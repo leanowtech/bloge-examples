@@ -40,6 +40,7 @@ public final class DatabaseTestRuntimeAdmissionControl {
     private static final Duration MAXIMUM_LEASE = Duration.ofHours(1);
     private static final int MAXIMUM_SUBJECTS = 10_001;
     private static final int MAXIMUM_PURGE_BATCH = 10_000;
+    private static final int ADMISSION_LOCK_STRIPES = 4_096;
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate mutations;
@@ -234,6 +235,7 @@ public final class DatabaseTestRuntimeAdmissionControl {
     public boolean release(AdmissionLease lease) {
         AdmissionLease current = Objects.requireNonNull(lease, "lease");
         Boolean released = mutations.execute(status -> {
+            ensureAndLock(List.of(admissionLock(current.admissionId())));
             Integer owned = jdbc.queryForObject("""
                             SELECT COUNT(*) FROM rg_test_admission_leases
                             WHERE admission_id = ? AND token_fingerprint = ?
@@ -282,12 +284,24 @@ public final class DatabaseTestRuntimeAdmissionControl {
             if (ids.isEmpty()) {
                 return 0;
             }
+            ensureAndLock(ids.stream().map(DatabaseTestRuntimeAdmissionControl::admissionLock)
+                    .distinct().sorted().toList());
             String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+            List<String> expired = jdbc.query("SELECT admission_id FROM rg_test_admission_leases "
+                            + "WHERE admission_id IN (" + placeholders + ") "
+                            + "AND lease_expires_at <= ? ORDER BY admission_id",
+                    (rs, row) -> rs.getString("admission_id"),
+                    append(ids, Timestamp.from(observedAt)));
+            if (expired.isEmpty()) {
+                return 0;
+            }
+            placeholders = String.join(",",
+                    java.util.Collections.nCopies(expired.size(), "?"));
             jdbc.update("DELETE FROM rg_test_admission_claims WHERE admission_id IN ("
-                    + placeholders + ")", ids.toArray());
+                    + placeholders + ")", expired.toArray());
             return jdbc.update("DELETE FROM rg_test_admission_leases WHERE admission_id IN ("
                     + placeholders + ") AND lease_expires_at <= ?",
-                    append(ids, Timestamp.from(observedAt)));
+                    append(expired, Timestamp.from(observedAt)));
         });
         return removed == null ? 0 : removed;
     }
@@ -356,13 +370,17 @@ public final class DatabaseTestRuntimeAdmissionControl {
             throw new AdmissionConflictException(ConflictReason.POLICY_TRANSITION_ACTIVE,
                     "Admission policy generation cannot change while tenant permits are live");
         }
-        jdbc.update("""
+        int updated = jdbc.update("""
                         UPDATE rg_test_admission_subject_policies
                         SET policy_generation = ?, max_active = ?, updated_at = ?
                         WHERE subject_key = ? AND policy_generation = ?
                         """,
                 requestedGeneration, subject.maxActive(), Timestamp.from(observedAt),
                 subject.subjectFingerprint(), stored.generation());
+        if (updated != 1) {
+            throw new AdmissionConflictException(ConflictReason.POLICY_DRIFT,
+                    "Admission subject policy transition lost its exact generation fence");
+        }
     }
 
     private Capacity capacity(String subjectFingerprint, Instant observedAt) {
@@ -425,7 +443,15 @@ public final class DatabaseTestRuntimeAdmissionControl {
     }
 
     private static String admissionLock(String admissionId) {
-        return ProtocolFingerprint.ofText("bloge.testAdmissionLock.v1|" + admissionId);
+        return ProtocolFingerprint.ofText(
+                "bloge.testAdmissionLockStripe.v1|" + admissionLockStripe(admissionId));
+    }
+
+    /** Returns the bounded stable request-lock stripe used by acquire, release, and retention. */
+    static int admissionLockStripe(String admissionId) {
+        String value = fingerprint(admissionId, "admissionId");
+        long prefix = Long.parseUnsignedLong(value.substring("sha256:".length(), 15), 16);
+        return (int) (prefix % ADMISSION_LOCK_STRIPES);
     }
 
     private static String tokenFingerprint(String token) {

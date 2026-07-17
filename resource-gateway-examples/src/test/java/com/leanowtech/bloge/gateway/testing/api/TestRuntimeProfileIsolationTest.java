@@ -11,11 +11,16 @@ import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionCoordinator;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionPolicy;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionRetentionScheduler;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionTelemetry;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
@@ -70,6 +75,13 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestRuntimeSloTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseTestRuntimeSloControlPlane.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DatabaseTestRuntimeAdmissionControl.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestRuntimeAdmissionCoordinator.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestRuntimeAdmissionPolicy.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestRuntimeAdmissionTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestRuntimeAdmissionRetentionScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -137,6 +149,13 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestRuntimeSloTelemetry.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DatabaseTestRuntimeSloControlPlane.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DatabaseTestRuntimeAdmissionControl.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestRuntimeAdmissionCoordinator.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestRuntimeAdmissionPolicy.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestRuntimeAdmissionTelemetry.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestRuntimeAdmissionRetentionScheduler.class)).hasSize(1);
             TestRuntimeSloMonitor runtimeSlo = context.getBean(TestRuntimeSloMonitor.class);
             runtimeSlo.refresh();
             assertThat(runtimeSlo.health().getStatus()).isEqualTo(Status.UP);
@@ -189,6 +208,9 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestRuntimeSloTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseTestRuntimeSloControlPlane.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DatabaseTestRuntimeAdmissionControl.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestRuntimeAdmissionCoordinator.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableStateProjectionControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(

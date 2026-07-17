@@ -28,8 +28,9 @@ The trust transition is explicit:
 4. The graph, operator bindings, and a conservative snapshot of all resource descriptors are frozen.
 5. `ExecutionControlCompiler` resolves every selector and rejects zero-match, ambiguity, stale target,
    unsafe external REAL/SPY, and fallback-to-real plans before graph execution.
-6. A new engine instance executes the plan without production cache, quota, circuit breaker, durable
-   state, listener, or context-carrier instances.
+6. The independent runtime atomically acquires its own test-capacity permit, then a new engine instance
+   executes without production cache, quota, circuit breaker, durable state, listener, or context-carrier
+   instances.
 7. Evidence is bounded and redacted before it is written to the independent test-runtime database.
 
 ## 2. Start And Stop
@@ -72,6 +73,16 @@ Independent-store settings:
 | `gateway.testing.store.password` | `RG_TEST_STORE_PASSWORD` | empty |
 | `gateway.testing.store.maximum-pool-size` | `RG_TEST_STORE_MAXIMUM_POOL_SIZE` | `4` |
 | `gateway.testing.store.retention-days` | `RG_TEST_STORE_RETENTION_DAYS` | `30` |
+| `gateway.testing.admission.policy-generation` | `RG_TEST_ADMISSION_POLICY_GENERATION` | `1` |
+| `gateway.testing.admission.tenant-max-active` | `RG_TEST_ADMISSION_TENANT_MAX_ACTIVE` | `16` |
+| `gateway.testing.admission.suite-max-active` | `RG_TEST_ADMISSION_SUITE_MAX_ACTIVE` | `2` |
+| `gateway.testing.admission.operator-max-active` | `RG_TEST_ADMISSION_OPERATOR_MAX_ACTIVE` | `8` |
+| `gateway.testing.admission.dependency-max-active` | `RG_TEST_ADMISSION_DEPENDENCY_MAX_ACTIVE` | `4` |
+| `gateway.testing.admission.lease-duration-seconds` | `RG_TEST_ADMISSION_LEASE_SECONDS` | `30` |
+| `gateway.testing.admission.heartbeat-interval-seconds` | `RG_TEST_ADMISSION_HEARTBEAT_SECONDS` | `5` |
+| `gateway.testing.admission.instance-id` | `RG_TEST_ADMISSION_INSTANCE_ID` | generated process identity |
+| `gateway.testing.admission.cleanup-interval-ms` | `RG_TEST_ADMISSION_CLEANUP_INTERVAL_MS` | `60000` |
+| `gateway.testing.admission.cleanup-batch-size` | `RG_TEST_ADMISSION_CLEANUP_BATCH_SIZE` | `1000` |
 | `gateway.testing.replay-payloads.maximum-retention-days` | `RG_TEST_REPLAY_MAX_RETENTION_DAYS` | `30` |
 | `gateway.testing.replay-payloads.sweep-interval-ms` | `RG_TEST_REPLAY_SWEEP_INTERVAL_MS` | `60000` |
 | `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |
@@ -1063,10 +1074,53 @@ Tenant, suite, run, operator, owner, item, token, error, and payload labels are 
 discovery advertises `testRuntimeSloHealth` and `boundedCardinalityTestRuntimeMetrics` only when the
 profile-owned testing runtime exists.
 
-This component is an observation and readiness gate, not a scheduler or capacity controller. It
-does not implement tenant/suite/operator/dependency quotas, admission control, backpressure,
-cancellation, hard worker deadlines, retention deletion, or external alert delivery. Those require
-separate fenced command paths and remain explicit follow-up work.
+The SLO component is an observation and readiness gate, not the capacity authority. The same isolated
+profile separately installs the admission controller below. Neither component supplies a queued
+scheduler, priority/fairness policy, hard worker cancellation, remote acquisition, adaptive scaling, or
+external alert delivery.
+
+### 4.2.1.2 Database-authoritative runtime admission
+
+Every engine-starting command is admitted against one independent test-runtime database transaction:
+
+| Command path | Permit lifetime | Subject closure |
+|---|---|---|
+| Direct graph/operator | compiled plan to sanitized evidence | tenant + recursively reachable operators + frozen dependencies |
+| Batch | one direct permit per sequential child | each child's exact compiled closure |
+| Immutable suite | one parent permit for the complete serial run | tenant + suite id + target operator/dependency closure |
+| Durable create | fresh engine preparation to committed initial boundary | authorized target/control-plan closure |
+| Durable terminal recovery | recovered engine execution to committed terminal boundary | re-authorized target/control-plan closure |
+
+Suite children deliberately do not reacquire capacity: the parent already owns every subject they can
+use. Query, claim, and heartbeat commands do not start an engine and consume no permit. Idempotent suite
+or durable result replay is resolved before admission and therefore consumes no capacity.
+
+The authority hashes every subject with tenant and environment scope, locks a bounded request stripe and
+all subject hashes in stable order, applies one versioned policy generation, counts only database-clock
+live leases, and inserts every claim or none. A heartbeat renews exact token/owner/epoch ownership. Lost
+ownership blocks terminal publication; exact release or bounded oldest-first expiry cleanup returns
+capacity. No fixture, business context, credential, raw operator/dependency name, or lease token is
+stored. Metrics use only closed `result` and `scope` tags under
+`resource.gateway.test.admission.decisions`. Capability discovery advertises
+`databaseAuthoritativeTestRuntimeAdmission` and
+`boundedCardinalityTestRuntimeAdmissionMetrics` only when the profile-owned runtime exists.
+
+Failure semantics are stable and payload-free:
+
+| Condition | HTTP/result | Caller action |
+|---|---|---|
+| Any quota dimension is full | `429 RG.TEST.ADMISSION_QUOTA_EXCEEDED` + bounded `Retry-After` | retry with jitter after the advertised delay |
+| Same stable suite/durable intent is live | `429 RG.TEST.ADMISSION_IN_PROGRESS` | query/replay the existing command, or retry later |
+| Stable key is rebound to another intent | `409 RG.TEST.ADMISSION_IDEMPOTENCY_CONFLICT` | use the original intent or a new caller key |
+| Store unavailable, policy generation drift, or coordinator shutdown | `503` | stop dispatch and repair deployment/store state |
+| Heartbeat loses exact ownership | `503 RG.TEST.ADMISSION_LEASE_LOST` | treat the terminal response as unpublished and reconcile by command id |
+
+Limits must be positive and at most `1,000,000`. Lease duration is an integral `2..3600` seconds and
+heartbeat is an integral shorter duration; cleanup batch is `1..10000`. Invalid values fail application
+startup. Changing any limit requires incrementing `policy-generation`; drain active tenant permits before
+the rollout so old and new replicas do not intentionally fail closed on mixed generations. Give each
+replica a stable, unique `instance-id` in managed deployments. The current SQL protocol is H2-certified;
+another database requires dialect/concurrency certification before use.
 
 ### 4.2.2 Register an immutable test suite
 
@@ -1990,9 +2044,9 @@ Still intentionally outside this increment:
   `GovernanceGateResult.v3` through a reconstructable exact-evidence basis, but the ANEKE publish
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
-  quota/admission/backpressure enforcement, external alert routing, and suite-history list/trend
-  APIs; projection loops and the global execution/suite/capacity surface now have aggregate-only
-  health and metrics, but observation must not be confused with capacity control;
+  queued priority/fairness scheduling, remote worker acquisition, adaptive quota/autoscaling, external
+  alert routing, and suite-history list/trend APIs; database-authoritative immediate admission now
+  enforces tenant/suite/operator/dependency capacity, but it is not a scheduler;
 - operator-target durable creation, dispatcher/polling, cross-process recovery supervision and
   multi-boundary recovery orchestration, hard worker cancellation, typed identity/flag/secret
   authorities, explicit

@@ -7,6 +7,11 @@ import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionCoordinator;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionPolicy;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionRetentionScheduler;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionTelemetry;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
@@ -17,6 +22,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEven
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.DurableStateProjectionReconciler;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
@@ -206,6 +212,61 @@ public class TestRuntimeConfiguration {
             ObjectProvider<MeterRegistry> meterRegistry) {
         return new TestRuntimeSloTelemetry(
                 meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
+    }
+
+    /** Creates the database-authoritative all-or-nothing quota and lease protocol. */
+    @Bean
+    DatabaseTestRuntimeAdmissionControl testRuntimeAdmissionControl(
+            TestRuntimeDatabase database) {
+        return new DatabaseTestRuntimeAdmissionControl(
+                database.jdbc(), database.transactionManager());
+    }
+
+    /** Registers only fixed admission result and quota-dimension metric series. */
+    @Bean
+    TestRuntimeAdmissionTelemetry testRuntimeAdmissionTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new TestRuntimeAdmissionTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
+    }
+
+    /**
+     * Builds the versioned cross-replica quota policy without silently normalizing bad values.
+     */
+    @Bean
+    TestRuntimeAdmissionPolicy testRuntimeAdmissionPolicy(
+            @Value("${gateway.testing.admission.policy-generation:1}") long generation,
+            @Value("${gateway.testing.admission.tenant-max-active:16}") long tenantMaxActive,
+            @Value("${gateway.testing.admission.suite-max-active:2}") long suiteMaxActive,
+            @Value("${gateway.testing.admission.operator-max-active:8}") long operatorMaxActive,
+            @Value("${gateway.testing.admission.dependency-max-active:4}") long dependencyMaxActive,
+            @Value("${gateway.testing.admission.lease-duration-seconds:30}") long leaseSeconds,
+            @Value("${gateway.testing.admission.heartbeat-interval-seconds:5}")
+            long heartbeatSeconds) {
+        return new TestRuntimeAdmissionPolicy(
+                generation, tenantMaxActive, suiteMaxActive, operatorMaxActive,
+                dependencyMaxActive, Duration.ofSeconds(leaseSeconds),
+                Duration.ofSeconds(heartbeatSeconds));
+    }
+
+    /** Hashes scoped subjects and maintains exact renewable admission guards. */
+    @Bean(destroyMethod = "close")
+    TestRuntimeAdmissionCoordinator testRuntimeAdmissionCoordinator(
+            DatabaseTestRuntimeAdmissionControl controlPlane,
+            TestRuntimeAdmissionPolicy policy,
+            ObjectMapper objectMapper,
+            TestRuntimeAdmissionTelemetry telemetry,
+            @Value("${gateway.testing.admission.instance-id:}") String instanceId) {
+        return new TestRuntimeAdmissionCoordinator(
+                controlPlane, policy, objectMapper, telemetry, instanceId);
+    }
+
+    /** Reclaims only bounded pages of expired permits; live capacity uses the database clock. */
+    @Bean
+    TestRuntimeAdmissionRetentionScheduler testRuntimeAdmissionRetentionScheduler(
+            DatabaseTestRuntimeAdmissionControl controlPlane,
+            @Value("${gateway.testing.admission.cleanup-batch-size:1000}") int batchSize) {
+        return new TestRuntimeAdmissionRetentionScheduler(controlPlane, batchSize);
     }
 
     @Bean
@@ -449,10 +510,11 @@ public class TestRuntimeConfiguration {
             DurableTestExecutionCheckpointIntegrity integrity,
             TestSecurityEventRepository securityEvents,
             ObjectMapper objectMapper,
-            DurableTestCreationLeaseCoordinator leases) {
+            DurableTestCreationLeaseCoordinator leases,
+            TestRuntimeAdmissionGate admissions) {
         return new DurableTestExecutionCreationService(
                 checkpoints, authorizer, runtime, integrity, securityEvents, objectMapper,
-                leases);
+                leases, admissions);
     }
 
     /** Retains staged BLOGE recovery state until the fenced repository commit consumes it. */
@@ -473,9 +535,11 @@ public class TestRuntimeConfiguration {
             DurableTestTerminalRecoveryRuntime runtime,
             TestSecurityEventRepository securityEvents,
             ObjectMapper objectMapper,
-            DurableTestRecoveryLeaseCoordinator leases) {
+            DurableTestRecoveryLeaseCoordinator leases,
+            TestRuntimeAdmissionGate admissions) {
         return new DurableTestTerminalRecoveryService(
-                checkpoints, authorizer, runtime, securityEvents, objectMapper, leases);
+                checkpoints, authorizer, runtime, securityEvents, objectMapper, leases,
+                admissions);
     }
 
     /** Reuses the configured local or managed signer for independently verifiable test evidence. */
@@ -527,11 +591,12 @@ public class TestRuntimeConfiguration {
             TestSecurityEventRepository securityEvents,
             TestReplayPayloadService replayPayloadService,
             TestEvidenceIntegrityService evidenceIntegrity,
+            TestRuntimeAdmissionGate admissions,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
         return new TestExecutionApiService(graphService, operatorRegistry, resourceRegistry,
                 expressionEvaluator, objectMapper, fixtureRepository, runRepository, securityEvents,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), replayPayloadService,
-                evidenceIntegrity);
+                evidenceIntegrity, admissions);
     }
 
     /** Assembles the dependency-validating immutable suite registry service. */
@@ -596,13 +661,14 @@ public class TestRuntimeConfiguration {
             TestSuiteRunRepository suiteRunRepository,
             TestSuiteRunLeaseCoordinator leaseCoordinator,
             TestSuiteRunAttestationService attestations,
+            TestRuntimeAdmissionGate admissions,
             ObjectMapper objectMapper,
             TestSecurityEventRepository securityEvents,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
         return new TestSuiteExecutionService(suiteRegistry, executionService, suiteRunRepository,
                 objectMapper, securityEvents,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), leaseCoordinator,
-                attestations);
+                attestations, admissions);
     }
 
     /** Marker consumed by the unauthenticated capability probe. */

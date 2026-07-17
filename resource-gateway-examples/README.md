@@ -625,10 +625,21 @@ values. Configure thresholds through `gateway.testing.runtime-slo.*` / `RG_TEST_
 full table is in the testing control-plane guide. Lifecycle/time indexes support these aggregate
 reads, and the outcome lookback is hard-capped at 365 days.
 
-This closes the aggregate execution/suite/capacity observation gap, not capacity enforcement.
-Tenant/suite/operator/dependency quotas, admission control, backpressure, cancellation, wall-clock
-worker deadlines, external alert routing, non-H2 dialect certification, tamper-evident external
-anchoring, and production-load certification remain future work.
+The isolated profile now also enforces database-authoritative admission before any test engine starts.
+Tenant, suite, recursively reachable operator, and conservative external-dependency claims are acquired
+all-or-nothing with database-clock renewable leases. Direct graph/operator runs and sequential batch
+children acquire their own permits; an immutable suite acquires its complete closure once so its child
+cases cannot self-deadlock; fresh durable creation and terminal recovery hold capacity through their
+first committed boundary. Saturation returns stable `429` problems plus `Retry-After`, policy drift and
+store loss fail closed, raw subject names are hashed before persistence, expired leases are reclaimed in
+bounded pages, and application shutdown releases local permits. Configure limits and lease behavior
+under `gateway.testing.admission.*` / `RG_TEST_ADMISSION_*`; the full table and rollout rules are in the
+[testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#4212-database-authoritative-runtime-admission).
+
+This is immediate admission backpressure, not a queued scheduler. Priority/fairness queues, remote
+worker acquisition, adaptive autoscaling, hard cancellation and wall-clock worker deadlines, external
+alert routing, non-H2 dialect certification, tamper-evident external anchoring, and production-load
+certification remain future work.
 
 Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
 another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter

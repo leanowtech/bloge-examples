@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.Timeout;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -414,6 +416,51 @@ class TestRunServiceTest {
         assertThat(result.evidence().status())
                 .isEqualTo(TestRunEvidence.Status.CONTROL_PLAN_REJECTED);
         assertThat(result.evidence().diagnostics()).anyMatch(item -> item.contains("same-precedence"));
+    }
+
+    @Test
+    void admissionUsesTheCompiledClosureAndCheckpointsBeforePermitRelease() {
+        List<String> lifecycle = new ArrayList<>();
+
+        TestExecutionResult result = service.execute(
+                request(single(new PureOperator()), bundle()), compiled -> {
+                    lifecycle.add("admit");
+                    assertThat(compiled.inventory().entries()).hasSize(1);
+                    assertThat(compiled.effectivePlan().planFingerprint()).startsWith("sha256:");
+                    return new AdmissionGuard() {
+                        @Override
+                        public void checkpoint() {
+                            lifecycle.add("checkpoint");
+                        }
+
+                        @Override
+                        public void close() {
+                            lifecycle.add("release");
+                        }
+                    };
+                });
+
+        assertThat(result.passed()).isTrue();
+        assertThat(lifecycle).containsExactly("admit", "checkpoint", "release");
+    }
+
+    @Test
+    void rejectedControlPlanNeverConsumesRuntimeCapacity() {
+        FixtureRule first = rule("first", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning("a"));
+        FixtureRule second = rule("second", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning("b"));
+        AtomicInteger admissionCalls = new AtomicInteger();
+
+        TestExecutionResult result = service.execute(
+                request(single(new PureOperator()), bundle(first, second)), compiled -> {
+                    admissionCalls.incrementAndGet();
+                    throw new AssertionError("rejected plans must not be admitted");
+                });
+
+        assertThat(result.evidence().status())
+                .isEqualTo(TestRunEvidence.Status.CONTROL_PLAN_REJECTED);
+        assertThat(admissionCalls).hasValue(0);
     }
 
     @Test

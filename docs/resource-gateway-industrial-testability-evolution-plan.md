@@ -21,7 +21,7 @@
 | Stage 1 unified kernel | Done | selector/preflight/effective plan、独立 engine、五行为、consumption/assertion/evidence、F2/F3、micro graph、旧 graph suite adapter；1653 tests 全绿 |
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite`、公共 `CheckpointFailurePolicy.FAIL_FAST`、fresh execution-to-durable-boundary 与同步 `resumeSuspended` 已接通；RG logical clock、seeded random/UUID、plan v3/provider-state、semantic result fingerprint、组合 `bloge.durableTestExecutionCheckpoint.v2`、fixture cursor、静止边界 recorder snapshot、同库事务、数据库时钟租约 CAS、持久化幂等命令和 staged 四 store aggregate 已落地。fresh `RunSession` 无需驻留或中断执行线程即可同步返回首个终态或持久化 suspension，内部 `RecoverySession` 能把真实 suspension 恢复到下一静止边界并原子 advance 或回滚；公开 authenticated durable GRAPH create 已把 exact dependency/principal authorization、首个唯一 signal suspension、revision-zero checkpoint、四 store mutation、不可变结果和审计原子闭合，并以数据库时钟 CAS 心跳自动维持 preparation lease；公开 payload-free query 已按 tenant/environment/org/project non-disclosure scope 投影完整性验证后的 fence、依赖与边界指纹；公开 owner claim 已把 authorization receipt、结果 fence 与 worker dispatch 原子绑定；公开 authenticated heartbeat 以 exact predecessor fence 隐式解析已签发 dispatch，保持授权 principal 连续性，并原子旋转 revision/lease/successor dispatch；公开 terminal recovery 已按同 principal/authorization 执行一个有界 signal，并把 server-derived BLOGE mutation、terminal checkpoint、不可变结果、审计与显式 evidence gap receipt 原子提交；进程内 recovery lease coordinator 在引擎启动前同步续租、执行期间周期旋转 successor，并在终态 CAS 前冻结到最新 dispatch，续租失效则丢弃 stage；全局 test-runtime operational snapshot、证据完整率、四类队列/租约/年龄、storage backlog、Actuator SLO health 与固定低基数指标已落地。operator-target durable 创建、dispatcher、worker poll/dispatch、多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
+| Stage 4 | In progress | BLOGE run-scoped `ExecutionServices`/`FunctionCallSite`、公共 `CheckpointFailurePolicy.FAIL_FAST`、fresh execution-to-durable-boundary 与同步 `resumeSuspended` 已接通；RG logical clock、seeded random/UUID、plan v3/provider-state、semantic result fingerprint、组合 `bloge.durableTestExecutionCheckpoint.v2`、fixture cursor、静止边界 recorder snapshot、同库事务、数据库时钟租约 CAS、持久化幂等命令和 staged 四 store aggregate 已落地。fresh `RunSession` 无需驻留或中断执行线程即可同步返回首个终态或持久化 suspension，内部 `RecoverySession` 能把真实 suspension 恢复到下一静止边界并原子 advance 或回滚；公开 authenticated durable GRAPH create 已把 exact dependency/principal authorization、首个唯一 signal suspension、revision-zero checkpoint、四 store mutation、不可变结果和审计原子闭合，并以数据库时钟 CAS 心跳自动维持 preparation lease；公开 payload-free query 已按 tenant/environment/org/project non-disclosure scope 投影完整性验证后的 fence、依赖与边界指纹；公开 owner claim 已把 authorization receipt、结果 fence 与 worker dispatch 原子绑定；公开 authenticated heartbeat 以 exact predecessor fence 隐式解析已签发 dispatch，保持授权 principal 连续性，并原子旋转 revision/lease/successor dispatch；公开 terminal recovery 已按同 principal/authorization 执行一个有界 signal，并把 server-derived BLOGE mutation、terminal checkpoint、不可变结果、审计与显式 evidence gap receipt 原子提交；进程内 recovery lease coordinator 在引擎启动前同步续租、执行期间周期旋转 successor，并在终态 CAS 前冻结到最新 dispatch，续租失效则丢弃 stage；全局 test-runtime operational snapshot、证据完整率、四类队列/租约/年龄、storage backlog、Actuator SLO health 与固定低基数指标已落地；第二十增量用数据库时钟、四维原子 claim、可续租 exact fence 和有界清理，为 graph/operator/suite/durable create/recovery 建立跨副本即时 admission，suite 以一次父 permit 避免 child 自锁。operator-target durable 创建、dispatcher、worker poll/dispatch、排队/公平/优先级调度、多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
 | Stage 5 | Not started | 独立部署、network/identity/secret/store 物理隔离、规模化调度与 mutation/property testing |
 
 Stage 4 最新增量把 fresh initial boundary 收敛为唯一持久化 signal wait，并在该静止点同时
@@ -46,8 +46,8 @@ worker 扫描持久化面已将 ready work、过期 work-item claim 与过期 ex
 tenant/namespace、状态、可选 shard、时间、排序和有界 limit 下推到 SQL，并对每个候选的调度投影
 与权威 JSON 做 fail-closed 回验。默认页 100、硬上限 10,000；全局和 tenant-scoped 复合索引均已
 建立。它消除了热路径全表 payload 解码，但热路径自身无法发现被错误投影隐藏的候选；该问题由
-下述独立反熵循环处理。公开 polling/acquisition、backpressure、配额/容量控制与跨进程 worker
-supervisor 仍未提供。
+下述独立反熵循环处理。测试执行的即时四维配额已由独立 admission authority 执行；公开 worker
+polling/acquisition、排队/公平/优先级 backpressure 与跨进程 worker supervisor 仍未提供。
 
 隐藏候选型投影漂移现已由独立 system-level keyset 反熵循环覆盖。它不使用待审计的调度谓词，而按
 execution/work-item 主键各自有界轮转；默认每表 100 行、60 秒一轮、`REPAIR_DERIVED`。JSON 仍是
@@ -70,9 +70,15 @@ backlog、last-success age 与 health 指标。第十九增量进一步用数据
 `REPEATABLE_READ` 事务聚合全局 child/suite evidence completeness、suite/creation/durable/work queue、
 expired ownership、oldest age 与 retention/terminal backlog；Actuator 只返回稳定 violation code 和
 聚合值，Micrometer 只使用固定 `status/queue/scope/kind` 标签，业务断言与被测系统失败不触发平台
-失活。authority table 已增加 lifecycle/time 运维索引，观察窗硬上限 365 天。当前剩余配额与 admission/
-backpressure 执行、自动清理命令、外部 alert routing、外部 WORM/tamper-evident audit/archive anchoring、
-非 H2 方言与生产负载认证。
+失活。authority table 已增加 lifecycle/time 运维索引，观察窗硬上限 365 天。第二十增量进一步在
+同一独立数据库中提供 tenant/suite/operator/dependency 四维全有或全无 admission、database-clock
+renewable lease、exact fencing、固定 4096 请求锁条带、bounded expiry cleanup 和关闭释放。所有
+engine-starting path 均在 control-plan/authorization 后获取 permit；suite 父运行一次保留完整闭包，child
+不重复获取。仍缺排队/公平/优先级 scheduler、远程 worker acquisition、hard cancellation、外部 alert
+routing、外部 WORM/tamper-evident audit/archive anchoring、非 H2 方言与生产负载认证。
+
+实现边界、错误语义、配置和 96 项聚焦证明见
+[Stage 4 runtime admission verification](resource-gateway-execution-data-control-plane-stage4-runtime-admission-verification.md)。
 
 实现细节、行为兼容决策和可复现测试见
 [v1 实施蓝图](resource-gateway-industrial-testability-evolution-plan-1.0.md) 与
@@ -145,6 +151,8 @@ Exact semantic suite 到 ANEKE payload-free workbook seed 的投影、失败边�
 Semantic workbook 到 ANEKE gate decision 的 exact evidence 重建、GraphDraft 编译 target 绑定与 v2 兼容证明见
 [Stage 3 semantic gate basis verification](resource-gateway-execution-data-control-plane-stage3-semantic-gate-basis-verification.md)。
 
+第二十增量后端全量验收：Resource Gateway `clean verify` 共 2121 tests、0 failures、0 errors、
+34 个既有条件跳过，Spring Boot JAR 打包成功；runtime admission 相关 96 项聚焦验证全部通过。
 当前严格验收基线：Resource Gateway `-Pfrontend clean verify` 共 2103 tests、0 failures、0 errors、
 0 skips，真实浏览器回归与 Spring Boot JAR 打包成功；Canvas suite 聚焦 68 tests、
 前端全量 150 tests，并在桌面与 390 x 844 真实浏览器中完成两行一等 suite 发布；Canvas 对完整
@@ -1289,9 +1297,10 @@ archive insert、exact source delete、purge 与累计 counter 同事务；archi
 Micrometer 指标关闭 projection loop 的基础运维观测缺口；store exception、row/token/payload 均不进入
 health detail 或 label。第十九增量把同一原则扩展到全局 execution/suite/capacity observation：一个只读
 可重复读事务聚合 evidence completeness、四类控制队列、expired ownership、oldest age 与 storage
-backlog，固定标签不含 scope identity，业务失败不污染平台 SLO。仍缺外部 WORM/tamper-evident anchoring、
-配额/admission/backpressure 控制、自动清理、alert routing、非 H2 方言与生产负载认证，且仍无公开 worker poll、
-原子远程 acquisition 或生产级跨进程 supervisor。
+backlog，固定标签不含 scope identity，业务失败不污染平台 SLO。第二十增量已补齐即时四维 admission、
+数据库时钟租约、精确释放/过期回收与低基数决策指标。仍缺外部 WORM/tamper-evident anchoring、
+排队/公平/优先级 backpressure、alert routing、非 H2 方言与生产负载认证，且仍无公开 worker poll、
+原子远程 acquisition、hard cancellation 或生产级跨进程 supervisor。
 `bloge.testWorkItemMutation.v1` 由 `bloge.testDurableStateMutation.v3` 纳入聚合，不修改 v1/v2
 历史 fingerprint。冷读、回滚、retry/dead-letter、tenant、异步可见性、过期 claim、跨实例 CAS
 输家和 work-item-only fingerprint 均已有反例测试。

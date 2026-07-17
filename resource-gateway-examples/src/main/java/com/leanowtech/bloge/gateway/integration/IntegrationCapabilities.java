@@ -393,6 +393,10 @@ public record IntegrationCapabilities(
         features.put("testRuntimeSloHealth", testExecutionEndpointEnabled);
         features.put("boundedCardinalityTestRuntimeMetrics",
                 testExecutionEndpointEnabled);
+        features.put("databaseAuthoritativeTestRuntimeAdmission",
+                testExecutionEndpointEnabled);
+        features.put("boundedCardinalityTestRuntimeAdmissionMetrics",
+                testExecutionEndpointEnabled);
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("signedTestSuiteRunAttestation",

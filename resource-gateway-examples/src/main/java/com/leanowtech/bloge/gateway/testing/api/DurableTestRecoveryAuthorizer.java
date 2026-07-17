@@ -143,7 +143,8 @@ public class DurableTestRecoveryAuthorizer {
                         dependencies.identitySnapshot().fingerprint(),
                         rebuilt.authorizedPurpose(),
                         dependencies.sideEffectPolicy());
-        return new AuthorizedRecovery(authorizedTarget.graph(), compiled, authorization);
+        return new AuthorizedRecovery(authorizedTarget.graph(), compiled,
+                authorizedTarget.dependencyRefs(), authorization);
     }
 
     /**
@@ -219,7 +220,7 @@ public class DurableTestRecoveryAuthorizer {
                 "replayDependenciesFingerprint", ProtocolFingerprint.of(
                         objectMapper, compiled.effectivePlan().replayDependencies())));
         return new AuthorizedCreation(
-                authorizedTarget.graph(), compiled, dependencies,
+                authorizedTarget.graph(), compiled, authorizedTarget.dependencyRefs(), dependencies,
                 authorizationFingerprint);
     }
 
@@ -256,7 +257,8 @@ public class DurableTestRecoveryAuthorizer {
                     if (!target.fingerprint().equals(snapshot.fingerprint())) {
                         throw unavailable(identity, "TARGET");
                     }
-                    yield new AuthorizedTarget(snapshot.graph());
+                    yield new AuthorizedTarget(
+                            snapshot.graph(), snapshot.dependencyFingerprints().keySet());
                 }
                 case "OPERATOR" -> {
                     OperatorExecutionTargetSnapshot snapshot =
@@ -267,7 +269,8 @@ public class DurableTestRecoveryAuthorizer {
                         throw unavailable(identity, "TARGET");
                     }
                     yield new AuthorizedTarget(OperatorMicroGraphRunner.microGraph(
-                            snapshot.operatorRef(), snapshot.synchronousOperator()));
+                            snapshot.operatorRef(), snapshot.synchronousOperator()),
+                            snapshot.resourceDependencyFingerprints().keySet());
                 }
                 default -> throw unavailable(identity, "TARGET");
             };
@@ -368,9 +371,10 @@ public class DurableTestRecoveryAuthorizer {
         return value == null ? "" : value.trim();
     }
 
-    private record AuthorizedTarget(Graph graph) {
+    private record AuthorizedTarget(Graph graph, Set<String> dependencyRefs) {
         private AuthorizedTarget {
             Objects.requireNonNull(graph, "graph");
+            dependencyRefs = dependencyRefs == null ? Set.of() : Set.copyOf(dependencyRefs);
         }
     }
 
@@ -383,16 +387,27 @@ public class DurableTestRecoveryAuthorizer {
      *
      * @param graph exact graph or canonical operator micro-graph
      * @param control exact fixture, replay, and execution-service controls
+     * @param dependencyRefs exact or conservatively frozen external resource references
      * @param authorization payload-free content-addressed authorization receipt
      */
     public record AuthorizedRecovery(
             Graph graph,
             CompiledExecutionControl control,
+            Set<String> dependencyRefs,
             DurableTestRecoveryAuthorization authorization) {
+        /** Compatibility constructor for focused runtimes without external dependencies. */
+        public AuthorizedRecovery(
+                Graph graph,
+                CompiledExecutionControl control,
+                DurableTestRecoveryAuthorization authorization) {
+            this(graph, control, Set.of(), authorization);
+        }
+
         /** Requires all executable and auditable parts of the authorization decision. */
         public AuthorizedRecovery {
             graph = Objects.requireNonNull(graph, "graph");
             control = Objects.requireNonNull(control, "control");
+            dependencyRefs = dependencyRefs == null ? Set.of() : Set.copyOf(dependencyRefs);
             authorization = Objects.requireNonNull(authorization, "authorization");
         }
     }
@@ -402,18 +417,30 @@ public class DurableTestRecoveryAuthorizer {
      *
      * @param graph exact graph selected by the caller's content fingerprint
      * @param control exact fixture, replay, operator, and execution-service controls
+     * @param dependencyRefs exact or conservatively frozen external resource references
      * @param dependencies payload-free immutable checkpoint dependency closure
      * @param authorizationFingerprint complete principal and dependency authorization identity
      */
     public record AuthorizedCreation(
             Graph graph,
             CompiledExecutionControl control,
+            Set<String> dependencyRefs,
             DurableTestExecutionCheckpoint.ControlDependencies dependencies,
             String authorizationFingerprint) {
+        /** Compatibility constructor for focused runtimes without external dependencies. */
+        public AuthorizedCreation(
+                Graph graph,
+                CompiledExecutionControl control,
+                DurableTestExecutionCheckpoint.ControlDependencies dependencies,
+                String authorizationFingerprint) {
+            this(graph, control, Set.of(), dependencies, authorizationFingerprint);
+        }
+
         /** Requires all executable and payload-free authorization material. */
         public AuthorizedCreation {
             graph = Objects.requireNonNull(graph, "graph");
             control = Objects.requireNonNull(control, "control");
+            dependencyRefs = dependencyRefs == null ? Set.of() : Set.copyOf(dependencyRefs);
             dependencies = Objects.requireNonNull(dependencies, "dependencies");
             authorizationFingerprint = authorizationFingerprint == null
                     ? "" : authorizationFingerprint.trim();

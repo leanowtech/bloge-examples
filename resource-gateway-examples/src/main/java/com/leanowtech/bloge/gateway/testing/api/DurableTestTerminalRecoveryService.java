@@ -5,6 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionSubjects;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.Kind;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryDispatch;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -44,6 +49,7 @@ public final class DurableTestTerminalRecoveryService {
     private final TestSecurityEventRepository securityEvents;
     private final ObjectMapper objectMapper;
     private final DurableTestRecoveryLeaseCoordinator leases;
+    private final TestRuntimeAdmissionGate admissions;
 
     /**
      * Creates a fail-closed terminal recovery boundary.
@@ -62,12 +68,36 @@ public final class DurableTestTerminalRecoveryService {
             TestSecurityEventRepository securityEvents,
             ObjectMapper objectMapper,
             DurableTestRecoveryLeaseCoordinator leases) {
+        this(checkpoints, authorizer, runtime, securityEvents, objectMapper, leases,
+                TestRuntimeAdmissionGate.unbounded());
+    }
+
+    /**
+     * Creates terminal recovery with an all-dimension permit acquired before runtime preparation.
+     *
+     * @param checkpoints verified dispatch, live checkpoint, and atomic terminal repository
+     * @param authorizer current exact dependency and identity re-authorization boundary
+     * @param runtime isolated staged BLOGE recovery runtime
+     * @param securityEvents transaction-capable semantic security-event sink
+     * @param objectMapper canonical protocol and signal mapper
+     * @param leases automatic authenticated recovery-dispatch heartbeat coordinator
+     * @param admissions database-authoritative runtime capacity gate
+     */
+    public DurableTestTerminalRecoveryService(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            DurableTestRecoveryAuthorizer authorizer,
+            DurableTestTerminalRecoveryRuntime runtime,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            DurableTestRecoveryLeaseCoordinator leases,
+            TestRuntimeAdmissionGate admissions) {
         this.checkpoints = Objects.requireNonNull(checkpoints, "checkpoints");
         this.authorizer = Objects.requireNonNull(authorizer, "authorizer");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.leases = Objects.requireNonNull(leases, "leases");
+        this.admissions = Objects.requireNonNull(admissions, "admissions");
     }
 
     /**
@@ -110,6 +140,34 @@ public final class DurableTestTerminalRecoveryService {
         TestRuntimeTransactionMutation boundAudit = boundAllowedAudit(
                 identity, normalizedRunId, request.clientRequestId());
 
+        AdmissionSubjects subjects = AdmissionSubjects.from(
+                authorized.control(), authorized.dependencyRefs());
+        String admissionFingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.durableTestRecoveryAdmissionIntent.v1",
+                "requestFingerprint", requestFingerprint,
+                "authorizationFingerprint", ProtocolFingerprint.of(
+                        objectMapper, authorized.authorization()),
+                "operatorRefs", subjects.operatorRefs(),
+                "dependencyRefs", subjects.dependencyRefs()));
+        AdmissionIntent intent = new AdmissionIntent(
+                Kind.DURABLE_RECOVERY, request.clientRequestId(), admissionFingerprint, "",
+                subjects.operatorRefs(), subjects.dependencyRefs());
+        try (AdmissionGuard admission = admissions.admit(identity, intent)) {
+            return recoverAdmitted(normalizedRunId, request, identity, requestFingerprint,
+                    dispatch, current, authorized, boundAudit, admission);
+        }
+    }
+
+    private DurableTestTerminalRecoveryResponse recoverAdmitted(
+            String normalizedRunId,
+            DurableTestTerminalRecoveryRequest request,
+            IntegrationRequestContext identity,
+            String requestFingerprint,
+            DurableTestRecoveryDispatch dispatch,
+            DurableTestExecutionCheckpoint current,
+            DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized,
+            TestRuntimeTransactionMutation boundAudit,
+            AdmissionGuard admission) {
         Object signal = signalValue(request.signal().data(), identity);
         String checkpointRef = "terminal:" + requestFingerprint.substring("sha256:".length());
         try (DurableTestRecoveryLeaseCoordinator.LeaseGuard guard = leases.monitor(
@@ -126,8 +184,11 @@ public final class DurableTestTerminalRecoveryService {
                                 prepared.engineStateMutation().engineState(),
                                 prepared.fixtureConsumptionState(),
                                 prepared.executionServiceState(), EVIDENCE_GAPS);
-                return commit(command, prepared, normalizedRunId, request.clientRequestId(),
+                DurableTestTerminalRecoveryResponse response = commit(
+                        command, prepared, normalizedRunId, request.clientRequestId(),
                         requestFingerprint, boundAudit, identity);
+                admission.checkpoint();
+                return response;
             }
         } catch (DurableTestTerminalRecoveryRuntime.NonTerminalBoundaryException nonTerminal) {
             rejected(identity, normalizedRunId,

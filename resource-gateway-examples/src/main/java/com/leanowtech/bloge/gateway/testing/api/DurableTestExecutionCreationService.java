@@ -5,6 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionSubjects;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.Kind;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -45,6 +50,7 @@ public final class DurableTestExecutionCreationService {
     private final TestSecurityEventRepository securityEvents;
     private final ObjectMapper objectMapper;
     private final DurableTestCreationLeaseCoordinator leases;
+    private final TestRuntimeAdmissionGate admissions;
 
     /**
      * Creates the public durable creation application boundary.
@@ -65,6 +71,31 @@ public final class DurableTestExecutionCreationService {
             TestSecurityEventRepository securityEvents,
             ObjectMapper objectMapper,
             DurableTestCreationLeaseCoordinator leases) {
+        this(checkpoints, authorizer, runtime, integrity, securityEvents, objectMapper, leases,
+                TestRuntimeAdmissionGate.unbounded());
+    }
+
+    /**
+     * Creates the durable boundary with database-authoritative execution admission.
+     *
+     * @param checkpoints command reservation and atomic checkpoint authority
+     * @param authorizer exact target, fixture, replay, plan, and authority freezer
+     * @param runtime isolated staged fresh-execution runtime
+     * @param integrity durable checkpoint sealing authority
+     * @param securityEvents mandatory transaction-bound semantic audit sink
+     * @param objectMapper canonical request fingerprint mapper
+     * @param leases database-fenced preparation heartbeat coordinator
+     * @param admissions all-dimension capacity gate acquired before engine preparation
+     */
+    public DurableTestExecutionCreationService(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            DurableTestRecoveryAuthorizer authorizer,
+            DurableTestCreationRuntime runtime,
+            DurableTestExecutionCheckpointIntegrity integrity,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            DurableTestCreationLeaseCoordinator leases,
+            TestRuntimeAdmissionGate admissions) {
         this.checkpoints = Objects.requireNonNull(checkpoints, "checkpoints");
         this.authorizer = Objects.requireNonNull(authorizer, "authorizer");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
@@ -72,6 +103,7 @@ public final class DurableTestExecutionCreationService {
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.leases = Objects.requireNonNull(leases, "leases");
+        this.admissions = Objects.requireNonNull(admissions, "admissions");
     }
 
     /**
@@ -95,6 +127,30 @@ public final class DurableTestExecutionCreationService {
 
         DurableTestRecoveryAuthorizer.AuthorizedCreation authorized =
                 authorizer.authorizeCreation(request, identity);
+        AdmissionSubjects subjects = AdmissionSubjects.from(
+                authorized.control(), authorized.dependencyRefs());
+        String admissionFingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.durableTestCreationAdmissionIntent.v1",
+                "requestFingerprint", requestFingerprint,
+                "authorizationFingerprint", authorized.authorizationFingerprint(),
+                "operatorRefs", subjects.operatorRefs(),
+                "dependencyRefs", subjects.dependencyRefs()));
+        AdmissionIntent intent = new AdmissionIntent(
+                Kind.DURABLE_CREATION, request.clientRequestId(), admissionFingerprint, "",
+                subjects.operatorRefs(), subjects.dependencyRefs());
+        try (AdmissionGuard admission = admissions.admit(identity, intent)) {
+            DurableTestExecutionCreateResponse response = createAdmitted(
+                    request, requestFingerprint, authorized, identity);
+            admission.checkpoint();
+            return response;
+        }
+    }
+
+    private DurableTestExecutionCreateResponse createAdmitted(
+            DurableTestExecutionCreateRequest request,
+            String requestFingerprint,
+            DurableTestRecoveryAuthorizer.AuthorizedCreation authorized,
+            IntegrationRequestContext identity) {
         var command = new DurableTestExecutionCheckpointRepository.InitialCreationCommand(
                 request.clientRequestId(), requestFingerprint,
                 authorized.authorizationFingerprint(), scope(identity),

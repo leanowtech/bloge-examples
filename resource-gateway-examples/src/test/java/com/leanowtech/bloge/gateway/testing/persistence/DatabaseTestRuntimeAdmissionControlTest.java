@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -120,6 +121,81 @@ class DatabaseTestRuntimeAdmissionControlTest {
     }
 
     @Test
+    void staleReleaseCannotRemoveClaimsFromAConcurrentReplacement() throws Exception {
+        DatabaseTestRuntimeAdmissionControl competing = newControl();
+        for (int attempt = 0; attempt < 20; attempt++) {
+            AdmissionRequest request = request("release-race-" + attempt, "same-intent",
+                    1, 1, 1, "operator-a");
+            AcquireResult original = control.acquire(request);
+            expire(request);
+            CountDownLatch start = new CountDownLatch(1);
+
+            try (var executor = Executors.newFixedThreadPool(2)) {
+                var staleRelease = executor.submit(() -> {
+                    start.await();
+                    return control.release(original.lease());
+                });
+                var reacquire = executor.submit(() -> {
+                    start.await();
+                    return competing.acquire(request);
+                });
+                start.countDown();
+
+                staleRelease.get();
+                AcquireResult replacement = reacquire.get();
+                assertThat(replacement.state()).isEqualTo(AcquireState.ACQUIRED);
+                assertLivePermitHasEveryClaim(request);
+                assertThat(control.release(replacement.lease())).isTrue();
+            }
+        }
+    }
+
+    @Test
+    void retentionCannotRemoveClaimsFromAConcurrentReplacement() throws Exception {
+        DatabaseTestRuntimeAdmissionControl competing = newControl();
+        for (int attempt = 0; attempt < 20; attempt++) {
+            AdmissionRequest request = request("purge-race-" + attempt, "same-intent",
+                    1, 1, 1, "operator-a");
+            control.acquire(request);
+            expire(request);
+            CountDownLatch start = new CountDownLatch(1);
+
+            try (var executor = Executors.newFixedThreadPool(2)) {
+                var purge = executor.submit(() -> {
+                    start.await();
+                    return control.purgeExpired(100);
+                });
+                var reacquire = executor.submit(() -> {
+                    start.await();
+                    return competing.acquire(request);
+                });
+                start.countDown();
+
+                purge.get();
+                AcquireResult replacement = reacquire.get();
+                assertThat(replacement.state()).isEqualTo(AcquireState.ACQUIRED);
+                assertLivePermitHasEveryClaim(request);
+                assertThat(control.release(replacement.lease())).isTrue();
+            }
+        }
+    }
+
+    @Test
+    void requestLocksUseABoundedStableStripeSpace() {
+        var stripes = IntStream.range(0, 20_000)
+                .map(index -> DatabaseTestRuntimeAdmissionControl.admissionLockStripe(
+                        fingerprint("admission:" + index)))
+                .boxed().collect(java.util.stream.Collectors.toSet());
+
+        assertThat(stripes).hasSizeLessThanOrEqualTo(4_096).hasSizeGreaterThan(4_000)
+                .allMatch(stripe -> stripe >= 0 && stripe < 4_096);
+        assertThat(DatabaseTestRuntimeAdmissionControl.admissionLockStripe(
+                fingerprint("admission:stable")))
+                .isEqualTo(DatabaseTestRuntimeAdmissionControl.admissionLockStripe(
+                        fingerprint("admission:stable")));
+    }
+
+    @Test
     void policyGenerationAndRequestIdentityDriftFailClosed() {
         AcquireResult generationTwo = control.acquire(
                 request("generation-two", "intent-two", 2, 2, 2, "operator-a"));
@@ -148,6 +224,25 @@ class DatabaseTestRuntimeAdmissionControlTest {
     private DatabaseTestRuntimeAdmissionControl newControl() {
         return new DatabaseTestRuntimeAdmissionControl(jdbc,
                 new DataSourceTransactionManager(dataSource));
+    }
+
+    private void expire(AdmissionRequest request) {
+        jdbc.update("""
+                UPDATE rg_test_admission_leases
+                SET lease_expires_at = DATEADD('SECOND', -10, CURRENT_TIMESTAMP)
+                WHERE admission_id = ?
+                """, request.admissionId());
+    }
+
+    private void assertLivePermitHasEveryClaim(AdmissionRequest request) {
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_admission_leases
+                WHERE admission_id = ? AND lease_expires_at > CURRENT_TIMESTAMP
+                """, Long.class, request.admissionId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_admission_claims
+                WHERE admission_id = ?
+                """, Long.class, request.admissionId())).isEqualTo(request.subjects().size());
     }
 
     private static AcquireResult acquireAfterBarrier(

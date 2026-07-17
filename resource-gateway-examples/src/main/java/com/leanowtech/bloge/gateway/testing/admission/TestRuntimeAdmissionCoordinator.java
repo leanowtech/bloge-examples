@@ -29,6 +29,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 /**
  * Application-facing admission coordinator with hashed subjects and renewable permit guards.
@@ -43,6 +44,8 @@ public final class TestRuntimeAdmissionCoordinator
 
     private static final Logger log = LoggerFactory.getLogger(
             TestRuntimeAdmissionCoordinator.class);
+    private static final Pattern OWNER =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
 
     private final DatabaseTestRuntimeAdmissionControl controlPlane;
     private final TestRuntimeAdmissionPolicy policy;
@@ -50,6 +53,9 @@ public final class TestRuntimeAdmissionCoordinator
     private final TestRuntimeAdmissionTelemetry telemetry;
     private final String ownerId;
     private final ScheduledExecutorService renewer;
+    private final Object lifecycleMonitor = new Object();
+    private final Set<Guard> activeGuards = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private volatile boolean closed;
 
     /**
      * Creates a cross-replica admission gate.
@@ -71,6 +77,9 @@ public final class TestRuntimeAdmissionCoordinator
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.telemetry = Objects.requireNonNull(telemetry, "telemetry");
         String normalizedOwner = ownerId == null ? "" : ownerId.trim();
+        if (!normalizedOwner.isBlank() && !OWNER.matcher(normalizedOwner).matches()) {
+            throw new IllegalArgumentException("Admission instance-id is invalid");
+        }
         this.ownerId = normalizedOwner.isBlank()
                 ? "admission-" + UUID.randomUUID() : normalizedOwner;
         renewer = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -93,6 +102,10 @@ public final class TestRuntimeAdmissionCoordinator
             AdmissionIntent intent) {
         IntegrationRequestContext principal = Objects.requireNonNull(identity, "identity");
         principal.requireComplete();
+        if (closed) {
+            throw unavailable(principal, "RG.TEST.ADMISSION_COORDINATOR_CLOSED",
+                    "Test-runtime admission is shutting down.");
+        }
         AdmissionIntent requested = Objects.requireNonNull(intent, "intent");
         AdmissionRequest request = request(principal, requested);
         AcquireResult result;
@@ -108,9 +121,7 @@ public final class TestRuntimeAdmissionCoordinator
         }
         return switch (result.state()) {
             case ACQUIRED -> {
-                telemetry.record(TestRuntimeAdmissionTelemetry.Result.ACQUIRED,
-                        TestRuntimeAdmissionTelemetry.Scope.RUNTIME);
-                yield new Guard(result.lease(), principal.correlationId());
+                yield register(result.lease(), principal);
             }
             case ALREADY_ACTIVE -> {
                 telemetry.record(TestRuntimeAdmissionTelemetry.Result.IN_PROGRESS,
@@ -134,6 +145,42 @@ public final class TestRuntimeAdmissionCoordinator
                                 "policyGeneration", policy.generation()));
             }
         };
+    }
+
+    private Guard register(
+            AdmissionLease lease,
+            IntegrationRequestContext identity) {
+        synchronized (lifecycleMonitor) {
+            if (closed) {
+                releaseUnregistered(lease);
+                throw unavailable(identity, "RG.TEST.ADMISSION_COORDINATOR_CLOSED",
+                        "Test-runtime admission is shutting down.");
+            }
+            try {
+                Guard guard = new Guard(lease, identity.correlationId());
+                activeGuards.add(guard);
+                telemetry.record(TestRuntimeAdmissionTelemetry.Result.ACQUIRED,
+                        TestRuntimeAdmissionTelemetry.Scope.RUNTIME);
+                return guard;
+            } catch (RuntimeException schedulingFailure) {
+                releaseUnregistered(lease);
+                throw unavailable(identity, "RG.TEST.ADMISSION_COORDINATOR_UNAVAILABLE",
+                        "Test-runtime admission heartbeat is unavailable.");
+            }
+        }
+    }
+
+    private void releaseUnregistered(AdmissionLease lease) {
+        try {
+            if (!controlPlane.release(lease)) {
+                telemetry.record(TestRuntimeAdmissionTelemetry.Result.RELEASE_FAILED,
+                        TestRuntimeAdmissionTelemetry.Scope.RUNTIME);
+            }
+        } catch (RuntimeException unavailable) {
+            telemetry.record(TestRuntimeAdmissionTelemetry.Result.RELEASE_FAILED,
+                    TestRuntimeAdmissionTelemetry.Scope.RUNTIME);
+            log.warn("Unregistered test-runtime admission release failed; lease expiry will recover capacity");
+        }
     }
 
     private AdmissionRequest request(
@@ -228,9 +275,18 @@ public final class TestRuntimeAdmissionCoordinator
                 code, title, identity.correlationId(), Map.of()));
     }
 
-    /** Stops future renewals during application shutdown. */
+    /** Invalidates and releases every local permit before stopping future renewals. */
     @Override
     public void close() {
+        List<Guard> guards;
+        synchronized (lifecycleMonitor) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            guards = List.copyOf(activeGuards);
+        }
+        guards.forEach(Guard::shutdown);
         renewer.shutdownNow();
     }
 
@@ -283,11 +339,23 @@ public final class TestRuntimeAdmissionCoordinator
         /** Releases exact ownership, relying on lease expiry if the store is unavailable. */
         @Override
         public synchronized void close() {
+            terminate(false);
+        }
+
+        private synchronized void shutdown() {
+            terminate(true);
+        }
+
+        private void terminate(boolean invalidate) {
+            if (invalidate) {
+                lost = true;
+            }
             if (closed) {
                 return;
             }
             closed = true;
             heartbeat.cancel(false);
+            activeGuards.remove(this);
             try {
                 if (!controlPlane.release(lease)) {
                     telemetry.record(TestRuntimeAdmissionTelemetry.Result.RELEASE_FAILED,

@@ -3,6 +3,11 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionSubjects;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.Kind;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
@@ -16,6 +21,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationServ
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -47,6 +53,8 @@ class TestSuiteExecutionServiceTest {
     private TestExecutionApiService executions;
     private InMemorySuiteRunRepository runRepository;
     private TestSecurityEventRepository securityEvents;
+    private TestRuntimeAdmissionGate admissions;
+    private AdmissionGuard admissionGuard;
     private TestSuiteExecutionService service;
     private IntegrationRequestContext identity;
     private ObjectMapper objectMapper;
@@ -57,16 +65,21 @@ class TestSuiteExecutionServiceTest {
         executions = mock(TestExecutionApiService.class);
         runRepository = new InMemorySuiteRunRepository();
         securityEvents = mock(TestSecurityEventRepository.class);
+        admissions = mock(TestRuntimeAdmissionGate.class);
+        admissionGuard = mock(AdmissionGuard.class);
+        when(admissions.admit(any(), any())).thenReturn(admissionGuard);
         objectMapper = new ObjectMapper().findAndRegisterModules();
         service = new TestSuiteExecutionService(registry, executions, runRepository,
                 objectMapper, securityEvents, Duration.ofDays(30),
                 TestSuiteRunLeaseCoordinator.passive(Duration.ofMinutes(5)),
                 new TestSuiteRunAttestationService(objectMapper,
-                        new InMemoryVisualEvidenceSigner()));
+                        new InMemoryVisualEvidenceSigner()), admissions);
         when(executions.verifyEvidence(any())).thenReturn(true);
         identity = new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test", "local",
                 "WORKLOAD", "runner", "", "TEST_EXECUTION", "correlation-a",
                 Set.of("quality"), "CONFIDENTIAL", "");
+        when(executions.admissionSubjects(any(), any())).thenReturn(
+                new AdmissionSubjects(Set.of("graph-operator"), Set.of("resource-a")));
     }
 
     @Test
@@ -74,7 +87,7 @@ class TestSuiteExecutionServiceTest {
         StoredTestSuite stored = storedSuite();
         when(registry.find("suite-a", 3, identity)).thenReturn(stored);
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(identity)))
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
                 .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
                                 "/root/fetch#PRIMARY", "/root/output#PRIMARY",
                                 TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE))
@@ -107,7 +120,18 @@ class TestSuiteExecutionServiceTest {
         TestSuiteExecutionResponse retry = service.execute("suite-a", request("request-a",
                 TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
         assertThat(retry).isEqualTo(result);
-        verify(executions, times(2)).execute(any(), eq(identity));
+        verify(executions, times(2)).executeAdmittedSuiteGraphCase(any(), eq(identity));
+        ArgumentCaptor<AdmissionIntent> admission = ArgumentCaptor.forClass(AdmissionIntent.class);
+        verify(admissions).admit(eq(identity), admission.capture());
+        assertThat(admission.getValue()).satisfies(intent -> {
+            assertThat(intent.kind()).isEqualTo(Kind.SUITE);
+            assertThat(intent.stableRequestKey()).isEqualTo("request-a");
+            assertThat(intent.suiteRef()).isEqualTo("suite-a");
+            assertThat(intent.operatorRefs()).containsExactly("graph-operator");
+            assertThat(intent.dependencyRefs()).containsExactly("resource-a");
+        });
+        verify(admissionGuard).checkpoint();
+        verify(admissionGuard).close();
         assertThat(runRepository.records).hasSize(1);
     }
 
@@ -115,7 +139,7 @@ class TestSuiteExecutionServiceTest {
     void terminalSuiteExportsPortablePayloadFreeEvidenceBundle() {
         when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(identity)))
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
                 .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
                                 "/root/fetch#PRIMARY", "/root/output#PRIMARY",
                                 TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE))
@@ -147,7 +171,7 @@ class TestSuiteExecutionServiceTest {
         when(registry.find("suite-a", 3, identity)).thenReturn(new StoredTestSuite("", "tenant-a",
                 "test", "suite-a", 3, SUITE, semantic, Instant.now(), "runner"));
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(identity)))
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
                 .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
                                 "/root/fetch#PRIMARY", "/root/output#PRIMARY",
                                 TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE))
@@ -185,7 +209,7 @@ class TestSuiteExecutionServiceTest {
     void tamperedPersistedAggregateIsAuditedAndRejectedOnRead() {
         when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(identity)))
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
                 .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
                                 "/root/fetch#PRIMARY", "/root/output#PRIMARY",
                                 TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE))
@@ -242,7 +266,7 @@ class TestSuiteExecutionServiceTest {
                 TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE);
         when(registry.find("suite-a", 3, identity)).thenReturn(stored);
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(identity))).thenReturn(child);
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity))).thenReturn(child);
         when(executions.verifyEvidence(child)).thenReturn(false);
 
         TestSuiteExecutionResponse result = service.execute("suite-a", request("request-unsigned",
@@ -265,7 +289,7 @@ class TestSuiteExecutionServiceTest {
         when(registry.find("suite-a", 3, replayIdentity)).thenReturn(storedSuite());
         when(executions.describeGraphTarget("graph-a", replayIdentity))
                 .thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(replayIdentity)))
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(replayIdentity)))
                 .thenReturn(response("run-golden-replay", "golden", "/root/fetch#PRIMARY",
                                 "/root/fetch#PRIMARY", "/root/output#PRIMARY",
                                 TestRunEvidence.Status.PASSED,
@@ -278,14 +302,14 @@ class TestSuiteExecutionServiceTest {
                 TestSuiteExecutionRequest.Strategy.COLLECT_ALL), replayIdentity);
 
         assertThat(result.evidence().status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED);
-        verify(executions, times(2)).execute(any(), eq(replayIdentity));
+        verify(executions, times(2)).executeAdmittedSuiteGraphCase(any(), eq(replayIdentity));
     }
 
     @Test
     void failFastStopsSchedulingAfterFirstFailedCaseAndCannotPromotePartialEvidence() {
         when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(identity))).thenReturn(response(
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity))).thenReturn(response(
                 "run-golden", "golden", "/root/fetch#PRIMARY", "", "",
                 TestRunEvidence.Status.ASSERTION_FAILED, TestRunEvidence.EvidenceClass.CERTIFIABLE));
 
@@ -301,7 +325,7 @@ class TestSuiteExecutionServiceTest {
         assertThat(result.evidence().promotion().status())
                 .isEqualTo(TestSuiteRunEvidence.PromotionStatus.BLOCKED);
         assertThat(result.evidence().promotion().reasons()).contains("SUITE_RUN_INCOMPLETE");
-        verify(executions).execute(any(), eq(identity));
+        verify(executions).executeAdmittedSuiteGraphCase(any(), eq(identity));
     }
 
     @Test
@@ -317,7 +341,7 @@ class TestSuiteExecutionServiceTest {
         assertThat(result.evidence().diagnostics()).contains("TARGET_FINGERPRINT_CONFLICT");
         assertThat(result.evidence().caseResults()).allMatch(item ->
                 item.status() == TestSuiteRunEvidence.CaseStatus.NOT_SCHEDULED);
-        verify(executions, never()).execute(any(), any());
+        verify(executions, never()).executeAdmittedSuiteGraphCase(any(), any());
         assertThat(runRepository.find("tenant-a", "test", result.suiteRunId())).isPresent();
     }
 
@@ -325,7 +349,7 @@ class TestSuiteExecutionServiceTest {
     void clientRequestIdCannotBeReusedForDifferentExecutionIntent() {
         when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(identity))).thenReturn(response(
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity))).thenReturn(response(
                 "run-golden", "golden", "/root/fetch#PRIMARY",
                 "/root/fetch#PRIMARY", "/root/output#PRIMARY",
                 TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE), response(
@@ -339,7 +363,7 @@ class TestSuiteExecutionServiceTest {
                 .isInstanceOf(IntegrationProblemException.class)
                 .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().code())
                         .isEqualTo("RG.TEST.SUITE_RUN_IDEMPOTENCY_CONFLICT"));
-        verify(executions, times(2)).execute(any(), eq(identity));
+        verify(executions, times(2)).executeAdmittedSuiteGraphCase(any(), eq(identity));
     }
 
     @Test
@@ -359,7 +383,8 @@ class TestSuiteExecutionServiceTest {
                 "OPERATOR", "customer.normalize", TARGET));
         when(descriptor.certificationEligible()).thenReturn(true);
         when(executions.describeOperatorTarget("customer.normalize", identity)).thenReturn(descriptor);
-        when(executions.executeOperator(eq("customer.normalize"), any(), eq(identity))).thenReturn(operatorResponse(
+        when(executions.executeAdmittedSuiteOperatorCase(
+                eq("customer.normalize"), any(), eq(identity))).thenReturn(operatorResponse(
                 "run-operator", "golden", "/root/operator#PRIMARY", "", "",
                 TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE));
 
@@ -369,17 +394,17 @@ class TestSuiteExecutionServiceTest {
                         TestSuiteExecutionRequest.Strategy.COLLECT_ALL, Map.of()), identity);
 
         assertThat(result.evidence().status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED);
-        verify(executions).executeOperator(eq("customer.normalize"),
+        verify(executions).executeAdmittedSuiteOperatorCase(eq("customer.normalize"),
                 org.mockito.ArgumentMatchers.argThat(request -> request.fixtureBundleRef().revision() == 1
                         && request.verbosity() == TestExecutionApiRequest.Verbosity.FULL), eq(identity));
-        verify(executions, never()).execute(any(), any());
+        verify(executions, never()).executeAdmittedSuiteGraphCase(any(), any());
     }
 
     @Test
     void passingCasesCannotPassSuiteWhenRequiredStructuralCoverageIsMissing() {
         when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(identity)))
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
                 .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY", "", "",
                                 TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE))
                 .thenReturn(response("run-negative", "negative", "/root/output#PRIMARY", "", "",
@@ -404,7 +429,7 @@ class TestSuiteExecutionServiceTest {
     void terminalPersistenceFailureFailsClosedAndBestEffortCheckpointBlocksPromotion() {
         when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
         when(executions.describeGraphTarget("graph-a", identity)).thenReturn(graphTarget(TARGET, true));
-        when(executions.execute(any(), eq(identity)))
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
                 .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
                                 "/root/fetch#PRIMARY", "/root/output#PRIMARY",
                                 TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE))
@@ -435,7 +460,7 @@ class TestSuiteExecutionServiceTest {
                 .isInstanceOf(IntegrationProblemException.class)
                 .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().code())
                         .isEqualTo("RG.TEST.SUITE_RUN_IDEMPOTENCY_RETIRED"));
-        verify(executions, never()).execute(any(), any());
+        verify(executions, never()).executeAdmittedSuiteGraphCase(any(), any());
     }
 
     @Test

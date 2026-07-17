@@ -93,6 +93,8 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("suiteRunOwnerLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true)
+                .containsEntry("databaseAuthoritativeTestRuntimeAdmission", true)
+                .containsEntry("boundedCardinalityTestRuntimeAdmissionMetrics", true)
                 .containsEntry("durableStateProjectionAntiEntropy", true)
                 .containsEntry("durableStateProjectionSweepLease", true)
                 .containsEntry("durableStateProjectionFindingQueue", true)

@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionSubjects;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.Kind;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
@@ -24,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityServic
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceSanitizer;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventoryBuilder;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
@@ -41,7 +43,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -200,6 +201,26 @@ public final class TestExecutionApiService {
     /** Executes one request after authorization and stores full sanitized evidence. */
     public TestExecutionApiResponse execute(TestExecutionApiRequest request,
                                             IntegrationRequestContext identity) {
+        return execute(request, identity, admissions);
+    }
+
+    /**
+     * Executes a suite child under the suite's already-held all-dimension parent permit.
+     *
+     * <p>This package-private entry cannot be reached by the HTTP adapter. It prevents a suite from
+     * acquiring tenant/operator/dependency capacity twice while preserving the same authorization,
+     * fixture, isolated-engine, sanitization, signing, and persistence path as a direct run.</p>
+     */
+    TestExecutionApiResponse executeAdmittedSuiteGraphCase(
+            TestExecutionApiRequest request,
+            IntegrationRequestContext identity) {
+        return execute(request, identity, TestRuntimeAdmissionGate.unbounded());
+    }
+
+    private TestExecutionApiResponse execute(
+            TestExecutionApiRequest request,
+            IntegrationRequestContext identity,
+            TestRuntimeAdmissionGate admissionGate) {
         requireTestIdentity(identity);
         validateRequest(request, identity);
         Graph graph = requireGraph(request.target(), identity);
@@ -221,7 +242,7 @@ public final class TestExecutionApiService {
         TestExecutionResult result = kernel.execute(new TestExecutionRequest(
                 target.graph(), new GraphContext(request.context()), fixture.bundle(), AUTHORIZED_PURPOSE,
                 target.fingerprint(), fixture.source(), metadata, target.certificationEligible(),
-                resolvedReplays), compiled -> admissions.admit(identity,
+                resolvedReplays), compiled -> admissionGate.admit(identity,
                 admissionIntent(Kind.GRAPH, request, target.fingerprint(),
                         compiled, target.dependencyFingerprints().keySet())));
         SecuredEvidence secured = secureEvidence(sanitizer.sanitize(result.evidence()));
@@ -284,6 +305,23 @@ public final class TestExecutionApiService {
     public TestExecutionApiResponse executeOperator(String operatorRef,
                                                     TestOperatorExecutionApiRequest request,
                                                     IntegrationRequestContext identity) {
+        return executeOperator(operatorRef, request, identity, admissions);
+    }
+
+    /** Executes an operator suite child under its already-held parent capacity permit. */
+    TestExecutionApiResponse executeAdmittedSuiteOperatorCase(
+            String operatorRef,
+            TestOperatorExecutionApiRequest request,
+            IntegrationRequestContext identity) {
+        return executeOperator(operatorRef, request, identity,
+                TestRuntimeAdmissionGate.unbounded());
+    }
+
+    private TestExecutionApiResponse executeOperator(
+            String operatorRef,
+            TestOperatorExecutionApiRequest request,
+            IntegrationRequestContext identity,
+            TestRuntimeAdmissionGate admissionGate) {
         requireTestIdentity(identity);
         validateOperatorRequest(operatorRef, request, identity);
         OperatorExecutionTargetSnapshot target = requireOperator(operatorRef, identity);
@@ -310,7 +348,7 @@ public final class TestExecutionApiService {
                         target.fingerprint(), typedInput, fixture.bundle(), AUTHORIZED_OPERATOR_PURPOSE,
                         fixture.source(), target.certificationEligible(),
                         operatorExecutionMetadata(request, identity, target), resolvedReplays),
-                compiled -> admissions.admit(identity,
+                compiled -> admissionGate.admit(identity,
                         admissionIntent(Kind.OPERATOR, request,
                                 target.fingerprint(), compiled,
                                 target.resourceDependencyFingerprints().keySet())));
@@ -668,29 +706,69 @@ public final class TestExecutionApiService {
         return Map.copyOf(metadata);
     }
 
+    /**
+     * Freezes the complete operator/dependency quota closure for one exact suite target.
+     *
+     * <p>The suite runner calls this before it creates a RUNNING checkpoint, then reserves that
+     * capacity once for all serial cases. Graph resource dependencies intentionally use the same
+     * conservative all-registered policy as target fingerprinting because a runtime expression can
+     * select a resource id dynamically.</p>
+     */
+    AdmissionSubjects admissionSubjects(
+            TestExecutionApiRequest.Target requested,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        if (requested == null) {
+            throw badRequest(identity, "RG.TEST.TARGET_INVALID",
+                    "An exact suite target is required for capacity admission.", Map.of());
+        }
+        try {
+            return switch (requested.kind()) {
+                case "GRAPH" -> {
+                    Graph graph = requireGraph(requested, identity);
+                    GraphExecutionTargetSnapshot target = GraphExecutionTargetSnapshot.capture(
+                            objectMapper, graph, resourceRegistry);
+                    requireTargetFingerprint(requested, target.fingerprint(), identity);
+                    yield AdmissionSubjects.from(
+                            new InvocationInventoryBuilder(operatorRegistry).build(
+                                    target.graph(), target.fingerprint()),
+                            target.dependencyFingerprints().keySet());
+                }
+                case "OPERATOR" -> {
+                    OperatorExecutionTargetSnapshot target = requireOperator(requested.id(), identity);
+                    requireTargetFingerprint(requested, target.fingerprint(), identity);
+                    Graph graph = OperatorMicroGraphRunner.microGraph(
+                            target.operatorRef(), target.synchronousOperator());
+                    yield AdmissionSubjects.from(
+                            new InvocationInventoryBuilder(operatorRegistry).build(
+                                    graph, target.fingerprint()),
+                            target.resourceDependencyFingerprints().keySet());
+                }
+                default -> throw badRequest(identity, "RG.TEST.TARGET_INVALID",
+                        "Suite capacity admission requires a GRAPH or OPERATOR target.", Map.of());
+            };
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException inventoryFailure) {
+            throw unavailable(identity, "RG.TEST.ADMISSION_TARGET_INVENTORY_UNAVAILABLE",
+                    "The exact suite target capacity closure cannot be frozen.");
+        }
+    }
+
     private AdmissionIntent admissionIntent(
             Kind kind,
             Object request,
             String targetFingerprint,
             CompiledExecutionControl compiled,
             Set<String> targetDependencyRefs) {
-        Set<String> operatorRefs = new TreeSet<>();
-        Set<String> dependencyRefs = new TreeSet<>(targetDependencyRefs);
-        compiled.inventory().entries().forEach(entry -> {
-            if (!entry.site().operatorRef().isBlank()) {
-                operatorRefs.add(entry.site().operatorRef());
-            }
-            if (!entry.site().resourceRef().isBlank()) {
-                dependencyRefs.add(entry.site().resourceRef());
-            }
-        });
+        AdmissionSubjects subjects = AdmissionSubjects.from(compiled, targetDependencyRefs);
         String intentFingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
                 "schemaVersion", "bloge.testRuntimeAdmissionWorkIntent.v1",
                 "request", request,
                 "targetFingerprint", targetFingerprint,
                 "planFingerprint", compiled.effectivePlan().planFingerprint()));
         return new AdmissionIntent(kind, UUID.randomUUID().toString(), intentFingerprint, "",
-                operatorRefs, dependencyRefs);
+                subjects.operatorRefs(), subjects.dependencyRefs());
     }
 
     private TestExecutionApiResponse response(TestRunRecord record,

@@ -5,6 +5,10 @@ import com.leanowtech.bloge.core.dsl.GraphBuilder;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.Kind;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
@@ -51,6 +55,8 @@ class DurableTestExecutionCreationServiceTest {
     private DurableTestCreationRuntime runtime;
     private TestSecurityEventRepository securityEvents;
     private DurableTestCreationLeaseCoordinator leases;
+    private TestRuntimeAdmissionGate admissions;
+    private AdmissionGuard admissionGuard;
     private DurableTestExecutionCreationService service;
     private TestValues values;
 
@@ -62,12 +68,15 @@ class DurableTestExecutionCreationServiceTest {
         runtime = mock(DurableTestCreationRuntime.class);
         securityEvents = mock(TestSecurityEventRepository.class);
         when(securityEvents.boundAppend(any())).thenReturn(TestRuntimeTransactionMutation.noop());
+        admissions = mock(TestRuntimeAdmissionGate.class);
+        admissionGuard = mock(AdmissionGuard.class);
+        when(admissions.admit(any(), any())).thenReturn(admissionGuard);
         leases = DurableTestCreationLeaseCoordinator.passive(
                 "creator-instance", Duration.ofMinutes(2));
         service = new DurableTestExecutionCreationService(
                 checkpoints, authorizer, runtime,
                 new DurableTestExecutionCheckpointIntegrity(mapper), securityEvents, mapper,
-                leases);
+                leases, admissions);
         values = new TestValues(mapper);
     }
 
@@ -89,6 +98,7 @@ class DurableTestExecutionCreationServiceTest {
         assertThat(response.execution().runId()).isEqualTo("run-created");
         assertThat(response.execution().status()).isEqualTo("SUSPENDED");
         verifyNoInteractions(authorizer, runtime);
+        verifyNoInteractions(admissions);
         verify(securityEvents, never()).boundAppend(any());
     }
 
@@ -128,6 +138,15 @@ class DurableTestExecutionCreationServiceTest {
             assertThat(value.engineState().boundaryType()).isEqualTo("SUSPEND");
         });
         verify(securityEvents).boundAppend(any());
+        ArgumentCaptor<AdmissionIntent> admission = ArgumentCaptor.forClass(AdmissionIntent.class);
+        verify(admissions).admit(any(), admission.capture());
+        assertThat(admission.getValue()).satisfies(intent -> {
+            assertThat(intent.kind()).isEqualTo(Kind.DURABLE_CREATION);
+            assertThat(intent.stableRequestKey()).isEqualTo("create-1");
+            assertThat(intent.dependencyRefs()).containsExactly("resource-a");
+        });
+        verify(admissionGuard).checkpoint();
+        verify(admissionGuard).close();
     }
 
     @Test
@@ -313,7 +332,7 @@ class DurableTestExecutionCreationServiceTest {
         service = new DurableTestExecutionCreationService(
                 checkpoints, authorizer, runtime,
                 new DurableTestExecutionCheckpointIntegrity(mapper), securityEvents, mapper,
-                leases);
+                leases, admissions);
     }
 
     private static final class TestValues {
@@ -370,6 +389,7 @@ class DurableTestExecutionCreationServiceTest {
                     mock(GovernedExecutionServices.class));
             authorized = new DurableTestRecoveryAuthorizer.AuthorizedCreation(
                     new GraphBuilder("graph-a").node("approval", wait).build(), control,
+                    Set.of("resource-a"),
                     dependencies, SHA_D);
         }
 

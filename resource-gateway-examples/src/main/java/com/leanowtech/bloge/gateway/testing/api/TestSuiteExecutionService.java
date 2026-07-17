@@ -6,6 +6,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionSubjects;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.Kind;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
@@ -66,6 +71,7 @@ public final class TestSuiteExecutionService {
     private final TestSuiteRunAttestationService attestations;
     private final TestSuiteEvidenceAggregator aggregator;
     private final TestSuiteRunEvidenceProtocolCodec evidenceCodec;
+    private final TestRuntimeAdmissionGate admissions;
     private final Duration retention;
 
     /**
@@ -86,7 +92,8 @@ public final class TestSuiteExecutionService {
                                      Duration retention) {
         this(suiteRegistry, executions, runRepository, objectMapper, securityEvents, retention,
                 TestSuiteRunLeaseCoordinator.passive(Duration.ofMinutes(5)),
-                new TestSuiteRunAttestationService(objectMapper, VisualEvidenceSigner.unavailable()));
+                new TestSuiteRunAttestationService(objectMapper, VisualEvidenceSigner.unavailable()),
+                TestRuntimeAdmissionGate.unbounded());
     }
 
     /** Creates a runner with an explicit process-wide lease coordinator. */
@@ -99,7 +106,8 @@ public final class TestSuiteExecutionService {
                                      TestSuiteRunLeaseCoordinator leaseCoordinator) {
         this(suiteRegistry, executions, runRepository, objectMapper, securityEvents, retention,
                 leaseCoordinator,
-                new TestSuiteRunAttestationService(objectMapper, VisualEvidenceSigner.unavailable()));
+                new TestSuiteRunAttestationService(objectMapper, VisualEvidenceSigner.unavailable()),
+                TestRuntimeAdmissionGate.unbounded());
     }
 
     /**
@@ -122,6 +130,32 @@ public final class TestSuiteExecutionService {
                                      Duration retention,
                                      TestSuiteRunLeaseCoordinator leaseCoordinator,
                                      TestSuiteRunAttestationService attestations) {
+        this(suiteRegistry, executions, runRepository, objectMapper, securityEvents, retention,
+                leaseCoordinator, attestations, TestRuntimeAdmissionGate.unbounded());
+    }
+
+    /**
+     * Creates a runner with distributed leases, signed evidence, and all-dimension capacity control.
+     *
+     * @param suiteRegistry immutable suite registry
+     * @param executions authorized graph and operator execution adapter
+     * @param runRepository durable aggregate checkpoint store
+     * @param objectMapper canonical protocol serializer
+     * @param securityEvents mandatory fail-closed security audit sink
+     * @param retention suite-run evidence retention
+     * @param leaseCoordinator process-wide suite-run lease coordinator
+     * @param attestations checkpoint and terminal signing boundary
+     * @param admissions database-authoritative suite capacity gate
+     */
+    public TestSuiteExecutionService(TestSuiteRegistryService suiteRegistry,
+                                     TestExecutionApiService executions,
+                                     TestSuiteRunRepository runRepository,
+                                     ObjectMapper objectMapper,
+                                     TestSecurityEventRepository securityEvents,
+                                     Duration retention,
+                                     TestSuiteRunLeaseCoordinator leaseCoordinator,
+                                     TestSuiteRunAttestationService attestations,
+                                     TestRuntimeAdmissionGate admissions) {
         this.suiteRegistry = Objects.requireNonNull(suiteRegistry, "suiteRegistry");
         this.executions = Objects.requireNonNull(executions, "executions");
         this.runRepository = Objects.requireNonNull(runRepository, "runRepository");
@@ -129,6 +163,7 @@ public final class TestSuiteExecutionService {
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.leaseCoordinator = Objects.requireNonNull(leaseCoordinator, "leaseCoordinator");
         this.attestations = Objects.requireNonNull(attestations, "attestations");
+        this.admissions = Objects.requireNonNull(admissions, "admissions");
         this.aggregator = new TestSuiteEvidenceAggregator(objectMapper);
         this.evidenceCodec = new TestSuiteRunEvidenceProtocolCodec(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
@@ -181,6 +216,32 @@ public final class TestSuiteExecutionService {
                 identity.environmentId(), identity.actorId(), stored.suite().classification(), "", running,
                 initialSeal.attestation(),
                 startedAt, startedAt.plus(retention));
+
+        AdmissionSubjects subjects = executions.admissionSubjects(target(stored.suite()), identity);
+        String admissionFingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.testSuiteAdmissionIntent.v1",
+                "requestFingerprint", requestFingerprint,
+                "suiteFingerprint", stored.fingerprint(),
+                "operatorRefs", subjects.operatorRefs(),
+                "dependencyRefs", subjects.dependencyRefs()));
+        AdmissionIntent intent = new AdmissionIntent(
+                Kind.SUITE, request.clientRequestId(), admissionFingerprint,
+                stored.suiteId(), subjects.operatorRefs(), subjects.dependencyRefs());
+        try (AdmissionGuard admission = admissions.admit(identity, intent)) {
+            TestSuiteExecutionResponse response = executeAdmitted(
+                    record, stored, request, identity, observations);
+            admission.checkpoint();
+            return response;
+        }
+    }
+
+    private TestSuiteExecutionResponse executeAdmitted(
+            TestSuiteRunRecord initial,
+            StoredTestSuite stored,
+            TestSuiteExecutionRequest request,
+            IntegrationRequestContext identity,
+            List<TestSuiteEvidenceAggregator.CaseObservation> observations) {
+        TestSuiteRunRecord record = initial;
         try {
             record = runRepository.create(record, leaseCoordinator.newLease());
         } catch (TestSuiteRunConflictException race) {
@@ -188,7 +249,7 @@ public final class TestSuiteExecutionService {
                     .orElseThrow(() -> conflict(identity, "RG.TEST.SUITE_RUN_IDEMPOTENCY_RETIRED",
                             "clientRequestId is already reserved by expired or retired evidence; use a new key.",
                             Map.of()));
-            return idempotentResponse(winner, requestFingerprint, identity);
+            return idempotentResponse(winner, initial.requestFingerprint(), identity);
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.SUITE_RUN_STORE_UNAVAILABLE",
                     "The independent suite-run store is unavailable.");
@@ -319,11 +380,11 @@ public final class TestSuiteExecutionService {
             if ("GRAPH".equals(suite.target().kind())) {
                 Map<String, Object> context = objectMapper.convertValue(testCase.input(),
                         new TypeReference<>() { });
-                child = executions.execute(new TestExecutionApiRequest("",
+                child = executions.executeAdmittedSuiteGraphCase(new TestExecutionApiRequest("",
                         target(suite), TestExecutionApiService.AUTHORIZED_PURPOSE, context,
                         null, fixtureRef, TestExecutionApiRequest.Verbosity.FULL, metadata), identity);
             } else {
-                child = executions.executeOperator(suite.target().id(),
+                child = executions.executeAdmittedSuiteOperatorCase(suite.target().id(),
                         new TestOperatorExecutionApiRequest("", target(suite),
                                 TestExecutionApiService.AUTHORIZED_OPERATOR_PURPOSE, testCase.input(),
                                 null, fixtureRef, TestExecutionApiRequest.Verbosity.FULL, metadata), identity);

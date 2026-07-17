@@ -1,9 +1,12 @@
 package com.leanowtech.bloge.gateway.testing.admission;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -23,7 +26,72 @@ public interface TestRuntimeAdmissionGate {
         GRAPH,
         OPERATOR,
         SUITE,
-        DURABLE_CREATION
+        DURABLE_CREATION,
+        DURABLE_RECOVERY
+    }
+
+    /**
+     * Frozen quota subjects derived from a recursively closed target inventory.
+     *
+     * <p>This value deliberately carries catalog references only inside the application process.
+     * The coordinator hashes every reference with tenant and environment scope before persistence.
+     * It is shared by direct, suite, and durable execution paths so none can silently omit nested
+     * or compensation operators.</p>
+     *
+     * @param operatorRefs exact reachable operator references
+     * @param dependencyRefs exact or explicitly conservative external dependency references
+     */
+    record AdmissionSubjects(Set<String> operatorRefs, Set<String> dependencyRefs) {
+        /** Normalizes, deduplicates, and bounds the complete subject closure. */
+        public AdmissionSubjects {
+            operatorRefs = normalizedRefs(operatorRefs);
+            dependencyRefs = normalizedRefs(dependencyRefs);
+            if (operatorRefs.size() + dependencyRefs.size() > MAXIMUM_SUBJECTS) {
+                throw new IllegalArgumentException(
+                        "Admission subject closure exceeds " + MAXIMUM_SUBJECTS);
+            }
+        }
+
+        /**
+         * Derives subjects from the exact compiled control plan and additional target dependencies.
+         *
+         * @param compiled recursively frozen control plan
+         * @param targetDependencyRefs dependency references frozen by target discovery
+         * @return immutable complete subject closure
+         */
+        public static AdmissionSubjects from(
+                CompiledExecutionControl compiled,
+                Collection<String> targetDependencyRefs) {
+            return from(Objects.requireNonNull(compiled, "compiled").inventory(),
+                    targetDependencyRefs);
+        }
+
+        /**
+         * Derives subjects before fixture compilation, for a suite that reserves its serial child
+         * execution capacity once and then reuses that parent permit.
+         *
+         * @param inventory exact reachable target inventory
+         * @param targetDependencyRefs dependency references frozen by target discovery
+         * @return immutable complete subject closure
+         */
+        public static AdmissionSubjects from(
+                InvocationInventory inventory,
+                Collection<String> targetDependencyRefs) {
+            LinkedHashSet<String> operators = new LinkedHashSet<>();
+            LinkedHashSet<String> dependencies = new LinkedHashSet<>();
+            if (targetDependencyRefs != null) {
+                dependencies.addAll(targetDependencyRefs);
+            }
+            Objects.requireNonNull(inventory, "inventory").entries().forEach(entry -> {
+                if (!entry.site().operatorRef().isBlank()) {
+                    operators.add(entry.site().operatorRef());
+                }
+                if (!entry.site().resourceRef().isBlank()) {
+                    dependencies.add(entry.site().resourceRef());
+                }
+            });
+            return new AdmissionSubjects(operators, dependencies);
+        }
     }
 
     /**
@@ -84,8 +152,8 @@ public interface TestRuntimeAdmissionGate {
             if (stableRequestKey.length() > 255 || suiteRef.length() > 512) {
                 throw new IllegalArgumentException("Admission identifiers exceed bounded size");
             }
-            operatorRefs = normalizedRefs(operatorRefs);
-            dependencyRefs = normalizedRefs(dependencyRefs);
+            operatorRefs = TestRuntimeAdmissionGate.normalizedRefs(operatorRefs);
+            dependencyRefs = TestRuntimeAdmissionGate.normalizedRefs(dependencyRefs);
             int total = operatorRefs.size() + dependencyRefs.size()
                     + (suiteRef.isBlank() ? 0 : 1);
             if (total > MAXIMUM_SUBJECTS) {
@@ -100,21 +168,6 @@ public interface TestRuntimeAdmissionGate {
             }
         }
 
-        private static Set<String> normalizedRefs(Collection<String> values) {
-            LinkedHashSet<String> normalized = new LinkedHashSet<>();
-            if (values != null) {
-                for (String value : values) {
-                    String ref = required(value, "admissionRef");
-                    if (ref.length() > 512) {
-                        throw new IllegalArgumentException(
-                                "Admission subject identifier exceeds bounded size");
-                    }
-                    normalized.add(ref);
-                }
-            }
-            return Set.copyOf(normalized);
-        }
-
         private static String required(String value, String name) {
             String result = normalized(value);
             if (result.isBlank()) {
@@ -126,6 +179,24 @@ public interface TestRuntimeAdmissionGate {
         private static String normalized(String value) {
             return value == null ? "" : value.trim();
         }
+    }
+
+    private static Set<String> normalizedRefs(Collection<String> values) {
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        if (values != null) {
+            for (String value : values) {
+                String ref = value == null ? "" : value.trim();
+                if (ref.isBlank()) {
+                    throw new IllegalArgumentException("admissionRef must not be blank");
+                }
+                if (ref.length() > 512) {
+                    throw new IllegalArgumentException(
+                            "Admission subject identifier exceeds bounded size");
+                }
+                normalized.add(ref);
+            }
+        }
+        return Set.copyOf(normalized);
     }
 
     /**

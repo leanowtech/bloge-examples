@@ -3,6 +3,10 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.Kind;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorization;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryDispatch;
@@ -10,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryTerminalRe
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,14 +59,20 @@ class DurableTestTerminalRecoveryServiceTest {
     private DurableTestTerminalRecoveryService service;
     private TestRuntimeTransactionMutation audit;
     private DurableTestRecoveryLeaseCoordinator leases;
+    private TestRuntimeAdmissionGate admissions;
+    private AdmissionGuard admissionGuard;
 
     @BeforeEach
     void setUp() {
         mapper = new ObjectMapper().findAndRegisterModules();
         audit = jdbc -> { };
+        admissions = mock(TestRuntimeAdmissionGate.class);
+        admissionGuard = mock(AdmissionGuard.class);
+        org.mockito.Mockito.lenient().when(admissions.admit(any(), any()))
+                .thenReturn(admissionGuard);
         leases = DurableTestRecoveryLeaseCoordinator.passive();
         service = new DurableTestTerminalRecoveryService(
-                checkpoints, authorizer, runtime, securityEvents, mapper, leases);
+                checkpoints, authorizer, runtime, securityEvents, mapper, leases, admissions);
     }
 
     @AfterEach
@@ -133,6 +144,15 @@ class DurableTestTerminalRecoveryServiceTest {
         assertThat(command.getValue().evidenceGapCodes()).containsExactly(
                 "PRE_CHECKPOINT_TRACE_UNAVAILABLE", "RECOVERY_SIGNAL_PAYLOAD_OMITTED");
         verify(prepared).close();
+        ArgumentCaptor<AdmissionIntent> admission = ArgumentCaptor.forClass(AdmissionIntent.class);
+        verify(admissions).admit(eq(identity), admission.capture());
+        assertThat(admission.getValue()).satisfies(intent -> {
+            assertThat(intent.kind()).isEqualTo(Kind.DURABLE_RECOVERY);
+            assertThat(intent.stableRequestKey()).isEqualTo("terminal-1");
+            assertThat(intent.dependencyRefs()).containsExactly("resource-a");
+        });
+        verify(admissionGuard).checkpoint();
+        verify(admissionGuard).close();
     }
 
     @Test
@@ -374,7 +394,7 @@ class DurableTestTerminalRecoveryServiceTest {
         leases.close();
         leases = replacement;
         service = new DurableTestTerminalRecoveryService(
-                checkpoints, authorizer, runtime, securityEvents, mapper, leases);
+                checkpoints, authorizer, runtime, securityEvents, mapper, leases, admissions);
     }
 
     private DurableTestRecoveryDispatch dispatch(
@@ -407,11 +427,17 @@ class DurableTestTerminalRecoveryServiceTest {
 
     private DurableTestRecoveryAuthorizer.AuthorizedRecovery authorized(
             DurableTestRecoveryDispatch dispatch) {
+        CompiledExecutionControl control = mock(CompiledExecutionControl.class,
+                invocation -> "inventory".equals(invocation.getMethod().getName())
+                        ? new InvocationInventory(
+                        List.of(), java.util.Map.of(), java.util.Map.of())
+                        : org.mockito.Answers.RETURNS_DEFAULTS.answer(invocation));
         return org.mockito.Mockito.mock(
                 DurableTestRecoveryAuthorizer.AuthorizedRecovery.class,
                 invocation -> switch (invocation.getMethod().getName()) {
                     case "graph" -> mock(com.leanowtech.bloge.core.model.Graph.class);
-                    case "control" -> mock(CompiledExecutionControl.class);
+                    case "control" -> control;
+                    case "dependencyRefs" -> Set.of("resource-a");
                     case "authorization" -> dispatch.authorization();
                     default -> org.mockito.Answers.RETURNS_DEFAULTS.answer(invocation);
                 });
