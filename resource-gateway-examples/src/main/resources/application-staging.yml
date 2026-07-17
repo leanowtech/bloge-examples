@@ -35,6 +35,11 @@ gateway:
         tombstone-retention-days: ${RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS:365}
         retention-page-size: ${RG_TEST_WORKER_QUARANTINE_RETENTION_PAGE_SIZE:100}
         retention-interval-ms: ${RG_TEST_WORKER_QUARANTINE_RETENTION_INTERVAL_MS:3600000}
+        change-authorization:
+          trust-domain: ${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_TRUST_DOMAIN}
+          accepted-policy-fingerprints: ${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_POLICY_FINGERPRINTS}
+          signature-threshold: ${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD}
+          authority-keys-json: ${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON}
         claim-token-protection:
           active-key-id: ${RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID}
           key-ring: ${RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING}

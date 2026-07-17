@@ -94,8 +94,17 @@ Useful variants:
 values use `keyId=base64-encoded-32-byte-key[,oldKeyId=...]`.
 `RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE` is also required and must be
 `LEGACY_READ_WRITE`, `DUAL_READ_KEYED_WRITE`, or `KEYED_ONLY`. The launcher fails early when any
-value is absent or the mode is invalid. The `test` profile's committed local keys are
-demonstration-only and must not be reused.
+value is absent or the mode is invalid. Staging also fails closed unless the independent external
+discard-authorization trust is complete: set
+`RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_TRUST_DOMAIN`,
+`RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_POLICY_FINGERPRINTS`,
+`RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD`, and
+`RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON`. The last value is a JSON array of
+external authority IDs, key IDs, validity windows, state, and X.509-encoded Ed25519 public keys;
+private keys never belong in Resource Gateway. The public capability probe reports quorum readiness
+and counts without key material. The `test` profile defaults to unavailable external trust, so
+discard approval returns `503` until all four values are supplied. Its committed local symmetric
+keys are demonstration-only and must not be reused.
 Worker-quarantine detailed replay defaults to 30 days, token-free history and request tombstones to
 365 days, and leased cleanup to 100 rows per category every hour. Override these with
 `RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS`,

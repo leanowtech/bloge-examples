@@ -21,7 +21,11 @@ import com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingRes
 import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineDiscardApprovalRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineApprovedDiscardResponse;
+import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineChangeAuthorizationReference;
 import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineResolutionResponse;
+import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorization;
+import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationBinding;
+import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
@@ -38,6 +42,14 @@ class TestabilityCapabilitiesTest {
         IntegrationCapabilities enabled = IntegrationCapabilities.current(
                 VisualEvidenceSigner.unavailable().descriptor(),
                 IntegrationIdentityResolver.unavailable().descriptor(), false, null, true);
+        var changeTrust = new WorkerQuarantineChangeAuthorizationTrustStore.Descriptor(
+                "", true, "governance.example", 2, 2, 2, 1,
+                java.util.Map.of("algorithm", "Ed25519"));
+        IntegrationCapabilities externallyGoverned = IntegrationCapabilities.current(
+                VisualEvidenceSigner.unavailable().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true,
+                EvidenceKeySetTrustStore.unavailable().descriptor(),
+                WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE, changeTrust);
 
         assertThat(disabled.testability().executionEndpointEnabled()).isFalse();
         assertThat(disabled.endpoints()).noneMatch(endpoint -> endpoint.path().startsWith("/api/testing/"));
@@ -51,6 +63,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableTestWorkerQuarantineMaintenance", false)
                 .containsEntry("immutableDurableWorkerQuarantineHistory", false)
                 .containsEntry("twoPersonDurableWorkerQuarantineDiscard", false)
+                .containsEntry("externalWorkerQuarantineChangeAuthorization", false)
                 .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", false)
                 .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", false)
                 .containsEntry("hashedDurableWorkerQuarantineActiveFence", false)
@@ -106,6 +119,10 @@ class TestabilityCapabilitiesTest {
                 "durableWorkerQuarantineResolutionResponse",
                 "durableWorkerQuarantineDiscardApprovalRequest",
                 "durableWorkerQuarantineDiscardApprovalResponse",
+                "workerQuarantineChangeAuthorization",
+                "workerQuarantineChangeAuthorizationScope",
+                "workerQuarantineChangeAuthorizationSubject",
+                "durableWorkerQuarantineChangeAuthorizationReference",
                 "durableWorkerQuarantineApprovedDiscardRequest",
                 "durableWorkerQuarantineApprovedDiscardResponse",
                 "durableWorkerQuarantineApprovedDiscardHistoryResponse",
@@ -135,6 +152,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableTestWorkerQuarantineMaintenance", true)
                 .containsEntry("immutableDurableWorkerQuarantineHistory", true)
                 .containsEntry("twoPersonDurableWorkerQuarantineDiscard", true)
+                .containsEntry("externalWorkerQuarantineChangeAuthorization", false)
                 .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", true)
                 .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", true)
                 .containsEntry("hashedDurableWorkerQuarantineActiveFence", true)
@@ -225,6 +243,22 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects().get(
                 "durableWorkerQuarantineApprovedDiscardResponse"))
                 .containsExactly(DurableWorkerQuarantineApprovedDiscardResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("workerQuarantineChangeAuthorization"))
+                .containsExactly(WorkerQuarantineChangeAuthorization.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("workerQuarantineChangeAuthorizationScope"))
+                .containsExactly(
+                        WorkerQuarantineChangeAuthorizationBinding.ScopeMaterial.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("workerQuarantineChangeAuthorizationSubject"))
+                .containsExactly(
+                        WorkerQuarantineChangeAuthorizationBinding.SubjectMaterial.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get(
+                "durableWorkerQuarantineChangeAuthorizationReference"))
+                .containsExactly(
+                        DurableWorkerQuarantineChangeAuthorizationReference.SCHEMA_VERSION);
+        assertThat(externallyGoverned.features())
+                .containsEntry("externalWorkerQuarantineChangeAuthorization", true);
+        assertThat(externallyGoverned.testability()
+                .workerQuarantineChangeAuthorizationTrust()).isEqualTo(changeTrust);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));

@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 
@@ -54,11 +55,13 @@ class DurableWorkerQuarantineControllerTest {
                         "operator-a", 1, Instant.parse("2026-07-17T12:00:00Z"),
                         "checker-a", "AUTHORIZED_RETRY",
                         Instant.parse("2026-07-17T11:00:00Z"),
-                        Instant.parse("2026-07-17T11:05:00Z"), SHA, false));
+                        Instant.parse("2026-07-17T11:05:00Z"),
+                        externalAuthorization(), SHA, false));
         when(service.discard(any(), any())).thenReturn(
                 new DurableWorkerQuarantineApprovedDiscardResponse("", "DISCARDED",
                         new DurableWorkerQuarantineKey("run-a", SHA), "operator-a",
-                        APPROVAL_ID, "checker-a", SHA, "AUTHORIZED_RETRY", 2,
+                        APPROVAL_ID, "checker-a", SHA, "EXTERNAL_VERIFIED",
+                        externalAuthorization(), "AUTHORIZED_RETRY", 2,
                         Instant.parse("2026-07-17T11:00:00Z"), SHA, false));
         MockMvc mvc = mvc(service, Set.of("TEST_RUNTIME_MAINTENANCE"));
 
@@ -98,6 +101,8 @@ class DurableWorkerQuarantineControllerTest {
                         .content(approvalJson()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.approvalId").value(APPROVAL_ID))
+                .andExpect(jsonPath("$.externalAuthorization.authorizationId")
+                        .value("change-approval-123"))
                 .andExpect(jsonPath("$.claimToken").doesNotExist());
         mvc.perform(post("/api/testing/durable-state/worker-quarantines/approved-discards")
                         .header("Authorization", "Bearer test-token")
@@ -178,16 +183,40 @@ class DurableWorkerQuarantineControllerTest {
     private static String approvalJson() {
         return """
                 {
-                  "schemaVersion": "bloge.durableWorkerQuarantineDiscardApprovalRequest.v1",
+                  "schemaVersion": "bloge.durableWorkerQuarantineDiscardApprovalRequest.v2",
                   "clientRequestId": "approval-1",
                   "key": {"runId": "run-a", "checkpointFingerprint": "%s"},
                   "claimOwner": "operator-a",
                   "claimVersion": 1,
                   "claimUntil": "2026-07-17T12:00:00Z",
                   "reasonCode": "AUTHORIZED_RETRY",
-                  "approvalDurationSeconds": 300
+                  "approvalDurationSeconds": 300,
+                  "changeAuthorization": {
+                    "schemaVersion": "bloge.workerQuarantineChangeAuthorization.v1",
+                    "material": {
+                      "schemaVersion": "bloge.workerQuarantineChangeAuthorizationMaterial.v1",
+                      "trustDomain": "governance.example",
+                      "authorizationId": "change-approval-123",
+                      "action": "WORKER_QUARANTINE_DISCARD",
+                      "scopeFingerprint": "%s",
+                      "subjectFingerprint": "%s",
+                      "policyFingerprint": "%s",
+                      "issuedAt": "2026-07-17T11:50:00Z",
+                      "notBefore": "2026-07-17T11:50:00Z",
+                      "expiresAt": "2026-07-17T12:10:00Z"
+                    },
+                    "materialFingerprint": "%s",
+                    "signatures": [{
+                      "authorityId": "authority-a",
+                      "keyId": "key-a",
+                      "algorithm": "Ed25519",
+                      "signedAt": "2026-07-17T11:55:00Z",
+                      "signature": "%s"
+                    }]
+                  }
                 }
-                """.formatted(SHA);
+                """.formatted(SHA, SHA, SHA, SHA, SHA,
+                Base64.getEncoder().encodeToString(new byte[64]));
     }
 
     private static String approvedDiscardJson() {
@@ -217,6 +246,14 @@ class DurableWorkerQuarantineControllerTest {
         return MockMvcBuilders.standaloneSetup(
                         new DurableWorkerQuarantineController(service, authenticator))
                 .setControllerAdvice(new TestExecutionProblemHandler()).build();
+    }
+
+    private static DurableWorkerQuarantineChangeAuthorizationReference
+            externalAuthorization() {
+        return new DurableWorkerQuarantineChangeAuthorizationReference("",
+                "governance.example", "change-approval-123", SHA, SHA,
+                Instant.parse("2026-07-17T11:50:00Z"),
+                Instant.parse("2026-07-17T12:10:00Z"));
     }
 
     private static final class RecordingAudit implements IntegrationAccessAuditRepository {

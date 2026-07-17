@@ -16,7 +16,7 @@ public record DurableWorkerQuarantineApprovedDiscardHistoryResponse(
         List<DiscardReceipt> history) {
     /** Current approved discard history protocol version. */
     public static final String SCHEMA_VERSION =
-            "bloge.durableWorkerQuarantineApprovedDiscardHistoryResponse.v1";
+            "bloge.durableWorkerQuarantineApprovedDiscardHistoryResponse.v2";
 
     /** Copies immutable history. */
     public DurableWorkerQuarantineApprovedDiscardHistoryResponse {
@@ -47,10 +47,23 @@ public record DurableWorkerQuarantineApprovedDiscardHistoryResponse(
             String approvalId,
             String approverId,
             String approvalFingerprint,
+            String authorizationMode,
+            DurableWorkerQuarantineChangeAuthorizationReference externalAuthorization,
             long version,
             Instant actedAt,
             String receiptFingerprint,
             String recordFingerprint) {
+        /** Enforces an explicit external or legacy authorization mode. */
+        public DiscardReceipt {
+            authorizationMode = normalized(authorizationMode);
+            if (!(externalAuthorization == null
+                    ? "LEGACY_IN_PROCESS".equals(authorizationMode)
+                    : "EXTERNAL_VERIFIED".equals(authorizationMode))) {
+                throw new IllegalArgumentException(
+                        "Approved discard history authorization mode is invalid");
+            }
+        }
+
         private static DiscardReceipt from(
                 DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardHistoryRecord record) {
             return new DiscardReceipt(record.historyId(), new DurableWorkerQuarantineKey(
@@ -59,6 +72,11 @@ public record DurableWorkerQuarantineApprovedDiscardHistoryResponse(
                     record.quarantineThreshold(), record.firstObservedAt(),
                     record.quarantinedAt(), record.reasonCode(), record.ownerId(),
                     record.approvalId(), record.approverId(), record.approvalFingerprint(),
+                    record.externalAuthorization() == null
+                            ? "LEGACY_IN_PROCESS" : "EXTERNAL_VERIFIED",
+                    record.externalAuthorization() == null ? null
+                            : DurableWorkerQuarantineChangeAuthorizationReference.from(
+                                    record.externalAuthorization()),
                     record.version(), record.actedAt(), record.receiptFingerprint(),
                     record.recordFingerprint());
         }

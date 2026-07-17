@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.time.Instant;
+import java.util.Objects;
 
 /**
  * Checker intent to approve one exact live quarantine claim for discard.
@@ -20,6 +21,7 @@ import java.time.Instant;
  * @param claimUntil observed database-clock claim deadline
  * @param reasonCode non-payload rationale later required by discard
  * @param approvalDurationSeconds requested lifetime from 1 through 900 seconds
+ * @param changeAuthorization detached external governance authorization for this exact mutation
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
 public record DurableWorkerQuarantineDiscardApprovalRequest(
@@ -30,10 +32,11 @@ public record DurableWorkerQuarantineDiscardApprovalRequest(
         long claimVersion,
         Instant claimUntil,
         String reasonCode,
-        long approvalDurationSeconds) {
+        long approvalDurationSeconds,
+        WorkerQuarantineChangeAuthorization changeAuthorization) {
     /** Current checker approval request protocol version. */
     public static final String SCHEMA_VERSION =
-            "bloge.durableWorkerQuarantineDiscardApprovalRequest.v1";
+            "bloge.durableWorkerQuarantineDiscardApprovalRequest.v2";
 
     /** Applies the current version when omitted and normalizes textual fields. */
     public DurableWorkerQuarantineDiscardApprovalRequest {
@@ -42,6 +45,8 @@ public record DurableWorkerQuarantineDiscardApprovalRequest(
         clientRequestId = normalized(clientRequestId);
         claimOwner = normalized(claimOwner);
         reasonCode = normalized(reasonCode);
+        changeAuthorization = Objects.requireNonNull(
+                changeAuthorization, "changeAuthorization");
     }
 
     /** Rejects caller-selected scope, token, approver, audit, or future command fields. */

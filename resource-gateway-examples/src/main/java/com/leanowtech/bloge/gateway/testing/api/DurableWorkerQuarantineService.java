@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQua
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -39,6 +40,7 @@ public final class DurableWorkerQuarantineService {
     private final DatabaseDurableWorkerQuarantineControlPlane controlPlane;
     private final TestSecurityEventRepository securityEvents;
     private final ObjectMapper objectMapper;
+    private final WorkerQuarantineChangeAuthorizationTrustStore changeAuthorizationTrust;
     private final String requiredGroup;
     private final String requiredApproverGroup;
     private final String requiredClearance;
@@ -49,6 +51,7 @@ public final class DurableWorkerQuarantineService {
      * @param controlPlane exact-checkpoint queue, claims, resolutions, and history authority
      * @param securityEvents append-only semantic security-event sink
      * @param objectMapper canonical audit intent fingerprint mapper
+     * @param changeAuthorizationTrust independent external governance trust boundary
      * @param requiredGroup deployment-owned maintenance operator group
      * @param requiredApproverGroup deployment-owned independent checker group
      * @param requiredClearance minimum supported identity clearance
@@ -57,12 +60,15 @@ public final class DurableWorkerQuarantineService {
             DatabaseDurableWorkerQuarantineControlPlane controlPlane,
             TestSecurityEventRepository securityEvents,
             ObjectMapper objectMapper,
+            WorkerQuarantineChangeAuthorizationTrustStore changeAuthorizationTrust,
             String requiredGroup,
             String requiredApproverGroup,
             String requiredClearance) {
         this.controlPlane = Objects.requireNonNull(controlPlane, "controlPlane");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.changeAuthorizationTrust = Objects.requireNonNull(
+                changeAuthorizationTrust, "changeAuthorizationTrust");
         this.requiredGroup = required(requiredGroup, "requiredGroup", 255);
         this.requiredApproverGroup = required(
                 requiredApproverGroup, "requiredApproverGroup", 255);
@@ -71,6 +77,24 @@ public final class DurableWorkerQuarantineService {
         if (!CLEARANCES.contains(this.requiredClearance)) {
             throw new IllegalArgumentException("requiredClearance is not supported");
         }
+    }
+
+    /**
+     * Creates a compatibility service whose external approval boundary fails closed.
+     *
+     * <p>This constructor preserves non-approval unit composition. Any checker approval attempt
+     * returns service unavailable until an explicit independent trust store is supplied.</p>
+     */
+    public DurableWorkerQuarantineService(
+            DatabaseDurableWorkerQuarantineControlPlane controlPlane,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            String requiredGroup,
+            String requiredApproverGroup,
+            String requiredClearance) {
+        this(controlPlane, securityEvents, objectMapper,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable(),
+                requiredGroup, requiredApproverGroup, requiredClearance);
     }
 
     /** Returns one bounded payload-free quarantine page after scoped maintenance authorization. */
@@ -267,6 +291,58 @@ public final class DurableWorkerQuarantineService {
         WorkerAcquisitionScope scope = authorizeApprover(identity, "DISCARD_APPROVE");
         validateDiscardApproval(request, identity);
         var key = key(request.key(), identity, "DISCARD_APPROVE");
+        WorkerQuarantineChangeAuthorizationBinding.ScopeMaterial scopeMaterial =
+                new WorkerQuarantineChangeAuthorizationBinding.ScopeMaterial("",
+                        scope.tenantId(), scope.organizationId(), scope.projectId(),
+                        scope.environmentId());
+        WorkerQuarantineChangeAuthorizationBinding.SubjectMaterial subjectMaterial =
+                new WorkerQuarantineChangeAuthorizationBinding.SubjectMaterial("", request.key(),
+                        request.claimOwner(), request.claimVersion(), request.claimUntil(),
+                        request.reasonCode());
+        WorkerQuarantineChangeAuthorization.Material material =
+                request.changeAuthorization().material();
+        var suppliedExternalAuthorization = new DatabaseDurableWorkerQuarantineControlPlane
+                .ExternalChangeAuthorizationReference(material.trustDomain(),
+                material.authorizationId(), request.changeAuthorization().materialFingerprint(),
+                material.policyFingerprint(), material.notBefore(), material.expiresAt());
+        try {
+            var prior = controlPlane.replayDiscardApproval(scope, key, request.claimOwner(),
+                    request.claimVersion(), request.claimUntil(), identity.actorId(),
+                    request.clientRequestId(), request.reasonCode(),
+                    Duration.ofSeconds(request.approvalDurationSeconds()),
+                    suppliedExternalAuthorization);
+            if (prior.isPresent()) {
+                return replayedApproval(prior.orElseThrow(), key, request.clientRequestId(),
+                        identity);
+            }
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "Worker quarantine approval storage is unavailable.");
+        }
+        WorkerQuarantineChangeAuthorizationTrustStore.Verification verification =
+                verifyChangeAuthorization(request.changeAuthorization(),
+                        new WorkerQuarantineChangeAuthorizationTrustStore.ExpectedBinding(
+                                scopeMaterial.fingerprint(objectMapper),
+                                subjectMaterial.fingerprint(objectMapper)),
+                        key, request.clientRequestId(), identity);
+        if (!verification.authorizationId().equals(material.authorizationId())
+                || !verification.materialFingerprint().equals(
+                        request.changeAuthorization().materialFingerprint())) {
+            String code =
+                    "RG.TEST.WORKER_QUARANTINE_CHANGE_AUTHORIZATION_TRUST_RESULT_INVALID";
+            rejected(identity, "DISCARD_APPROVE", code, Map.of(
+                    "runId", key.runId(),
+                    "checkpointFingerprint", key.checkpointFingerprint(),
+                    "clientRequestId", request.clientRequestId()));
+            throw changeAuthorizationUnavailable(identity,
+                    code,
+                    "External change-authorization verification returned inconsistent identity.");
+        }
+        var externalAuthorization = new DatabaseDurableWorkerQuarantineControlPlane
+                .ExternalChangeAuthorizationReference(material.trustDomain(),
+                verification.authorizationId(), verification.materialFingerprint(),
+                material.policyFingerprint(), material.notBefore(), material.expiresAt());
         String intentFingerprint = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
                 Map.entry("schemaVersion", request.schemaVersion()),
                 Map.entry("clientRequestId", request.clientRequestId()),
@@ -276,12 +352,14 @@ public final class DurableWorkerQuarantineService {
                 Map.entry("claimUntil", request.claimUntil()),
                 Map.entry("reasonCode", request.reasonCode()),
                 Map.entry("approvalDurationSeconds", request.approvalDurationSeconds()),
+                Map.entry("externalAuthorization", externalAuthorization),
                 Map.entry("approverId", identity.actorId())));
         try {
             var result = controlPlane.approveDiscard(scope, key, request.claimOwner(),
                     request.claimVersion(), request.claimUntil(), identity.actorId(),
                     request.clientRequestId(), request.reasonCode(),
                     Duration.ofSeconds(request.approvalDurationSeconds()),
+                    externalAuthorization,
                     approval -> bound(identity, "DISCARD_APPROVE",
                             "RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_COMMITTED",
                             Map.ofEntries(
@@ -294,6 +372,18 @@ public final class DurableWorkerQuarantineService {
                                     Map.entry("claimOwner", approval.claimOwner()),
                                     Map.entry("claimVersion", approval.claimVersion()),
                                     Map.entry("reasonCode", approval.reasonCode()),
+                                    Map.entry("externalTrustDomain",
+                                            externalAuthorization.trustDomain()),
+                                    Map.entry("externalAuthorizationId",
+                                            externalAuthorization.authorizationId()),
+                                    Map.entry("externalAuthorizationFingerprint",
+                                            externalAuthorization.authorizationFingerprint()),
+                                    Map.entry("externalPolicyFingerprint",
+                                            externalAuthorization.policyFingerprint()),
+                                    Map.entry("validExternalSignatureCount",
+                                            verification.validSignatureCount()),
+                                    Map.entry("requiredExternalSignatureCount",
+                                            verification.requiredSignatureCount()),
                                     Map.entry("approvalFingerprint",
                                             approval.approvalFingerprint()))));
             return switch (result.disposition()) {
@@ -304,6 +394,8 @@ public final class DurableWorkerQuarantineService {
                             Map.of("runId", key.runId(),
                                     "clientRequestId", request.clientRequestId(),
                                     "approvalId", result.approval().approvalId(),
+                                    "externalAuthorizationId",
+                                    result.approval().externalAuthorization().authorizationId(),
                                     "approvalFingerprint",
                                     result.approval().approvalFingerprint())));
                     yield DurableWorkerQuarantineDiscardApprovalResponse.from(result);
@@ -344,6 +436,38 @@ public final class DurableWorkerQuarantineService {
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "Worker quarantine approval storage is unavailable.");
         }
+    }
+
+    private DurableWorkerQuarantineDiscardApprovalResponse replayedApproval(
+            DatabaseDurableWorkerQuarantineControlPlane.DiscardApprovalResult result,
+            DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey key,
+            String clientRequestId,
+            IntegrationRequestContext identity) {
+        return switch (result.disposition()) {
+            case IDEMPOTENT_REPLAY -> {
+                append(identity, event(identity, "DISCARD_APPROVE", "ALLOWED",
+                        "RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_IDEMPOTENT_REPLAY",
+                        Map.of("runId", key.runId(),
+                                "clientRequestId", clientRequestId,
+                                "approvalId", result.approval().approvalId(),
+                                "externalAuthorizationId",
+                                result.approval().externalAuthorization().authorizationId(),
+                                "approvalFingerprint",
+                                result.approval().approvalFingerprint())));
+                yield DurableWorkerQuarantineDiscardApprovalResponse.from(result);
+            }
+            case IDEMPOTENCY_CONFLICT -> throw conflict(identity, "DISCARD_APPROVE",
+                    "RG.TEST.WORKER_QUARANTINE_IDEMPOTENCY_CONFLICT",
+                    "The client request ID was reused with changed approval intent.",
+                    key, clientRequestId);
+            case REPLAY_WINDOW_EXPIRED -> throw conflict(identity, "DISCARD_APPROVE",
+                    "RG.TEST.WORKER_QUARANTINE_REPLAY_WINDOW_EXPIRED",
+                    "Exact response replay expired; the request ID remains reserved.",
+                    key, clientRequestId);
+            default -> throw new IllegalStateException(
+                    "Unexpected worker quarantine approval replay disposition: "
+                            + result.disposition());
+        };
     }
 
     /** Idempotently discards an exact claim by consuming an independent checker approval. */
@@ -520,7 +644,8 @@ public final class DurableWorkerQuarantineService {
                 || request.reasonCode() == null
                 || !REASON_CODE.matcher(request.reasonCode()).matches()
                 || request.approvalDurationSeconds() < 1
-                || request.approvalDurationSeconds() > 900) {
+                || request.approvalDurationSeconds() > 900
+                || request.changeAuthorization() == null) {
             rejected(identity, "DISCARD_APPROVE",
                     "RG.TEST.WORKER_QUARANTINE_REQUEST_INVALID", Map.of());
             throw badRequest(identity, "Worker quarantine discard approval is invalid.");
@@ -573,6 +698,50 @@ public final class DurableWorkerQuarantineService {
         rejected(identity, action, code, Map.of());
         throw new IntegrationProblemException(IntegrationProblem.forbidden(
                 code, title, identity.correlationId(), Map.of()));
+    }
+
+    private WorkerQuarantineChangeAuthorizationTrustStore.Verification
+            verifyChangeAuthorization(
+            WorkerQuarantineChangeAuthorization authorization,
+            WorkerQuarantineChangeAuthorizationTrustStore.ExpectedBinding expected,
+            DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey key,
+            String clientRequestId,
+            IntegrationRequestContext identity) {
+        WorkerQuarantineChangeAuthorizationTrustStore.Verification verification;
+        try {
+            verification = Objects.requireNonNull(changeAuthorizationTrust.verify(
+                            authorization, expected,
+                            Instant.now().truncatedTo(ChronoUnit.MICROS)),
+                    "changeAuthorization verification");
+        } catch (RuntimeException unavailable) {
+            String code =
+                    "RG.TEST.WORKER_QUARANTINE_CHANGE_AUTHORIZATION_TRUST_EVALUATION_UNAVAILABLE";
+            rejected(identity, "DISCARD_APPROVE", code, Map.of(
+                    "runId", key.runId(),
+                    "checkpointFingerprint", key.checkpointFingerprint(),
+                    "clientRequestId", clientRequestId));
+            throw changeAuthorizationUnavailable(identity, code,
+                    "External change-authorization trust evaluation is unavailable.");
+        }
+        if (verification.verified()) {
+            return verification;
+        }
+        String code = "RG.TEST.WORKER_QUARANTINE_" + verification.reasonCode();
+        rejected(identity, "DISCARD_APPROVE", code, Map.of(
+                "runId", key.runId(),
+                "checkpointFingerprint", key.checkpointFingerprint(),
+                "clientRequestId", clientRequestId,
+                "verificationStatus", verification.status().name(),
+                "validSignatureCount", verification.validSignatureCount(),
+                "requiredSignatureCount", verification.requiredSignatureCount()));
+        if (verification.status()
+                == WorkerQuarantineChangeAuthorizationTrustStore.VerificationStatus.UNAVAILABLE) {
+            throw changeAuthorizationUnavailable(identity, code,
+                    "External change-authorization trust is unavailable.");
+        }
+        throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                code, "External change authorization was rejected.",
+                identity.correlationId(), Map.of()));
     }
 
     private TestRuntimeTransactionMutation bound(
@@ -647,6 +816,12 @@ public final class DurableWorkerQuarantineService {
         return new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
                 "RG.TEST.WORKER_QUARANTINE_CONTROL_UNAVAILABLE", title,
                 identity.correlationId(), Map.of()));
+    }
+
+    private static IntegrationProblemException changeAuthorizationUnavailable(
+            IntegrationRequestContext identity, String code, String title) {
+        return new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                code, title, identity.correlationId(), Map.of()));
     }
 
     private static boolean bounded(String value, int maximum) {

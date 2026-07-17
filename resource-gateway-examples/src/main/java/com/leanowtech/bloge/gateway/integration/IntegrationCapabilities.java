@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
+import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.ManagedEvidenceSigningProvider;
@@ -139,10 +140,32 @@ public record IntegrationCapabilities(
                                                   boolean testExecutionEndpointEnabled,
                                                   EvidenceKeySetTrustStore.Descriptor evidenceTrust,
                                                   WorkerQuarantineRequestIndexMode requestIndexMode) {
+        return current(evidenceSigner, identityProvider, sideEffectReconcilerAdapters,
+                payloadGovernance, testExecutionEndpointEnabled, evidenceTrust,
+                requestIndexMode,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor());
+    }
+
+    /**
+     * Builds the capability probe with exact request-index and external approval readiness.
+     */
+    public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters,
+                                                  VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
+                                                  boolean testExecutionEndpointEnabled,
+                                                  EvidenceKeySetTrustStore.Descriptor evidenceTrust,
+                                                  WorkerQuarantineRequestIndexMode requestIndexMode,
+                                                  WorkerQuarantineChangeAuthorizationTrustStore
+                                                          .Descriptor changeAuthorizationTrust) {
         VisualEvidenceSigner.Descriptor signer = evidenceSigner == null
                 ? VisualEvidenceSigner.unavailable().descriptor() : evidenceSigner;
         EvidenceKeySetTrustStore.Descriptor trust = evidenceTrust == null
                 ? EvidenceKeySetTrustStore.unavailable().descriptor() : evidenceTrust;
+        WorkerQuarantineChangeAuthorizationTrustStore.Descriptor changeTrust =
+                changeAuthorizationTrust == null
+                        ? WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor()
+                        : changeAuthorizationTrust;
         WorkerQuarantineRequestIndexMode effectiveRequestIndexMode =
                 testExecutionEndpointEnabled
                         ? Objects.requireNonNull(requestIndexMode, "requestIndexMode") : null;
@@ -324,6 +347,18 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineDiscardApprovalRequest.SCHEMA_VERSION));
             objects.put("durableWorkerQuarantineDiscardApprovalResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineDiscardApprovalResponse.SCHEMA_VERSION));
+            objects.put("workerQuarantineChangeAuthorization", List.of(
+                    com.leanowtech.bloge.gateway.testing.api
+                            .WorkerQuarantineChangeAuthorization.SCHEMA_VERSION));
+            objects.put("workerQuarantineChangeAuthorizationScope", List.of(
+                    com.leanowtech.bloge.gateway.testing.api
+                            .WorkerQuarantineChangeAuthorizationBinding.ScopeMaterial.SCHEMA_VERSION));
+            objects.put("workerQuarantineChangeAuthorizationSubject", List.of(
+                    com.leanowtech.bloge.gateway.testing.api
+                            .WorkerQuarantineChangeAuthorizationBinding.SubjectMaterial.SCHEMA_VERSION));
+            objects.put("durableWorkerQuarantineChangeAuthorizationReference", List.of(
+                    com.leanowtech.bloge.gateway.testing.api
+                            .DurableWorkerQuarantineChangeAuthorizationReference.SCHEMA_VERSION));
             objects.put("durableWorkerQuarantineApprovedDiscardRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineApprovedDiscardRequest.SCHEMA_VERSION));
             objects.put("durableWorkerQuarantineApprovedDiscardResponse", List.of(
@@ -444,6 +479,8 @@ public record IntegrationCapabilities(
         features.put("durableTestWorkerQuarantineMaintenance", testExecutionEndpointEnabled);
         features.put("immutableDurableWorkerQuarantineHistory", testExecutionEndpointEnabled);
         features.put("twoPersonDurableWorkerQuarantineDiscard", testExecutionEndpointEnabled);
+        features.put("externalWorkerQuarantineChangeAuthorization",
+                testExecutionEndpointEnabled && changeTrust.available());
         features.put("immutableApprovedWorkerQuarantineDiscardHistory",
                 testExecutionEndpointEnabled);
         features.put("encryptedDurableWorkerQuarantineClaimReplay",
@@ -586,7 +623,8 @@ public record IntegrationCapabilities(
         }
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
                 payloadGovernance, testExecutionEndpointEnabled
-                        ? Testability.executionControlPlane() : Testability.schemaContractOnly(),
+                        ? Testability.executionControlPlane(changeTrust)
+                        : Testability.schemaContractOnly(),
                 endpoints);
     }
 
@@ -615,12 +653,15 @@ public record IntegrationCapabilities(
      * @param enabledEnvironments environments allowed to expose caller-driven testing endpoints
      * @param schemaContractMode whether schema-only operator checks are available
      * @param executionEndpointEnabled whether caller-driven execution is currently implemented
+     * @param workerQuarantineChangeAuthorizationTrust key-free external approval readiness
      */
     public record Testability(
             String protocolVersion,
             List<String> enabledEnvironments,
             boolean schemaContractMode,
-            boolean executionEndpointEnabled
+            boolean executionEndpointEnabled,
+            WorkerQuarantineChangeAuthorizationTrustStore.Descriptor
+                    workerQuarantineChangeAuthorizationTrust
     ) {
         /** Normalizes capability values. */
         public Testability {
@@ -628,16 +669,30 @@ public record IntegrationCapabilities(
                     ? "bloge.testing.v1" : protocolVersion.trim();
             enabledEnvironments = enabledEnvironments == null
                     ? List.of() : List.copyOf(enabledEnvironments);
+            workerQuarantineChangeAuthorizationTrust =
+                    workerQuarantineChangeAuthorizationTrust == null
+                            ? WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor()
+                            : workerQuarantineChangeAuthorizationTrust;
         }
 
         /** @return Stage 0 capability before the execution endpoint is activated */
         public static Testability schemaContractOnly() {
-            return new Testability("bloge.testing.v1", List.of("test", "staging"), true, false);
+            return new Testability("bloge.testing.v1", List.of("test", "staging"),
+                    true, false,
+                    WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor());
         }
 
         /** @return Stage 2 capability with the caller-driven execution endpoint assembled */
         public static Testability executionControlPlane() {
-            return new Testability("bloge.testing.v1", List.of("test", "staging"), true, true);
+            return executionControlPlane(
+                    WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor());
+        }
+
+        /** @return execution capability with exact external approval trust readiness */
+        public static Testability executionControlPlane(
+                WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust) {
+            return new Testability("bloge.testing.v1", List.of("test", "staging"),
+                    true, true, trust);
         }
     }
 }

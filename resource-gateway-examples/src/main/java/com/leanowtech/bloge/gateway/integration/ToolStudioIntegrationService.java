@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
+import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
@@ -54,6 +55,9 @@ public class ToolStudioIntegrationService {
     private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
     private WorkerQuarantineRequestIndexMode workerQuarantineRequestIndexMode;
+    private WorkerQuarantineChangeAuthorizationTrustStore.Descriptor
+            workerQuarantineChangeAuthorizationTrust =
+            WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor();
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -90,6 +94,9 @@ public class ToolStudioIntegrationService {
         this.testExecutionEndpointEnabled = availability != null && availability.executionEndpointEnabled();
         this.workerQuarantineRequestIndexMode = this.testExecutionEndpointEnabled
                 ? availability.workerQuarantineRequestIndexMode() : null;
+        this.workerQuarantineChangeAuthorizationTrust = availability == null
+                ? WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor()
+                : availability.workerQuarantineChangeAuthorizationTrust();
     }
 
     /** Receives the profile-owned semantic workbook projector with the isolated test runtime. */
@@ -186,7 +193,8 @@ public class ToolStudioIntegrationService {
                 IntegrationCapabilities.current(signer.descriptor(), identityResolver.descriptor(),
                         sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor(),
                         testExecutionEndpointEnabled, evidenceTrustStore.descriptor(),
-                        workerQuarantineRequestIndexMode));
+                        workerQuarantineRequestIndexMode,
+                        workerQuarantineChangeAuthorizationTrust));
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,

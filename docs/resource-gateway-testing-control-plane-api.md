@@ -64,16 +64,26 @@ export RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING='request-index-2026-07=<differ
 export RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE='DUAL_READ_KEYED_WRITE'
 export RG_RESOURCE_GATEWAY_INSTANCE_ID='rg-staging-0'
 export RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT='sha256:<64-lowercase-hex-digest>'
+export RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_TRUST_DOMAIN='enterprise-change-governance'
+export RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_POLICY_FINGERPRINTS='sha256:<64-lowercase-hex-policy-digest>'
+export RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD='2'
+export RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON='[{"authorityId":"change-board-a","keyId":"ed25519-a-2026-07","publicKeyBase64":"<X.509-Ed25519-public-key-a>","notBefore":"2026-07-01T00:00:00Z","expiresAt":"2027-07-01T00:00:00Z","enabled":true,"revoked":false},{"authorityId":"risk-board-b","keyId":"ed25519-b-2026-07","publicKeyBase64":"<X.509-Ed25519-public-key-b>","notBefore":"2026-07-01T00:00:00Z","expiresAt":"2027-07-01T00:00:00Z","enabled":true,"revoked":false}]'
 ./scripts/start-visual-canvas-demo.sh --profile staging
 ```
 
 Do not use the placeholders literally, reuse the local `test` keys, or share one root between the two
-rings. Rotation runbooks are in the
+rings. The change-authorization JSON contains public verification keys only; signing private keys
+remain in the independent governance authority. Its threshold cannot exceed the number of distinct
+configured authorities. The launcher checks presence and basic shape, then application startup
+performs strict key, policy, threshold, and validity validation. Rotation runbooks are in the
 [claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md)
 and [request-index protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md).
 For the first N/N-1 rollout, start N in `LEGACY_READ_WRITE`, prove every serving instance is N,
 then move to `DUAL_READ_KEYED_WRITE`; enter `KEYED_ONLY` only after the live v1 inventory is zero.
 See the [request-index rolling-upgrade verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md).
+The signed discard-authorization protocol, canonical scope/subject preimages, exact replay behavior,
+and static-key rotation boundary are specified in the
+[change-authorization trust verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-change-authorization-trust-verification.md).
 
 `production` intentionally has no `TestExecutionController`, fixture/suite repository,
 child/suite-run repository, or testability capability marker. The capability probe reports
@@ -1297,8 +1307,41 @@ Content-Type: application/json
 }
 ```
 
-To discard, a distinct checker first approves the exact live claim. The checker request deliberately
-has no `claimToken` and its lifetime is bounded to `1..900` seconds and never exceeds `claimUntil`:
+To discard, a distinct checker first approves the exact live claim. Before the HTTP call, construct
+the published `bloge.workerQuarantineChangeAuthorizationScope.v1` preimage from the same verified
+tenant, organization, project, and environment identity used by Resource Gateway. Construct
+`bloge.workerQuarantineChangeAuthorizationSubject.v1` from the exact key, observed claim owner,
+version, deadline, and reason. Canonically fingerprint both objects, place those fingerprints in the
+authorization material, and have the independent governance authorities sign that material's exact
+canonical fingerprint with Ed25519.
+
+```json
+{
+  "schemaVersion": "bloge.workerQuarantineChangeAuthorizationScope.v1",
+  "tenantId": "tenant-a",
+  "organizationId": "org-a",
+  "projectId": "project-a",
+  "environmentId": "staging"
+}
+```
+
+```json
+{
+  "schemaVersion": "bloge.workerQuarantineChangeAuthorizationSubject.v1",
+  "key": {
+    "runId": "run-a",
+    "checkpointFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "claimOwner": "maintenance-operator-a",
+  "claimVersion": 1,
+  "claimUntil": "2026-07-17T12:02:00Z",
+  "reasonCode": "AUTHORIZED_RETRY"
+}
+```
+
+The checker request deliberately has no `claimToken`; its local lifetime is bounded to `1..900`
+seconds and never exceeds `claimUntil` or the external authorization expiry. The fingerprints and
+signature below are shape-only placeholders and must be replaced with the exact canonical values:
 
 ```http
 POST /api/testing/durable-state/worker-quarantines/discard-approvals
@@ -1307,7 +1350,7 @@ X-Purpose: TEST_RUNTIME_MAINTENANCE
 Content-Type: application/json
 
 {
-  "schemaVersion": "bloge.durableWorkerQuarantineDiscardApprovalRequest.v1",
+  "schemaVersion": "bloge.durableWorkerQuarantineDiscardApprovalRequest.v2",
   "clientRequestId": "approve-discard-run-a-1",
   "key": {
     "runId": "run-a",
@@ -1317,12 +1360,39 @@ Content-Type: application/json
   "claimVersion": 1,
   "claimUntil": "2026-07-17T12:02:00Z",
   "reasonCode": "AUTHORIZED_RETRY",
-  "approvalDurationSeconds": 60
+  "approvalDurationSeconds": 60,
+  "changeAuthorization": {
+    "schemaVersion": "bloge.workerQuarantineChangeAuthorization.v1",
+    "material": {
+      "schemaVersion": "bloge.workerQuarantineChangeAuthorizationMaterial.v1",
+      "trustDomain": "enterprise-change-governance",
+      "authorizationId": "CHG-2026-0001842",
+      "action": "WORKER_QUARANTINE_DISCARD",
+      "scopeFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "subjectFingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "policyFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "issuedAt": "2026-07-17T11:55:00Z",
+      "notBefore": "2026-07-17T11:56:00Z",
+      "expiresAt": "2026-07-17T12:02:00Z"
+    },
+    "materialFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "signatures": [{
+      "authorityId": "change-board-a",
+      "keyId": "ed25519-a-2026-07",
+      "algorithm": "Ed25519",
+      "signedAt": "2026-07-17T11:56:00Z",
+      "signature": "<base64-ed25519-signature-over-material-fingerprint>"
+    }]
+  }
 }
 ```
 
-The response contains a token-free `approvalId` and `approvalFingerprint`. The original maker then
-consumes that exact approval while still proving the secret claim fence:
+Resource Gateway derives both bindings again from verified identity and request facts, verifies the
+configured quorum, and reserves the authorization under database time. The v2 response contains a
+token-free `approvalId`, `approvalFingerprint`, and
+`bloge.durableWorkerQuarantineChangeAuthorizationReference.v1`; it never echoes authority
+signatures or public keys. The original maker then consumes that exact approval while still proving
+the secret claim fence:
 
 ```http
 POST /api/testing/durable-state/worker-quarantines/approved-discards
@@ -1354,10 +1424,13 @@ The actions have intentionally different worker and governance semantics:
 
 Every claim, approval, and mutation first locks and revalidates the full checkpoint authority, then
 the exact quarantine/control row. Approved discard additionally locks and verifies the approval.
-Maker and checker identities must differ; claim and approval must bind the same key, owner, version,
-expiry, and reason; both must still be live by database time. A changed checkpoint, stale/forged/
+Maker and checker identities must differ; claim, local approval, and external authorization must
+bind the same scope, key, owner, version, expiry, and reason; all must be live by database time for a
+new command. A changed checkpoint, stale/forged/
 expired fence, self approval, consumed approval, or reused request ID with changed intent returns a
 stable `409`; malformed requests return `400`. Exact retries return the immutable original result.
+Approval replay checks the committed database intent before live trust, so a lost response remains
+replayable after external expiry or temporary trust unavailability without authorizing new work.
 
 Exact replay is intentionally time bounded. After the command/approval deadline plus
 `command-retention-days`, the leased retention loop atomically replaces the detailed command with a
@@ -1386,8 +1459,8 @@ the detailed replay window the claim-command copy is AES-GCM encrypted; bounded 
 authenticates it before deletion and leaves only a payload-free request tombstone. The live control
 contains only a keyed verifier, not a second bearer token. Request tombstone indexes use a separate
 key ring so their longer retention does not retain the claim-token root. External workflow
-identity proof, ticket binding, WORM anchoring, legal hold, backup erasure, and webhook notification
-remain hardening work.
+ticket lifecycle callbacks, dynamic revocation refresh, device/session assurance, WORM anchoring,
+legal hold, backup erasure, and webhook notification remain hardening work.
 
 The exact request-index format, online rotation order, legacy migration limit, and failure matrix are
 defined in the

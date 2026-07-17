@@ -1195,8 +1195,13 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 | `-- --gateway.base-url=http://localhost:9091` | `--` 后面的参数透传给 Spring Boot 应用 |
 
 `staging` 还要求显式注入 claim-token key ring、独立 request-index key ring，以及
-`RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE`。首次跨版本升级应从
-`LEGACY_READ_WRITE` 开始；完整五项配置和三阶段切换门禁见
+`RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE`。此外，隔离区销毁审批必须配置独立的
+`RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_TRUST_DOMAIN`、
+`RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_POLICY_FINGERPRINTS`、
+`RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD` 和
+`RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON`；最后一项只能包含 Ed25519 公钥，
+私钥必须留在外部治理系统。脚本会在启动 Spring 前检查这些值是否齐全及基本格式，应用再执行完整密钥、阈值和策略校验。
+首次 request-index 跨版本升级应从 `LEGACY_READ_WRITE` 开始；完整配置和三阶段切换门禁见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 与
 [request-index rolling-upgrade verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md)。
 

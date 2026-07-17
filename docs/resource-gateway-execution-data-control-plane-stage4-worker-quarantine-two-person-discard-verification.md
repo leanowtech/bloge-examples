@@ -19,7 +19,7 @@ consume the independent approval. Direct new `DISCARD` commands are rejected.
 3. Maker and checker actor IDs must differ, even if a credential has both groups.
 4. The checker never receives or submits `claimToken`.
 5. Approval binds exact scope, run, checkpoint fingerprint, claim owner, version, expiry, reason,
-   approver, and a database-clock deadline.
+   approver, a database-clock deadline, and an independently verified external authorization.
 6. Approval expiry is at most 900 seconds and never later than the maker claim expiry.
 7. One approval can be consumed only once and only by its original live maker claim.
 8. Approval consumption, quarantine deletion, receipt, two-person history, and maker audit commit in
@@ -41,11 +41,13 @@ clearance, and `test` or `staging`. Production profile assembly excludes the com
 
 The frozen Schema objects are:
 
-- `bloge.durableWorkerQuarantineDiscardApprovalRequest.v1`;
-- `bloge.durableWorkerQuarantineDiscardApprovalResponse.v1`;
+- `bloge.durableWorkerQuarantineDiscardApprovalRequest.v2`;
+- `bloge.durableWorkerQuarantineDiscardApprovalResponse.v2`;
 - `bloge.durableWorkerQuarantineApprovedDiscardRequest.v1`;
-- `bloge.durableWorkerQuarantineApprovedDiscardResponse.v1`;
-- `bloge.durableWorkerQuarantineApprovedDiscardHistoryResponse.v1`.
+- `bloge.durableWorkerQuarantineApprovedDiscardResponse.v2`;
+- `bloge.durableWorkerQuarantineApprovedDiscardHistoryResponse.v2`;
+- `bloge.workerQuarantineChangeAuthorization.v1` and its canonical scope/subject preimages;
+- `bloge.durableWorkerQuarantineChangeAuthorizationReference.v1`.
 
 Requests reject unknown fields. Approval response, approved-discard response, and history structurally
 exclude `claimToken`. Capability discovery advertises all five objects and all three endpoints only
@@ -163,6 +165,8 @@ resource.gateway.test.runtime.worker.candidate.quarantines.discards.approved.his
 | one external authorization is submitted for a second checker command | second reservation is rejected |
 | external authorization is premature or expired by database time | approval and reservation are absent |
 | external approval audit append fails | approval and authorization reservation both roll back |
+| a legacy v1 approval is submitted to a new discard | approval is readable but mutation is rejected |
+| exact approval response is lost and external trust later expires or is unavailable | immutable database result replays without authorizing a new mutation |
 | metrics and health are scraped | only aggregate counts are exposed |
 
 ## Verification Gate
@@ -186,17 +190,16 @@ passes packaged-Schema, shaded CLI, and public JavaDoc verification.
 
 ## Honest Boundary
 
-This is an in-process two-person database protocol, not a complete enterprise approval workflow.
-Actor separation is only as trustworthy as the configured identity provider and group lifecycle.
-The independent signed
+This is a signed two-person mutation protocol, not a complete enterprise approval workflow. Actor
+separation is only as trustworthy as the configured identity provider and group lifecycle. The
+independent signed
 [change-authorization trust foundation](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-change-authorization-trust-verification.md)
-now verifies exact external policy, scope, and mutation bindings. Its database substrate uniquely
-reserves the authorization and atomically consumes it with discard while retaining the reference in
-v2 fingerprints, receipts, and history. The HTTP checker API does not yet require or verify that
-signed envelope, so callers still reach the legacy in-process path. This flow therefore does not yet
-enforce an external ticket, approval policy revision, device/session assurance, time-bound
-privileged access grant, or governance callback. Same-database fingerprints detect accidental or
-unsophisticated mutation but are not external WORM evidence.
+now verifies exact external policy, scope, and mutation bindings at the checker HTTP boundary. Its
+database substrate uniquely reserves the authorization and atomically consumes it with discard while
+retaining the reference in v2 fingerprints, receipts, and history. This enforces an externally signed
+decision and policy revision, but does not prove the external ticket's full lifecycle, device/session
+assurance, approver employment status, time-bound privileged access grant, or later governance
+callback. Same-database fingerprints remain distinct from external WORM evidence.
 
 Claim-command replay tokens now use a rotation-aware AES-256-GCM envelope; valid legacy plaintext
 rows are migrated and old-key envelopes are rewrapped at startup. The active control retains only a

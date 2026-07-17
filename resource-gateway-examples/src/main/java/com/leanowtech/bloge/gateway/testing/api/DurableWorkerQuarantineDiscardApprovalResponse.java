@@ -19,6 +19,7 @@ import java.util.Objects;
  * @param reasonCode exact shared rationale
  * @param approvedAt database-clock checker decision time
  * @param approvalUntil database-clock deadline no later than the claim deadline
+ * @param externalAuthorization verified key-free external governance reference
  * @param approvalFingerprint immutable checker-decision fingerprint
  * @param idempotentReplay whether the original immutable decision was replayed
  */
@@ -34,11 +35,12 @@ public record DurableWorkerQuarantineDiscardApprovalResponse(
         String reasonCode,
         Instant approvedAt,
         Instant approvalUntil,
+        DurableWorkerQuarantineChangeAuthorizationReference externalAuthorization,
         String approvalFingerprint,
         boolean idempotentReplay) {
     /** Current checker approval response protocol version. */
     public static final String SCHEMA_VERSION =
-            "bloge.durableWorkerQuarantineDiscardApprovalResponse.v1";
+            "bloge.durableWorkerQuarantineDiscardApprovalResponse.v2";
 
     /** Validates complete token-free checker evidence. */
     public DurableWorkerQuarantineDiscardApprovalResponse {
@@ -53,6 +55,8 @@ public record DurableWorkerQuarantineDiscardApprovalResponse(
         reasonCode = normalized(reasonCode);
         approvedAt = Objects.requireNonNull(approvedAt, "approvedAt");
         approvalUntil = Objects.requireNonNull(approvalUntil, "approvalUntil");
+        externalAuthorization = Objects.requireNonNull(
+                externalAuthorization, "externalAuthorization");
         approvalFingerprint = normalized(approvalFingerprint);
         if (disposition.isBlank() || approvalId.isBlank() || claimOwner.isBlank()
                 || claimVersion <= 0 || approverId.isBlank() || reasonCode.isBlank()
@@ -71,7 +75,10 @@ public record DurableWorkerQuarantineDiscardApprovalResponse(
                         approval.key().runId(), approval.key().checkpointFingerprint()),
                 approval.claimOwner(), approval.claimVersion(), approval.claimUntil(),
                 approval.approverId(), approval.reasonCode(), approval.approvedAt(),
-                approval.approvalUntil(), approval.approvalFingerprint(),
+                approval.approvalUntil(),
+                DurableWorkerQuarantineChangeAuthorizationReference.from(
+                        approval.externalAuthorization()),
+                approval.approvalFingerprint(),
                 result.disposition() == DatabaseDurableWorkerQuarantineControlPlane
                         .DiscardApprovalDisposition.IDEMPOTENT_REPLAY);
     }

@@ -60,6 +60,10 @@ Environment:
   RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE  required for staging; staged rollout mode
   RG_RESOURCE_GATEWAY_INSTANCE_ID                  required for staging; exact serving replica id
   RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT         required for staging; sha256 image/JAR identity
+  RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_TRUST_DOMAIN  required for staging
+  RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_POLICY_FINGERPRINTS  required; comma-separated sha256 values
+  RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD  required; 1..32 authorities
+  RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON  required; public Ed25519 keys only
   RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS    default: 30
   RG_TEST_WORKER_QUARANTINE_HISTORY_RETENTION_DAYS    default: 365
   RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS  default: 365
@@ -93,9 +97,13 @@ validate_profile_secrets() {
         [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING:-}" ] ||
         [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE:-}" ] ||
         [ -z "${RG_RESOURCE_GATEWAY_INSTANCE_ID:-}" ] ||
-        [ -z "${RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT:-}" ]; then
-        echo "Staging requires both worker-quarantine key rings, rollout mode, instance, and artifact identity." >&2
-        echo "Inject all seven values from deployment policy before startup." >&2
+        [ -z "${RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT:-}" ] ||
+        [ -z "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_TRUST_DOMAIN:-}" ] ||
+        [ -z "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_POLICY_FINGERPRINTS:-}" ] ||
+        [ -z "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD:-}" ] ||
+        [ -z "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON:-}" ]; then
+        echo "Staging requires quarantine key rings, rollout identity, and external change-authorization trust." >&2
+        echo "Inject all eleven deployment-owned values before startup." >&2
         return 1
     fi
     case "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE}" in
@@ -123,6 +131,34 @@ validate_profile_secrets() {
         echo "Invalid Resource Gateway artifact fingerprint; use canonical sha256:<lowercase-hex>." >&2
         return 1
     fi
+    if ! printf '%s' "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_TRUST_DOMAIN}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+        echo "Invalid external change-authorization trust domain." >&2
+        return 1
+    fi
+    if ! printf '%s' "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_POLICY_FINGERPRINTS}" |
+        grep -Eq '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31}$'; then
+        echo "Invalid external change-authorization policy fingerprints." >&2
+        return 1
+    fi
+    case "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD}" in
+        ''|*[!0-9]*)
+            echo "Invalid external change-authorization signature threshold." >&2
+            return 1
+            ;;
+    esac
+    if [ "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD}" -lt 1 ] ||
+        [ "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD}" -gt 32 ]; then
+        echo "External change-authorization signature threshold must be 1..32." >&2
+        return 1
+    fi
+    case "${RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON}" in
+        \[*\]) ;;
+        *)
+            echo "External change-authorization authority keys must be a JSON array." >&2
+            return 1
+            ;;
+    esac
 }
 
 pid_file() {

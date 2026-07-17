@@ -1040,18 +1040,19 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-approval-replay",
                 Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
         AtomicInteger approvalAudits = new AtomicInteger();
+        var external = externalAuthorization("approval-replay", Instant.now());
 
         var approved = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
                 claim.version(), claim.claimUntil(), "checker-a", "approval-replay",
-                "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1), external,
                 ignored -> jdbc -> approvalAudits.incrementAndGet());
         var replayed = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
                 claim.version(), claim.claimUntil(), "checker-a", "approval-replay",
-                "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1), external,
                 ignored -> jdbc -> approvalAudits.incrementAndGet());
         var drifted = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
                 claim.version(), claim.claimUntil(), "checker-a", "approval-replay",
-                "AUTHORIZED_RETRY", Duration.ofSeconds(30),
+                "AUTHORIZED_RETRY", Duration.ofSeconds(30), external,
                 ignored -> TestRuntimeTransactionMutation.noop());
 
         assertThat(approved.disposition()).isEqualTo(
@@ -1078,6 +1079,28 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 FROM rg_test_durable_worker_quarantine_discard_approvals
                 WHERE approval_id = ?
                 """, String.class, approved.approval().approvalId())).isEqualTo("CONSUMED");
+    }
+
+    @Test
+    void legacyApprovalRemainsReadableButCannotAuthorizeANewDiscard() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-legacy-approval",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var legacy = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "legacy-approval",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                ignored -> TestRuntimeTransactionMutation.noop()).approval();
+
+        assertThat(legacy.externalAuthorization()).isNull();
+        assertThat(controlPlane.discard(workerScope(), claim, legacy.approvalId(),
+                "discard-with-legacy-approval", "AUTHORIZED_RETRY",
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition())
+                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                        .ApprovedDiscardDisposition.APPROVAL_REJECTED);
+        assertThat(controlPlane.quarantines(workerScope(), false, 10)).hasSize(1);
+        assertThat(controlPlane.discardHistory(workerScope(), 10)).isEmpty();
     }
 
     @Test
@@ -1193,9 +1216,10 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 checkpoint.runId(), checkpoint.checkpointFingerprint());
         var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-expiring-approval",
                 Duration.ofSeconds(5), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var external = externalAuthorization("approval-expiring", Instant.now());
         var approval = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
                 claim.version(), claim.claimUntil(), "checker-a", "approval-expiring",
-                "AUTHORIZED_RETRY", Duration.ofSeconds(1),
+                "AUTHORIZED_RETRY", Duration.ofSeconds(1), external,
                 ignored -> TestRuntimeTransactionMutation.noop()).approval();
 
         Thread.sleep(1_200);
@@ -1217,10 +1241,11 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 checkpoint.runId(), checkpoint.checkpointFingerprint());
         var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-two-person-rollback",
                 Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var external = externalAuthorization("approval-rollback", Instant.now());
 
         assertThatThrownBy(() -> controlPlane.approveDiscard(workerScope(), key,
                 claim.ownerId(), claim.version(), claim.claimUntil(), "checker-a",
-                "approval-rollback", "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                "approval-rollback", "AUTHORIZED_RETRY", Duration.ofMinutes(1), external,
                 ignored -> jdbc -> {
                     throw new IllegalStateException("approval audit unavailable");
                 })).isInstanceOf(IllegalStateException.class)
@@ -1230,7 +1255,10 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 FROM rg_test_durable_worker_quarantine_discard_approvals
                 """, Integer.class)).isZero();
 
-        var approval = approve(claim, "checker-a", "approval-rollback");
+        var approval = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-rollback",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1), external,
+                ignored -> TestRuntimeTransactionMutation.noop()).approval();
         assertThatThrownBy(() -> controlPlane.discard(workerScope(), claim,
                 approval.approvalId(), "discard-rollback", "AUTHORIZED_RETRY",
                 ignored -> jdbc -> {
@@ -1812,9 +1840,10 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 checkpoint.runId(), checkpoint.checkpointFingerprint());
         var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-discard-retained",
                 Duration.ofSeconds(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var external = externalAuthorization("approval-retained", Instant.now());
         var approval = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
                 claim.version(), claim.claimUntil(), "checker-a", "approval-retained",
-                "AUTHORIZED_RETRY", Duration.ofSeconds(2),
+                "AUTHORIZED_RETRY", Duration.ofSeconds(2), external,
                 ignored -> TestRuntimeTransactionMutation.noop()).approval();
         var discarded = controlPlane.discard(workerScope(), claim, approval.approvalId(),
                 "discard-retained", "AUTHORIZED_RETRY",
@@ -1830,7 +1859,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         assertThat(controlPlane.discardHistory(workerScope(), 10)).isEmpty();
         assertThat(controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
                 claim.version(), claim.claimUntil(), "checker-a", "approval-retained",
-                "AUTHORIZED_RETRY", Duration.ofSeconds(2),
+                "AUTHORIZED_RETRY", Duration.ofSeconds(2), external,
                 ignored -> TestRuntimeTransactionMutation.noop()).disposition()).isEqualTo(
                 DatabaseDurableWorkerQuarantineControlPlane.DiscardApprovalDisposition
                         .REPLAY_WINDOW_EXPIRED);
@@ -2002,6 +2031,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         return controlPlane.approveDiscard(workerScope(), claim.key(), claim.ownerId(),
                 claim.version(), claim.claimUntil(), approver, requestId,
                 "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                externalAuthorization(requestId, Instant.now()),
                 ignored -> TestRuntimeTransactionMutation.noop()).approval();
     }
 

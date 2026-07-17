@@ -188,6 +188,38 @@ class TestingControlProtocolSchemaTest {
                 .asText()).isEqualTo(
                 DurableWorkerQuarantineApprovedDiscardHistoryResponse.SCHEMA_VERSION);
         assertThat(schema.at(
+                "/$defs/workerQuarantineChangeAuthorization/properties/schemaVersion/const")
+                .asText()).isEqualTo(WorkerQuarantineChangeAuthorization.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/workerQuarantineChangeAuthorizationMaterial/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                WorkerQuarantineChangeAuthorization.Material.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/workerQuarantineChangeAuthorizationScope/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                WorkerQuarantineChangeAuthorizationBinding.ScopeMaterial.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/workerQuarantineChangeAuthorizationSubject/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                WorkerQuarantineChangeAuthorizationBinding.SubjectMaterial.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineChangeAuthorizationReference/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DurableWorkerQuarantineChangeAuthorizationReference.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineDiscardApprovalRequest/properties/changeAuthorization/$ref")
+                .asText()).isEqualTo("#/$defs/workerQuarantineChangeAuthorization");
+        assertThat(schema.at(
+                "/$defs/workerQuarantineChangeAuthorization/properties/signatures/items/properties/algorithm/const")
+                .asText()).isEqualTo("Ed25519");
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineDiscardApprovalResponse/properties/externalAuthorization/$ref")
+                .asText()).isEqualTo(
+                "#/$defs/durableWorkerQuarantineChangeAuthorizationReference");
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineChangeAuthorizationReference/properties")
+                .has("signatures")).isFalse();
+        assertThat(schema.at(
                 "/$defs/workerQuarantineRequestIndexReplicaProofRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(
                 WorkerQuarantineRequestIndexReplicaProofRequest.SCHEMA_VERSION);

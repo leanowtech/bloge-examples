@@ -2,11 +2,137 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, terminal recovery, durable projection finding operations, exact-checkpoint worker quarantine maintenance, signed request-index rollout proofs, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, terminal recovery, durable projection finding operations, externally authorized exact-checkpoint worker quarantine maintenance, signed request-index rollout proofs, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "workerQuarantineChangeAuthorizationScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "tenantId", "organizationId", "projectId",
+        "environmentId"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.workerQuarantineChangeAuthorizationScope.v1"
+        },
+        "tenantId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "organizationId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "projectId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "environmentId": {"type": "string", "minLength": 1, "maxLength": 32}
+      }
+    },
+    "workerQuarantineChangeAuthorizationSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "key", "claimOwner", "claimVersion", "claimUntil",
+        "reasonCode"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.workerQuarantineChangeAuthorizationSubject.v1"
+        },
+        "key": {"$ref": "#/$defs/durableWorkerQuarantineKey"},
+        "claimOwner": {"type": "string", "minLength": 1, "maxLength": 255},
+        "claimVersion": {"type": "integer", "minimum": 1},
+        "claimUntil": {"type": "string", "format": "date-time"},
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+        }
+      }
+    },
+    "workerQuarantineChangeAuthorizationMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "trustDomain", "authorizationId", "action",
+        "scopeFingerprint", "subjectFingerprint", "policyFingerprint", "issuedAt",
+        "notBefore", "expiresAt"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.workerQuarantineChangeAuthorizationMaterial.v1"
+        },
+        "trustDomain": {
+          "type": "string", "minLength": 1, "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "authorizationId": {
+          "type": "string", "minLength": 1, "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "action": {"const": "WORKER_QUARANTINE_DISCARD"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "subjectFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "policyFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "issuedAt": {"type": "string", "format": "date-time"},
+        "notBefore": {"type": "string", "format": "date-time"},
+        "expiresAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "workerQuarantineChangeAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "material", "materialFingerprint", "signatures"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.workerQuarantineChangeAuthorization.v1"
+        },
+        "material": {
+          "$ref": "#/$defs/workerQuarantineChangeAuthorizationMaterial"
+        },
+        "materialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["authorityId", "keyId", "algorithm", "signedAt", "signature"],
+            "properties": {
+              "authorityId": {
+                "type": "string", "minLength": 1, "maxLength": 255,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+              },
+              "keyId": {
+                "type": "string", "minLength": 1, "maxLength": 255,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+              },
+              "algorithm": {"const": "Ed25519"},
+              "signedAt": {"type": "string", "format": "date-time"},
+              "signature": {
+                "type": "string", "minLength": 88, "maxLength": 88,
+                "pattern": "^[A-Za-z0-9+/]{86}==$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "durableWorkerQuarantineChangeAuthorizationReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "trustDomain", "authorizationId",
+        "authorizationFingerprint", "policyFingerprint", "notBefore", "expiresAt"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.durableWorkerQuarantineChangeAuthorizationReference.v1"
+        },
+        "trustDomain": {
+          "type": "string", "minLength": 1, "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "authorizationId": {
+          "type": "string", "minLength": 1, "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "authorizationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "policyFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "notBefore": {"type": "string", "format": "date-time"},
+        "expiresAt": {"type": "string", "format": "date-time"}
+      }
     },
     "workerQuarantineRequestIndexReplicaProofRequest": {
       "type": "object",
@@ -751,10 +877,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "clientRequestId", "key", "claimOwner",
-        "claimVersion", "claimUntil", "reasonCode", "approvalDurationSeconds"],
+        "claimVersion", "claimUntil", "reasonCode", "approvalDurationSeconds",
+        "changeAuthorization"],
       "properties": {
         "schemaVersion": {
-          "const": "bloge.durableWorkerQuarantineDiscardApprovalRequest.v1"
+          "const": "bloge.durableWorkerQuarantineDiscardApprovalRequest.v2"
         },
         "clientRequestId": {
           "type": "string",
@@ -772,7 +899,10 @@
           "maxLength": 128,
           "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
         },
-        "approvalDurationSeconds": {"type": "integer", "minimum": 1, "maximum": 900}
+        "approvalDurationSeconds": {"type": "integer", "minimum": 1, "maximum": 900},
+        "changeAuthorization": {
+          "$ref": "#/$defs/workerQuarantineChangeAuthorization"
+        }
       }
     },
     "durableWorkerQuarantineDiscardApprovalResponse": {
@@ -780,10 +910,11 @@
       "additionalProperties": false,
       "required": ["schemaVersion", "disposition", "approvalId", "key", "claimOwner",
         "claimVersion", "claimUntil", "approverId", "reasonCode", "approvedAt",
-        "approvalUntil", "approvalFingerprint", "idempotentReplay"],
+        "approvalUntil", "externalAuthorization", "approvalFingerprint",
+        "idempotentReplay"],
       "properties": {
         "schemaVersion": {
-          "const": "bloge.durableWorkerQuarantineDiscardApprovalResponse.v1"
+          "const": "bloge.durableWorkerQuarantineDiscardApprovalResponse.v2"
         },
         "disposition": {"enum": ["APPROVED", "IDEMPOTENT_REPLAY"]},
         "approvalId": {"type": "string", "format": "uuid", "maxLength": 36},
@@ -800,6 +931,9 @@
         },
         "approvedAt": {"type": "string", "format": "date-time"},
         "approvalUntil": {"type": "string", "format": "date-time"},
+        "externalAuthorization": {
+          "$ref": "#/$defs/durableWorkerQuarantineChangeAuthorizationReference"
+        },
         "approvalFingerprint": {"$ref": "#/$defs/fingerprint"},
         "idempotentReplay": {"type": "boolean"}
       }
@@ -836,11 +970,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "disposition", "key", "ownerId", "approvalId",
-        "approverId", "approvalFingerprint", "reasonCode", "version", "actedAt",
+        "approverId", "approvalFingerprint", "authorizationMode",
+        "externalAuthorization", "reasonCode", "version", "actedAt",
         "receiptFingerprint", "idempotentReplay"],
       "properties": {
         "schemaVersion": {
-          "const": "bloge.durableWorkerQuarantineApprovedDiscardResponse.v1"
+          "const": "bloge.durableWorkerQuarantineApprovedDiscardResponse.v2"
         },
         "disposition": {"enum": ["DISCARDED", "IDEMPOTENT_REPLAY"]},
         "key": {"$ref": "#/$defs/durableWorkerQuarantineKey"},
@@ -848,6 +983,13 @@
         "approvalId": {"type": "string", "format": "uuid", "maxLength": 36},
         "approverId": {"type": "string", "minLength": 1, "maxLength": 255},
         "approvalFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "authorizationMode": {"enum": ["EXTERNAL_VERIFIED", "LEGACY_IN_PROCESS"]},
+        "externalAuthorization": {
+          "oneOf": [
+            {"$ref": "#/$defs/durableWorkerQuarantineChangeAuthorizationReference"},
+            {"type": "null"}
+          ]
+        },
         "reasonCode": {
           "type": "string",
           "minLength": 1,
@@ -858,7 +1000,23 @@
         "actedAt": {"type": "string", "format": "date-time"},
         "receiptFingerprint": {"$ref": "#/$defs/fingerprint"},
         "idempotentReplay": {"type": "boolean"}
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "authorizationMode": {"const": "EXTERNAL_VERIFIED"},
+            "externalAuthorization": {
+              "$ref": "#/$defs/durableWorkerQuarantineChangeAuthorizationReference"
+            }
+          }
+        },
+        {
+          "properties": {
+            "authorizationMode": {"const": "LEGACY_IN_PROCESS"},
+            "externalAuthorization": {"type": "null"}
+          }
+        }
+      ]
     },
     "durableWorkerQuarantineApprovedDiscardHistoryResponse": {
       "type": "object",
@@ -866,7 +1024,7 @@
       "required": ["schemaVersion", "history"],
       "properties": {
         "schemaVersion": {
-          "const": "bloge.durableWorkerQuarantineApprovedDiscardHistoryResponse.v1"
+          "const": "bloge.durableWorkerQuarantineApprovedDiscardHistoryResponse.v2"
         },
         "history": {
           "type": "array",
@@ -877,7 +1035,8 @@
             "required": ["historyId", "key", "quarantineReason", "consecutiveFailures",
               "quarantineThreshold", "firstObservedAt", "quarantinedAt", "reasonCode",
               "ownerId", "approvalId", "approverId", "approvalFingerprint", "version",
-              "actedAt", "receiptFingerprint", "recordFingerprint"],
+              "authorizationMode", "externalAuthorization", "actedAt",
+              "receiptFingerprint", "recordFingerprint"],
             "properties": {
               "historyId": {"type": "string", "format": "uuid", "maxLength": 36},
               "key": {"$ref": "#/$defs/durableWorkerQuarantineKey"},
@@ -898,11 +1057,36 @@
               "approvalId": {"type": "string", "format": "uuid", "maxLength": 36},
               "approverId": {"type": "string", "minLength": 1, "maxLength": 255},
               "approvalFingerprint": {"$ref": "#/$defs/fingerprint"},
+              "authorizationMode": {
+                "enum": ["EXTERNAL_VERIFIED", "LEGACY_IN_PROCESS"]
+              },
+              "externalAuthorization": {
+                "oneOf": [
+                  {"$ref": "#/$defs/durableWorkerQuarantineChangeAuthorizationReference"},
+                  {"type": "null"}
+                ]
+              },
               "version": {"type": "integer", "minimum": 1},
               "actedAt": {"type": "string", "format": "date-time"},
               "receiptFingerprint": {"$ref": "#/$defs/fingerprint"},
               "recordFingerprint": {"$ref": "#/$defs/fingerprint"}
-            }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "authorizationMode": {"const": "EXTERNAL_VERIFIED"},
+                  "externalAuthorization": {
+                    "$ref": "#/$defs/durableWorkerQuarantineChangeAuthorizationReference"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "authorizationMode": {"const": "LEGACY_IN_PROCESS"},
+                  "externalAuthorization": {"type": "null"}
+                }
+              }
+            ]
           }
         }
       }

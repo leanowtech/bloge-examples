@@ -9,7 +9,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -19,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,16 +29,29 @@ class DurableWorkerQuarantineServiceTest {
 
     private DatabaseDurableWorkerQuarantineControlPlane controlPlane;
     private TestSecurityEventRepository securityEvents;
+    private WorkerQuarantineChangeAuthorizationTrustStore changeAuthorizationTrust;
+    private ObjectMapper objectMapper;
     private DurableWorkerQuarantineService service;
 
     @BeforeEach
     void setUp() {
         controlPlane = mock(DatabaseDurableWorkerQuarantineControlPlane.class);
         securityEvents = mock(TestSecurityEventRepository.class);
+        changeAuthorizationTrust = mock(WorkerQuarantineChangeAuthorizationTrustStore.class);
+        objectMapper = new ObjectMapper().findAndRegisterModules();
         when(securityEvents.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(securityEvents.boundAppend(any())).thenReturn(TestRuntimeTransactionMutation.noop());
+        when(changeAuthorizationTrust.verify(any(), any(), any())).thenAnswer(invocation -> {
+            WorkerQuarantineChangeAuthorization authorization = invocation.getArgument(0);
+            return verified(authorization);
+        });
+        when(controlPlane.replayDiscardApproval(any(), any(), any(),
+                org.mockito.ArgumentMatchers.anyLong(), any(), any(), any(), any(), any(),
+                any(DatabaseDurableWorkerQuarantineControlPlane
+                        .ExternalChangeAuthorizationReference.class)))
+                .thenReturn(Optional.empty());
         service = new DurableWorkerQuarantineService(controlPlane, securityEvents,
-                new ObjectMapper().findAndRegisterModules(),
+                objectMapper, changeAuthorizationTrust,
                 "resource-gateway-test-runtime-operators",
                 "resource-gateway-test-runtime-quarantine-approvers", "RESTRICTED");
     }
@@ -225,13 +241,14 @@ class DurableWorkerQuarantineServiceTest {
         var approval = new DatabaseDurableWorkerQuarantineControlPlane.DiscardApproval(
                 APPROVAL_ID, key(), "operator-a", 1, claimUntil, "checker-a",
                 "AUTHORIZED_RETRY", Instant.parse("2026-07-17T11:00:00Z"),
-                Instant.parse("2026-07-17T11:05:00Z"), SHA);
+                Instant.parse("2026-07-17T11:05:00Z"), externalReference(), SHA);
         when(controlPlane.approveDiscard(eq(scope()), eq(key()), eq("operator-a"), eq(1L),
                 eq(claimUntil), eq("checker-a"), eq("approval-1"),
-                eq("AUTHORIZED_RETRY"), eq(java.time.Duration.ofSeconds(300)), any()))
+                eq("AUTHORIZED_RETRY"), eq(java.time.Duration.ofSeconds(300)),
+                eq(externalReference()), any()))
                 .thenAnswer(invocation -> {
                     Function<DatabaseDurableWorkerQuarantineControlPlane.DiscardApproval,
-                            TestRuntimeTransactionMutation> audit = invocation.getArgument(9);
+                            TestRuntimeTransactionMutation> audit = invocation.getArgument(10);
                     assertThat(audit.apply(approval)).isNotNull();
                     return new DatabaseDurableWorkerQuarantineControlPlane.DiscardApprovalResult(
                             DatabaseDurableWorkerQuarantineControlPlane
@@ -239,7 +256,7 @@ class DurableWorkerQuarantineServiceTest {
                 });
         var request = new DurableWorkerQuarantineDiscardApprovalRequest("", "approval-1",
                 new DurableWorkerQuarantineKey("run-a", SHA), "operator-a", 1,
-                claimUntil, "AUTHORIZED_RETRY", 300);
+                claimUntil, "AUTHORIZED_RETRY", 300, authorization(claimUntil));
 
         assertThatThrownBy(() -> service.approveDiscard(request, authorized()))
                 .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
@@ -253,12 +270,119 @@ class DurableWorkerQuarantineServiceTest {
 
         assertThat(response.claimOwner()).isEqualTo("operator-a");
         assertThat(response.approverId()).isEqualTo("checker-a");
+        assertThat(response.externalAuthorization().authorizationId())
+                .isEqualTo("change-approval-123");
         assertThat(response.toString()).doesNotContain("token", "secret");
         ArgumentCaptor<TestSecurityEvent> event = ArgumentCaptor.forClass(TestSecurityEvent.class);
         verify(securityEvents).boundAppend(event.capture());
         assertThat(event.getValue().reasonCode())
                 .isEqualTo("RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_COMMITTED");
         assertThat(event.getValue().toString()).doesNotContain("token", "secret");
+        ArgumentCaptor<WorkerQuarantineChangeAuthorizationTrustStore.ExpectedBinding> binding =
+                ArgumentCaptor.forClass(
+                        WorkerQuarantineChangeAuthorizationTrustStore.ExpectedBinding.class);
+        verify(changeAuthorizationTrust).verify(eq(request.changeAuthorization()),
+                binding.capture(), any());
+        assertThat(binding.getValue().scopeFingerprint()).isEqualTo(
+                new WorkerQuarantineChangeAuthorizationBinding.ScopeMaterial("",
+                        "tenant-a", "org-a", "project-a", "test").fingerprint(objectMapper));
+        assertThat(binding.getValue().subjectFingerprint()).isEqualTo(
+                new WorkerQuarantineChangeAuthorizationBinding.SubjectMaterial("", request.key(),
+                        request.claimOwner(), request.claimVersion(), request.claimUntil(),
+                        request.reasonCode()).fingerprint(objectMapper));
+    }
+
+    @Test
+    void externalAuthorizationTrustFailuresAreAuditedAndFailClosedBeforePersistence() {
+        Instant claimUntil = Instant.parse("2026-07-17T12:00:00Z");
+        var request = new DurableWorkerQuarantineDiscardApprovalRequest("", "approval-denied",
+                new DurableWorkerQuarantineKey("run-a", SHA), "operator-a", 1,
+                claimUntil, "AUTHORIZED_RETRY", 300, authorization(claimUntil));
+        IntegrationRequestContext checker = identity("test", "TEST_RUNTIME_MAINTENANCE",
+                Set.of("resource-gateway-test-runtime-quarantine-approvers"),
+                "RESTRICTED", "checker-a");
+        doReturn(
+                new WorkerQuarantineChangeAuthorizationTrustStore.Verification(
+                        WorkerQuarantineChangeAuthorizationTrustStore.VerificationStatus
+                                .BINDING_MISMATCH,
+                        "CHANGE_AUTHORIZATION_BINDING_MISMATCH", "", "", 0, 2))
+                .when(changeAuthorizationTrust).verify(any(), any(), any());
+
+        assertThatThrownBy(() -> service.approveDiscard(request, checker))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(403);
+                    assertThat(failure.problem().code()).isEqualTo(
+                            "RG.TEST.WORKER_QUARANTINE_CHANGE_AUTHORIZATION_BINDING_MISMATCH");
+                });
+
+        verify(controlPlane, never()).approveDiscard(any(), any(), any(),
+                org.mockito.ArgumentMatchers.anyLong(), any(), any(), any(), any(), any(),
+                any(DatabaseDurableWorkerQuarantineControlPlane
+                        .ExternalChangeAuthorizationReference.class), any());
+        ArgumentCaptor<TestSecurityEvent> event = ArgumentCaptor.forClass(TestSecurityEvent.class);
+        verify(securityEvents).append(event.capture());
+        assertThat(event.getValue().reasonCode()).isEqualTo(
+                "RG.TEST.WORKER_QUARANTINE_CHANGE_AUTHORIZATION_BINDING_MISMATCH");
+        assertThat(event.getValue().toString())
+                .doesNotContain(request.changeAuthorization().signatures().getFirst().signature());
+    }
+
+    @Test
+    void unavailableExternalAuthorizationTrustReturnsServiceUnavailable() {
+        Instant claimUntil = Instant.parse("2026-07-17T12:00:00Z");
+        var request = new DurableWorkerQuarantineDiscardApprovalRequest("", "approval-unavailable",
+                new DurableWorkerQuarantineKey("run-a", SHA), "operator-a", 1,
+                claimUntil, "AUTHORIZED_RETRY", 300, authorization(claimUntil));
+        doReturn(
+                new WorkerQuarantineChangeAuthorizationTrustStore.Verification(
+                        WorkerQuarantineChangeAuthorizationTrustStore.VerificationStatus.UNAVAILABLE,
+                        "CHANGE_AUTHORIZATION_TRUST_UNAVAILABLE", "", "", 0, 0))
+                .when(changeAuthorizationTrust).verify(any(), any(), any());
+
+        assertThatThrownBy(() -> service.approveDiscard(request,
+                identity("test", "TEST_RUNTIME_MAINTENANCE",
+                        Set.of("resource-gateway-test-runtime-quarantine-approvers"),
+                        "RESTRICTED", "checker-a")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().code()).isEqualTo(
+                            "RG.TEST.WORKER_QUARANTINE_CHANGE_AUTHORIZATION_TRUST_UNAVAILABLE");
+                });
+    }
+
+    @Test
+    void exactCommittedApprovalReplaysWithoutReevaluatingLiveExternalTrust() {
+        Instant claimUntil = Instant.parse("2026-07-17T12:00:00Z");
+        var approval = new DatabaseDurableWorkerQuarantineControlPlane.DiscardApproval(
+                APPROVAL_ID, key(), "operator-a", 1, claimUntil, "checker-a",
+                "AUTHORIZED_RETRY", Instant.parse("2026-07-17T11:00:00Z"),
+                Instant.parse("2026-07-17T11:05:00Z"), externalReference(), SHA);
+        when(controlPlane.replayDiscardApproval(eq(scope()), eq(key()), eq("operator-a"),
+                eq(1L), eq(claimUntil), eq("checker-a"), eq("approval-replay"),
+                eq("AUTHORIZED_RETRY"), eq(java.time.Duration.ofSeconds(300)),
+                any(DatabaseDurableWorkerQuarantineControlPlane
+                        .ExternalChangeAuthorizationReference.class)))
+                .thenReturn(Optional.of(
+                        new DatabaseDurableWorkerQuarantineControlPlane.DiscardApprovalResult(
+                                DatabaseDurableWorkerQuarantineControlPlane
+                                        .DiscardApprovalDisposition.IDEMPOTENT_REPLAY,
+                                approval)));
+        var request = new DurableWorkerQuarantineDiscardApprovalRequest("", "approval-replay",
+                new DurableWorkerQuarantineKey("run-a", SHA), "operator-a", 1,
+                claimUntil, "AUTHORIZED_RETRY", 300, authorization(claimUntil));
+
+        DurableWorkerQuarantineDiscardApprovalResponse response = service.approveDiscard(request,
+                identity("test", "TEST_RUNTIME_MAINTENANCE",
+                        Set.of("resource-gateway-test-runtime-quarantine-approvers"),
+                        "RESTRICTED", "checker-a"));
+
+        assertThat(response.idempotentReplay()).isTrue();
+        assertThat(response.approvalId()).isEqualTo(APPROVAL_ID);
+        verify(changeAuthorizationTrust, never()).verify(any(), any(), any());
+        verify(controlPlane, never()).approveDiscard(any(), any(), any(),
+                org.mockito.ArgumentMatchers.anyLong(), any(), any(), any(), any(), any(),
+                any(DatabaseDurableWorkerQuarantineControlPlane
+                        .ExternalChangeAuthorizationReference.class), any());
     }
 
     @Test
@@ -266,7 +390,8 @@ class DurableWorkerQuarantineServiceTest {
         Instant claimUntil = Instant.parse("2026-07-17T12:00:00Z");
         var receipt = new DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardReceipt(
                 key(), "operator-a", APPROVAL_ID, "checker-a", SHA,
-                "AUTHORIZED_RETRY", 2, Instant.parse("2026-07-17T11:10:00Z"), SHA);
+                externalReference(), "AUTHORIZED_RETRY", 2,
+                Instant.parse("2026-07-17T11:10:00Z"), SHA);
         when(controlPlane.discard(eq(scope()), any(), eq(APPROVAL_ID), eq("discard-1"),
                 eq("AUTHORIZED_RETRY"), any())).thenAnswer(invocation -> {
                     var claim = (DatabaseDurableWorkerQuarantineControlPlane.QuarantineClaim)
@@ -290,6 +415,7 @@ class DurableWorkerQuarantineServiceTest {
         assertThat(response.ownerId()).isEqualTo("operator-a");
         assertThat(response.approverId()).isEqualTo("checker-a");
         assertThat(response.approvalId()).isEqualTo(APPROVAL_ID);
+        assertThat(response.authorizationMode()).isEqualTo("EXTERNAL_VERIFIED");
         assertThat(response.toString()).doesNotContain("sensitive-server-token");
         ArgumentCaptor<TestSecurityEvent> event = ArgumentCaptor.forClass(TestSecurityEvent.class);
         verify(securityEvents).boundAppend(event.capture());
@@ -310,7 +436,8 @@ class DurableWorkerQuarantineServiceTest {
                         .ResolutionDisposition.REPLAY_WINDOW_EXPIRED, null));
         when(controlPlane.approveDiscard(eq(scope()), eq(key()), eq("operator-a"), eq(1L),
                 eq(claimUntil), eq("checker-a"), eq("approval-expired"),
-                eq("AUTHORIZED_RETRY"), eq(java.time.Duration.ofSeconds(300)), any()))
+                eq("AUTHORIZED_RETRY"), eq(java.time.Duration.ofSeconds(300)),
+                eq(externalReference()), any()))
                 .thenReturn(new DatabaseDurableWorkerQuarantineControlPlane
                         .DiscardApprovalResult(DatabaseDurableWorkerQuarantineControlPlane
                         .DiscardApprovalDisposition.REPLAY_WINDOW_EXPIRED, null));
@@ -330,7 +457,7 @@ class DurableWorkerQuarantineServiceTest {
         assertReplayExpired(() -> service.approveDiscard(
                 new DurableWorkerQuarantineDiscardApprovalRequest("", "approval-expired",
                         new DurableWorkerQuarantineKey("run-a", SHA), "operator-a", 1,
-                        claimUntil, "AUTHORIZED_RETRY", 300),
+                        claimUntil, "AUTHORIZED_RETRY", 300, authorization(claimUntil)),
                 identity("test", "TEST_RUNTIME_MAINTENANCE",
                         Set.of("resource-gateway-test-runtime-quarantine-approvers"),
                         "RESTRICTED", "checker-a")));
@@ -358,6 +485,7 @@ class DurableWorkerQuarantineServiceTest {
         assertThat(response.history()).singleElement().satisfies(item -> {
             assertThat(item.ownerId()).isEqualTo("operator-a");
             assertThat(item.approverId()).isEqualTo("checker-a");
+            assertThat(item.authorizationMode()).isEqualTo("LEGACY_IN_PROCESS");
             assertThat(item.toString()).doesNotContain("token", "payload", "secret");
         });
         verify(controlPlane).discardHistory(scope(), 25);
@@ -382,6 +510,38 @@ class DurableWorkerQuarantineServiceTest {
 
     private static final String SHA = "sha256:" + "a".repeat(64);
     private static final String APPROVAL_ID = "11111111-1111-1111-1111-111111111111";
+
+    private static WorkerQuarantineChangeAuthorization authorization(Instant claimUntil) {
+        Instant authorizationTime = Instant.parse("2026-07-17T12:00:00Z");
+        var material = new WorkerQuarantineChangeAuthorization.Material(
+                WorkerQuarantineChangeAuthorization.Material.SCHEMA_VERSION,
+                "governance.example", "change-approval-123",
+                WorkerQuarantineChangeAuthorization.Material.DISCARD_ACTION,
+                SHA, SHA, SHA, authorizationTime.minusSeconds(60),
+                authorizationTime.minusSeconds(60), authorizationTime.plusSeconds(600));
+        return new WorkerQuarantineChangeAuthorization(
+                WorkerQuarantineChangeAuthorization.SCHEMA_VERSION, material, SHA, List.of(
+                new WorkerQuarantineChangeAuthorization.AuthoritySignature(
+                        "authority-a", "key-a", "Ed25519", authorizationTime,
+                        Base64.getEncoder().encodeToString(new byte[64]))));
+    }
+
+    private static WorkerQuarantineChangeAuthorizationTrustStore.Verification verified(
+            WorkerQuarantineChangeAuthorization authorization) {
+        return new WorkerQuarantineChangeAuthorizationTrustStore.Verification(
+                WorkerQuarantineChangeAuthorizationTrustStore.VerificationStatus.VERIFIED,
+                "VERIFIED", authorization.material().authorizationId(),
+                authorization.materialFingerprint(), 2, 2);
+    }
+
+    private static DatabaseDurableWorkerQuarantineControlPlane
+            .ExternalChangeAuthorizationReference externalReference() {
+        return new DatabaseDurableWorkerQuarantineControlPlane
+                .ExternalChangeAuthorizationReference("governance.example",
+                "change-approval-123", SHA, SHA,
+                Instant.parse("2026-07-17T11:59:00Z"),
+                Instant.parse("2026-07-17T12:10:00Z"));
+    }
 
     private static DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey key() {
         return new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey("run-a", SHA);

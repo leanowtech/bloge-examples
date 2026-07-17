@@ -89,6 +89,8 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(
                 DatabaseDurableWorkerQuarantineControlPlane.class)).hasSize(1);
         assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                WorkerQuarantineChangeAuthorizationTrustStore.class)).hasSize(1);
         assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 WorkerQuarantineRequestIndexRolloutService.class)).hasSize(1);
@@ -130,6 +132,7 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("durableTestWorkerQuarantineMaintenance", true)
                 .containsEntry("immutableDurableWorkerQuarantineHistory", true)
                 .containsEntry("twoPersonDurableWorkerQuarantineDiscard", true)
+                .containsEntry("externalWorkerQuarantineChangeAuthorization", false)
                 .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", true)
                 .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", true)
                 .containsEntry("hashedDurableWorkerQuarantineActiveFence", true)
@@ -140,6 +143,8 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("durableWorkerQuarantineRequestIndexDualReadKeyedWrite", false)
                 .containsEntry("durableWorkerQuarantineRequestIndexKeyedOnly", true)
                 .containsEntry("boundedDurableWorkerQuarantineMaintenanceRetention", true);
+        assertThat(capabilities.getBody().payload().testability()
+                .workerQuarantineChangeAuthorizationTrust().available()).isFalse();
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/durable-state/projection-findings"));
         assertThat(capabilities.getBody().payload().supportedObjects())

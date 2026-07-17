@@ -170,12 +170,46 @@ public class TestRuntimeConfiguration {
                 meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
     }
 
+    /**
+     * Builds the independent public-key-only external change-authorization trust boundary.
+     *
+     * <p>An entirely absent test-profile configuration produces an explicit unavailable store so
+     * non-destructive test-runtime functions can start while approval fails closed. Any partial or
+     * malformed configuration aborts application startup. The staging profile requires every
+     * property through its profile configuration.</p>
+     */
+    @Bean
+    WorkerQuarantineChangeAuthorizationTrustStore
+            workerQuarantineChangeAuthorizationTrustStore(
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.durable.worker-quarantines.change-authorization.trust-domain:}")
+            String trustDomain,
+            @Value("${gateway.testing.durable.worker-quarantines.change-authorization.accepted-policy-fingerprints:}")
+            String acceptedPolicyFingerprints,
+            @Value("${gateway.testing.durable.worker-quarantines.change-authorization.signature-threshold:0}")
+            int signatureThreshold,
+            @Value("${gateway.testing.durable.worker-quarantines.change-authorization.authority-keys-json:}")
+            String authorityKeysJson) {
+        boolean absent = (trustDomain == null || trustDomain.isBlank())
+                && (acceptedPolicyFingerprints == null
+                || acceptedPolicyFingerprints.isBlank())
+                && signatureThreshold == 0
+                && (authorityKeysJson == null || authorityKeysJson.isBlank());
+        if (absent) {
+            return WorkerQuarantineChangeAuthorizationTrustStore.unavailable();
+        }
+        return ConfiguredWorkerQuarantineChangeAuthorizationTrustStore.fromJson(
+                objectMapper, trustDomain, acceptedPolicyFingerprints,
+                signatureThreshold, authorityKeysJson);
+    }
+
     /** Assembles the scoped, authenticated, action-audited quarantine owner queue. */
     @Bean
     DurableWorkerQuarantineService durableWorkerQuarantineService(
             DatabaseDurableWorkerQuarantineControlPlane controlPlane,
             TestSecurityEventRepository securityEvents,
             ObjectMapper objectMapper,
+            WorkerQuarantineChangeAuthorizationTrustStore changeAuthorizationTrust,
             @Value("${gateway.testing.durable.worker-quarantines.required-group:resource-gateway-test-runtime-operators}")
             String requiredGroup,
             @Value("${gateway.testing.durable.worker-quarantines.required-approver-group:resource-gateway-test-runtime-quarantine-approvers}")
@@ -183,7 +217,7 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.durable.worker-quarantines.required-clearance:RESTRICTED}")
             String requiredClearance) {
         return new DurableWorkerQuarantineService(
-                controlPlane, securityEvents, objectMapper, requiredGroup,
+                controlPlane, securityEvents, objectMapper, changeAuthorizationTrust, requiredGroup,
                 requiredApproverGroup, requiredClearance);
     }
 
@@ -853,7 +887,9 @@ public class TestRuntimeConfiguration {
     /** Marker consumed by the unauthenticated capability probe. */
     @Bean
     TestabilityAvailability testabilityAvailability(
-            DatabaseDurableWorkerQuarantineControlPlane controlPlane) {
-        return new TestabilityAvailability(true, controlPlane.requestIndexMode());
+            DatabaseDurableWorkerQuarantineControlPlane controlPlane,
+            WorkerQuarantineChangeAuthorizationTrustStore changeAuthorizationTrust) {
+        return new TestabilityAvailability(true, controlPlane.requestIndexMode(),
+                changeAuthorizationTrust.descriptor());
     }
 }
