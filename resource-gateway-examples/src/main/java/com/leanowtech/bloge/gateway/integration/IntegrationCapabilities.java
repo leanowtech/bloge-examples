@@ -414,6 +414,8 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled);
         features.put("encryptedDurableWorkerQuarantineClaimReplay",
                 testExecutionEndpointEnabled);
+        features.put("boundedDurableWorkerQuarantineMaintenanceRetention",
+                testExecutionEndpointEnabled);
         features.put("immutableDurableWorkerNoWorkResult", testExecutionEndpointEnabled);
         features.put("durableRecoveryDependencyReauthorization", testExecutionEndpointEnabled);
         features.put("authenticatedDurableRecoveryHeartbeat", testExecutionEndpointEnabled);

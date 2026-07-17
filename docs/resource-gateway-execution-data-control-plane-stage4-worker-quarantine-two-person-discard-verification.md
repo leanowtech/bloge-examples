@@ -191,10 +191,13 @@ unsophisticated mutation but are not external WORM evidence.
 
 Claim-command replay tokens now use a rotation-aware AES-256-GCM envelope; valid legacy plaintext
 rows are migrated and old-key envelopes are rewrapped at startup. The active control fence remains
-in the isolated database for its short lease, and approval/command/history retention and archival
-are not implemented. Alert routing, webhook notification, break-glass workflow, bulk approval limits,
-external witness anchoring, non-H2 dialect certification, and production-scale contention tests
-remain future hardening work.
+in the isolated database for its short lease. Approval/command/history retention is now bounded by a
+database-leased lifecycle with payload-free request tombstones, but there is no archive, legal hold,
+backup-erasure proof, or external retention-policy ledger. Alert routing, webhook notification,
+break-glass workflow, bulk approval limits, external witness anchoring, non-H2 dialect certification,
+and production-scale contention tests remain future hardening work.
 
 Key setup, two-phase rotation, migration failure semantics, and the narrower remaining boundary are
 specified in the [claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md).
+Deletion clocks, tombstone idempotency semantics, and lease/fence proofs are specified in the
+[bounded retention verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md).

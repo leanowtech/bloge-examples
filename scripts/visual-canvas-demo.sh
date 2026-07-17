@@ -55,6 +55,11 @@ Environment:
   BLOGE_VISUAL_CANVAS_PROFILE          default: test
   RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID  required for staging
   RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING       required for staging; keyId=base64AES256[,..]
+  RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS    default: 30
+  RG_TEST_WORKER_QUARANTINE_HISTORY_RETENTION_DAYS    default: 365
+  RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS  default: 365
+  RG_TEST_WORKER_QUARANTINE_RETENTION_PAGE_SIZE       default: 100 per category
+  RG_TEST_WORKER_QUARANTINE_RETENTION_INTERVAL_MS     default: 3600000
   JAVA_BIN                             default: java
   MVN                                  default: /opt/apache-maven-3.9.16/bin/mvn when present, otherwise mvn
 

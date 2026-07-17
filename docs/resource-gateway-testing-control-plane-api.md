@@ -114,6 +114,13 @@ Independent-store settings:
 | `gateway.testing.durable.worker-quarantines.required-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_GROUP` | `resource-gateway-test-runtime-operators` |
 | `gateway.testing.durable.worker-quarantines.required-approver-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_APPROVER_GROUP` | `resource-gateway-test-runtime-quarantine-approvers` |
 | `gateway.testing.durable.worker-quarantines.required-clearance` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_CLEARANCE` | `RESTRICTED` |
+| `gateway.testing.durable.worker-quarantines.retention-instance-id` | `RG_TEST_WORKER_QUARANTINE_RETENTION_INSTANCE_ID` | generated process identity |
+| `gateway.testing.durable.worker-quarantines.retention-lease-duration-seconds` | `RG_TEST_WORKER_QUARANTINE_RETENTION_LEASE_SECONDS` | `120` |
+| `gateway.testing.durable.worker-quarantines.command-retention-days` | `RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS` | `30` |
+| `gateway.testing.durable.worker-quarantines.history-retention-days` | `RG_TEST_WORKER_QUARANTINE_HISTORY_RETENTION_DAYS` | `365` |
+| `gateway.testing.durable.worker-quarantines.tombstone-retention-days` | `RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS` | `365` |
+| `gateway.testing.durable.worker-quarantines.retention-page-size` | `RG_TEST_WORKER_QUARANTINE_RETENTION_PAGE_SIZE` | `100` |
+| `gateway.testing.durable.worker-quarantines.retention-interval-ms` | `RG_TEST_WORKER_QUARANTINE_RETENTION_INTERVAL_MS` | `3600000` |
 | `gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID` | local key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING` | local key in `test`; required in `staging` |
 | `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
@@ -1330,13 +1337,29 @@ expiry, and reason; both must still be live by database time. A changed checkpoi
 expired fence, self approval, consumed approval, or reused request ID with changed intent returns a
 stable `409`; malformed requests return `400`. Exact retries return the immutable original result.
 
+Exact replay is intentionally time bounded. After the command/approval deadline plus
+`command-retention-days`, the leased retention loop atomically replaces the detailed command with a
+payload-free request tombstone. An exact retry then returns
+`409 RG.TEST.WORKER_QUARANTINE_REPLAY_WINDOW_EXPIRED`; changed intent under that ID remains an
+idempotency conflict. The tombstone stores a server-computed `sha256:` request key rather than the
+raw `clientRequestId`. Only after `tombstone-retention-days` may the request identity be reused.
+Token-free action history is physically deleted after `history-retention-days`.
+
+Each tick has a database-clock owner/token/epoch lease and processes at most the configured page in
+each command, history, and tombstone category. Source verification, tombstone insertion, exact
+deletion, history purge, counter advance, and lease release commit as one transaction; a stale fence,
+corrupt row, or claim-envelope authentication failure rolls the page back. See the
+[worker-quarantine retention verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md)
+for lifecycle clocks, metrics, counterexamples, and honest erasure boundaries.
+
 Approval creation has a checker-bound audit transaction. Approved discard then consumes the approval,
 deletes the quarantine, writes its immutable command receipt and dedicated maker/checker history, and
 commits semantic audit in one local transaction. Audit failure rolls everything back. Responses,
-history, metrics, health, logs, and audit facts exclude claim tokens and business payloads. The claim
-command table still retains a token to reproduce an exact lost claim response; encryption-at-rest,
-bounded command/approval retention, external workflow identity proof, ticket binding, WORM anchoring,
-and webhook notification remain hardening work.
+history, metrics, health, logs, and audit facts exclude claim tokens and business payloads. During
+the detailed replay window the claim-command copy is AES-GCM encrypted; bounded retention later
+authenticates it before deletion and leaves only a payload-free request tombstone. External workflow
+identity proof, ticket binding, WORM anchoring, legal hold, backup erasure, and webhook notification
+remain hardening work.
 
 ### 4.2.1.1 Global test-runtime SLO and capacity observation
 
@@ -1421,6 +1444,10 @@ above. Store exception messages are discarded. Micrometer gauges are rooted at
 | `worker.candidate.quarantines.claims.expired`, `.history` | none | expired ownership and retained resolution history |
 | `worker.candidate.quarantines.discard.approvals.live`, `.expired` | none | unconsumed checker approval lifecycle |
 | `worker.candidate.quarantines.discards.approved.history` | none | retained two-person discard evidence count |
+| `worker.candidate.quarantines.retention.attempts` | `result` | completed, lease-busy, or failed retention ticks |
+| `worker.candidate.quarantines.retention.duration` | none | bounded retention attempt duration |
+| `worker.candidate.quarantines.retention.tombstoned.total`, `.tombstones.purged.total`, `.history.purged.total` | none | cumulative lifecycle transitions |
+| `worker.candidate.quarantines.retention.tombstones.records`, `.last.success.epoch` | none | current request reservations and last committed page |
 | `evidence.incomplete.basis_points` | `scope` | execution/suite incomplete ratio |
 | `storage.records`, `storage.backlog` | `kind` | retained and cleanup-pressure rows |
 | `health` | none | `1` healthy, `-1` violated, `-2` store unavailable |

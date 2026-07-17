@@ -914,6 +914,296 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 .hasMessageContaining("discard history is corrupt");
     }
 
+    @Test
+    void retentionCryptographicallyErasesClaimReplayButReservesItsRequestIdentity()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claimed = controlPlane.claim(workerScope(), key, "operator-a", "claim-retained",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        String token = claimed.claim().claimToken();
+        Thread.sleep(1_100);
+
+        var lease = controlPlane.acquireRetentionLease().orElseThrow();
+        var retained = controlPlane.retainClaimedPage(lease, Duration.ZERO,
+                Duration.ZERO, Duration.ofDays(1), 10);
+
+        assertThat(retained.status()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.RetentionStatus.COMPLETED);
+        assertThat(retained.result().tombstoned()).isOne();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_worker_quarantine_claim_commands
+                """, Long.class)).isZero();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """, Long.class)).isOne();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT request_fingerprint || source_record_fingerprint || record_fingerprint
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """, String.class)).doesNotContain(token);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT request_key
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """, String.class)).startsWith("sha256:").doesNotContain("claim-retained");
+        assertThat(database.jdbc().queryForList("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'RG_TEST_DURABLE_WORKER_QUARANTINE_REQUEST_TOMBSTONES'
+                """, String.class))
+                .contains("REQUEST_KEY")
+                .doesNotContain("CLIENT_REQUEST_ID");
+
+        assertThat(controlPlane.claim(workerScope(), key, "operator-a", "claim-retained",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop())
+                .disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition
+                        .REPLAY_WINDOW_EXPIRED);
+        assertThat(controlPlane.claim(workerScope(), key, "operator-a", "claim-retained",
+                Duration.ofSeconds(2), ignored -> TestRuntimeTransactionMutation.noop())
+                .disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition
+                        .IDEMPOTENCY_CONFLICT);
+        assertThat(controlPlane.retentionSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.totalTombstoned()).isOne();
+            assertThat(snapshot.tombstoneRecords()).isOne();
+            assertThat(snapshot.lastSuccessAt()).isNotNull();
+        });
+    }
+
+    @Test
+    void corruptedRequestTombstoneFailsClosedBeforeIdempotencyClassification() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-tombstone-tamper",
+                Duration.ofMinutes(1), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        controlPlane.resolve(workerScope(), claim, "release-tombstone-tamper",
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
+                "AUTHORIZED_RETRY", ignored -> TestRuntimeTransactionMutation.noop());
+        var lease = controlPlane.acquireRetentionLease().orElseThrow();
+        controlPlane.retainClaimedPage(lease, Duration.ZERO, Duration.ZERO,
+                Duration.ofDays(1), 10);
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_request_tombstones
+                SET request_fingerprint = ?
+                WHERE request_kind = 'RESOLUTION'
+                """, SHA_B);
+
+        assertThatThrownBy(() -> controlPlane.resolve(workerScope(), claim,
+                "release-tombstone-tamper",
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
+                "AUTHORIZED_RETRY", ignored -> TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("request tombstone is corrupt");
+    }
+
+    @Test
+    void retentionTombstonesResolutionAndPurgesItsHistoryAsOnePage() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-release-retained",
+                Duration.ofMinutes(1), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var resolved = controlPlane.resolve(workerScope(), claim, "release-retained",
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
+                "AUTHORIZED_RETRY", ignored -> TestRuntimeTransactionMutation.noop());
+
+        var lease = controlPlane.acquireRetentionLease().orElseThrow();
+        var retained = controlPlane.retainClaimedPage(lease, Duration.ZERO,
+                Duration.ZERO, Duration.ofDays(1), 10);
+
+        assertThat(retained.result().tombstoned()).isOne();
+        assertThat(retained.result().historiesPurged()).isOne();
+        assertThat(controlPlane.history(workerScope(), 10)).isEmpty();
+        assertThat(controlPlane.resolve(workerScope(), claim, "release-retained",
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
+                "AUTHORIZED_RETRY", ignored -> TestRuntimeTransactionMutation.noop())
+                .disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionDisposition
+                        .REPLAY_WINDOW_EXPIRED);
+        assertThat(controlPlane.resolve(workerScope(), claim, "release-retained",
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
+                "DIFFERENT_REASON", ignored -> TestRuntimeTransactionMutation.noop())
+                .disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionDisposition
+                        .IDEMPOTENCY_CONFLICT);
+        assertThat(resolved.receipt()).isNotNull();
+    }
+
+    @Test
+    void retentionBoundsApprovalDiscardAndTwoPersonHistoryWithoutRequestResurrection()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-discard-retained",
+                Duration.ofSeconds(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var approval = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-retained",
+                "AUTHORIZED_RETRY", Duration.ofSeconds(2),
+                ignored -> TestRuntimeTransactionMutation.noop()).approval();
+        var discarded = controlPlane.discard(workerScope(), claim, approval.approvalId(),
+                "discard-retained", "AUTHORIZED_RETRY",
+                ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(2_100);
+
+        var lease = controlPlane.acquireRetentionLease().orElseThrow();
+        var retained = controlPlane.retainClaimedPage(lease, Duration.ZERO,
+                Duration.ZERO, Duration.ofDays(1), 10);
+
+        assertThat(retained.result().tombstoned()).isEqualTo(3);
+        assertThat(retained.result().historiesPurged()).isOne();
+        assertThat(controlPlane.discardHistory(workerScope(), 10)).isEmpty();
+        assertThat(controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-retained",
+                "AUTHORIZED_RETRY", Duration.ofSeconds(2),
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.DiscardApprovalDisposition
+                        .REPLAY_WINDOW_EXPIRED);
+        assertThat(controlPlane.discard(workerScope(), claim, approval.approvalId(),
+                "discard-retained", "AUTHORIZED_RETRY",
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardDisposition
+                        .REPLAY_WINDOW_EXPIRED);
+        assertThat(discarded.receipt()).isNotNull();
+    }
+
+    @Test
+    void retentionLeaseIsExclusiveAndRejectsTheSupersededReplicaFence() throws Exception {
+        var first = new DatabaseDurableWorkerQuarantineControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper, tokenProtector,
+                "retention-replica-a", Duration.ofSeconds(1));
+        first.init();
+        var firstLease = first.acquireRetentionLease().orElseThrow();
+        var second = new DatabaseDurableWorkerQuarantineControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper, tokenProtector,
+                "retention-replica-b", Duration.ofSeconds(1));
+        second.init();
+
+        assertThat(second.acquireRetentionLease()).isEmpty();
+        Thread.sleep(1_100);
+        var successor = second.acquireRetentionLease().orElseThrow();
+
+        assertThat(successor.epoch()).isGreaterThan(firstLease.epoch());
+        assertThatThrownBy(() -> first.retainClaimedPage(firstLease, Duration.ZERO,
+                Duration.ZERO, Duration.ofDays(1), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("retention fence is stale or expired");
+    }
+
+    @Test
+    void retentionAuthorityTamperingFailsClosedBeforeLeaseOrSnapshotUse() {
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_retention
+                SET total_tombstoned = total_tombstoned + 1
+                """);
+
+        assertThatThrownBy(controlPlane::retentionSnapshot)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("retention authority is corrupt");
+        assertThatThrownBy(controlPlane::acquireRetentionLease)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("retention authority is corrupt");
+    }
+
+    @Test
+    void retentionRollsBackTombstonesHistoryAndCountersWhenOneSourceIsCorrupt() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-retention-tamper",
+                Duration.ofMinutes(1), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        controlPlane.resolve(workerScope(), claim, "release-retention-tamper",
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
+                "AUTHORIZED_RETRY", ignored -> TestRuntimeTransactionMutation.noop());
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_resolutions
+                SET result_version = result_version + 1
+                WHERE client_request_id = 'release-retention-tamper'
+                """);
+        var lease = controlPlane.acquireRetentionLease().orElseThrow();
+
+        assertThatThrownBy(() -> controlPlane.retainClaimedPage(lease, Duration.ZERO,
+                Duration.ZERO, Duration.ofDays(1), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("resolution command is corrupt");
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_worker_quarantine_resolutions
+                """, Long.class)).isOne();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_worker_quarantine_history
+                """, Long.class)).isOne();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                """, Long.class)).isZero();
+        assertThat(controlPlane.retentionSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.totalTombstoned()).isZero();
+            assertThat(snapshot.totalHistoryPurged()).isZero();
+            assertThat(snapshot.lastSuccessAt()).isNull();
+        });
+    }
+
+    @Test
+    void retentionAppliesThePageBoundIndependentlyToCommandsAndHistory() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        for (int index = 0; index < 3; index++) {
+            var claim = controlPlane.claim(workerScope(), key, "operator-a",
+                    "claim-page-" + index, Duration.ofMinutes(1),
+                    ignored -> TestRuntimeTransactionMutation.noop()).claim();
+            controlPlane.resolve(workerScope(), claim, "release-page-" + index,
+                    DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
+                    "AUTHORIZED_RETRY", ignored -> TestRuntimeTransactionMutation.noop());
+        }
+
+        var lease = controlPlane.acquireRetentionLease().orElseThrow();
+        var firstPage = controlPlane.retainClaimedPage(lease, Duration.ZERO,
+                Duration.ZERO, Duration.ofDays(1), 2);
+
+        assertThat(firstPage.result().tombstoned()).isEqualTo(2);
+        assertThat(firstPage.result().historiesPurged()).isEqualTo(2);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_worker_quarantine_resolutions
+                """, Long.class)).isOne();
+        assertThat(controlPlane.history(workerScope(), 10)).hasSize(1);
+    }
+
+    @Test
+    void expiredTombstoneIsPurgedBeforeTheRequestIdentityCanBeReused() throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        controlPlane.claim(workerScope(), key, "operator-a", "claim-reusable",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        var firstLease = controlPlane.acquireRetentionLease().orElseThrow();
+        controlPlane.retainClaimedPage(firstLease, Duration.ZERO, Duration.ZERO,
+                Duration.ofSeconds(1), 10);
+
+        assertThat(controlPlane.claim(workerScope(), key, "operator-a", "claim-reusable",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop())
+                .disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition
+                        .REPLAY_WINDOW_EXPIRED);
+        Thread.sleep(1_100);
+        var secondLease = controlPlane.acquireRetentionLease().orElseThrow();
+        var purged = controlPlane.retainClaimedPage(secondLease, Duration.ZERO,
+                Duration.ZERO, Duration.ofSeconds(1), 10);
+
+        assertThat(purged.result().tombstonesPurged()).isOne();
+        assertThat(controlPlane.claim(workerScope(), key, "operator-a", "claim-reusable",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop())
+                .disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition.CLAIMED);
+    }
+
     private DurableTestExecutionCheckpoint createQuarantine() {
         DurableTestExecutionCheckpoint checkpoint = expiredCheckpoint();
         repository.create(checkpoint, boundNoop(checkpoint));

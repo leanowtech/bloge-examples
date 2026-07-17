@@ -96,6 +96,10 @@ class TestRuntimeProfileIsolationTest {
                     DatabaseDurableWorkerQuarantineControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     WorkerQuarantineClaimTokenProtector.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableWorkerQuarantineRetentionScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableWorkerQuarantineRetentionTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
@@ -155,6 +159,10 @@ class TestRuntimeProfileIsolationTest {
                     DatabaseDurableWorkerQuarantineControlPlane.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     WorkerQuarantineClaimTokenProtector.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableWorkerQuarantineRetentionScheduler.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableWorkerQuarantineRetentionTelemetry.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -241,6 +249,10 @@ class TestRuntimeProfileIsolationTest {
                     DatabaseDurableWorkerQuarantineControlPlane.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     WorkerQuarantineClaimTokenProtector.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableWorkerQuarantineRetentionScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableWorkerQuarantineRetentionTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();

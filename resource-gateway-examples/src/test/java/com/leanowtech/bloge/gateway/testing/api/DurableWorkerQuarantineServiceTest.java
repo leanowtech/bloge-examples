@@ -297,6 +297,51 @@ class DurableWorkerQuarantineServiceTest {
     }
 
     @Test
+    void mapsEveryRetainedRequestTombstoneToOneStableConflictCode() {
+        Instant claimUntil = Instant.parse("2026-07-17T12:00:00Z");
+        when(controlPlane.claim(eq(scope()), eq(key()), eq("operator-a"), eq("claim-expired"),
+                eq(java.time.Duration.ofSeconds(120)), any())).thenReturn(
+                new DatabaseDurableWorkerQuarantineControlPlane.QuarantineClaimResult(
+                        DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition
+                                .REPLAY_WINDOW_EXPIRED, null));
+        when(controlPlane.resolve(eq(scope()), any(), eq("resolve-expired"), any(), any(), any()))
+                .thenReturn(new DatabaseDurableWorkerQuarantineControlPlane
+                        .QuarantineResolutionResult(DatabaseDurableWorkerQuarantineControlPlane
+                        .ResolutionDisposition.REPLAY_WINDOW_EXPIRED, null));
+        when(controlPlane.approveDiscard(eq(scope()), eq(key()), eq("operator-a"), eq(1L),
+                eq(claimUntil), eq("checker-a"), eq("approval-expired"),
+                eq("AUTHORIZED_RETRY"), eq(java.time.Duration.ofSeconds(300)), any()))
+                .thenReturn(new DatabaseDurableWorkerQuarantineControlPlane
+                        .DiscardApprovalResult(DatabaseDurableWorkerQuarantineControlPlane
+                        .DiscardApprovalDisposition.REPLAY_WINDOW_EXPIRED, null));
+        when(controlPlane.discard(eq(scope()), any(), eq(APPROVAL_ID), eq("discard-expired"),
+                eq("AUTHORIZED_RETRY"), any())).thenReturn(
+                new DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardResult(
+                        DatabaseDurableWorkerQuarantineControlPlane
+                                .ApprovedDiscardDisposition.REPLAY_WINDOW_EXPIRED, null));
+
+        assertReplayExpired(() -> service.claim(new DurableWorkerQuarantineClaimRequest("",
+                "claim-expired", new DurableWorkerQuarantineKey("run-a", SHA), 120),
+                authorized()));
+        assertReplayExpired(() -> service.resolve(new DurableWorkerQuarantineResolutionRequest("",
+                "resolve-expired", new DurableWorkerQuarantineKey("run-a", SHA),
+                "sensitive-server-token", 1, claimUntil, "RELEASE", "AUTHORIZED_RETRY"),
+                authorized()));
+        assertReplayExpired(() -> service.approveDiscard(
+                new DurableWorkerQuarantineDiscardApprovalRequest("", "approval-expired",
+                        new DurableWorkerQuarantineKey("run-a", SHA), "operator-a", 1,
+                        claimUntil, "AUTHORIZED_RETRY", 300),
+                identity("test", "TEST_RUNTIME_MAINTENANCE",
+                        Set.of("resource-gateway-test-runtime-quarantine-approvers"),
+                        "RESTRICTED", "checker-a")));
+        assertReplayExpired(() -> service.discard(
+                new DurableWorkerQuarantineApprovedDiscardRequest("", "discard-expired",
+                        new DurableWorkerQuarantineKey("run-a", SHA),
+                        "sensitive-server-token", 1, claimUntil, APPROVAL_ID,
+                        "AUTHORIZED_RETRY"), authorized()));
+    }
+
+    @Test
     void readsTokenFreeApprovedDiscardHistoryFromTheVerifiedScope() {
         var history = new DatabaseDurableWorkerQuarantineControlPlane
                 .ApprovedDiscardHistoryRecord("history-discard", key(),
@@ -323,6 +368,15 @@ class DurableWorkerQuarantineServiceTest {
                 .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
                     assertThat(failure.problem().status()).isEqualTo(403);
                     assertThat(failure.problem().code()).isEqualTo(code);
+                });
+    }
+
+    private static void assertReplayExpired(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+        assertThatThrownBy(call).isInstanceOfSatisfying(
+                IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(409);
+                    assertThat(failure.problem().code()).isEqualTo(
+                            "RG.TEST.WORKER_QUARANTINE_REPLAY_WINDOW_EXPIRED");
                 });
     }
 

@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRe
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -41,8 +42,13 @@ import java.util.regex.Pattern;
  */
 public final class DatabaseDurableWorkerQuarantineControlPlane {
 
+    private static final String RETENTION_JOB_NAME = "bloge-worker-quarantine-retention";
     private static final int MAX_PAGE_SIZE = 1_000;
     private static final int TOKEN_MIGRATION_PAGE_SIZE = 1_000;
+    private static final Duration MIN_COMMAND_RETENTION = Duration.ofHours(1);
+    private static final Duration MIN_HISTORY_RETENTION = Duration.ofDays(1);
+    private static final Duration MIN_TOMBSTONE_RETENTION = Duration.ofDays(1);
+    private static final Duration MAX_RETENTION = Duration.ofDays(3_650);
     private static final Pattern REASON_CODE =
             Pattern.compile("[A-Z][A-Z0-9_.-]{0,127}");
 
@@ -52,6 +58,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     private final WorkerQuarantineClaimTokenProtector claimTokenProtector;
     private final TransactionTemplate transactions;
     private final TransactionTemplate observations;
+    private final String retentionOwnerId;
+    private final Duration retentionLeaseDuration;
 
     /**
      * Creates a quarantine maintenance authority over the isolated test-runtime database.
@@ -66,6 +74,27 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             PlatformTransactionManager transactionManager,
             ObjectMapper objectMapper,
             WorkerQuarantineClaimTokenProtector claimTokenProtector) {
+        this(jdbc, transactionManager, objectMapper, claimTokenProtector,
+                "worker-quarantine-retention-" + UUID.randomUUID(), Duration.ofMinutes(2));
+    }
+
+    /**
+     * Creates a quarantine authority with an explicit cross-replica retention identity.
+     *
+     * @param jdbc isolated test-runtime JDBC facade
+     * @param transactionManager transaction manager for the same datasource
+     * @param objectMapper canonical protocol fingerprint mapper
+     * @param claimTokenProtector rotation-aware claim-command token envelope authority
+     * @param retentionOwnerId stable identity of this Resource Gateway replica
+     * @param retentionLeaseDuration database-clock lease for one bounded retention page
+     */
+    public DatabaseDurableWorkerQuarantineControlPlane(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager,
+            ObjectMapper objectMapper,
+            WorkerQuarantineClaimTokenProtector claimTokenProtector,
+            String retentionOwnerId,
+            Duration retentionLeaseDuration) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.checkpointIntegrity = new DurableTestExecutionCheckpointIntegrity(objectMapper);
@@ -78,6 +107,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         this.observations = new TransactionTemplate(safeTransactionManager);
         this.observations.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.observations.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        this.retentionOwnerId = required(retentionOwnerId, "retentionOwnerId", 255);
+        this.retentionLeaseDuration = boundedRetentionLease(retentionLeaseDuration);
     }
 
     /** Creates maintenance ownership state without modifying automatic quarantine facts. */
@@ -275,6 +306,540 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 ON rg_test_durable_worker_quarantine_discard_history
                     (scope_key, acted_at, history_id)
                 """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_claim_retention_idx
+                ON rg_test_durable_worker_quarantine_claim_commands
+                    (result_claim_until, scope_key, client_request_id)
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_resolution_retention_idx
+                ON rg_test_durable_worker_quarantine_resolutions
+                    (result_acted_at, scope_key, client_request_id)
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_approval_retention_idx
+                ON rg_test_durable_worker_quarantine_discard_approvals
+                    (approval_until, scope_key, client_request_id)
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_discard_retention_idx
+                ON rg_test_durable_worker_quarantine_discards
+                    (result_acted_at, scope_key, client_request_id)
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_history_retention_idx
+                ON rg_test_durable_worker_quarantine_history (acted_at, history_id)
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_discard_history_retention_idx
+                ON rg_test_durable_worker_quarantine_discard_history (acted_at, history_id)
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_request_tombstones (
+                    request_kind VARCHAR(32) NOT NULL,
+                    scope_key VARCHAR(80) NOT NULL,
+                    request_key VARCHAR(80) NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    source_record_fingerprint VARCHAR(80) NOT NULL,
+                    source_completed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    tombstoned_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (request_kind, scope_key, request_key)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_tombstone_expiry_idx
+                ON rg_test_durable_worker_quarantine_request_tombstones
+                    (expires_at, request_kind, scope_key, request_key)
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_retention (
+                    job_name VARCHAR(128) PRIMARY KEY,
+                    lease_owner VARCHAR(255) NOT NULL,
+                    lease_token VARCHAR(255) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    lease_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    revision BIGINT NOT NULL,
+                    total_tombstoned BIGINT NOT NULL,
+                    total_tombstones_purged BIGINT NOT NULL,
+                    total_history_purged BIGINT NOT NULL,
+                    last_success_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL
+                )
+                """);
+        initializeRetentionState();
+    }
+
+    /**
+     * Processes one cross-replica-fenced retention page for maintenance commands and history.
+     *
+     * <p>Each source category is independently bounded by {@code pageSize}. Command and approval
+     * rows first become payload-free request tombstones, preserving an explicit idempotency window
+     * after exact response replay has expired. History and expired tombstones are then physically
+     * removed. Every source verification, tombstone insert, source delete, purge, and counter
+     * checkpoint commits in one transaction; any corrupt row rolls the whole page back.</p>
+     *
+     * @param commandRetention time to retain exact command/approval replay after its deadline
+     * @param historyRetention time to retain token-free operator and maker-checker history
+     * @param tombstoneRetention idempotency protection after detailed command removal
+     * @param pageSize per-category bound from 1 through 1,000
+     * @return committed aggregate or lease-busy result
+     */
+    public RetentionAttempt retainPage(
+            Duration commandRetention,
+            Duration historyRetention,
+            Duration tombstoneRetention,
+            int pageSize) {
+        Duration safeCommandRetention = boundedRetention(
+                commandRetention, MIN_COMMAND_RETENTION, "commandRetention");
+        Duration safeHistoryRetention = boundedRetention(
+                historyRetention, MIN_HISTORY_RETENTION, "historyRetention");
+        Duration safeTombstoneRetention = boundedRetention(
+                tombstoneRetention, MIN_TOMBSTONE_RETENTION, "tombstoneRetention");
+        int safePageSize = bounded(pageSize);
+        Optional<RetentionLease> lease = acquireRetentionLease();
+        if (lease.isEmpty()) {
+            return RetentionAttempt.busy();
+        }
+        try {
+            return retainClaimedPage(lease.orElseThrow(), safeCommandRetention,
+                    safeHistoryRetention, safeTombstoneRetention, safePageSize);
+        } catch (RuntimeException failure) {
+            try {
+                releaseRetentionLease(lease.orElseThrow());
+            } catch (RuntimeException releaseFailure) {
+                failure.addSuppressed(releaseFailure);
+            }
+            throw failure;
+        }
+    }
+
+    /**
+     * Returns aggregate retention ownership and backlog counts without request IDs or credentials.
+     *
+     * @return database-clock retention control snapshot
+     */
+    public RetentionSnapshot retentionSnapshot() {
+        RetentionSnapshot snapshot = observations.execute(status -> {
+            RetentionState state = requireRetentionState(false);
+            Long tombstones = jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_durable_worker_quarantine_request_tombstones
+                    """, Long.class);
+            return state.snapshot(tombstones == null ? 0L : tombstones);
+        });
+        if (snapshot == null) {
+            throw new IllegalStateException("Worker quarantine retention snapshot returned no result");
+        }
+        return snapshot;
+    }
+
+    Optional<RetentionLease> acquireRetentionLease() {
+        Optional<RetentionLease> result = transactions.execute(status -> {
+            RetentionState current = requireRetentionState(true);
+            Instant now = databaseNow();
+            if (current.leaseUntil().isAfter(now)) {
+                return Optional.empty();
+            }
+            String token = UUID.randomUUID().toString();
+            long epoch = Math.addExact(current.leaseEpoch(), 1);
+            long revision = Math.addExact(current.revision(), 1);
+            Instant leaseUntil = now.plus(retentionLeaseDuration);
+            RetentionState next = new RetentionState(retentionOwnerId, token, epoch,
+                    leaseUntil, revision, current.totalTombstoned(),
+                    current.totalTombstonesPurged(), current.totalHistoryPurged(),
+                    current.lastSuccessAt(), now, "");
+            next = next.withFingerprint(retentionStateFingerprint(next));
+            int updated = jdbc.update("""
+                    UPDATE rg_test_durable_worker_quarantine_retention
+                    SET lease_owner = ?, lease_token = ?, lease_epoch = ?, lease_until = ?,
+                        revision = ?, updated_at = ?, record_fingerprint = ?
+                    WHERE job_name = ? AND revision = ? AND record_fingerprint = ?
+                    """, next.leaseOwner(), next.leaseToken(), next.leaseEpoch(),
+                    Timestamp.from(next.leaseUntil()), next.revision(),
+                    Timestamp.from(next.updatedAt()), next.recordFingerprint(),
+                    RETENTION_JOB_NAME, current.revision(), current.recordFingerprint());
+            if (updated != 1) {
+                throw new IllegalStateException(
+                        "Worker quarantine retention lease fence was rejected");
+            }
+            return Optional.of(new RetentionLease(next.leaseOwner(), next.leaseToken(),
+                    next.leaseEpoch(), next.leaseUntil()));
+        });
+        if (result == null) {
+            throw new IllegalStateException(
+                    "Worker quarantine retention lease acquisition returned no result");
+        }
+        return result;
+    }
+
+    RetentionAttempt retainClaimedPage(
+            RetentionLease lease,
+            Duration commandRetention,
+            Duration historyRetention,
+            Duration tombstoneRetention,
+            int pageSize) {
+        RetentionLease safeLease = Objects.requireNonNull(lease, "lease");
+        RetentionAttempt result = transactions.execute(status -> {
+            RetentionState state = requireRetentionState(true);
+            Instant startedAt = databaseNow();
+            requireLiveRetentionFence(state, safeLease, startedAt);
+            Instant commandCutoff = startedAt.minus(commandRetention);
+            Instant historyCutoff = startedAt.minus(historyRetention);
+            int tombstoned = 0;
+            tombstoned = Math.addExact(tombstoned, tombstoneClaimCommands(
+                    commandCutoff, tombstoneRetention, pageSize, startedAt));
+            tombstoned = Math.addExact(tombstoned, tombstoneResolutionCommands(
+                    commandCutoff, tombstoneRetention, pageSize, startedAt));
+            tombstoned = Math.addExact(tombstoned, tombstoneDiscardApprovals(
+                    commandCutoff, tombstoneRetention, pageSize, startedAt));
+            tombstoned = Math.addExact(tombstoned, tombstoneApprovedDiscardCommands(
+                    commandCutoff, tombstoneRetention, pageSize, startedAt));
+            int historiesPurged = purgeResolutionHistory(historyCutoff, pageSize);
+            historiesPurged = Math.addExact(historiesPurged,
+                    purgeApprovedDiscardHistory(historyCutoff, pageSize));
+            int tombstonesPurged = purgeExpiredTombstones(startedAt, pageSize);
+            Instant completedAt = databaseNow();
+            requireLiveRetentionFence(state, safeLease, completedAt);
+            long revision = Math.addExact(state.revision(), 1);
+            RetentionState next = new RetentionState("", "", state.leaseEpoch(),
+                    Instant.EPOCH, revision,
+                    Math.addExact(state.totalTombstoned(), tombstoned),
+                    Math.addExact(state.totalTombstonesPurged(), tombstonesPurged),
+                    Math.addExact(state.totalHistoryPurged(), historiesPurged),
+                    completedAt, completedAt, "");
+            next = next.withFingerprint(retentionStateFingerprint(next));
+            int updated = jdbc.update("""
+                    UPDATE rg_test_durable_worker_quarantine_retention
+                    SET lease_owner = '', lease_token = '', lease_until = ?, revision = ?,
+                        total_tombstoned = ?, total_tombstones_purged = ?,
+                        total_history_purged = ?, last_success_at = ?, updated_at = ?,
+                        record_fingerprint = ?
+                    WHERE job_name = ? AND lease_owner = ? AND lease_token = ?
+                      AND lease_epoch = ? AND revision = ? AND record_fingerprint = ?
+                    """, Timestamp.from(next.leaseUntil()), next.revision(),
+                    next.totalTombstoned(), next.totalTombstonesPurged(),
+                    next.totalHistoryPurged(), Timestamp.from(next.lastSuccessAt()),
+                    Timestamp.from(next.updatedAt()), next.recordFingerprint(),
+                    RETENTION_JOB_NAME, safeLease.ownerId(), safeLease.token(),
+                    safeLease.epoch(), state.revision(), state.recordFingerprint());
+            if (updated != 1) {
+                throw new IllegalStateException(
+                        "Worker quarantine retention checkpoint fence was rejected");
+            }
+            return RetentionAttempt.completed(new RetentionResult(
+                    tombstoned, tombstonesPurged, historiesPurged, completedAt));
+        });
+        if (result == null) {
+            throw new IllegalStateException("Worker quarantine retention returned no result");
+        }
+        return result;
+    }
+
+    private int tombstoneClaimCommands(
+            Instant cutoff, Duration tombstoneRetention, int pageSize, Instant tombstonedAt) {
+        List<StoredClaimCommand> commands = jdbc.query("""
+                        SELECT scope_key, client_request_id, tenant_id, environment_id,
+                               organization_id, project_id, run_id, checkpoint_fingerprint,
+                               claim_owner, claim_duration_seconds, request_fingerprint,
+                               result_claim_token, result_claim_token_envelope,
+                               result_version, result_claim_until, created_at,
+                               record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_claim_commands
+                        WHERE result_claim_until <= ?
+                        ORDER BY result_claim_until, scope_key, client_request_id
+                        LIMIT ? FOR UPDATE
+                        """, this::mapClaimCommand, Timestamp.from(cutoff), pageSize);
+        for (StoredClaimCommand command : commands) {
+            requireValid(command);
+            claimFrom(command);
+            insertRequestTombstone(RequestKind.CLAIM, command.scopeKey(),
+                    command.clientRequestId(), command.requestFingerprint(),
+                    command.recordFingerprint(), command.resultClaimUntil(), tombstonedAt,
+                    tombstoneRetention);
+            int deleted = jdbc.update("""
+                    DELETE FROM rg_test_durable_worker_quarantine_claim_commands
+                    WHERE scope_key = ? AND client_request_id = ?
+                      AND result_claim_until = ? AND record_fingerprint = ?
+                    """, command.scopeKey(), command.clientRequestId(),
+                    Timestamp.from(command.resultClaimUntil()), command.recordFingerprint());
+            requireDeleted(deleted, "claim command");
+        }
+        return commands.size();
+    }
+
+    private int tombstoneResolutionCommands(
+            Instant cutoff, Duration tombstoneRetention, int pageSize, Instant tombstonedAt) {
+        List<StoredResolutionCommand> commands = jdbc.query("""
+                        SELECT scope_key, client_request_id, tenant_id, environment_id,
+                               organization_id, project_id, run_id, checkpoint_fingerprint,
+                               resolution_owner, resolution_action, reason_code,
+                               request_fingerprint, result_version, result_acted_at,
+                               result_receipt_fingerprint, record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_resolutions
+                        WHERE result_acted_at <= ?
+                        ORDER BY result_acted_at, scope_key, client_request_id
+                        LIMIT ? FOR UPDATE
+                        """, this::mapResolutionCommand, Timestamp.from(cutoff), pageSize);
+        for (StoredResolutionCommand command : commands) {
+            requireValid(command);
+            insertRequestTombstone(RequestKind.RESOLUTION, command.scopeKey(),
+                    command.clientRequestId(), command.requestFingerprint(),
+                    command.recordFingerprint(), command.resultActedAt(), tombstonedAt,
+                    tombstoneRetention);
+            int deleted = jdbc.update("""
+                    DELETE FROM rg_test_durable_worker_quarantine_resolutions
+                    WHERE scope_key = ? AND client_request_id = ?
+                      AND result_acted_at = ? AND record_fingerprint = ?
+                    """, command.scopeKey(), command.clientRequestId(),
+                    Timestamp.from(command.resultActedAt()), command.recordFingerprint());
+            requireDeleted(deleted, "resolution command");
+        }
+        return commands.size();
+    }
+
+    private int tombstoneDiscardApprovals(
+            Instant cutoff, Duration tombstoneRetention, int pageSize, Instant tombstonedAt) {
+        List<StoredDiscardApproval> approvals = jdbc.query(discardApprovalSelect() + """
+                        WHERE approval_until <= ?
+                        ORDER BY approval_until, scope_key, client_request_id
+                        LIMIT ? FOR UPDATE
+                        """, this::mapDiscardApproval, Timestamp.from(cutoff), pageSize);
+        for (StoredDiscardApproval approval : approvals) {
+            requireValid(approval);
+            insertRequestTombstone(RequestKind.DISCARD_APPROVAL, approval.scopeKey(),
+                    approval.clientRequestId(), approval.requestFingerprint(),
+                    approval.recordFingerprint(), approval.approvalUntil(), tombstonedAt,
+                    tombstoneRetention);
+            int deleted = jdbc.update("""
+                    DELETE FROM rg_test_durable_worker_quarantine_discard_approvals
+                    WHERE scope_key = ? AND client_request_id = ? AND approval_until = ?
+                      AND record_fingerprint = ?
+                    """, approval.scopeKey(), approval.clientRequestId(),
+                    Timestamp.from(approval.approvalUntil()), approval.recordFingerprint());
+            requireDeleted(deleted, "discard approval");
+        }
+        return approvals.size();
+    }
+
+    private int tombstoneApprovedDiscardCommands(
+            Instant cutoff, Duration tombstoneRetention, int pageSize, Instant tombstonedAt) {
+        List<StoredApprovedDiscardCommand> commands = jdbc.query("""
+                        SELECT scope_key, client_request_id, tenant_id, environment_id,
+                               organization_id, project_id, run_id, checkpoint_fingerprint,
+                               resolution_owner, claim_version, claim_until, approval_id,
+                               approver_id, reason_code, request_fingerprint, result_version,
+                               result_acted_at, result_approval_fingerprint,
+                               result_receipt_fingerprint, record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_discards
+                        WHERE result_acted_at <= ?
+                        ORDER BY result_acted_at, scope_key, client_request_id
+                        LIMIT ? FOR UPDATE
+                        """, this::mapApprovedDiscardCommand, Timestamp.from(cutoff), pageSize);
+        for (StoredApprovedDiscardCommand command : commands) {
+            requireValid(command);
+            insertRequestTombstone(RequestKind.APPROVED_DISCARD, command.scopeKey(),
+                    command.clientRequestId(), command.requestFingerprint(),
+                    command.recordFingerprint(), command.resultActedAt(), tombstonedAt,
+                    tombstoneRetention);
+            int deleted = jdbc.update("""
+                    DELETE FROM rg_test_durable_worker_quarantine_discards
+                    WHERE scope_key = ? AND client_request_id = ?
+                      AND result_acted_at = ? AND record_fingerprint = ?
+                    """, command.scopeKey(), command.clientRequestId(),
+                    Timestamp.from(command.resultActedAt()), command.recordFingerprint());
+            requireDeleted(deleted, "approved discard command");
+        }
+        return commands.size();
+    }
+
+    private int purgeResolutionHistory(Instant cutoff, int pageSize) {
+        List<QuarantineHistoryRecord> history = jdbc.query("""
+                        SELECT history_id, scope_key, tenant_id, environment_id,
+                               organization_id, project_id, run_id, checkpoint_fingerprint,
+                               quarantine_reason, consecutive_failures, quarantine_threshold,
+                               first_observed_at, quarantined_at, resolution_action, reason_code,
+                               resolution_owner, result_version, acted_at, receipt_fingerprint,
+                               record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_history
+                        WHERE acted_at <= ?
+                        ORDER BY acted_at, history_id
+                        LIMIT ? FOR UPDATE
+                        """, this::mapHistory, Timestamp.from(cutoff), pageSize);
+        for (QuarantineHistoryRecord record : history) {
+            int deleted = jdbc.update("""
+                    DELETE FROM rg_test_durable_worker_quarantine_history
+                    WHERE history_id = ? AND acted_at = ? AND record_fingerprint = ?
+                    """, record.historyId(), Timestamp.from(record.actedAt()),
+                    record.recordFingerprint());
+            requireDeleted(deleted, "resolution history");
+        }
+        return history.size();
+    }
+
+    private int purgeApprovedDiscardHistory(Instant cutoff, int pageSize) {
+        List<ApprovedDiscardHistoryRecord> history = jdbc.query("""
+                        SELECT history_id, scope_key, tenant_id, environment_id,
+                               organization_id, project_id, run_id, checkpoint_fingerprint,
+                               quarantine_reason, consecutive_failures, quarantine_threshold,
+                               first_observed_at, quarantined_at, reason_code, resolution_owner,
+                               approval_id, approver_id, approval_fingerprint, result_version,
+                               acted_at, receipt_fingerprint, record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_discard_history
+                        WHERE acted_at <= ?
+                        ORDER BY acted_at, history_id
+                        LIMIT ? FOR UPDATE
+                        """, this::mapApprovedDiscardHistory, Timestamp.from(cutoff), pageSize);
+        for (ApprovedDiscardHistoryRecord record : history) {
+            int deleted = jdbc.update("""
+                    DELETE FROM rg_test_durable_worker_quarantine_discard_history
+                    WHERE history_id = ? AND acted_at = ? AND record_fingerprint = ?
+                    """, record.historyId(), Timestamp.from(record.actedAt()),
+                    record.recordFingerprint());
+            requireDeleted(deleted, "approved discard history");
+        }
+        return history.size();
+    }
+
+    private int purgeExpiredTombstones(Instant now, int pageSize) {
+        List<StoredRequestTombstone> tombstones = jdbc.query("""
+                        SELECT request_kind, scope_key, request_key, request_fingerprint,
+                               source_record_fingerprint, source_completed_at, tombstoned_at,
+                               expires_at, record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_request_tombstones
+                        WHERE expires_at <= ?
+                        ORDER BY expires_at, request_kind, scope_key, request_key
+                        LIMIT ? FOR UPDATE
+                        """, this::mapRequestTombstone, Timestamp.from(now), pageSize);
+        for (StoredRequestTombstone tombstone : tombstones) {
+            requireValid(tombstone);
+            int deleted = jdbc.update("""
+                    DELETE FROM rg_test_durable_worker_quarantine_request_tombstones
+                    WHERE request_kind = ? AND scope_key = ? AND request_key = ?
+                      AND expires_at = ? AND record_fingerprint = ?
+                    """, tombstone.kind().name(), tombstone.scopeKey(),
+                    tombstone.requestKey(), Timestamp.from(tombstone.expiresAt()),
+                    tombstone.recordFingerprint());
+            requireDeleted(deleted, "request tombstone");
+        }
+        return tombstones.size();
+    }
+
+    private void insertRequestTombstone(
+            RequestKind kind,
+            String scopeKey,
+            String requestId,
+            String requestFingerprint,
+            String sourceRecordFingerprint,
+            Instant sourceCompletedAt,
+            Instant tombstonedAt,
+            Duration retention) {
+        StoredRequestTombstone unsealed = new StoredRequestTombstone(kind, scopeKey,
+                requestTombstoneKey(kind, scopeKey, requestId), requestFingerprint,
+                sourceRecordFingerprint, sourceCompletedAt, tombstonedAt,
+                tombstonedAt.plus(retention), "");
+        StoredRequestTombstone tombstone = unsealed.withFingerprint(
+                requestTombstoneFingerprint(unsealed));
+        int inserted = jdbc.update("""
+                INSERT INTO rg_test_durable_worker_quarantine_request_tombstones (
+                    request_kind, scope_key, request_key, request_fingerprint,
+                    source_record_fingerprint, source_completed_at, tombstoned_at,
+                    expires_at, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, tombstone.kind().name(), tombstone.scopeKey(),
+                tombstone.requestKey(), tombstone.requestFingerprint(),
+                tombstone.sourceRecordFingerprint(), Timestamp.from(tombstone.sourceCompletedAt()),
+                Timestamp.from(tombstone.tombstonedAt()), Timestamp.from(tombstone.expiresAt()),
+                tombstone.recordFingerprint());
+        if (inserted != 1) {
+            throw new IllegalStateException(
+                    "Worker quarantine request tombstone was not inserted");
+        }
+    }
+
+    private static void requireDeleted(int deleted, String source) {
+        if (deleted != 1) {
+            throw new IllegalStateException(
+                    "Worker quarantine retention " + source + " fence was rejected");
+        }
+    }
+
+    private Optional<StoredRequestTombstone> findRequestTombstone(
+            RequestKind kind,
+            WorkerAcquisitionScope scope,
+            String requestId,
+            boolean forUpdate) {
+        String safeScopeKey = scopeKey(scope);
+        String requestKey = requestTombstoneKey(kind, safeScopeKey, requestId);
+        List<StoredRequestTombstone> rows = jdbc.query("""
+                        SELECT request_kind, scope_key, request_key, request_fingerprint,
+                               source_record_fingerprint, source_completed_at, tombstoned_at,
+                               expires_at, record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_request_tombstones
+                        WHERE request_kind = ? AND scope_key = ? AND request_key = ?
+                        """ + (forUpdate ? " FOR UPDATE" : ""), this::mapRequestTombstone,
+                kind.name(), safeScopeKey, requestKey);
+        if (rows.size() > 1) {
+            throw new IllegalStateException(
+                    "Worker quarantine request tombstone is not unique");
+        }
+        rows.forEach(this::requireValid);
+        return rows.stream().findFirst();
+    }
+
+    private StoredRequestTombstone mapRequestTombstone(
+            ResultSet rs, int rowNumber) throws SQLException {
+        RequestKind kind;
+        try {
+            kind = RequestKind.valueOf(rs.getString("request_kind"));
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException(
+                    "Stored worker quarantine request tombstone is corrupt", invalid);
+        }
+        return new StoredRequestTombstone(kind, rs.getString("scope_key"),
+                rs.getString("request_key"), rs.getString("request_fingerprint"),
+                rs.getString("source_record_fingerprint"),
+                rs.getTimestamp("source_completed_at").toInstant(),
+                rs.getTimestamp("tombstoned_at").toInstant(),
+                rs.getTimestamp("expires_at").toInstant(),
+                rs.getString("record_fingerprint"));
+    }
+
+    private void requireValid(StoredRequestTombstone tombstone) {
+        if (tombstone.requestKey().length() != 71
+                || !tombstone.requestKey().startsWith("sha256:")
+                || !tombstone.sourceCompletedAt().isAfter(Instant.EPOCH)
+                || tombstone.tombstonedAt().isBefore(tombstone.sourceCompletedAt())
+                || !tombstone.expiresAt().isAfter(tombstone.tombstonedAt())
+                || !requestTombstoneFingerprint(tombstone).equals(
+                        tombstone.recordFingerprint())) {
+            throw new IllegalStateException(
+                    "Stored worker quarantine request tombstone is corrupt");
+        }
+    }
+
+    private String requestTombstoneFingerprint(StoredRequestTombstone tombstone) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRequestTombstone.v1"),
+                Map.entry("requestKind", tombstone.kind().name()),
+                Map.entry("scopeKey", tombstone.scopeKey()),
+                Map.entry("requestKey", tombstone.requestKey()),
+                Map.entry("requestFingerprint", tombstone.requestFingerprint()),
+                Map.entry("sourceRecordFingerprint", tombstone.sourceRecordFingerprint()),
+                Map.entry("sourceCompletedAt", tombstone.sourceCompletedAt()),
+                Map.entry("tombstonedAt", tombstone.tombstonedAt()),
+                Map.entry("expiresAt", tombstone.expiresAt())));
+    }
+
+    private String requestTombstoneKey(
+            RequestKind kind, String scopeKey, String requestId) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRequestKey.v1"),
+                Map.entry("requestKind", kind.name()),
+                Map.entry("scopeKey", scopeKey),
+                Map.entry("clientRequestId", requestId)));
     }
 
     /**
@@ -364,6 +929,13 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 StoredClaimCommand stored = normalizeClaimCommand(replay.orElseThrow());
                 return stored.requestFingerprint().equals(requestFingerprint)
                         ? QuarantineClaimResult.replay(claimFrom(stored))
+                        : QuarantineClaimResult.conflict();
+            }
+            Optional<StoredRequestTombstone> tombstone = findRequestTombstone(
+                    RequestKind.CLAIM, safeScope, safeRequestId, true);
+            if (tombstone.isPresent()) {
+                return tombstone.orElseThrow().requestFingerprint().equals(requestFingerprint)
+                        ? QuarantineClaimResult.replayWindowExpired()
                         : QuarantineClaimResult.conflict();
             }
             if (!lockExactCheckpoint(safeScope, safeKey)) {
@@ -457,6 +1029,13 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 requireValid(stored);
                 return stored.requestFingerprint().equals(requestFingerprint)
                         ? QuarantineResolutionResult.replay(stored.receipt())
+                        : QuarantineResolutionResult.conflict();
+            }
+            Optional<StoredRequestTombstone> tombstone = findRequestTombstone(
+                    RequestKind.RESOLUTION, safeScope, safeRequestId, true);
+            if (tombstone.isPresent()) {
+                return tombstone.orElseThrow().requestFingerprint().equals(requestFingerprint)
+                        ? QuarantineResolutionResult.replayWindowExpired()
                         : QuarantineResolutionResult.conflict();
             }
             if (!lockExactCheckpoint(safeScope, safeClaim.key())) {
@@ -618,6 +1197,13 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                         ? DiscardApprovalResult.replay(stored.external())
                         : DiscardApprovalResult.conflict();
             }
+            Optional<StoredRequestTombstone> tombstone = findRequestTombstone(
+                    RequestKind.DISCARD_APPROVAL, safeScope, safeRequestId, true);
+            if (tombstone.isPresent()) {
+                return tombstone.orElseThrow().requestFingerprint().equals(requestFingerprint)
+                        ? DiscardApprovalResult.replayWindowExpired()
+                        : DiscardApprovalResult.conflict();
+            }
             if (!lockExactCheckpoint(safeScope, safeKey)) {
                 return DiscardApprovalResult.staleCheckpoint();
             }
@@ -713,6 +1299,13 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 requireValid(stored);
                 return stored.requestFingerprint().equals(requestFingerprint)
                         ? ApprovedDiscardResult.replay(stored.receipt())
+                        : ApprovedDiscardResult.conflict();
+            }
+            Optional<StoredRequestTombstone> tombstone = findRequestTombstone(
+                    RequestKind.APPROVED_DISCARD, safeScope, safeRequestId, true);
+            if (tombstone.isPresent()) {
+                return tombstone.orElseThrow().requestFingerprint().equals(requestFingerprint)
+                        ? ApprovedDiscardResult.replayWindowExpired()
                         : ApprovedDiscardResult.conflict();
             }
             if (!lockExactCheckpoint(safeScope, safeClaim.key())) {
@@ -1949,6 +2542,136 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 "schemaVersion", "bloge.durableWorkerScanScope.v1", "scope", scope));
     }
 
+    private void initializeRetentionState() {
+        try {
+            Instant now = databaseNow();
+            RetentionState initial = new RetentionState("", "", 0, Instant.EPOCH,
+                    0, 0, 0, 0, null, now, "");
+            initial = initial.withFingerprint(retentionStateFingerprint(initial));
+            jdbc.update("""
+                    INSERT INTO rg_test_durable_worker_quarantine_retention (
+                        job_name, lease_owner, lease_token, lease_epoch, lease_until, revision,
+                        total_tombstoned, total_tombstones_purged, total_history_purged,
+                        last_success_at, updated_at, record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, RETENTION_JOB_NAME, initial.leaseOwner(), initial.leaseToken(),
+                    initial.leaseEpoch(), Timestamp.from(initial.leaseUntil()), initial.revision(),
+                    initial.totalTombstoned(), initial.totalTombstonesPurged(),
+                    initial.totalHistoryPurged(), initial.lastSuccessAt(),
+                    Timestamp.from(initial.updatedAt()), initial.recordFingerprint());
+        } catch (DuplicateKeyException alreadyInitialized) {
+            // Another replica created the singleton row first.
+        }
+    }
+
+    private RetentionState requireRetentionState(boolean lock) {
+        List<RetentionState> rows = jdbc.query("""
+                        SELECT lease_owner, lease_token, lease_epoch, lease_until, revision,
+                               total_tombstoned, total_tombstones_purged,
+                               total_history_purged, last_success_at, updated_at,
+                               record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_retention
+                        WHERE job_name = ?
+                        """ + (lock ? " FOR UPDATE" : ""), this::mapRetentionState,
+                RETENTION_JOB_NAME);
+        if (rows.size() != 1) {
+            throw new IllegalStateException(
+                    "Worker quarantine retention state is not initialized");
+        }
+        RetentionState state = rows.getFirst();
+        requireValid(state);
+        return state;
+    }
+
+    private RetentionState mapRetentionState(ResultSet rs, int rowNumber) throws SQLException {
+        Timestamp lastSuccess = rs.getTimestamp("last_success_at");
+        return new RetentionState(rs.getString("lease_owner"),
+                rs.getString("lease_token"), rs.getLong("lease_epoch"),
+                rs.getTimestamp("lease_until").toInstant(), rs.getLong("revision"),
+                rs.getLong("total_tombstoned"), rs.getLong("total_tombstones_purged"),
+                rs.getLong("total_history_purged"),
+                lastSuccess == null ? null : lastSuccess.toInstant(),
+                rs.getTimestamp("updated_at").toInstant(),
+                rs.getString("record_fingerprint"));
+    }
+
+    private void requireValid(RetentionState state) {
+        boolean idle = state.leaseOwner() != null && state.leaseOwner().isBlank()
+                && state.leaseToken() != null && state.leaseToken().isBlank()
+                && state.leaseUntil() != null && state.leaseUntil().equals(Instant.EPOCH);
+        boolean owned = state.leaseOwner() != null && !state.leaseOwner().isBlank()
+                && state.leaseToken() != null && !state.leaseToken().isBlank()
+                && state.leaseUntil() != null && state.leaseUntil().isAfter(Instant.EPOCH);
+        if ((!idle && !owned) || state.leaseEpoch() < 0 || state.revision() < 0
+                || state.totalTombstoned() < 0 || state.totalTombstonesPurged() < 0
+                || state.totalHistoryPurged() < 0 || state.updatedAt() == null
+                || !state.updatedAt().isAfter(Instant.EPOCH)
+                || (state.lastSuccessAt() != null
+                && (state.lastSuccessAt().isAfter(state.updatedAt())
+                || !state.lastSuccessAt().isAfter(Instant.EPOCH)))
+                || !retentionStateFingerprint(state).equals(state.recordFingerprint())) {
+            throw new IllegalStateException(
+                    "Stored worker quarantine retention authority is corrupt");
+        }
+    }
+
+    private String retentionStateFingerprint(RetentionState state) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRetentionState.v1"),
+                Map.entry("jobName", RETENTION_JOB_NAME),
+                Map.entry("leaseOwner", state.leaseOwner()),
+                Map.entry("leaseToken", state.leaseToken()),
+                Map.entry("leaseEpoch", state.leaseEpoch()),
+                Map.entry("leaseUntil", state.leaseUntil()),
+                Map.entry("revision", state.revision()),
+                Map.entry("totalTombstoned", state.totalTombstoned()),
+                Map.entry("totalTombstonesPurged", state.totalTombstonesPurged()),
+                Map.entry("totalHistoryPurged", state.totalHistoryPurged()),
+                Map.entry("lastSuccessAt", state.lastSuccessAt() == null
+                        ? "" : state.lastSuccessAt()),
+                Map.entry("updatedAt", state.updatedAt())));
+    }
+
+    private void requireLiveRetentionFence(
+            RetentionState state, RetentionLease lease, Instant now) {
+        if (!state.leaseOwner().equals(lease.ownerId())
+                || !state.leaseToken().equals(lease.token())
+                || state.leaseEpoch() != lease.epoch()
+                || !state.leaseUntil().isAfter(now)) {
+            throw new IllegalStateException(
+                    "Worker quarantine retention fence is stale or expired");
+        }
+    }
+
+    private boolean releaseRetentionLease(RetentionLease lease) {
+        Boolean result = transactions.execute(status -> {
+            RetentionState current = requireRetentionState(true);
+            if (!current.leaseOwner().equals(lease.ownerId())
+                    || !current.leaseToken().equals(lease.token())
+                    || current.leaseEpoch() != lease.epoch()) {
+                return false;
+            }
+            Instant now = databaseNow();
+            RetentionState next = new RetentionState("", "", current.leaseEpoch(),
+                    Instant.EPOCH, Math.addExact(current.revision(), 1),
+                    current.totalTombstoned(), current.totalTombstonesPurged(),
+                    current.totalHistoryPurged(), current.lastSuccessAt(), now, "");
+            next = next.withFingerprint(retentionStateFingerprint(next));
+            int updated = jdbc.update("""
+                    UPDATE rg_test_durable_worker_quarantine_retention
+                    SET lease_owner = '', lease_token = '', lease_until = ?,
+                        revision = ?, updated_at = ?, record_fingerprint = ?
+                    WHERE job_name = ? AND lease_owner = ? AND lease_token = ?
+                      AND lease_epoch = ? AND revision = ? AND record_fingerprint = ?
+                    """, Timestamp.from(next.leaseUntil()), next.revision(),
+                    Timestamp.from(next.updatedAt()), next.recordFingerprint(),
+                    RETENTION_JOB_NAME, lease.ownerId(), lease.token(), lease.epoch(),
+                    current.revision(), current.recordFingerprint());
+            return updated == 1;
+        });
+        return Boolean.TRUE.equals(result);
+    }
+
     private Instant databaseNow() {
         Instant now = jdbc.queryForObject("SELECT CURRENT_TIMESTAMP",
                 (rs, rowNumber) -> rs.getTimestamp(1).toInstant());
@@ -1988,6 +2711,27 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         return safe;
     }
 
+    private static Duration boundedRetention(
+            Duration duration, Duration minimum, String name) {
+        Duration safe = Objects.requireNonNull(duration, name);
+        if (safe.compareTo(minimum) < 0 || safe.compareTo(MAX_RETENTION) > 0
+                || safe.getNano() != 0) {
+            throw new IllegalArgumentException(name + " must be whole seconds from "
+                    + minimum + " through " + MAX_RETENTION);
+        }
+        return safe;
+    }
+
+    private static Duration boundedRetentionLease(Duration duration) {
+        Duration safe = Objects.requireNonNull(duration, "retentionLeaseDuration");
+        if (safe.compareTo(Duration.ofSeconds(1)) < 0
+                || safe.compareTo(Duration.ofHours(1)) > 0 || safe.getNano() != 0) {
+            throw new IllegalArgumentException(
+                    "retentionLeaseDuration must be whole seconds from 1 through 3600");
+        }
+        return safe;
+    }
+
     private static Instant earlierOf(Instant first, Instant second) {
         return first.isBefore(second) ? first : second;
     }
@@ -1998,6 +2742,102 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             throw new IllegalArgumentException("Worker quarantine reasonCode is invalid");
         }
         return safe;
+    }
+
+    /** Stable outcome of one scheduled worker-quarantine retention attempt. */
+    public enum RetentionStatus {
+        /** This replica held the live database fence and committed one bounded page. */
+        COMPLETED,
+        /** Another replica still owns the database-clock retention lease. */
+        LEASE_BUSY
+    }
+
+    /**
+     * Aggregate of one atomically committed retention page.
+     *
+     * @param tombstoned detailed command or approval rows replaced by payload-free tombstones
+     * @param tombstonesPurged expired idempotency tombstones physically removed
+     * @param historiesPurged expired token-free history rows physically removed
+     * @param completedAt database-clock commit time
+     */
+    public record RetentionResult(
+            int tombstoned,
+            int tombstonesPurged,
+            int historiesPurged,
+            Instant completedAt) {
+        /** Validates non-negative bounded aggregate values. */
+        public RetentionResult {
+            completedAt = Objects.requireNonNull(completedAt, "completedAt");
+            if (tombstoned < 0 || tombstonesPurged < 0 || historiesPurged < 0) {
+                throw new IllegalArgumentException(
+                        "Worker quarantine retention counts must be non-negative");
+            }
+        }
+    }
+
+    /**
+     * Result of one scheduled retention attempt.
+     *
+     * @param status committed or lease-busy
+     * @param result aggregate for a committed page, otherwise {@code null}
+     */
+    public record RetentionAttempt(RetentionStatus status, RetentionResult result) {
+        /** Enforces that only completed attempts carry an aggregate. */
+        public RetentionAttempt {
+            status = Objects.requireNonNull(status, "status");
+            if ((status == RetentionStatus.COMPLETED) != (result != null)) {
+                throw new IllegalArgumentException(
+                        "Invalid worker quarantine retention attempt");
+            }
+        }
+
+        private static RetentionAttempt completed(RetentionResult result) {
+            return new RetentionAttempt(RetentionStatus.COMPLETED,
+                    Objects.requireNonNull(result, "result"));
+        }
+
+        private static RetentionAttempt busy() {
+            return new RetentionAttempt(RetentionStatus.LEASE_BUSY, null);
+        }
+    }
+
+    /**
+     * Payload-free retention control snapshot for readiness and bounded-cardinality telemetry.
+     *
+     * @param leaseOwner current replica owner, blank when idle
+     * @param leaseEpoch monotonically increasing fencing generation
+     * @param leaseUntil database-clock lease deadline
+     * @param revision monotonically increasing control revision
+     * @param totalTombstoned cumulative detailed commands and approvals removed
+     * @param totalTombstonesPurged cumulative expired idempotency tombstones removed
+     * @param totalHistoryPurged cumulative expired history rows removed
+     * @param tombstoneRecords current payload-free tombstone count
+     * @param lastSuccessAt last committed retention page, or {@code null}
+     * @param updatedAt last database-clock control mutation
+     */
+    public record RetentionSnapshot(
+            String leaseOwner,
+            long leaseEpoch,
+            Instant leaseUntil,
+            long revision,
+            long totalTombstoned,
+            long totalTombstonesPurged,
+            long totalHistoryPurged,
+            long tombstoneRecords,
+            Instant lastSuccessAt,
+            Instant updatedAt) {
+        /** Validates aggregate-only operational state. */
+        public RetentionSnapshot {
+            leaseOwner = leaseOwner == null ? "" : leaseOwner;
+            leaseUntil = Objects.requireNonNull(leaseUntil, "leaseUntil");
+            updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
+            if (leaseEpoch < 0 || revision < 0 || totalTombstoned < 0
+                    || totalTombstonesPurged < 0 || totalHistoryPurged < 0
+                    || tombstoneRecords < 0) {
+                throw new IllegalArgumentException(
+                        "Invalid worker quarantine retention snapshot");
+            }
+        }
     }
 
     /** Stable operational state of one automatic quarantine. */
@@ -2018,6 +2858,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         NOT_ACTIONABLE,
         /** The request ID already identifies different intent. */
         IDEMPOTENCY_CONFLICT,
+        /** Exact replay material expired, but its tombstone still forbids request-ID reuse. */
+        REPLAY_WINDOW_EXPIRED,
         /** The run no longer has the exact checkpoint closure named by the request. */
         STALE_CHECKPOINT
     }
@@ -2098,6 +2940,10 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             return new QuarantineClaimResult(ClaimDisposition.IDEMPOTENCY_CONFLICT, null);
         }
 
+        private static QuarantineClaimResult replayWindowExpired() {
+            return new QuarantineClaimResult(ClaimDisposition.REPLAY_WINDOW_EXPIRED, null);
+        }
+
         private static QuarantineClaimResult staleCheckpoint() {
             return new QuarantineClaimResult(ClaimDisposition.STALE_CHECKPOINT, null);
         }
@@ -2121,6 +2967,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         FENCE_REJECTED,
         /** The request ID already identifies different intent. */
         IDEMPOTENCY_CONFLICT,
+        /** Exact replay material expired, but its tombstone still forbids request-ID reuse. */
+        REPLAY_WINDOW_EXPIRED,
         /** The run no longer has the exact checkpoint closure named by the claim. */
         STALE_CHECKPOINT,
         /** A new discard must use the independent two-person approval protocol. */
@@ -2199,6 +3047,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     ResolutionDisposition.IDEMPOTENCY_CONFLICT, null);
         }
 
+        private static QuarantineResolutionResult replayWindowExpired() {
+            return new QuarantineResolutionResult(
+                    ResolutionDisposition.REPLAY_WINDOW_EXPIRED, null);
+        }
+
         private static QuarantineResolutionResult staleCheckpoint() {
             return new QuarantineResolutionResult(ResolutionDisposition.STALE_CHECKPOINT, null);
         }
@@ -2228,6 +3081,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         FENCE_REJECTED,
         /** The request ID already identifies a different approval intent. */
         IDEMPOTENCY_CONFLICT,
+        /** Exact replay material expired, but its tombstone still forbids request-ID reuse. */
+        REPLAY_WINDOW_EXPIRED,
         /** The run no longer has the exact checkpoint closure. */
         STALE_CHECKPOINT
     }
@@ -2312,6 +3167,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     DiscardApprovalDisposition.IDEMPOTENCY_CONFLICT, null);
         }
 
+        private static DiscardApprovalResult replayWindowExpired() {
+            return new DiscardApprovalResult(
+                    DiscardApprovalDisposition.REPLAY_WINDOW_EXPIRED, null);
+        }
+
         private static DiscardApprovalResult staleCheckpoint() {
             return new DiscardApprovalResult(
                     DiscardApprovalDisposition.STALE_CHECKPOINT, null);
@@ -2330,6 +3190,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         APPROVAL_REJECTED,
         /** The request ID already identifies a different discard intent. */
         IDEMPOTENCY_CONFLICT,
+        /** Exact replay material expired, but its tombstone still forbids request-ID reuse. */
+        REPLAY_WINDOW_EXPIRED,
         /** The run no longer has the exact checkpoint closure. */
         STALE_CHECKPOINT
     }
@@ -2409,6 +3271,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         private static ApprovedDiscardResult conflict() {
             return new ApprovedDiscardResult(
                     ApprovedDiscardDisposition.IDEMPOTENCY_CONFLICT, null);
+        }
+
+        private static ApprovedDiscardResult replayWindowExpired() {
+            return new ApprovedDiscardResult(
+                    ApprovedDiscardDisposition.REPLAY_WINDOW_EXPIRED, null);
         }
 
         private static ApprovedDiscardResult staleCheckpoint() {
@@ -2741,6 +3608,58 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     quarantinedAt, reasonCode, resolutionOwner, approvalId, approverId,
                     approvalFingerprint, resultVersion, actedAt, receiptFingerprint,
                     fingerprint);
+        }
+    }
+
+    private enum RequestKind {
+        CLAIM,
+        RESOLUTION,
+        DISCARD_APPROVAL,
+        APPROVED_DISCARD
+    }
+
+    record RetentionLease(String ownerId, String token, long epoch, Instant leaseUntil) {
+    }
+
+    private record RetentionState(
+            String leaseOwner,
+            String leaseToken,
+            long leaseEpoch,
+            Instant leaseUntil,
+            long revision,
+            long totalTombstoned,
+            long totalTombstonesPurged,
+            long totalHistoryPurged,
+            Instant lastSuccessAt,
+            Instant updatedAt,
+            String recordFingerprint) {
+        private RetentionSnapshot snapshot(long tombstoneRecords) {
+            return new RetentionSnapshot(leaseOwner, leaseEpoch, leaseUntil, revision,
+                    totalTombstoned, totalTombstonesPurged, totalHistoryPurged,
+                    tombstoneRecords, lastSuccessAt, updatedAt);
+        }
+
+        private RetentionState withFingerprint(String fingerprint) {
+            return new RetentionState(leaseOwner, leaseToken, leaseEpoch, leaseUntil,
+                    revision, totalTombstoned, totalTombstonesPurged, totalHistoryPurged,
+                    lastSuccessAt, updatedAt, fingerprint);
+        }
+    }
+
+    private record StoredRequestTombstone(
+            RequestKind kind,
+            String scopeKey,
+            String requestKey,
+            String requestFingerprint,
+            String sourceRecordFingerprint,
+            Instant sourceCompletedAt,
+            Instant tombstonedAt,
+            Instant expiresAt,
+            String recordFingerprint) {
+        private StoredRequestTombstone withFingerprint(String fingerprint) {
+            return new StoredRequestTombstone(kind, scopeKey, requestKey,
+                    requestFingerprint, sourceRecordFingerprint, sourceCompletedAt,
+                    tombstonedAt, expiresAt, fingerprint);
         }
     }
 

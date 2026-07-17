@@ -73,7 +73,7 @@ The automatic failure fact remains in
 `rg_test_durable_worker_candidate_quarantines`. Maintenance never rewrites its reason, threshold,
 failure count, scope, checkpoint binding, or timestamps.
 
-The maintenance protocol owns seven separate tables:
+The maintenance protocol owns nine separate tables:
 
 | Table | Responsibility |
 | --- | --- |
@@ -84,6 +84,8 @@ The maintenance protocol owns seven separate tables:
 | `rg_test_durable_worker_quarantine_discard_approvals` | exact token-free checker intent and one-way consumption state |
 | `rg_test_durable_worker_quarantine_discards` | caller-stable approved-discard intent and receipt replay |
 | `rg_test_durable_worker_quarantine_discard_history` | dedicated token-free maker/checker evidence |
+| `rg_test_durable_worker_quarantine_request_tombstones` | payload-free request reservation after detailed replay expires |
+| `rg_test_durable_worker_quarantine_retention` | singleton database lease, fence, counters, and last-success authority |
 
 Control rows cascade with the automatic quarantine. History is independent so `DISCARD` cannot erase
 the fact that an operator removed suppression. Every active, control, resolution, and history read
@@ -121,14 +123,20 @@ the checker identity must differ from the maker. Any mismatch fails closed.
 - only the first state transition appends the transaction-bound semantic action event;
 - replay and rejection attempts append separate token-free audit events.
 
+After the detailed replay window, an exact retry returns stable replay-window-expired `409`; changed
+intent remains a conflict. A server-computed request-key digest reserves the identity without storing
+the raw request ID. Reuse is accepted only after the independent tombstone window expires.
+
 ## Audit And Data Minimization
 
 Claim/release/approval/discard state and their semantic security event commit together through
 `TestRuntimeTransactionMutation`. If the event sink cannot bind or commit, the command receipt and
 state mutation roll back.
 
-The claim token appears only in the successful claim response, the resolution request, and the
-internal claim-command replay row. It is excluded from list/history payloads, resolution receipts,
+The claim token appears only in the successful claim response, the resolution request, and an
+AES-GCM envelope in the internal claim-command replay row. Bounded retention authenticates that
+envelope before deleting the row; the successor tombstone contains no token or raw request ID. The
+token is excluded from list/history payloads, resolution receipts,
 health details, metrics, problem responses, and semantic audit facts. Business input/output,
 fixture, dispatch, dependency value, and checkpoint JSON are never exported by this protocol.
 
@@ -153,11 +161,21 @@ Stable health codes are:
 Micrometer uses only the closed `reason` and `state` labels. Scope, run, checkpoint, owner, token,
 exception, and payload values cannot become metric identity.
 
+The independent retention metric family uses only closed `result=completed|lease_busy|failed` on
+attempts and otherwise unlabeled cumulative tombstone/history counts, current tombstones, duration,
+and last-success epoch.
+
 | Property | Environment variable | Default |
 | --- | --- | --- |
 | `gateway.testing.durable.worker-quarantines.required-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_GROUP` | `resource-gateway-test-runtime-operators` |
 | `gateway.testing.durable.worker-quarantines.required-approver-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_APPROVER_GROUP` | `resource-gateway-test-runtime-quarantine-approvers` |
 | `gateway.testing.durable.worker-quarantines.required-clearance` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_CLEARANCE` | `RESTRICTED` |
+| `gateway.testing.durable.worker-quarantines.retention-lease-duration-seconds` | `RG_TEST_WORKER_QUARANTINE_RETENTION_LEASE_SECONDS` | `120` |
+| `gateway.testing.durable.worker-quarantines.command-retention-days` | `RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS` | `30` |
+| `gateway.testing.durable.worker-quarantines.history-retention-days` | `RG_TEST_WORKER_QUARANTINE_HISTORY_RETENTION_DAYS` | `365` |
+| `gateway.testing.durable.worker-quarantines.tombstone-retention-days` | `RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS` | `365` |
+| `gateway.testing.durable.worker-quarantines.retention-page-size` | `RG_TEST_WORKER_QUARANTINE_RETENTION_PAGE_SIZE` | `100` |
+| `gateway.testing.durable.worker-quarantines.retention-interval-ms` | `RG_TEST_WORKER_QUARANTINE_RETENTION_INTERVAL_MS` | `3600000` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-records` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_RECORDS` | `100` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_OLDEST_AGE_SECONDS` | `86400` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-expired-claims` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_EXPIRED_CLAIMS` | `0` |
@@ -176,6 +194,8 @@ exception, and payload values cannot become metric identity.
 | Request ID is reused with changed intent | stable idempotency conflict; no mutation |
 | Claim response is lost | exact retry returns the original token and fence |
 | Resolution response is lost | exact retry returns the original token-free receipt |
+| detailed replay expires | exact retry returns replay-window-expired; no action is repeated |
+| retention source or tombstone is changed out of band | leased page or retry fails closed |
 | `RELEASE` succeeds | quarantine remains and returns to actionable maintenance state |
 | direct new `DISCARD` is submitted | stable approval-required rejection; no mutation |
 | maker approves its own discard | self approval rejected; no approval row |
@@ -205,23 +225,25 @@ races, database-clock expiry, tamper rejection, atomic audit rollback, and concu
 The combined focused gate executes 48 tests, Resource Gateway `clean verify` executes 2,201 tests
 with 34 existing conditional browser skips, and test-kit `clean verify` executes 63 tests; all gates
 have zero failures and errors. Exact scope is recorded in the dedicated two-person verification.
+The follow-on [bounded retention verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md)
+records the retention-specific gate and database lifecycle proofs.
 
 ## Honest Boundary
 
 This increment is a governed test/staging remediation primitive, not a complete enterprise
 dead-letter product. New discards require distinct verified maker/checker actors and separate
 deployment groups, but there is no external ticket binding, governance-gate callback, device/session
-assurance, or proof beyond the configured identity provider. The claim-command table retains the
-token needed to reproduce an exact lost claim response, but its replay copy is now protected by a
-rotation-aware AES-256-GCM envelope and valid legacy plaintext rows are migrated at startup. The
-active short-lived control fence is not yet hashed, and bounded command-receipt retention is not yet
-present.
-History has application-level whole-record fingerprints but remains in the same database; it is not
-externally anchored WORM evidence. History retention/purge, webhook notification, deep links, and
-alert routing are also absent.
+assurance, or proof beyond the configured identity provider. During its bounded detailed replay
+window the claim-command copy is protected by a rotation-aware AES-256-GCM envelope; valid legacy
+plaintext rows are migrated at startup. The active short-lived control fence is not yet hashed.
+Command, approval, and history retention are now database-leased and bounded, but physical deletion
+is not backup erasure, legal hold, an archive, or externally anchored WORM evidence. Webhook
+notification, deep links, retention-backlog health policy, and alert routing are also absent.
 
 See the [claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md)
 for key configuration, two-phase rotation, and fail-closed migration behavior.
+The [bounded retention verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md)
+defines deletion clocks, tombstone semantics, database fencing, and remaining erasure limits.
 
 Runtime-state dispatch, fair/priority scheduling, cross-process supervision, hard cancellation,
 non-H2 dialect certification, and production-load qualification remain separate Stage 4/5 work.

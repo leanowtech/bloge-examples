@@ -90,6 +90,13 @@ Useful variants:
 `RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING` (`keyId=base64AES256[,oldKeyId=base64AES256]`) to be
 injected by the deployment secret manager before `--profile staging`; the launcher fails early when
 either value is absent. The `test` profile's committed local key is demonstration-only.
+Worker-quarantine detailed replay defaults to 30 days, token-free history and request tombstones to
+365 days, and leased cleanup to 100 rows per category every hour. Override these with
+`RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS`,
+`RG_TEST_WORKER_QUARANTINE_HISTORY_RETENTION_DAYS`,
+`RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS`,
+`RG_TEST_WORKER_QUARANTINE_RETENTION_PAGE_SIZE`, and
+`RG_TEST_WORKER_QUARANTINE_RETENTION_INTERVAL_MS` before startup.
 
 The start command becomes ready only after the integration capability probe
 succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;
@@ -284,12 +291,16 @@ server-fenced claims, idempotent `RELEASE`, and database-authoritative two-perso
 separate approver group creates a token-free, short-lived approval for the exact live maker claim;
 the maker then proves its secret fence and atomically consumes that approval. New direct legacy
 `DISCARD` commands are rejected. Exact claim-response replay is encrypted with a rotation-aware
-AES-256-GCM key ring; `staging` requires the key ring to be injected explicitly. Exact semantics are
+AES-256-GCM key ring; `staging` requires the key ring to be injected explicitly. A database-leased,
+bounded retention loop later replaces detailed claim/resolution/approval/discard replay rows with
+request-key tombstones that contain neither the raw request ID nor claim token, independently purges
+token-free history, and permits request-ID reuse only after the tombstone window. Exact semantics are
 documented in
 [Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md),
 the [worker quarantine maintenance verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md),
 the [two-person discard verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-two-person-discard-verification.md),
-and the [claim-token protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md).
+the [claim-token protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md),
+and the [bounded retention verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md).
 
 ### Claim an expired durable test lease
 

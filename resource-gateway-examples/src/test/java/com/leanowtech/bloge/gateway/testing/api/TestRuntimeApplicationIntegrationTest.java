@@ -78,6 +78,10 @@ class TestRuntimeApplicationIntegrationTest {
                 DatabaseDurableWorkerQuarantineControlPlane.class)).hasSize(1);
         assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).hasSize(1);
         assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DurableWorkerQuarantineRetentionScheduler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DurableWorkerQuarantineRetentionTelemetry.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRetentionScheduler.class)).hasSize(1);
@@ -111,7 +115,8 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("immutableDurableWorkerQuarantineHistory", true)
                 .containsEntry("twoPersonDurableWorkerQuarantineDiscard", true)
                 .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", true)
-                .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", true);
+                .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", true)
+                .containsEntry("boundedDurableWorkerQuarantineMaintenanceRetention", true);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/durable-state/projection-findings"));
         assertThat(capabilities.getBody().payload().supportedObjects())

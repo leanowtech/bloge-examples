@@ -170,6 +170,10 @@ public final class DurableWorkerQuarantineService {
                         "RG.TEST.WORKER_QUARANTINE_IDEMPOTENCY_CONFLICT",
                         "The client request ID was reused with changed claim intent.",
                         key, request.clientRequestId());
+                case REPLAY_WINDOW_EXPIRED -> throw conflict(identity, "CLAIM",
+                        "RG.TEST.WORKER_QUARANTINE_REPLAY_WINDOW_EXPIRED",
+                        "Exact response replay expired; the request ID remains reserved.",
+                        key, request.clientRequestId());
                 case STALE_CHECKPOINT -> throw conflict(identity, "CLAIM",
                         "RG.TEST.WORKER_QUARANTINE_STALE_CHECKPOINT",
                         "The run no longer has the exact quarantined checkpoint.",
@@ -235,6 +239,10 @@ public final class DurableWorkerQuarantineService {
                 case IDEMPOTENCY_CONFLICT -> throw conflict(identity, "RESOLVE",
                         "RG.TEST.WORKER_QUARANTINE_IDEMPOTENCY_CONFLICT",
                         "The client request ID was reused with changed resolution intent.",
+                        key, request.clientRequestId());
+                case REPLAY_WINDOW_EXPIRED -> throw conflict(identity, "RESOLVE",
+                        "RG.TEST.WORKER_QUARANTINE_REPLAY_WINDOW_EXPIRED",
+                        "Exact response replay expired; the request ID remains reserved.",
                         key, request.clientRequestId());
                 case STALE_CHECKPOINT -> throw conflict(identity, "RESOLVE",
                         "RG.TEST.WORKER_QUARANTINE_STALE_CHECKPOINT",
@@ -312,6 +320,10 @@ public final class DurableWorkerQuarantineService {
                         "RG.TEST.WORKER_QUARANTINE_IDEMPOTENCY_CONFLICT",
                         "The client request ID was reused with changed approval intent.",
                         key, request.clientRequestId());
+                case REPLAY_WINDOW_EXPIRED -> throw conflict(identity, "DISCARD_APPROVE",
+                        "RG.TEST.WORKER_QUARANTINE_REPLAY_WINDOW_EXPIRED",
+                        "Exact response replay expired; the request ID remains reserved.",
+                        key, request.clientRequestId());
                 case STALE_CHECKPOINT -> throw conflict(identity, "DISCARD_APPROVE",
                         "RG.TEST.WORKER_QUARANTINE_STALE_CHECKPOINT",
                         "The run no longer has the exact quarantined checkpoint.",
@@ -385,6 +397,10 @@ public final class DurableWorkerQuarantineService {
                 case IDEMPOTENCY_CONFLICT -> throw conflict(identity, "APPROVED_DISCARD",
                         "RG.TEST.WORKER_QUARANTINE_IDEMPOTENCY_CONFLICT",
                         "The client request ID was reused with changed discard intent.",
+                        key, request.clientRequestId());
+                case REPLAY_WINDOW_EXPIRED -> throw conflict(identity, "APPROVED_DISCARD",
+                        "RG.TEST.WORKER_QUARANTINE_REPLAY_WINDOW_EXPIRED",
+                        "Exact response replay expired; the request ID remains reserved.",
                         key, request.clientRequestId());
                 case STALE_CHECKPOINT -> throw conflict(identity, "APPROVED_DISCARD",
                         "RG.TEST.WORKER_QUARANTINE_STALE_CHECKPOINT",

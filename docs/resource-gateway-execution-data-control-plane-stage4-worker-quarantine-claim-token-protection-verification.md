@@ -8,8 +8,10 @@ Before this increment, `rg_test_durable_worker_quarantine_claim_commands` retain
 as plaintext for an unbounded period. Database read access therefore exposed a reusable live token
 and converted a short maintenance lease into a long-lived credential asset.
 
-This increment protects the replay copy without changing the public claim protocol. It does not
-claim that all quarantine lifecycle data now has bounded retention.
+This increment protects the replay copy without changing the public claim protocol. Bounded command,
+approval, history, and tombstone lifecycles are supplied by the later
+[retention increment](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md),
+not by encryption alone.
 
 ## Storage Contract
 
@@ -111,7 +113,9 @@ There is no key-provider health probe, KMS audit event, automatic cryptographic 
 key-rotation controller yet.
 
 The active quarantine control row still keeps its short-lived comparison fence in the isolated
-test-runtime database until release, takeover, or discard. Command, approval, discard, and history
-rows still lack bounded retention/tombstone policy. Same-database fingerprints are not external
-WORM evidence. Those are separate hardening increments and must not be inferred from the capability
-flag's deliberately narrow name.
+test-runtime database until release, takeover, or discard. Detailed command/approval rows now have
+bounded retention and payload-free request tombstones, while history is independently purged, but
+same-database fingerprints are not external WORM evidence and physical deletion does not prove
+backup or replica erasure. Legal hold, keyed request indexes, external workflow binding, and KMS/HSM
+custody remain separate hardening work and must not be inferred from this capability flag's
+deliberately narrow name.

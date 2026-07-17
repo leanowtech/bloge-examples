@@ -108,11 +108,47 @@ public class TestRuntimeConfiguration {
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
             DurableTestExecutionCheckpointRepository checkpointAuthority,
-            WorkerQuarantineClaimTokenProtector claimTokenProtector) {
+            WorkerQuarantineClaimTokenProtector claimTokenProtector,
+            @Value("${gateway.testing.durable.worker-quarantines.retention-instance-id:}")
+            String retentionInstanceId,
+            @Value("${gateway.testing.durable.worker-quarantines.retention-lease-duration-seconds:120}")
+            long retentionLeaseDurationSeconds) {
         java.util.Objects.requireNonNull(checkpointAuthority, "checkpointAuthority");
+        String owner = retentionInstanceId == null || retentionInstanceId.isBlank()
+                ? "worker-quarantine-retention-" + UUID.randomUUID()
+                : retentionInstanceId.trim();
         return new DatabaseDurableWorkerQuarantineControlPlane(
                 database.jdbc(), database.transactionManager(), objectMapper,
-                claimTokenProtector);
+                claimTokenProtector, owner, Duration.ofSeconds(retentionLeaseDurationSeconds));
+    }
+
+    /** Bounds quarantine command, approval, tombstone, and history storage in leased pages. */
+    @Bean
+    DurableWorkerQuarantineRetentionScheduler durableWorkerQuarantineRetentionScheduler(
+            DatabaseDurableWorkerQuarantineControlPlane controlPlane,
+            DurableWorkerQuarantineRetentionTelemetry telemetry,
+            @Value("${gateway.testing.durable.worker-quarantines.command-retention-days:30}")
+            long commandRetentionDays,
+            @Value("${gateway.testing.durable.worker-quarantines.history-retention-days:365}")
+            long historyRetentionDays,
+            @Value("${gateway.testing.durable.worker-quarantines.tombstone-retention-days:365}")
+            long tombstoneRetentionDays,
+            @Value("${gateway.testing.durable.worker-quarantines.retention-page-size:100}")
+            int pageSize,
+            @Value("${gateway.testing.durable.worker-quarantines.retention-interval-ms:3600000}")
+            long retentionIntervalMillis) {
+        return new DurableWorkerQuarantineRetentionScheduler(controlPlane,
+                Duration.ofDays(commandRetentionDays), Duration.ofDays(historyRetentionDays),
+                Duration.ofDays(tombstoneRetentionDays), pageSize, telemetry,
+                Duration.ofMillis(retentionIntervalMillis));
+    }
+
+    /** Registers fixed-cardinality quarantine-retention metrics with no request identity tags. */
+    @Bean
+    DurableWorkerQuarantineRetentionTelemetry durableWorkerQuarantineRetentionTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new DurableWorkerQuarantineRetentionTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
     }
 
     /** Assembles the scoped, authenticated, action-audited quarantine owner queue. */
