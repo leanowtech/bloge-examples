@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionPolicy
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionRetentionScheduler;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionTelemetry;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
@@ -123,6 +124,8 @@ public class TestRuntimeConfiguration {
             DurableTestExecutionCheckpointRepository checkpointAuthority,
             WorkerQuarantineClaimTokenProtector claimTokenProtector,
             WorkerQuarantineRequestKeyProtector requestKeyProtector,
+            @Value("${gateway.testing.durable.worker-quarantines.request-key-protection.write-mode}")
+            String requestIndexWriteMode,
             @Value("${gateway.testing.durable.worker-quarantines.retention-instance-id:}")
             String retentionInstanceId,
             @Value("${gateway.testing.durable.worker-quarantines.retention-lease-duration-seconds:120}")
@@ -133,7 +136,8 @@ public class TestRuntimeConfiguration {
                 : retentionInstanceId.trim();
         return new DatabaseDurableWorkerQuarantineControlPlane(
                 database.jdbc(), database.transactionManager(), objectMapper,
-                claimTokenProtector, requestKeyProtector, owner,
+                claimTokenProtector, requestKeyProtector,
+                WorkerQuarantineRequestIndexMode.parse(requestIndexWriteMode), owner,
                 Duration.ofSeconds(retentionLeaseDurationSeconds));
     }
 
@@ -824,7 +828,8 @@ public class TestRuntimeConfiguration {
 
     /** Marker consumed by the unauthenticated capability probe. */
     @Bean
-    TestabilityAvailability testabilityAvailability() {
-        return new TestabilityAvailability(true);
+    TestabilityAvailability testabilityAvailability(
+            DatabaseDurableWorkerQuarantineControlPlane controlPlane) {
+        return new TestabilityAvailability(true, controlPlane.requestIndexMode());
     }
 }

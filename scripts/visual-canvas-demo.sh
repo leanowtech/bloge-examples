@@ -57,6 +57,7 @@ Environment:
   RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING       required for staging; keyId=base64AES256[,..]
   RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID  required for staging
   RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING       required for staging; keyId=base64Key[,..]
+  RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE  required for staging; staged rollout mode
   RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS    default: 30
   RG_TEST_WORKER_QUARANTINE_HISTORY_RETENTION_DAYS    default: 365
   RG_TEST_WORKER_QUARANTINE_TOMBSTONE_RETENTION_DAYS  default: 365
@@ -87,11 +88,20 @@ validate_profile_secrets() {
     if [ -z "${RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID:-}" ] ||
         [ -z "${RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING:-}" ] ||
         [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID:-}" ] ||
-        [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING:-}" ]; then
-        echo "Staging requires both worker-quarantine token and request-key protection key rings." >&2
-        echo "Inject all four values from the deployment secret manager before startup." >&2
+        [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING:-}" ] ||
+        [ -z "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE:-}" ]; then
+        echo "Staging requires both worker-quarantine key rings and an index write mode." >&2
+        echo "Inject all five values from deployment policy before startup." >&2
         return 1
     fi
+    case "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE}" in
+        LEGACY_READ_WRITE|DUAL_READ_KEYED_WRITE|KEYED_ONLY) ;;
+        *)
+            echo "Invalid worker-quarantine request-index write mode." >&2
+            echo "Use LEGACY_READ_WRITE, DUAL_READ_KEYED_WRITE, or KEYED_ONLY." >&2
+            return 1
+            ;;
+    esac
 }
 
 pid_file() {

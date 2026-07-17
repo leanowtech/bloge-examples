@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.integration;
 
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.ManagedEvidenceSigningProvider;
@@ -8,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadGovernancePolicy
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Machine-readable integration capability and compatibility probe.
@@ -112,10 +114,38 @@ public record IntegrationCapabilities(
                                                   VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
                                                   boolean testExecutionEndpointEnabled,
                                                   EvidenceKeySetTrustStore.Descriptor evidenceTrust) {
+        return current(evidenceSigner, identityProvider, sideEffectReconcilerAdapters,
+                payloadGovernance, testExecutionEndpointEnabled, evidenceTrust,
+                testExecutionEndpointEnabled
+                        ? WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE : null);
+    }
+
+    /**
+     * Builds the capability probe with the exact request-index upgrade mode of this replica.
+     *
+     * @param evidenceSigner evidence signing readiness
+     * @param identityProvider integration identity readiness
+     * @param sideEffectReconcilerAdapters whether real side-effect reconcilers are installed
+     * @param payloadGovernance payload capture and replay governance descriptor
+     * @param testExecutionEndpointEnabled whether the isolated testing runtime is assembled
+     * @param evidenceTrust independently configured evidence trust-publication readiness
+     * @param requestIndexMode exact request-index mode; required when test execution is enabled
+     * @return immutable capability projection
+     */
+    public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters,
+                                                  VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
+                                                  boolean testExecutionEndpointEnabled,
+                                                  EvidenceKeySetTrustStore.Descriptor evidenceTrust,
+                                                  WorkerQuarantineRequestIndexMode requestIndexMode) {
         VisualEvidenceSigner.Descriptor signer = evidenceSigner == null
                 ? VisualEvidenceSigner.unavailable().descriptor() : evidenceSigner;
         EvidenceKeySetTrustStore.Descriptor trust = evidenceTrust == null
                 ? EvidenceKeySetTrustStore.unavailable().descriptor() : evidenceTrust;
+        WorkerQuarantineRequestIndexMode effectiveRequestIndexMode =
+                testExecutionEndpointEnabled
+                        ? Objects.requireNonNull(requestIndexMode, "requestIndexMode") : null;
         Map<String, List<String>> objects = new LinkedHashMap<>();
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
@@ -418,6 +448,16 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled);
         features.put("keyedDurableWorkerQuarantineRequestIndex",
                 testExecutionEndpointEnabled);
+        features.put("stagedDurableWorkerQuarantineRequestIndexUpgrade",
+                testExecutionEndpointEnabled);
+        features.put("durableWorkerQuarantineRequestIndexLegacyReadWrite",
+                effectiveRequestIndexMode
+                        == WorkerQuarantineRequestIndexMode.LEGACY_READ_WRITE);
+        features.put("durableWorkerQuarantineRequestIndexDualReadKeyedWrite",
+                effectiveRequestIndexMode
+                        == WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE);
+        features.put("durableWorkerQuarantineRequestIndexKeyedOnly",
+                effectiveRequestIndexMode == WorkerQuarantineRequestIndexMode.KEYED_ONLY);
         features.put("boundedDurableWorkerQuarantineMaintenanceRetention",
                 testExecutionEndpointEnabled);
         features.put("immutableDurableWorkerNoWorkResult", testExecutionEndpointEnabled);
@@ -538,7 +578,8 @@ public record IntegrationCapabilities(
         }
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
                 payloadGovernance, testExecutionEndpointEnabled
-                        ? Testability.executionControlPlane() : Testability.schemaContractOnly(), endpoints);
+                        ? Testability.executionControlPlane() : Testability.schemaContractOnly(),
+                endpoints);
     }
 
     private static VisualPayloadGovernancePolicy.Descriptor unavailablePayloadGovernance() {

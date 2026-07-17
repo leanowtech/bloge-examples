@@ -61,6 +61,7 @@ export RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID='staging-2026-07'
 export RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING='staging-2026-07=<base64-encoded-32-byte-key>'
 export RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID='request-index-2026-07'
 export RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING='request-index-2026-07=<different-base64-encoded-32-byte-key>'
+export RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE='DUAL_READ_KEYED_WRITE'
 ./scripts/start-visual-canvas-demo.sh --profile staging
 ```
 
@@ -68,10 +69,14 @@ Do not use the placeholders literally, reuse the local `test` keys, or share one
 rings. Rotation runbooks are in the
 [claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md)
 and [request-index protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md).
+For the first N/N-1 rollout, start N in `LEGACY_READ_WRITE`, prove every serving instance is N,
+then move to `DUAL_READ_KEYED_WRITE`; enter `KEYED_ONLY` only after the live v1 inventory is zero.
+See the [request-index rolling-upgrade verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md).
 
 `production` intentionally has no `TestExecutionController`, fixture/suite repository,
 child/suite-run repository, or testability capability marker. The capability probe reports
-`testability.executionEndpointEnabled=false` in that profile.
+`testability.executionEndpointEnabled=false`; all three request-index mode feature flags are false
+in that profile.
 
 Direct Maven startup:
 
@@ -130,6 +135,7 @@ Independent-store settings:
 | `gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING` | local key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` | local key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` | local key in `test`; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-key-protection.write-mode` | `RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE` | `DUAL_READ_KEYED_WRITE` in local `test`; required in `staging` |
 | `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
 | `gateway.testing.runtime-slo.outcome-lookback-seconds` | `RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS` | `900` |
 | `gateway.testing.runtime-slo.execution-minimum-samples` | `RG_TEST_RUNTIME_SLO_EXECUTION_MINIMUM_SAMPLES` | `20` |

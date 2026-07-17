@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoin
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -146,6 +147,151 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                     assertThat(record.claimOwner()).isEqualTo("operator-a");
                     assertThat(record.version()).isOne();
                 });
+    }
+
+    @Test
+    void stagedModesPreserveOldBinaryLookupThenMigrateAndReachKeyedOnly()
+            throws Exception {
+        controlPlane = newControlPlane(WorkerQuarantineRequestIndexMode.LEGACY_READ_WRITE);
+        controlPlane.init();
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        String requestId = "claim-staged-upgrade";
+        controlPlane.claim(workerScope(), key, "operator-a", requestId,
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+
+        Map<String, Object> legacy = database.jdbc().queryForMap("""
+                SELECT scope_key, request_key_id, request_key, record_version
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """);
+        String expectedLegacyKey = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineRequestKey.v1"),
+                Map.entry("requestKind", "CLAIM"),
+                Map.entry("scopeKey", legacy.get("SCOPE_KEY")),
+                Map.entry("clientRequestId", requestId)));
+        assertThat(legacy.get("REQUEST_KEY_ID")).isEqualTo("");
+        assertThat(legacy.get("REQUEST_KEY")).isEqualTo(expectedLegacyKey);
+        assertThat(legacy.get("RECORD_VERSION")).isEqualTo(1);
+
+        var dual = newControlPlane(
+                WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE);
+        dual.init();
+        assertThat(dual.claim(workerScope(), key, "operator-a", requestId,
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop())
+                .disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition
+                        .REPLAY_WINDOW_EXPIRED);
+        Map<String, Object> migrated = database.jdbc().queryForMap("""
+                SELECT request_key_id, request_key, record_version
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """);
+        assertThat(migrated.get("REQUEST_KEY_ID")).isEqualTo("request-key-v1");
+        assertThat(migrated.get("REQUEST_KEY").toString()).startsWith("v1.");
+        assertThat(migrated.get("RECORD_VERSION")).isEqualTo(2);
+
+        var keyedOnly = newControlPlane(WorkerQuarantineRequestIndexMode.KEYED_ONLY);
+        keyedOnly.init();
+        assertThat(keyedOnly.requestIndexMode())
+                .isEqualTo(WorkerQuarantineRequestIndexMode.KEYED_ONLY);
+    }
+
+    @Test
+    void legacyModeRejectsStartupAfterKeyedWritesHaveBegun() throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        controlPlane.claim(workerScope(), key, "operator-a", "claim-keyed-before-rollback",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+
+        var legacy = newControlPlane(WorkerQuarantineRequestIndexMode.LEGACY_READ_WRITE);
+
+        assertThatThrownBy(legacy::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LEGACY_READ_WRITE")
+                .hasMessageContaining("zero live keyed tombstones");
+    }
+
+    @Test
+    void keyedOnlyModeRejectsStartupUntilEveryLegacyRowIsGone() throws Exception {
+        controlPlane = newControlPlane(WorkerQuarantineRequestIndexMode.LEGACY_READ_WRITE);
+        controlPlane.init();
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        controlPlane.claim(workerScope(), key, "operator-a", "claim-legacy-before-cutover",
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+
+        var keyedOnly = newControlPlane(WorkerQuarantineRequestIndexMode.KEYED_ONLY);
+
+        assertThatThrownBy(keyedOnly::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("KEYED_ONLY")
+                .hasMessageContaining("zero live legacy tombstones");
+    }
+
+    @Test
+    void readyLegacyModeCanReadV2CreatedDuringTheNewBinaryModeRollout()
+            throws Exception {
+        var readyLegacy = newControlPlane(
+                WorkerQuarantineRequestIndexMode.LEGACY_READ_WRITE);
+        readyLegacy.init();
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        String requestId = "claim-v2-after-legacy-readiness";
+        controlPlane.claim(workerScope(), key, "operator-a", requestId,
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+
+        assertThat(readyLegacy.claim(workerScope(), key, "operator-a", requestId,
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop())
+                .disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition
+                        .REPLAY_WINDOW_EXPIRED);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT record_version
+                FROM rg_test_durable_worker_quarantine_request_tombstones
+                WHERE request_kind = 'CLAIM'
+                """, Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void keyedOnlyExactAccessRejectsALegacyRowCreatedAfterReadiness()
+            throws Exception {
+        var readyKeyedOnly = newControlPlane(WorkerQuarantineRequestIndexMode.KEYED_ONLY);
+        readyKeyedOnly.init();
+        controlPlane = newControlPlane(WorkerQuarantineRequestIndexMode.LEGACY_READ_WRITE);
+        controlPlane.init();
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        String requestId = "claim-v1-after-keyed-readiness";
+        controlPlane.claim(workerScope(), key, "operator-a", requestId,
+                Duration.ofSeconds(1), ignored -> TestRuntimeTransactionMutation.noop());
+        Thread.sleep(1_100);
+        controlPlane.retainClaimedPage(controlPlane.acquireRetentionLease().orElseThrow(),
+                Duration.ZERO, Duration.ZERO, Duration.ofDays(1), 10);
+
+        assertThatThrownBy(() -> readyKeyedOnly.claim(
+                workerScope(), key, "operator-a", requestId, Duration.ofSeconds(1),
+                ignored -> TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("KEYED_ONLY rejected a legacy tombstone")
+                .hasMessageNotContaining(requestId);
     }
 
     @Test
@@ -1687,6 +1833,13 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
     private static WorkerQuarantineRequestKeyProtector requestKeyProtector(
             String activeKeyId, Map<String, byte[]> keys) {
         return new WorkerQuarantineRequestKeyProtector(activeKeyId, keys);
+    }
+
+    private DatabaseDurableWorkerQuarantineControlPlane newControlPlane(
+            WorkerQuarantineRequestIndexMode mode) {
+        return new DatabaseDurableWorkerQuarantineControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper,
+                tokenProtector, requestKeyProtector, mode);
     }
 
     private static byte[] keyBytes(int fill) {

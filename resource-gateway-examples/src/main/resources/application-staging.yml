@@ -41,6 +41,7 @@ gateway:
         request-key-protection:
           active-key-id: ${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID}
           key-ring: ${RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING}
+          write-mode: ${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE}
       heartbeats:
         lease-duration-seconds: ${RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS:120}
       recovery-worker:

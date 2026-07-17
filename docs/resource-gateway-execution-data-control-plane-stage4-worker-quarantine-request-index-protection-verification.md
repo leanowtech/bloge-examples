@@ -45,7 +45,7 @@ rotation unsafe.
 
 ## Lookup And Migration
 
-New writes use only the active generation. Exact lookup derives candidates for the active key,
+In `DUAL_READ_KEYED_WRITE` or `KEYED_ONLY`, new writes use only the active generation. Exact lookup derives candidates for the active key,
 configured verification-only keys in stable key-ID order, and the legacy unkeyed v1 digest. A hit is
 validated against the supplied request ID and the whole-record fingerprint. An old-key or legacy hit
 is rewritten to the active v2 key with an exact compare-and-set fence while the tombstone is locked.
@@ -88,12 +88,12 @@ must first know both generations; only then may the active generation change. Th
 public generation-inventory API, so the bounded SQL inventory plus readiness guard is the current
 operational proof.
 
-This is not an N/N-1 application-binary rolling-upgrade protocol. The new binary reads legacy SHA
-rows, but an old binary cannot read v2 HMAC rows. For the first upgrade from the legacy release,
-pause worker-quarantine maintenance writes and the retention scheduler, drain in-flight commands,
-upgrade every replica, verify readiness, and only then resume traffic and retention. A future staged
-`LEGACY_READ_WRITE -> DUAL_READ_KEYED_WRITE -> KEYED_ONLY` deployment contract is required before
-claiming zero-downtime mixed-binary rollout.
+Application-binary rollout uses the implemented
+`LEGACY_READ_WRITE -> DUAL_READ_KEYED_WRITE -> KEYED_ONLY` protocol. Deploy N in legacy mode while
+N-1 remains, prove every serving instance is N through per-replica capability inventory, and only
+then enable keyed writes. Keyed-only is allowed only after every live v1 row has migrated on exact
+access or expired. The complete state machine, rollback boundary, and fleet-authority limitation are
+documented in the [request-index rolling-upgrade verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md).
 
 ## Configuration
 
@@ -101,6 +101,7 @@ claiming zero-downtime mixed-binary rollout.
 | --- | --- | --- |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` | local demonstration key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` | `keyId=base64Key[,oldKeyId=base64Key]`; local demonstration ring in `test`; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.request-key-protection.write-mode` | `RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE` | local `test` defaults to dual; `staging` requires an explicit closed mode |
 
 The launcher checks both request-index values as well as the two claim-token values before starting a
 `staging` profile. Invalid key IDs, malformed Base64, roots other than 32 bytes, duplicate/missing
@@ -120,6 +121,9 @@ active generations, empty rings, or rings larger than 16 fail application assemb
 | More than 16 generations are configured | configuration is rejected before serving traffic |
 | A selected row's key ID, version, or fingerprint is inconsistent | exact read or retention fails closed |
 | Two candidates exist for one request identity | uniqueness check fails closed; no command is rerun |
+| Previous binary may still serve | N stays in legacy-write mode; keyed writes remain deployment-gated |
+| Legacy mode starts after a live keyed write | readiness fails and rollback safety is not claimed |
+| Keyed-only starts with a live v1 row | readiness fails until exact migration or natural expiry |
 
 ## Verification Gate
 
@@ -155,6 +159,7 @@ The current example uses deployment-injected key material, not KMS/HSM-backed no
 automated retirement attestations. Legacy SHA rows remain susceptible until exact-access migration or
 expiry. Database deletion does not prove backup, replica, log, or secret-manager erasure. External
 WORM anchoring, legal hold, per-tenant key policy, multi-region rotation qualification, and non-H2
-dialect certification remain Stage 4/5 hardening work. Key-generation rotation is online, but the
-first legacy-to-v2 application upgrade requires a quiesced maintenance window until a staged
-mixed-binary write-mode protocol and N/N-1 conformance tests exist.
+dialect certification remain Stage 4/5 hardening work. Key-generation rotation and the staged
+application-binary transition are online, but the deployment platform remains responsible for
+proving that every serving replica has reached N before keyed writes begin. There is no signed fleet
+attestation or database-enforced barrier that an N-1 binary could understand.

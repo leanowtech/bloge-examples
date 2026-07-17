@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
@@ -52,6 +53,7 @@ public class ToolStudioIntegrationService {
     private EvidenceKeySetTrustPublicationRepository evidenceTrustPublications;
     private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
+    private WorkerQuarantineRequestIndexMode workerQuarantineRequestIndexMode;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -86,6 +88,8 @@ public class ToolStudioIntegrationService {
     @Autowired(required = false)
     void configureTestability(TestabilityAvailability availability) {
         this.testExecutionEndpointEnabled = availability != null && availability.executionEndpointEnabled();
+        this.workerQuarantineRequestIndexMode = this.testExecutionEndpointEnabled
+                ? availability.workerQuarantineRequestIndexMode() : null;
     }
 
     /** Receives the profile-owned semantic workbook projector with the isolated test runtime. */
@@ -181,7 +185,8 @@ public class ToolStudioIntegrationService {
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 IntegrationCapabilities.current(signer.descriptor(), identityResolver.descriptor(),
                         sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor(),
-                        testExecutionEndpointEnabled, evidenceTrustStore.descriptor()));
+                        testExecutionEndpointEnabled, evidenceTrustStore.descriptor(),
+                        workerQuarantineRequestIndexMode));
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,

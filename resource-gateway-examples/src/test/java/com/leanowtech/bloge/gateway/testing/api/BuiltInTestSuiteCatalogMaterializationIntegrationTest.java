@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring=catalog-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
                 "gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id=catalog-request-index-v1",
                 "gateway.testing.durable.worker-quarantines.request-key-protection.key-ring=catalog-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=",
+                "gateway.testing.durable.worker-quarantines.request-key-protection.write-mode=DUAL_READ_KEYED_WRITE",
                 "gateway.seed-descriptors=true",
                 "gateway.base-url=http://127.0.0.1:1",
                 "gateway.integration.identity.environment-id=test",

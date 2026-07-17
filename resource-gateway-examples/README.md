@@ -91,8 +91,11 @@ Useful variants:
 `RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING` protect claim replay/control credentials, while
 `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` plus
 `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` protect low-entropy request tombstone indexes. Ring
-values use `keyId=base64-encoded-32-byte-key[,oldKeyId=...]`. The launcher fails early when any value
-is absent. The `test` profile's committed local keys are demonstration-only and must not be reused.
+values use `keyId=base64-encoded-32-byte-key[,oldKeyId=...]`.
+`RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE` is also required and must be
+`LEGACY_READ_WRITE`, `DUAL_READ_KEYED_WRITE`, or `KEYED_ONLY`. The launcher fails early when any
+value is absent or the mode is invalid. The `test` profile's committed local keys are
+demonstration-only and must not be reused.
 Worker-quarantine detailed replay defaults to 30 days, token-free history and request tombstones to
 365 days, and leased cleanup to 100 rows per category every hour. Override these with
 `RG_TEST_WORKER_QUARANTINE_COMMAND_RETENTION_DAYS`,
@@ -300,14 +303,18 @@ bounded retention loop later replaces detailed claim/resolution/approval/discard
 request-key tombstones that contain neither the raw request ID nor claim token. New tombstones use an
 independent, domain-separated HMAC-SHA-256 request index with bounded online key rotation; live rows
 whose key is unavailable block readiness, old-key/legacy rows lazily re-key on exact access, and
-expired rows remain purgeable. The loop independently purges token-free history and permits request-ID
+expired rows remain purgeable. A three-stage legacy/dual/keyed-only write-mode protocol now keeps
+mixed N/N-1 deployment on old-readable rows until the deployment authority proves every serving
+instance is N; each replica publishes its exact mode and rejects incompatible live generations at
+readiness. The loop independently purges token-free history and permits request-ID
 reuse only after the tombstone window. Exact semantics are documented in
 [Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md),
 the [worker quarantine maintenance verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md),
 the [two-person discard verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-two-person-discard-verification.md),
 the [claim-token protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md),
 the [bounded retention verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-retention-verification.md),
-and the [request-index protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md).
+the [request-index protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-protection-verification.md),
+and the [request-index rolling-upgrade verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md).
 
 ### Claim an expired durable test lease
 

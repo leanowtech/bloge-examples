@@ -101,6 +101,7 @@ The scheduler exists only in `test` or `staging`, and never when `production` is
 | `gateway.testing.durable.worker-quarantines.retention-interval-ms` | `RG_TEST_WORKER_QUARANTINE_RETENTION_INTERVAL_MS` | `3600000` | 1000 ms..30 days |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID` | local key in `test`; required in `staging` | `[A-Za-z0-9_-]{1,64}` and present in ring |
 | `gateway.testing.durable.worker-quarantines.request-key-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_RING` | local key in `test`; required in `staging` | 1..16 named 32-byte roots |
+| `gateway.testing.durable.worker-quarantines.request-key-protection.write-mode` | `RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE` | local test defaults to dual; staging requires a value | legacy, dual, or keyed-only closed mode |
 
 Days are assembled as whole-day durations by the profile configuration. Unsafe lifecycle windows,
 page sizes, lease durations, or scheduling cadence fail application assembly instead of silently

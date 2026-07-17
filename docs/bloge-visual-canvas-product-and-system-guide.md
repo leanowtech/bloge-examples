@@ -1194,6 +1194,12 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 | `--run-tests` | 打包时不跳过 Maven 测试 |
 | `-- --gateway.base-url=http://localhost:9091` | `--` 后面的参数透传给 Spring Boot 应用 |
 
+`staging` 还要求显式注入 claim-token key ring、独立 request-index key ring，以及
+`RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE`。首次跨版本升级应从
+`LEGACY_READ_WRITE` 开始；完整五项配置和三阶段切换门禁见
+[Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 与
+[request-index rolling-upgrade verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md)。
+
 测试控制面的 target fingerprint 获取、fixture 注册、执行、批量、证据查询、脱敏和生产隔离操作见
 [Resource Gateway Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
 

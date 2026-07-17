@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionPolicy
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionRetentionScheduler;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionTelemetry;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
@@ -190,7 +191,11 @@ class TestRuntimeProfileIsolationTest {
             TestRuntimeSloMonitor runtimeSlo = context.getBean(TestRuntimeSloMonitor.class);
             runtimeSlo.refresh();
             assertThat(runtimeSlo.health().getStatus()).isEqualTo(Status.UP);
-            assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled()).isTrue();
+            assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled())
+                    .isTrue();
+            assertThat(context.getBean(TestabilityAvailability.class)
+                    .workerQuarantineRequestIndexMode())
+                    .isEqualTo(WorkerQuarantineRequestIndexMode.KEYED_ONLY);
             ObjectMapper mapper = context.getBean(ObjectMapper.class);
             TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
                     new TestRunEvidence("", "profile-run",
@@ -287,7 +292,9 @@ class TestRuntimeProfileIsolationTest {
                 "gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id",
                 "profile-request-index-v1",
                 "gateway.testing.durable.worker-quarantines.request-key-protection.key-ring",
-                "profile-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=")));
+                "profile-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=",
+                "gateway.testing.durable.worker-quarantines.request-key-protection.write-mode",
+                "KEYED_ONLY")));
         context.registerBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules());
         context.registerBean(GatewayGraphService.class, () -> mock(GatewayGraphService.class));
         context.registerBean(OperatorRegistry.class, () -> mock(OperatorRegistry.class));

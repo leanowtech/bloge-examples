@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineResolutio
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +55,10 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", false)
                 .containsEntry("hashedDurableWorkerQuarantineActiveFence", false)
                 .containsEntry("keyedDurableWorkerQuarantineRequestIndex", false)
+                .containsEntry("stagedDurableWorkerQuarantineRequestIndexUpgrade", false)
+                .containsEntry("durableWorkerQuarantineRequestIndexLegacyReadWrite", false)
+                .containsEntry("durableWorkerQuarantineRequestIndexDualReadKeyedWrite", false)
+                .containsEntry("durableWorkerQuarantineRequestIndexKeyedOnly", false)
                 .containsEntry("boundedDurableWorkerQuarantineMaintenanceRetention", false);
         assertThat(disabled.features())
                 .containsEntry("authenticatedDurableStateProjectionOperations", false)
@@ -131,6 +136,10 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", true)
                 .containsEntry("hashedDurableWorkerQuarantineActiveFence", true)
                 .containsEntry("keyedDurableWorkerQuarantineRequestIndex", true)
+                .containsEntry("stagedDurableWorkerQuarantineRequestIndexUpgrade", true)
+                .containsEntry("durableWorkerQuarantineRequestIndexLegacyReadWrite", false)
+                .containsEntry("durableWorkerQuarantineRequestIndexDualReadKeyedWrite", true)
+                .containsEntry("durableWorkerQuarantineRequestIndexKeyedOnly", false)
                 .containsEntry("boundedDurableWorkerQuarantineMaintenanceRetention", true)
                 .containsEntry("immutableDurableWorkerNoWorkResult", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
@@ -292,5 +301,36 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("suiteSignedChildEvidenceGate", true)
                 .containsEntry("signedTestSuiteRunAttestation", true)
                 .containsEntry("portableTestSuiteEvidenceBundle", true);
+    }
+
+    @Test
+    void capabilityProbeDistinguishesEveryRequestIndexRolloutMode() {
+        IntegrationCapabilities legacy = capabilitiesFor(
+                WorkerQuarantineRequestIndexMode.LEGACY_READ_WRITE);
+        IntegrationCapabilities dual = capabilitiesFor(
+                WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE);
+        IntegrationCapabilities keyedOnly = capabilitiesFor(
+                WorkerQuarantineRequestIndexMode.KEYED_ONLY);
+
+        assertThat(legacy.features())
+                .containsEntry("durableWorkerQuarantineRequestIndexLegacyReadWrite", true)
+                .containsEntry("durableWorkerQuarantineRequestIndexDualReadKeyedWrite", false)
+                .containsEntry("durableWorkerQuarantineRequestIndexKeyedOnly", false);
+        assertThat(dual.features())
+                .containsEntry("durableWorkerQuarantineRequestIndexLegacyReadWrite", false)
+                .containsEntry("durableWorkerQuarantineRequestIndexDualReadKeyedWrite", true)
+                .containsEntry("durableWorkerQuarantineRequestIndexKeyedOnly", false);
+        assertThat(keyedOnly.features())
+                .containsEntry("durableWorkerQuarantineRequestIndexLegacyReadWrite", false)
+                .containsEntry("durableWorkerQuarantineRequestIndexDualReadKeyedWrite", false)
+                .containsEntry("durableWorkerQuarantineRequestIndexKeyedOnly", true);
+    }
+
+    private static IntegrationCapabilities capabilitiesFor(
+            WorkerQuarantineRequestIndexMode mode) {
+        return IntegrationCapabilities.current(
+                VisualEvidenceSigner.unavailable().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true,
+                EvidenceKeySetTrustStore.unavailable().descriptor(), mode);
     }
 }

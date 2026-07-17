@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRe
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository.WorkerAcquisitionScope;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -60,6 +61,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     private final DurableTestExecutionCheckpointIntegrity checkpointIntegrity;
     private final WorkerQuarantineClaimTokenProtector claimTokenProtector;
     private final WorkerQuarantineRequestKeyProtector requestKeyProtector;
+    private final WorkerQuarantineRequestIndexMode requestIndexMode;
     private final TransactionTemplate transactions;
     private final TransactionTemplate observations;
     private final String retentionOwnerId;
@@ -81,7 +83,30 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             WorkerQuarantineClaimTokenProtector claimTokenProtector,
             WorkerQuarantineRequestKeyProtector requestKeyProtector) {
         this(jdbc, transactionManager, objectMapper, claimTokenProtector, requestKeyProtector,
+                WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE,
                 "worker-quarantine-retention-" + UUID.randomUUID(), Duration.ofMinutes(2));
+    }
+
+    /**
+     * Creates a quarantine authority in one explicit request-index migration mode.
+     *
+     * @param jdbc isolated test-runtime JDBC facade
+     * @param transactionManager transaction manager for the same datasource
+     * @param objectMapper canonical protocol fingerprint mapper
+     * @param claimTokenProtector rotation-aware claim-command token envelope authority
+     * @param requestKeyProtector independent rotation-aware idempotency index authority
+     * @param requestIndexMode closed write, read, and readiness policy for request tombstones
+     */
+    public DatabaseDurableWorkerQuarantineControlPlane(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager,
+            ObjectMapper objectMapper,
+            WorkerQuarantineClaimTokenProtector claimTokenProtector,
+            WorkerQuarantineRequestKeyProtector requestKeyProtector,
+            WorkerQuarantineRequestIndexMode requestIndexMode) {
+        this(jdbc, transactionManager, objectMapper, claimTokenProtector, requestKeyProtector,
+                requestIndexMode, "worker-quarantine-retention-" + UUID.randomUUID(),
+                Duration.ofMinutes(2));
     }
 
     /**
@@ -103,6 +128,32 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             WorkerQuarantineRequestKeyProtector requestKeyProtector,
             String retentionOwnerId,
             Duration retentionLeaseDuration) {
+        this(jdbc, transactionManager, objectMapper, claimTokenProtector, requestKeyProtector,
+                WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE, retentionOwnerId,
+                retentionLeaseDuration);
+    }
+
+    /**
+     * Creates a quarantine authority with explicit migration and retention ownership policies.
+     *
+     * @param jdbc isolated test-runtime JDBC facade
+     * @param transactionManager transaction manager for the same datasource
+     * @param objectMapper canonical protocol fingerprint mapper
+     * @param claimTokenProtector rotation-aware claim-command token envelope authority
+     * @param requestKeyProtector independent rotation-aware idempotency index authority
+     * @param requestIndexMode closed write, read, and readiness policy for request tombstones
+     * @param retentionOwnerId stable identity of this Resource Gateway replica
+     * @param retentionLeaseDuration database-clock lease for one bounded retention page
+     */
+    public DatabaseDurableWorkerQuarantineControlPlane(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager,
+            ObjectMapper objectMapper,
+            WorkerQuarantineClaimTokenProtector claimTokenProtector,
+            WorkerQuarantineRequestKeyProtector requestKeyProtector,
+            WorkerQuarantineRequestIndexMode requestIndexMode,
+            String retentionOwnerId,
+            Duration retentionLeaseDuration) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.checkpointIntegrity = new DurableTestExecutionCheckpointIntegrity(objectMapper);
@@ -110,6 +161,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 claimTokenProtector, "claimTokenProtector");
         this.requestKeyProtector = Objects.requireNonNull(
                 requestKeyProtector, "requestKeyProtector");
+        this.requestIndexMode = Objects.requireNonNull(
+                requestIndexMode, "requestIndexMode");
         PlatformTransactionManager safeTransactionManager =
                 Objects.requireNonNull(transactionManager, "transactionManager");
         this.transactions = new TransactionTemplate(safeTransactionManager);
@@ -119,6 +172,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         this.observations.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         this.retentionOwnerId = required(retentionOwnerId, "retentionOwnerId", 255);
         this.retentionLeaseDuration = boundedRetentionLease(retentionLeaseDuration);
+    }
+
+    /** @return exact request-index migration mode enforced by this replica */
+    public WorkerQuarantineRequestIndexMode requestIndexMode() {
+        return requestIndexMode;
     }
 
     /** Creates maintenance ownership state without modifying automatic quarantine facts. */
@@ -786,12 +844,20 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             Instant sourceCompletedAt,
             Instant tombstonedAt,
             Duration retention) {
-        WorkerQuarantineRequestKeyProtector.IndexKey index = requestKeyProtector.protect(
-                kind.name(), scopeKey, requestId);
-        StoredRequestTombstone unsealed = new StoredRequestTombstone(kind, scopeKey,
-                index.keyId(), index.value(), requestFingerprint,
-                sourceRecordFingerprint, sourceCompletedAt, tombstonedAt,
-                tombstonedAt.plus(retention), TOMBSTONE_RECORD_VERSION, "");
+        StoredRequestTombstone unsealed;
+        if (requestIndexMode.writesLegacy()) {
+            unsealed = new StoredRequestTombstone(kind, scopeKey, "",
+                    legacyRequestTombstoneKey(kind, scopeKey, requestId), requestFingerprint,
+                    sourceRecordFingerprint, sourceCompletedAt, tombstonedAt,
+                    tombstonedAt.plus(retention), 1, "");
+        } else {
+            WorkerQuarantineRequestKeyProtector.IndexKey index = requestKeyProtector.protect(
+                    kind.name(), scopeKey, requestId);
+            unsealed = new StoredRequestTombstone(kind, scopeKey,
+                    index.keyId(), index.value(), requestFingerprint,
+                    sourceRecordFingerprint, sourceCompletedAt, tombstonedAt,
+                    tombstonedAt.plus(retention), TOMBSTONE_RECORD_VERSION, "");
+        }
         StoredRequestTombstone tombstone = unsealed.withFingerprint(
                 requestTombstoneFingerprint(unsealed));
         int inserted = jdbc.update("""
@@ -867,8 +933,16 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             throw new IllegalStateException(
                     "Stored worker quarantine request tombstone index is inconsistent");
         }
-        if (forUpdate && (found.recordVersion() == 1
-                || requestKeyProtector.requiresRekey(found.requestKeyId()))) {
+        if (found.recordVersion() == 1
+                && requestIndexMode == WorkerQuarantineRequestIndexMode.KEYED_ONLY) {
+            throw new IllegalStateException(
+                    "Worker quarantine request-index mode KEYED_ONLY rejected a legacy tombstone");
+        }
+        boolean migrateLegacy = found.recordVersion() == 1
+                && requestIndexMode.migratesLegacyOnAccess();
+        boolean rotateKeyed = found.recordVersion() == TOMBSTONE_RECORD_VERSION
+                && requestKeyProtector.requiresRekey(found.requestKeyId());
+        if (forUpdate && (migrateLegacy || rotateKeyed)) {
             found = rekeyRequestTombstone(found, requestId);
         }
         return Optional.of(found);
@@ -1000,10 +1074,20 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         for (TombstoneKeyGeneration generation : generations) {
             boolean legacy = generation.recordVersion() == 1
                     && generation.keyId().isBlank();
-            boolean current = generation.recordVersion() == TOMBSTONE_RECORD_VERSION
-                    && !generation.keyId().isBlank()
-                    && requestKeyProtector.containsKey(generation.keyId());
-            if (!legacy && !current) {
+            boolean keyedShape = generation.recordVersion() == TOMBSTONE_RECORD_VERSION
+                    && !generation.keyId().isBlank();
+            if (legacy && !requestIndexMode.permitsLiveLegacyRows()) {
+                throw new IllegalStateException(
+                        "Worker quarantine request-index mode KEYED_ONLY requires zero live "
+                                + "legacy tombstones");
+            }
+            if (keyedShape && !requestIndexMode.permitsLiveKeyedRows()) {
+                throw new IllegalStateException(
+                        "Worker quarantine request-index mode LEGACY_READ_WRITE requires zero "
+                                + "live keyed tombstones");
+            }
+            boolean keyed = keyedShape && requestKeyProtector.containsKey(generation.keyId());
+            if (!legacy && !keyed) {
                 throw new IllegalStateException(
                         "Worker quarantine request tombstone key generation is unavailable");
             }
