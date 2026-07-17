@@ -28,6 +28,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepo
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DurableStateProjectionReconciler;
+import com.leanowtech.bloge.gateway.testing.persistence.RecoverySequenceRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTokenProtector;
@@ -85,9 +86,59 @@ public class TestRuntimeConfiguration {
     @Bean
     DurableTestExecutionCheckpointRepository durableTestExecutionCheckpointRepository(
             TestRuntimeDatabase database, ObjectMapper objectMapper,
-            DurableTestExecutionCheckpointIntegrity integrity) {
+            DurableTestExecutionCheckpointIntegrity integrity,
+            RecoverySequenceRequestKeyProtector recoverySequenceRequestKeys,
+            @Value("${gateway.testing.durable.recovery-sequences.retention-instance-id:}")
+            String retentionInstanceId,
+            @Value("${gateway.testing.durable.recovery-sequences.retention-lease-duration-seconds:120}")
+            long retentionLeaseDurationSeconds,
+            @Value("${gateway.testing.durable.recovery-sequences.command-retention-days:30}")
+            long commandRetentionDays) {
+        String retentionOwner = retentionInstanceId == null || retentionInstanceId.isBlank()
+                ? "recovery-sequence-retention-" + UUID.randomUUID()
+                : retentionInstanceId.trim();
         return new DatabaseDurableTestExecutionCheckpointRepository(
-                database.jdbc(), database.transactionManager(), objectMapper, integrity);
+                database.jdbc(), database.transactionManager(), objectMapper, integrity,
+                recoverySequenceRequestKeys, retentionOwner,
+                Duration.ofSeconds(retentionLeaseDurationSeconds),
+                Duration.ofDays(commandRetentionDays));
+    }
+
+    /** Builds the independently domain-separated HMAC authority for sequence tombstones. */
+    @Bean
+    RecoverySequenceRequestKeyProtector recoverySequenceRequestKeyProtector(
+            @Value("${gateway.testing.durable.recovery-sequences.request-key-protection.active-key-id:local-recovery-sequence-v1}")
+            String activeKeyId,
+            @Value("${gateway.testing.durable.recovery-sequences.request-key-protection.key-ring:local-recovery-sequence-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}")
+            String keyRing) {
+        return RecoverySequenceRequestKeyProtector.fromConfiguration(activeKeyId, keyRing);
+    }
+
+    /** Bounds recovery-sequence replay detail and derived child commands in leased pages. */
+    @Bean
+    DurableRecoverySequenceRetentionScheduler durableRecoverySequenceRetentionScheduler(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            DurableRecoverySequenceRetentionTelemetry telemetry,
+            @Value("${gateway.testing.durable.recovery-sequences.command-retention-days:30}")
+            long commandRetentionDays,
+            @Value("${gateway.testing.durable.recovery-sequences.tombstone-retention-days:365}")
+            long tombstoneRetentionDays,
+            @Value("${gateway.testing.durable.recovery-sequences.retention-page-size:100}")
+            int pageSize,
+            @Value("${gateway.testing.durable.recovery-sequences.retention-interval-ms:3600000}")
+            long retentionIntervalMillis) {
+        return new DurableRecoverySequenceRetentionScheduler(
+                checkpoints, Duration.ofDays(commandRetentionDays),
+                Duration.ofDays(tombstoneRetentionDays), pageSize, telemetry,
+                Duration.ofMillis(retentionIntervalMillis));
+    }
+
+    /** Registers aggregate-only recovery-sequence retention metrics. */
+    @Bean
+    DurableRecoverySequenceRetentionTelemetry durableRecoverySequenceRetentionTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new DurableRecoverySequenceRetentionTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
     }
 
     /**

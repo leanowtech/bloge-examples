@@ -133,6 +133,14 @@ Independent-store settings:
 | `gateway.testing.durable.worker-acquisitions.initial-backoff-seconds` | `RG_TEST_DURABLE_WORKER_INITIAL_BACKOFF_SECONDS` | `5` |
 | `gateway.testing.durable.worker-acquisitions.maximum-backoff-seconds` | `RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` | `300` |
 | `gateway.testing.durable.worker-acquisitions.quarantine-threshold` | `RG_TEST_DURABLE_WORKER_QUARANTINE_THRESHOLD` | `32` |
+| `gateway.testing.durable.recovery-sequences.retention-instance-id` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_INSTANCE_ID` | generated process identity in `test`; required in `staging` |
+| `gateway.testing.durable.recovery-sequences.retention-lease-duration-seconds` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_LEASE_SECONDS` | `120` |
+| `gateway.testing.durable.recovery-sequences.command-retention-days` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_COMMAND_RETENTION_DAYS` | `30` |
+| `gateway.testing.durable.recovery-sequences.tombstone-retention-days` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_TOMBSTONE_RETENTION_DAYS` | `365` |
+| `gateway.testing.durable.recovery-sequences.retention-page-size` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_PAGE_SIZE` | `100` |
+| `gateway.testing.durable.recovery-sequences.retention-interval-ms` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_INTERVAL_MS` | `3600000` |
+| `gateway.testing.durable.recovery-sequences.request-key-protection.active-key-id` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_REQUEST_KEY_ACTIVE_ID` | local key in `test`; required in `staging` |
+| `gateway.testing.durable.recovery-sequences.request-key-protection.key-ring` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_REQUEST_KEY_RING` | local key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.required-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_GROUP` | `resource-gateway-test-runtime-operators` |
 | `gateway.testing.durable.worker-quarantines.required-approver-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_APPROVER_GROUP` | `resource-gateway-test-runtime-quarantine-approvers` |
 | `gateway.testing.durable.worker-quarantines.required-clearance` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_CLEARANCE` | `RESTRICTED` |
@@ -1202,11 +1210,59 @@ the provided count when the graph terminates early. `stopReason=SIGNALS_EXHAUSTE
 provided signal committed but the graph reached another suspension. No signal, dispatch,
 authorization, fixture/provider state, engine body, or lease expiry appears in the response.
 
+#### Recovery-sequence replay and retention lifecycle
+
+The exact-response replay window is finite and absolute. By default, the outer sequence reservation
+and every server-derived step, intermediate owner claim, and automatic recovery heartbeat can be
+replayed for 30 days from first reservation. Each request accepted before that deadline advances a
+separate whole-record-fingerprinted `activityUntil/revision` fence for one command window. The fence
+prevents retention from deleting a sequence while that accepted request can still write a child;
+it does not extend the absolute replay deadline. A scheduled page is elected by a database-clock
+lease. In one local transaction it:
+
+1. selects at most `retention-page-size` expired outer reservations in stable database order;
+2. integrity-verifies the outer reservation and every derived child row before deletion;
+3. inserts a tenant/environment-bound, domain-separated HMAC request tombstone without retaining
+   the plaintext `clientRequestId`;
+4. deletes the exact verified child and outer records by whole-record fingerprint;
+5. independently verifies and purges at most one page of expired tombstones; and
+6. advances aggregate counters and releases the fenced lease.
+
+The retention query locks selected outer rows and requires both the absolute deadline and activity
+fence to have elapsed. Replay uses the same row lock: whichever transaction wins forces the other
+to observe either a new activity fence or the tombstone. Schema upgrade rows without a v1 activity
+fingerprint are initialized and deferred for one grace window before they become deletion eligible.
+Any corrupt, missing-key, changed-fingerprint, or stale-lease condition rolls back the entire page.
+The page has independent bounds for outer records and expired tombstones; automatic-heartbeat
+fanout is additionally capped at 4,096 per sequence and fails closed above that bound. The initial
+owner claim supplied before sequence orchestration is not sequence-derived and is deliberately
+outside this deletion set.
+
+At the absolute deadline, unchanged intent returns stable
+`409 RG.TEST.DURABLE_RECOVERY_SEQUENCE_REPLAY_WINDOW_EXPIRED`. Changed intent under the same
+request identity remains an idempotency conflict, including while physical erasure is waiting for an
+in-flight fence or the next scheduled page. After tombstone expiry, that identity may be reused.
+This is a deliberate finite replay contract: callers that require longer exact replay must configure
+a longer command window before execution, up to 3,650 days, or retain their own external evidence.
+The same window must exceed the maximum supported synchronous sequence wall time. Minimums are one
+hour for command detail and one day for tombstones; page size is `1..1000`.
+
+New tombstones use only the active request-index key generation; lookup tries the bounded active-first
+key ring. Because plaintext request ids are erased, an old tombstone cannot be re-keyed. Operators
+must add the new key to every live replica, verify fleet rollout, switch the active generation on
+every replica, retain old verification keys through their last tombstone expiry, and only then
+remove them. There is no built-in cohort proof for this key ring, so deployment orchestration must
+not permit a replica with an incomplete ring to serve during the active-key switch. Repository
+startup refuses an unavailable referenced generation. Key material, tenant, run, request, payload,
+and error text are absent from retention logs and metrics. Capability discovery advertises
+`durableRecoverySequenceRetention` only when the test-runtime control plane is assembled.
+
 This endpoint is synchronous and bounded. It does not durably queue future signals, wait for a
 signal that was not supplied, run BLOGE in another process, enforce a wall-clock process kill,
 schedule fairly across tenants, supervise a remote worker, or preserve complete pre-checkpoint
-trace evidence. Those remain separate dispatcher, supervisor, hard-cancellation, and evidence
-requirements.
+trace evidence. Same-database deletion does not prove backup erasure, legal-hold compliance, or
+external WORM retention. Those remain separate dispatcher, supervisor, hard-cancellation, evidence,
+and governance requirements.
 
 ### 4.2h.3 Execute one terminal cold recovery
 
@@ -1771,6 +1827,10 @@ above. Store exception messages are discarded. Micrometer gauges are rooted at
 | `worker.candidate.quarantines.retention.duration` | none | bounded retention attempt duration |
 | `worker.candidate.quarantines.retention.tombstoned.total`, `.tombstones.purged.total`, `.history.purged.total` | none | cumulative lifecycle transitions |
 | `worker.candidate.quarantines.retention.tombstones.records`, `.last.success.epoch` | none | current request reservations and last committed page |
+| `durable.recovery.sequences.retention.attempts` | `result` | closed `completed`, `lease_busy`, or `failed` retention outcome |
+| `durable.recovery.sequences.retention.duration` | none | bounded retention attempt duration |
+| `durable.recovery.sequences.retention.sequences.tombstoned.total`, `.steps.purged.total`, `.claims.purged.total`, `.heartbeats.purged.total`, `.tombstones.purged.total` | none | cumulative verified lifecycle transitions |
+| `durable.recovery.sequences.retention.sequences.records`, `.tombstones.records`, `.last.success.epoch` | none | aggregate current rows and last committed page |
 | `evidence.incomplete.basis_points` | `scope` | execution/suite incomplete ratio |
 | `storage.records`, `storage.backlog` | `kind` | retained and cleanup-pressure rows |
 | `health` | none | `1` healthy, `-1` violated, `-2` store unavailable |

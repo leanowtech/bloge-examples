@@ -424,6 +424,31 @@ public interface DurableTestExecutionCheckpointRepository {
             TestRuntimeTransactionMutation companionMutation);
 
     /**
+     * Processes one database-leased page of expired recovery-sequence replay state.
+     *
+     * <p>Implementations must replace every selected outer request with a non-reversible
+     * idempotency tombstone before erasing the detailed sequence and its server-derived child
+     * commands. Tombstone insertion, verified child deletion, expired-tombstone purge, aggregate
+     * counters, and lease release form one local transaction.</p>
+     *
+     * @param commandRetention exact response-replay window for detailed sequence commands
+     * @param tombstoneRetention additional request-identity reservation window
+     * @param pageSize maximum outer sequences and expired tombstones processed per category
+     * @return committed page result or a lease-busy result from another replica
+     */
+    RecoverySequenceRetentionAttempt retainRecoverySequencePage(
+            Duration commandRetention,
+            Duration tombstoneRetention,
+            int pageSize);
+
+    /**
+     * Returns aggregate-only recovery-sequence lifecycle state.
+     *
+     * @return integrity-verified database-clock retention snapshot
+     */
+    RecoverySequenceRetentionSnapshot recoverySequenceRetentionSnapshot();
+
+    /**
      * Authenticated payload-free intent used to reserve an initial durable execution.
      *
      * @param clientRequestId caller-stable idempotency key scoped by tenant/environment
@@ -1511,6 +1536,123 @@ public interface DurableTestExecutionCheckpointRepository {
             if (!FINGERPRINT.matcher(recordFingerprint).matches()) {
                 throw new IllegalArgumentException(
                         "Recovery-sequence record fingerprint must be canonical SHA-256");
+            }
+        }
+    }
+
+    /** Closed outcome vocabulary for one scheduled recovery-sequence retention attempt. */
+    enum RecoverySequenceRetentionStatus {
+        /** One fenced retention page committed successfully. */
+        COMPLETED,
+        /** Another replica currently owns the unexpired database lease. */
+        LEASE_BUSY
+    }
+
+    /**
+     * Aggregate-only result of one committed recovery-sequence retention page.
+     *
+     * @param sequencesTombstoned detailed outer requests replaced by keyed tombstones
+     * @param recoveryStepsPurged server-derived recovery-step rows erased
+     * @param ownerClaimsPurged server-derived owner-claim rows erased
+     * @param heartbeatsPurged automatic heartbeat rows erased
+     * @param tombstonesPurged expired keyed request identities erased
+     * @param completedAt database-authority completion time
+     */
+    record RecoverySequenceRetentionResult(
+            int sequencesTombstoned,
+            int recoveryStepsPurged,
+            int ownerClaimsPurged,
+            int heartbeatsPurged,
+            int tombstonesPurged,
+            Instant completedAt) {
+        /** Rejects negative counters and absent database time. */
+        public RecoverySequenceRetentionResult {
+            if (sequencesTombstoned < 0 || recoveryStepsPurged < 0
+                    || ownerClaimsPurged < 0 || heartbeatsPurged < 0
+                    || tombstonesPurged < 0) {
+                throw new IllegalArgumentException(
+                        "Recovery-sequence retention counters cannot be negative");
+            }
+            completedAt = Objects.requireNonNull(completedAt, "completedAt");
+        }
+    }
+
+    /**
+     * Result envelope distinguishing a committed page from normal cross-replica contention.
+     *
+     * @param status closed attempt status
+     * @param result committed aggregate, present only for {@link
+     *     RecoverySequenceRetentionStatus#COMPLETED}
+     */
+    record RecoverySequenceRetentionAttempt(
+            RecoverySequenceRetentionStatus status,
+            RecoverySequenceRetentionResult result) {
+        /** Enforces exact status/result correspondence. */
+        public RecoverySequenceRetentionAttempt {
+            status = Objects.requireNonNull(status, "status");
+            if ((status == RecoverySequenceRetentionStatus.COMPLETED) != (result != null)) {
+                throw new IllegalArgumentException(
+                        "Completed recovery-sequence retention requires exactly one result");
+            }
+        }
+
+        /** @return a completed attempt around one immutable aggregate */
+        public static RecoverySequenceRetentionAttempt completed(
+                RecoverySequenceRetentionResult result) {
+            return new RecoverySequenceRetentionAttempt(
+                    RecoverySequenceRetentionStatus.COMPLETED,
+                    Objects.requireNonNull(result, "result"));
+        }
+
+        /** @return normal lease contention without a committed page */
+        public static RecoverySequenceRetentionAttempt leaseBusy() {
+            return new RecoverySequenceRetentionAttempt(
+                    RecoverySequenceRetentionStatus.LEASE_BUSY, null);
+        }
+    }
+
+    /**
+     * Aggregate-only operational view of recovery-sequence lifecycle control.
+     *
+     * @param leaseOwner current maintenance replica or empty when idle
+     * @param leaseEpoch monotonic ownership generation
+     * @param leaseUntil database-clock lease deadline
+     * @param revision monotonic retention-state revision
+     * @param totalSequencesTombstoned cumulative outer requests erased
+     * @param totalRecoveryStepsPurged cumulative derived step rows erased
+     * @param totalOwnerClaimsPurged cumulative derived claim rows erased
+     * @param totalHeartbeatsPurged cumulative derived heartbeat rows erased
+     * @param totalTombstonesPurged cumulative expired request identities erased
+     * @param activeSequenceRecords current detailed outer-request count
+     * @param tombstoneRecords current keyed tombstone count
+     * @param lastSuccessAt last successfully committed page or {@code null}
+     * @param observedAt database-authority snapshot time
+     */
+    record RecoverySequenceRetentionSnapshot(
+            String leaseOwner,
+            long leaseEpoch,
+            Instant leaseUntil,
+            long revision,
+            long totalSequencesTombstoned,
+            long totalRecoveryStepsPurged,
+            long totalOwnerClaimsPurged,
+            long totalHeartbeatsPurged,
+            long totalTombstonesPurged,
+            long activeSequenceRecords,
+            long tombstoneRecords,
+            Instant lastSuccessAt,
+            Instant observedAt) {
+        /** Validates complete non-negative aggregate state. */
+        public RecoverySequenceRetentionSnapshot {
+            leaseOwner = leaseOwner == null ? "" : leaseOwner.trim();
+            leaseUntil = Objects.requireNonNull(leaseUntil, "leaseUntil");
+            observedAt = Objects.requireNonNull(observedAt, "observedAt");
+            if (leaseEpoch < 0 || revision < 0 || totalSequencesTombstoned < 0
+                    || totalRecoveryStepsPurged < 0 || totalOwnerClaimsPurged < 0
+                    || totalHeartbeatsPurged < 0 || totalTombstonesPurged < 0
+                    || activeSequenceRecords < 0 || tombstoneRecords < 0) {
+                throw new IllegalArgumentException(
+                        "Recovery-sequence retention snapshot counters cannot be negative");
             }
         }
     }

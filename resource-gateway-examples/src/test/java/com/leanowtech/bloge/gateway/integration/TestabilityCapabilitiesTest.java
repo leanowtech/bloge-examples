@@ -62,6 +62,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableOperatorTestExecutionCreation", false);
         assertThat(disabled.features())
                 .containsEntry("boundedDurableRecoverySequence", false);
+        assertThat(disabled.features())
+                .containsEntry("durableRecoverySequenceRetention", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionAntiEntropy", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionSweepLease", false);
         assertThat(disabled.features()).containsEntry("durableStateProjectionFindingQueue", false);
@@ -178,6 +180,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("authenticatedDurableTerminalRecovery", true)
                 .containsEntry("authenticatedDurableRecoveryStep", true)
                 .containsEntry("boundedDurableRecoverySequence", true)
+                .containsEntry("durableRecoverySequenceRetention", true)
                 .containsEntry("durableStateProjectionAntiEntropy", true)
                 .containsEntry("durableStateProjectionSweepLease", true)
                 .containsEntry("durableStateProjectionFindingQueue", true)

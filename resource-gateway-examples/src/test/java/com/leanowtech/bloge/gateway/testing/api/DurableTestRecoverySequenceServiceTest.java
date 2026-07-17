@@ -186,6 +186,29 @@ class DurableTestRecoverySequenceServiceTest {
     }
 
     @Test
+    void expiredExactReplayReturnsStableConflictBeforeAnyChildMutation() {
+        when(checkpoints.reserveRecoverySequenceIdempotently(any(), eq(audit)))
+                .thenThrow(new DurableTestExecutionCheckpointConflictException(
+                        DurableTestExecutionCheckpointConflictException.Reason
+                                .REPLAY_WINDOW_EXPIRED,
+                        "detailed replay expired"));
+
+        assertProblem(() -> service.advance("run-a", request(2), identity()),
+                409, "RG.TEST.DURABLE_RECOVERY_SEQUENCE_REPLAY_WINDOW_EXPIRED");
+
+        verifyNoInteractions(ownerClaims, recoverySteps);
+        ArgumentCaptor<TestSecurityEvent> rejected =
+                ArgumentCaptor.forClass(TestSecurityEvent.class);
+        verify(securityEvents).append(rejected.capture());
+        assertThat(rejected.getValue()).satisfies(event -> {
+            assertThat(event.outcome()).isEqualTo("REJECTED");
+            assertThat(event.reasonCode()).isEqualTo(
+                    "RG.TEST.DURABLE_RECOVERY_SEQUENCE_REPLAY_WINDOW_EXPIRED");
+            assertThat(event.facts()).containsOnlyKeys("runId", "clientRequestId");
+        });
+    }
+
+    @Test
     void rejectsOversizedLateSignalBeforeReservingOrExecutingPrefix() {
         DurableTestRecoverySequenceRequest request = request(List.of(
                 signal("approval-1", "approved"),

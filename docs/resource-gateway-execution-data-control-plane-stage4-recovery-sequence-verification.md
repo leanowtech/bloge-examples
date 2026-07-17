@@ -79,6 +79,34 @@ The sequence is intentionally not one cross-step database transaction. Earlier s
 business effects and cannot be rolled back honestly when a later signal fails. The guarantee is a
 durable, gap-free, exactly replayable prefix, not fictional all-or-nothing business atomicity.
 
+## Bounded Retention And Key Rotation
+
+Exact response replay is bounded rather than permanent. The default detailed-command window is an
+absolute 30 days from first reservation. A request accepted before that deadline atomically advances
+an integrity-protected activity fence for one more command window; replay and retention row locks
+therefore cannot admit a child writer after maintenance selected the parent. The activity fence
+does not extend the replay deadline. A database-clock leased scheduler then selects a stable page
+whose deadline and activity fence both elapsed, validates their whole-record fingerprints, derives
+the only legal child step/claim/automatic-heartbeat keys,
+verifies every discovered child, inserts a domain-separated keyed-HMAC tombstone, and physically
+deletes the detail in one transaction. No plaintext outer request id is copied into the tombstone.
+
+The default tombstone window is 365 additional days. During it, exact intent receives
+`RG.TEST.DURABLE_RECOVERY_SEQUENCE_REPLAY_WINDOW_EXPIRED`; changed intent remains a conflict. Once
+the tombstone is verified and purged, the outer key may be reused. Outer and tombstone pages are
+independently bounded to `1..1000`; derived automatic-heartbeat discovery has a hard 4,096-row
+limit. Child corruption, stale replica fence, retention-state corruption, tombstone corruption, or
+an unavailable HMAC generation rolls the page back or fails startup before maintenance proceeds.
+
+Rotation is fleet-wide append, switch, wait, remove. Add the new 32-byte root to every replica's
+bounded key ring, verify fleet rollout, make its id active everywhere, keep every old generation
+until its final tombstone expires, then remove it. Built-in cohort proof is not yet available for
+this ring, so deployment orchestration must prevent mixed incomplete rings. Tombstones cannot be
+re-keyed after plaintext identity erasure. The key and message domains are distinct from
+worker-quarantine request indexing even when a deployment accidentally uses the same root.
+Telemetry exposes only closed result tags and aggregate counters; no tenant,
+run, request, payload, key material, or exception text becomes a label.
+
 ## Verification
 
 The persistence and orchestration gate is:
@@ -89,10 +117,15 @@ The persistence and orchestration gate is:
 DurableTestRecoverySequenceServiceTest test
 ```
 
-Verified on 2026-07-17: 93 tests passed with zero failures, errors, or skips. New counterexamples
-prove payload-free exact replay, late-intent drift rejection, audit rollback, stored-record tamper
-rejection, fresh intermediate claims, partial-prefix continuation, full replay identity, terminal
-short-circuiting, signal exhaustion, and pre-mutation rejection of oversized late signals.
+Verified on 2026-07-17: the retention-focused gate ran 122 tests with zero failures, errors, or skips.
+Counterexamples prove payload-free exact replay, late-intent drift rejection, audit rollback,
+stored-record tamper rejection, fresh intermediate claims, partial-prefix continuation, full replay
+identity, terminal short-circuiting, signal exhaustion, pre-mutation rejection of oversized late
+signals, atomic parent/child erasure, rollback on corrupt child state, independent page bounds,
+cross-replica lease fencing, public policy bounds, stable child-key formats, HMAC domain separation,
+rotation lookup, startup refusal when a referenced tombstone generation is unavailable, absolute
+deadline rejection before physical retention, row-lock serialization with an accepted replay,
+activity-fence tamper rejection, and fail-safe legacy activity migration.
 
 The public protocol gate is:
 
@@ -114,17 +147,17 @@ The complete Resource Gateway acceptance gate is:
 /opt/apache-maven-3.9.16/bin/mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-Verified on 2026-07-17: 2298 tests ran with zero failures and errors; 28 existing conditional tests
-were skipped. The real-browser authoring workflow passed, and the executable Spring Boot JAR was
-rebuilt successfully. The broader recovery control-plane gate separately ran 146 tests with zero
-failures, errors, or skips across reservation, owner claim, heartbeat, recovery step, recovery
-sequence, terminal recovery, Schema, capability, and production-profile isolation.
+Verified on 2026-07-17: 2,322 tests ran with zero failures and errors; two existing conditional
+tests were skipped. The real-browser authoring workflows passed and the executable Spring Boot JAR
+was rebuilt successfully.
 
 ## Honest Boundary
 
 This closes automatic orchestration only for a finite signal program already present in one HTTP
 request. It does not provide a durable signal inbox, asynchronous continuation, long polling,
 runtime-state offload, tenant-fair scheduling, cross-process supervision, hard worker cancellation,
-stream offsets, or pre-checkpoint historical trace evidence. It also inherits the current durable
-command-store lifecycle: sequence reservations do not yet have an independently tombstoned
-retention protocol. Those are separate Stage 4/5 requirements and remain explicit gaps.
+stream offsets, or pre-checkpoint historical trace evidence. Sequence-owned detail now has bounded
+retention, but unrelated durable creation, acquisition, claim, heartbeat, step, and terminal command
+families do not yet share one general lifecycle authority. Same-database physical deletion also does
+not provide legal hold, backup erasure proof, external WORM evidence, or non-H2 dialect certification.
+Those are separate Stage 4/5 requirements and remain explicit gaps.

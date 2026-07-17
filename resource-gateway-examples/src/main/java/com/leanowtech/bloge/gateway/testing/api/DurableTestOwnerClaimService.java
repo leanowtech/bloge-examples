@@ -366,7 +366,8 @@ public final class DurableTestOwnerClaimService {
                     "RG.TEST.DURABLE_IDEMPOTENCY_CONFLICT",
                     "clientRequestId already identifies different authorized owner-claim intent.",
                     false, Map.of());
-            case DUPLICATE_IDENTITY, INVALID_TRANSITION -> conflict(identity,
+            case DUPLICATE_IDENTITY, REPLAY_WINDOW_EXPIRED, INVALID_TRANSITION ->
+                    conflict(identity,
                     "RG.TEST.DURABLE_OWNER_CLAIM_CONFLICT",
                     "The durable owner claim violates the current control state.", false, Map.of());
         };

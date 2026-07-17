@@ -341,7 +341,8 @@ public final class DurableTestRecoveryHeartbeatService {
                     "RG.TEST.DURABLE_IDEMPOTENCY_CONFLICT",
                     "clientRequestId already identifies different authorized heartbeat intent.",
                     false);
-            case LEASE_ACTIVE, NOT_RESUMABLE, DUPLICATE_IDENTITY, INVALID_TRANSITION ->
+            case LEASE_ACTIVE, NOT_RESUMABLE, DUPLICATE_IDENTITY,
+                    REPLAY_WINDOW_EXPIRED, INVALID_TRANSITION ->
                     conflict(identity, "RG.TEST.DURABLE_HEARTBEAT_CONFLICT",
                             "The recovery heartbeat violates the current control state.", false);
         };

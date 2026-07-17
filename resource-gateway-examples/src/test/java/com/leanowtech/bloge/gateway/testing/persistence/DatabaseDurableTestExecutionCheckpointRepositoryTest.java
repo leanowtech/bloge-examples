@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRe
 import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryHeartbeatService;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryCommandKeys;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryPrincipal;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
@@ -27,6 +28,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -363,6 +365,370 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         .reason())
                 .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
                         .INVALID_TRANSITION);
+    }
+
+    @Test
+    void recoverySequenceRetentionErasesDetailAndEveryDerivedChildBeforeBlockingReplay() {
+        RecoverySequenceFixture fixture = completeTwoSignalRecoverySequence("sequence-retained");
+
+        var lease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+        var retained = repository.retainRecoverySequenceClaimedPage(
+                lease, Duration.ZERO, Duration.ofDays(1), 10);
+
+        assertThat(retained.result()).satisfies(result -> {
+            assertThat(result.sequencesTombstoned()).isOne();
+            assertThat(result.recoveryStepsPurged()).isEqualTo(2);
+            assertThat(result.ownerClaimsPurged()).isOne();
+            assertThat(result.heartbeatsPurged()).isOne();
+            assertThat(result.tombstonesPurged()).isZero();
+        });
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_sequences", Integer.class))
+                .isZero();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_recovery_steps
+                WHERE client_request_id LIKE ?
+                """, Integer.class, "rseq:" + fixture.namespace() + ":step:%")).isZero();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_resume_commands
+                WHERE client_request_id LIKE ?
+                """, Integer.class, "rseq:" + fixture.namespace() + ":claim:%")).isZero();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_recovery_heartbeats
+                WHERE client_request_id = ?
+                """, Integer.class, fixture.heartbeatKey())).isZero();
+        Map<String, Object> tombstone = database.jdbc().queryForMap("""
+                SELECT * FROM rg_test_durable_recovery_sequence_tombstones
+                """);
+        assertThat(tombstone.values()).noneMatch(value ->
+                "sequence-retained".equals(String.valueOf(value)));
+        assertThat(tombstone).containsEntry("REQUEST_FINGERPRINT", SHA_A);
+
+        assertThatThrownBy(() -> repository.reserveRecoverySequenceIdempotently(
+                fixture.command(), TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .REPLAY_WINDOW_EXPIRED);
+        assertThatThrownBy(() -> repository.reserveRecoverySequenceIdempotently(
+                recoverySequenceCommand("sequence-retained", SHA_B, "run-a", 2),
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .IDEMPOTENCY_CONFLICT);
+        assertThat(repository.recoverySequenceRetentionSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.totalSequencesTombstoned()).isOne();
+            assertThat(snapshot.totalRecoveryStepsPurged()).isEqualTo(2);
+            assertThat(snapshot.totalOwnerClaimsPurged()).isOne();
+            assertThat(snapshot.totalHeartbeatsPurged()).isOne();
+            assertThat(snapshot.activeSequenceRecords()).isZero();
+            assertThat(snapshot.tombstoneRecords()).isOne();
+        });
+    }
+
+    @Test
+    void recoverySequenceRetentionRollsBackTombstoneChildrenAndCountersOnChildCorruption() {
+        RecoverySequenceFixture fixture = completeTwoSignalRecoverySequence("sequence-corrupt");
+        database.jdbc().update("""
+                UPDATE rg_test_durable_recovery_steps
+                SET evidence_gaps_json = '[]'
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, "tenant-a", "test",
+                DurableTestRecoveryCommandKeys.sequenceStep(fixture.namespace(), 0));
+        var lease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+
+        assertThatThrownBy(() -> repository.retainRecoverySequenceClaimedPage(
+                lease, Duration.ZERO, Duration.ofDays(1), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("evidence gaps are corrupt");
+
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_sequences", Integer.class))
+                .isOne();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_steps", Integer.class))
+                .isEqualTo(2);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_recovery_sequence_tombstones
+                """, Integer.class)).isZero();
+        assertThat(repository.recoverySequenceRetentionSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.totalSequencesTombstoned()).isZero();
+            assertThat(snapshot.lastSuccessAt()).isNull();
+        });
+    }
+
+    @Test
+    void recoverySequenceRetentionBoundsOuterAndTombstonePagesIndependently()
+            throws Exception {
+        for (int index = 0; index < 3; index++) {
+            var command = recoverySequenceCommand(
+                    "sequence-page-" + index, SHA_A, "run-" + index, 1);
+            repository.reserveRecoverySequenceIdempotently(
+                    command, TestRuntimeTransactionMutation.noop());
+            expireRecoverySequenceActivity(command);
+        }
+        var firstLease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+        var first = repository.retainRecoverySequenceClaimedPage(
+                firstLease, Duration.ZERO, Duration.ofMillis(1), 2);
+
+        assertThat(first.result().sequencesTombstoned()).isEqualTo(2);
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_sequences", Integer.class))
+                .isOne();
+        TimeUnit.MILLISECONDS.sleep(10);
+        var secondLease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+        var second = repository.retainRecoverySequenceClaimedPage(
+                secondLease, Duration.ZERO, Duration.ofDays(1), 2);
+
+        assertThat(second.result().sequencesTombstoned()).isOne();
+        assertThat(second.result().tombstonesPurged()).isEqualTo(2);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_recovery_sequence_tombstones
+                """, Integer.class)).isOne();
+        repository.reserveRecoverySequenceIdempotently(
+                recoverySequenceCommand("sequence-page-0", SHA_B, "run-reused", 1),
+                TestRuntimeTransactionMutation.noop());
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_sequences", Integer.class))
+                .isOne();
+    }
+
+    @Test
+    void recoverySequenceRetentionLeaseIsExclusiveAndRejectsSupersededReplicaFence()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        var keys = RecoverySequenceRequestKeyProtector.fromConfiguration(
+                "key-a",
+                "key-a=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
+        var first = new DatabaseDurableTestExecutionCheckpointRepository(
+                database.jdbc(), database.transactionManager(), mapper, integrity,
+                keys, "retention-replica-a", Duration.ofSeconds(1));
+        first.init();
+        var firstLease = first.acquireRecoverySequenceRetentionLease().orElseThrow();
+        var second = new DatabaseDurableTestExecutionCheckpointRepository(
+                database.jdbc(), database.transactionManager(), mapper, integrity,
+                keys, "retention-replica-b", Duration.ofSeconds(1));
+        second.init();
+
+        assertThat(second.acquireRecoverySequenceRetentionLease()).isEmpty();
+        TimeUnit.MILLISECONDS.sleep(1_100);
+        var successor = second.acquireRecoverySequenceRetentionLease().orElseThrow();
+
+        assertThat(successor.epoch()).isGreaterThan(firstLease.epoch());
+        assertThatThrownBy(() -> first.retainRecoverySequenceClaimedPage(
+                firstLease, Duration.ZERO, Duration.ofDays(1), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("retention fence is stale or expired");
+    }
+
+    @Test
+    void recoverySequenceRetentionAuthorityAndTombstoneTamperingFailClosed() {
+        var command = recoverySequenceCommand(
+                "sequence-tamper", SHA_A, "run-a", 1);
+        repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop());
+        expireRecoverySequenceActivity(command);
+        var lease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+        repository.retainRecoverySequenceClaimedPage(
+                lease, Duration.ZERO, Duration.ofDays(1), 10);
+        database.jdbc().update("""
+                UPDATE rg_test_durable_recovery_sequence_tombstones
+                SET request_fingerprint = ?
+                """, SHA_B);
+
+        assertThatThrownBy(() -> repository.reserveRecoverySequenceIdempotently(
+                recoverySequenceCommand("sequence-tamper", SHA_A, "run-a", 1),
+                TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .INVALID_TRANSITION);
+
+        database.jdbc().update("""
+                UPDATE rg_test_durable_recovery_sequence_retention
+                SET total_sequences_tombstoned = total_sequences_tombstoned + 1
+                """);
+        assertThatThrownBy(repository::recoverySequenceRetentionSnapshot)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("retention authority is corrupt");
+        assertThatThrownBy(repository::acquireRecoverySequenceRetentionLease)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("retention authority is corrupt");
+    }
+
+    @Test
+    void recoverySequenceRetentionPublicEntryPointRejectsUnsafeLifecyclePolicy() {
+        assertThatThrownBy(() -> repository.retainRecoverySequencePage(
+                Duration.ofMinutes(59), Duration.ofDays(365), 100))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("commandRetention");
+        assertThatThrownBy(() -> repository.retainRecoverySequencePage(
+                Duration.ofDays(30), Duration.ofHours(23), 100))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("tombstoneRetention");
+        assertThatThrownBy(() -> repository.retainRecoverySequencePage(
+                Duration.ofDays(3_651), Duration.ofDays(365), 100))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("commandRetention");
+        assertThatThrownBy(() -> repository.retainRecoverySequencePage(
+                Duration.ofDays(30), Duration.ofDays(365), 1_001))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("pageSize");
+    }
+
+    @Test
+    void recoverySequenceRetentionSerializesWithAnAcceptedInFlightReplay()
+            throws Exception {
+        var command = recoverySequenceCommand(
+                "sequence-in-flight", SHA_A, "run-a", 1);
+        repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop());
+        expireRecoverySequenceActivity(command);
+        var lease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+        CountDownLatch replayActivated = new CountDownLatch(1);
+        CountDownLatch releaseReplay = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var replay = executor.submit(() -> repository.reserveRecoverySequenceIdempotently(
+                    command, jdbc -> {
+                        replayActivated.countDown();
+                        try {
+                            if (!releaseReplay.await(5, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("replay release timed out");
+                            }
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException(
+                                    "replay activity was interrupted", interrupted);
+                        }
+                    }));
+            assertThat(replayActivated.await(5, TimeUnit.SECONDS)).isTrue();
+            var retention = executor.submit(() -> repository
+                    .retainRecoverySequenceClaimedPage(
+                            lease, Duration.ZERO, Duration.ofDays(1), 10));
+
+            TimeUnit.MILLISECONDS.sleep(100);
+            assertThat(retention.isDone()).isFalse();
+            releaseReplay.countDown();
+
+            assertThat(replay.get(5, TimeUnit.SECONDS).idempotentReplay()).isTrue();
+            assertThat(retention.get(5, TimeUnit.SECONDS).result()
+                    .sequencesTombstoned()).isZero();
+        }
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_sequences",
+                Integer.class)).isOne();
+    }
+
+    @Test
+    void recoverySequenceReplayStopsAtTheAbsoluteDeadlineBeforeRetentionRuns() {
+        var command = recoverySequenceCommand(
+                "sequence-expired-active", SHA_A, "run-a", 1);
+        repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop());
+        ageRecoverySequenceBeyondReplayWindow(command);
+
+        assertThatThrownBy(() -> repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
+                        .REPLAY_WINDOW_EXPIRED);
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_sequences",
+                Integer.class)).isOne();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT activity_revision FROM rg_test_durable_recovery_sequences
+                WHERE client_request_id = ?
+                """, Long.class, command.clientRequestId())).isEqualTo(2L);
+    }
+
+    @Test
+    void recoverySequenceRetentionRejectsTamperedActivityFenceWithoutDeletingDetail() {
+        var command = recoverySequenceCommand(
+                "sequence-activity-tamper", SHA_A, "run-a", 1);
+        repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop());
+        expireRecoverySequenceActivity(command);
+        database.jdbc().update("""
+                UPDATE rg_test_durable_recovery_sequences
+                SET activity_revision = activity_revision + 1
+                WHERE client_request_id = ?
+                """, command.clientRequestId());
+        var lease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+
+        assertThatThrownBy(() -> repository.retainRecoverySequenceClaimedPage(
+                lease, Duration.ZERO, Duration.ofDays(1), 10))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .hasMessageContaining("activity fence is corrupt");
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_recovery_sequences",
+                Integer.class)).isOne();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_recovery_sequence_tombstones
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void recoverySequenceRetentionMigratesLegacyActivityBeforeItCanDeleteDetail() {
+        var command = recoverySequenceCommand(
+                "sequence-legacy-activity", SHA_A, "run-a", 1);
+        repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop());
+        expireRecoverySequenceActivity(command);
+        database.jdbc().update("""
+                UPDATE rg_test_durable_recovery_sequences
+                SET activity_revision = 0, activity_fingerprint = ''
+                WHERE client_request_id = ?
+                """, command.clientRequestId());
+        var lease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+
+        var retained = repository.retainRecoverySequenceClaimedPage(
+                lease, Duration.ZERO, Duration.ofDays(1), 10);
+
+        assertThat(retained.result().sequencesTombstoned()).isZero();
+        Map<String, Object> migrated = database.jdbc().queryForMap("""
+                SELECT activity_revision, activity_fingerprint, activity_until
+                FROM rg_test_durable_recovery_sequences
+                WHERE client_request_id = ?
+                """, command.clientRequestId());
+        assertThat(((Number) migrated.get("ACTIVITY_REVISION")).longValue()).isOne();
+        assertThat(String.valueOf(migrated.get("ACTIVITY_FINGERPRINT")))
+                .startsWith("sha256:");
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*) FROM rg_test_durable_recovery_sequence_tombstones
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void recoverySequenceRepositoryRefusesStartupWithoutAReferencedTombstoneKey() {
+        var command = recoverySequenceCommand(
+                "sequence-old-key", SHA_A, "run-a", 1);
+        repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop());
+        expireRecoverySequenceActivity(command);
+        var lease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+        repository.retainRecoverySequenceClaimedPage(
+                lease, Duration.ZERO, Duration.ofDays(1), 10);
+        var newGenerationOnly = RecoverySequenceRequestKeyProtector.fromConfiguration(
+                "key-b",
+                "key-b=ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=");
+        var restarted = new DatabaseDurableTestExecutionCheckpointRepository(
+                database.jdbc(), database.transactionManager(),
+                new ObjectMapper().findAndRegisterModules(), integrity,
+                newGenerationOnly, "retention-replica-b", Duration.ofMinutes(2));
+
+        assertThatThrownBy(restarted::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("tombstone key generation is unavailable")
+                .hasMessageContaining("local-recovery-sequence-v1");
     }
 
     @Test
@@ -3018,6 +3384,142 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         };
     }
 
+    private RecoverySequenceFixture completeTwoSignalRecoverySequence(String outerKey) {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        DurableTestExecutionCheckpointRepository.RecoverySequenceCommand outer =
+                recoverySequenceCommand(outerKey, SHA_A, "run-a", 2);
+        repository.reserveRecoverySequenceIdempotently(
+                outer, TestRuntimeTransactionMutation.noop());
+        String namespace = DurableTestRecoveryCommandKeys.sequenceNamespace(
+                mapper, "tenant-a", "test", outerKey);
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult initialClaim =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(expired, "sequence-initial-claim", SHA_D,
+                                "instance-b"));
+        DurableTestExecutionCheckpoint.EngineState suspendedEngine =
+                suspendedEngineState(initialClaim.checkpoint());
+        DurableTestExecutionCheckpointRepository.RecoveryStepResult first =
+                repository.advanceRecoveryStepIdempotently(
+                        stepCommand(initialClaim,
+                                DurableTestRecoveryCommandKeys.sequenceStep(namespace, 0),
+                                SHA_B,
+                                DurableTestExecutionCheckpointRepository
+                                        .RecoveryStepOutcome.SUSPENDED,
+                                suspendedEngine),
+                        mutation(initialClaim.checkpoint().engineExecutionId(),
+                                suspendedEngine, ignored -> { }),
+                        TestRuntimeTransactionMutation.noop());
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult secondClaim =
+                repository.claimExpiredLeaseIdempotently(
+                        resumeCommand(first.checkpoint(),
+                                DurableTestRecoveryCommandKeys.sequenceClaim(namespace, 1),
+                                SHA_D, "instance-c"));
+        String heartbeatKey = DurableTestRecoveryCommandKeys.automaticHeartbeat(
+                SHA_C, secondClaim.dispatch().revision());
+        DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult heartbeat =
+                repository.heartbeatRecoveryLeaseIdempotently(
+                        heartbeatCommand(secondClaim.dispatch(), heartbeatKey, SHA_A,
+                                Duration.ofMinutes(3)));
+        DurableTestExecutionCheckpointRepository.LeaseClaimResult heartbeatClaim =
+                new DurableTestExecutionCheckpointRepository.LeaseClaimResult(
+                        heartbeat.checkpoint(), heartbeat.dispatch(), false);
+        DurableTestExecutionCheckpoint.EngineState terminalEngine =
+                terminalEngineState(heartbeat.checkpoint());
+        repository.advanceRecoveryStepIdempotently(
+                stepCommand(heartbeatClaim,
+                        DurableTestRecoveryCommandKeys.sequenceStep(namespace, 1),
+                        SHA_C,
+                        DurableTestExecutionCheckpointRepository
+                                .RecoveryStepOutcome.COMPLETED,
+                        terminalEngine),
+                mutation(heartbeat.checkpoint().engineExecutionId(),
+                        terminalEngine, ignored -> { }),
+                TestRuntimeTransactionMutation.noop());
+        expireRecoverySequenceActivity(outer);
+        return new RecoverySequenceFixture(outer, namespace, heartbeatKey);
+    }
+
+    private void expireRecoverySequenceActivity(
+            DurableTestExecutionCheckpointRepository.RecoverySequenceCommand command) {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        record Activity(Instant createdAt, String recordFingerprint, long revision) {
+        }
+        Activity current = database.jdbc().queryForObject("""
+                        SELECT created_at, record_fingerprint, activity_revision
+                        FROM rg_test_durable_recovery_sequences
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND client_request_id = ?
+                        """, (rs, rowNumber) -> new Activity(
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getString("record_fingerprint"),
+                        rs.getLong("activity_revision")),
+                command.scope().tenantId(), command.scope().environmentId(),
+                command.clientRequestId());
+        long revision = current.revision() + 1;
+        String fingerprint = ProtocolFingerprint.of(mapper, Map.of(
+                "schemaVersion", "bloge.durableRecoverySequenceActivity.v1",
+                "scope", command.scope(),
+                "clientRequestId", command.clientRequestId(),
+                "recordFingerprint", current.recordFingerprint(),
+                "activityUntil", current.createdAt(),
+                "activityRevision", revision));
+        assertThat(database.jdbc().update("""
+                        UPDATE rg_test_durable_recovery_sequences
+                        SET activity_until = ?, activity_revision = ?,
+                            activity_fingerprint = ?
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND client_request_id = ? AND activity_revision = ?
+                        """, Timestamp.from(current.createdAt()), revision, fingerprint,
+                command.scope().tenantId(), command.scope().environmentId(),
+                command.clientRequestId(), current.revision())).isOne();
+    }
+
+    private void ageRecoverySequenceBeyondReplayWindow(
+            DurableTestExecutionCheckpointRepository.RecoverySequenceCommand command) {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        record Stored(String recordFingerprint, long activityRevision) {
+        }
+        Stored current = database.jdbc().queryForObject("""
+                        SELECT record_fingerprint, activity_revision
+                        FROM rg_test_durable_recovery_sequences
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND client_request_id = ?
+                        """, (rs, rowNumber) -> new Stored(
+                        rs.getString("record_fingerprint"),
+                        rs.getLong("activity_revision")),
+                command.scope().tenantId(), command.scope().environmentId(),
+                command.clientRequestId());
+        Instant createdAt = Instant.now().minus(Duration.ofDays(31));
+        String recordFingerprint = ProtocolFingerprint.of(mapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableRecoverySequenceReservation.v1"),
+                Map.entry("clientRequestId", command.clientRequestId()),
+                Map.entry("requestFingerprint", command.requestFingerprint()),
+                Map.entry("scope", command.scope()),
+                Map.entry("runId", command.runId()),
+                Map.entry("signalCount", command.signalCount()),
+                Map.entry("createdAt", createdAt)));
+        long activityRevision = current.activityRevision() + 1;
+        String activityFingerprint = ProtocolFingerprint.of(mapper, Map.of(
+                "schemaVersion", "bloge.durableRecoverySequenceActivity.v1",
+                "scope", command.scope(),
+                "clientRequestId", command.clientRequestId(),
+                "recordFingerprint", recordFingerprint,
+                "activityUntil", createdAt,
+                "activityRevision", activityRevision));
+        assertThat(database.jdbc().update("""
+                        UPDATE rg_test_durable_recovery_sequences
+                        SET created_at = ?, record_fingerprint = ?, activity_until = ?,
+                            activity_revision = ?, activity_fingerprint = ?
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND client_request_id = ? AND record_fingerprint = ?
+                        """, Timestamp.from(createdAt), recordFingerprint,
+                Timestamp.from(createdAt), activityRevision, activityFingerprint,
+                command.scope().tenantId(), command.scope().environmentId(),
+                command.clientRequestId(), current.recordFingerprint())).isOne();
+    }
+
     private DurableTestExecutionCheckpointRepository.RecoverySequenceCommand
     recoverySequenceCommand(
             String clientRequestId,
@@ -3029,6 +3531,13 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 new DurableTestExecutionCheckpoint.Scope(
                         "tenant-a", "org-a", "project-a", "test", "runner"),
                 runId, signalCount);
+    }
+
+    private record RecoverySequenceFixture(
+            DurableTestExecutionCheckpointRepository.RecoverySequenceCommand command,
+            String namespace,
+            String heartbeatKey
+    ) {
     }
 
     private DurableTestExecutionCheckpointRepository.InitialCreationCommand creationCommand(

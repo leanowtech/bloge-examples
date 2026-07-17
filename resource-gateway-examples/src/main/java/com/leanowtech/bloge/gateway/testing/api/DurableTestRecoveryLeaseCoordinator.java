@@ -166,7 +166,7 @@ public final class DurableTestRecoveryLeaseCoordinator implements AutoCloseable 
         DurableTestExecutionCheckpointRepository.RecoveryHeartbeatResult successor;
         try {
             successor = heartbeats.renewIssuedDispatch(
-                    previous.dispatch(), heartbeatKey(
+                    previous.dispatch(), DurableTestRecoveryCommandKeys.automaticHeartbeat(
                             operationFingerprint, previous.dispatch().revision()), identity);
         } catch (RuntimeException unavailableOrLost) {
             throw lost("Durable recovery preparation ownership became uncertain",
@@ -236,11 +236,6 @@ public final class DurableTestRecoveryLeaseCoordinator implements AutoCloseable 
             throw new IllegalStateException(
                     "Recovery heartbeat violated monotonic lease succession");
         }
-    }
-
-    private static String heartbeatKey(String operationFingerprint, long revision) {
-        return "auto-recovery-"
-                + operationFingerprint.substring("sha256:".length()) + "-" + revision;
     }
 
     private static LeaseLostException lost(String message, RuntimeException cause) {

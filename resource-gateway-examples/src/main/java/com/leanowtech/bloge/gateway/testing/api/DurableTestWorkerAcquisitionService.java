@@ -509,7 +509,8 @@ public final class DurableTestWorkerAcquisitionService {
                             "RG.TEST.DURABLE_WORKER_ACQUISITION_RACE",
                             "The selected worker assignment changed concurrently.",
                             identity.correlationId(), Map.of()));
-            case NOT_RESUMABLE, UNRECOGNIZED_DISPATCH, DUPLICATE_IDENTITY, INVALID_TRANSITION ->
+            case NOT_RESUMABLE, UNRECOGNIZED_DISPATCH, DUPLICATE_IDENTITY,
+                    REPLAY_WINDOW_EXPIRED, INVALID_TRANSITION ->
                     new IntegrationProblemException(IntegrationProblem.conflict(
                             "RG.TEST.DURABLE_WORKER_ACQUISITION_CONFLICT",
                             "The worker acquisition violates the current durable control state.",

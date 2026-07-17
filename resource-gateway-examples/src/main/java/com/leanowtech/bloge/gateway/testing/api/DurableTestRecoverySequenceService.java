@@ -111,7 +111,9 @@ public final class DurableTestRecoverySequenceService {
                         identity, normalizedRunId, request.clientRequestId(),
                         request.signals().size()), identity);
 
-        String childNamespace = childNamespace(request.clientRequestId(), identity);
+        String childNamespace = DurableTestRecoveryCommandKeys.sequenceNamespace(
+                objectMapper, identity.tenantId(), identity.environmentId(),
+                request.clientRequestId());
         DurableTestRecoverySequenceRequest.Fence currentFence = request.expectedFence();
         String currentCheckpointFingerprint = request.expectedCheckpointFingerprint();
         List<DurableTestRecoveryStepResponse> committedSteps = new ArrayList<>();
@@ -119,7 +121,7 @@ public final class DurableTestRecoverySequenceService {
         for (int index = 0; index < request.signals().size(); index++) {
             DurableTestRecoverySequenceRequest.Signal signal = request.signals().get(index);
             DurableTestRecoveryStepRequest stepRequest = new DurableTestRecoveryStepRequest(
-                    "", childKey(childNamespace, "step", index),
+                    "", DurableTestRecoveryCommandKeys.sequenceStep(childNamespace, index),
                     new DurableTestRecoveryStepRequest.Fence(
                             currentFence.ownerId(), currentFence.leaseEpoch(),
                             currentFence.revision()),
@@ -137,7 +139,8 @@ public final class DurableTestRecoverySequenceService {
                 DurableTestOwnerClaimResponse claim = ownerClaims.claim(
                         normalizedRunId,
                         new DurableTestOwnerClaimRequest(
-                                "", childKey(childNamespace, "claim", index + 1),
+                                "", DurableTestRecoveryCommandKeys.sequenceClaim(
+                                childNamespace, index + 1),
                                 new DurableTestOwnerClaimRequest.Fence(
                                         step.ownerId(), step.leaseEpoch(), step.revision()),
                                 step.checkpointFingerprint()),
@@ -163,6 +166,18 @@ public final class DurableTestRecoverySequenceService {
         try {
             return checkpoints.reserveRecoverySequenceIdempotently(command, boundAudit);
         } catch (DurableTestExecutionCheckpointConflictException conflict) {
+            if (conflict.reason()
+                    == DurableTestExecutionCheckpointConflictException.Reason
+                    .REPLAY_WINDOW_EXPIRED) {
+                rejected(identity, command.runId(),
+                        "RG.TEST.DURABLE_RECOVERY_SEQUENCE_REPLAY_WINDOW_EXPIRED",
+                        command.clientRequestId());
+                throw new IntegrationProblemException(IntegrationProblem.conflict(
+                        "RG.TEST.DURABLE_RECOVERY_SEQUENCE_REPLAY_WINDOW_EXPIRED",
+                        "Exact recovery-sequence replay expired while its request key "
+                                + "remains reserved.",
+                        identity.correlationId(), Map.of()));
+            }
             if (conflict.reason()
                     == DurableTestExecutionCheckpointConflictException.Reason
                     .IDEMPOTENCY_CONFLICT) {
@@ -234,21 +249,6 @@ public final class DurableTestRecoverySequenceService {
                 Map.entry("purpose", identity.purpose()),
                 Map.entry("clearance", identity.clearance()),
                 Map.entry("groups", identity.groups().stream().sorted().toList())));
-    }
-
-    private String childNamespace(
-            String clientRequestId,
-            IntegrationRequestContext identity) {
-        String fingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
-                "schemaVersion", "bloge.durableRecoverySequenceChildNamespace.v1",
-                "tenantId", identity.tenantId(),
-                "environmentId", identity.environmentId(),
-                "clientRequestId", clientRequestId));
-        return fingerprint.substring("sha256:".length());
-    }
-
-    private static String childKey(String namespace, String kind, int index) {
-        return "rseq:" + namespace + ":" + kind + ":" + index;
     }
 
     private static void requireStep(

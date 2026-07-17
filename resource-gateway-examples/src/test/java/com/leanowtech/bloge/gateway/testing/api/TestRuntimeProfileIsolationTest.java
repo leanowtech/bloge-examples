@@ -23,6 +23,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProj
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
+import com.leanowtech.bloge.gateway.testing.persistence.RecoverySequenceRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTokenProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineRequestKeyProtector;
@@ -69,6 +70,12 @@ class TestRuntimeProfileIsolationTest {
                     DurableTestRecoverySequenceController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestRecoverySequenceService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableRecoverySequenceRetentionScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableRecoverySequenceRetentionTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    RecoverySequenceRequestKeyProtector.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryService.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -151,6 +158,12 @@ class TestRuntimeProfileIsolationTest {
                     DurableTestRecoverySequenceController.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestRecoverySequenceService.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableRecoverySequenceRetentionScheduler.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableRecoverySequenceRetentionTelemetry.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    RecoverySequenceRequestKeyProtector.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -254,6 +267,12 @@ class TestRuntimeProfileIsolationTest {
                     DurableTestRecoveryStepController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableRecoverySequenceRetentionScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableRecoverySequenceRetentionTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    RecoverySequenceRequestKeyProtector.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryRuntime.class)).isEmpty();
             assertThat(context.getBeansOfType(TestExecutionApiService.class)).isEmpty();

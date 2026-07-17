@@ -477,8 +477,25 @@ derives stable child keys and performs a fresh authorized owner claim after ever
 suspension. A retry of the unchanged outer request replays the committed prefix and continues at
 the first unfinished step. The response reports ordered payload-free `steps`, consumed/provided
 counts, and either `stopReason=TERMINAL` or `SIGNALS_EXHAUSTED`. Limits are 16 signals, 256 KiB per
-signal, and 1 MiB for the sequence. This synchronous helper is not a background queue, remote
-runtime-state dispatcher, cross-process supervisor, or hard-cancellation mechanism.
+signal, and 1 MiB for the sequence.
+
+Detailed outer and server-derived child commands remain exactly replayable for 30 days from the
+first reservation by default. A request accepted before that absolute deadline advances an
+integrity-protected database activity fence for one more command window, so retention cannot race
+its in-flight child writes; the fence does not extend the replay deadline. A database-leased,
+bounded retention page then verifies every row, atomically replaces the outer request with a scoped
+keyed-HMAC tombstone, and erases its derived steps, intermediate claims, and automatic heartbeats.
+After the absolute deadline and during the default 365-day tombstone window, an exact retry returns
+`409 RG.TEST.DURABLE_RECOVERY_SEQUENCE_REPLAY_WINDOW_EXPIRED`; changed intent under the same key
+remains an idempotency conflict. Only tombstone expiry permits key reuse. Staging deployments must
+set `RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_INSTANCE_ID`,
+`RG_TEST_DURABLE_RECOVERY_SEQUENCE_REQUEST_KEY_ACTIVE_ID`, and
+`RG_TEST_DURABLE_RECOVERY_SEQUENCE_REQUEST_KEY_RING`. Roll out a new verification key to every
+replica before making it active, and keep an old key until all tombstones written with it have
+expired; a restarted replica fails closed when a referenced generation is missing.
+
+This synchronous helper is not a background queue, remote runtime-state dispatcher, cross-process
+supervisor, hard-cancellation mechanism, backup-erasure protocol, or external evidence archive.
 
 ### Complete one terminal recovery
 

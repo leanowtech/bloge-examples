@@ -894,7 +894,8 @@ public final class DurableTestTerminalRecoveryService {
                     "RG.TEST.DURABLE_IDEMPOTENCY_CONFLICT",
                     "clientRequestId already identifies different authorized terminal intent.",
                     false);
-            case LEASE_ACTIVE, NOT_RESUMABLE, DUPLICATE_IDENTITY, INVALID_TRANSITION ->
+            case LEASE_ACTIVE, NOT_RESUMABLE, DUPLICATE_IDENTITY,
+                    REPLAY_WINDOW_EXPIRED, INVALID_TRANSITION ->
                     conflict(identity, "RG.TEST.DURABLE_TERMINAL_RECOVERY_CONFLICT",
                             "The terminal recovery violates the current control state.", false);
         };
@@ -915,7 +916,8 @@ public final class DurableTestTerminalRecoveryService {
                     "RG.TEST.DURABLE_IDEMPOTENCY_CONFLICT",
                     "clientRequestId already identifies different authorized recovery-step intent.",
                     false);
-            case LEASE_ACTIVE, NOT_RESUMABLE, DUPLICATE_IDENTITY, INVALID_TRANSITION ->
+            case LEASE_ACTIVE, NOT_RESUMABLE, DUPLICATE_IDENTITY,
+                    REPLAY_WINDOW_EXPIRED, INVALID_TRANSITION ->
                     conflict(identity, "RG.TEST.DURABLE_RECOVERY_STEP_CONFLICT",
                             "The recovery step violates the current control state.", false);
         };

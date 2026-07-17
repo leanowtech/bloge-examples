@@ -42,6 +42,8 @@ public final class DurableTestExecutionCheckpointConflictException extends Runti
         NOT_RESUMABLE,
         /** A scoped client request key already identifies different resume intent. */
         IDEMPOTENCY_CONFLICT,
+        /** Exact replay detail expired while the request identity remains reserved. */
+        REPLAY_WINDOW_EXPIRED,
         /** The requested lifecycle or monotonic state transition violates the protocol. */
         INVALID_TRANSITION
     }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestRecoveryCommandKeys;
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
@@ -13,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -32,12 +34,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.INVALID_TRANSITION;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.LEASE_ACTIVE;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.LEASE_EXPIRED;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.NOT_RESUMABLE;
+import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.REPLAY_WINDOW_EXPIRED;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE;
 import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointConflictException.Reason.UNRECOGNIZED_DISPATCH;
 
@@ -52,11 +57,34 @@ import static com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheck
 public final class DatabaseDurableTestExecutionCheckpointRepository
         implements DurableTestExecutionCheckpointRepository {
 
+    private static final String RECOVERY_SEQUENCE_RETENTION_JOB =
+            "durable-recovery-sequence-retention-v1";
+    private static final Duration MIN_RECOVERY_SEQUENCE_COMMAND_RETENTION =
+            Duration.ofHours(1);
+    private static final Duration MIN_RECOVERY_SEQUENCE_TOMBSTONE_RETENTION =
+            Duration.ofDays(1);
+    private static final Duration MAX_RECOVERY_SEQUENCE_RETENTION =
+            Duration.ofDays(3_650);
+    private static final Duration MIN_RECOVERY_SEQUENCE_RETENTION_LEASE =
+            Duration.ofSeconds(1);
+    private static final Duration MAX_RECOVERY_SEQUENCE_RETENTION_LEASE =
+            Duration.ofHours(1);
+    private static final int MAX_RECOVERY_SEQUENCE_RETENTION_PAGE = 1_000;
+    private static final int MAX_RECOVERY_SEQUENCE_DERIVED_HEARTBEATS = 4_096;
+    private static final Pattern RETENTION_OWNER =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+    private static final String LOCAL_RECOVERY_SEQUENCE_KEY =
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
     private final TransactionTemplate repeatableReadScans;
     private final ObjectMapper objectMapper;
     private final DurableTestExecutionCheckpointIntegrity integrity;
+    private final RecoverySequenceRequestKeyProtector recoverySequenceRequestKeys;
+    private final String recoverySequenceRetentionOwnerId;
+    private final Duration recoverySequenceRetentionLeaseDuration;
+    private final Duration recoverySequenceReplayActivityGrace;
 
     /**
      * Creates a transactional checkpoint authority over the isolated test-runtime database.
@@ -71,6 +99,62 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             PlatformTransactionManager transactionManager,
             ObjectMapper objectMapper,
             DurableTestExecutionCheckpointIntegrity integrity) {
+        this(jdbc, transactionManager, objectMapper, integrity,
+                RecoverySequenceRequestKeyProtector.fromConfiguration(
+                        "local-recovery-sequence-v1",
+                        "local-recovery-sequence-v1=" + LOCAL_RECOVERY_SEQUENCE_KEY),
+                "recovery-sequence-retention-" + UUID.randomUUID(),
+                Duration.ofMinutes(2), Duration.ofDays(30));
+    }
+
+    /**
+     * Creates a checkpoint authority with an independently keyed, replica-fenced sequence
+     * lifecycle controller.
+     *
+     * @param jdbc JDBC facade for schema, verified reads, and transaction-participating writes
+     * @param transactionManager local transaction manager shared with BLOGE staged stores
+     * @param objectMapper mapper for complete immutable checkpoint JSON
+     * @param integrity nested and aggregate checkpoint fingerprint authority
+     * @param recoverySequenceRequestKeys HMAC authority for erased sequence request identities
+     * @param recoverySequenceRetentionOwnerId stable maintenance replica identity
+     * @param recoverySequenceRetentionLeaseDuration database-clock maintenance lease
+     */
+    public DatabaseDurableTestExecutionCheckpointRepository(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager,
+            ObjectMapper objectMapper,
+            DurableTestExecutionCheckpointIntegrity integrity,
+            RecoverySequenceRequestKeyProtector recoverySequenceRequestKeys,
+            String recoverySequenceRetentionOwnerId,
+            Duration recoverySequenceRetentionLeaseDuration) {
+        this(jdbc, transactionManager, objectMapper, integrity,
+                recoverySequenceRequestKeys, recoverySequenceRetentionOwnerId,
+                recoverySequenceRetentionLeaseDuration, Duration.ofDays(30));
+    }
+
+    /**
+     * Creates a checkpoint authority with an absolute sequence replay window and equal in-flight
+     * deletion grace.
+     *
+     * @param jdbc JDBC facade for schema, verified reads, and transaction-participating writes
+     * @param transactionManager local transaction manager shared with BLOGE staged stores
+     * @param objectMapper mapper for complete immutable checkpoint JSON
+     * @param integrity nested and aggregate checkpoint fingerprint authority
+     * @param recoverySequenceRequestKeys HMAC authority for erased sequence request identities
+     * @param recoverySequenceRetentionOwnerId stable maintenance replica identity
+     * @param recoverySequenceRetentionLeaseDuration database-clock maintenance lease
+     * @param recoverySequenceReplayActivityGrace in-flight protection granted only before the
+     *     absolute replay deadline
+     */
+    public DatabaseDurableTestExecutionCheckpointRepository(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager,
+            ObjectMapper objectMapper,
+            DurableTestExecutionCheckpointIntegrity integrity,
+            RecoverySequenceRequestKeyProtector recoverySequenceRequestKeys,
+            String recoverySequenceRetentionOwnerId,
+            Duration recoverySequenceRetentionLeaseDuration,
+            Duration recoverySequenceReplayActivityGrace) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         PlatformTransactionManager requiredTransactionManager = Objects.requireNonNull(
                 transactionManager, "transactionManager");
@@ -81,6 +165,14 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 TransactionDefinition.ISOLATION_REPEATABLE_READ);
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.integrity = Objects.requireNonNull(integrity, "integrity");
+        this.recoverySequenceRequestKeys = Objects.requireNonNull(
+                recoverySequenceRequestKeys, "recoverySequenceRequestKeys");
+        this.recoverySequenceRetentionOwnerId = requiredRetentionOwner(
+                recoverySequenceRetentionOwnerId);
+        this.recoverySequenceRetentionLeaseDuration = boundedRetentionLease(
+                recoverySequenceRetentionLeaseDuration);
+        this.recoverySequenceReplayActivityGrace = boundedRecoverySequenceActivityGrace(
+                recoverySequenceReplayActivityGrace);
     }
 
     /** Creates the isolated durable control table and its scoped execution lookup index. */
@@ -397,7 +489,76 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     signal_count INTEGER NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     record_fingerprint VARCHAR(80) NOT NULL,
+                    activity_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    activity_revision BIGINT NOT NULL,
+                    activity_fingerprint VARCHAR(80) NOT NULL,
                     PRIMARY KEY (tenant_id, environment_id, client_request_id)
+                )
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_recovery_sequences
+                ADD COLUMN IF NOT EXISTS activity_until TIMESTAMP WITH TIME ZONE
+                    DEFAULT CURRENT_TIMESTAMP NOT NULL
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_recovery_sequences
+                ADD COLUMN IF NOT EXISTS activity_revision BIGINT DEFAULT 0 NOT NULL
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_recovery_sequences
+                ADD COLUMN IF NOT EXISTS activity_fingerprint VARCHAR(80) DEFAULT '' NOT NULL
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_recovery_sequence_retention_idx
+                ON rg_test_durable_recovery_sequences (
+                    created_at, tenant_id, environment_id, client_request_id
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_recovery_sequence_activity_idx
+                ON rg_test_durable_recovery_sequences (
+                    created_at, activity_until, tenant_id, environment_id,
+                    client_request_id
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_sequence_tombstones (
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    request_key_id VARCHAR(64) NOT NULL,
+                    request_key VARCHAR(80) NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    tombstoned_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_version INTEGER NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (
+                        tenant_id, environment_id, request_key_id, request_key
+                    )
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_recovery_sequence_tombstone_expiry_idx
+                ON rg_test_durable_recovery_sequence_tombstones (
+                    expires_at, tenant_id, environment_id, request_key_id, request_key
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_sequence_retention (
+                    job_name VARCHAR(128) PRIMARY KEY,
+                    lease_owner VARCHAR(255) NOT NULL,
+                    lease_token VARCHAR(255) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    lease_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    revision BIGINT NOT NULL,
+                    total_sequences_tombstoned BIGINT NOT NULL,
+                    total_recovery_steps_purged BIGINT NOT NULL,
+                    total_owner_claims_purged BIGINT NOT NULL,
+                    total_heartbeats_purged BIGINT NOT NULL,
+                    total_tombstones_purged BIGINT NOT NULL,
+                    last_success_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL
                 )
                 """);
         jdbc.execute("""
@@ -439,6 +600,8 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     tenant_id, environment_id, run_id, result_checkpoint_fingerprint
                 )
                 """);
+        validateRecoverySequenceTombstoneKeyRing();
+        initializeRecoverySequenceRetentionState();
     }
 
     @Override
@@ -1170,13 +1333,17 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     requiredCommand, requiredCompanion));
         } catch (DataIntegrityViolationException concurrentInsert) {
             return transactions.execute(status -> {
-                StoredRecoverySequence stored = findRecoverySequences(
+                List<StoredRecoverySequence> stored = findRecoverySequences(
                         requiredCommand.scope().tenantId(),
                         requiredCommand.scope().environmentId(),
-                        requiredCommand.clientRequestId()).stream().findFirst()
-                        .orElseThrow(() -> concurrentInsert);
+                        requiredCommand.clientRequestId(), true);
+                if (stored.isEmpty()) {
+                    requireNoRecoverySequenceTombstone(requiredCommand);
+                    throw concurrentInsert;
+                }
                 RecoverySequenceReservation replay = verifiedRecoverySequence(
-                        requiredCommand, stored, true);
+                        requiredCommand, stored.getFirst(), true);
+                activateRecoverySequenceReplay(stored.getFirst());
                 requiredCompanion.apply(jdbc);
                 return replay;
             });
@@ -1188,26 +1355,34 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             TestRuntimeTransactionMutation companionMutation) {
         List<StoredRecoverySequence> existing = findRecoverySequences(
                 command.scope().tenantId(), command.scope().environmentId(),
-                command.clientRequestId());
+                command.clientRequestId(), true);
         if (!existing.isEmpty()) {
             RecoverySequenceReservation replay = verifiedRecoverySequence(
                     command, existing.getFirst(), true);
+            activateRecoverySequenceReplay(existing.getFirst());
             companionMutation.apply(jdbc);
             return replay;
         }
+        requireNoRecoverySequenceTombstone(command);
         Instant createdAt = databaseNow();
         String recordFingerprint = recoverySequenceRecordFingerprint(command, createdAt);
+        Instant activityUntil = createdAt.plus(recoverySequenceReplayActivityGrace);
+        long activityRevision = 1;
+        String activityFingerprint = recoverySequenceActivityFingerprint(
+                command, recordFingerprint, activityUntil, activityRevision);
         DurableTestExecutionCheckpoint.Scope scope = command.scope();
         jdbc.update("""
                 INSERT INTO rg_test_durable_recovery_sequences (
                     tenant_id, environment_id, client_request_id, request_fingerprint,
                     organization_id, project_id, actor_id, run_id, signal_count,
-                    created_at, record_fingerprint
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at, record_fingerprint, activity_until,
+                    activity_revision, activity_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, scope.tenantId(), scope.environmentId(), command.clientRequestId(),
                 command.requestFingerprint(), scope.organizationId(), scope.projectId(),
                 scope.actorId(), command.runId(), command.signalCount(),
-                Timestamp.from(createdAt), recordFingerprint);
+                Timestamp.from(createdAt), recordFingerprint, Timestamp.from(activityUntil),
+                activityRevision, activityFingerprint);
         companionMutation.apply(jdbc);
         return new RecoverySequenceReservation(command, createdAt, recordFingerprint, false);
     }
@@ -1215,22 +1390,117 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
     private List<StoredRecoverySequence> findRecoverySequences(
             String tenantId,
             String environmentId,
-            String clientRequestId) {
+            String clientRequestId,
+            boolean lock) {
         return jdbc.query("""
                 SELECT tenant_id, environment_id, client_request_id, request_fingerprint,
                        organization_id, project_id, actor_id, run_id, signal_count,
-                       created_at, record_fingerprint
+                       created_at, record_fingerprint, activity_until,
+                       activity_revision, activity_fingerprint
                 FROM rg_test_durable_recovery_sequences
                 WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
-                """, (rs, rowNumber) -> new StoredRecoverySequence(
+                """ + (lock ? " FOR UPDATE" : ""), (rs, rowNumber) -> new StoredRecoverySequence(
                 rs.getString("tenant_id"), rs.getString("environment_id"),
                 rs.getString("client_request_id"), rs.getString("request_fingerprint"),
                 rs.getString("organization_id"), rs.getString("project_id"),
                 rs.getString("actor_id"), rs.getString("run_id"),
                 rs.getInt("signal_count"), rs.getTimestamp("created_at").toInstant(),
-                rs.getString("record_fingerprint")),
+                rs.getString("record_fingerprint"),
+                rs.getTimestamp("activity_until").toInstant(),
+                rs.getLong("activity_revision"),
+                rs.getString("activity_fingerprint")),
                 normalized(tenantId), normalizedEnvironment(environmentId),
                 normalized(clientRequestId));
+    }
+
+    private void requireNoRecoverySequenceTombstone(RecoverySequenceCommand command) {
+        List<StoredRecoverySequenceTombstone> matches = new ArrayList<>();
+        DurableTestExecutionCheckpoint.Scope scope = command.scope();
+        for (RecoverySequenceRequestKeyProtector.IndexKey candidate
+                : recoverySequenceRequestKeys.lookupCandidates(
+                scope.tenantId(), scope.environmentId(), command.clientRequestId())) {
+            matches.addAll(jdbc.query("""
+                            SELECT tenant_id, environment_id, request_key_id, request_key,
+                                   request_fingerprint, tombstoned_at, expires_at,
+                                   record_version, record_fingerprint
+                            FROM rg_test_durable_recovery_sequence_tombstones
+                            WHERE tenant_id = ? AND environment_id = ?
+                              AND request_key_id = ? AND request_key = ?
+                            """, this::mapRecoverySequenceTombstone,
+                    scope.tenantId(), scope.environmentId(),
+                    candidate.keyId(), candidate.value()));
+        }
+        if (matches.isEmpty()) {
+            return;
+        }
+        if (matches.size() != 1) {
+            throw conflict(INVALID_TRANSITION,
+                    "Recovery-sequence request identity has multiple tombstones");
+        }
+        StoredRecoverySequenceTombstone tombstone = matches.getFirst();
+        requireValidRecoverySequenceTombstone(tombstone);
+        if (!recoverySequenceRequestKeys.matches(
+                scope.tenantId(), scope.environmentId(), command.clientRequestId(),
+                tombstone.requestKeyId(), tombstone.requestKey())) {
+            throw conflict(INVALID_TRANSITION,
+                    "Recovery-sequence tombstone index does not match its request identity");
+        }
+        if (tombstone.requestFingerprint().equals(command.requestFingerprint())) {
+            throw conflict(REPLAY_WINDOW_EXPIRED,
+                    "Recovery-sequence exact replay window has expired");
+        }
+        throw conflict(IDEMPOTENCY_CONFLICT,
+                "clientRequestId remains reserved for different recovery-sequence intent");
+    }
+
+    private StoredRecoverySequenceTombstone mapRecoverySequenceTombstone(
+            ResultSet rs,
+            int rowNumber) throws SQLException {
+        return new StoredRecoverySequenceTombstone(
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                rs.getString("request_key_id"), rs.getString("request_key"),
+                rs.getString("request_fingerprint"),
+                rs.getTimestamp("tombstoned_at").toInstant(),
+                rs.getTimestamp("expires_at").toInstant(),
+                rs.getInt("record_version"), rs.getString("record_fingerprint"));
+    }
+
+    private void requireValidRecoverySequenceTombstone(
+            StoredRecoverySequenceTombstone tombstone) {
+        try {
+            if (tombstone.recordVersion() != 1
+                    || tombstone.tenantId().isBlank()
+                    || tombstone.environmentId().isBlank()
+                    || !recoverySequenceRequestKeys.containsKey(tombstone.requestKeyId())
+                    || !tombstone.requestFingerprint().matches("sha256:[a-f0-9]{64}")
+                    || !tombstone.expiresAt().isAfter(tombstone.tombstonedAt())) {
+                throw new IllegalArgumentException("invalid tombstone fields");
+            }
+            new RecoverySequenceRequestKeyProtector.IndexKey(
+                    tombstone.requestKeyId(), tombstone.requestKey());
+        } catch (RuntimeException malformed) {
+            throw conflict(INVALID_TRANSITION,
+                    "Stored recovery-sequence tombstone is malformed");
+        }
+        if (!recoverySequenceTombstoneFingerprint(tombstone)
+                .equals(tombstone.recordFingerprint())) {
+            throw conflict(INVALID_TRANSITION,
+                    "Stored recovery-sequence tombstone failed integrity verification");
+        }
+    }
+
+    private String recoverySequenceTombstoneFingerprint(
+            StoredRecoverySequenceTombstone tombstone) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableRecoverySequenceTombstone.v1"),
+                Map.entry("tenantId", tombstone.tenantId()),
+                Map.entry("environmentId", tombstone.environmentId()),
+                Map.entry("requestKeyId", tombstone.requestKeyId()),
+                Map.entry("requestKey", tombstone.requestKey()),
+                Map.entry("requestFingerprint", tombstone.requestFingerprint()),
+                Map.entry("tombstonedAt", tombstone.tombstonedAt()),
+                Map.entry("expiresAt", tombstone.expiresAt()),
+                Map.entry("recordVersion", tombstone.recordVersion())));
     }
 
     private RecoverySequenceReservation verifiedRecoverySequence(
@@ -1274,6 +1544,809 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 Map.entry("runId", command.runId()),
                 Map.entry("signalCount", command.signalCount()),
                 Map.entry("createdAt", createdAt)));
+    }
+
+    private void activateRecoverySequenceReplay(StoredRecoverySequence sequence) {
+        if (!isLegacyRecoverySequenceActivity(sequence)) {
+            requireValidRecoverySequenceActivity(sequence);
+        }
+        Instant now = databaseNow();
+        Instant absoluteReplayDeadline = sequence.createdAt()
+                .plus(recoverySequenceReplayActivityGrace);
+        if (!now.isBefore(absoluteReplayDeadline)) {
+            throw conflict(REPLAY_WINDOW_EXPIRED,
+                    "Recovery-sequence exact replay window has expired");
+        }
+        long nextRevision = Math.addExact(sequence.activityRevision(), 1);
+        Instant nextActivityUntil = now.plus(recoverySequenceReplayActivityGrace);
+        RecoverySequenceCommand command = storedRecoverySequenceCommand(sequence);
+        String nextFingerprint = recoverySequenceActivityFingerprint(
+                command, sequence.recordFingerprint(), nextActivityUntil, nextRevision);
+        int updated = jdbc.update("""
+                UPDATE rg_test_durable_recovery_sequences
+                SET activity_until = ?, activity_revision = ?, activity_fingerprint = ?
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                  AND record_fingerprint = ? AND activity_revision = ?
+                  AND activity_fingerprint = ?
+                """, Timestamp.from(nextActivityUntil), nextRevision, nextFingerprint,
+                sequence.tenantId(), sequence.environmentId(), sequence.clientRequestId(),
+                sequence.recordFingerprint(), sequence.activityRevision(),
+                sequence.activityFingerprint());
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "Recovery-sequence activity changed concurrently");
+        }
+    }
+
+    private boolean initializeLegacyRecoverySequenceActivity(
+            StoredRecoverySequence sequence,
+            Instant now) {
+        if (!isLegacyRecoverySequenceActivity(sequence)) {
+            requireValidRecoverySequenceActivity(sequence);
+            return false;
+        }
+        RecoverySequenceCommand command = storedRecoverySequenceCommand(sequence);
+        Instant activityUntil = now.plus(recoverySequenceReplayActivityGrace);
+        long activityRevision = 1;
+        String activityFingerprint = recoverySequenceActivityFingerprint(
+                command, sequence.recordFingerprint(), activityUntil, activityRevision);
+        int updated = jdbc.update("""
+                UPDATE rg_test_durable_recovery_sequences
+                SET activity_until = ?, activity_revision = ?, activity_fingerprint = ?
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                  AND record_fingerprint = ? AND activity_revision = 0
+                  AND activity_fingerprint = ''
+                """, Timestamp.from(activityUntil), activityRevision, activityFingerprint,
+                sequence.tenantId(), sequence.environmentId(), sequence.clientRequestId(),
+                sequence.recordFingerprint());
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "Legacy recovery-sequence activity changed concurrently");
+        }
+        return true;
+    }
+
+    private boolean isLegacyRecoverySequenceActivity(StoredRecoverySequence sequence) {
+        return sequence.activityRevision() == 0
+                && sequence.activityFingerprint() != null
+                && sequence.activityFingerprint().isBlank();
+    }
+
+    private void requireValidRecoverySequenceActivity(StoredRecoverySequence sequence) {
+        if (sequence.activityUntil() == null
+                || sequence.activityUntil().isBefore(sequence.createdAt())
+                || sequence.activityRevision() < 1
+                || !recoverySequenceActivityFingerprint(
+                storedRecoverySequenceCommand(sequence), sequence.recordFingerprint(),
+                sequence.activityUntil(), sequence.activityRevision())
+                .equals(sequence.activityFingerprint())) {
+            throw conflict(INVALID_TRANSITION,
+                    "Stored recovery-sequence activity fence is corrupt");
+        }
+    }
+
+    private String recoverySequenceActivityFingerprint(
+            RecoverySequenceCommand command,
+            String recordFingerprint,
+            Instant activityUntil,
+            long activityRevision) {
+        return ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.durableRecoverySequenceActivity.v1",
+                "scope", command.scope(),
+                "clientRequestId", command.clientRequestId(),
+                "recordFingerprint", recordFingerprint,
+                "activityUntil", activityUntil,
+                "activityRevision", activityRevision));
+    }
+
+    @Override
+    public RecoverySequenceRetentionAttempt retainRecoverySequencePage(
+            Duration commandRetention,
+            Duration tombstoneRetention,
+            int pageSize) {
+        Duration safeCommandRetention = boundedRecoverySequenceRetention(
+                commandRetention, MIN_RECOVERY_SEQUENCE_COMMAND_RETENTION,
+                "commandRetention");
+        if (!safeCommandRetention.equals(recoverySequenceReplayActivityGrace)) {
+            throw new IllegalArgumentException(
+                    "commandRetention must match the configured recovery-sequence replay window");
+        }
+        Duration safeTombstoneRetention = boundedRecoverySequenceRetention(
+                tombstoneRetention, MIN_RECOVERY_SEQUENCE_TOMBSTONE_RETENTION,
+                "tombstoneRetention");
+        int safePageSize = boundedRecoverySequenceRetentionPage(pageSize);
+        Optional<RecoverySequenceRetentionLease> lease =
+                acquireRecoverySequenceRetentionLease();
+        if (lease.isEmpty()) {
+            return RecoverySequenceRetentionAttempt.leaseBusy();
+        }
+        try {
+            return retainRecoverySequenceClaimedPage(
+                    lease.orElseThrow(), safeCommandRetention,
+                    safeTombstoneRetention, safePageSize);
+        } catch (RuntimeException failure) {
+            try {
+                releaseRecoverySequenceRetentionLease(lease.orElseThrow());
+            } catch (RuntimeException releaseFailure) {
+                failure.addSuppressed(releaseFailure);
+            }
+            throw failure;
+        }
+    }
+
+    @Override
+    public RecoverySequenceRetentionSnapshot recoverySequenceRetentionSnapshot() {
+        RecoverySequenceRetentionSnapshot snapshot = repeatableReadScans.execute(status -> {
+            RecoverySequenceRetentionState state =
+                    requireRecoverySequenceRetentionState(false);
+            Long active = jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM rg_test_durable_recovery_sequences
+                    """, Long.class);
+            Long tombstones = jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_durable_recovery_sequence_tombstones
+                    """, Long.class);
+            return state.snapshot(active == null ? 0 : active,
+                    tombstones == null ? 0 : tombstones, databaseNow());
+        });
+        if (snapshot == null) {
+            throw new IllegalStateException(
+                    "Recovery-sequence retention snapshot returned no result");
+        }
+        return snapshot;
+    }
+
+    Optional<RecoverySequenceRetentionLease> acquireRecoverySequenceRetentionLease() {
+        Optional<RecoverySequenceRetentionLease> result = transactions.execute(status -> {
+            RecoverySequenceRetentionState current =
+                    requireRecoverySequenceRetentionState(true);
+            Instant now = databaseNow();
+            if (current.leaseUntil().isAfter(now)) {
+                return Optional.empty();
+            }
+            String token = UUID.randomUUID().toString();
+            long epoch = Math.addExact(current.leaseEpoch(), 1);
+            long revision = Math.addExact(current.revision(), 1);
+            Instant leaseUntil = now.plus(recoverySequenceRetentionLeaseDuration);
+            RecoverySequenceRetentionState next = new RecoverySequenceRetentionState(
+                    recoverySequenceRetentionOwnerId, token, epoch, leaseUntil, revision,
+                    current.totalSequencesTombstoned(),
+                    current.totalRecoveryStepsPurged(),
+                    current.totalOwnerClaimsPurged(),
+                    current.totalHeartbeatsPurged(),
+                    current.totalTombstonesPurged(), current.lastSuccessAt(), now, "");
+            next = next.withFingerprint(recoverySequenceRetentionStateFingerprint(next));
+            int updated = jdbc.update("""
+                    UPDATE rg_test_durable_recovery_sequence_retention
+                    SET lease_owner = ?, lease_token = ?, lease_epoch = ?, lease_until = ?,
+                        revision = ?, updated_at = ?, record_fingerprint = ?
+                    WHERE job_name = ? AND revision = ? AND record_fingerprint = ?
+                    """, next.leaseOwner(), next.leaseToken(), next.leaseEpoch(),
+                    Timestamp.from(next.leaseUntil()), next.revision(),
+                    Timestamp.from(next.updatedAt()), next.recordFingerprint(),
+                    RECOVERY_SEQUENCE_RETENTION_JOB, current.revision(),
+                    current.recordFingerprint());
+            if (updated != 1) {
+                throw new IllegalStateException(
+                        "Recovery-sequence retention lease changed concurrently");
+            }
+            return Optional.of(new RecoverySequenceRetentionLease(
+                    next.leaseOwner(), next.leaseToken(), next.leaseEpoch(),
+                    next.leaseUntil()));
+        });
+        if (result == null) {
+            throw new IllegalStateException(
+                    "Recovery-sequence retention lease returned no result");
+        }
+        return result;
+    }
+
+    RecoverySequenceRetentionAttempt retainRecoverySequenceClaimedPage(
+            RecoverySequenceRetentionLease lease,
+            Duration commandRetention,
+            Duration tombstoneRetention,
+            int pageSize) {
+        RecoverySequenceRetentionLease requiredLease = Objects.requireNonNull(lease, "lease");
+        RecoverySequenceRetentionAttempt result = transactions.execute(status -> {
+            RecoverySequenceRetentionState current =
+                    requireRecoverySequenceRetentionState(true);
+            Instant startedAt = databaseNow();
+            requireLiveRecoverySequenceRetentionFence(current, requiredLease, startedAt);
+            Instant commandCutoff = startedAt.minus(commandRetention);
+            List<StoredRecoverySequence> sequences =
+                    findRecoverySequencesForRetention(commandCutoff, pageSize);
+            int sequencesTombstoned = 0;
+            int recoveryStepsPurged = 0;
+            int ownerClaimsPurged = 0;
+            int heartbeatsPurged = 0;
+            for (StoredRecoverySequence sequence : sequences) {
+                if (isLegacyRecoverySequenceActivity(sequence)) {
+                    RecoverySequenceCommand legacyCommand =
+                            storedRecoverySequenceCommand(sequence);
+                    verifiedRecoverySequence(legacyCommand, sequence, false);
+                    initializeLegacyRecoverySequenceActivity(sequence, startedAt);
+                    continue;
+                }
+                RecoverySequenceRetentionChildCounts counts = tombstoneRecoverySequence(
+                        sequence, startedAt, tombstoneRetention);
+                sequencesTombstoned = Math.addExact(sequencesTombstoned, 1);
+                recoveryStepsPurged = Math.addExact(
+                        recoveryStepsPurged, counts.recoverySteps());
+                ownerClaimsPurged = Math.addExact(
+                        ownerClaimsPurged, counts.ownerClaims());
+                heartbeatsPurged = Math.addExact(
+                        heartbeatsPurged, counts.heartbeats());
+            }
+            int tombstonesPurged = purgeExpiredRecoverySequenceTombstones(
+                    startedAt, pageSize);
+            Instant completedAt = databaseNow();
+            requireLiveRecoverySequenceRetentionFence(
+                    current, requiredLease, completedAt);
+            RecoverySequenceRetentionState next = new RecoverySequenceRetentionState(
+                    "", "", current.leaseEpoch(), Instant.EPOCH,
+                    Math.addExact(current.revision(), 1),
+                    Math.addExact(current.totalSequencesTombstoned(),
+                            sequencesTombstoned),
+                    Math.addExact(current.totalRecoveryStepsPurged(),
+                            recoveryStepsPurged),
+                    Math.addExact(current.totalOwnerClaimsPurged(), ownerClaimsPurged),
+                    Math.addExact(current.totalHeartbeatsPurged(), heartbeatsPurged),
+                    Math.addExact(current.totalTombstonesPurged(), tombstonesPurged),
+                    completedAt, completedAt, "");
+            next = next.withFingerprint(recoverySequenceRetentionStateFingerprint(next));
+            int updated = jdbc.update("""
+                    UPDATE rg_test_durable_recovery_sequence_retention
+                    SET lease_owner = '', lease_token = '', lease_until = ?,
+                        revision = ?, total_sequences_tombstoned = ?,
+                        total_recovery_steps_purged = ?, total_owner_claims_purged = ?,
+                        total_heartbeats_purged = ?, total_tombstones_purged = ?,
+                        last_success_at = ?, updated_at = ?, record_fingerprint = ?
+                    WHERE job_name = ? AND lease_owner = ? AND lease_token = ?
+                      AND lease_epoch = ? AND revision = ? AND record_fingerprint = ?
+                    """, Timestamp.from(next.leaseUntil()), next.revision(),
+                    next.totalSequencesTombstoned(), next.totalRecoveryStepsPurged(),
+                    next.totalOwnerClaimsPurged(), next.totalHeartbeatsPurged(),
+                    next.totalTombstonesPurged(), Timestamp.from(next.lastSuccessAt()),
+                    Timestamp.from(next.updatedAt()), next.recordFingerprint(),
+                    RECOVERY_SEQUENCE_RETENTION_JOB, requiredLease.ownerId(),
+                    requiredLease.token(), requiredLease.epoch(), current.revision(),
+                    current.recordFingerprint());
+            if (updated != 1) {
+                throw new IllegalStateException(
+                        "Recovery-sequence retention fence changed before commit");
+            }
+            return RecoverySequenceRetentionAttempt.completed(
+                    new RecoverySequenceRetentionResult(
+                            sequencesTombstoned, recoveryStepsPurged,
+                            ownerClaimsPurged, heartbeatsPurged,
+                            tombstonesPurged, completedAt));
+        });
+        if (result == null) {
+            throw new IllegalStateException(
+                    "Recovery-sequence retention page returned no result");
+        }
+        return result;
+    }
+
+    private List<StoredRecoverySequence> findRecoverySequencesForRetention(
+            Instant cutoff,
+            int pageSize) {
+        return jdbc.query("""
+                        SELECT tenant_id, environment_id, client_request_id,
+                               request_fingerprint, organization_id, project_id, actor_id,
+                               run_id, signal_count, created_at, record_fingerprint,
+                               activity_until, activity_revision, activity_fingerprint
+                        FROM rg_test_durable_recovery_sequences
+                        WHERE created_at <= ? AND activity_until <= CURRENT_TIMESTAMP
+                        ORDER BY created_at, activity_until, tenant_id, environment_id,
+                                 client_request_id
+                        FETCH FIRST %d ROWS ONLY
+                        FOR UPDATE
+                        """.formatted(pageSize),
+                (rs, rowNumber) -> new StoredRecoverySequence(
+                        rs.getString("tenant_id"), rs.getString("environment_id"),
+                        rs.getString("client_request_id"),
+                        rs.getString("request_fingerprint"),
+                        rs.getString("organization_id"), rs.getString("project_id"),
+                        rs.getString("actor_id"), rs.getString("run_id"),
+                        rs.getInt("signal_count"),
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getString("record_fingerprint"),
+                        rs.getTimestamp("activity_until").toInstant(),
+                        rs.getLong("activity_revision"),
+                        rs.getString("activity_fingerprint")),
+                Timestamp.from(cutoff));
+    }
+
+    private RecoverySequenceRetentionChildCounts tombstoneRecoverySequence(
+            StoredRecoverySequence sequence,
+            Instant tombstonedAt,
+            Duration tombstoneRetention) {
+        RecoverySequenceCommand command = storedRecoverySequenceCommand(sequence);
+        verifiedRecoverySequence(command, sequence, false);
+        requireValidRecoverySequenceActivity(sequence);
+        String namespace = DurableTestRecoveryCommandKeys.sequenceNamespace(
+                objectMapper, sequence.tenantId(), sequence.environmentId(),
+                sequence.clientRequestId());
+        List<StoredRecoveryStep> recoverySteps = findRecoverySequenceSteps(
+                sequence, namespace);
+        List<StoredResumeCommand> ownerClaims = findRecoverySequenceClaims(
+                sequence, namespace);
+        Map<String, StoredRecoveryHeartbeat> heartbeats = new HashMap<>();
+        Set<String> heartbeatPrefixes = new HashSet<>();
+        for (StoredRecoveryStep step : recoverySteps) {
+            requireValidRecoveryStepRecord(step);
+            if (!sequence.runId().equals(step.runId())) {
+                throw new IllegalStateException(
+                        "Recovery-sequence child step belongs to a different run");
+            }
+            verifiedRecoveryStepResult(step, true);
+            String heartbeatPrefix =
+                    DurableTestRecoveryCommandKeys.automaticHeartbeatPrefix(
+                            step.requestFingerprint());
+            if (!heartbeatPrefixes.add(heartbeatPrefix)) {
+                continue;
+            }
+            int heartbeatLimit = MAX_RECOVERY_SEQUENCE_DERIVED_HEARTBEATS
+                    - heartbeats.size() + 1;
+            for (StoredRecoveryHeartbeat heartbeat
+                    : findRecoveryHeartbeatsByPrefix(
+                    sequence, heartbeatPrefix, heartbeatLimit)) {
+                StoredRecoveryHeartbeat duplicate = heartbeats.putIfAbsent(
+                        heartbeat.clientRequestId(), heartbeat);
+                if (duplicate != null && !duplicate.equals(heartbeat)) {
+                    throw new IllegalStateException(
+                            "Recovery-sequence heartbeat identity is not unique");
+                }
+            }
+        }
+        if (heartbeats.size() > MAX_RECOVERY_SEQUENCE_DERIVED_HEARTBEATS) {
+            throw new IllegalStateException(
+                    "Recovery sequence exceeds the bounded derived-heartbeat lifecycle limit");
+        }
+        for (StoredResumeCommand claim : ownerClaims) {
+            requireValidResumeCommandRecord(claim);
+            if (!sequence.runId().equals(claim.runId())) {
+                throw new IllegalStateException(
+                        "Recovery-sequence owner claim belongs to a different run");
+            }
+            verifiedCommandResult(claim, true);
+        }
+        for (StoredRecoveryHeartbeat heartbeat : heartbeats.values()) {
+            requireValidRecoveryHeartbeatRecord(heartbeat);
+            if (!sequence.runId().equals(heartbeat.runId())) {
+                throw new IllegalStateException(
+                        "Recovery-sequence heartbeat belongs to a different run");
+            }
+            verifiedRecoveryHeartbeatResult(heartbeat, true);
+        }
+
+        insertRecoverySequenceTombstone(
+                sequence, tombstonedAt, tombstoneRetention);
+        for (StoredRecoveryHeartbeat heartbeat : heartbeats.values()) {
+            requireDeleted(jdbc.update("""
+                    DELETE FROM rg_test_durable_recovery_heartbeats
+                    WHERE tenant_id = ? AND environment_id = ?
+                      AND client_request_id = ? AND record_fingerprint = ?
+                    """, heartbeat.tenantId(), heartbeat.environmentId(),
+                    heartbeat.clientRequestId(), heartbeat.recordFingerprint()),
+                    "recovery-sequence heartbeat");
+        }
+        for (StoredRecoveryStep step : recoverySteps) {
+            requireDeleted(jdbc.update("""
+                    DELETE FROM rg_test_durable_recovery_steps
+                    WHERE tenant_id = ? AND environment_id = ?
+                      AND client_request_id = ? AND record_fingerprint = ?
+                    """, step.tenantId(), step.environmentId(),
+                    step.clientRequestId(), step.recordFingerprint()),
+                    "recovery-sequence step");
+        }
+        for (StoredResumeCommand claim : ownerClaims) {
+            requireDeleted(jdbc.update("""
+                    DELETE FROM rg_test_durable_resume_commands
+                    WHERE tenant_id = ? AND environment_id = ?
+                      AND client_request_id = ? AND record_fingerprint = ?
+                    """, claim.tenantId(), claim.environmentId(),
+                    claim.clientRequestId(), claim.recordFingerprint()),
+                    "recovery-sequence owner claim");
+        }
+        requireDeleted(jdbc.update("""
+                DELETE FROM rg_test_durable_recovery_sequences
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                  AND record_fingerprint = ? AND activity_revision = ?
+                  AND activity_fingerprint = ?
+                """, sequence.tenantId(), sequence.environmentId(),
+                sequence.clientRequestId(), sequence.recordFingerprint(),
+                sequence.activityRevision(), sequence.activityFingerprint()),
+                "recovery-sequence outer command");
+        return new RecoverySequenceRetentionChildCounts(
+                recoverySteps.size(), ownerClaims.size(), heartbeats.size());
+    }
+
+    private RecoverySequenceCommand storedRecoverySequenceCommand(
+            StoredRecoverySequence sequence) {
+        try {
+            return new RecoverySequenceCommand(
+                    sequence.clientRequestId(), sequence.requestFingerprint(),
+                    new DurableTestExecutionCheckpoint.Scope(
+                            sequence.tenantId(), sequence.organizationId(),
+                            sequence.projectId(), sequence.environmentId(),
+                            sequence.actorId()),
+                    sequence.runId(), sequence.signalCount());
+        } catch (RuntimeException malformed) {
+            throw conflict(INVALID_TRANSITION,
+                    "Stored recovery-sequence intent is malformed");
+        }
+    }
+
+    private List<StoredRecoveryStep> findRecoverySequenceSteps(
+            StoredRecoverySequence sequence,
+            String namespace) {
+        List<StoredRecoveryStep> rows = jdbc.query(recoveryStepSelect() + """
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND client_request_id LIKE ?
+                        ORDER BY client_request_id
+                        FETCH FIRST %d ROWS ONLY
+                        """.formatted(sequence.signalCount() + 1),
+                this::mapRecoveryStep, sequence.tenantId(),
+                sequence.environmentId(),
+                "rseq:" + namespace + ":step:%");
+        Set<String> expectedKeys = new HashSet<>();
+        for (int index = 0; index < sequence.signalCount(); index++) {
+            expectedKeys.add(DurableTestRecoveryCommandKeys.sequenceStep(namespace, index));
+        }
+        if (rows.stream().anyMatch(row -> !expectedKeys.contains(row.clientRequestId()))) {
+            throw new IllegalStateException(
+                    "Recovery-sequence contains an unexpected derived step key");
+        }
+        return rows;
+    }
+
+    private List<StoredResumeCommand> findRecoverySequenceClaims(
+            StoredRecoverySequence sequence,
+            String namespace) {
+        List<StoredResumeCommand> rows = jdbc.query(resumeCommandSelect() + """
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND client_request_id LIKE ?
+                        ORDER BY client_request_id
+                        FETCH FIRST %d ROWS ONLY
+                        """.formatted(sequence.signalCount()),
+                this::mapResumeCommand, sequence.tenantId(),
+                sequence.environmentId(),
+                "rseq:" + namespace + ":claim:%");
+        Set<String> expectedKeys = new HashSet<>();
+        for (int index = 1; index < sequence.signalCount(); index++) {
+            expectedKeys.add(DurableTestRecoveryCommandKeys.sequenceClaim(namespace, index));
+        }
+        if (rows.stream().anyMatch(row -> !expectedKeys.contains(row.clientRequestId()))) {
+            throw new IllegalStateException(
+                    "Recovery-sequence contains an unexpected derived owner-claim key");
+        }
+        return rows;
+    }
+
+    private List<StoredRecoveryHeartbeat> findRecoveryHeartbeatsByPrefix(
+            StoredRecoverySequence sequence,
+            String heartbeatPrefix,
+            int limit) {
+        return jdbc.query(recoveryHeartbeatSelect() + """
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND client_request_id LIKE ?
+                        ORDER BY client_request_id
+                        FETCH FIRST %d ROWS ONLY
+                        """.formatted(limit), this::mapRecoveryHeartbeat, sequence.tenantId(),
+                sequence.environmentId(), heartbeatPrefix + "%");
+    }
+
+    private void insertRecoverySequenceTombstone(
+            StoredRecoverySequence sequence,
+            Instant tombstonedAt,
+            Duration tombstoneRetention) {
+        RecoverySequenceRequestKeyProtector.IndexKey requestKey =
+                recoverySequenceRequestKeys.protect(
+                        sequence.tenantId(), sequence.environmentId(),
+                        sequence.clientRequestId());
+        StoredRecoverySequenceTombstone tombstone =
+                new StoredRecoverySequenceTombstone(
+                        sequence.tenantId(), sequence.environmentId(),
+                        requestKey.keyId(), requestKey.value(),
+                        sequence.requestFingerprint(), tombstonedAt,
+                        tombstonedAt.plus(tombstoneRetention), 1, "");
+        tombstone = tombstone.withFingerprint(
+                recoverySequenceTombstoneFingerprint(tombstone));
+        jdbc.update("""
+                INSERT INTO rg_test_durable_recovery_sequence_tombstones (
+                    tenant_id, environment_id, request_key_id, request_key,
+                    request_fingerprint, tombstoned_at, expires_at,
+                    record_version, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, tombstone.tenantId(), tombstone.environmentId(),
+                tombstone.requestKeyId(), tombstone.requestKey(),
+                tombstone.requestFingerprint(), Timestamp.from(tombstone.tombstonedAt()),
+                Timestamp.from(tombstone.expiresAt()), tombstone.recordVersion(),
+                tombstone.recordFingerprint());
+    }
+
+    private int purgeExpiredRecoverySequenceTombstones(
+            Instant now,
+            int pageSize) {
+        List<StoredRecoverySequenceTombstone> expired = jdbc.query("""
+                        SELECT tenant_id, environment_id, request_key_id, request_key,
+                               request_fingerprint, tombstoned_at, expires_at,
+                               record_version, record_fingerprint
+                        FROM rg_test_durable_recovery_sequence_tombstones
+                        WHERE expires_at <= ?
+                        ORDER BY expires_at, tenant_id, environment_id,
+                                 request_key_id, request_key
+                        FETCH FIRST %d ROWS ONLY
+                        """.formatted(pageSize), this::mapRecoverySequenceTombstone,
+                Timestamp.from(now));
+        for (StoredRecoverySequenceTombstone tombstone : expired) {
+            requireValidRecoverySequenceTombstone(tombstone);
+        }
+        for (StoredRecoverySequenceTombstone tombstone : expired) {
+            requireDeleted(jdbc.update("""
+                    DELETE FROM rg_test_durable_recovery_sequence_tombstones
+                    WHERE tenant_id = ? AND environment_id = ?
+                      AND request_key_id = ? AND request_key = ?
+                      AND record_fingerprint = ?
+                    """, tombstone.tenantId(), tombstone.environmentId(),
+                    tombstone.requestKeyId(), tombstone.requestKey(),
+                    tombstone.recordFingerprint()),
+                    "recovery-sequence tombstone");
+        }
+        return expired.size();
+    }
+
+    private static void requireDeleted(int deleted, String recordType) {
+        if (deleted != 1) {
+            throw new IllegalStateException(recordType + " changed during retention");
+        }
+    }
+
+    private void validateRecoverySequenceTombstoneKeyRing() {
+        List<String> keyIds = jdbc.query("""
+                        SELECT DISTINCT request_key_id
+                        FROM rg_test_durable_recovery_sequence_tombstones
+                        """, (rs, rowNumber) -> rs.getString("request_key_id"));
+        for (String keyId : keyIds) {
+            if (!recoverySequenceRequestKeys.containsKey(keyId)) {
+                throw new IllegalStateException(
+                        "Recovery-sequence tombstone key generation is unavailable: "
+                                + keyId);
+            }
+        }
+    }
+
+    private void initializeRecoverySequenceRetentionState() {
+        try {
+            Instant now = databaseNow();
+            RecoverySequenceRetentionState initial =
+                    new RecoverySequenceRetentionState(
+                            "", "", 0, Instant.EPOCH, 0,
+                            0, 0, 0, 0, 0, null, now, "");
+            initial = initial.withFingerprint(
+                    recoverySequenceRetentionStateFingerprint(initial));
+            jdbc.update("""
+                    INSERT INTO rg_test_durable_recovery_sequence_retention (
+                        job_name, lease_owner, lease_token, lease_epoch, lease_until,
+                        revision, total_sequences_tombstoned,
+                        total_recovery_steps_purged, total_owner_claims_purged,
+                        total_heartbeats_purged, total_tombstones_purged,
+                        last_success_at, updated_at, record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, RECOVERY_SEQUENCE_RETENTION_JOB,
+                    initial.leaseOwner(), initial.leaseToken(), initial.leaseEpoch(),
+                    Timestamp.from(initial.leaseUntil()), initial.revision(),
+                    initial.totalSequencesTombstoned(),
+                    initial.totalRecoveryStepsPurged(),
+                    initial.totalOwnerClaimsPurged(), initial.totalHeartbeatsPurged(),
+                    initial.totalTombstonesPurged(), initial.lastSuccessAt(),
+                    Timestamp.from(initial.updatedAt()), initial.recordFingerprint());
+        } catch (DuplicateKeyException alreadyInitialized) {
+            // Another replica initialized the singleton lease row first.
+        }
+    }
+
+    private RecoverySequenceRetentionState requireRecoverySequenceRetentionState(
+            boolean lock) {
+        List<RecoverySequenceRetentionState> rows = jdbc.query("""
+                        SELECT lease_owner, lease_token, lease_epoch, lease_until, revision,
+                               total_sequences_tombstoned,
+                               total_recovery_steps_purged, total_owner_claims_purged,
+                               total_heartbeats_purged, total_tombstones_purged,
+                               last_success_at, updated_at, record_fingerprint
+                        FROM rg_test_durable_recovery_sequence_retention
+                        WHERE job_name = ?
+                        """ + (lock ? " FOR UPDATE" : ""),
+                this::mapRecoverySequenceRetentionState,
+                RECOVERY_SEQUENCE_RETENTION_JOB);
+        if (rows.size() != 1) {
+            throw new IllegalStateException(
+                    "Recovery-sequence retention state is not initialized");
+        }
+        RecoverySequenceRetentionState state = rows.getFirst();
+        requireValidRecoverySequenceRetentionState(state);
+        return state;
+    }
+
+    private RecoverySequenceRetentionState mapRecoverySequenceRetentionState(
+            ResultSet rs,
+            int rowNumber) throws SQLException {
+        Timestamp lastSuccess = rs.getTimestamp("last_success_at");
+        return new RecoverySequenceRetentionState(
+                rs.getString("lease_owner"), rs.getString("lease_token"),
+                rs.getLong("lease_epoch"),
+                rs.getTimestamp("lease_until").toInstant(),
+                rs.getLong("revision"),
+                rs.getLong("total_sequences_tombstoned"),
+                rs.getLong("total_recovery_steps_purged"),
+                rs.getLong("total_owner_claims_purged"),
+                rs.getLong("total_heartbeats_purged"),
+                rs.getLong("total_tombstones_purged"),
+                lastSuccess == null ? null : lastSuccess.toInstant(),
+                rs.getTimestamp("updated_at").toInstant(),
+                rs.getString("record_fingerprint"));
+    }
+
+    private void requireValidRecoverySequenceRetentionState(
+            RecoverySequenceRetentionState state) {
+        boolean idle = state.leaseOwner() != null && state.leaseOwner().isBlank()
+                && state.leaseToken() != null && state.leaseToken().isBlank()
+                && Instant.EPOCH.equals(state.leaseUntil());
+        boolean owned = state.leaseOwner() != null && !state.leaseOwner().isBlank()
+                && state.leaseToken() != null && !state.leaseToken().isBlank()
+                && state.leaseUntil() != null && state.leaseUntil().isAfter(Instant.EPOCH);
+        if ((!idle && !owned) || state.leaseEpoch() < 0 || state.revision() < 0
+                || state.totalSequencesTombstoned() < 0
+                || state.totalRecoveryStepsPurged() < 0
+                || state.totalOwnerClaimsPurged() < 0
+                || state.totalHeartbeatsPurged() < 0
+                || state.totalTombstonesPurged() < 0
+                || state.updatedAt() == null
+                || !state.updatedAt().isAfter(Instant.EPOCH)
+                || (state.lastSuccessAt() != null
+                && (state.lastSuccessAt().isAfter(state.updatedAt())
+                || !state.lastSuccessAt().isAfter(Instant.EPOCH)))
+                || !recoverySequenceRetentionStateFingerprint(state)
+                .equals(state.recordFingerprint())) {
+            throw new IllegalStateException(
+                    "Stored recovery-sequence retention authority is corrupt");
+        }
+    }
+
+    private String recoverySequenceRetentionStateFingerprint(
+            RecoverySequenceRetentionState state) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion",
+                        "bloge.durableRecoverySequenceRetentionState.v1"),
+                Map.entry("leaseOwner", state.leaseOwner()),
+                Map.entry("leaseToken", state.leaseToken()),
+                Map.entry("leaseEpoch", state.leaseEpoch()),
+                Map.entry("leaseUntil", state.leaseUntil()),
+                Map.entry("revision", state.revision()),
+                Map.entry("totalSequencesTombstoned",
+                        state.totalSequencesTombstoned()),
+                Map.entry("totalRecoveryStepsPurged",
+                        state.totalRecoveryStepsPurged()),
+                Map.entry("totalOwnerClaimsPurged",
+                        state.totalOwnerClaimsPurged()),
+                Map.entry("totalHeartbeatsPurged",
+                        state.totalHeartbeatsPurged()),
+                Map.entry("totalTombstonesPurged",
+                        state.totalTombstonesPurged()),
+                Map.entry("lastSuccessAt",
+                        state.lastSuccessAt() == null ? "" : state.lastSuccessAt()),
+                Map.entry("updatedAt", state.updatedAt())));
+    }
+
+    private static void requireLiveRecoverySequenceRetentionFence(
+            RecoverySequenceRetentionState state,
+            RecoverySequenceRetentionLease lease,
+            Instant now) {
+        if (!state.leaseOwner().equals(lease.ownerId())
+                || !state.leaseToken().equals(lease.token())
+                || state.leaseEpoch() != lease.epoch()
+                || !state.leaseUntil().equals(lease.leaseUntil())
+                || !state.leaseUntil().isAfter(now)) {
+            throw new IllegalStateException(
+                    "Recovery-sequence retention fence is stale or expired");
+        }
+    }
+
+    private boolean releaseRecoverySequenceRetentionLease(
+            RecoverySequenceRetentionLease lease) {
+        Boolean released = transactions.execute(status -> {
+            RecoverySequenceRetentionState current =
+                    requireRecoverySequenceRetentionState(true);
+            if (!current.leaseOwner().equals(lease.ownerId())
+                    || !current.leaseToken().equals(lease.token())
+                    || current.leaseEpoch() != lease.epoch()) {
+                return false;
+            }
+            Instant now = databaseNow();
+            RecoverySequenceRetentionState next =
+                    new RecoverySequenceRetentionState(
+                            "", "", current.leaseEpoch(), Instant.EPOCH,
+                            Math.addExact(current.revision(), 1),
+                            current.totalSequencesTombstoned(),
+                            current.totalRecoveryStepsPurged(),
+                            current.totalOwnerClaimsPurged(),
+                            current.totalHeartbeatsPurged(),
+                            current.totalTombstonesPurged(),
+                            current.lastSuccessAt(), now, "");
+            next = next.withFingerprint(
+                    recoverySequenceRetentionStateFingerprint(next));
+            int updated = jdbc.update("""
+                    UPDATE rg_test_durable_recovery_sequence_retention
+                    SET lease_owner = '', lease_token = '', lease_until = ?,
+                        revision = ?, updated_at = ?, record_fingerprint = ?
+                    WHERE job_name = ? AND lease_owner = ? AND lease_token = ?
+                      AND lease_epoch = ? AND revision = ? AND record_fingerprint = ?
+                    """, Timestamp.from(next.leaseUntil()), next.revision(),
+                    Timestamp.from(next.updatedAt()), next.recordFingerprint(),
+                    RECOVERY_SEQUENCE_RETENTION_JOB, lease.ownerId(), lease.token(),
+                    lease.epoch(), current.revision(), current.recordFingerprint());
+            return updated == 1;
+        });
+        return Boolean.TRUE.equals(released);
+    }
+
+    private static Duration boundedRecoverySequenceRetention(
+            Duration value,
+            Duration minimum,
+            String name) {
+        Duration safe = Objects.requireNonNull(value, name);
+        if (safe.compareTo(minimum) < 0
+                || safe.compareTo(MAX_RECOVERY_SEQUENCE_RETENTION) > 0
+                || safe.getNano() != 0) {
+            throw new IllegalArgumentException(name + " must be whole seconds between "
+                    + minimum + " and " + MAX_RECOVERY_SEQUENCE_RETENTION);
+        }
+        return safe;
+    }
+
+    private static int boundedRecoverySequenceRetentionPage(int pageSize) {
+        if (pageSize < 1 || pageSize > MAX_RECOVERY_SEQUENCE_RETENTION_PAGE) {
+            throw new IllegalArgumentException(
+                    "pageSize must be between 1 and "
+                            + MAX_RECOVERY_SEQUENCE_RETENTION_PAGE);
+        }
+        return pageSize;
+    }
+
+    private static Duration boundedRecoverySequenceActivityGrace(Duration value) {
+        Duration safe = Objects.requireNonNull(
+                value, "recoverySequenceReplayActivityGrace");
+        if (safe.isZero() || safe.isNegative()
+                || safe.compareTo(MAX_RECOVERY_SEQUENCE_RETENTION) > 0) {
+            throw new IllegalArgumentException(
+                    "Recovery-sequence replay activity grace must be positive and no longer than "
+                            + MAX_RECOVERY_SEQUENCE_RETENTION);
+        }
+        return safe;
+    }
+
+    private static String requiredRetentionOwner(String value) {
+        String safe = value == null ? "" : value.trim();
+        if (!RETENTION_OWNER.matcher(safe).matches()) {
+            throw new IllegalArgumentException(
+                    "Recovery-sequence retention owner must be a bounded stable identifier");
+        }
+        return safe;
+    }
+
+    private static Duration boundedRetentionLease(Duration value) {
+        Duration safe = Objects.requireNonNull(value, "recoverySequenceRetentionLeaseDuration");
+        if (safe.compareTo(MIN_RECOVERY_SEQUENCE_RETENTION_LEASE) < 0
+                || safe.compareTo(MAX_RECOVERY_SEQUENCE_RETENTION_LEASE) > 0
+                || safe.getNano() != 0) {
+            throw new IllegalArgumentException(
+                    "Recovery-sequence retention lease must be whole seconds between "
+                            + MIN_RECOVERY_SEQUENCE_RETENTION_LEASE + " and "
+                            + MAX_RECOVERY_SEQUENCE_RETENTION_LEASE);
+        }
+        return safe;
     }
 
     @Override
@@ -4438,8 +5511,81 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             String runId,
             int signalCount,
             Instant createdAt,
+            String recordFingerprint,
+            Instant activityUntil,
+            long activityRevision,
+            String activityFingerprint
+    ) {
+    }
+
+    private record StoredRecoverySequenceTombstone(
+            String tenantId,
+            String environmentId,
+            String requestKeyId,
+            String requestKey,
+            String requestFingerprint,
+            Instant tombstonedAt,
+            Instant expiresAt,
+            int recordVersion,
             String recordFingerprint
     ) {
+        private StoredRecoverySequenceTombstone withFingerprint(String fingerprint) {
+            return new StoredRecoverySequenceTombstone(
+                    tenantId, environmentId, requestKeyId, requestKey,
+                    requestFingerprint, tombstonedAt, expiresAt, recordVersion,
+                    fingerprint);
+        }
+    }
+
+    private record RecoverySequenceRetentionChildCounts(
+            int recoverySteps,
+            int ownerClaims,
+            int heartbeats
+    ) {
+    }
+
+    record RecoverySequenceRetentionLease(
+            String ownerId,
+            String token,
+            long epoch,
+            Instant leaseUntil
+    ) {
+    }
+
+    private record RecoverySequenceRetentionState(
+            String leaseOwner,
+            String leaseToken,
+            long leaseEpoch,
+            Instant leaseUntil,
+            long revision,
+            long totalSequencesTombstoned,
+            long totalRecoveryStepsPurged,
+            long totalOwnerClaimsPurged,
+            long totalHeartbeatsPurged,
+            long totalTombstonesPurged,
+            Instant lastSuccessAt,
+            Instant updatedAt,
+            String recordFingerprint
+    ) {
+        private RecoverySequenceRetentionState withFingerprint(String fingerprint) {
+            return new RecoverySequenceRetentionState(
+                    leaseOwner, leaseToken, leaseEpoch, leaseUntil, revision,
+                    totalSequencesTombstoned, totalRecoveryStepsPurged,
+                    totalOwnerClaimsPurged, totalHeartbeatsPurged,
+                    totalTombstonesPurged, lastSuccessAt, updatedAt, fingerprint);
+        }
+
+        private RecoverySequenceRetentionSnapshot snapshot(
+                long activeSequenceRecords,
+                long tombstoneRecords,
+                Instant observedAt) {
+            return new RecoverySequenceRetentionSnapshot(
+                    leaseOwner, leaseEpoch, leaseUntil, revision,
+                    totalSequencesTombstoned, totalRecoveryStepsPurged,
+                    totalOwnerClaimsPurged, totalHeartbeatsPurged,
+                    totalTombstonesPurged, activeSequenceRecords, tombstoneRecords,
+                    lastSuccessAt, observedAt);
+        }
     }
 
     private record StoredRecoveryHeartbeat(
