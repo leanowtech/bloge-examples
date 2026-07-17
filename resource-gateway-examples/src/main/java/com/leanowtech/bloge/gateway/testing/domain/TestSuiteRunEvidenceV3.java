@@ -73,6 +73,15 @@ public record TestSuiteRunEvidenceV3(
 ) implements TestSuiteRunEvidenceProtocol {
     /** Current schema-admission aggregate evidence generation. */
     public static final String SCHEMA_VERSION = "bloge.testSuiteRunEvidence.v3";
+    /** Fixed authorization purpose proving that no business target is invoked. */
+    public static final String EXECUTION_PURPOSE = "SCHEMA_ADMISSION_SUITE_EXECUTION";
+    /** Exact proof mode shared with graph and operator schema admission. */
+    public static final String VERIFICATION_MODE = "EXACT_SHARED_VALIDATOR";
+    /** Permanent promotion block reason for admission-only evidence. */
+    public static final String SCHEMA_ADMISSION_ONLY = "SCHEMA_ADMISSION_ONLY";
+    /** Permanent promotion block reason proving business execution was not performed. */
+    public static final String BUSINESS_EXECUTION_NOT_PERFORMED =
+            "BUSINESS_EXECUTION_NOT_PERFORMED";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Normalizes fields and enforces one ordered typed result per compatibility case result. */
@@ -109,12 +118,37 @@ public record TestSuiteRunEvidenceV3(
                 : sourcePlanStatus == TestBoundaryCasePlan.Status.PARTIAL
                 && sourceCoverageGapCount > 0 && coverageGapsAccepted;
         if (!SCHEMA_VERSION.equals(schemaVersion) || suiteRef == null || target == null
-                || startedAt == null || generatorVersion.isBlank() || verificationMode.isBlank()
+                || startedAt == null || caseResults.isEmpty() || generatorVersion.isBlank()
+                || !EXECUTION_PURPOSE.equals(executionPurpose)
+                || !VERIFICATION_MODE.equals(verificationMode)
+                || evaluationMode != TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION
                 || sourceCoverageGapCount < 0 || !planShape || !exactCaseClosure
                 || !FINGERPRINT.matcher(boundaryPlanFingerprint).matches()
                 || !FINGERPRINT.matcher(inputSchemaFingerprint).matches()) {
             throw new IllegalArgumentException(
                     "Schema-admission evidence requires exact plan, schema, and ordered case closure");
+        }
+        if ((status == TestSuiteRunEvidence.Status.RUNNING) != (completedAt == null)) {
+            throw new IllegalArgumentException(
+                    "Schema-admission evidence completion time must match aggregate lifecycle");
+        }
+        if (!TestSuiteRunEvidence.CoverageVerdict.notEvaluated().equals(coverage)) {
+            throw new IllegalArgumentException(
+                    "Schema-admission evidence cannot claim business structural coverage");
+        }
+        if (!promotionBlocked(promotion, admissionCoverage)) {
+            throw new IllegalArgumentException(
+                    "Schema-admission evidence must remain blocked from business promotion");
+        }
+        if (caseResults.stream().anyMatch(result -> !result.runId().isBlank()
+                || result.evidenceStatus() != null || result.evidenceClass() != null
+                || result.assertionsEvaluated() != 0 || result.assertionsPassed() != 0)) {
+            throw new IllegalArgumentException(
+                    "Schema-admission evidence cannot reference business child execution");
+        }
+        if (!terminalCoverageMatches(status, admissionCoverage)) {
+            throw new IllegalArgumentException(
+                    "Schema-admission aggregate status and admission coverage must agree");
         }
     }
 
@@ -243,6 +277,34 @@ public record TestSuiteRunEvidenceV3(
         List<String> sorted = new ArrayList<>(normalizedValues);
         sorted.sort(String::compareTo);
         return List.copyOf(sorted);
+    }
+
+    private static boolean promotionBlocked(
+            TestSuiteRunEvidence.PromotionVerdict promotion,
+            AdmissionCoverageVerdict admissionCoverage) {
+        return promotion.status() == TestSuiteRunEvidence.PromotionStatus.BLOCKED
+                && promotion.reasons().contains(SCHEMA_ADMISSION_ONLY)
+                && promotion.reasons().contains(BUSINESS_EXECUTION_NOT_PERFORMED)
+                && promotion.certifiableCases() == 0
+                && promotion.minimumCertifiableCases() == 0
+                && !promotion.targetCertificationEligible()
+                && !promotion.coverageSatisfied()
+                && promotion.allCasesCompleted() == admissionCoverage.allCasesCompleted();
+    }
+
+    private static boolean terminalCoverageMatches(
+            TestSuiteRunEvidence.Status status, AdmissionCoverageVerdict admissionCoverage) {
+        return switch (status) {
+            case RUNNING -> admissionCoverage.status() == AdmissionCoverageStatus.NOT_EVALUATED
+                    || admissionCoverage.status() == AdmissionCoverageStatus.INCOMPLETE;
+            case PASSED -> admissionCoverage.status() == AdmissionCoverageStatus.SATISFIED
+                    && admissionCoverage.allCasesCompleted();
+            case COMPLETED_WITH_FAILURES ->
+                    admissionCoverage.status() == AdmissionCoverageStatus.UNSATISFIED
+                            && admissionCoverage.allCasesCompleted();
+            case PARTIAL, EVIDENCE_INCOMPLETE ->
+                    admissionCoverage.status() == AdmissionCoverageStatus.INCOMPLETE;
+        };
     }
 
     private static String defaulted(String value, String fallback) {

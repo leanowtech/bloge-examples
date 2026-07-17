@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
@@ -65,6 +66,10 @@ public final class TestSuiteRunAttestationService {
         Objects.requireNonNull(evidence, "evidence");
         Objects.requireNonNull(scope, "scope");
         List<TestSuiteRunAttestation.ChildEvidenceRef> safeChildren = immutable(children);
+        if (evidence instanceof TestSuiteRunEvidenceV3 && !safeChildren.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Schema-admission evidence cannot bind business child evidence");
+        }
         String aggregateFingerprint = evidenceCodec.fingerprint(evidence);
         if (!signer.available()) {
             return SealResult.failed(TestSuiteRunAttestation.unavailable(scope, evidence,
@@ -167,9 +172,11 @@ public final class TestSuiteRunAttestationService {
     }
 
     private static String attestationVersion(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV3) {
+            return TestSuiteRunAttestation.SCHEMA_VERSION_V3;
+        }
         return evidence instanceof TestSuiteRunEvidenceV2
-                ? TestSuiteRunAttestation.SCHEMA_VERSION_V2
-                : TestSuiteRunAttestation.SCHEMA_VERSION;
+                ? TestSuiteRunAttestation.SCHEMA_VERSION_V2 : TestSuiteRunAttestation.SCHEMA_VERSION;
     }
 
     private static List<TestSuiteRunAttestation.ChildEvidenceRef> immutable(

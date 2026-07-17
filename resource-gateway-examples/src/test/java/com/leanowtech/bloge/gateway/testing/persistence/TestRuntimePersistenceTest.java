@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
 import com.leanowtech.bloge.gateway.testing.api.FixtureBundleConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan;
 import com.leanowtech.bloge.gateway.testing.api.TestRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
@@ -17,9 +18,12 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
@@ -185,6 +189,78 @@ class TestRuntimePersistenceTest {
         assertThat(restored.evidence()).isInstanceOf(TestSuiteRunEvidenceV2.class).isEqualTo(evidence);
         assertThat(restored.attestation().schemaVersion())
                 .isEqualTo(com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V2);
+    }
+
+    @Test
+    void admissionCheckpointRetainsV3EvidenceAndSignatureGeneration() {
+        Instant now = suiteRuns.currentTime();
+        TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
+                "fixture-v3", 1, "sha256:" + "f".repeat(64));
+        TestSuiteRunEvidence.CaseResult pendingCase = new TestSuiteRunEvidence.CaseResult(
+                "required", TestSuite.CaseType.BOUNDARY, fixture,
+                TestSuiteRunEvidence.CaseStatus.PENDING, "", null, null,
+                0, 0, "", "");
+        TestSuiteRunEvidenceV3.AdmissionCaseResult pendingAdmission =
+                new TestSuiteRunEvidenceV3.AdmissionCaseResult(
+                        "required", TestSuiteRunEvidenceV3.AdmissionCaseStatus.PENDING,
+                        TestSuiteV3.ExpectedOutcome.SCHEMA_REJECTED, null,
+                        List.of("visual.context.required"), List.of(), "");
+        TestSuiteRunEvidenceV3 evidence = new TestSuiteRunEvidenceV3(
+                "", "suite-run-v3", "request-v3", TestSuiteRunEvidence.Status.RUNNING,
+                TestSuiteRunEvidenceV3.EXECUTION_PURPOSE,
+                new TestSuiteExecutionRequest.SuiteRef(
+                        "suite-v3", 1, "sha256:" + "a".repeat(64)),
+                new TestSuite.Target("GRAPH", "graph-v3", "sha256:" + "b".repeat(64)),
+                now, null, List.of(pendingCase),
+                TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
+                new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.BLOCKED,
+                        List.of(TestSuiteRunEvidenceV3.BUSINESS_EXECUTION_NOT_PERFORMED,
+                                TestSuiteRunEvidenceV3.SCHEMA_ADMISSION_ONLY),
+                        false, 0, 0, false, false, false),
+                TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION,
+                "sha256:" + "c".repeat(64), "sha256:" + "d".repeat(64),
+                "boundary-cases-v1", TestSuiteRunEvidenceV3.VERIFICATION_MODE,
+                TestBoundaryCasePlan.Status.GENERATED, 0, false, List.of(pendingAdmission),
+                TestSuiteRunEvidenceV3.AdmissionCoverageVerdict.notEvaluated(1),
+                List.of(), Map.of());
+        String requestFingerprint = "sha256:" + "e".repeat(64);
+        var attestation = suiteAttestations.seal(evidence, requestFingerprint, List.of(),
+                com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.CHECKPOINT)
+                .attestation();
+        TestSuiteRunRecord record = new TestSuiteRunRecord(
+                evidence.suiteRunId(), evidence.clientRequestId(), requestFingerprint,
+                "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL", "",
+                evidence, attestation, now, now.plusSeconds(3600));
+        var downgradedAttestation = new TestSuiteRunAttestation(
+                TestSuiteRunAttestation.SCHEMA_VERSION,
+                attestation.signatureStatus(), attestation.scope(), attestation.suiteRunId(),
+                attestation.suiteRef(), attestation.requestFingerprint(),
+                attestation.aggregateEvidenceFingerprint(), attestation.childEvidenceRefs(),
+                attestation.signedAt(), attestation.keyId(), attestation.algorithm(),
+                attestation.signature(), true);
+        TestSuiteRunRecord mixedGeneration = new TestSuiteRunRecord(
+                record.suiteRunId(), record.clientRequestId(), record.requestFingerprint(),
+                record.tenantId(), record.organizationId(), record.projectId(),
+                record.environmentId(), record.actorId(), record.classification(),
+                record.evidenceFingerprint(), record.evidence(), downgradedAttestation,
+                record.createdAt(), record.expiresAt());
+
+        assertThatThrownBy(() -> suiteRuns.create(mixedGeneration,
+                new TestSuiteRunLease("instance-a", now.plusSeconds(30))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("signed attestation");
+
+        suiteRuns.create(record, new TestSuiteRunLease("instance-a", now.plusSeconds(30)));
+
+        TestSuiteRunRecord restored = suiteRuns.find(
+                "tenant-a", "test", evidence.suiteRunId()).orElseThrow();
+        assertThat(restored.evidence()).isInstanceOf(TestSuiteRunEvidenceV3.class)
+                .isEqualTo(evidence);
+        assertThat(restored.attestation().schemaVersion())
+                .isEqualTo(com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation
+                        .SCHEMA_VERSION_V3);
+        assertThat(restored.attestation().childEvidenceRefs()).isEmpty();
     }
 
     @Test

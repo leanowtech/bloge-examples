@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.evidence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
@@ -8,6 +9,8 @@ import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestSuiteRunAttestationServiceTest {
 
@@ -152,6 +156,25 @@ class TestSuiteRunAttestationServiceTest {
                 .isEqualTo(TestSuiteRunAttestationService.Verification.INVALID);
     }
 
+    @Test
+    void admissionEvidenceUsesV3SignatureDomainWithoutBusinessChildClosure() {
+        TestSuiteRunEvidenceV3 admission = admissionEvidence();
+
+        var seal = service.seal(admission, REQUEST_FINGERPRINT, List.of(),
+                TestSuiteRunAttestation.Scope.TERMINAL);
+
+        assertThat(seal.verified()).isTrue();
+        assertThat(seal.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V3);
+        assertThat(seal.attestation().childEvidenceRefs()).isEmpty();
+        assertThat(service.verify(admission, seal.attestation()))
+                .isEqualTo(TestSuiteRunAttestationService.Verification.VERIFIED);
+        assertThatThrownBy(() -> service.seal(admission, REQUEST_FINGERPRINT, children(),
+                TestSuiteRunAttestation.Scope.TERMINAL))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cannot bind business child evidence");
+    }
+
     private static TestSuiteRunAttestation copy(
             TestSuiteRunAttestation source, String requestFingerprint,
             List<TestSuiteRunAttestation.ChildEvidenceRef> children) {
@@ -186,5 +209,41 @@ class TestSuiteRunAttestationServiceTest {
                         TestSuiteRunEvidence.PromotionStatus.ELIGIBLE, List.of(), true,
                         0, 0, true, true, true)
                         : TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), metadata);
+    }
+
+    private static TestSuiteRunEvidenceV3 admissionEvidence() {
+        TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
+                "fixture", 1, "sha256:" + "d".repeat(64));
+        TestSuiteRunEvidence.CaseResult common = new TestSuiteRunEvidence.CaseResult(
+                "required", TestSuite.CaseType.BOUNDARY, fixture,
+                TestSuiteRunEvidence.CaseStatus.PASSED, "", null, null,
+                0, 0, "", "");
+        TestSuiteRunEvidenceV3.AdmissionCaseResult admission =
+                new TestSuiteRunEvidenceV3.AdmissionCaseResult(
+                        "required", TestSuiteRunEvidenceV3.AdmissionCaseStatus.MATCHED,
+                        TestSuiteV3.ExpectedOutcome.SCHEMA_REJECTED,
+                        TestSuiteV3.ExpectedOutcome.SCHEMA_REJECTED,
+                        List.of("visual.context.required"),
+                        List.of("visual.context.required"), "");
+        return new TestSuiteRunEvidenceV3("", "suite-run-admission", "request-admission",
+                TestSuiteRunEvidence.Status.PASSED, TestSuiteRunEvidenceV3.EXECUTION_PURPOSE,
+                new TestSuiteExecutionRequest.SuiteRef(
+                        "suite-admission", 1, "sha256:" + "e".repeat(64)),
+                new TestSuite.Target("GRAPH", "graph-admission",
+                        "sha256:" + "f".repeat(64)), SIGNED_AT.minusSeconds(30), SIGNED_AT,
+                List.of(common), TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
+                new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.BLOCKED,
+                        List.of(TestSuiteRunEvidenceV3.BUSINESS_EXECUTION_NOT_PERFORMED,
+                                TestSuiteRunEvidenceV3.SCHEMA_ADMISSION_ONLY),
+                        true, 0, 0, false, false, true),
+                TestSuiteV3.EvaluationMode.SCHEMA_ADMISSION,
+                "sha256:" + "1".repeat(64), "sha256:" + "2".repeat(64),
+                "boundary-cases-v1", TestSuiteRunEvidenceV3.VERIFICATION_MODE,
+                TestBoundaryCasePlan.Status.GENERATED, 0, false, List.of(admission),
+                new TestSuiteRunEvidenceV3.AdmissionCoverageVerdict(
+                        TestSuiteRunEvidenceV3.AdmissionCoverageStatus.SATISFIED,
+                        1, 1, 1, List.of(), List.of(), List.of(), true),
+                List.of(), Map.of());
     }
 }

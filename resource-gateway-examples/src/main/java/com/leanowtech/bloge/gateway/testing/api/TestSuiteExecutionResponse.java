@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 
 /**
  * Public response for one idempotent immutable suite execution.
@@ -27,11 +28,13 @@ public record TestSuiteExecutionResponse(
     public static final String SCHEMA_VERSION = "bloge.testSuiteExecutionResponse.v2";
     /** Suite-execution response carrying semantic aggregate evidence v2. */
     public static final String SCHEMA_VERSION_V3 = "bloge.testSuiteExecutionResponse.v3";
+    /** Suite-execution response carrying schema-admission aggregate evidence v3. */
+    public static final String SCHEMA_VERSION_V4 = "bloge.testSuiteExecutionResponse.v4";
 
     /** Applies current protocol defaults to service-created responses. */
     public TestSuiteExecutionResponse {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank()
-                ? evidence instanceof TestSuiteRunEvidenceV2 ? SCHEMA_VERSION_V3 : SCHEMA_VERSION
+                ? versionFor(evidence)
                 : schemaVersion.trim();
         suiteRunId = suiteRunId == null ? "" : suiteRunId.trim();
         evidenceFingerprint = evidenceFingerprint == null ? "" : evidenceFingerprint.trim();
@@ -48,7 +51,12 @@ public record TestSuiteExecutionResponse(
                 && evidence instanceof TestSuiteRunEvidenceV2 semantic
                 && TestSuiteRunEvidenceV2.SCHEMA_VERSION.equals(semantic.schemaVersion())
                 && TestSuiteRunAttestation.SCHEMA_VERSION_V2.equals(attestation.schemaVersion());
-        if (!v1 && !v2 && !v3) {
+        boolean v4 = SCHEMA_VERSION_V4.equals(schemaVersion)
+                && evidence instanceof TestSuiteRunEvidenceV3 admission
+                && TestSuiteRunEvidenceV3.SCHEMA_VERSION.equals(admission.schemaVersion())
+                && TestSuiteRunAttestation.SCHEMA_VERSION_V3.equals(attestation.schemaVersion())
+                && attestation.childEvidenceRefs().isEmpty();
+        if (!v1 && !v2 && !v3 && !v4) {
             throw new IllegalArgumentException(
                     "Suite execution response, evidence, and attestation generations must match");
         }
@@ -59,5 +67,12 @@ public record TestSuiteExecutionResponse(
                                       String evidenceFingerprint, TestSuiteRunEvidence evidence) {
         this(schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION_V1 : schemaVersion,
                 suiteRunId, evidenceFingerprint, evidence, TestSuiteRunAttestation.unsigned());
+    }
+
+    private static String versionFor(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV3) {
+            return SCHEMA_VERSION_V4;
+        }
+        return evidence instanceof TestSuiteRunEvidenceV2 ? SCHEMA_VERSION_V3 : SCHEMA_VERSION;
     }
 }

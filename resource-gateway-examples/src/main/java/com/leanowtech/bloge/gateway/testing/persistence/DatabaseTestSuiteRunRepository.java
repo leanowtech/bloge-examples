@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -291,17 +292,28 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
         boolean fingerprintMatches = running
                 ? record.evidenceFingerprint().isBlank()
                 : record.evidenceFingerprint().equals(attestation.aggregateEvidenceFingerprint());
-        boolean generationMatches = record.evidence() instanceof TestSuiteRunEvidenceV2 semantic
-                ? TestSuiteRunEvidenceV2.SCHEMA_VERSION.equals(semantic.schemaVersion())
-                && TestSuiteRunAttestation.SCHEMA_VERSION_V2.equals(attestation.schemaVersion())
-                : record.evidence() instanceof TestSuiteRunEvidence structural
-                && TestSuiteRunEvidence.SCHEMA_VERSION.equals(structural.schemaVersion())
-                && TestSuiteRunAttestation.SCHEMA_VERSION.equals(attestation.schemaVersion());
+        boolean generationMatches = generationMatches(record, attestation);
         if ((!verified && !unavailableTerminal) || !scopeMatches
                 || !identityMatches || !fingerprintMatches || !generationMatches) {
             throw new IllegalArgumentException(
                     "Suite-run persistence requires a structurally valid signed attestation");
         }
+    }
+
+    private static boolean generationMatches(TestSuiteRunRecord record,
+                                             TestSuiteRunAttestation attestation) {
+        if (record.evidence() instanceof TestSuiteRunEvidenceV3 admission) {
+            return TestSuiteRunEvidenceV3.SCHEMA_VERSION.equals(admission.schemaVersion())
+                    && TestSuiteRunAttestation.SCHEMA_VERSION_V3.equals(attestation.schemaVersion())
+                    && attestation.childEvidenceRefs().isEmpty();
+        }
+        if (record.evidence() instanceof TestSuiteRunEvidenceV2 semantic) {
+            return TestSuiteRunEvidenceV2.SCHEMA_VERSION.equals(semantic.schemaVersion())
+                    && TestSuiteRunAttestation.SCHEMA_VERSION_V2.equals(attestation.schemaVersion());
+        }
+        return record.evidence() instanceof TestSuiteRunEvidence structural
+                && TestSuiteRunEvidence.SCHEMA_VERSION.equals(structural.schemaVersion())
+                && TestSuiteRunAttestation.SCHEMA_VERSION.equals(attestation.schemaVersion());
     }
 
     private static void requireLease(TestSuiteRunLease lease, Instant observedAt) {

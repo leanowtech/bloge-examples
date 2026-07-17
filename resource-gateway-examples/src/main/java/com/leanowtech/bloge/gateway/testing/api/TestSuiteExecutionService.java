@@ -21,6 +21,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteEvidenceAggregator;
@@ -366,8 +367,7 @@ public final class TestSuiteExecutionService {
         }
         BundleMaterial material = new BundleMaterial(TestSuiteEvidenceBundle.PayloadPolicy.OMITTED,
                 response.attestation(), response.evidence());
-        String schemaVersion = response.evidence() instanceof TestSuiteRunEvidenceV2
-                ? TestSuiteEvidenceBundle.SCHEMA_VERSION_V2 : TestSuiteEvidenceBundle.SCHEMA_VERSION;
+        String schemaVersion = bundleVersion(response.evidence());
         return new TestSuiteEvidenceBundle(schemaVersion, response.suiteRunId(),
                 ProtocolFingerprint.of(objectMapper, material), material.payloadPolicy(),
                 material.attestation(), material.evidence());
@@ -810,11 +810,27 @@ public final class TestSuiteExecutionService {
     }
 
     private static TestSuiteExecutionResponse response(TestSuiteRunRecord record) {
-        String schemaVersion = record.evidence() instanceof TestSuiteRunEvidenceV2
-                ? TestSuiteExecutionResponse.SCHEMA_VERSION_V3
-                : TestSuiteExecutionResponse.SCHEMA_VERSION;
+        String schemaVersion = responseVersion(record.evidence());
         return new TestSuiteExecutionResponse(schemaVersion, record.suiteRunId(),
                 record.evidenceFingerprint(), record.evidence(), record.attestation());
+    }
+
+    private static String responseVersion(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV3) {
+            return TestSuiteExecutionResponse.SCHEMA_VERSION_V4;
+        }
+        return evidence instanceof TestSuiteRunEvidenceV2
+                ? TestSuiteExecutionResponse.SCHEMA_VERSION_V3
+                : TestSuiteExecutionResponse.SCHEMA_VERSION;
+    }
+
+    private static String bundleVersion(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV3) {
+            return TestSuiteEvidenceBundle.SCHEMA_VERSION_V3;
+        }
+        return evidence instanceof TestSuiteRunEvidenceV2
+                ? TestSuiteEvidenceBundle.SCHEMA_VERSION_V2
+                : TestSuiteEvidenceBundle.SCHEMA_VERSION;
     }
 
     private void validateRequest(String pathSuiteId, TestSuiteExecutionRequest request,

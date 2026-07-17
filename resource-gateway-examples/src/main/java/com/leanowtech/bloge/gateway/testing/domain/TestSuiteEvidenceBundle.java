@@ -28,6 +28,8 @@ public record TestSuiteEvidenceBundle(
     public static final String SCHEMA_VERSION = "bloge.testSuiteEvidenceBundle.v1";
     /** Portable bundle version carrying semantic aggregate evidence and attestation. */
     public static final String SCHEMA_VERSION_V2 = "bloge.testSuiteEvidenceBundle.v2";
+    /** Portable bundle version carrying schema-admission aggregate evidence and attestation. */
+    public static final String SCHEMA_VERSION_V3 = "bloge.testSuiteEvidenceBundle.v3";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Payload handling for this first portable bundle version. */
@@ -39,7 +41,7 @@ public record TestSuiteEvidenceBundle(
     /** Normalizes and validates portable bundle identity. */
     public TestSuiteEvidenceBundle {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank()
-                ? evidence instanceof TestSuiteRunEvidenceV2 ? SCHEMA_VERSION_V2 : SCHEMA_VERSION
+                ? versionFor(evidence)
                 : schemaVersion.trim();
         suiteRunId = suiteRunId == null ? "" : suiteRunId.trim();
         bundleFingerprint = bundleFingerprint == null ? "" : bundleFingerprint.trim();
@@ -54,11 +56,24 @@ public record TestSuiteEvidenceBundle(
                 && TestSuiteRunEvidenceV2.SCHEMA_VERSION.equals(semantic.schemaVersion())
                 && attestation != null
                 && TestSuiteRunAttestation.SCHEMA_VERSION_V2.equals(attestation.schemaVersion());
+        boolean v3 = SCHEMA_VERSION_V3.equals(schemaVersion)
+                && evidence instanceof TestSuiteRunEvidenceV3 admission
+                && TestSuiteRunEvidenceV3.SCHEMA_VERSION.equals(admission.schemaVersion())
+                && attestation != null
+                && TestSuiteRunAttestation.SCHEMA_VERSION_V3.equals(attestation.schemaVersion())
+                && attestation.childEvidenceRefs().isEmpty();
         if (suiteRunId.isBlank() || !FINGERPRINT.matcher(bundleFingerprint).matches()
                 || attestation == null || !attestation.terminallyVerifiable()
                 || evidence == null || !suiteRunId.equals(evidence.suiteRunId())
-                || !suiteRunId.equals(attestation.suiteRunId()) || (!v1 && !v2)) {
+                || !suiteRunId.equals(attestation.suiteRunId()) || (!v1 && !v2 && !v3)) {
             throw new IllegalArgumentException("Portable suite evidence bundle is incomplete");
         }
+    }
+
+    private static String versionFor(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV3) {
+            return SCHEMA_VERSION_V3;
+        }
+        return evidence instanceof TestSuiteRunEvidenceV2 ? SCHEMA_VERSION_V2 : SCHEMA_VERSION;
     }
 }
