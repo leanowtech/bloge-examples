@@ -253,7 +253,8 @@ public record IntegrationCapabilities(
             objects.put("testSuite", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuite.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2.SCHEMA_VERSION,
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4.SCHEMA_VERSION));
             objects.put("testSuiteRegistrationRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistrationRequest.SCHEMA_VERSION));
             objects.put("storedTestSuite", List.of(
@@ -306,6 +307,10 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION));
             objects.put("testBoundarySuiteMaterialization", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationResponse.SCHEMA_VERSION));
+            objects.put("testPropertySuiteMaterializationRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterializationRequest.SCHEMA_VERSION));
+            objects.put("testPropertySuiteMaterialization", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterializationResponse.SCHEMA_VERSION));
             objects.put("testOperatorExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestOperatorExecutionApiRequest.SCHEMA_VERSION));
             objects.put("testOperatorTargetDescriptor", List.of(
@@ -478,6 +483,7 @@ public record IntegrationCapabilities(
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);
+        features.put("propertySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteExecution", false);
         features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("schemaAdmissionSuiteExecution", testExecutionEndpointEnabled);
@@ -603,6 +609,8 @@ public record IntegrationCapabilities(
                     "/api/testing/targets/graphs/{graphName}/property-cases"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/targets/graphs/{graphName}/boundary-suites"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/targets/graphs/{graphName}/property-suites"));
             endpoints.add(new Endpoint("GET", "/api/testing/targets/operators/{operatorRef}"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/targets/operators/{operatorRef}/boundary-cases"));
@@ -610,6 +618,8 @@ public record IntegrationCapabilities(
                     "/api/testing/targets/operators/{operatorRef}/property-cases"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/targets/operators/{operatorRef}/boundary-suites"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/targets/operators/{operatorRef}/property-suites"));
             endpoints.add(new Endpoint("POST", "/api/testing/targets/operators/{operatorRef}/executions"));
             endpoints.add(new Endpoint("POST", "/api/testing/executions/batch"));
             endpoints.add(new Endpoint("GET", "/api/testing/executions/{runId}"));

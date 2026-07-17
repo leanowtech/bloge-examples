@@ -1765,7 +1765,7 @@
       "required": ["caseId", "caseType", "input", "fixtureBundleRef", "tags", "metadata"],
       "properties": {
         "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
-        "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]},
+        "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"]},
         "input": true,
         "fixtureBundleRef": {"$ref": "#/$defs/governedFixtureBundleRef"},
         "tags": {
@@ -1774,6 +1774,14 @@
         },
         "metadata": {"type": "object", "maxProperties": 100}
       }
+    },
+    "businessTestSuiteCase": {
+      "allOf": [
+        {"$ref": "#/$defs/testSuiteCase"},
+        {"properties": {
+          "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}
+        }}
+      ]
     },
     "testSuiteEdgeTransferRef": {
       "type": "object",
@@ -1792,8 +1800,8 @@
       "properties": {
         "minimumCases": {"type": "integer", "minimum": 1, "maximum": 100},
         "requiredCaseTypes": {
-          "type": "array", "uniqueItems": true, "maxItems": 4,
-          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}
+          "type": "array", "uniqueItems": true, "maxItems": 5,
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"]}
         },
         "requiredInvocationSiteIds": {
           "type": "array", "uniqueItems": true, "maxItems": 10000,
@@ -1905,7 +1913,7 @@
         "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
         "cases": {
           "type": "array", "minItems": 1, "maxItems": 100,
-          "items": {"$ref": "#/$defs/testSuiteCase"}
+          "items": {"$ref": "#/$defs/businessTestSuiteCase"}
         },
         "coveragePolicy": {"$ref": "#/$defs/testSuiteCoveragePolicy"},
         "promotionPolicy": {"$ref": "#/$defs/testSuitePromotionPolicy"},
@@ -1925,7 +1933,7 @@
         "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
         "cases": {
           "type": "array", "minItems": 1, "maxItems": 100,
-          "items": {"$ref": "#/$defs/testSuiteCase"}
+          "items": {"$ref": "#/$defs/businessTestSuiteCase"}
         },
         "coveragePolicy": {"$ref": "#/$defs/testSuiteCoveragePolicy"},
         "semanticCoveragePolicy": {"$ref": "#/$defs/semanticCoveragePolicy"},
@@ -1974,7 +1982,7 @@
         "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
         "cases": {
           "type": "array", "minItems": 1, "maxItems": 100,
-          "items": {"$ref": "#/$defs/testSuiteCase"}
+          "items": {"$ref": "#/$defs/businessTestSuiteCase"}
         },
         "coveragePolicy": {
           "allOf": [
@@ -2017,11 +2025,164 @@
         "metadata": {"type": "object", "maxProperties": 100}
       }
     },
+    "testSuitePropertyGenerationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generatorVersion", "seed", "requestedTrials", "maxShrinkSteps",
+        "maxCases", "maxGenerationAttempts", "maxDepth", "maxCollectionItems",
+        "verificationMode"],
+      "properties": {
+        "generatorVersion": {"const": "property-cases-v1"},
+        "seed": {"type": "integer"},
+        "requestedTrials": {"type": "integer", "minimum": 1, "maximum": 16},
+        "maxShrinkSteps": {"type": "integer", "minimum": 0, "maximum": 5},
+        "maxCases": {"type": "integer", "minimum": 1, "maximum": 96},
+        "maxGenerationAttempts": {"const": 32},
+        "maxDepth": {"const": 8},
+        "maxCollectionItems": {"const": 32},
+        "verificationMode": {"const": "VISUAL_SCHEMA_VALIDATOR_PROOF"}
+      }
+    },
+    "testSuitePropertyGenerationGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "schemaPath", "keyword"],
+      "properties": {
+        "code": {
+          "enum": ["OPAQUE_INPUT_SCHEMA", "INVALID_INPUT_SCHEMA",
+            "BLOGE_SCHEMA_PROJECTION_WARNING", "CONSTRAINT_NOT_GENERATED",
+            "UNIQUE_TRIAL_LIMIT_REACHED", "CANDIDATE_NOT_PROVEN",
+            "DEPTH_LIMIT_REACHED", "COLLECTION_LIMIT_REACHED", "CASE_LIMIT_REACHED"]
+        },
+        "schemaPath": {"type": "string"},
+        "keyword": {"type": "string"}
+      }
+    },
+    "testSuitePropertyShrinkRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "parentCaseId", "step", "inputFingerprint", "complexity"],
+      "properties": {
+        "caseId": {"type": "string", "pattern": "^property-[0-9]{3}-shrink-[0-9]{3}$"},
+        "parentCaseId": {
+          "type": "string", "pattern": "^property-[0-9]{3}(-shrink-[0-9]{3})?$"
+        },
+        "step": {"type": "integer", "minimum": 1, "maximum": 5},
+        "inputFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "complexity": {"type": "integer", "minimum": 0}
+      }
+    },
+    "testSuitePropertyTrialRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trialId", "inputFingerprint", "complexity", "shrinkPath"],
+      "properties": {
+        "trialId": {"type": "string", "pattern": "^property-[0-9]{3}$"},
+        "inputFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "complexity": {"type": "integer", "minimum": 0},
+        "shrinkPath": {
+          "type": "array", "maxItems": 5,
+          "items": {"$ref": "#/$defs/testSuitePropertyShrinkRef"}
+        }
+      }
+    },
+    "testSuiteV4": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteId", "revision", "target", "classification",
+        "cases", "coveragePolicy", "semanticCoveragePolicy", "promotionPolicy",
+        "evaluationMode", "quantification", "exhaustive", "propertyPlanFingerprint",
+        "inputSchemaFingerprint", "generationPolicy", "sourcePlanStatus",
+        "generationGapsAccepted", "generationGaps", "propertyTrials", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuite.v4"},
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "cases": {
+          "type": "array", "minItems": 1, "maxItems": 96,
+          "items": {
+            "allOf": [
+              {"$ref": "#/$defs/testSuiteCase"},
+              {"properties": {
+                "caseId": {"pattern": "^property-[0-9]{3}(-shrink-[0-9]{3})?$"},
+                "caseType": {"const": "PROPERTY"}
+              }}
+            ]
+          }
+        },
+        "coveragePolicy": {
+          "allOf": [
+            {"$ref": "#/$defs/testSuiteCoveragePolicy"},
+            {"properties": {
+              "requiredCaseTypes": {
+                "type": "array", "minItems": 1, "maxItems": 1,
+                "items": {"const": "PROPERTY"}
+              },
+              "requiredInvocationSiteIds": {"maxItems": 0},
+              "requiredEdgeTransfers": {"maxItems": 0},
+              "minimumAssertionsPerCase": {"minimum": 1},
+              "requireAllFixtureRulesConsumed": {"const": false}
+            }}
+          ]
+        },
+        "semanticCoveragePolicy": {
+          "type": "object", "additionalProperties": false,
+          "required": ["requirements"],
+          "properties": {"requirements": {"type": "array", "maxItems": 0}}
+        },
+        "promotionPolicy": {
+          "allOf": [
+            {"$ref": "#/$defs/testSuitePromotionPolicy"},
+            {"properties": {
+              "requireAllCasesPassed": {"const": true},
+              "minimumCertifiableCases": {"minimum": 1, "maximum": 96},
+              "requireTargetCertificationEligible": {"const": true}
+            }}
+          ]
+        },
+        "evaluationMode": {"const": "PROPERTY_EXECUTION"},
+        "quantification": {"const": "BOUNDED_SAMPLED"},
+        "exhaustive": {"const": false},
+        "propertyPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "inputSchemaFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "generationPolicy": {"$ref": "#/$defs/testSuitePropertyGenerationPolicy"},
+        "sourcePlanStatus": {"enum": ["GENERATED", "PARTIAL"]},
+        "generationGapsAccepted": {"type": "boolean"},
+        "generationGaps": {
+          "type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuitePropertyGenerationGap"}
+        },
+        "propertyTrials": {
+          "type": "array", "minItems": 1, "maxItems": 16,
+          "items": {"$ref": "#/$defs/testSuitePropertyTrialRef"}
+        },
+        "metadata": {"type": "object", "maxProperties": 100}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "GENERATED"},
+            "generationGapsAccepted": {"const": false},
+            "generationGaps": {"maxItems": 0}
+          }
+        },
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "PARTIAL"},
+            "generationGapsAccepted": {"const": true},
+            "generationGaps": {"minItems": 1}
+          }
+        }
+      ]
+    },
     "testSuiteProtocol": {
       "oneOf": [
         {"$ref": "#/$defs/testSuite"},
         {"$ref": "#/$defs/testSuiteV2"},
-        {"$ref": "#/$defs/testSuiteV3"}
+        {"$ref": "#/$defs/testSuiteV3"},
+        {"$ref": "#/$defs/testSuiteV4"}
       ]
     },
     "testSuiteRegistrationRequest": {
@@ -2114,7 +2275,7 @@
         "diagnosticCode", "diagnostic"],
       "properties": {
         "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
-        "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]},
+        "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"]},
         "fixtureBundleRef": {"$ref": "#/$defs/governedFixtureBundleRef"},
         "status": {"enum": ["PENDING", "PASSED", "FAILED", "NOT_SCHEDULED", "EVIDENCE_INCOMPLETE"]},
         "runId": {"type": "string", "maxLength": 255},
@@ -2139,11 +2300,11 @@
         "minimumCases": {"type": "integer", "minimum": 0, "maximum": 100},
         "completedCases": {"type": "integer", "minimum": 0, "maximum": 100},
         "requiredCaseTypes": {"type": "array", "uniqueItems": true,
-          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"]}},
         "observedCaseTypes": {"type": "array", "uniqueItems": true,
-          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"]}},
         "missingCaseTypes": {"type": "array", "uniqueItems": true,
-          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION"]}},
+          "items": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"]}},
         "requiredInvocationSiteIds": {"type": "array", "uniqueItems": true, "maxItems": 10000,
           "items": {"type": "string", "minLength": 1, "maxLength": 512}},
         "observedInvocationSiteIds": {"type": "array", "uniqueItems": true, "maxItems": 10000,
@@ -3531,6 +3692,71 @@
           "properties": {
             "sourcePlanStatus": {"const": "PARTIAL"},
             "coverageGapsAccepted": {"const": true}
+          }
+        }
+      ]
+    },
+    "testPropertySuiteMaterializationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteId", "classification",
+        "expectedTargetFingerprint", "expectedInputSchemaFingerprint",
+        "expectedPlanFingerprint", "seed", "trials", "maxShrinkSteps",
+        "fixtureRef", "acceptGenerationGaps"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testPropertySuiteMaterializationRequest.v1"},
+        "suiteId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$"},
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "expectedTargetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "expectedInputSchemaFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "expectedPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "seed": {"type": "integer"},
+        "trials": {"type": "integer", "minimum": 1, "maximum": 16},
+        "maxShrinkSteps": {"type": "integer", "minimum": 0, "maximum": 5},
+        "fixtureRef": {"$ref": "#/$defs/governedFixtureBundleRef"},
+        "acceptGenerationGaps": {"type": "boolean"}
+      }
+    },
+    "testPropertySuiteMaterialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "materializationFingerprint", "target",
+        "inputSchemaFingerprint", "propertyPlanFingerprint", "sourcePlanStatus",
+        "generationGapsAccepted", "generationPolicy", "rootTrialIds", "caseIds",
+        "fixtureRef", "suiteRef"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testPropertySuiteMaterialization.v1"},
+        "materializationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "inputSchemaFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "propertyPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sourcePlanStatus": {"enum": ["GENERATED", "PARTIAL"]},
+        "generationGapsAccepted": {"type": "boolean"},
+        "generationPolicy": {"$ref": "#/$defs/testSuitePropertyGenerationPolicy"},
+        "rootTrialIds": {
+          "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^property-[0-9]{3}$"}
+        },
+        "caseIds": {
+          "type": "array", "minItems": 1, "maxItems": 96, "uniqueItems": true,
+          "items": {
+            "type": "string", "pattern": "^property-[0-9]{3}(-shrink-[0-9]{3})?$"
+          }
+        },
+        "fixtureRef": {"$ref": "#/$defs/governedFixtureBundleRef"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "GENERATED"},
+            "generationGapsAccepted": {"const": false}
+          }
+        },
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "PARTIAL"},
+            "generationGapsAccepted": {"const": true}
           }
         }
       ]

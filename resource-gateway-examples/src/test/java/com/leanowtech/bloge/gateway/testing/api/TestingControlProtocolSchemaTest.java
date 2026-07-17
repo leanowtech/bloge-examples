@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
 import com.leanowtech.bloge.gateway.testing.planning.TestPropertyCasePlanner;
 import com.leanowtech.bloge.gateway.visual.runtime.EvidenceVerificationKeySet;
@@ -63,6 +64,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteV2.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteV3/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteV3.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteV4/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteV4.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRegistrationRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRegistrationRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/storedTestSuite/properties/schemaVersion/const").asText())
@@ -112,6 +115,12 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at(
                 "/$defs/testBoundarySuiteMaterialization/properties/schemaVersion/const")
                 .asText()).isEqualTo(TestBoundarySuiteMaterializationResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testPropertySuiteMaterializationRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestPropertySuiteMaterializationRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testPropertySuiteMaterialization/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestPropertySuiteMaterializationResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testOperatorExecutionRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestOperatorExecutionApiRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testOperatorTargetDescriptor/properties/schemaVersion/const").asText())
@@ -624,6 +633,19 @@ class TestingControlProtocolSchemaTest {
                 "/testBoundarySuiteMaterialization/properties/sourcePlanStatus/enum"))
                 .extracting(JsonNode::asText).containsExactly("GENERATED", "PARTIAL");
         assertThat(definitions.at("/testBoundarySuiteMaterialization/oneOf")).hasSize(2);
+        assertThat(definitions.at(
+                "/testPropertySuiteMaterializationRequest/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at(
+                "/testPropertySuiteMaterializationRequest/properties/trials/maximum").asInt())
+                .isEqualTo(TestPropertyCasePlanner.MAX_TRIALS);
+        assertThat(definitions.at(
+                "/testPropertySuiteMaterializationRequest/properties/maxShrinkSteps/maximum")
+                .asInt()).isEqualTo(TestPropertyCasePlanner.MAX_SHRINK_STEPS);
+        assertThat(definitions.at(
+                "/testPropertySuiteMaterialization/properties/caseIds/maxItems").asInt())
+                .isEqualTo(TestPropertyCasePlanner.MAX_CASES);
+        assertThat(definitions.at("/testPropertySuiteMaterialization/oneOf")).hasSize(2);
         assertThat(definitions.at("/testExecutionRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/graphTarget");
         assertThat(definitions.at("/testOperatorExecutionRequest/properties/target/$ref").asText())
@@ -696,7 +718,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at(
                 "/testSuiteEvidenceBundleV3/properties/evidence/$ref").asText())
                 .isEqualTo("#/$defs/testSuiteRunEvidenceV3");
-        assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(3);
+        assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(4);
         assertThat(definitions.at("/testSuiteV3/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/testSuiteV3/properties/evaluationMode/const").asText())
                 .isEqualTo("SCHEMA_ADMISSION");
@@ -705,6 +727,19 @@ class TestingControlProtocolSchemaTest {
                 .asInt()).isZero();
         assertThat(definitions.at(
                 "/testSuiteAdmissionExpectation/oneOf")).hasSize(2);
+        assertThat(definitions.at("/testSuiteV4/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at("/testSuiteV4/properties/evaluationMode/const").asText())
+                .isEqualTo(TestSuiteV4.EvaluationMode.PROPERTY_EXECUTION.name());
+        assertThat(definitions.at("/testSuiteV4/properties/quantification/const").asText())
+                .isEqualTo(TestSuiteV4.Quantification.BOUNDED_SAMPLED.name());
+        assertThat(definitions.at("/testSuiteV4/properties/exhaustive/const").asBoolean())
+                .isFalse();
+        assertThat(definitions.at(
+                "/testSuiteV4/properties/propertyTrials/items/$ref").asText())
+                .isEqualTo("#/$defs/testSuitePropertyTrialRef");
+        assertThat(definitions.at("/testSuiteV4/oneOf")).hasSize(2);
+        assertThat(definitions.at("/testSuiteCase/properties/caseType/enum"))
+                .extracting(JsonNode::asText).contains("PROPERTY");
         assertThat(definitions.at("/semanticRequirement/oneOf")).hasSize(4);
         assertThat(definitions.at("/semanticCoveragePolicy/properties/requirements/maxItems").asInt())
                 .isEqualTo(1_000);

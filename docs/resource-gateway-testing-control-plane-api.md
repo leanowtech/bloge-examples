@@ -365,11 +365,66 @@ with `UNIQUE_TRIAL_LIMIT_REACHED` rather than duplicating values to satisfy a re
 means every requested unique root was produced without a disclosed planning gap; it does not mean the
 input domain is exhausted. `PARTIAL` retains useful proven trials and names every known projection,
 constraint, or resource-limit gap. `UNAVAILABLE` publishes no trial and must explain why. The capability
-`seededPropertyCasePlanning=true` advertises only this authoring step. `propertySuiteExecution=false`
-remains fail-closed until immutable suite materialization and same-generation signed property evidence
-are implemented.
+`seededPropertyCasePlanning=true` advertises this authoring step. A reviewed plan can now be frozen as
+V4 through the next section, while `propertySuiteExecution=false` remains fail-closed until
+same-generation signed property evidence is implemented.
 
-### 4.1.4 Materialize reviewed boundary cases
+### 4.1.4 Materialize a reviewed property plan
+
+Register an assertion-bearing fixture for the same exact target, then submit the plan's seed, policy,
+three review fingerprints, and exact fixture reference. Materialization requires
+`TEST_SUITE_WRITE` and always freezes the complete root-plus-shrink closure; there is no favorable-case
+selection field.
+
+```http
+POST /api/testing/targets/graphs/loanDecisionPolicy/property-suites
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_SUITE_WRITE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.testPropertySuiteMaterializationRequest.v1",
+  "suiteId": "loan-decision-properties",
+  "classification": "INTERNAL",
+  "expectedTargetFingerprint": "sha256:<target>",
+  "expectedInputSchemaFingerprint": "sha256:<input-schema>",
+  "expectedPlanFingerprint": "sha256:<property-plan>",
+  "seed": 918273645,
+  "trials": 8,
+  "maxShrinkSteps": 3,
+  "fixtureRef": {
+    "fixtureBundleId": "loan-property-assertions",
+    "revision": 4,
+    "fingerprint": "sha256:<fixture>"
+  },
+  "acceptGenerationGaps": false
+}
+```
+
+Use `POST /api/testing/targets/operators/{operatorRef}/property-suites` for an operator target. The
+service regenerates the plan with the submitted coordinates. Target, projected schema, or plan drift
+returns `409 RG.TEST.PROPERTY_PLAN_FINGERPRINT_CONFLICT`. A partial plan requires explicit gap
+acceptance; an unavailable plan is rejected. Fixture fingerprint or target substitution is a
+conflict, and an assertion-free fixture is invalid.
+
+Success returns `bloge.testPropertySuiteMaterialization.v1`: materialization fingerprint, exact
+target/schema/plan, copied generation policy, ordered root IDs, the complete case ID closure, fixture
+ref, and content-derived V4 suite ref. `bloge.testSuite.v4` retains bounded-sampled/non-exhaustive
+quantification, generator policy, accepted gaps, every input and fingerprint, and root/shrink lineage
+as canonical fields. Inputs are recursively immutable. Every case has type `PROPERTY`, uses the same
+fixture revision, and participates in full-case coverage and future fail-closed promotion policy.
+
+Raw `PUT /api/testing/suites/{suiteId}` registration rejects V4; only the materializer can provide the
+same-request regenerated plan proof. Conversely, `PROPERTY` cannot be used in V1-V3. An execution
+attempt currently returns `409 RG.TEST.PROPERTY_EVIDENCE_UNAVAILABLE` before run persistence,
+admission, or business invocation. Capability discovery therefore reports
+`propertySuiteMaterialization=true` and `propertySuiteExecution=false`.
+
+The standalone test-kit exposes graph/operator plan and materialization methods and validates all
+four messages against its packaged schema. Implementation and negative proof details are recorded in
+[Stage 5 immutable property suite materialization verification](resource-gateway-execution-data-control-plane-stage5-property-suite-materialization-verification.md).
+
+### 4.1.5 Materialize reviewed boundary cases
 
 After reviewing one exact plan, submit the target, input-schema, and plan fingerprints together with
 an explicit case selection. Materialization requires `TEST_SUITE_WRITE`; target-read or execution-only
@@ -414,7 +469,7 @@ The capability probe reports both `schemaBoundarySuiteMaterialization=true` and
 exact v3 suite as described below. Admission evidence is useful for reviewed schema-regression
 gates, but it remains permanently ineligible for business promotion.
 
-### 4.1.5 Execute and verify a schema-admission suite
+### 4.1.6 Execute and verify a schema-admission suite
 
 Use the exact suite reference returned by materialization. The request and idempotency semantics are
 the same as other immutable suites:

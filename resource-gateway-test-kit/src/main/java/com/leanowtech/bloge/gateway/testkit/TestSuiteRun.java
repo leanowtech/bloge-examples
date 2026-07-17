@@ -308,7 +308,7 @@ public record TestSuiteRun(
      * Payload-free projection of one governed suite case.
      *
      * @param caseId suite-local case id
-     * @param caseType GOLDEN, NEGATIVE, BOUNDARY, or REGRESSION
+     * @param caseType GOLDEN, NEGATIVE, BOUNDARY, REGRESSION, or governed PROPERTY
      * @param status scheduling and child-evidence outcome
      * @param runId persisted child run id, blank when unscheduled
      * @param evidenceStatus child test-run status
@@ -344,7 +344,8 @@ public record TestSuiteRun(
             fixtureBundleId = normalized(fixtureBundleId);
             fixtureFingerprint = normalized(fixtureFingerprint);
             diagnosticCode = machineCode(diagnosticCode, "case diagnostic code");
-            if (caseId.isBlank() || !List.of("GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION")
+            if (caseId.isBlank() || !List.of(
+                    "GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY")
                     .contains(caseType) || status == null || fixtureBundleId.isBlank()
                     || fixtureRevision < 1 || !fingerprint(fixtureFingerprint)
                     || assertionsEvaluated < 0 || assertionsPassed < 0

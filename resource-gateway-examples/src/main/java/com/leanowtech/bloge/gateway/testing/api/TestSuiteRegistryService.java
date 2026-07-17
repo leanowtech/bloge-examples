@@ -13,9 +13,11 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteProtocolCodec;
 
 import java.time.Instant;
@@ -105,6 +107,33 @@ public final class TestSuiteRegistryService {
     public StoredTestSuite register(String suiteId,
                                     TestSuiteRegistrationRequest request,
                                     IntegrationRequestContext identity) {
+        return register(suiteId, request, null, identity);
+    }
+
+    /**
+     * Registers V4 only when the materializer supplies the exact plan regenerated in this request.
+     *
+     * <p>This package-private boundary prevents a generic registration client from asserting an
+     * arbitrary property-plan fingerprint. The registry still performs every normal target,
+     * fixture, classification, and size check before committing the revision.</p>
+     */
+    StoredTestSuite registerPropertySuite(String suiteId,
+                                          TestSuiteRegistrationRequest request,
+                                          TestPropertyCasePlan exactPlan,
+                                          IntegrationRequestContext identity) {
+        if (exactPlan == null || request == null
+                || !(request.testSuite() instanceof TestSuiteV4)) {
+            throw badRequest(identity, "RG.TEST.PROPERTY_SUITE_PROOF_INVALID",
+                    "Property-suite registration requires an exact regenerated plan and V4 suite.",
+                    Map.of());
+        }
+        return register(suiteId, request, exactPlan, identity);
+    }
+
+    private StoredTestSuite register(String suiteId,
+                                     TestSuiteRegistrationRequest request,
+                                     TestPropertyCasePlan exactPropertyPlan,
+                                     IntegrationRequestContext identity) {
         requireTestIdentity(identity);
         if (request == null || !TestSuiteRegistrationRequest.SCHEMA_VERSION.equals(request.schemaVersion())
                 || request.testSuite() == null) {
@@ -113,6 +142,11 @@ public final class TestSuiteRegistryService {
         }
         TestSuiteProtocol suite = request.testSuite();
         validateIdentity(suiteId, suite, identity);
+        if (suite instanceof TestSuiteV4 && exactPropertyPlan == null) {
+            throw badRequest(identity, "RG.TEST.PROPERTY_SUITE_MATERIALIZATION_REQUIRED",
+                    "Property suites must be created through the exact-plan materialization endpoint.",
+                    Map.of("schemaVersion", suite.schemaVersion()));
+        }
         requireClearance(suite.classification(), identity);
         requireBounded(suite.metadata(), MAX_METADATA_BYTES, "testSuite.metadata", identity);
         requireMetadata(suite.metadata(), "testSuite.metadata", identity);
@@ -130,7 +164,7 @@ public final class TestSuiteRegistryService {
                     "Promotion policy requires a target revision that is certification eligible.", Map.of());
         }
 
-        validatePoliciesAndCases(suite, identity);
+        validatePoliciesAndCases(suite, exactPropertyPlan, identity);
         String fingerprint = suiteCodec.fingerprint(suite);
         StoredTestSuite stored = new StoredTestSuite("", identity.tenantId(), identity.environmentId(),
                 suite.suiteId(), suite.revision(), fingerprint, suite, Instant.now(), identity.actorId());
@@ -184,7 +218,9 @@ public final class TestSuiteRegistryService {
                 || (suite instanceof TestSuiteV2
                 && TestSuiteV2.SCHEMA_VERSION.equals(suite.schemaVersion()))
                 || (suite instanceof TestSuiteV3
-                && TestSuiteV3.SCHEMA_VERSION.equals(suite.schemaVersion()));
+                && TestSuiteV3.SCHEMA_VERSION.equals(suite.schemaVersion()))
+                || (suite instanceof TestSuiteV4
+                && TestSuiteV4.SCHEMA_VERSION.equals(suite.schemaVersion()));
         if (!supportedGeneration
                 || normalized(pathSuiteId).isBlank()
                 || !normalized(pathSuiteId).equals(suite.suiteId())
@@ -203,6 +239,7 @@ public final class TestSuiteRegistryService {
     }
 
     private void validatePoliciesAndCases(TestSuiteProtocol suite,
+                                          TestPropertyCasePlan exactPropertyPlan,
                                           IntegrationRequestContext identity) {
         if (suite.cases().isEmpty() || suite.cases().size() > MAX_CASES) {
             throw badRequest(identity, "RG.TEST.SUITE_CASE_COUNT_INVALID",
@@ -221,6 +258,7 @@ public final class TestSuiteRegistryService {
             validateFixtureDependency(suite, testCase, fixture, identity);
         }
         validateSchemaAdmissionPolicy(suite, caseIds, identity);
+        validatePropertyPolicy(suite, exactPropertyPlan, identity);
         if (!representedTypes.containsAll(suite.coveragePolicy().requiredCaseTypes())) {
             Set<TestSuite.CaseType> missing = new HashSet<>(suite.coveragePolicy().requiredCaseTypes());
             missing.removeAll(representedTypes);
@@ -248,6 +286,7 @@ public final class TestSuiteRegistryService {
         SemanticCoveragePolicy semanticCoverage = switch (suite) {
             case TestSuiteV2 semanticSuite -> semanticSuite.semanticCoveragePolicy();
             case TestSuiteV3 admissionSuite -> admissionSuite.semanticCoveragePolicy();
+            case TestSuiteV4 propertySuite -> propertySuite.semanticCoveragePolicy();
             default -> null;
         };
         if (semanticCoverage == null) {
@@ -255,7 +294,8 @@ public final class TestSuiteRegistryService {
         }
         List<SemanticCoveragePolicy.Requirement> requirements =
                 semanticCoverage.requirements();
-        if (suite instanceof TestSuiteV3 && requirements.isEmpty()) {
+        if ((suite instanceof TestSuiteV3 || suite instanceof TestSuiteV4)
+                && requirements.isEmpty()) {
             return;
         }
         if (requirements.isEmpty() || requirements.size() > MAX_SEMANTIC_REQUIREMENTS) {
@@ -353,6 +393,77 @@ public final class TestSuiteRegistryService {
         });
     }
 
+    private void validatePropertyPolicy(TestSuiteProtocol suite,
+                                        TestPropertyCasePlan exactPlan,
+                                        IntegrationRequestContext identity) {
+        if (!(suite instanceof TestSuiteV4 propertySuite)) {
+            return;
+        }
+        if (exactPlan == null || exactPlan.status() == TestPropertyCasePlan.Status.UNAVAILABLE) {
+            throw badRequest(identity, "RG.TEST.PROPERTY_SUITE_PROOF_INVALID",
+                    "A property suite requires a usable exact regenerated plan.", Map.of());
+        }
+        TestExecutionApiRequest.Target sourceTarget = exactPlan.target();
+        boolean targetMatches = propertySuite.target().kind().equals(sourceTarget.kind())
+                && propertySuite.target().id().equals(sourceTarget.id())
+                && propertySuite.target().fingerprint().equals(sourceTarget.fingerprint());
+        boolean fingerprintsMatch = propertySuite.propertyPlanFingerprint()
+                .equals(exactPlan.planFingerprint())
+                && propertySuite.inputSchemaFingerprint()
+                .equals(exactPlan.inputSchemaFingerprint());
+        TestSuiteV4.PropertyGenerationPolicy expectedPolicy = propertyPolicy(exactPlan.policy());
+        TestSuiteV4.SourcePlanStatus expectedStatus = TestSuiteV4.SourcePlanStatus.valueOf(
+                exactPlan.status().name());
+        List<TestSuiteV4.PropertyGenerationGap> expectedGaps = exactPlan.gaps().stream()
+                .map(TestSuiteRegistryService::propertyGap).toList();
+        List<TestSuiteV4.PropertyTrialRef> expectedTrials = exactPlan.trials().stream()
+                .map(TestSuiteRegistryService::propertyTrial).toList();
+        if (!targetMatches || !fingerprintsMatch
+                || !expectedPolicy.equals(propertySuite.generationPolicy())
+                || expectedStatus != propertySuite.sourcePlanStatus()
+                || !expectedGaps.equals(propertySuite.generationGaps())
+                || !expectedTrials.equals(propertySuite.propertyTrials())) {
+            throw conflict(identity, "RG.TEST.PROPERTY_SUITE_PLAN_MISMATCH",
+                    "The V4 suite does not exactly close over the regenerated property plan.",
+                    Map.of("currentPlanFingerprint", exactPlan.planFingerprint()));
+        }
+        List<TestPropertyCasePlan.PlannedCase> plannedCases = exactPlan.allCases();
+        if (plannedCases.size() != propertySuite.cases().size()) {
+            throw conflict(identity, "RG.TEST.PROPERTY_SUITE_PLAN_MISMATCH",
+                    "The V4 suite case count differs from the regenerated property plan.",
+                    Map.of("plannedCases", plannedCases.size(),
+                            "suiteCases", propertySuite.cases().size()));
+        }
+        for (int index = 0; index < plannedCases.size(); index++) {
+            TestPropertyCasePlan.PlannedCase plannedCase = plannedCases.get(index);
+            TestSuite.TestCase suiteCase = propertySuite.cases().get(index);
+            String inputFingerprint = ProtocolFingerprint.of(objectMapper, suiteCase.input());
+            if (!plannedCase.caseId().equals(suiteCase.caseId())
+                    || !plannedCase.inputFingerprint().equals(inputFingerprint)) {
+                throw conflict(identity, "RG.TEST.PROPERTY_SUITE_INPUT_MISMATCH",
+                        "A V4 suite input differs from its exact validator-proven plan case.",
+                        Map.of("caseId", suiteCase.caseId()));
+            }
+        }
+        TestSuite.CoveragePolicy coverage = propertySuite.coveragePolicy();
+        TestSuite.PromotionPolicy promotion = propertySuite.promotionPolicy();
+        boolean policyClosed = coverage.minimumCases() == propertySuite.cases().size()
+                && coverage.requiredCaseTypes().equals(List.of(TestSuite.CaseType.PROPERTY))
+                && coverage.requiredInvocationSiteIds().isEmpty()
+                && coverage.requiredEdgeTransfers().isEmpty()
+                && coverage.minimumAssertionsPerCase() >= 1
+                && !coverage.requireAllFixtureRulesConsumed()
+                && propertySuite.semanticCoveragePolicy().requirements().isEmpty()
+                && promotion.requireAllCasesPassed()
+                && promotion.minimumCertifiableCases() == propertySuite.cases().size()
+                && promotion.requireTargetCertificationEligible();
+        if (!policyClosed) {
+            throw badRequest(identity, "RG.TEST.PROPERTY_SUITE_POLICY_INVALID",
+                    "V4 requires full case closure, at least one assertion per case, and fail-closed promotion policy.",
+                    Map.of("caseCount", propertySuite.cases().size()));
+        }
+    }
+
     private void validateCaseShape(TestSuiteProtocol suite, TestSuite.TestCase testCase,
                                    Set<String> caseIds,
                                    IntegrationRequestContext identity) {
@@ -361,6 +472,12 @@ public final class TestSuiteRegistryService {
                 || !caseIds.add(testCase.caseId())) {
             throw badRequest(identity, "RG.TEST.SUITE_CASE_IDENTITY_INVALID",
                     "Every case requires a unique bounded caseId and a supported caseType.", Map.of());
+        }
+        if ((suite instanceof TestSuiteV4)
+                != (testCase.caseType() == TestSuite.CaseType.PROPERTY)) {
+            throw badRequest(identity, "RG.TEST.SUITE_CASE_TYPE_GENERATION_INVALID",
+                    "PROPERTY cases are reserved for exact-plan V4 suites, and every V4 case must be PROPERTY.",
+                    Map.of("caseId", testCase.caseId()));
         }
         if ("GRAPH".equals(suite.target().kind()) && !(suite instanceof TestSuiteV3)
                 && !(testCase.input() instanceof Map<?, ?>)) {
@@ -441,6 +558,35 @@ public final class TestSuiteRegistryService {
                     "Schema-admission suites may reference only inert provenance fixtures.",
                     Map.of("caseId", testCase.caseId()));
         }
+        if (suite instanceof TestSuiteV4 && fixture.bundle().assertions().isEmpty()) {
+            throw badRequest(identity, "RG.TEST.PROPERTY_SUITE_ASSERTIONS_REQUIRED",
+                    "Every property-suite fixture must contain at least one business assertion.",
+                    Map.of("caseId", testCase.caseId()));
+        }
+    }
+
+    private static TestSuiteV4.PropertyGenerationPolicy propertyPolicy(
+            TestPropertyCasePlan.GenerationPolicy source) {
+        return new TestSuiteV4.PropertyGenerationPolicy(source.generatorVersion(), source.seed(),
+                source.requestedTrials(), source.maxShrinkSteps(), source.maxCases(),
+                source.maxGenerationAttempts(), source.maxDepth(), source.maxCollectionItems(),
+                source.verificationMode());
+    }
+
+    private static TestSuiteV4.PropertyGenerationGap propertyGap(
+            TestPropertyCasePlan.CoverageGap source) {
+        return new TestSuiteV4.PropertyGenerationGap(
+                TestSuiteV4.GenerationGapCode.valueOf(source.code().name()),
+                source.schemaPath(), source.keyword());
+    }
+
+    private static TestSuiteV4.PropertyTrialRef propertyTrial(
+            TestPropertyCasePlan.PropertyTrial source) {
+        return new TestSuiteV4.PropertyTrialRef(source.trialId(), source.inputFingerprint(),
+                source.complexity(), source.shrinkPath().stream()
+                .map(shrink -> new TestSuiteV4.PropertyShrinkRef(shrink.caseId(),
+                        shrink.parentCaseId(), shrink.step(), shrink.inputFingerprint(),
+                        shrink.complexity())).toList());
     }
 
     private void requireSemanticSite(String invocationSiteId,

@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -83,6 +84,43 @@ class TestSuiteProtocolCodecTest {
                 List.of("visual.context.typeMismatch", "visual.context.typeMismatch")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("unique non-empty");
+    }
+
+    @Test
+    void v4RoundTripRetainsPropertyQuantificationPolicyAndLineage() {
+        TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
+                "property-fixture", 7, "sha256:" + "c".repeat(64));
+        List<TestSuite.TestCase> cases = List.of(
+                new TestSuite.TestCase("property-001", TestSuite.CaseType.PROPERTY,
+                        Map.of("value", 2), fixture, List.of("property-root"), Map.of()),
+                new TestSuite.TestCase("property-001-shrink-001", TestSuite.CaseType.PROPERTY,
+                        Map.of("value", 1), fixture, List.of("property-shrink"), Map.of()));
+        TestSuiteV4 suite = new TestSuiteV4("", "property-suite", 9,
+                new TestSuite.Target("GRAPH", "graph", FINGERPRINT), "INTERNAL", cases,
+                new TestSuite.CoveragePolicy(2, List.of(TestSuite.CaseType.PROPERTY),
+                        List.of(), List.of(), 1, false), SemanticCoveragePolicy.empty(),
+                new TestSuite.PromotionPolicy(true, 2, true),
+                TestSuiteV4.EvaluationMode.PROPERTY_EXECUTION,
+                TestSuiteV4.Quantification.BOUNDED_SAMPLED, false,
+                "sha256:" + "d".repeat(64), "sha256:" + "e".repeat(64),
+                new TestSuiteV4.PropertyGenerationPolicy(
+                        "property-cases-v1", 42, 1, 1, 2, 32, 8, 32,
+                        "DRAFT_2020_12_SHARED_VALIDATOR"),
+                TestSuiteV4.SourcePlanStatus.GENERATED, false, List.of(),
+                List.of(new TestSuiteV4.PropertyTrialRef(
+                        "property-001", "sha256:" + "f".repeat(64), 2,
+                        List.of(new TestSuiteV4.PropertyShrinkRef(
+                                "property-001-shrink-001", "property-001", 1,
+                                "sha256:" + "9".repeat(64), 1)))),
+                Map.of("source", "property-plan"));
+
+        String json = codec.write(suite);
+
+        assertThat(codec.read(json)).isInstanceOf(TestSuiteV4.class).isEqualTo(suite);
+        assertThat(json).contains("PROPERTY_EXECUTION", "BOUNDED_SAMPLED", "propertyTrials")
+                .contains("\"exhaustive\":false");
+        assertThat(codec.fingerprint(suite)).isEqualTo(ProtocolFingerprint.of(mapper, suite));
+        assertThat(codec.fingerprint(v1())).isEqualTo(ProtocolFingerprint.of(mapper, v1()));
     }
 
     private static TestSuite v1() {

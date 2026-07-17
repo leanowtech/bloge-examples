@@ -103,6 +103,35 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Plans deterministic validator-proven property inputs for one exact graph contract.
+     *
+     * @param graphName registered graph name
+     * @param seed deterministic generation seed
+     * @param trials requested root trials from 1 through 16
+     * @param maxShrinkSteps precomputed shrink steps per root from 0 through 5
+     * @return defensive schema-validated property-plan JSON
+     */
+    public JsonNode planGraphPropertyCases(
+            String graphName, long seed, int trials, int maxShrinkSteps) {
+        return planPropertyCases("graphs", graphName, seed, trials, maxShrinkSteps);
+    }
+
+    /**
+     * Materializes a caller-reviewed graph property plan as an immutable V4 suite.
+     *
+     * <p>The request must reference an existing assertion-bearing fixture. A successful response
+     * does not imply execution support; clients must still inspect the server's
+     * {@code propertySuiteExecution} capability.</p>
+     *
+     * @param graphName registered graph name
+     * @param request schema-complete exact-plan materialization request
+     * @return defensive schema-validated materialization JSON
+     */
+    public JsonNode materializeGraphPropertySuite(String graphName, JsonNode request) {
+        return materializePropertySuite("graphs", graphName, request);
+    }
+
+    /**
      * Discovers one frozen operator binding, schemas and executable testability classification.
      * @param operatorRef registered operator reference
      * @return typed operator target descriptor
@@ -112,6 +141,31 @@ public final class ResourceGatewayTestClient {
                 "TEST_EXECUTION", null);
         requireVersion(response, TestingProtocol.OPERATOR_TARGET_DESCRIPTOR_V2);
         return OperatorTargetDescriptor.from(response);
+    }
+
+    /**
+     * Plans deterministic validator-proven property inputs for one exact operator binding.
+     *
+     * @param operatorRef registered operator reference
+     * @param seed deterministic generation seed
+     * @param trials requested root trials from 1 through 16
+     * @param maxShrinkSteps precomputed shrink steps per root from 0 through 5
+     * @return defensive schema-validated property-plan JSON
+     */
+    public JsonNode planOperatorPropertyCases(
+            String operatorRef, long seed, int trials, int maxShrinkSteps) {
+        return planPropertyCases("operators", operatorRef, seed, trials, maxShrinkSteps);
+    }
+
+    /**
+     * Materializes a caller-reviewed operator property plan as an immutable V4 suite.
+     *
+     * @param operatorRef registered operator reference
+     * @param request schema-complete exact-plan materialization request
+     * @return defensive schema-validated materialization JSON
+     */
+    public JsonNode materializeOperatorPropertySuite(String operatorRef, JsonNode request) {
+        return materializePropertySuite("operators", operatorRef, request);
     }
 
     /**
@@ -641,6 +695,39 @@ public final class ResourceGatewayTestClient {
                 "verbosity=" + selected, "TEST_EXECUTION", null);
         requireExecutionResponseVersion(response);
         return projectRun(response);
+    }
+
+    private JsonNode planPropertyCases(
+            String targetCollection,
+            String targetId,
+            long seed,
+            int trials,
+            int maxShrinkSteps) {
+        if (trials < 1 || trials > 16 || maxShrinkSteps < 0 || maxShrinkSteps > 5) {
+            throw new IllegalArgumentException(
+                    "Property planning requires 1..16 trials and 0..5 shrink steps");
+        }
+        String query = "seed=" + seed + "&trials=" + trials
+                + "&maxShrinkSteps=" + maxShrinkSteps;
+        JsonNode response = exchange("GET", "/api/testing/targets/" + targetCollection + "/"
+                + segment(targetId) + "/property-cases", query, "TEST_EXECUTION", null);
+        requireVersion(response, TestingProtocol.TEST_PROPERTY_CASE_PLAN_V1);
+        TestingProtocolSchemaValidator.require(response, "testPropertyCasePlan");
+        return response.deepCopy();
+    }
+
+    private JsonNode materializePropertySuite(
+            String targetCollection,
+            String targetId,
+            JsonNode requestValue) {
+        JsonNode request = requiredObject(requestValue, "request");
+        TestingProtocolSchemaValidator.require(
+                request, "testPropertySuiteMaterializationRequest");
+        JsonNode response = exchange("POST", "/api/testing/targets/" + targetCollection + "/"
+                + segment(targetId) + "/property-suites", "", "TEST_SUITE_WRITE", request);
+        requireVersion(response, TestingProtocol.TEST_PROPERTY_SUITE_MATERIALIZATION_V1);
+        TestingProtocolSchemaValidator.require(response, "testPropertySuiteMaterialization");
+        return response.deepCopy();
     }
 
     private JsonNode exchange(String method, String path, String query, String purpose, JsonNode body) {

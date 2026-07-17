@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
@@ -86,6 +87,8 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(TestSuiteRunReconciliationScheduler.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestBoundarySuiteController.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestBoundarySuiteMaterializationService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestPropertySuiteController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestPropertySuiteMaterializationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
         assertThat(context.getBeansOfType(
@@ -135,6 +138,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST") && endpoint.path().equals(
                         "/api/testing/targets/graphs/{graphName}/boundary-suites"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("POST") && endpoint.path().equals(
+                        "/api/testing/targets/graphs/{graphName}/property-suites"));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("immutableTestSuiteRegistry", true)
                 .containsEntry("immutableTestSuiteExecution", true)
@@ -144,6 +150,7 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("schemaBoundarySuiteMaterialization", true)
                 .containsEntry("schemaAdmissionSuiteExecution", true)
                 .containsEntry("seededPropertyCasePlanning", true)
+                .containsEntry("propertySuiteMaterialization", true)
                 .containsEntry("propertySuiteExecution", false);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testBoundaryCasePlan",
@@ -154,6 +161,10 @@ class TestRuntimeApplicationIntegrationTest {
                         List.of(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION))
                 .containsEntry("testBoundarySuiteMaterialization",
                         List.of(TestBoundarySuiteMaterializationResponse.SCHEMA_VERSION))
+                .containsEntry("testPropertySuiteMaterializationRequest",
+                        List.of(TestPropertySuiteMaterializationRequest.SCHEMA_VERSION))
+                .containsEntry("testPropertySuiteMaterialization",
+                        List.of(TestPropertySuiteMaterializationResponse.SCHEMA_VERSION))
                 .containsEntry("testSuiteExecutionResponse", List.of(
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteExecutionResponse.SCHEMA_VERSION,
@@ -332,9 +343,72 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(propertyCases.getBody().trials()).isNotEmpty();
         assertThat(propertyCases.getBody().planFingerprint()).matches("sha256:[a-f0-9]{64}");
 
+        FixtureBundle propertyFixture = new FixtureBundle("", "loan-property-fixture", 1,
+                descriptor.target().fingerprint(), "INTERNAL", null, 918273645L,
+                List.of(), List.of(new FixtureBundle.Assertion(
+                "OUTPUT_PATH", "decision", "/decision", "EQUALS", "APPROVE", null)),
+                Map.of("source", "property-http-integration"));
+        String propertyFixtureFingerprint = ProtocolFingerprint.of(objectMapper, propertyFixture);
+        fixtureRepository.create(new StoredFixtureBundle("", "tenant-a", "test",
+                propertyFixture.fixtureBundleId(), propertyFixture.revision(),
+                propertyFixtureFingerprint, propertyFixture, Instant.now(), "integration-test"));
+
         HttpHeaders suiteWriteHeaders = new HttpHeaders();
         suiteWriteHeaders.setBearerAuth("bloge-aneke-demo-token");
         suiteWriteHeaders.set("X-Purpose", "TEST_SUITE_WRITE");
+        TestPropertySuiteMaterializationRequest propertyMaterializationRequest =
+                new TestPropertySuiteMaterializationRequest("", "loan-decision-properties",
+                        "INTERNAL", propertyCases.getBody().target().fingerprint(),
+                        propertyCases.getBody().inputSchemaFingerprint(),
+                        propertyCases.getBody().planFingerprint(), 918273645L, 3, 2,
+                        new TestSuite.FixtureBundleRef("loan-property-fixture", 1,
+                                propertyFixtureFingerprint), true);
+        var propertyMaterialized = restTemplate.exchange(
+                "/api/testing/targets/graphs/loanDecisionPolicy/property-suites",
+                HttpMethod.POST,
+                new HttpEntity<>(propertyMaterializationRequest, suiteWriteHeaders),
+                TestPropertySuiteMaterializationResponse.class);
+        assertThat(propertyMaterialized.getStatusCode())
+                .withFailMessage("property suite materialization failed: %s",
+                        propertyMaterialized.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(propertyMaterialized.getBody()).isNotNull();
+        assertThat(propertyMaterialized.getBody().caseIds())
+                .containsExactlyElementsOf(propertyCases.getBody().allCases().stream()
+                        .map(TestPropertyCasePlan.PlannedCase::caseId).toList());
+        assertThat(propertyMaterialized.getBody().fixtureRef().fingerprint())
+                .isEqualTo(propertyFixtureFingerprint);
+        assertThat(propertyMaterialized.getBody().generationGapsAccepted()).isEqualTo(
+                propertyCases.getBody().status() == TestPropertyCasePlan.Status.PARTIAL);
+
+        HttpHeaders suiteReadHeaders = new HttpHeaders();
+        suiteReadHeaders.setBearerAuth("bloge-aneke-demo-token");
+        suiteReadHeaders.set("X-Purpose", "TEST_SUITE_READ");
+        var propertyStored = restTemplate.exchange(
+                "/api/testing/suites/loan-decision-properties?revision="
+                        + propertyMaterialized.getBody().suiteRef().revision(),
+                HttpMethod.GET, new HttpEntity<>(suiteReadHeaders), StoredTestSuite.class);
+        assertThat(propertyStored.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(propertyStored.getBody()).isNotNull();
+        assertThat(propertyStored.getBody().suite()).isInstanceOf(TestSuiteV4.class);
+        TestSuiteV4 storedPropertySuite = (TestSuiteV4) propertyStored.getBody().suite();
+        assertThat(storedPropertySuite.propertyPlanFingerprint())
+                .isEqualTo(propertyCases.getBody().planFingerprint());
+        assertThat(storedPropertySuite.cases()).extracting(TestSuite.TestCase::caseType)
+                .containsOnly(TestSuite.CaseType.PROPERTY);
+
+        TestSuiteExecutionRequest propertyExecution = new TestSuiteExecutionRequest("",
+                propertyMaterialized.getBody().suiteRef(), "integration-property-run-disabled",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL,
+                Map.of("source", "spring-http-property-test"));
+        var disabledPropertyRun = restTemplate.exchange(
+                "/api/testing/suites/loan-decision-properties/executions",
+                HttpMethod.POST, new HttpEntity<>(propertyExecution, headers), JsonNode.class);
+        assertThat(disabledPropertyRun.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(disabledPropertyRun.getBody()).isNotNull();
+        assertThat(disabledPropertyRun.getBody().path("code").asText())
+                .isEqualTo("RG.TEST.PROPERTY_EVIDENCE_UNAVAILABLE");
+
         List<String> selectedBoundaryCases = boundaryCases.getBody().cases().stream()
                 .limit(3).map(TestBoundaryCasePlan.BoundaryCase::caseId).toList();
         TestBoundarySuiteMaterializationRequest materializationRequest =
@@ -357,9 +431,6 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(materialized.getBody().materializationFingerprint())
                 .matches("sha256:[a-f0-9]{64}");
 
-        HttpHeaders suiteReadHeaders = new HttpHeaders();
-        suiteReadHeaders.setBearerAuth("bloge-aneke-demo-token");
-        suiteReadHeaders.set("X-Purpose", "TEST_SUITE_READ");
         var materializedSuite = restTemplate.exchange(
                 "/api/testing/suites/loan-decision-schema-boundaries?revision="
                         + materialized.getBody().suiteRef().revision(),

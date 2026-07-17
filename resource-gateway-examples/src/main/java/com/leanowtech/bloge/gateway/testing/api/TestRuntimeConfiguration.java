@@ -945,6 +945,16 @@ public class TestRuntimeConfiguration {
                 executionService, suiteRegistry, objectMapper);
     }
 
+    /** Assembles exact seeded-property-plan materialization into immutable V4 suites. */
+    @Bean
+    TestPropertySuiteMaterializationService testPropertySuiteMaterializationService(
+            TestExecutionApiService executionService,
+            TestSuiteRegistryService suiteRegistry,
+            ObjectMapper objectMapper) {
+        return new TestPropertySuiteMaterializationService(
+                executionService, suiteRegistry, objectMapper);
+    }
+
     /** Assembles the idempotent immutable-suite runner and coverage evaluator. */
     @Bean(destroyMethod = "close")
     TestSuiteRunLeaseCoordinator testSuiteRunLeaseCoordinator(

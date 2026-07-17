@@ -71,7 +71,9 @@ public record TestSuite(
         GOLDEN,
         NEGATIVE,
         BOUNDARY,
-        REGRESSION
+        REGRESSION,
+        /** Seeded, validator-proven sample governed by an explicit property policy. */
+        PROPERTY
     }
 
     /**

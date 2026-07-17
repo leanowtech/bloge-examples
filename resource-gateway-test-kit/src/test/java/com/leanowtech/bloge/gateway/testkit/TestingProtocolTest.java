@@ -63,6 +63,15 @@ class TestingProtocolTest {
             assertThat(definitions.at("/testRunEvidence/oneOf")).hasSize(2);
             assertConstant(definitions, "testSuite", TestingProtocol.TEST_SUITE_V1);
             assertConstant(definitions, "testSuiteV2", TestingProtocol.TEST_SUITE_V2);
+            assertConstant(definitions, "testSuiteV3", TestingProtocol.TEST_SUITE_V3);
+            assertConstant(definitions, "testSuiteV4", TestingProtocol.TEST_SUITE_V4);
+            assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(4);
+            assertConstant(definitions, "testPropertyCasePlan",
+                    TestingProtocol.TEST_PROPERTY_CASE_PLAN_V1);
+            assertConstant(definitions, "testPropertySuiteMaterializationRequest",
+                    TestingProtocol.TEST_PROPERTY_SUITE_MATERIALIZATION_REQUEST_V1);
+            assertConstant(definitions, "testPropertySuiteMaterialization",
+                    TestingProtocol.TEST_PROPERTY_SUITE_MATERIALIZATION_V1);
             assertConstant(definitions, "testSuiteRegistrationRequest",
                     TestingProtocol.TEST_SUITE_REGISTRATION_REQUEST_V1);
             assertConstant(definitions, "storedTestSuite", TestingProtocol.STORED_TEST_SUITE_V1);

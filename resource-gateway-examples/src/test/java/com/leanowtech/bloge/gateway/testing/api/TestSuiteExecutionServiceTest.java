@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -138,6 +139,25 @@ class TestSuiteExecutionServiceTest {
         verify(admissionGuard).checkpoint();
         verify(admissionGuard).close();
         assertThat(runRepository.records).hasSize(1);
+    }
+
+    @Test
+    void propertyV4FailsClosedBeforeRunPersistenceAdmissionOrBusinessExecution() {
+        StoredTestSuite stored = storedPropertySuite();
+        when(registry.find("suite-a", 3, identity)).thenReturn(stored);
+
+        assertThatThrownBy(() -> service.execute("suite-a", request("property-request",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(failure -> {
+                    var problem = ((IntegrationProblemException) failure).problem();
+                    assertThat(problem.code()).isEqualTo("RG.TEST.PROPERTY_EVIDENCE_UNAVAILABLE");
+                    assertThat(problem.status()).isEqualTo(409);
+                });
+
+        verifyNoInteractions(executions, admissions);
+        assertThat(runRepository.findByClientRequestId(
+                "tenant-a", "test", "property-request")).isEmpty();
     }
 
     @Test
@@ -593,6 +613,31 @@ class TestSuiteExecutionServiceTest {
                 new TestSuite.PromotionPolicy(true, 2, true), Map.of("owner", "quality"));
         return new StoredTestSuite("", "tenant-a", "test", "suite-a", 3, SUITE,
                 suite, Instant.now(), "runner");
+    }
+
+    private StoredTestSuite storedPropertySuite() {
+        TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
+                "fixture-property", 1, FIXTURE_1);
+        TestSuiteV4 suite = new TestSuiteV4("", "suite-a", 3,
+                new TestSuite.Target("GRAPH", "graph-a", TARGET), "INTERNAL",
+                List.of(new TestSuite.TestCase("property-001", TestSuite.CaseType.PROPERTY,
+                        Map.of("orderId", "generated"), fixture,
+                        List.of("property-root"), Map.of())),
+                new TestSuite.CoveragePolicy(1, List.of(TestSuite.CaseType.PROPERTY),
+                        List.of(), List.of(), 1, false), SemanticCoveragePolicy.empty(),
+                new TestSuite.PromotionPolicy(true, 1, true),
+                TestSuiteV4.EvaluationMode.PROPERTY_EXECUTION,
+                TestSuiteV4.Quantification.BOUNDED_SAMPLED, false,
+                "sha256:" + "e".repeat(64), "sha256:" + "f".repeat(64),
+                new TestSuiteV4.PropertyGenerationPolicy(
+                        "property-cases-v1", 42, 1, 0, 1, 32, 8, 32,
+                        "VISUAL_SCHEMA_VALIDATOR_PROOF"),
+                TestSuiteV4.SourcePlanStatus.GENERATED, false, List.of(),
+                List.of(new TestSuiteV4.PropertyTrialRef(
+                        "property-001", "sha256:" + "9".repeat(64), 1, List.of())),
+                Map.of("source", "seeded-property-plan"));
+        return new StoredTestSuite("", "tenant-a", "test", "suite-a", 3,
+                SUITE, suite, Instant.now(), "runner");
     }
 
     private TestSuiteV3 admissionSuite(TestBoundaryCasePlan plan, int caseCount) {

@@ -18,9 +18,10 @@ import java.util.Map;
 @JsonSubTypes({
         @JsonSubTypes.Type(value = TestSuite.class, name = TestSuite.SCHEMA_VERSION),
         @JsonSubTypes.Type(value = TestSuiteV2.class, name = TestSuiteV2.SCHEMA_VERSION),
-        @JsonSubTypes.Type(value = TestSuiteV3.class, name = TestSuiteV3.SCHEMA_VERSION)
+        @JsonSubTypes.Type(value = TestSuiteV3.class, name = TestSuiteV3.SCHEMA_VERSION),
+        @JsonSubTypes.Type(value = TestSuiteV4.class, name = TestSuiteV4.SCHEMA_VERSION)
 })
-public sealed interface TestSuiteProtocol permits TestSuite, TestSuiteV2, TestSuiteV3 {
+public sealed interface TestSuiteProtocol permits TestSuite, TestSuiteV2, TestSuiteV3, TestSuiteV4 {
     /** @return exact wire schema version */
     String schemaVersion();
 

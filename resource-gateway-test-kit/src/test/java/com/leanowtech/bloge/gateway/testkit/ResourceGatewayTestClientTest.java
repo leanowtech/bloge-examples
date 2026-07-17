@@ -118,6 +118,43 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void plansAndMaterializesExactGraphAndOperatorPropertySuites() throws Exception {
+        ResourceGatewayTestClient client = client();
+        ObjectNode request = (ObjectNode) JSON.readTree(propertyMaterializationRequest());
+
+        JsonNode graphPlan = client.planGraphPropertyCases("loan decision/v2", 42, 1, 0);
+        JsonNode operatorPlan = client.planOperatorPropertyCases(
+                "customer.normalize/v2", 42, 1, 0);
+        JsonNode graphMaterialization = client.materializeGraphPropertySuite(
+                "loan decision/v2", request);
+        JsonNode operatorMaterialization = client.materializeOperatorPropertySuite(
+                "customer.normalize/v2", request);
+
+        assertThat(graphPlan.path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_PROPERTY_CASE_PLAN_V1);
+        assertThat(operatorPlan.path("trials")).hasSize(1);
+        assertThat(graphMaterialization.path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_PROPERTY_SUITE_MATERIALIZATION_V1);
+        assertThat(operatorMaterialization.path("caseIds")).extracting(JsonNode::asText)
+                .containsExactly("property-001");
+        ((ObjectNode) graphPlan).put("schemaVersion", "mutated");
+        assertThat(operatorPlan.path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_PROPERTY_CASE_PLAN_V1);
+
+        assertThat(requests).extracting(CapturedRequest::purpose)
+                .containsExactly("TEST_EXECUTION", "TEST_EXECUTION",
+                        "TEST_SUITE_WRITE", "TEST_SUITE_WRITE");
+        assertThat(requests.get(0).rawQuery())
+                .isEqualTo("seed=42&trials=1&maxShrinkSteps=0");
+        assertThat(requests.get(0).rawPath())
+                .endsWith("/loan%20decision%2Fv2/property-cases");
+        assertThat(requests.get(3).rawPath())
+                .endsWith("/customer.normalize%2Fv2/property-suites");
+        assertThat(requests.get(2).body().path("fixtureRef").path("revision").asLong())
+                .isEqualTo(7);
+    }
+
+    @Test
     void registersExecutesAndQueriesOneExactImmutableSuite() throws Exception {
         ResourceGatewayTestClient client = client();
         ObjectNode registration = JSON.createObjectNode();
@@ -584,6 +621,10 @@ class ResourceGatewayTestClientTest {
             respond(exchange, 200, evidenceKeySetResponse());
         } else if (path.contains("/evidence-keys/")) {
             respond(exchange, 200, evidenceKeyResponse());
+        } else if (path.endsWith("/property-cases")) {
+            respond(exchange, 200, propertyPlanResponse());
+        } else if (path.endsWith("/property-suites")) {
+            respond(exchange, 200, propertyMaterializationResponse());
         } else if (path.endsWith("/catalogs/gateway-graph-contract-v1")) {
             respond(exchange, 200, catalogMaterializationResponse());
         } else if (path.contains("/suite-executions/") || path.endsWith("/executions") && path.contains("/suites/")) {
@@ -602,6 +643,54 @@ class ResourceGatewayTestClientTest {
         } else {
             respond(exchange, 200, runResponse());
         }
+    }
+
+    private static String propertyMaterializationRequest() {
+        return """
+                {"schemaVersion":"bloge.testPropertySuiteMaterializationRequest.v1",
+                 "suiteId":"loan-properties","classification":"INTERNAL",
+                 "expectedTargetFingerprint":"%1$s",
+                 "expectedInputSchemaFingerprint":"%1$s",
+                 "expectedPlanFingerprint":"%1$s",
+                 "seed":42,"trials":1,"maxShrinkSteps":0,
+                 "fixtureRef":{"fixtureBundleId":"property-fixture","revision":7,
+                   "fingerprint":"%1$s"},
+                 "acceptGenerationGaps":false}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String propertyPlanResponse() {
+        return """
+                {"schemaVersion":"bloge.testPropertyCasePlan.v1",
+                 "target":{"kind":"GRAPH","id":"loan decision/v2","fingerprint":"%1$s"},
+                 "inputSchemaFingerprint":"%1$s","planFingerprint":"%1$s",
+                 "status":"GENERATED","quantification":"BOUNDED_SAMPLED","exhaustive":false,
+                 "policy":{"generatorVersion":"property-cases-v1","seed":42,
+                   "requestedTrials":1,"maxShrinkSteps":0,"maxCases":1,
+                   "maxGenerationAttempts":32,"maxDepth":8,"maxCollectionItems":32,
+                   "verificationMode":"VISUAL_SCHEMA_VALIDATOR_PROOF"},
+                 "trials":[{"trialId":"property-001","input":{"value":"generated"},
+                   "inputFingerprint":"%1$s","complexity":1,"shrinkPath":[]}],
+                 "gaps":[]}
+                """.formatted(FINGERPRINT);
+    }
+
+    private static String propertyMaterializationResponse() {
+        return """
+                {"schemaVersion":"bloge.testPropertySuiteMaterialization.v1",
+                 "materializationFingerprint":"%1$s",
+                 "target":{"kind":"GRAPH","id":"loan decision/v2","fingerprint":"%1$s"},
+                 "inputSchemaFingerprint":"%1$s","propertyPlanFingerprint":"%1$s",
+                 "sourcePlanStatus":"GENERATED","generationGapsAccepted":false,
+                 "generationPolicy":{"generatorVersion":"property-cases-v1","seed":42,
+                   "requestedTrials":1,"maxShrinkSteps":0,"maxCases":1,
+                   "maxGenerationAttempts":32,"maxDepth":8,"maxCollectionItems":32,
+                   "verificationMode":"VISUAL_SCHEMA_VALIDATOR_PROOF"},
+                 "rootTrialIds":["property-001"],"caseIds":["property-001"],
+                 "fixtureRef":{"fixtureBundleId":"property-fixture","revision":7,
+                   "fingerprint":"%1$s"},
+                 "suiteRef":{"suiteId":"loan-properties","revision":9,"fingerprint":"%1$s"}}
+                """.formatted(FINGERPRINT);
     }
 
     private String evidenceTrustBundleResponse() {

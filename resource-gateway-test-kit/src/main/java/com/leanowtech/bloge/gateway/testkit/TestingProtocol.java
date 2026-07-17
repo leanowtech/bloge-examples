@@ -71,6 +71,18 @@ public final class TestingProtocol {
     public static final String TEST_SUITE_V1 = "bloge.testSuite.v1";
     /** Immutable suite generation with typed orchestration-semantic requirements. */
     public static final String TEST_SUITE_V2 = "bloge.testSuite.v2";
+    /** Immutable admission-only suite generation bound to one boundary plan. */
+    public static final String TEST_SUITE_V3 = "bloge.testSuite.v3";
+    /** Immutable bounded-property suite generation bound to one seeded plan. */
+    public static final String TEST_SUITE_V4 = "bloge.testSuite.v4";
+    /** Seeded validator-proven property case plan wire version. */
+    public static final String TEST_PROPERTY_CASE_PLAN_V1 = "bloge.testPropertyCasePlan.v1";
+    /** Exact property-suite materialization request wire version. */
+    public static final String TEST_PROPERTY_SUITE_MATERIALIZATION_REQUEST_V1 =
+            "bloge.testPropertySuiteMaterializationRequest.v1";
+    /** Exact property-suite materialization response wire version. */
+    public static final String TEST_PROPERTY_SUITE_MATERIALIZATION_V1 =
+            "bloge.testPropertySuiteMaterialization.v1";
     /** Test-suite registration request wire version. */
     public static final String TEST_SUITE_REGISTRATION_REQUEST_V1 =
             "bloge.testSuiteRegistrationRequest.v1";

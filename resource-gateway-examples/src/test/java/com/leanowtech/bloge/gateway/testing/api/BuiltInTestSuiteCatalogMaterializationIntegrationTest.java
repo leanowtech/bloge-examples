@@ -126,7 +126,8 @@ class BuiltInTestSuiteCatalogMaterializationIntegrationTest {
                     });
         }
         assertThat(representedTypes).containsExactlyInAnyOrderElementsOf(
-                EnumSet.allOf(TestSuite.CaseType.class));
+                EnumSet.of(TestSuite.CaseType.GOLDEN, TestSuite.CaseType.NEGATIVE,
+                        TestSuite.CaseType.BOUNDARY, TestSuite.CaseType.REGRESSION));
     }
 
     @Test

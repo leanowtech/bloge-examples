@@ -5,8 +5,9 @@ Resource Gateway testing control plane without depending on its Spring Boot
 implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
-  registries, built-in graph-catalog materialization, graph/operator execution, suite execution,
-  and persisted child/aggregate-run lookup;
+  registries, deterministic property planning and V4 materialization, built-in graph-catalog
+  materialization, graph/operator execution, suite execution, and persisted child/aggregate-run
+  lookup;
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level protocol fixtures,
   including one-based attempt/occurrence selectors;
 - a dependency-closed `TestSuiteBuilder` with exact target/fixture references and typed semantic
@@ -205,6 +206,45 @@ shared validator produced the expected outcome/codes. It does not mean the opera
 or structural/semantic coverage passed. v4 response, v3 evidence, v3 attestation, and v3 bundle are a
 single generation; the schema validator and offline verifier reject mixed generations. The v3
 attestation must have an empty `childEvidenceRefs` list.
+
+Plan and freeze a bounded property suite without pretending that it is already executable:
+
+```java
+JsonNode propertyPlan = client.planGraphPropertyCases(
+        "loanDecisionPolicy", 918273645L, 8, 3);
+
+ObjectNode materializationRequest = JsonNodeFactory.instance.objectNode();
+materializationRequest.put("schemaVersion",
+        TestingProtocol.TEST_PROPERTY_SUITE_MATERIALIZATION_REQUEST_V1);
+materializationRequest.put("suiteId", "loan-decision-properties");
+materializationRequest.put("classification", "INTERNAL");
+materializationRequest.put("expectedTargetFingerprint",
+        propertyPlan.path("target").path("fingerprint").asText());
+materializationRequest.put("expectedInputSchemaFingerprint",
+        propertyPlan.path("inputSchemaFingerprint").asText());
+materializationRequest.put("expectedPlanFingerprint",
+        propertyPlan.path("planFingerprint").asText());
+materializationRequest.put("seed", 918273645L);
+materializationRequest.put("trials", 8);
+materializationRequest.put("maxShrinkSteps", 3);
+ObjectNode propertyFixture = materializationRequest.putObject("fixtureRef");
+propertyFixture.put("fixtureBundleId", stored.fixtureBundleId());
+propertyFixture.put("revision", stored.revision());
+propertyFixture.put("fingerprint", stored.fingerprint());
+materializationRequest.put("acceptGenerationGaps", false);
+
+JsonNode materialized = client.materializeGraphPropertySuite(
+        "loanDecisionPolicy", materializationRequest);
+assert materialized.path("suiteRef").path("schemaVersion").asText()
+        .equals(TestingProtocol.TEST_SUITE_V4);
+```
+
+The service regenerates the plan and freezes its complete root/shrink closure; there is no case
+selection. The fixture must already belong to the same exact target and contain assertions. The
+ordinary `TestSuiteBuilder` intentionally remains limited to V1/V2 business intents, while
+`PROPERTY` is reserved for server-materialized V4. Check the capability probe before any execution:
+this release advertises `propertySuiteMaterialization=true` and `propertySuiteExecution=false`, so a
+V4 execution attempt is expected to fail closed with `RG.TEST.PROPERTY_EVIDENCE_UNAVAILABLE`.
 
 Calling any semantic requirement method emits `bloge.testSuite.v2`; builders without these methods
 remain on v1:

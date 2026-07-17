@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.BeforeEach;
@@ -167,6 +168,15 @@ class TestSuiteRegistryServiceTest {
         assertProblem(() -> service.register("suite-input", new TestSuiteRegistrationRequest("", malformed),
                 identity("tenant-a", "test", "CONFIDENTIAL")),
                 "RG.TEST.SUITE_GRAPH_INPUT_INVALID", 400);
+
+        TestSuite disguisedProperty = suite("suite-property-v1", 1, "INTERNAL", targetFingerprint,
+                List.of(testCase("property-001", TestSuite.CaseType.PROPERTY, internalFixture)),
+                new TestSuite.CoveragePolicy(1, List.of(TestSuite.CaseType.PROPERTY),
+                        List.of(), List.of(), 1, false));
+        assertProblem(() -> service.register("suite-property-v1",
+                new TestSuiteRegistrationRequest("", disguisedProperty),
+                identity("tenant-a", "test", "CONFIDENTIAL")),
+                "RG.TEST.SUITE_CASE_TYPE_GENERATION_INVALID", 400);
     }
 
     @Test
@@ -295,6 +305,90 @@ class TestSuiteRegistryServiceTest {
                 new TestSuiteRegistrationRequest("", promotionClaim),
                 identity("tenant-a", "test", "CONFIDENTIAL")),
                 "RG.TEST.SUITE_ADMISSION_POLICY_INVALID", 400);
+    }
+
+    @Test
+    void propertyV4RequiresTrustedMaterializationAndRegistersAnExactPlanClosure() {
+        TestPropertyCasePlan plan = propertyPlan(Map.of("input", "generated"));
+        TestSuiteV4 propertySuite = propertySuite("suite-v4", plan, internalFixture,
+                Map.of("input", "generated"), 1);
+        IntegrationRequestContext identity = identity("tenant-a", "test", "CONFIDENTIAL");
+
+        assertProblem(() -> service.register("suite-v4",
+                new TestSuiteRegistrationRequest("", propertySuite), identity),
+                "RG.TEST.PROPERTY_SUITE_MATERIALIZATION_REQUIRED", 400);
+
+        StoredTestSuite stored = service.registerPropertySuite("suite-v4",
+                new TestSuiteRegistrationRequest("", propertySuite), plan, identity);
+
+        assertThat(stored.suite()).isInstanceOf(TestSuiteV4.class);
+        assertThat(stored.fingerprint()).isEqualTo(ProtocolFingerprint.of(mapper, propertySuite));
+        assertThat(stored.suite().cases()).extracting(TestSuite.TestCase::caseType)
+                .containsExactly(TestSuite.CaseType.PROPERTY);
+    }
+
+    @Test
+    void propertyV4RejectsInputSubstitutionAndAssertionFreeFixtures() {
+        TestPropertyCasePlan plan = propertyPlan(Map.of("input", "generated"));
+        TestSuiteV4 substituted = propertySuite("suite-v4-substituted", plan, internalFixture,
+                Map.of("input", "caller-substitution"), 1);
+        IntegrationRequestContext identity = identity("tenant-a", "test", "CONFIDENTIAL");
+
+        assertProblem(() -> service.registerPropertySuite("suite-v4-substituted",
+                new TestSuiteRegistrationRequest("", substituted), plan, identity),
+                "RG.TEST.PROPERTY_SUITE_INPUT_MISMATCH", 409);
+
+        StoredFixtureBundle inert = storeInertFixture("property-inert", "INTERNAL", 1);
+        TestSuiteV4 noAssertions = propertySuite(
+                "suite-v4-no-assertions", plan, inert, Map.of("input", "generated"), 0);
+        assertProblem(() -> service.registerPropertySuite("suite-v4-no-assertions",
+                new TestSuiteRegistrationRequest("", noAssertions), plan, identity),
+                "RG.TEST.PROPERTY_SUITE_ASSERTIONS_REQUIRED", 400);
+    }
+
+    private TestPropertyCasePlan propertyPlan(Object input) {
+        String inputFingerprint = ProtocolFingerprint.of(mapper, input);
+        TestPropertyCasePlan.GenerationPolicy policy = new TestPropertyCasePlan.GenerationPolicy(
+                "property-cases-v1", 42, 1, 0, 1, 32, 8, 32,
+                "DRAFT_2020_12_SHARED_VALIDATOR");
+        return new TestPropertyCasePlan("",
+                new TestExecutionApiRequest.Target(
+                        "GRAPH", "controlled-graph", targetFingerprint),
+                "sha256:" + "c".repeat(64), "sha256:" + "b".repeat(64),
+                TestPropertyCasePlan.Status.GENERATED,
+                TestPropertyCasePlan.Quantification.BOUNDED_SAMPLED, false, policy,
+                List.of(new TestPropertyCasePlan.PropertyTrial(
+                        "property-001", input, inputFingerprint, 1, List.of())), List.of());
+    }
+
+    private TestSuiteV4 propertySuite(
+            String suiteId,
+            TestPropertyCasePlan plan,
+            StoredFixtureBundle fixture,
+            Object input,
+            int minimumAssertions) {
+        TestSuiteV4.PropertyGenerationPolicy policy = new TestSuiteV4.PropertyGenerationPolicy(
+                plan.policy().generatorVersion(), plan.policy().seed(),
+                plan.policy().requestedTrials(), plan.policy().maxShrinkSteps(),
+                plan.policy().maxCases(), plan.policy().maxGenerationAttempts(),
+                plan.policy().maxDepth(), plan.policy().maxCollectionItems(),
+                plan.policy().verificationMode());
+        TestPropertyCasePlan.PropertyTrial root = plan.trials().getFirst();
+        return new TestSuiteV4("", suiteId, 1,
+                new TestSuite.Target(plan.target().kind(), plan.target().id(),
+                        plan.target().fingerprint()), "INTERNAL",
+                List.of(new TestSuite.TestCase(root.trialId(), TestSuite.CaseType.PROPERTY,
+                        input, fixtureRef(fixture), List.of("property-root"), Map.of())),
+                new TestSuite.CoveragePolicy(1, List.of(TestSuite.CaseType.PROPERTY),
+                        List.of(), List.of(), minimumAssertions, false),
+                SemanticCoveragePolicy.empty(), new TestSuite.PromotionPolicy(true, 1, true),
+                TestSuiteV4.EvaluationMode.PROPERTY_EXECUTION,
+                TestSuiteV4.Quantification.BOUNDED_SAMPLED, false,
+                plan.planFingerprint(), plan.inputSchemaFingerprint(), policy,
+                TestSuiteV4.SourcePlanStatus.GENERATED, false, List.of(),
+                List.of(new TestSuiteV4.PropertyTrialRef(root.trialId(),
+                        root.inputFingerprint(), root.complexity(), List.of())),
+                Map.of("source", "property-plan"));
     }
 
     private TestSuiteV3 admissionSuite(String suiteId, TestSuite.TestCase testCase,

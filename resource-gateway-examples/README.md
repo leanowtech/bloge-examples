@@ -55,6 +55,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/boundary-cases` | Generate bounded, validator-proven graph input candidates and explicit coverage gaps (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/property-cases?seed=...` | Generate reproducible, bounded graph trials with validator-proven shrink paths; this is an authoring plan, not execution evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/graphs/{graphName}/boundary-suites` | Materialize an explicitly selected, fingerprint-locked boundary-plan subset as an immutable schema-admission suite (test/staging only) |
+| `POST http://localhost:8080/api/testing/targets/graphs/{graphName}/property-suites` | Freeze one exact property plan's complete root/shrink closure against an existing assertion-bearing fixture; execution remains disabled (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/operators/{operatorRef}` | Idempotently freeze an exact operator test at its server-owned start gate (test/staging only) |
@@ -69,6 +70,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}/boundary-cases` | Project an operator input schema and generate bounded, validator-proven candidates (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/operators/{operatorRef}/property-cases?seed=...` | Generate reproducible, bounded operator trials while disclosing schema-projection and generation gaps (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/boundary-suites` | Materialize selected operator boundary candidates under suite-write authority (test/staging only) |
+| `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/property-suites` | Materialize the complete reviewed operator property plan as immutable `bloge.testSuite.v4`; execution remains disabled (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/operators/{operatorRef}/executions` | Run the exact synchronous binding as a controlled one-node BLOGE graph (test/staging only) |
 | `GET http://localhost:8080/api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook` | Export a payload-free ANEKE seed for one exact semantic suite and its verified terminal evidence (test/staging only) |
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/draft` | Generate editable graph mock/table suites from graph and resource schemas |
@@ -673,8 +675,19 @@ calling the graph or operator. A successful run emits generation-matched
 observations, exact plan/schema/generator provenance, and a signed empty business-child closure. Structural coverage stays
 `NOT_EVALUATED` and promotion stays `BLOCKED`; this proves schema admission, not business correctness. The capability probe
 advertises `schemaAdmissionSuiteExecution` only with the isolated testing runtime. See the
-[testing API guide](../docs/resource-gateway-testing-control-plane-api.md#414-execute-and-verify-a-schema-admission-suite)
+[testing API guide](../docs/resource-gateway-testing-control-plane-api.md#416-execute-and-verify-a-schema-admission-suite)
 and [standalone test-kit guide](../resource-gateway-test-kit/README.md).
+
+Property authoring now has a separate, deliberately narrower lifecycle. A seeded
+`bloge.testPropertyCasePlan.v1` can be materialized as `bloge.testSuite.v4` only after the service
+regenerates and matches the target, input-schema, and plan fingerprints. V4 freezes every root and
+shrink input in order, binds one existing assertion-bearing fixture revision, and keeps
+`BOUNDED_SAMPLED` plus `exhaustive=false` as canonical facts. Raw V4 registration and `PROPERTY`
+cases in V1-V3 are rejected. Capability discovery reports `propertySuiteMaterialization=true` but
+`propertySuiteExecution=false`; execution fails before persistence or business invocation until a
+matching property evidence generation exists. See the
+[property materialization API](../docs/resource-gateway-testing-control-plane-api.md#414-materialize-a-reviewed-property-plan)
+and [verification record](../docs/resource-gateway-execution-data-control-plane-stage5-property-suite-materialization-verification.md).
 
 ANEKE remains the workbook and publish-gate authority. Historical `GovernanceGateResult.v2` stays readable, while a
 semantic `PASSED` decision uses `GovernanceGateResult.v3`: it records the exact suite target, reconstructable ordered
