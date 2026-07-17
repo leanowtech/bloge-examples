@@ -75,6 +75,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableRecoverySequenceRetentionTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    DurableRecoverySequenceRetentionSloMonitor.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     RecoverySequenceRequestKeyProtector.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestTerminalRecoveryService.class)).isEmpty();
@@ -162,6 +164,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableRecoverySequenceRetentionScheduler.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableRecoverySequenceRetentionTelemetry.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DurableRecoverySequenceRetentionSloMonitor.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     RecoverySequenceRequestKeyProtector.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -271,6 +275,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableRecoverySequenceRetentionScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableRecoverySequenceRetentionTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DurableRecoverySequenceRetentionSloMonitor.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     RecoverySequenceRequestKeyProtector.class)).isEmpty();
             assertThat(context.getBeansOfType(

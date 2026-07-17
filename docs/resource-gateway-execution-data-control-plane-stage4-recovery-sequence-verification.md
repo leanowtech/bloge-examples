@@ -107,6 +107,32 @@ worker-quarantine request indexing even when a deployment accidentally uses the 
 Telemetry exposes only closed result tags and aggregate counters; no tenant,
 run, request, payload, key material, or exception text becomes a label.
 
+## Retention SLO And Readiness
+
+Bounded deletion is not operationally complete unless a stalled scheduler becomes machine-visible.
+The `test` and `staging` profiles therefore install a dedicated fail-closed Actuator health
+indicator. It reads a repeatable-read snapshot with one database-authority `observedAt`, then checks:
+
+- whether any page has succeeded after startup grace;
+- the age of the last committed page;
+- the count and oldest true eligibility age of outer rows ready for erasure; and
+- the count and oldest expiry age of tombstones ready for purge.
+
+For an outer row, eligibility is `max(createdAt + commandRetention, activityUntil)`. This prevents
+the configured replay window from being misreported as backlog age. Snapshot policy must exactly
+match the repository replay/activity window; drift fails closed instead of producing a plausible
+but false count. `HEALTHY`, `INITIALIZING`, `SLO_VIOLATED`, and `STORE_UNAVAILABLE` map to Actuator
+`UP`, `UNKNOWN`, `OUT_OF_SERVICE`, and `DOWN`. Details contain only stable violation codes,
+aggregate counts, database-clock ages, and observation time. Store errors are never emitted, and a
+metrics outage cannot downgrade or mask the independently computed health result.
+
+New gauges publish overdue/expired counts, last-success age, oldest backlog ages, and the closed
+health value `1/0/-1/-2`, without identity tags. Capability discovery exposes
+`durableRecoverySequenceRetentionSloHealth` only with the isolated test runtime. Default policy is
+three minutes startup grace, three hours maximum retention staleness, zero tolerated ready rows,
+and one hour maximum oldest backlog age; deployments should set limits from measured page capacity
+and scheduling jitter before wiring the aggregate Actuator endpoint into readiness.
+
 ## Verification
 
 The persistence and orchestration gate is:
@@ -126,6 +152,21 @@ cross-replica lease fencing, public policy bounds, stable child-key formats, HMA
 rotation lookup, startup refusal when a referenced tombstone generation is unavailable, absolute
 deadline rejection before physical retention, row-lock serialization with an accepted replay,
 activity-fence tamper rejection, and fail-safe legacy activity migration.
+
+The retention health, database snapshot, telemetry, capability, and profile-isolation gate is:
+
+```bash
+/opt/apache-maven-3.9.16/bin/mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=DurableRecoverySequenceRetentionSloMonitorTest,\
+DurableRecoverySequenceRetentionSchedulerTest,\
+DatabaseDurableTestExecutionCheckpointRepositoryTest,\
+TestRuntimeProfileIsolationTest,TestabilityCapabilitiesTest test
+```
+
+Verified on 2026-07-17: 113 tests passed with zero failures, errors, or skips. Counterexamples cover
+startup grace, stale and never-successful retention, count and age backlog violations, database
+store outage, telemetry isolation, unsafe policy bounds, replay-policy drift, aggregate-only
+metrics, no identity leakage, and production-profile exclusion.
 
 The public protocol gate is:
 
@@ -147,7 +188,7 @@ The complete Resource Gateway acceptance gate is:
 /opt/apache-maven-3.9.16/bin/mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-Verified on 2026-07-17: 2,322 tests ran with zero failures and errors; two existing conditional
+Verified on 2026-07-17: 2,329 tests ran with zero failures and errors; two existing conditional
 tests were skipped. The real-browser authoring workflows passed and the executable Spring Boot JAR
 was rebuilt successfully.
 

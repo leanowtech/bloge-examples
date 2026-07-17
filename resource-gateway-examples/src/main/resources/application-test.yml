@@ -62,6 +62,14 @@ gateway:
         tombstone-retention-days: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_TOMBSTONE_RETENTION_DAYS:365}
         retention-page-size: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_PAGE_SIZE:100}
         retention-interval-ms: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_INTERVAL_MS:3600000}
+        slo:
+          observation-interval-ms: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_OBSERVATION_INTERVAL_MS:30000}
+          startup-grace-seconds: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_STARTUP_GRACE_SECONDS:180}
+          max-retention-staleness-seconds: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_RETENTION_STALENESS_SECONDS:10800}
+          max-overdue-sequences: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_OVERDUE_SEQUENCES:0}
+          max-oldest-overdue-sequence-age-seconds: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_OLDEST_OVERDUE_SEQUENCE_AGE_SECONDS:3600}
+          max-expired-tombstones: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_EXPIRED_TOMBSTONES:0}
+          max-oldest-expired-tombstone-age-seconds: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_OLDEST_EXPIRED_TOMBSTONE_AGE_SECONDS:3600}
         request-key-protection:
           active-key-id: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_REQUEST_KEY_ACTIVE_ID:local-recovery-sequence-v1}
           key-ring: ${RG_TEST_DURABLE_RECOVERY_SEQUENCE_REQUEST_KEY_RING:local-recovery-sequence-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}

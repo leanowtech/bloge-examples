@@ -442,11 +442,13 @@ public interface DurableTestExecutionCheckpointRepository {
             int pageSize);
 
     /**
-     * Returns aggregate-only recovery-sequence lifecycle state.
+     * Returns aggregate-only recovery-sequence lifecycle and overdue-backlog state.
      *
+     * @param commandRetention configured absolute detailed-response replay window
      * @return integrity-verified database-clock retention snapshot
      */
-    RecoverySequenceRetentionSnapshot recoverySequenceRetentionSnapshot();
+    RecoverySequenceRetentionSnapshot recoverySequenceRetentionSnapshot(
+            Duration commandRetention);
 
     /**
      * Authenticated payload-free intent used to reserve an initial durable execution.
@@ -1625,6 +1627,11 @@ public interface DurableTestExecutionCheckpointRepository {
      * @param totalTombstonesPurged cumulative expired request identities erased
      * @param activeSequenceRecords current detailed outer-request count
      * @param tombstoneRecords current keyed tombstone count
+     * @param overdueSequenceRecords outer requests beyond replay and activity fences
+     * @param expiredTombstoneRecords tombstones waiting beyond their persisted expiry
+     * @param oldestOverdueSequenceEligibleAt earliest instant at which an overdue outer request
+     *        became eligible after both replay-retention and activity fences elapsed
+     * @param oldestExpiredTombstoneExpiresAt expiry of the oldest purge-backlog tombstone
      * @param lastSuccessAt last successfully committed page or {@code null}
      * @param observedAt database-authority snapshot time
      */
@@ -1640,6 +1647,10 @@ public interface DurableTestExecutionCheckpointRepository {
             long totalTombstonesPurged,
             long activeSequenceRecords,
             long tombstoneRecords,
+            long overdueSequenceRecords,
+            long expiredTombstoneRecords,
+            Instant oldestOverdueSequenceEligibleAt,
+            Instant oldestExpiredTombstoneExpiresAt,
             Instant lastSuccessAt,
             Instant observedAt) {
         /** Validates complete non-negative aggregate state. */
@@ -1650,9 +1661,25 @@ public interface DurableTestExecutionCheckpointRepository {
             if (leaseEpoch < 0 || revision < 0 || totalSequencesTombstoned < 0
                     || totalRecoveryStepsPurged < 0 || totalOwnerClaimsPurged < 0
                     || totalHeartbeatsPurged < 0 || totalTombstonesPurged < 0
-                    || activeSequenceRecords < 0 || tombstoneRecords < 0) {
+                    || activeSequenceRecords < 0 || tombstoneRecords < 0
+                    || overdueSequenceRecords < 0 || expiredTombstoneRecords < 0) {
                 throw new IllegalArgumentException(
                         "Recovery-sequence retention snapshot counters cannot be negative");
+            }
+            if ((overdueSequenceRecords == 0)
+                    != (oldestOverdueSequenceEligibleAt == null)
+                    || (expiredTombstoneRecords == 0)
+                    != (oldestExpiredTombstoneExpiresAt == null)) {
+                throw new IllegalArgumentException(
+                        "Recovery-sequence backlog counts require exact oldest timestamps");
+            }
+            if ((oldestOverdueSequenceEligibleAt != null
+                    && oldestOverdueSequenceEligibleAt.isAfter(observedAt))
+                    || (oldestExpiredTombstoneExpiresAt != null
+                    && oldestExpiredTombstoneExpiresAt.isAfter(observedAt))
+                    || (lastSuccessAt != null && lastSuccessAt.isAfter(observedAt))) {
+                throw new IllegalArgumentException(
+                        "Recovery-sequence lifecycle times cannot be after observation time");
             }
         }
     }

@@ -494,6 +494,15 @@ set `RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_INSTANCE_ID`,
 replica before making it active, and keep an old key until all tombstones written with it have
 expired; a restarted replica fails closed when a referenced generation is missing.
 
+The `test` and `staging` profiles also install a fail-closed Actuator health component for this
+lifecycle. Every 30 seconds by default it reads one repeatable-read, database-clock snapshot and
+checks last successful retention age, ready-to-delete sequence count/oldest eligible age, and
+expired tombstone count/oldest expiry age. Store failure is `DOWN`, policy violation is
+`OUT_OF_SERVICE`, and first-start grace is `UNKNOWN`; health details contain only stable violation
+codes, aggregate counts, and ages. Capability discovery exposes
+`durableRecoverySequenceRetentionSloHealth`. Tune the `RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_*`
+limits before using the health aggregate as a deployment readiness gate.
+
 This synchronous helper is not a background queue, remote runtime-state dispatcher, cross-process
 supervisor, hard-cancellation mechanism, backup-erasure protocol, or external evidence archive.
 

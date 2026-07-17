@@ -139,6 +139,13 @@ Independent-store settings:
 | `gateway.testing.durable.recovery-sequences.tombstone-retention-days` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_TOMBSTONE_RETENTION_DAYS` | `365` |
 | `gateway.testing.durable.recovery-sequences.retention-page-size` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_PAGE_SIZE` | `100` |
 | `gateway.testing.durable.recovery-sequences.retention-interval-ms` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_RETENTION_INTERVAL_MS` | `3600000` |
+| `gateway.testing.durable.recovery-sequences.slo.observation-interval-ms` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
+| `gateway.testing.durable.recovery-sequences.slo.startup-grace-seconds` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_STARTUP_GRACE_SECONDS` | `180` |
+| `gateway.testing.durable.recovery-sequences.slo.max-retention-staleness-seconds` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_RETENTION_STALENESS_SECONDS` | `10800` |
+| `gateway.testing.durable.recovery-sequences.slo.max-overdue-sequences` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_OVERDUE_SEQUENCES` | `0` |
+| `gateway.testing.durable.recovery-sequences.slo.max-oldest-overdue-sequence-age-seconds` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_OLDEST_OVERDUE_SEQUENCE_AGE_SECONDS` | `3600` |
+| `gateway.testing.durable.recovery-sequences.slo.max-expired-tombstones` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_EXPIRED_TOMBSTONES` | `0` |
+| `gateway.testing.durable.recovery-sequences.slo.max-oldest-expired-tombstone-age-seconds` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_SLO_MAX_OLDEST_EXPIRED_TOMBSTONE_AGE_SECONDS` | `3600` |
 | `gateway.testing.durable.recovery-sequences.request-key-protection.active-key-id` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_REQUEST_KEY_ACTIVE_ID` | local key in `test`; required in `staging` |
 | `gateway.testing.durable.recovery-sequences.request-key-protection.key-ring` | `RG_TEST_DURABLE_RECOVERY_SEQUENCE_REQUEST_KEY_RING` | local key in `test`; required in `staging` |
 | `gateway.testing.durable.worker-quarantines.required-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_GROUP` | `resource-gateway-test-runtime-operators` |
@@ -1257,6 +1264,29 @@ startup refuses an unavailable referenced generation. Key material, tenant, run,
 and error text are absent from retention logs and metrics. Capability discovery advertises
 `durableRecoverySequenceRetention` only when the test-runtime control plane is assembled.
 
+The same profile owns a dedicated fail-closed Actuator health indicator. It observes a single
+repeatable-read snapshot whose authority time comes from the database, not the application host.
+The sequence backlog count includes only rows whose absolute replay-retention deadline and
+activity fence have both elapsed. Its oldest age starts at the true eligibility instant
+`max(createdAt + commandRetention, activityUntil)`, so a newly eligible 30-day record does not
+appear 30 days stale. Tombstone age starts at persisted expiry. The state mapping is:
+
+| State | Actuator status | Meaning |
+|---|---|---|
+| `HEALTHY` | `UP` | last committed page is fresh and both backlog policies pass |
+| `INITIALIZING` | `UNKNOWN` | no page has committed, but startup grace has not elapsed |
+| `SLO_VIOLATED` | `OUT_OF_SERVICE` | one or more freshness, count, or age policies fail |
+| `STORE_UNAVAILABLE` | `DOWN` | no trustworthy aggregate database snapshot could be read |
+
+Stable violation codes are `RETENTION_NEVER_SUCCEEDED`, `RETENTION_STALE`,
+`SEQUENCE_RETENTION_BACKLOG_EXCEEDED`, `SEQUENCE_RETENTION_BACKLOG_STALE`,
+`TOMBSTONE_PURGE_BACKLOG_EXCEEDED`, `TOMBSTONE_PURGE_BACKLOG_STALE`, and
+`RETENTION_STORE_UNAVAILABLE`. Health and metrics expose only counts, durations, state, and these
+closed codes; identities, payloads, key material, and exception text are excluded. Telemetry
+failure never changes a successful health assessment, while store observation failure always
+fails closed. Capability discovery separately advertises
+`durableRecoverySequenceRetentionSloHealth`.
+
 This endpoint is synchronous and bounded. It does not durably queue future signals, wait for a
 signal that was not supplied, run BLOGE in another process, enforce a wall-clock process kill,
 schedule fairly across tenants, supervise a remote worker, or preserve complete pre-checkpoint
@@ -1831,6 +1861,9 @@ above. Store exception messages are discarded. Micrometer gauges are rooted at
 | `durable.recovery.sequences.retention.duration` | none | bounded retention attempt duration |
 | `durable.recovery.sequences.retention.sequences.tombstoned.total`, `.steps.purged.total`, `.claims.purged.total`, `.heartbeats.purged.total`, `.tombstones.purged.total` | none | cumulative verified lifecycle transitions |
 | `durable.recovery.sequences.retention.sequences.records`, `.tombstones.records`, `.last.success.epoch` | none | aggregate current rows and last committed page |
+| `durable.recovery.sequences.retention.sequences.overdue`, `.tombstones.expired` | none | policy-ready sequence and tombstone backlog counts |
+| `durable.recovery.sequences.retention.last.success.age`, `.sequences.overdue.oldest.age`, `.tombstones.expired.oldest.age` | none | database-clock lifecycle ages in seconds; `-1` means unavailable |
+| `durable.recovery.sequences.retention.health` | none | `1` healthy, `0` startup grace, `-1` SLO violated, `-2` store unavailable |
 | `evidence.incomplete.basis_points` | `scope` | execution/suite incomplete ratio |
 | `storage.records`, `storage.backlog` | `kind` | retained and cleanup-pressure rows |
 | `health` | none | `1` healthy, `-1` violated, `-2` store unavailable |

@@ -32,7 +32,8 @@ class DurableRecoverySequenceRetentionSchedulerTest {
                 .thenReturn(busy)
                 .thenThrow(new IllegalStateException("database unavailable"))
                 .thenReturn(completed);
-        when(checkpoints.recoverySequenceRetentionSnapshot()).thenReturn(snapshot());
+        when(checkpoints.recoverySequenceRetentionSnapshot(Duration.ofDays(30)))
+                .thenReturn(snapshot());
         var scheduler = new DurableRecoverySequenceRetentionScheduler(
                 checkpoints, Duration.ofDays(30), Duration.ofDays(365), 100,
                 telemetry, Duration.ofHours(1));
@@ -59,7 +60,7 @@ class DurableRecoverySequenceRetentionSchedulerTest {
                 .thenReturn(completedAttempt());
         doThrow(new IllegalStateException("metrics backend unavailable"))
                 .when(telemetry).record(any(), any(Duration.class));
-        when(checkpoints.recoverySequenceRetentionSnapshot())
+        when(checkpoints.recoverySequenceRetentionSnapshot(Duration.ofDays(30)))
                 .thenThrow(new IllegalStateException("snapshot unavailable"));
         var scheduler = new DurableRecoverySequenceRetentionScheduler(
                 checkpoints, Duration.ofDays(30), Duration.ofDays(365), 100,
@@ -67,7 +68,7 @@ class DurableRecoverySequenceRetentionSchedulerTest {
 
         scheduler.retain();
 
-        verify(checkpoints).recoverySequenceRetentionSnapshot();
+        verify(checkpoints).recoverySequenceRetentionSnapshot(Duration.ofDays(30));
         verify(telemetry, never()).recordFailure(any(Duration.class));
     }
 
@@ -103,7 +104,10 @@ class DurableRecoverySequenceRetentionSchedulerTest {
 
         telemetry.record(completedAttempt(), Duration.ofMillis(12));
         telemetry.recordFailure(Duration.ofMillis(3));
-        telemetry.refresh(snapshot());
+        var snapshot = backloggedSnapshot();
+        telemetry.observeSlo(
+                snapshot, DurableRecoverySequenceRetentionSloMonitor.State.SLO_VIOLATED,
+                Duration.ofMinutes(4), Duration.ofHours(2), Duration.ofHours(3));
 
         String prefix =
                 "resource.gateway.test.runtime.durable.recovery.sequences.retention.";
@@ -117,6 +121,14 @@ class DurableRecoverySequenceRetentionSchedulerTest {
                 .gauge().value()).isEqualTo(6);
         assertThat(registry.get(prefix + "tombstones.records")
                 .gauge().value()).isEqualTo(3);
+        assertThat(registry.get(prefix + "sequences.overdue")
+                .gauge().value()).isEqualTo(2);
+        assertThat(registry.get(prefix + "tombstones.expired")
+                .gauge().value()).isEqualTo(1);
+        assertThat(registry.get(prefix + "last.success.age")
+                .gauge().value()).isEqualTo(240);
+        assertThat(registry.get(prefix + "health")
+                .gauge().value()).isEqualTo(-1);
         assertThat(registry.getMeters()).allSatisfy(meter ->
                 assertThat(meter.getId().getTags()).allSatisfy(tag ->
                         assertThat(tag.getKey()).isEqualTo("result")));
@@ -138,6 +150,18 @@ class DurableRecoverySequenceRetentionSchedulerTest {
         return new DurableTestExecutionCheckpointRepository
                 .RecoverySequenceRetentionSnapshot(
                 "", 1, Instant.EPOCH, 2,
-                4, 3, 2, 6, 1, 5, 3, now, now);
+                4, 3, 2, 6, 1, 5, 3,
+                0, 0, null, null, now, now);
+    }
+
+    private static DurableTestExecutionCheckpointRepository
+    .RecoverySequenceRetentionSnapshot backloggedSnapshot() {
+        Instant now = Instant.parse("2026-07-17T12:00:00Z");
+        return new DurableTestExecutionCheckpointRepository
+                .RecoverySequenceRetentionSnapshot(
+                "", 1, Instant.EPOCH, 2,
+                4, 3, 2, 6, 1, 5, 3,
+                2, 1, now.minus(Duration.ofHours(2)),
+                now.minus(Duration.ofHours(3)), now.minus(Duration.ofMinutes(4)), now);
     }
 }

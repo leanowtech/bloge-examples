@@ -1675,19 +1675,57 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
     }
 
     @Override
-    public RecoverySequenceRetentionSnapshot recoverySequenceRetentionSnapshot() {
+    public RecoverySequenceRetentionSnapshot recoverySequenceRetentionSnapshot(
+            Duration commandRetention) {
+        Duration safeCommandRetention = boundedRecoverySequenceRetention(
+                commandRetention, MIN_RECOVERY_SEQUENCE_COMMAND_RETENTION,
+                "commandRetention");
+        if (!safeCommandRetention.equals(recoverySequenceReplayActivityGrace)) {
+            throw new IllegalArgumentException(
+                    "commandRetention must match the configured recovery-sequence replay window");
+        }
         RecoverySequenceRetentionSnapshot snapshot = repeatableReadScans.execute(status -> {
+            Instant observedAt = databaseNow();
             RecoverySequenceRetentionState state =
                     requireRecoverySequenceRetentionState(false);
-            Long active = jdbc.queryForObject("""
-                    SELECT COUNT(*) FROM rg_test_durable_recovery_sequences
-                    """, Long.class);
-            Long tombstones = jdbc.queryForObject("""
-                    SELECT COUNT(*)
+            RecoverySequenceBacklog sequences = jdbc.queryForObject("""
+                    SELECT COUNT(*) AS total_records,
+                           COALESCE(SUM(CASE
+                               WHEN created_at <= ? AND activity_until <= ?
+                               THEN 1 ELSE 0 END), 0) AS overdue_records,
+                           MIN(CASE
+                               WHEN created_at <= ? AND activity_until <= ?
+                               THEN CASE
+                                   WHEN activity_until > DATEADD('SECOND', ?, created_at)
+                                   THEN activity_until
+                                   ELSE DATEADD('SECOND', ?, created_at)
+                               END ELSE NULL END) AS oldest_overdue
+                    FROM rg_test_durable_recovery_sequences
+                    """, (rs, rowNumber) -> new RecoverySequenceBacklog(
+                    rs.getLong("total_records"), rs.getLong("overdue_records"),
+                    nullableInstant(rs.getTimestamp("oldest_overdue"))),
+                    Timestamp.from(observedAt.minus(safeCommandRetention)),
+                    Timestamp.from(observedAt),
+                    Timestamp.from(observedAt.minus(safeCommandRetention)),
+                    Timestamp.from(observedAt),
+                    safeCommandRetention.toSeconds(),
+                    safeCommandRetention.toSeconds());
+            RecoverySequenceBacklog tombstones = jdbc.queryForObject("""
+                    SELECT COUNT(*) AS total_records,
+                           COALESCE(SUM(CASE WHEN expires_at <= ?
+                               THEN 1 ELSE 0 END), 0) AS overdue_records,
+                           MIN(CASE WHEN expires_at <= ?
+                               THEN expires_at ELSE NULL END) AS oldest_overdue
                     FROM rg_test_durable_recovery_sequence_tombstones
-                    """, Long.class);
-            return state.snapshot(active == null ? 0 : active,
-                    tombstones == null ? 0 : tombstones, databaseNow());
+                    """, (rs, rowNumber) -> new RecoverySequenceBacklog(
+                    rs.getLong("total_records"), rs.getLong("overdue_records"),
+                    nullableInstant(rs.getTimestamp("oldest_overdue"))),
+                    Timestamp.from(observedAt), Timestamp.from(observedAt));
+            if (sequences == null || tombstones == null) {
+                throw new IllegalStateException(
+                        "Recovery-sequence backlog observation returned no result");
+            }
+            return state.snapshot(sequences, tombstones, observedAt);
         });
         if (snapshot == null) {
             throw new IllegalStateException(
@@ -4801,6 +4839,10 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         return now.truncatedTo(ChronoUnit.MICROS);
     }
 
+    private static Instant nullableInstant(Timestamp value) {
+        return value == null ? null : value.toInstant();
+    }
+
     private Optional<DurableTestExecutionCheckpoint> findInternal(
             String tenantId, String environmentId, String runId) {
         List<StoredRow> rows = jdbc.query(selectColumns() + """
@@ -5576,16 +5618,25 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         }
 
         private RecoverySequenceRetentionSnapshot snapshot(
-                long activeSequenceRecords,
-                long tombstoneRecords,
+                RecoverySequenceBacklog sequences,
+                RecoverySequenceBacklog tombstones,
                 Instant observedAt) {
             return new RecoverySequenceRetentionSnapshot(
                     leaseOwner, leaseEpoch, leaseUntil, revision,
                     totalSequencesTombstoned, totalRecoveryStepsPurged,
                     totalOwnerClaimsPurged, totalHeartbeatsPurged,
-                    totalTombstonesPurged, activeSequenceRecords, tombstoneRecords,
+                    totalTombstonesPurged, sequences.totalRecords(),
+                    tombstones.totalRecords(), sequences.overdueRecords(),
+                    tombstones.overdueRecords(), sequences.oldestOverdueAt(),
+                    tombstones.oldestOverdueAt(),
                     lastSuccessAt, observedAt);
         }
+    }
+
+    private record RecoverySequenceBacklog(
+            long totalRecords,
+            long overdueRecords,
+            Instant oldestOverdueAt) {
     }
 
     private record StoredRecoveryHeartbeat(

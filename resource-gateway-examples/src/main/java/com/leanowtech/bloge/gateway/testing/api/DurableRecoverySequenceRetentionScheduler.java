@@ -102,7 +102,8 @@ public final class DurableRecoverySequenceRetentionScheduler {
             return;
         }
         try {
-            telemetry.refresh(checkpoints.recoverySequenceRetentionSnapshot());
+            telemetry.refresh(checkpoints.recoverySequenceRetentionSnapshot(
+                    commandRetention));
         } catch (RuntimeException telemetryUnavailable) {
             log.warn("Recovery-sequence retention telemetry refresh failed after the page "
                     + "was committed");

@@ -36,6 +36,12 @@ public final class DurableRecoverySequenceRetentionTelemetry {
     private final AtomicLong activeSequenceRecords;
     private final AtomicLong tombstoneRecords;
     private final AtomicLong lastSuccessEpochSeconds;
+    private final AtomicLong overdueSequenceRecords;
+    private final AtomicLong expiredTombstoneRecords;
+    private final AtomicLong retentionSuccessAgeSeconds;
+    private final AtomicLong oldestOverdueSequenceAgeSeconds;
+    private final AtomicLong oldestExpiredTombstoneAgeSeconds;
+    private final AtomicLong health;
 
     /**
      * Registers closed-result counters and aggregate-only lifecycle gauges.
@@ -61,6 +67,17 @@ public final class DurableRecoverySequenceRetentionTelemetry {
         activeSequenceRecords = gauge(meters, "sequences.records");
         tombstoneRecords = gauge(meters, "tombstones.records");
         lastSuccessEpochSeconds = gauge(meters, "last.success.epoch");
+        overdueSequenceRecords = gauge(meters, "sequences.overdue");
+        expiredTombstoneRecords = gauge(meters, "tombstones.expired");
+        retentionSuccessAgeSeconds = gauge(meters, "last.success.age");
+        oldestOverdueSequenceAgeSeconds = gauge(
+                meters, "sequences.overdue.oldest.age");
+        oldestExpiredTombstoneAgeSeconds = gauge(
+                meters, "tombstones.expired.oldest.age");
+        health = gauge(meters, "health");
+        retentionSuccessAgeSeconds.set(-1);
+        oldestOverdueSequenceAgeSeconds.set(-1);
+        oldestExpiredTombstoneAgeSeconds.set(-1);
     }
 
     private DurableRecoverySequenceRetentionTelemetry() {
@@ -75,6 +92,12 @@ public final class DurableRecoverySequenceRetentionTelemetry {
         activeSequenceRecords = new AtomicLong();
         tombstoneRecords = new AtomicLong();
         lastSuccessEpochSeconds = new AtomicLong();
+        overdueSequenceRecords = new AtomicLong();
+        expiredTombstoneRecords = new AtomicLong();
+        retentionSuccessAgeSeconds = new AtomicLong(-1);
+        oldestOverdueSequenceAgeSeconds = new AtomicLong(-1);
+        oldestExpiredTombstoneAgeSeconds = new AtomicLong(-1);
+        health = new AtomicLong();
     }
 
     /** @return disabled adapter for focused scheduler tests */
@@ -121,6 +144,45 @@ public final class DurableRecoverySequenceRetentionTelemetry {
         tombstoneRecords.set(safe.tombstoneRecords());
         lastSuccessEpochSeconds.set(
                 safe.lastSuccessAt() == null ? 0L : safe.lastSuccessAt().getEpochSecond());
+        overdueSequenceRecords.set(safe.overdueSequenceRecords());
+        expiredTombstoneRecords.set(safe.expiredTombstoneRecords());
+    }
+
+    /** Publishes one assessed aggregate SLO view without adding identity-derived labels. */
+    public void observeSlo(
+            DurableTestExecutionCheckpointRepository.RecoverySequenceRetentionSnapshot snapshot,
+            DurableRecoverySequenceRetentionSloMonitor.State state,
+            Duration retentionSuccessAge,
+            Duration oldestOverdueSequenceAge,
+            Duration oldestExpiredTombstoneAge) {
+        Objects.requireNonNull(state, "state");
+        refresh(snapshot);
+        if (!enabled) {
+            return;
+        }
+        retentionSuccessAgeSeconds.set(secondsOrUnknown(retentionSuccessAge));
+        oldestOverdueSequenceAgeSeconds.set(secondsOrUnknown(oldestOverdueSequenceAge));
+        oldestExpiredTombstoneAgeSeconds.set(secondsOrUnknown(oldestExpiredTombstoneAge));
+        health.set(switch (state) {
+            case HEALTHY -> 1;
+            case INITIALIZING -> 0;
+            case SLO_VIOLATED -> -1;
+            case STORE_UNAVAILABLE -> -2;
+        });
+    }
+
+    /** Marks aggregate SLO gauges unavailable without retaining an exception message. */
+    public void observeStoreUnavailable() {
+        if (enabled) {
+            health.set(-2);
+            retentionSuccessAgeSeconds.set(-1);
+            oldestOverdueSequenceAgeSeconds.set(-1);
+            oldestExpiredTombstoneAgeSeconds.set(-1);
+        }
+    }
+
+    private static long secondsOrUnknown(Duration value) {
+        return value == null ? -1 : Math.max(0L, value.toSeconds());
     }
 
     private static AtomicLong gauge(MeterRegistry registry, String suffix) {

@@ -519,6 +519,8 @@ public record IntegrationCapabilities(
         features.put("authenticatedDurableRecoveryStep", testExecutionEndpointEnabled);
         features.put("boundedDurableRecoverySequence", testExecutionEndpointEnabled);
         features.put("durableRecoverySequenceRetention", testExecutionEndpointEnabled);
+        features.put("durableRecoverySequenceRetentionSloHealth",
+                testExecutionEndpointEnabled);
         features.put("durableStateProjectionAntiEntropy", testExecutionEndpointEnabled);
         features.put("durableStateProjectionSweepLease", testExecutionEndpointEnabled);
         features.put("durableStateProjectionFindingQueue", testExecutionEndpointEnabled);

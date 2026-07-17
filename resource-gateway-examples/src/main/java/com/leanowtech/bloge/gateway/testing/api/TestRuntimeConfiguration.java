@@ -141,6 +141,41 @@ public class TestRuntimeConfiguration {
                 meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
     }
 
+    /** Fails readiness closed on stale sequence retention or overdue lifecycle backlog. */
+    @Bean
+    DurableRecoverySequenceRetentionSloMonitor
+            durableRecoverySequenceRetentionSloMonitor(
+                    DurableTestExecutionCheckpointRepository checkpoints,
+                    DurableRecoverySequenceRetentionTelemetry telemetry,
+                    @Value("${gateway.testing.durable.recovery-sequences.command-retention-days:30}")
+                    long commandRetentionDays,
+                    @Value("${gateway.testing.durable.recovery-sequences.slo.observation-interval-ms:30000}")
+                    long observationIntervalMillis,
+                    @Value("${gateway.testing.durable.recovery-sequences.slo.startup-grace-seconds:180}")
+                    long startupGraceSeconds,
+                    @Value("${gateway.testing.durable.recovery-sequences.slo.max-retention-staleness-seconds:10800}")
+                    long maxRetentionStalenessSeconds,
+                    @Value("${gateway.testing.durable.recovery-sequences.slo.max-overdue-sequences:0}")
+                    long maxOverdueSequences,
+                    @Value("${gateway.testing.durable.recovery-sequences.slo.max-oldest-overdue-sequence-age-seconds:3600}")
+                    long maxOldestOverdueSequenceAgeSeconds,
+                    @Value("${gateway.testing.durable.recovery-sequences.slo.max-expired-tombstones:0}")
+                    long maxExpiredTombstones,
+                    @Value("${gateway.testing.durable.recovery-sequences.slo.max-oldest-expired-tombstone-age-seconds:3600}")
+                    long maxOldestExpiredTombstoneAgeSeconds) {
+        return new DurableRecoverySequenceRetentionSloMonitor(
+                checkpoints, telemetry,
+                new DurableRecoverySequenceRetentionSloMonitor.Policy(
+                        Duration.ofDays(commandRetentionDays),
+                        Duration.ofMillis(observationIntervalMillis),
+                        Duration.ofSeconds(startupGraceSeconds),
+                        Duration.ofSeconds(maxRetentionStalenessSeconds),
+                        maxOverdueSequences,
+                        Duration.ofSeconds(maxOldestOverdueSequenceAgeSeconds),
+                        maxExpiredTombstones,
+                        Duration.ofSeconds(maxOldestExpiredTombstoneAgeSeconds)));
+    }
+
     /**
      * Builds the shared, rotation-aware envelope authority for replayable quarantine claim tokens.
      */

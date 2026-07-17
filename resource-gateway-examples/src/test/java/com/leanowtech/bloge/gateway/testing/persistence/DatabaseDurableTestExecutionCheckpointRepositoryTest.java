@@ -419,7 +419,8 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         .reason())
                 .isEqualTo(DurableTestExecutionCheckpointConflictException.Reason
                         .IDEMPOTENCY_CONFLICT);
-        assertThat(repository.recoverySequenceRetentionSnapshot()).satisfies(snapshot -> {
+        assertThat(repository.recoverySequenceRetentionSnapshot(
+                Duration.ofDays(30))).satisfies(snapshot -> {
             assertThat(snapshot.totalSequencesTombstoned()).isOne();
             assertThat(snapshot.totalRecoveryStepsPurged()).isEqualTo(2);
             assertThat(snapshot.totalOwnerClaimsPurged()).isOne();
@@ -427,6 +428,46 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
             assertThat(snapshot.activeSequenceRecords()).isZero();
             assertThat(snapshot.tombstoneRecords()).isOne();
         });
+    }
+
+    @Test
+    void recoverySequenceRetentionSnapshotUsesDatabaseTimeForBothBacklogs() throws Exception {
+        var command = recoverySequenceCommand(
+                "sequence-slo-backlog", SHA_A, "run-a", 1);
+        repository.reserveRecoverySequenceIdempotently(
+                command, TestRuntimeTransactionMutation.noop());
+        ageRecoverySequenceBeyondReplayWindow(command);
+
+        var overdue = repository.recoverySequenceRetentionSnapshot(Duration.ofDays(30));
+
+        assertThat(overdue.activeSequenceRecords()).isOne();
+        assertThat(overdue.overdueSequenceRecords()).isOne();
+        assertThat(overdue.oldestOverdueSequenceEligibleAt()).isNotNull()
+                .isBefore(overdue.observedAt());
+        assertThat(overdue.expiredTombstoneRecords()).isZero();
+        assertThat(overdue.oldestExpiredTombstoneExpiresAt()).isNull();
+
+        var lease = repository.acquireRecoverySequenceRetentionLease().orElseThrow();
+        repository.retainRecoverySequenceClaimedPage(
+                lease, Duration.ofDays(30), Duration.ofMillis(1), 10);
+        TimeUnit.MILLISECONDS.sleep(10);
+        var expiredTombstone = repository.recoverySequenceRetentionSnapshot(
+                Duration.ofDays(30));
+
+        assertThat(expiredTombstone.activeSequenceRecords()).isZero();
+        assertThat(expiredTombstone.overdueSequenceRecords()).isZero();
+        assertThat(expiredTombstone.tombstoneRecords()).isOne();
+        assertThat(expiredTombstone.expiredTombstoneRecords()).isOne();
+        assertThat(expiredTombstone.oldestExpiredTombstoneExpiresAt()).isNotNull()
+                .isBeforeOrEqualTo(expiredTombstone.observedAt());
+    }
+
+    @Test
+    void recoverySequenceRetentionSnapshotRejectsPolicyDrift() {
+        assertThatThrownBy(() -> repository.recoverySequenceRetentionSnapshot(
+                Duration.ofDays(29)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must match");
     }
 
     @Test
@@ -455,7 +496,8 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 SELECT COUNT(*)
                 FROM rg_test_durable_recovery_sequence_tombstones
                 """, Integer.class)).isZero();
-        assertThat(repository.recoverySequenceRetentionSnapshot()).satisfies(snapshot -> {
+        assertThat(repository.recoverySequenceRetentionSnapshot(
+                Duration.ofDays(30))).satisfies(snapshot -> {
             assertThat(snapshot.totalSequencesTombstoned()).isZero();
             assertThat(snapshot.lastSuccessAt()).isNull();
         });
@@ -554,7 +596,8 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 UPDATE rg_test_durable_recovery_sequence_retention
                 SET total_sequences_tombstoned = total_sequences_tombstoned + 1
                 """);
-        assertThatThrownBy(repository::recoverySequenceRetentionSnapshot)
+        assertThatThrownBy(() -> repository.recoverySequenceRetentionSnapshot(
+                Duration.ofDays(30)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("retention authority is corrupt");
         assertThatThrownBy(repository::acquireRecoverySequenceRetentionLease)
