@@ -291,7 +291,8 @@ server-fenced claims, idempotent `RELEASE`, and database-authoritative two-perso
 separate approver group creates a token-free, short-lived approval for the exact live maker claim;
 the maker then proves its secret fence and atomically consumes that approval. New direct legacy
 `DISCARD` commands are rejected. Exact claim-response replay is encrypted with a rotation-aware
-AES-256-GCM key ring; `staging` requires the key ring to be injected explicitly. A database-leased,
+AES-256-GCM key ring, while the live control keeps only a domain-separated HMAC-SHA-256 verifier;
+`staging` requires the shared root-key ring to be injected explicitly. A database-leased,
 bounded retention loop later replaces detailed claim/resolution/approval/discard replay rows with
 request-key tombstones that contain neither the raw request ID nor claim token, independently purges
 token-free history, and permits request-ID reuse only after the tombstone window. Exact semantics are

@@ -41,6 +41,47 @@ class WorkerQuarantineClaimTokenProtectorTest {
     }
 
     @Test
+    void activeFenceMacIsDeterministicDomainBoundAndContainsNoBearerToken() {
+        WorkerQuarantineClaimTokenProtector protector = protector(
+                "key-v1", Map.of("key-v1", key(1)));
+
+        var first = protector.protectActiveFence("secret-claim-token", "control-a");
+        var second = protector.protectActiveFence("secret-claim-token", "control-a");
+
+        assertThat(first).isEqualTo(second);
+        assertThat(first.keyId()).isEqualTo("key-v1");
+        assertThat(first.mac()).startsWith("v1.").doesNotContain("secret-claim-token");
+        assertThat(protector.matchesActiveFence("secret-claim-token", "control-a",
+                first.keyId(), first.mac())).isTrue();
+        assertThat(protector.matchesActiveFence("different-token", "control-a",
+                first.keyId(), first.mac())).isFalse();
+        assertThat(protector.matchesActiveFence("secret-claim-token", "control-b",
+                first.keyId(), first.mac())).isFalse();
+    }
+
+    @Test
+    void activeFenceMacSupportsTwoPhaseRotationAndFailsClosedWithoutOldKey() {
+        WorkerQuarantineClaimTokenProtector oldProtector = protector(
+                "key-v1", Map.of("key-v1", key(1)));
+        var oldFence = oldProtector.protectActiveFence("claim-token", "control-a");
+        WorkerQuarantineClaimTokenProtector rotated = protector(
+                "key-v2", Map.of("key-v1", key(1), "key-v2", key(2)));
+
+        assertThat(rotated.activeFenceRequiresRekey(oldFence.keyId())).isTrue();
+        assertThat(rotated.matchesActiveFence("claim-token", "control-a",
+                oldFence.keyId(), oldFence.mac())).isTrue();
+        assertThat(rotated.protectActiveFence("claim-token", "control-a").keyId())
+                .isEqualTo("key-v2");
+        WorkerQuarantineClaimTokenProtector missingOldKey = protector(
+                "key-v2", Map.of("key-v2", key(2)));
+        assertThatThrownBy(() -> missingOldKey.matchesActiveFence("claim-token", "control-a",
+                oldFence.keyId(), oldFence.mac()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("key is unavailable")
+                .hasMessageNotContaining("claim-token");
+    }
+
+    @Test
     void associatedDataCiphertextAndMissingKeysAllFailClosed() {
         WorkerQuarantineClaimTokenProtector protector = protector(
                 "key-v1", Map.of("key-v1", key(1)));

@@ -116,6 +116,7 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("twoPersonDurableWorkerQuarantineDiscard", true)
                 .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", true)
                 .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", true)
+                .containsEntry("hashedDurableWorkerQuarantineActiveFence", true)
                 .containsEntry("boundedDurableWorkerQuarantineMaintenanceRetention", true);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/durable-state/projection-findings"));

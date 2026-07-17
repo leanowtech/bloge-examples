@@ -45,6 +45,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     private static final String RETENTION_JOB_NAME = "bloge-worker-quarantine-retention";
     private static final int MAX_PAGE_SIZE = 1_000;
     private static final int TOKEN_MIGRATION_PAGE_SIZE = 1_000;
+    private static final int CONTROL_RECORD_VERSION = 2;
     private static final Duration MIN_COMMAND_RETENTION = Duration.ofHours(1);
     private static final Duration MIN_HISTORY_RETENTION = Duration.ofDays(1);
     private static final Duration MIN_TOMBSTONE_RETENTION = Duration.ofDays(1);
@@ -122,8 +123,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     control_state VARCHAR(32) NOT NULL,
                     claim_owner VARCHAR(255) NOT NULL,
                     claim_token VARCHAR(255) NOT NULL,
+                    claim_token_key_id VARCHAR(64) NOT NULL DEFAULT '',
+                    claim_token_mac VARCHAR(80) NOT NULL DEFAULT '',
                     claim_until TIMESTAMP WITH TIME ZONE NOT NULL,
                     control_version BIGINT NOT NULL,
+                    record_version INTEGER NOT NULL DEFAULT 1,
                     record_fingerprint VARCHAR(80) NOT NULL,
                     PRIMARY KEY (scope_key, run_id),
                     CONSTRAINT fk_rg_test_worker_quarantine_control
@@ -132,6 +136,23 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                             (scope_key, run_id)
                         ON DELETE CASCADE
                 )
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_controls
+                ADD COLUMN IF NOT EXISTS claim_token_key_id VARCHAR(64) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_controls
+                ADD COLUMN IF NOT EXISTS claim_token_mac VARCHAR(80) NOT NULL DEFAULT ''
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_controls
+                ADD COLUMN IF NOT EXISTS record_version INTEGER NOT NULL DEFAULT 1
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_control_migration_idx
+                ON rg_test_durable_worker_quarantine_controls
+                    (record_version, control_state, claim_token_key_id, scope_key, run_id)
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_claim_commands (
@@ -161,6 +182,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     VARCHAR(1024) NOT NULL DEFAULT ''
                 """);
         migrateAndRewrapClaimCommandTokens();
+        migrateAndRekeyActiveControlFences();
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_control_queue_idx
                 ON rg_test_durable_worker_quarantine_controls
@@ -1065,12 +1087,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 return QuarantineResolutionResult.fenceRejected();
             }
             requireValid(control, quarantine);
-            if (control.state() != QuarantineState.CLAIMED
-                    || !control.claimOwner().equals(safeClaim.ownerId())
-                    || !control.claimToken().equals(safeClaim.claimToken())
-                    || control.version() != safeClaim.version()
-                    || !control.claimUntil().equals(safeClaim.claimUntil())
-                    || !control.claimUntil().isAfter(now)) {
+            if (!matchesActiveClaim(control, safeClaim, now)) {
                 return QuarantineResolutionResult.fenceRejected();
             }
             long nextVersion = Math.addExact(control.version(), 1);
@@ -1332,12 +1349,7 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 return ApprovedDiscardResult.fenceRejected();
             }
             requireValid(control, quarantine);
-            if (control.state() != QuarantineState.CLAIMED
-                    || !control.claimOwner().equals(safeClaim.ownerId())
-                    || !control.claimToken().equals(safeClaim.claimToken())
-                    || control.version() != safeClaim.version()
-                    || !control.claimUntil().equals(safeClaim.claimUntil())
-                    || !control.claimUntil().isAfter(now)) {
+            if (!matchesActiveClaim(control, safeClaim, now)) {
                 return ApprovedDiscardResult.fenceRejected();
             }
             StoredDiscardApproval approval = findDiscardApprovalById(
@@ -1845,8 +1857,10 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                        q.consecutive_failures, q.quarantine_threshold, q.first_observed_at,
                        q.quarantined_at, q.record_fingerprint,
                        c.checkpoint_fingerprint AS control_checkpoint_fingerprint,
-                       c.control_state, c.claim_owner, c.claim_token, c.claim_until,
-                       c.control_version, c.record_fingerprint AS control_record_fingerprint
+                       c.control_state, c.claim_owner, c.claim_token,
+                       c.claim_token_key_id, c.claim_token_mac, c.claim_until,
+                       c.control_version, c.record_version,
+                       c.record_fingerprint AS control_record_fingerprint
                 FROM rg_test_durable_worker_candidate_quarantines q
                 LEFT JOIN rg_test_durable_worker_quarantine_controls c
                   ON c.scope_key = q.scope_key AND c.run_id = q.run_id
@@ -1865,7 +1879,9 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 stored.scopeKey(), stored.runId(),
                 rs.getString("control_checkpoint_fingerprint"), controlState,
                 rs.getString("claim_owner"), rs.getString("claim_token"),
+                rs.getString("claim_token_key_id"), rs.getString("claim_token_mac"),
                 rs.getTimestamp("claim_until").toInstant(), rs.getLong("control_version"),
+                rs.getInt("record_version"),
                 rs.getString("control_record_fingerprint"));
         requireValid(control, stored);
         boolean liveClaim = control.state() == QuarantineState.CLAIMED
@@ -1936,8 +1952,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             WorkerAcquisitionScope scope, String runId, boolean forUpdate) {
         List<StoredControl> rows = jdbc.query("""
                         SELECT scope_key, run_id, checkpoint_fingerprint, control_state,
-                               claim_owner, claim_token, claim_until, control_version,
-                               record_fingerprint
+                               claim_owner, claim_token, claim_token_key_id, claim_token_mac,
+                               claim_until, control_version, record_version, record_fingerprint
                         FROM rg_test_durable_worker_quarantine_controls
                         WHERE scope_key = ? AND run_id = ?
                         """ + (forUpdate ? " FOR UPDATE" : ""), this::mapControl,
@@ -1952,7 +1968,9 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         return new StoredControl(rs.getString("scope_key"), rs.getString("run_id"),
                 rs.getString("checkpoint_fingerprint"), rs.getString("control_state"),
                 rs.getString("claim_owner"), rs.getString("claim_token"),
+                rs.getString("claim_token_key_id"), rs.getString("claim_token_mac"),
                 rs.getTimestamp("claim_until").toInstant(), rs.getLong("control_version"),
+                rs.getInt("record_version"),
                 rs.getString("record_fingerprint"));
     }
 
@@ -1964,8 +1982,14 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             Instant claimUntil,
             long version) {
         StoredControl unsealed = new StoredControl(quarantine.scopeKey(), quarantine.runId(),
-                quarantine.checkpointFingerprint(), state.name(), owner, token, claimUntil,
-                version, "");
+                quarantine.checkpointFingerprint(), state.name(), owner, "", "", "",
+                claimUntil, version, CONTROL_RECORD_VERSION, "");
+        if (state == QuarantineState.CLAIMED) {
+            WorkerQuarantineClaimTokenProtector.ActiveFence fence =
+                    claimTokenProtector.protectActiveFence(
+                            token, activeFenceAssociatedData(unsealed));
+            unsealed = unsealed.withActiveFence(fence.keyId(), fence.mac());
+        }
         return unsealed.withFingerprint(controlFingerprint(unsealed));
     }
 
@@ -1975,21 +1999,26 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             changed = jdbc.update("""
                     INSERT INTO rg_test_durable_worker_quarantine_controls (
                         scope_key, run_id, checkpoint_fingerprint, control_state,
-                        claim_owner, claim_token, claim_until, control_version,
-                        record_fingerprint
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        claim_owner, claim_token, claim_token_key_id, claim_token_mac,
+                        claim_until, control_version, record_version, record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, next.scopeKey(), next.runId(), next.checkpointFingerprint(),
-                    next.state().name(), next.claimOwner(), next.claimToken(),
-                    Timestamp.from(next.claimUntil()), next.version(), next.recordFingerprint());
+                    next.state().name(), next.claimOwner(), next.legacyClaimToken(),
+                    next.claimTokenKeyId(), next.claimTokenMac(),
+                    Timestamp.from(next.claimUntil()), next.version(), next.recordVersion(),
+                    next.recordFingerprint());
         } else {
             changed = jdbc.update("""
                     UPDATE rg_test_durable_worker_quarantine_controls
-                    SET control_state = ?, claim_owner = ?, claim_token = ?, claim_until = ?,
-                        control_version = ?, record_fingerprint = ?
+                    SET control_state = ?, claim_owner = ?, claim_token = ?,
+                        claim_token_key_id = ?, claim_token_mac = ?, claim_until = ?,
+                        control_version = ?, record_version = ?, record_fingerprint = ?
                     WHERE scope_key = ? AND run_id = ? AND checkpoint_fingerprint = ?
                       AND control_version = ? AND record_fingerprint = ?
-                    """, next.state().name(), next.claimOwner(), next.claimToken(),
-                    Timestamp.from(next.claimUntil()), next.version(), next.recordFingerprint(),
+                    """, next.state().name(), next.claimOwner(), next.legacyClaimToken(),
+                    next.claimTokenKeyId(), next.claimTokenMac(),
+                    Timestamp.from(next.claimUntil()), next.version(), next.recordVersion(),
+                    next.recordFingerprint(),
                     current.scopeKey(), current.runId(), current.checkpointFingerprint(),
                     current.version(), current.recordFingerprint());
         }
@@ -2222,6 +2251,139 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 return;
             }
         }
+    }
+
+    private void migrateAndRekeyActiveControlFences() {
+        while (true) {
+            Integer migrated = transactions.execute(status -> {
+                List<StoredControl> candidates = jdbc.query("""
+                                SELECT scope_key, run_id, checkpoint_fingerprint, control_state,
+                                       claim_owner, claim_token, claim_token_key_id,
+                                       claim_token_mac, claim_until, control_version,
+                                       record_version, record_fingerprint
+                                FROM rg_test_durable_worker_quarantine_controls
+                                WHERE record_version <> ?
+                                   OR (control_state = 'CLAIMED'
+                                       AND claim_token_key_id <> ?)
+                                ORDER BY scope_key, run_id
+                                LIMIT ? FOR UPDATE
+                                """, this::mapControl, CONTROL_RECORD_VERSION,
+                        claimTokenProtector.activeKeyId(), TOKEN_MIGRATION_PAGE_SIZE);
+                Instant observedAt = databaseNow();
+                candidates.forEach(control -> normalizeActiveControlFence(control, observedAt));
+                return candidates.size();
+            });
+            if (migrated == null) {
+                throw new IllegalStateException(
+                        "Worker quarantine active fence migration returned no result");
+            }
+            if (migrated < TOKEN_MIGRATION_PAGE_SIZE) {
+                return;
+            }
+        }
+    }
+
+    private void normalizeActiveControlFence(StoredControl control, Instant observedAt) {
+        StoredQuarantine quarantine = findQuarantineForControl(control);
+        requireValid(control, quarantine);
+        boolean expiredClaim = control.state() == QuarantineState.CLAIMED
+                && !control.claimUntil().isAfter(observedAt);
+        StoredControl migrated = new StoredControl(
+                control.scopeKey(), control.runId(), control.checkpointFingerprint(),
+                expiredClaim ? QuarantineState.AVAILABLE.name() : control.stateName(),
+                expiredClaim ? "" : control.claimOwner(), "", "", "",
+                expiredClaim ? Instant.EPOCH : control.claimUntil(), control.version(),
+                CONTROL_RECORD_VERSION, "");
+        if (control.state() == QuarantineState.CLAIMED && !expiredClaim) {
+            StoredClaimCommand command = findClaimCommandForControl(control);
+            requireValid(command);
+            QuarantineClaim claim = claimFrom(command);
+            if (!claim.key().equals(new QuarantineKey(
+                    control.runId(), control.checkpointFingerprint()))
+                    || !claim.ownerId().equals(control.claimOwner())
+                    || claim.version() != control.version()
+                    || !claim.claimUntil().equals(control.claimUntil())) {
+                throw new IllegalStateException(
+                        "Stored worker quarantine active fence command is inconsistent");
+            }
+            if (control.recordVersion() == 1) {
+                if (!claim.claimToken().equals(control.legacyClaimToken())) {
+                    throw new IllegalStateException(
+                            "Stored worker quarantine active fence token is inconsistent");
+                }
+            } else if (!claimTokenProtector.matchesActiveFence(
+                    claim.claimToken(), activeFenceAssociatedData(control),
+                    control.claimTokenKeyId(), control.claimTokenMac())) {
+                throw new IllegalStateException(
+                        "Stored worker quarantine active fence authentication failed");
+            }
+            WorkerQuarantineClaimTokenProtector.ActiveFence fence =
+                    claimTokenProtector.protectActiveFence(
+                            claim.claimToken(), activeFenceAssociatedData(migrated));
+            migrated = migrated.withActiveFence(fence.keyId(), fence.mac());
+        }
+        migrated = migrated.withFingerprint(controlFingerprint(migrated));
+        int changed = jdbc.update("""
+                UPDATE rg_test_durable_worker_quarantine_controls
+                SET control_state = ?, claim_owner = ?, claim_token = '',
+                    claim_token_key_id = ?, claim_token_mac = ?, claim_until = ?,
+                    record_version = ?, record_fingerprint = ?
+                WHERE scope_key = ? AND run_id = ? AND checkpoint_fingerprint = ?
+                  AND control_version = ? AND record_fingerprint = ?
+                """, migrated.state().name(), migrated.claimOwner(),
+                migrated.claimTokenKeyId(), migrated.claimTokenMac(),
+                Timestamp.from(migrated.claimUntil()),
+                migrated.recordVersion(), migrated.recordFingerprint(),
+                control.scopeKey(), control.runId(), control.checkpointFingerprint(),
+                control.version(), control.recordFingerprint());
+        if (changed != 1) {
+            throw new IllegalStateException(
+                    "Worker quarantine active fence migration was rejected");
+        }
+    }
+
+    private StoredQuarantine findQuarantineForControl(StoredControl control) {
+        List<StoredQuarantine> rows = jdbc.query("""
+                        SELECT scope_key, tenant_id, environment_id, organization_id,
+                               project_id, run_id, checkpoint_fingerprint, reason,
+                               consecutive_failures, quarantine_threshold, first_observed_at,
+                               quarantined_at, record_fingerprint
+                        FROM rg_test_durable_worker_candidate_quarantines
+                        WHERE scope_key = ? AND run_id = ?
+                        FOR UPDATE
+                        """, (rs, rowNumber) -> mapStoredQuarantine(rs),
+                control.scopeKey(), control.runId());
+        if (rows.size() != 1) {
+            throw new IllegalStateException(
+                    "Stored worker quarantine active fence has no unique quarantine");
+        }
+        StoredQuarantine quarantine = rows.getFirst();
+        requireValid(quarantine);
+        return quarantine;
+    }
+
+    private StoredClaimCommand findClaimCommandForControl(StoredControl control) {
+        List<StoredClaimCommand> rows = jdbc.query("""
+                        SELECT scope_key, client_request_id, tenant_id, environment_id,
+                               organization_id, project_id, run_id, checkpoint_fingerprint,
+                               claim_owner, claim_duration_seconds, request_fingerprint,
+                               result_claim_token, result_claim_token_envelope,
+                               result_version, result_claim_until,
+                               created_at, record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_claim_commands
+                        WHERE scope_key = ? AND run_id = ? AND checkpoint_fingerprint = ?
+                          AND claim_owner = ? AND result_version = ?
+                          AND result_claim_until = ?
+                        ORDER BY client_request_id
+                        LIMIT 2 FOR UPDATE
+                        """, this::mapClaimCommand, control.scopeKey(), control.runId(),
+                control.checkpointFingerprint(), control.claimOwner(), control.version(),
+                Timestamp.from(control.claimUntil()));
+        if (rows.size() != 1) {
+            throw new IllegalStateException(
+                    "Stored worker quarantine active fence has no unique claim command");
+        }
+        return normalizeClaimCommand(rows.getFirst());
     }
 
     private String resolutionRequestFingerprint(
@@ -2508,23 +2670,66 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
     }
 
     private void requireValid(StoredControl control, StoredQuarantine quarantine) {
-        String expected = controlFingerprint(control);
-        boolean available = control.state() == QuarantineState.AVAILABLE;
-        boolean claimShapeValid = available
-                ? control.claimOwner().isBlank() && control.claimToken().isBlank()
-                && control.claimUntil().equals(Instant.EPOCH)
-                : !control.claimOwner().isBlank() && !control.claimToken().isBlank()
-                && control.claimUntil().isAfter(Instant.EPOCH);
-        if (!control.scopeKey().equals(quarantine.scopeKey())
-                || !control.runId().equals(quarantine.runId())
-                || !control.checkpointFingerprint().equals(quarantine.checkpointFingerprint())
-                || control.version() < 0 || !claimShapeValid
-                || !expected.equals(control.recordFingerprint())) {
+        boolean valid;
+        try {
+            boolean available = control.state() == QuarantineState.AVAILABLE;
+            boolean legacy = control.recordVersion() == 1;
+            boolean current = control.recordVersion() == CONTROL_RECORD_VERSION;
+            boolean availableShape = control.claimOwner().isBlank()
+                    && control.legacyClaimToken().isBlank()
+                    && control.claimTokenKeyId().isBlank()
+                    && control.claimTokenMac().isBlank()
+                    && control.claimUntil().equals(Instant.EPOCH);
+            boolean legacyClaimShape = !control.claimOwner().isBlank()
+                    && !control.legacyClaimToken().isBlank()
+                    && control.claimTokenKeyId().isBlank()
+                    && control.claimTokenMac().isBlank()
+                    && control.claimUntil().isAfter(Instant.EPOCH);
+            boolean currentClaimShape = !control.claimOwner().isBlank()
+                    && control.legacyClaimToken().isBlank()
+                    && !control.claimTokenKeyId().isBlank()
+                    && !control.claimTokenMac().isBlank()
+                    && control.claimUntil().isAfter(Instant.EPOCH);
+            boolean shapeValid = available
+                    ? availableShape
+                    : legacy ? legacyClaimShape : current && currentClaimShape;
+            valid = (legacy || current)
+                    && control.scopeKey().equals(quarantine.scopeKey())
+                    && control.runId().equals(quarantine.runId())
+                    && control.checkpointFingerprint().equals(
+                    quarantine.checkpointFingerprint())
+                    && control.version() >= 0 && shapeValid
+                    && controlFingerprint(control).equals(control.recordFingerprint());
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException("Stored worker quarantine control is corrupt", invalid);
+        }
+        if (!valid) {
             throw new IllegalStateException("Stored worker quarantine control is corrupt");
         }
     }
 
     private String controlFingerprint(StoredControl control) {
+        if (control.recordVersion() == 1) {
+            return legacyControlFingerprint(control);
+        }
+        if (control.recordVersion() != CONTROL_RECORD_VERSION) {
+            throw new IllegalStateException("Worker quarantine control version is unsupported");
+        }
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineControl.v2"),
+                Map.entry("scopeKey", control.scopeKey()),
+                Map.entry("runId", control.runId()),
+                Map.entry("checkpointFingerprint", control.checkpointFingerprint()),
+                Map.entry("state", control.state().name()),
+                Map.entry("claimOwner", control.claimOwner()),
+                Map.entry("claimTokenKeyId", control.claimTokenKeyId()),
+                Map.entry("claimTokenMac", control.claimTokenMac()),
+                Map.entry("claimUntil", control.claimUntil()),
+                Map.entry("version", control.version()),
+                Map.entry("recordVersion", control.recordVersion())));
+    }
+
+    private String legacyControlFingerprint(StoredControl control) {
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
                 Map.entry("schemaVersion", "bloge.durableWorkerQuarantineControl.v1"),
                 Map.entry("scopeKey", control.scopeKey()),
@@ -2532,7 +2737,31 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 Map.entry("checkpointFingerprint", control.checkpointFingerprint()),
                 Map.entry("state", control.state().name()),
                 Map.entry("claimOwner", control.claimOwner()),
-                Map.entry("claimToken", control.claimToken()),
+                Map.entry("claimToken", control.legacyClaimToken()),
+                Map.entry("claimUntil", control.claimUntil()),
+                Map.entry("version", control.version())));
+    }
+
+    private boolean matchesActiveClaim(
+            StoredControl control, QuarantineClaim claim, Instant now) {
+        return control.state() == QuarantineState.CLAIMED
+                && control.claimOwner().equals(claim.ownerId())
+                && control.version() == claim.version()
+                && control.claimUntil().equals(claim.claimUntil())
+                && control.claimUntil().isAfter(now)
+                && claimTokenProtector.matchesActiveFence(
+                claim.claimToken(), activeFenceAssociatedData(control),
+                control.claimTokenKeyId(), control.claimTokenMac());
+    }
+
+    private String activeFenceAssociatedData(StoredControl control) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineActiveFenceAad.v1"),
+                Map.entry("scopeKey", control.scopeKey()),
+                Map.entry("runId", control.runId()),
+                Map.entry("checkpointFingerprint", control.checkpointFingerprint()),
+                Map.entry("state", control.state().name()),
+                Map.entry("claimOwner", control.claimOwner()),
                 Map.entry("claimUntil", control.claimUntil()),
                 Map.entry("version", control.version())));
     }
@@ -3703,17 +3932,27 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String checkpointFingerprint,
             String stateName,
             String claimOwner,
-            String claimToken,
+            String legacyClaimToken,
+            String claimTokenKeyId,
+            String claimTokenMac,
             Instant claimUntil,
             long version,
+            int recordVersion,
             String recordFingerprint) {
         private QuarantineState state() {
             return QuarantineState.valueOf(stateName);
         }
 
+        private StoredControl withActiveFence(String keyId, String mac) {
+            return new StoredControl(scopeKey, runId, checkpointFingerprint, stateName,
+                    claimOwner, "", keyId, mac, claimUntil, version,
+                    CONTROL_RECORD_VERSION, recordFingerprint);
+        }
+
         private StoredControl withFingerprint(String fingerprint) {
             return new StoredControl(scopeKey, runId, checkpointFingerprint, stateName,
-                    claimOwner, claimToken, claimUntil, version, fingerprint);
+                    claimOwner, legacyClaimToken, claimTokenKeyId, claimTokenMac,
+                    claimUntil, version, recordVersion, fingerprint);
         }
     }
 

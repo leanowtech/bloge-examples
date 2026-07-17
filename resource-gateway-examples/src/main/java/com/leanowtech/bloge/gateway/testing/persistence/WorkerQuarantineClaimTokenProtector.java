@@ -2,10 +2,13 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
+import javax.crypto.Mac;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -14,12 +17,13 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * Protects replayable worker-quarantine claim tokens with a rotation-aware AES-GCM envelope.
+ * Protects replayable worker-quarantine claim tokens and live token-verification fences.
  *
  * <p>The first configured key is not inferred: callers name one active key and retain any prior
  * decrypt-only keys in the same key ring until every stored envelope has been rewrapped. Envelope
  * authentication also binds caller-supplied associated data, so moving ciphertext between command
- * rows fails closed.</p>
+ * rows fails closed. A domain-separated HMAC key derived from each root key protects active-control
+ * equality checks without persisting a second bearer token.</p>
  */
 public final class WorkerQuarantineClaimTokenProtector {
 
@@ -27,12 +31,20 @@ public final class WorkerQuarantineClaimTokenProtector {
     private static final int AES_256_BYTES = 32;
     private static final int GCM_NONCE_BYTES = 12;
     private static final int GCM_TAG_BITS = 128;
+    private static final int HMAC_SHA_256_BYTES = 32;
+    private static final String ACTIVE_FENCE_MAC_VERSION = "v1";
+    private static final byte[] ACTIVE_FENCE_KEY_CONTEXT =
+            "bloge.workerQuarantine.activeFenceHmacKey.v1"
+                    .getBytes(StandardCharsets.UTF_8);
+    private static final byte[] ACTIVE_FENCE_MESSAGE_CONTEXT =
+            "bloge.workerQuarantine.activeFenceMac.v1"
+                    .getBytes(StandardCharsets.UTF_8);
     private static final Pattern KEY_ID = Pattern.compile("[A-Za-z0-9_-]{1,64}");
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
 
     private final String activeKeyId;
-    private final Map<String, SecretKeySpec> keys;
+    private final Map<String, KeyMaterial> keys;
     private final SecureRandom secureRandom;
 
     /**
@@ -52,7 +64,7 @@ public final class WorkerQuarantineClaimTokenProtector {
             String activeKeyId, Map<String, byte[]> keys, SecureRandom secureRandom) {
         this.activeKeyId = requiredKeyId(activeKeyId);
         Objects.requireNonNull(keys, "keys");
-        Map<String, SecretKeySpec> validated = new LinkedHashMap<>();
+        Map<String, KeyMaterial> validated = new LinkedHashMap<>();
         keys.forEach((keyId, value) -> {
             String safeKeyId = requiredKeyId(keyId);
             byte[] key = Objects.requireNonNull(value, "key material").clone();
@@ -60,7 +72,9 @@ public final class WorkerQuarantineClaimTokenProtector {
                 throw new IllegalArgumentException(
                         "Worker quarantine token keys must be 32-byte AES-256 keys");
             }
-            if (validated.putIfAbsent(safeKeyId, new SecretKeySpec(key, "AES")) != null) {
+            KeyMaterial material = new KeyMaterial(new SecretKeySpec(key, "AES"),
+                    new SecretKeySpec(deriveActiveFenceKey(key), "HmacSHA256"));
+            if (validated.putIfAbsent(safeKeyId, material) != null) {
                 throw new IllegalArgumentException(
                         "Duplicate worker quarantine token key id: " + safeKeyId);
             }
@@ -85,7 +99,8 @@ public final class WorkerQuarantineClaimTokenProtector {
         String safeAssociatedData = required(associatedData, "associatedData");
         byte[] nonce = new byte[GCM_NONCE_BYTES];
         secureRandom.nextBytes(nonce);
-        byte[] ciphertext = crypt(Cipher.ENCRYPT_MODE, keys.get(activeKeyId), nonce,
+        byte[] ciphertext = crypt(Cipher.ENCRYPT_MODE,
+                keys.get(activeKeyId).encryptionKey(), nonce,
                 safeAssociatedData, safeToken.getBytes(StandardCharsets.UTF_8));
         return VERSION + "." + activeKeyId + "." + ENCODER.encodeToString(nonce) + "."
                 + ENCODER.encodeToString(ciphertext);
@@ -100,12 +115,12 @@ public final class WorkerQuarantineClaimTokenProtector {
      */
     public String unprotect(String envelope, String associatedData) {
         ParsedEnvelope parsed = parse(envelope);
-        SecretKeySpec key = keys.get(parsed.keyId());
+        KeyMaterial key = keys.get(parsed.keyId());
         if (key == null) {
             throw new IllegalStateException(
                     "Worker quarantine claim token key is unavailable");
         }
-        byte[] plaintext = crypt(Cipher.DECRYPT_MODE, key, parsed.nonce(),
+        byte[] plaintext = crypt(Cipher.DECRYPT_MODE, key.encryptionKey(), parsed.nonce(),
                 required(associatedData, "associatedData"), parsed.ciphertext());
         return new String(plaintext, StandardCharsets.UTF_8);
     }
@@ -139,6 +154,56 @@ public final class WorkerQuarantineClaimTokenProtector {
         return activeKeyId;
     }
 
+    /**
+     * Creates a deterministic, domain-separated MAC for one live active-control fence.
+     *
+     * <p>The MAC key is derived from the active root key with a fixed HMAC context and is never
+     * reused as the AES-GCM key. Associated data must bind the complete non-secret control
+     * identity. The returned value contains no claim token and is not a replay credential.</p>
+     *
+     * @param token opaque server-minted claim token
+     * @param associatedData canonical active-control identity
+     * @return active key identifier and versioned HMAC value
+     */
+    public ActiveFence protectActiveFence(String token, String associatedData) {
+        byte[] mac = activeFenceMac(keys.get(activeKeyId).activeFenceKey(),
+                required(token, "token"), required(associatedData, "associatedData"));
+        return new ActiveFence(activeKeyId,
+                ACTIVE_FENCE_MAC_VERSION + "." + ENCODER.encodeToString(mac));
+    }
+
+    /**
+     * Constant-time verifies a caller-presented token against one stored active-control MAC.
+     *
+     * @param token caller-presented opaque claim token
+     * @param associatedData exact control identity used when the MAC was created
+     * @param keyId non-secret stored key identifier
+     * @param storedMac versioned stored MAC
+     * @return {@code true} only for the exact token and control identity
+     */
+    public boolean matchesActiveFence(
+            String token, String associatedData, String keyId, String storedMac) {
+        KeyMaterial material = keys.get(requiredKeyId(keyId));
+        if (material == null) {
+            throw new IllegalStateException(
+                    "Worker quarantine active fence key is unavailable");
+        }
+        byte[] supplied = parseActiveFenceMac(storedMac);
+        byte[] expected = activeFenceMac(material.activeFenceKey(),
+                required(token, "token"), required(associatedData, "associatedData"));
+        return MessageDigest.isEqual(expected, supplied);
+    }
+
+    /**
+     * Reports whether a stored active-control MAC names a decrypt-only key.
+     *
+     * @param keyId stored MAC key identifier
+     * @return {@code true} when startup should verify and re-key the control
+     */
+    public boolean activeFenceRequiresRekey(String keyId) {
+        return !activeKeyId.equals(requiredKeyId(keyId));
+    }
+
     private byte[] crypt(
             int mode,
             SecretKeySpec key,
@@ -156,6 +221,55 @@ public final class WorkerQuarantineClaimTokenProtector {
         } catch (GeneralSecurityException failure) {
             throw new IllegalStateException(
                     "Worker quarantine claim token protection failed", failure);
+        }
+    }
+
+    private static byte[] deriveActiveFenceKey(byte[] rootKey) {
+        try {
+            Mac kdf = Mac.getInstance("HmacSHA256");
+            kdf.init(new SecretKeySpec(rootKey, "HmacSHA256"));
+            return kdf.doFinal(ACTIVE_FENCE_KEY_CONTEXT);
+        } catch (GeneralSecurityException failure) {
+            throw new IllegalStateException(
+                    "Worker quarantine active fence key derivation failed", failure);
+        }
+    }
+
+    private static byte[] activeFenceMac(
+            SecretKeySpec key, String token, String associatedData) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(key);
+            updateLengthPrefixed(mac, ACTIVE_FENCE_MESSAGE_CONTEXT);
+            updateLengthPrefixed(mac, associatedData.getBytes(StandardCharsets.UTF_8));
+            updateLengthPrefixed(mac, token.getBytes(StandardCharsets.UTF_8));
+            return mac.doFinal();
+        } catch (GeneralSecurityException failure) {
+            throw new IllegalStateException(
+                    "Worker quarantine active fence protection failed", failure);
+        }
+    }
+
+    private static void updateLengthPrefixed(Mac mac, byte[] value) {
+        mac.update(ByteBuffer.allocate(Integer.BYTES).putInt(value.length).array());
+        mac.update(value);
+    }
+
+    private static byte[] parseActiveFenceMac(String storedMac) {
+        String safe = required(storedMac, "storedMac");
+        String prefix = ACTIVE_FENCE_MAC_VERSION + ".";
+        if (!safe.startsWith(prefix)) {
+            throw new IllegalStateException("Worker quarantine active fence MAC is invalid");
+        }
+        try {
+            byte[] decoded = DECODER.decode(safe.substring(prefix.length()));
+            if (decoded.length != HMAC_SHA_256_BYTES) {
+                throw new IllegalStateException(
+                        "Worker quarantine active fence MAC is invalid");
+            }
+            return decoded;
+        } catch (IllegalArgumentException malformedBase64) {
+            throw new IllegalStateException("Worker quarantine active fence MAC is invalid");
         }
     }
 
@@ -222,5 +336,31 @@ public final class WorkerQuarantineClaimTokenProtector {
     }
 
     private record ParsedEnvelope(String keyId, byte[] nonce, byte[] ciphertext) {
+    }
+
+    private record KeyMaterial(
+            SecretKeySpec encryptionKey, SecretKeySpec activeFenceKey) {
+    }
+
+    /**
+     * Non-secret persisted representation of one active maintenance fence.
+     *
+     * @param keyId key generation used to derive the MAC key
+     * @param mac versioned HMAC-SHA-256 value
+     */
+    public record ActiveFence(String keyId, String mac) {
+        /** Validates a complete bounded representation. */
+        public ActiveFence {
+            keyId = requiredKeyId(keyId);
+            mac = required(mac, "mac");
+            if (mac.length() > 80) {
+                throw new IllegalArgumentException("Active fence MAC is too long");
+            }
+            try {
+                parseActiveFenceMac(mac);
+            } catch (IllegalStateException invalid) {
+                throw new IllegalArgumentException("Active fence MAC is invalid", invalid);
+            }
+        }
     }
 }

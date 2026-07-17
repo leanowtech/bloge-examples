@@ -1250,9 +1250,12 @@ direct `DISCARD` on that endpoint is rejected with
 committed legacy command remains replayable.
 
 The exact-replay copy of `claimToken` is stored as an AES-256-GCM envelope bound to the command
-identity. `staging` refuses to start without an explicit active key and key ring; rotation requires
-the documented two-phase rollout so old replicas never encounter an unknown new key. Upgrade and
-rotation details are in the [claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md).
+identity. The live control stores only a key ID and domain-separated HMAC-SHA-256 verifier bound to
+scope/run/checkpoint/owner/version/expiry; resolve and approved discard verify it in constant time.
+`staging` refuses to start without an explicit active key and key ring. Rotation requires the
+documented two-phase rollout; startup rewraps commands before re-keying active controls and refuses
+missing/ambiguous recovery commands or unknown old keys. Upgrade and rotation details are in the
+[claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md).
 
 ```http
 POST /api/testing/durable-state/worker-quarantines/resolutions
@@ -1357,7 +1360,8 @@ deletes the quarantine, writes its immutable command receipt and dedicated maker
 commits semantic audit in one local transaction. Audit failure rolls everything back. Responses,
 history, metrics, health, logs, and audit facts exclude claim tokens and business payloads. During
 the detailed replay window the claim-command copy is AES-GCM encrypted; bounded retention later
-authenticates it before deletion and leaves only a payload-free request tombstone. External workflow
+authenticates it before deletion and leaves only a payload-free request tombstone. The live control
+contains only a keyed verifier, not a second bearer token. External workflow
 identity proof, ticket binding, WORM anchoring, legal hold, backup erasure, and webhook notification
 remain hardening work.
 

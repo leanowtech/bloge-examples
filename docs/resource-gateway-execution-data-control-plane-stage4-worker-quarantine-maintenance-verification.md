@@ -77,7 +77,7 @@ The maintenance protocol owns nine separate tables:
 
 | Table | Responsibility |
 | --- | --- |
-| `rg_test_durable_worker_quarantine_controls` | current `AVAILABLE`/`CLAIMED` owner fence and monotonic version |
+| `rg_test_durable_worker_quarantine_controls` | current owner/version/expiry plus keyed token verifier; no v2 bearer token |
 | `rg_test_durable_worker_quarantine_claim_commands` | caller-stable claim intent and exact response replay |
 | `rg_test_durable_worker_quarantine_resolutions` | caller-stable resolution intent and token-free receipt replay |
 | `rg_test_durable_worker_quarantine_history` | immutable token-free action history retained after discard |
@@ -133,10 +133,11 @@ Claim/release/approval/discard state and their semantic security event commit to
 `TestRuntimeTransactionMutation`. If the event sink cannot bind or commit, the command receipt and
 state mutation roll back.
 
-The claim token appears only in the successful claim response, the resolution request, and an
-AES-GCM envelope in the internal claim-command replay row. Bounded retention authenticates that
-envelope before deleting the row; the successor tombstone contains no token or raw request ID. The
-token is excluded from list/history payloads, resolution receipts,
+The claim token appears only in the successful claim response, the resolution/approved-discard
+request, and an AES-GCM envelope in the internal claim-command replay row. The active control stores
+only a domain-separated HMAC verifier and key ID. Bounded retention authenticates the envelope before
+deleting the command; the successor tombstone contains no token or raw request ID. The token is
+excluded from list/history payloads, resolution receipts,
 health details, metrics, problem responses, and semantic audit facts. Business input/output,
 fixture, dispatch, dependency value, and checkpoint JSON are never exported by this protocol.
 

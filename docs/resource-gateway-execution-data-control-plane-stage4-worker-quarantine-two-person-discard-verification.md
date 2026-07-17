@@ -190,8 +190,10 @@ privileged access grant, or governance callback. Same-database fingerprints dete
 unsophisticated mutation but are not external WORM evidence.
 
 Claim-command replay tokens now use a rotation-aware AES-256-GCM envelope; valid legacy plaintext
-rows are migrated and old-key envelopes are rewrapped at startup. The active control fence remains
-in the isolated database for its short lease. Approval/command/history retention is now bounded by a
+rows are migrated and old-key envelopes are rewrapped at startup. The active control retains only a
+domain-separated HMAC verifier; valid legacy plaintext controls and old-key MACs are cross-checked
+against the encrypted command and atomically migrated before readiness. Approval/command/history
+retention is now bounded by a
 database-leased lifecycle with payload-free request tombstones, but there is no archive, legal hold,
 backup-erasure proof, or external retention-policy ledger. Alert routing, webhook notification,
 break-glass workflow, bulk approval limits, external witness anchoring, non-H2 dialect certification,
