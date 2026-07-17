@@ -96,6 +96,9 @@ Independent-store settings:
 | `gateway.testing.durable.projection-slo.max-unresolved-age-seconds` | `RG_TEST_PROJECTION_SLO_MAX_UNRESOLVED_AGE_SECONDS` | `3600` |
 | `gateway.testing.durable.projection-slo.max-overdue-resolved-findings` | `RG_TEST_PROJECTION_SLO_MAX_OVERDUE_RESOLVED_FINDINGS` | `0` |
 | `gateway.testing.durable.projection-slo.max-overdue-archive-records` | `RG_TEST_PROJECTION_SLO_MAX_OVERDUE_ARCHIVE_RECORDS` | `0` |
+| `gateway.testing.durable.worker-acquisitions.candidate-limit` | `RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT` | `32` |
+| `gateway.testing.durable.worker-acquisitions.initial-backoff-seconds` | `RG_TEST_DURABLE_WORKER_INITIAL_BACKOFF_SECONDS` | `5` |
+| `gateway.testing.durable.worker-acquisitions.maximum-backoff-seconds` | `RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` | `300` |
 | `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
 | `gateway.testing.runtime-slo.outcome-lookback-seconds` | `RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS` | `900` |
 | `gateway.testing.runtime-slo.execution-minimum-samples` | `RG_TEST_RUNTIME_SLO_EXECUTION_MINIMUM_SAMPLES` | `20` |
@@ -114,6 +117,10 @@ Independent-store settings:
 | `gateway.testing.runtime-slo.work-max-depth` | `RG_TEST_RUNTIME_SLO_WORK_MAX_DEPTH` | `10000` |
 | `gateway.testing.runtime-slo.work-max-expired-claims` | `RG_TEST_RUNTIME_SLO_WORK_MAX_EXPIRED_CLAIMS` | `0` |
 | `gateway.testing.runtime-slo.work-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORK_MAX_OLDEST_AGE_SECONDS` | `300` |
+| `gateway.testing.runtime-slo.worker-backoff-max-active` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_ACTIVE` | `1000` |
+| `gateway.testing.runtime-slo.worker-backoff-max-retry-due` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_RETRY_DUE` | `100` |
+| `gateway.testing.runtime-slo.worker-backoff-max-consecutive-failures` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_CONSECUTIVE_FAILURES` | `16` |
+| `gateway.testing.runtime-slo.worker-backoff-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_OLDEST_AGE_SECONDS` | `3600` |
 | `gateway.testing.runtime-slo.max-expired-execution-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_EXECUTION_RECORDS` | `0` |
 | `gateway.testing.runtime-slo.max-expired-suite-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_SUITE_RECORDS` | `0` |
 | `gateway.testing.runtime-slo.max-terminal-durable-executions` | `RG_TEST_RUNTIME_SLO_MAX_TERMINAL_DURABLE_EXECUTIONS` | `10000` |
@@ -835,8 +842,13 @@ select at most `RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT` expired `ACTIVE`, `SUSPE
 v2 candidates from a persisted cyclic `(leaseExpiresAt, updatedAt, runId)` keyset position; default
 `32`, valid `1..1000`. Cursor plus tail/head reads use one database-clock `REPEATABLE_READ` snapshot.
 Each candidate is integrity-verified and freshly re-authorized before exact fence CAS. Authorization
-conflicts are skipped inside the bounded window; dependency-store or authority outages fail the
-entire poll instead of producing false `NO_WORK` or cursor progress.
+denials (`403`), exact conflicts (`409`), and legacy/target-less checkpoints are deterministic
+ineligibility reasons. A winning scan records a database-timed negative scheduling cache for the
+exact checkpoint fingerprint. Active records skip re-authorization while the cyclic scan still
+advances; a due repeat doubles the delay from
+`RG_TEST_DURABLE_WORKER_INITIAL_BACKOFF_SECONDS` to the bounded
+`RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` cap. Dependency-store or authority outages and all
+other infrastructure failures commit neither a result, cursor progress, nor a deferral.
 
 The first successful transaction performs lease CAS, issues the hidden authorization-bound dispatch,
 stores the immutable acquisition result, and appends the semantic audit atomically. If the bounded
@@ -846,7 +858,9 @@ actually examined. A stale concurrent token is a no-op and cannot regress a newe
 lookup uses a derived scope key and verifies all scope/position projections against a whole-record
 fingerprint, so projection drift cannot silently reset the scan. Both outcomes are immutable under
 the scoped `clientRequestId`; a retry after a lost response receives the original result before a
-new scan. A later observation must use a new key.
+new scan. A stale concurrent cursor token cannot create or amplify a deferral. Checkpoint replacement,
+successful claim, and ordinary checkpoint update clear the old fingerprint's record. A later
+observation must use a new key.
 
 ```json
 {
@@ -875,8 +889,11 @@ new scan. A later observation must use a new key.
 payload, provider cursor, engine checkpoint, context, or credential. This endpoint acquires recovery
 ownership only. It does not hold an admission permit while idle, execute BLOGE remotely, long-poll,
 guarantee bounded waiting under unbounded churn, provide tenant weighting/priority/aging, quarantine
-or back off unrecoverable candidates, cancel work, or supervise worker liveness. The cyclic cursor
-prevents a stable poison prefix from causing permanent starvation; it is not a general scheduler.
+unrecoverable candidates permanently, provide dead-letter/manual remediation, cancel work, or
+supervise worker liveness. The cyclic cursor prevents a stable poison prefix from causing permanent
+starvation and deterministic candidate backoff reduces repeated authority load; neither is a general
+scheduler. Persistence, SLO, and counterexample semantics are specified in
+[Stage 4 worker candidate backoff verification](resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md).
 
 ### 4.2h Claim, renew, and terminally recover an exact durable fence
 
@@ -1160,6 +1177,8 @@ The health model distinguishes correctness outcomes from runtime correctness:
   expired-claim work each have independent depth, expired-ownership, and oldest-age policies;
 - suspended durable executions count toward capacity, but an expired suspension lease is not an
   ownership failure until the execution is `ACTIVE` or `RESUMING`;
+- deterministic worker-candidate deferrals have independent active-count, retry-due, repeated-failure,
+  and oldest-active-age policies; aggregation uses only the closed failure-reason vocabulary;
 - expired child/suite records and terminal durable/work-item rows have explicit cleanup-backlog
   limits. Observation does not silently delete them.
 
@@ -1180,6 +1199,10 @@ DURABLE_EXECUTION_STALE
 WORK_ITEM_CAPACITY_EXCEEDED
 WORK_ITEM_CLAIM_BACKLOG
 WORK_ITEM_DISPATCH_STALE
+WORKER_CANDIDATE_BACKOFF_CAPACITY_EXCEEDED
+WORKER_CANDIDATE_RETRY_DUE_BACKLOG
+WORKER_CANDIDATE_REPEATED_FAILURES
+WORKER_CANDIDATE_BACKOFF_STALE
 EXECUTION_RETENTION_BACKLOG_EXCEEDED
 SUITE_RETENTION_BACKLOG_EXCEEDED
 DURABLE_TERMINAL_RETENTION_BACKLOG_EXCEEDED
@@ -1200,6 +1223,8 @@ above. Store exception messages are discarded. Micrometer gauges are rooted at
 | `engine.executions` | `status` | BLOGE execution states |
 | `work.items` | `status` | BLOGE work-item states |
 | `queue.depth`, `lease.expired`, `queue.oldest.age` | `queue` | suite, creation, durable, and work pressure |
+| `worker.candidate.deferrals`, `worker.candidate.deferrals.active` | `reason` | retained and active deterministic backoffs |
+| `worker.candidate.deferrals.retry_due`, `.maximum_failures`, `.oldest_age` | none | due backlog and worst active-record pressure |
 | `evidence.incomplete.basis_points` | `scope` | execution/suite incomplete ratio |
 | `storage.records`, `storage.backlog` | `kind` | retained and cleanup-pressure rows |
 | `health` | none | `1` healthy, `-1` violated, `-2` store unavailable |
@@ -1210,8 +1235,8 @@ profile-owned testing runtime exists.
 
 The SLO component is an observation and readiness gate, not the capacity authority. The same isolated
 profile separately installs the admission controller below. Neither component supplies a queued
-scheduler, priority/fairness policy, hard worker cancellation, remote acquisition, adaptive scaling, or
-external alert delivery.
+scheduler, priority/fairness policy, permanent quarantine/dead-letter workflow, hard worker
+cancellation, runtime-state delivery, adaptive scaling, or external alert delivery.
 
 ### 4.2.1.2 Database-authoritative runtime admission
 

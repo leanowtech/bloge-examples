@@ -40,6 +40,18 @@ class TestRuntimeSloTelemetryTest {
                         queue(3, 0, observedAt.minusSeconds(40)),
                         queue(4, 1, observedAt.minusSeconds(30)),
                         queue(5, 2, observedAt.minusSeconds(20)),
+                        new DatabaseTestRuntimeSloControlPlane.WorkerCandidateDeferralSnapshot(
+                                counts(DurableTestExecutionCheckpointRepository
+                                                .WorkerCandidateDeferralReason.class,
+                                        DurableTestExecutionCheckpointRepository
+                                                .WorkerCandidateDeferralReason
+                                                .AUTHORIZATION_DENIED, 3),
+                                counts(DurableTestExecutionCheckpointRepository
+                                                .WorkerCandidateDeferralReason.class,
+                                        DurableTestExecutionCheckpointRepository
+                                                .WorkerCandidateDeferralReason
+                                                .AUTHORIZATION_DENIED, 2),
+                                observedAt.minusSeconds(100), 5),
                         new DatabaseTestRuntimeSloControlPlane.StorageSnapshot(
                                 20, 2, 10, 1, 8, 9));
 
@@ -68,11 +80,27 @@ class TestRuntimeSloTelemetryTest {
                 "kind", "execution")).isEqualTo(20.0);
         assertThat(gauge(registry, "resource.gateway.test.runtime.storage.backlog",
                 "kind", "durable_terminal")).isEqualTo(8.0);
+        assertThat(gauge(registry,
+                "resource.gateway.test.runtime.worker.candidate.deferrals",
+                "reason", "authorization_denied")).isEqualTo(3.0);
+        assertThat(gauge(registry,
+                "resource.gateway.test.runtime.worker.candidate.deferrals.active",
+                "reason", "authorization_denied")).isEqualTo(2.0);
+        assertThat(registry.get(
+                "resource.gateway.test.runtime.worker.candidate.deferrals.retry_due")
+                .gauge().value()).isEqualTo(1.0);
+        assertThat(registry.get(
+                "resource.gateway.test.runtime.worker.candidate.deferrals.maximum_failures")
+                .gauge().value()).isEqualTo(5.0);
+        assertThat(registry.get(
+                "resource.gateway.test.runtime.worker.candidate.deferrals.oldest_age")
+                .gauge().value()).isEqualTo(100.0);
         assertThat(registry.get("resource.gateway.test.runtime.health").gauge().value())
                 .isEqualTo(-1.0);
         assertThat(registry.getMeters()).allSatisfy(meter ->
                 assertThat(meter.getId().getTags()).allSatisfy(tag ->
-                        assertThat(tag.getKey()).isIn("status", "queue", "scope", "kind")));
+                        assertThat(tag.getKey())
+                                .isIn("status", "queue", "scope", "kind", "reason")));
 
         telemetry.observeStoreUnavailable();
         assertThat(registry.get("resource.gateway.test.runtime.health").gauge().value())

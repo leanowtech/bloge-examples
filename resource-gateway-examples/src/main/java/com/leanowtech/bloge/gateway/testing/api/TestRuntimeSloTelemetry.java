@@ -37,6 +37,13 @@ public final class TestRuntimeSloTelemetry {
     private final Map<EvidenceScope, AtomicLong> incompleteBasisPoints;
     private final Map<StorageKind, AtomicLong> storageRecords;
     private final Map<StorageKind, AtomicLong> storageBacklog;
+    private final Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason,
+            AtomicLong> workerDeferralRecords;
+    private final Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason,
+            AtomicLong> activeWorkerDeferrals;
+    private final AtomicLong workerDeferralRetryDue = new AtomicLong();
+    private final AtomicLong workerDeferralMaximumFailures = new AtomicLong();
+    private final AtomicLong workerDeferralOldestAge = new AtomicLong(-1);
     private final AtomicLong health = new AtomicLong();
 
     /**
@@ -69,6 +76,23 @@ public final class TestRuntimeSloTelemetry {
                 PREFIX + "storage.records", "kind");
         storageBacklog = enumGauges(meters, StorageKind.class,
                 PREFIX + "storage.backlog", "kind");
+        workerDeferralRecords = enumGauges(
+                meters,
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason.class,
+                PREFIX + "worker.candidate.deferrals", "reason");
+        activeWorkerDeferrals = enumGauges(
+                meters,
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason.class,
+                PREFIX + "worker.candidate.deferrals.active", "reason");
+        Gauge.builder(PREFIX + "worker.candidate.deferrals.retry_due",
+                        workerDeferralRetryDue, AtomicLong::doubleValue)
+                .register(meters);
+        Gauge.builder(PREFIX + "worker.candidate.deferrals.maximum_failures",
+                        workerDeferralMaximumFailures, AtomicLong::doubleValue)
+                .register(meters);
+        Gauge.builder(PREFIX + "worker.candidate.deferrals.oldest_age",
+                        workerDeferralOldestAge, AtomicLong::doubleValue)
+                .register(meters);
         Gauge.builder(PREFIX + "health", health, AtomicLong::doubleValue)
                 .description("Global test-runtime health: 1 healthy, -1 SLO violated, "
                         + "-2 store unavailable")
@@ -88,6 +112,8 @@ public final class TestRuntimeSloTelemetry {
         incompleteBasisPoints = Map.of();
         storageRecords = Map.of();
         storageBacklog = Map.of();
+        workerDeferralRecords = Map.of();
+        activeWorkerDeferrals = Map.of();
     }
 
     /**
@@ -140,6 +166,14 @@ public final class TestRuntimeSloTelemetry {
         storageBacklog.get(StorageKind.DURABLE_TERMINAL)
                 .set(storage.terminalDurableExecutions());
         storageBacklog.get(StorageKind.WORK_ITEM_TERMINAL).set(storage.terminalWorkItems());
+        DatabaseTestRuntimeSloControlPlane.WorkerCandidateDeferralSnapshot deferrals =
+                snapshot.workerCandidateDeferrals();
+        replace(workerDeferralRecords, deferrals.totalByReason());
+        replace(activeWorkerDeferrals, deferrals.activeByReason());
+        workerDeferralRetryDue.set(deferrals.retryDueRecords());
+        workerDeferralMaximumFailures.set(deferrals.maximumActiveConsecutiveFailures());
+        workerDeferralOldestAge.set(ageSeconds(
+                deferrals.oldestActiveObservedAt(), snapshot.observedAt()));
         health.set(state == TestRuntimeSloMonitor.State.HEALTHY ? 1 : -1);
     }
 

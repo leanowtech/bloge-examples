@@ -1596,6 +1596,249 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void recordsDeterministicCandidateBackoffAndReturnsItOnTheNextCyclicScan() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+        var observation = new DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral(
+                candidate.progress(), expired.checkpointFingerprint(),
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                        .AUTHORIZATION_DENIED,
+                Duration.ofSeconds(5), Duration.ofMinutes(5));
+
+        var result = repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-deferral-1", SHA_A), Optional.empty(),
+                Optional.of(candidate.progress()), List.of(observation),
+                TestRuntimeTransactionMutation.noop());
+        var nextPage = repository.findExpiredRecoveryCandidates(
+                new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
+                        workerScope(), 1));
+
+        assertThat(result.outcome()).isEqualTo(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.NO_WORK);
+        assertThat(nextPage.candidates()).singleElement().satisfies(deferred -> {
+            assertThat(deferred.checkpoint().runId()).isEqualTo(expired.runId());
+            assertThat(deferred.activeDeferral()).isPresent();
+            assertThat(deferred.activeDeferral().orElseThrow().reason())
+                    .isEqualTo(DurableTestExecutionCheckpointRepository
+                            .WorkerCandidateDeferralReason.AUTHORIZATION_DENIED);
+            assertThat(deferred.activeDeferral().orElseThrow().consecutiveFailures()).isOne();
+            assertThat(deferred.activeDeferral().orElseThrow().retryAfter())
+                    .isAfter(result.observedAt());
+        });
+    }
+
+    @Test
+    void projectsMultipleActiveCandidateBackoffsInOneBoundedPage() {
+        DurableTestExecutionCheckpoint oldest = identifiedCheckpoint(
+                expiredCheckpoint(), "run-oldest", "engine-oldest", "org-a", "project-a",
+                Instant.parse("2000-01-01T00:00:01Z"));
+        DurableTestExecutionCheckpoint next = identifiedCheckpoint(
+                expiredCheckpoint(), "run-next", "engine-next", "org-a", "project-a",
+                Instant.parse("2000-01-01T00:00:02Z"));
+        repository.create(oldest, boundNoop(oldest));
+        repository.create(next, boundNoop(next));
+        var firstPage = repository.findExpiredRecoveryCandidates(
+                new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
+                        workerScope(), 2));
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-deferral-page", SHA_A), Optional.empty(),
+                Optional.of(firstPage.candidates().getLast().progress()),
+                firstPage.candidates().stream().map(candidate -> workerDeferral(
+                        candidate,
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_DENIED)).toList(),
+                TestRuntimeTransactionMutation.noop());
+
+        var projected = repository.findExpiredRecoveryCandidates(
+                new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
+                        workerScope(), 2));
+
+        assertThat(projected.candidates())
+                .extracting(candidate -> candidate.checkpoint().runId())
+                .containsExactly("run-oldest", "run-next");
+        assertThat(projected.candidates())
+                .allSatisfy(candidate -> assertThat(candidate.activeDeferral()).isPresent());
+    }
+
+    @Test
+    void activeCandidateBackoffCannotBeCountedAgainBeforeItsRetryDeadline() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var first = workerCandidate();
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-deferral-first", SHA_A), Optional.empty(),
+                Optional.of(first.progress()), List.of(workerDeferral(first,
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_DENIED)),
+                TestRuntimeTransactionMutation.noop());
+        var active = workerCandidate();
+
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-deferral-active", SHA_B), Optional.empty(),
+                Optional.of(active.progress()), List.of(workerDeferral(active,
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_DENIED)),
+                TestRuntimeTransactionMutation.noop());
+
+        assertThat(database.jdbc().queryForObject("""
+                SELECT consecutive_failures
+                FROM rg_test_durable_worker_candidate_deferrals
+                WHERE run_id = 'run-a'
+                """, Long.class)).isOne();
+    }
+
+    @Test
+    void sameCandidateFailureUsesDatabaseTimedExponentialBackoffWithACap() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+
+        for (int observation = 1; observation <= 3; observation++) {
+            var candidate = workerCandidate();
+            assertThat(candidate.activeDeferral()).isEmpty();
+            var deferral = new DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral(
+                    candidate.progress(), candidate.checkpoint().checkpointFingerprint(),
+                    DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                            .AUTHORIZATION_CONFLICT,
+                    Duration.ofSeconds(1), Duration.ofSeconds(2));
+            repository.acquireWorkerCommandIdempotently(
+                    workerCommand("worker-deferral-exponential-" + observation,
+                            observation == 1 ? SHA_A : observation == 2 ? SHA_B : SHA_C),
+                    Optional.empty(), Optional.of(candidate.progress()), List.of(deferral),
+                    TestRuntimeTransactionMutation.noop());
+
+            var stored = database.jdbc().queryForObject("""
+                            SELECT consecutive_failures, last_observed_at, retry_after
+                            FROM rg_test_durable_worker_candidate_deferrals
+                            WHERE run_id = 'run-a'
+                            """, (rs, row) -> Map.entry(
+                            rs.getLong("consecutive_failures"),
+                            Duration.between(
+                                    rs.getTimestamp("last_observed_at").toInstant(),
+                                    rs.getTimestamp("retry_after").toInstant())));
+            assertThat(stored).isNotNull();
+            assertThat(stored.getKey()).isEqualTo((long) observation);
+            assertThat(stored.getValue())
+                    .isEqualTo(Duration.ofSeconds(observation == 1 ? 1 : 2));
+            if (observation < 3) {
+                Thread.sleep(observation == 1 ? 1_100 : 2_100);
+            }
+        }
+    }
+
+    @Test
+    void checkpointFingerprintChangeImmediatelyInvalidatesHistoricalBackoff() throws Exception {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-deferral-before-change", SHA_A), Optional.empty(),
+                Optional.of(candidate.progress()), List.of(workerDeferral(candidate,
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_DENIED)),
+                TestRuntimeTransactionMutation.noop());
+        DurableTestExecutionCheckpoint claimed = repository.claimExpiredLease(
+                new DurableTestExecutionCheckpointRepository.LeaseClaim(
+                        "tenant-a", "test", expired.runId(),
+                        new DurableTestExecutionCheckpointRepository.Fence(
+                                expired.lifecycle().ownerId(), expired.lifecycle().leaseEpoch(),
+                                expired.lifecycle().revision()),
+                        expired.checkpointFingerprint(), "replacement-owner",
+                        Duration.ofSeconds(1)));
+        Thread.sleep(1_100);
+
+        var changed = workerCandidate();
+
+        assertThat(changed.checkpoint().checkpointFingerprint())
+                .isEqualTo(claimed.checkpointFingerprint())
+                .isNotEqualTo(expired.checkpointFingerprint());
+        assertThat(changed.activeDeferral()).isEmpty();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_deferrals",
+                Integer.class)).isZero();
+    }
+
+    @Test
+    void staleConcurrentScanCannotCreateOrAmplifyCandidateBackoff() {
+        DurableTestExecutionCheckpoint oldest = identifiedCheckpoint(
+                expiredCheckpoint(), "run-oldest", "engine-oldest", "org-a", "project-a",
+                Instant.parse("2000-01-01T00:00:01Z"));
+        DurableTestExecutionCheckpoint next = identifiedCheckpoint(
+                expiredCheckpoint(), "run-next", "engine-next", "org-a", "project-a",
+                Instant.parse("2000-01-01T00:00:02Z"));
+        repository.create(oldest, boundNoop(oldest));
+        repository.create(next, boundNoop(next));
+        var shared = repository.findExpiredRecoveryCandidates(
+                new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
+                        workerScope(), 2));
+        var stale = shared.candidates().getFirst();
+
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-deferral-winner", SHA_A), Optional.empty(),
+                Optional.of(shared.candidates().getLast().progress()), List.of(),
+                TestRuntimeTransactionMutation.noop());
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-deferral-stale", SHA_B), Optional.empty(),
+                Optional.of(stale.progress()), List.of(workerDeferral(stale,
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_CONFLICT)),
+                TestRuntimeTransactionMutation.noop());
+
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_deferrals",
+                Integer.class)).isZero();
+    }
+
+    @Test
+    void rejectsTamperedCandidateBackoffBeforeItCanSuppressAuthorization() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-deferral-tamper", SHA_A), Optional.empty(),
+                Optional.of(candidate.progress()), List.of(workerDeferral(candidate,
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_DENIED)),
+                TestRuntimeTransactionMutation.noop());
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_candidate_deferrals
+                SET consecutive_failures = 99
+                WHERE run_id = 'run-a'
+                """);
+
+        assertThatThrownBy(this::workerCandidate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("candidate deferral is corrupt");
+    }
+
+    @Test
+    void companionAuditFailureRollsBackCandidateBackoffCursorAndNoWorkResult() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var candidate = workerCandidate();
+
+        assertThatThrownBy(() -> repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-deferral-rollback", SHA_A), Optional.empty(),
+                Optional.of(candidate.progress()), List.of(workerDeferral(candidate,
+                        DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                                .AUTHORIZATION_CONFLICT)),
+                ignored -> {
+                    throw new IllegalStateException("audit unavailable");
+                })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("audit unavailable");
+
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_candidate_deferrals",
+                Integer.class)).isZero();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_scan_cursors", Integer.class))
+                .isZero();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_acquisitions", Integer.class))
+                .isZero();
+    }
+
+    @Test
     void staleConcurrentScanProgressCannotRegressTheCommittedCursor() {
         DurableTestExecutionCheckpoint oldest = identifiedCheckpoint(
                 expiredCheckpoint(), "run-oldest", "engine-oldest", "org-a", "project-a",
@@ -2118,6 +2361,14 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                         new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
                                 workerScope(), 1))
                 .candidates().getFirst();
+    }
+
+    private DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral workerDeferral(
+            DurableTestExecutionCheckpointRepository.RecoveryCandidate candidate,
+            DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason reason) {
+        return new DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral(
+                candidate.progress(), candidate.checkpoint().checkpointFingerprint(), reason,
+                Duration.ofSeconds(5), Duration.ofMinutes(5));
     }
 
     private DurableTestExecutionCheckpointRepository.WorkerScanProgress workerProgress(

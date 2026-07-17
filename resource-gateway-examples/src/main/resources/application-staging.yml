@@ -21,6 +21,8 @@ gateway:
         lease-duration-seconds: ${RG_TEST_DURABLE_OWNER_LEASE_SECONDS:120}
       worker-acquisitions:
         candidate-limit: ${RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT:32}
+        initial-backoff-seconds: ${RG_TEST_DURABLE_WORKER_INITIAL_BACKOFF_SECONDS:5}
+        maximum-backoff-seconds: ${RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS:300}
       heartbeats:
         lease-duration-seconds: ${RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS:120}
       recovery-worker:
@@ -70,6 +72,10 @@ gateway:
       work-max-depth: ${RG_TEST_RUNTIME_SLO_WORK_MAX_DEPTH:10000}
       work-max-expired-claims: ${RG_TEST_RUNTIME_SLO_WORK_MAX_EXPIRED_CLAIMS:0}
       work-max-oldest-age-seconds: ${RG_TEST_RUNTIME_SLO_WORK_MAX_OLDEST_AGE_SECONDS:300}
+      worker-backoff-max-active: ${RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_ACTIVE:1000}
+      worker-backoff-max-retry-due: ${RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_RETRY_DUE:100}
+      worker-backoff-max-consecutive-failures: ${RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_CONSECUTIVE_FAILURES:16}
+      worker-backoff-max-oldest-age-seconds: ${RG_TEST_RUNTIME_SLO_WORKER_BACKOFF_MAX_OLDEST_AGE_SECONDS:3600}
       max-expired-execution-records: ${RG_TEST_RUNTIME_SLO_MAX_EXPIRED_EXECUTION_RECORDS:0}
       max-expired-suite-records: ${RG_TEST_RUNTIME_SLO_MAX_EXPIRED_SUITE_RECORDS:0}
       max-terminal-durable-executions: ${RG_TEST_RUNTIME_SLO_MAX_TERMINAL_DURABLE_EXECUTIONS:10000}

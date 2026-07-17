@@ -39,7 +39,8 @@ longer permanently hide work behind it.
 
 This claim does not hold across storage/authority outages because fail-closed polls intentionally do
 not advance. It also does not claim bounded waiting under unbounded queue churn, weighted tenant
-fairness, priority, aging, or per-candidate retry suppression.
+fairness, priority, or aging. A later increment adds bounded deterministic per-candidate suppression
+without changing this liveness claim.
 
 ## Persistence Linearization
 
@@ -83,6 +84,9 @@ shaded-JAR checks.
 ## Honest Boundary
 
 The capability probe reports `durableTestWorkerCyclicScanCursor=true`. This means bounded cyclic
-progress only. It does not mean a queued scheduler, tenant weighting, priority/aging, poison-candidate
-quarantine/backoff, long polling, runtime-state delivery, cross-process worker supervision, hard
-cancellation, non-H2 dialect certification, or production load qualification.
+progress only. Temporary deterministic-candidate backoff is separately specified in
+[Stage 4 worker candidate backoff verification](resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md).
+The combined capability still does not mean a queued scheduler, tenant weighting, priority/aging,
+permanent quarantine/dead-letter/manual remediation, long polling, runtime-state delivery,
+cross-process worker supervision, hard cancellation, non-H2 dialect certification, or production
+load qualification.

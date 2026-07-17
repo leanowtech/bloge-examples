@@ -125,6 +125,50 @@ class TestRuntimeSloMonitorTest {
     }
 
     @Test
+    void reportsWorkerCandidateBackoffPressureWithoutScopeIdentity() {
+        DatabaseTestRuntimeSloControlPlane controlPlane =
+                mock(DatabaseTestRuntimeSloControlPlane.class);
+        Instant observedAt = Instant.parse("2026-07-17T10:00:00Z");
+        Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long> totals =
+                zeroes(DurableTestExecutionCheckpointRepository
+                        .WorkerCandidateDeferralReason.class);
+        Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long> active =
+                zeroes(DurableTestExecutionCheckpointRepository
+                        .WorkerCandidateDeferralReason.class);
+        totals.put(DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                .AUTHORIZATION_DENIED, 2L);
+        totals.put(DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                .AUTHORIZATION_CONFLICT, 1L);
+        active.put(DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                .AUTHORIZATION_DENIED, 2L);
+        var deferrals = new DatabaseTestRuntimeSloControlPlane
+                .WorkerCandidateDeferralSnapshot(
+                totals, active, observedAt.minusSeconds(120), 7);
+        when(controlPlane.operationalSnapshot(Duration.ofMinutes(15)))
+                .thenReturn(snapshot(observedAt, executionOutcomes(), suiteOutcomes(),
+                        queue(0, 0, null), queue(0, 0, null),
+                        queue(0, 0, null), queue(0, 0, null), deferrals, storage(0)));
+        TestRuntimeSloMonitor monitor = new TestRuntimeSloMonitor(
+                controlPlane, TestRuntimeSloTelemetry.noop(), policy(2, 2));
+
+        monitor.refresh();
+
+        Health health = monitor.health();
+        assertThat(health.getStatus()).isEqualTo(Status.OUT_OF_SERVICE);
+        @SuppressWarnings("unchecked")
+        java.util.List<String> violations =
+                (java.util.List<String>) health.getDetails().get("violations");
+        assertThat(violations).containsExactly(
+                "WORKER_CANDIDATE_BACKOFF_CAPACITY_EXCEEDED",
+                "WORKER_CANDIDATE_RETRY_DUE_BACKLOG",
+                "WORKER_CANDIDATE_REPEATED_FAILURES",
+                "WORKER_CANDIDATE_BACKOFF_STALE");
+        assertThat(health.getDetails().toString())
+                .contains("maximumConsecutiveFailures=7")
+                .doesNotContain("tenant", "runId", "checkpointFingerprint");
+    }
+
+    @Test
     void rejectsInvalidSloPoliciesBeforeTheMonitorCanStart() {
         assertThatThrownBy(() -> new TestRuntimeSloMonitor.EvidencePolicy(0, 0))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -133,6 +177,9 @@ class TestRuntimeSloMonitorTest {
         assertThatThrownBy(() -> new TestRuntimeSloMonitor.QueuePolicy(-1, 0, Duration.ofSeconds(1)))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TestRuntimeSloMonitor.StoragePolicy(0, 0, -1, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TestRuntimeSloMonitor.WorkerCandidateDeferralPolicy(
+                -1, 0, 0, Duration.ofSeconds(1)))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TestRuntimeSloMonitor.Policy(
                 Duration.ofDays(366),
@@ -157,6 +204,8 @@ class TestRuntimeSloMonitorTest {
                 new TestRuntimeSloMonitor.EvidencePolicy(executionMinimumSamples, 0),
                 new TestRuntimeSloMonitor.EvidencePolicy(suiteMinimumSamples, 0),
                 queue, queue, queue, queue,
+                new TestRuntimeSloMonitor.WorkerCandidateDeferralPolicy(
+                        1, 0, 2, Duration.ofSeconds(60)),
                 new TestRuntimeSloMonitor.StoragePolicy(0, 0, 0, 0));
     }
 
@@ -169,11 +218,27 @@ class TestRuntimeSloMonitorTest {
             DatabaseTestRuntimeSloControlPlane.QueueSnapshot durableQueue,
             DatabaseTestRuntimeSloControlPlane.QueueSnapshot workQueue,
             DatabaseTestRuntimeSloControlPlane.StorageSnapshot storage) {
+        return snapshot(observedAt, executions, suites, suiteQueue, creationQueue,
+                durableQueue, workQueue,
+                DatabaseTestRuntimeSloControlPlane.WorkerCandidateDeferralSnapshot.empty(),
+                storage);
+    }
+
+    private static DatabaseTestRuntimeSloControlPlane.OperationalSnapshot snapshot(
+            Instant observedAt,
+            Map<TestRunEvidence.Status, Long> executions,
+            Map<TestSuiteRunEvidence.Status, Long> suites,
+            DatabaseTestRuntimeSloControlPlane.QueueSnapshot suiteQueue,
+            DatabaseTestRuntimeSloControlPlane.QueueSnapshot creationQueue,
+            DatabaseTestRuntimeSloControlPlane.QueueSnapshot durableQueue,
+            DatabaseTestRuntimeSloControlPlane.QueueSnapshot workQueue,
+            DatabaseTestRuntimeSloControlPlane.WorkerCandidateDeferralSnapshot deferrals,
+            DatabaseTestRuntimeSloControlPlane.StorageSnapshot storage) {
         return new DatabaseTestRuntimeSloControlPlane.OperationalSnapshot(
                 observedAt, Duration.ofMinutes(15), executions, suites,
                 zeroes(DurableTestExecutionCheckpoint.Status.class),
                 zeroes(ExecutionStatus.class), zeroes(WorkItemStatus.class),
-                suiteQueue, creationQueue, durableQueue, workQueue, storage);
+                suiteQueue, creationQueue, durableQueue, workQueue, deferrals, storage);
     }
 
     private static DatabaseTestRuntimeSloControlPlane.QueueSnapshot queue(

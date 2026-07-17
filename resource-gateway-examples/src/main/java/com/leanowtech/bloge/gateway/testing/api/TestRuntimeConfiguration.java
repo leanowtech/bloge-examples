@@ -360,6 +360,14 @@ public class TestRuntimeConfiguration {
             long workMaxExpiredClaims,
             @Value("${gateway.testing.runtime-slo.work-max-oldest-age-seconds:300}")
             long workMaxOldestAgeSeconds,
+            @Value("${gateway.testing.runtime-slo.worker-backoff-max-active:1000}")
+            long workerBackoffMaxActive,
+            @Value("${gateway.testing.runtime-slo.worker-backoff-max-retry-due:100}")
+            long workerBackoffMaxRetryDue,
+            @Value("${gateway.testing.runtime-slo.worker-backoff-max-consecutive-failures:16}")
+            long workerBackoffMaxConsecutiveFailures,
+            @Value("${gateway.testing.runtime-slo.worker-backoff-max-oldest-age-seconds:3600}")
+            long workerBackoffMaxOldestAgeSeconds,
             @Value("${gateway.testing.runtime-slo.max-expired-execution-records:0}")
             long maxExpiredExecutionRecords,
             @Value("${gateway.testing.runtime-slo.max-expired-suite-records:0}")
@@ -387,6 +395,10 @@ public class TestRuntimeConfiguration {
                         new TestRuntimeSloMonitor.QueuePolicy(
                                 workMaxDepth, workMaxExpiredClaims,
                                 Duration.ofSeconds(workMaxOldestAgeSeconds)),
+                        new TestRuntimeSloMonitor.WorkerCandidateDeferralPolicy(
+                                workerBackoffMaxActive, workerBackoffMaxRetryDue,
+                                workerBackoffMaxConsecutiveFailures,
+                                Duration.ofSeconds(workerBackoffMaxOldestAgeSeconds)),
                         new TestRuntimeSloMonitor.StoragePolicy(
                                 maxExpiredExecutionRecords,
                                 maxExpiredSuiteRecords,
@@ -449,12 +461,18 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.durable.owner-claims.lease-duration-seconds:120}")
             long leaseDurationSeconds,
             @Value("${gateway.testing.durable.worker-acquisitions.candidate-limit:32}")
-            int candidateLimit) {
+            int candidateLimit,
+            @Value("${gateway.testing.durable.worker-acquisitions.initial-backoff-seconds:5}")
+            long initialBackoffSeconds,
+            @Value("${gateway.testing.durable.worker-acquisitions.maximum-backoff-seconds:300}")
+            long maximumBackoffSeconds) {
         String owner = instanceId == null || instanceId.isBlank()
                 ? "durable-worker-" + UUID.randomUUID() : instanceId.trim();
         return new DurableTestWorkerAcquisitionService(
                 checkpoints, authorizer, securityEvents, objectMapper, owner,
-                Duration.ofSeconds(leaseDurationSeconds), candidateLimit);
+                Duration.ofSeconds(leaseDurationSeconds), candidateLimit,
+                Duration.ofSeconds(initialBackoffSeconds),
+                Duration.ofSeconds(maximumBackoffSeconds));
     }
 
     /** Assembles authenticated heartbeat adaptation over issued internal recovery dispatches. */

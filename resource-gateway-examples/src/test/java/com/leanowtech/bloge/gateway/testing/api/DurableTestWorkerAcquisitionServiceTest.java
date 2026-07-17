@@ -83,7 +83,7 @@ class DurableTestWorkerAcquisitionServiceTest {
         when(authorizer.authorize(eq(eligible), any())).thenReturn(authorized);
         var acquired = result(eligible, false);
         when(checkpoints.acquireWorkerCommandIdempotently(
-                any(), any(), any(), any())).thenReturn(acquired);
+                any(), any(), any(), any(), any())).thenReturn(acquired);
 
         DurableTestWorkerAcquisitionResponse response = service.acquire(
                 request("poll-1"), identity());
@@ -93,13 +93,55 @@ class DurableTestWorkerAcquisitionServiceTest {
                 selection = ArgumentCaptor.forClass(Optional.class);
         ArgumentCaptor<Optional<DurableTestExecutionCheckpointRepository.WorkerScanProgress>>
                 progress = ArgumentCaptor.forClass(Optional.class);
+        ArgumentCaptor<List<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferral>>
+                deferrals = ArgumentCaptor.forClass(List.class);
         verify(checkpoints).acquireWorkerCommandIdempotently(
-                any(), selection.capture(), progress.capture(), any());
+                any(), selection.capture(), progress.capture(), deferrals.capture(), any());
         assertThat(selection.getValue()).isPresent();
         assertThat(selection.getValue().orElseThrow().claim().runId()).isEqualTo("run-next");
         assertThat(selection.getValue().orElseThrow().claim().claimantOwnerId())
                 .isEqualTo("worker-instance-a");
         assertThat(progress.getValue().orElseThrow().nextRunId()).isEqualTo("run-next");
+        assertThat(deferrals.getValue()).singleElement().satisfies(deferral -> {
+            assertThat(deferral.runId()).isEqualTo("run-old");
+            assertThat(deferral.reason()).isEqualTo(
+                    DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                            .AUTHORIZATION_CONFLICT);
+        });
+    }
+
+    @Test
+    void skipsAnActiveCandidateDeferralWithoutReauthorizingDependencies() {
+        DurableTestExecutionCheckpoint candidate = checkpoint("run-deferred", SHA_A);
+        var queued = page(candidate).candidates().getFirst();
+        var active = new DurableTestExecutionCheckpointRepository.ActiveWorkerCandidateDeferral(
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                        .AUTHORIZATION_DENIED,
+                3, Instant.parse("2026-07-17T00:00:00Z"),
+                Instant.parse("2026-07-17T00:01:00Z"),
+                Instant.parse("2026-07-17T00:06:00Z"));
+        when(checkpoints.findWorkerAcquisitionResult(any(), eq("poll-1"), any()))
+                .thenReturn(Optional.empty());
+        var deferredPage = new DurableTestExecutionCheckpointRepository.RecoveryCandidatePage(
+                List.of(new DurableTestExecutionCheckpointRepository.RecoveryCandidate(
+                        candidate, queued.progress(), Optional.of(active))));
+        when(checkpoints.findExpiredRecoveryCandidates(any())).thenReturn(deferredPage);
+        var noWork = mock(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionResult.class);
+        when(noWork.outcome()).thenReturn(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.NO_WORK);
+        when(noWork.observedAt()).thenReturn(Instant.parse("2026-07-17T00:02:00Z"));
+        when(checkpoints.acquireWorkerCommandIdempotently(
+                any(), eq(Optional.empty()), any(), eq(List.of()), any()))
+                .thenReturn(noWork);
+
+        DurableTestWorkerAcquisitionResponse response = service.acquire(
+                request("poll-1"), identity());
+
+        assertThat(response.outcome()).isEqualTo("NO_WORK");
+        verifyNoInteractions(authorizer);
+        verify(checkpoints).acquireWorkerCommandIdempotently(
+                any(), eq(Optional.empty()), any(), eq(List.of()), any());
     }
 
     @Test
@@ -114,7 +156,7 @@ class DurableTestWorkerAcquisitionServiceTest {
         when(noWork.observedAt()).thenReturn(Instant.parse("2026-07-17T00:00:00Z"));
         when(noWork.idempotentReplay()).thenReturn(false);
         when(checkpoints.acquireWorkerCommandIdempotently(
-                any(), eq(Optional.empty()), eq(Optional.empty()), any()))
+                any(), eq(Optional.empty()), eq(Optional.empty()), eq(List.of()), any()))
                 .thenReturn(noWork);
 
         DurableTestWorkerAcquisitionResponse response = service.acquire(
@@ -149,7 +191,7 @@ class DurableTestWorkerAcquisitionServiceTest {
         when(noWork.outcome()).thenReturn(
                 DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.NO_WORK);
         when(noWork.observedAt()).thenReturn(Instant.parse("2026-07-17T00:00:00Z"));
-        when(checkpoints.acquireWorkerCommandIdempotently(any(), any(), any(), any()))
+        when(checkpoints.acquireWorkerCommandIdempotently(any(), any(), any(), any(), any()))
                 .thenReturn(noWork);
 
         DurableTestWorkerAcquisitionResponse response = service.acquire(
@@ -159,7 +201,7 @@ class DurableTestWorkerAcquisitionServiceTest {
         ArgumentCaptor<Optional<DurableTestExecutionCheckpointRepository.WorkerScanProgress>>
                 progress = ArgumentCaptor.forClass(Optional.class);
         verify(checkpoints).acquireWorkerCommandIdempotently(
-                any(), eq(Optional.empty()), progress.capture(), any());
+                any(), eq(Optional.empty()), progress.capture(), any(), any());
         assertThat(progress.getValue().orElseThrow().nextRunId()).isEqualTo("run-second");
     }
 
@@ -176,7 +218,7 @@ class DurableTestWorkerAcquisitionServiceTest {
         DurableTestRecoveryAuthorizer.AuthorizedRecovery secondAuthorization = authorized(second);
         when(authorizer.authorize(any(), any()))
                 .thenReturn(firstAuthorization, secondAuthorization);
-        when(checkpoints.acquireWorkerCommandIdempotently(any(), any(), any(), any()))
+        when(checkpoints.acquireWorkerCommandIdempotently(any(), any(), any(), any(), any()))
                 .thenThrow(new DurableTestExecutionCheckpointConflictException(
                         DurableTestExecutionCheckpointConflictException.Reason.STALE_FENCE,
                         "lost race"))
@@ -187,7 +229,7 @@ class DurableTestWorkerAcquisitionServiceTest {
 
         assertThat(response.assignment().runId()).isEqualTo("run-second");
         verify(checkpoints, org.mockito.Mockito.times(2))
-                .acquireWorkerCommandIdempotently(any(), any(), any(), any());
+                .acquireWorkerCommandIdempotently(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -204,7 +246,7 @@ class DurableTestWorkerAcquisitionServiceTest {
                 503, "RG.TEST.DURABLE_AUTHORIZATION_UNAVAILABLE");
 
         verify(checkpoints, never()).acquireWorkerCommandIdempotently(
-                any(), any(), any(), any());
+                any(), any(), any(), any(), any());
     }
 
     @Test
@@ -226,7 +268,7 @@ class DurableTestWorkerAcquisitionServiceTest {
 
         verifyNoInteractions(authorizer);
         verify(checkpoints, never()).acquireWorkerCommandIdempotently(
-                any(), any(), any(), any());
+                any(), any(), any(), any(), any());
     }
 
     @Test

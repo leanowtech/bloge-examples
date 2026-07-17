@@ -259,9 +259,18 @@ the same key; use a new key for a later poll. Lease CAS, hidden dispatch, comman
 audit share one transaction with progress through the last examined candidate. The database cursor
 wraps from the ordered tail to the head, so a full ineligible prefix cannot permanently hide later
 work; cursor state and scope projections are fingerprint-verified, and stale concurrent progress
-cannot move it backward. This is non-blocking pull control, not a fairness claim: it does not transfer
-BLOGE runtime state to the caller, reserve an execution-capacity permit while idle, provide tenant
-weighting/priority/aging or candidate quarantine, or supervise a remote process.
+cannot move it backward.
+
+Legacy checkpoints and exact authorization `403`/`409` outcomes create a database-timed negative
+scheduling cache for that checkpoint fingerprint. An active record skips the authority call but not
+scan progress; a due repeat doubles from `RG_TEST_DURABLE_WORKER_INITIAL_BACKOFF_SECONDS` (default
+`5`) to `RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` (default `300`). Infrastructure failures do
+not create a deferral or advance the cursor. Checkpoint replacement or successful state transition
+clears the old record. This is non-blocking pull control with temporary deterministic backoff, not a
+fairness or quarantine claim: it does not transfer BLOGE runtime state to the caller, reserve an
+execution-capacity permit while idle, provide tenant weighting/priority/aging, dead-letter/manual
+remediation, or supervise a remote process. The exact transaction and counterexample semantics are
+documented in [Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md).
 
 ### Claim an expired durable test lease
 
@@ -702,9 +711,11 @@ negative-case, and product-under-test failures remain outcome metrics and never 
 unhealthy. Only incomplete evidence, excessive/old queues, expired ownership, retention backlog, or
 store unavailability produce stable SLO violations. Fixed-vocabulary meters live under
 `resource.gateway.test.runtime.*`; tags are limited to closed `status`, `queue`, `scope`, and `kind`
-values. Configure thresholds through `gateway.testing.runtime-slo.*` / `RG_TEST_RUNTIME_SLO_*`; the
-full table is in the testing control-plane guide. Lifecycle/time indexes support these aggregate
-reads, and the outcome lookback is hard-capped at 365 days.
+values. Deterministic worker deferrals add only the closed `reason` tag plus untagged retry-due,
+maximum-failure, and oldest-age gauges. Configure thresholds through
+`gateway.testing.runtime-slo.*` / `RG_TEST_RUNTIME_SLO_*`; the full table is in the testing
+control-plane guide. Lifecycle/time indexes support these aggregate reads, and the outcome lookback
+is hard-capped at 365 days.
 
 The isolated profile now also enforces database-authoritative admission before any test engine starts.
 Tenant, suite, recursively reachable operator, and conservative external-dependency claims are acquired

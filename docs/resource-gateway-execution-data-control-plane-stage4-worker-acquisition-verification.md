@@ -37,6 +37,8 @@ Request and response versions are:
 9. Acquisition does not hold a runtime admission permit. Capacity is acquired immediately before
    the existing server-side terminal recovery starts BLOGE.
 10. Production profile cannot assemble the controller, service, or test-runtime store.
+11. Deterministic legacy/authorization failures may create an internal database-timed deferral for
+    the exact checkpoint. Infrastructure failure never creates one.
 
 ## Persistence Linearization
 
@@ -60,7 +62,7 @@ rolls back its lease mutation and replays the winner.
 | Missing credential or forbidden purpose | `401` / `403`, no scan |
 | Production identity/profile | `403` or endpoint absent |
 | Malformed version/key or caller-owned selector | `400`, no scan |
-| Candidate exact dependency conflict | Skip within bounded window |
+| Legacy checkpoint or exact authorization `403`/`409` | Skip and atomically defer exact checkpoint |
 | Identity authority or dependency store outage | `503`, no false `NO_WORK` |
 | Candidate CAS race | Try next candidate; bounded exhaustion may commit `NO_WORK` |
 | Same key, different authenticated intent | `409` idempotency conflict |
@@ -108,8 +110,10 @@ Verification results on 2026-07-17:
 This increment is a remote control-plane acquisition protocol, not a complete worker product. A
 later increment adds the persisted cyclic scan cursor documented in
 [Stage 4 worker scan cursor verification](resource-gateway-execution-data-control-plane-stage4-worker-scan-cursor-verification.md).
+A further increment adds temporary deterministic-candidate suppression documented in
+[Stage 4 worker candidate backoff verification](resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md).
 The combined capability still does not provide long polling, tenant weighting, priority/aging,
-unrecoverable-candidate quarantine/backoff, runtime-state delivery, cross-process heartbeat supervision,
-hard process/container cancellation, multi-suspension orchestration, non-H2 dialect certification,
-or production load qualification. Those remain Stage 4 work and must not be inferred from
-`durableTestWorkerPullAcquisition=true`.
+permanent quarantine/dead-letter/manual remediation, runtime-state delivery, cross-process heartbeat
+supervision, hard process/container cancellation, multi-suspension orchestration, non-H2 dialect
+certification, or production load qualification. Those remain Stage 4 work and must not be inferred
+from `durableTestWorkerPullAcquisition=true`.

@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.leanowtech.bloge.core.runtime.execution.ExecutionStatus;
 import com.leanowtech.bloge.core.runtime.work.WorkItemStatus;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
@@ -115,6 +116,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
                     creationQueue(observedAt),
                     durableQueue(observedAt),
                     workQueue(observedAt),
+                    workerCandidateDeferrals(observedAt),
                     storage(observedAt));
         });
         if (snapshot == null) {
@@ -171,6 +173,56 @@ public final class DatabaseTestRuntimeSloControlPlane {
                        AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
                    OR (item_status = 'CLAIMED' AND claim_until <= ?)
                 """, observedAt, observedAt, observedAt);
+    }
+
+    private WorkerCandidateDeferralSnapshot workerCandidateDeferrals(Instant observedAt) {
+        EnumMap<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                totals = new EnumMap<>(
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason.class);
+        EnumMap<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                active = new EnumMap<>(
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason.class);
+        for (var reason : DurableTestExecutionCheckpointRepository
+                .WorkerCandidateDeferralReason.values()) {
+            totals.put(reason, 0L);
+            active.put(reason, 0L);
+        }
+        Instant[] oldestActive = new Instant[1];
+        long[] maximumConsecutiveFailures = new long[1];
+        jdbc.query("""
+                SELECT reason,
+                       COUNT(*) AS total_count,
+                       COALESCE(SUM(CASE WHEN retry_after > ? THEN 1 ELSE 0 END), 0)
+                           AS active_count,
+                       MIN(CASE WHEN retry_after > ? THEN first_observed_at ELSE NULL END)
+                           AS oldest_active,
+                       COALESCE(MAX(CASE WHEN retry_after > ? THEN consecutive_failures ELSE 0 END), 0)
+                           AS maximum_consecutive_failures
+                FROM rg_test_durable_worker_candidate_deferrals
+                GROUP BY reason
+                """, rs -> {
+            DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason reason;
+            try {
+                reason = DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                        .valueOf(rs.getString("reason"));
+            } catch (IllegalArgumentException invalid) {
+                throw new IllegalStateException(
+                        "Stored worker deferral reason is outside its closed vocabulary");
+            }
+            totals.put(reason, rs.getLong("total_count"));
+            active.put(reason, rs.getLong("active_count"));
+            Timestamp candidateOldest = rs.getTimestamp("oldest_active");
+            if (candidateOldest != null && (oldestActive[0] == null
+                    || candidateOldest.toInstant().isBefore(oldestActive[0]))) {
+                oldestActive[0] = candidateOldest.toInstant();
+            }
+            maximumConsecutiveFailures[0] = Math.max(
+                    maximumConsecutiveFailures[0],
+                    rs.getLong("maximum_consecutive_failures"));
+        }, Timestamp.from(observedAt), Timestamp.from(observedAt), Timestamp.from(observedAt));
+        return new WorkerCandidateDeferralSnapshot(
+                Map.copyOf(totals), Map.copyOf(active), oldestActive[0],
+                maximumConsecutiveFailures[0]);
     }
 
     private QueueSnapshot queue(String sql, Instant... instants) {
@@ -282,6 +334,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
      * @param durableCreations pending durable-creation ownership queue
      * @param durableExecutions resumable durable execution queue
      * @param workItems dispatchable or expired-claim work queue
+     * @param workerCandidateDeferrals deterministic worker authorization backoff pressure
      * @param storage retained-record pressure
      */
     public record OperationalSnapshot(
@@ -296,7 +349,28 @@ public final class DatabaseTestRuntimeSloControlPlane {
             QueueSnapshot durableCreations,
             QueueSnapshot durableExecutions,
             QueueSnapshot workItems,
+            WorkerCandidateDeferralSnapshot workerCandidateDeferrals,
             StorageSnapshot storage) {
+        /** Creates a compatibility snapshot with no worker candidate deferral pressure. */
+        public OperationalSnapshot(
+                Instant observedAt,
+                Duration outcomeLookback,
+                Map<TestRunEvidence.Status, Long> executionOutcomes,
+                Map<TestSuiteRunEvidence.Status, Long> suiteOutcomes,
+                Map<DurableTestExecutionCheckpoint.Status, Long> durableExecutionStates,
+                Map<ExecutionStatus, Long> engineExecutionStates,
+                Map<WorkItemStatus, Long> workItemStates,
+                QueueSnapshot suiteRuns,
+                QueueSnapshot durableCreations,
+                QueueSnapshot durableExecutions,
+                QueueSnapshot workItems,
+                StorageSnapshot storage) {
+            this(observedAt, outcomeLookback, executionOutcomes, suiteOutcomes,
+                    durableExecutionStates, engineExecutionStates, workItemStates,
+                    suiteRuns, durableCreations, durableExecutions, workItems,
+                    WorkerCandidateDeferralSnapshot.empty(), storage);
+        }
+
         /** Freezes all aggregate maps and rejects incomplete observations. */
         public OperationalSnapshot {
             Objects.requireNonNull(observedAt, "observedAt");
@@ -313,6 +387,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
             Objects.requireNonNull(durableCreations, "durableCreations");
             Objects.requireNonNull(durableExecutions, "durableExecutions");
             Objects.requireNonNull(workItems, "workItems");
+            Objects.requireNonNull(workerCandidateDeferrals, "workerCandidateDeferrals");
             Objects.requireNonNull(storage, "storage");
         }
 
@@ -370,6 +445,73 @@ public final class DatabaseTestRuntimeSloControlPlane {
             if (depth < 0 || expiredClaims < 0 || expiredClaims > depth) {
                 throw new IllegalArgumentException("Invalid test-runtime queue aggregate");
             }
+        }
+    }
+
+    /**
+     * Payload-free deterministic worker-candidate backoff pressure.
+     *
+     * @param totalByReason retained records by closed reason
+     * @param activeByReason records whose database retry deadline remains in the future
+     * @param oldestActiveObservedAt first observation of the oldest active record, or {@code null}
+     * @param maximumActiveConsecutiveFailures largest active same-reason failure count
+     */
+    public record WorkerCandidateDeferralSnapshot(
+            Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                    totalByReason,
+            Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                    activeByReason,
+            Instant oldestActiveObservedAt,
+            long maximumActiveConsecutiveFailures) {
+        /** Freezes the closed maps and rejects inconsistent aggregates. */
+        public WorkerCandidateDeferralSnapshot {
+            totalByReason = Map.copyOf(Objects.requireNonNull(totalByReason, "totalByReason"));
+            activeByReason = Map.copyOf(Objects.requireNonNull(activeByReason, "activeByReason"));
+            for (var reason : DurableTestExecutionCheckpointRepository
+                    .WorkerCandidateDeferralReason.values()) {
+                long total = totalByReason.getOrDefault(reason, -1L);
+                long active = activeByReason.getOrDefault(reason, -1L);
+                if (total < 0 || active < 0 || active > total) {
+                    throw new IllegalArgumentException(
+                            "Invalid worker candidate deferral aggregate");
+                }
+            }
+            long activeRecords = activeByReason.values().stream()
+                    .mapToLong(Long::longValue).sum();
+            if (maximumActiveConsecutiveFailures < 0
+                    || (activeRecords == 0) != (oldestActiveObservedAt == null)
+                    || (activeRecords == 0) != (maximumActiveConsecutiveFailures == 0)) {
+                throw new IllegalArgumentException(
+                        "Invalid worker candidate deferral activity aggregate");
+            }
+        }
+
+        /** @return all retained deterministic-candidate records */
+        public long totalRecords() {
+            return totalByReason.values().stream().mapToLong(Long::longValue).sum();
+        }
+
+        /** @return records whose retry deadline remains in the future */
+        public long activeRecords() {
+            return activeByReason.values().stream().mapToLong(Long::longValue).sum();
+        }
+
+        /** @return records whose retry deadline is due and await another cyclic scan */
+        public long retryDueRecords() {
+            return totalRecords() - activeRecords();
+        }
+
+        /** @return an all-zero closed-vocabulary observation */
+        public static WorkerCandidateDeferralSnapshot empty() {
+            EnumMap<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                    empty = new EnumMap<>(
+                    DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason.class);
+            for (var reason : DurableTestExecutionCheckpointRepository
+                    .WorkerCandidateDeferralReason.values()) {
+                empty.put(reason, 0L);
+            }
+            return new WorkerCandidateDeferralSnapshot(
+                    Map.copyOf(empty), Map.copyOf(empty), null, 0);
         }
     }
 

@@ -95,6 +95,8 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                     .withDetail("durableExecutionQueue",
                             queueDetails(assessment.durableExecutions()))
                     .withDetail("workItemQueue", queueDetails(assessment.workItems()))
+                    .withDetail("workerCandidateDeferrals",
+                            workerDeferralDetails(assessment.workerCandidateDeferrals()))
                     .withDetail("storage", assessment.storage());
         }
         return builder.build();
@@ -129,6 +131,25 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                 Violation.WORK_ITEM_CAPACITY_EXCEEDED,
                 Violation.WORK_ITEM_CLAIM_BACKLOG,
                 Violation.WORK_ITEM_DISPATCH_STALE, snapshot.observedAt(), violations);
+        DatabaseTestRuntimeSloControlPlane.WorkerCandidateDeferralSnapshot deferrals =
+                snapshot.workerCandidateDeferrals();
+        if (deferrals.activeRecords() > policy.workerCandidateDeferrals().maxActiveRecords()) {
+            violations.add(Violation.WORKER_CANDIDATE_BACKOFF_CAPACITY_EXCEEDED.name());
+        }
+        if (deferrals.retryDueRecords()
+                > policy.workerCandidateDeferrals().maxRetryDueRecords()) {
+            violations.add(Violation.WORKER_CANDIDATE_RETRY_DUE_BACKLOG.name());
+        }
+        if (deferrals.maximumActiveConsecutiveFailures()
+                > policy.workerCandidateDeferrals().maxConsecutiveFailures()) {
+            violations.add(Violation.WORKER_CANDIDATE_REPEATED_FAILURES.name());
+        }
+        Duration oldestDeferralAge = age(
+                deferrals.oldestActiveObservedAt(), snapshot.observedAt());
+        if (oldestDeferralAge != null && oldestDeferralAge.compareTo(
+                policy.workerCandidateDeferrals().maxOldestActiveAge()) > 0) {
+            violations.add(Violation.WORKER_CANDIDATE_BACKOFF_STALE.name());
+        }
         DatabaseTestRuntimeSloControlPlane.StorageSnapshot storage = snapshot.storage();
         if (storage.expiredExecutionRecords()
                 > policy.storage().maxExpiredExecutionRecords()) {
@@ -152,7 +173,12 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                 observedQueue(snapshot.suiteRuns(), snapshot.observedAt()),
                 observedQueue(snapshot.durableCreations(), snapshot.observedAt()),
                 observedQueue(snapshot.durableExecutions(), snapshot.observedAt()),
-                observedQueue(snapshot.workItems(), snapshot.observedAt()), storage);
+                observedQueue(snapshot.workItems(), snapshot.observedAt()),
+                new ObservedWorkerDeferrals(
+                        deferrals.totalRecords(), deferrals.activeRecords(),
+                        deferrals.retryDueRecords(),
+                        deferrals.maximumActiveConsecutiveFailures(),
+                        secondsOrUnknown(oldestDeferralAge)), storage);
     }
 
     private static void assessEvidence(
@@ -200,6 +226,16 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                 "depth", queue.depth(),
                 "expiredClaims", queue.expiredClaims(),
                 "oldestAgeSeconds", queue.oldestAgeSeconds());
+    }
+
+    private static java.util.Map<String, Long> workerDeferralDetails(
+            ObservedWorkerDeferrals deferrals) {
+        return java.util.Map.of(
+                "records", deferrals.records(),
+                "active", deferrals.active(),
+                "retryDue", deferrals.retryDue(),
+                "maximumConsecutiveFailures", deferrals.maximumConsecutiveFailures(),
+                "oldestActiveAgeSeconds", deferrals.oldestActiveAgeSeconds());
     }
 
     private static Duration age(Instant earlier, Instant observedAt) {
@@ -270,6 +306,14 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
         WORK_ITEM_CLAIM_BACKLOG,
         /** The oldest dispatchable work item exceeds queue-age policy. */
         WORK_ITEM_DISPATCH_STALE,
+        /** Active deterministic worker-candidate backoffs exceed bounded capacity. */
+        WORKER_CANDIDATE_BACKOFF_CAPACITY_EXCEEDED,
+        /** Too many retry-due candidate records await another cyclic scan. */
+        WORKER_CANDIDATE_RETRY_DUE_BACKLOG,
+        /** A candidate has exceeded the accepted consecutive deterministic-failure count. */
+        WORKER_CANDIDATE_REPEATED_FAILURES,
+        /** The oldest active deterministic candidate backoff exceeds policy. */
+        WORKER_CANDIDATE_BACKOFF_STALE,
         /** Expired child execution records exceed their retention backlog limit. */
         EXECUTION_RETENTION_BACKLOG_EXCEEDED,
         /** Expired suite records exceed their retention backlog limit. */
@@ -292,6 +336,7 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
      * @param durableCreations pending durable-creation limits
      * @param durableExecutions resumable durable-execution limits
      * @param workItems dispatchable and expired-claim work limits
+     * @param workerCandidateDeferrals deterministic worker-candidate backoff limits
      * @param storage retained-record cleanup backlog limits
      */
     public record Policy(
@@ -302,7 +347,26 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             QueuePolicy durableCreations,
             QueuePolicy durableExecutions,
             QueuePolicy workItems,
+            WorkerCandidateDeferralPolicy workerCandidateDeferrals,
             StoragePolicy storage) {
+        /** Creates a compatibility policy with effectively unbounded candidate deferral limits. */
+        public Policy(
+                Duration outcomeLookback,
+                EvidencePolicy executionEvidence,
+                EvidencePolicy suiteEvidence,
+                QueuePolicy suiteRuns,
+                QueuePolicy durableCreations,
+                QueuePolicy durableExecutions,
+                QueuePolicy workItems,
+                StoragePolicy storage) {
+            this(outcomeLookback, executionEvidence, suiteEvidence, suiteRuns,
+                    durableCreations, durableExecutions, workItems,
+                    new WorkerCandidateDeferralPolicy(
+                            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+                            Duration.ofDays(36500)),
+                    storage);
+        }
+
         /** Rejects missing or non-positive policy components. */
         public Policy {
             positive(outcomeLookback, "outcomeLookback");
@@ -316,6 +380,7 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             Objects.requireNonNull(durableCreations, "durableCreations");
             Objects.requireNonNull(durableExecutions, "durableExecutions");
             Objects.requireNonNull(workItems, "workItems");
+            Objects.requireNonNull(workerCandidateDeferrals, "workerCandidateDeferrals");
             Objects.requireNonNull(storage, "storage");
         }
     }
@@ -354,6 +419,30 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
     }
 
     /**
+     * Deterministic worker-candidate backoff pressure policy.
+     *
+     * @param maxActiveRecords largest acceptable active backoff population
+     * @param maxRetryDueRecords largest acceptable due-but-not-yet-revisited population
+     * @param maxConsecutiveFailures largest accepted active same-reason failure count
+     * @param maxOldestActiveAge oldest accepted active backoff age
+     */
+    public record WorkerCandidateDeferralPolicy(
+            long maxActiveRecords,
+            long maxRetryDueRecords,
+            long maxConsecutiveFailures,
+            Duration maxOldestActiveAge) {
+        /** Rejects negative counts or an unbounded/non-positive age. */
+        public WorkerCandidateDeferralPolicy {
+            if (maxActiveRecords < 0 || maxRetryDueRecords < 0
+                    || maxConsecutiveFailures < 0) {
+                throw new IllegalArgumentException(
+                        "Worker candidate deferral SLO limits must be non-negative");
+            }
+            positive(maxOldestActiveAge, "maxOldestActiveAge");
+        }
+    }
+
+    /**
      * Retained-record cleanup backlog policy.
      *
      * @param maxExpiredExecutionRecords largest expired child-evidence backlog
@@ -379,6 +468,14 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
     private record ObservedQueue(long depth, long expiredClaims, long oldestAgeSeconds) {
     }
 
+    private record ObservedWorkerDeferrals(
+            long records,
+            long active,
+            long retryDue,
+            long maximumConsecutiveFailures,
+            long oldestActiveAgeSeconds) {
+    }
+
     private record Assessment(
             State state,
             List<String> violations,
@@ -393,14 +490,17 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             ObservedQueue durableCreations,
             ObservedQueue durableExecutions,
             ObservedQueue workItems,
+            ObservedWorkerDeferrals workerCandidateDeferrals,
             DatabaseTestRuntimeSloControlPlane.StorageSnapshot storage) {
         private static Assessment storeUnavailable() {
             DatabaseTestRuntimeSloControlPlane.StorageSnapshot empty =
                     new DatabaseTestRuntimeSloControlPlane.StorageSnapshot(0, 0, 0, 0, 0, 0);
             ObservedQueue queue = new ObservedQueue(0, 0, -1);
+            ObservedWorkerDeferrals deferrals =
+                    new ObservedWorkerDeferrals(0, 0, 0, 0, -1);
             return new Assessment(State.STORE_UNAVAILABLE,
                     List.of(Violation.TEST_RUNTIME_STORE_UNAVAILABLE.name()), null,
-                    0, 0, 0, 0, 0, 0, queue, queue, queue, queue, empty);
+                    0, 0, 0, 0, 0, 0, queue, queue, queue, queue, deferrals, empty);
         }
     }
 

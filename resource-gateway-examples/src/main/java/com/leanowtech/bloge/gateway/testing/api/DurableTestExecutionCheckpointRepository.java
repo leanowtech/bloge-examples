@@ -174,10 +174,35 @@ public interface DurableTestExecutionCheckpointRepository {
      * @param companionMutation local payload-free audit mutation
      * @return immutable original result, marked as replay when already committed
      */
+    default WorkerAcquisitionResult acquireWorkerCommandIdempotently(
+            WorkerAcquisitionCommand command,
+            Optional<WorkerAcquisitionSelection> selection,
+            Optional<WorkerScanProgress> scanProgress,
+            TestRuntimeTransactionMutation companionMutation) {
+        return acquireWorkerCommandIdempotently(
+                command, selection, scanProgress, List.of(), companionMutation);
+    }
+
+    /**
+     * Atomically commits one worker pull result, scan progress, and deterministic deferrals.
+     *
+     * <p>Deferrals are advisory scheduling state bound to the exact source checkpoint fingerprint.
+     * They must be written only when the supplied scan token wins compare-and-advance; stale scans
+     * cannot amplify failure counters. Infrastructure failures must never be supplied as deferrals.
+     * A successful selection clears a matching historical deferral in the same transaction.</p>
+     *
+     * @param command authenticated pull identity independent of any selected run
+     * @param selection exact authorized candidate, or empty after no claimable work was found
+     * @param scanProgress last candidate actually examined, or empty for an empty queue page
+     * @param deferrals deterministic ineligible candidates observed in this exact scan
+     * @param companionMutation local payload-free audit mutation
+     * @return immutable original result, marked as replay when already committed
+     */
     WorkerAcquisitionResult acquireWorkerCommandIdempotently(
             WorkerAcquisitionCommand command,
             Optional<WorkerAcquisitionSelection> selection,
             Optional<WorkerScanProgress> scanProgress,
+            List<WorkerCandidateDeferral> deferrals,
             TestRuntimeTransactionMutation companionMutation);
 
     /**
@@ -672,10 +697,11 @@ public interface DurableTestExecutionCheckpointRepository {
     record RecoveryCandidatePage(List<RecoveryCandidate> candidates) {
         /** Freezes the page and rejects null candidate entries. */
         public RecoveryCandidatePage {
-            candidates = List.copyOf(Objects.requireNonNull(candidates, "candidates"));
-            if (candidates.stream().anyMatch(Objects::isNull)) {
+            List<RecoveryCandidate> required = Objects.requireNonNull(candidates, "candidates");
+            if (required.stream().anyMatch(Objects::isNull)) {
                 throw new IllegalArgumentException("Recovery candidate page contains null entries");
             }
+            candidates = List.copyOf(required);
         }
     }
 
@@ -684,14 +710,24 @@ public interface DurableTestExecutionCheckpointRepository {
      *
      * @param checkpoint exact candidate checkpoint
      * @param progress atomic cursor progress through this candidate
+     * @param activeDeferral verified scheduling backoff for this exact checkpoint, when active
      */
     record RecoveryCandidate(
             DurableTestExecutionCheckpoint checkpoint,
-            WorkerScanProgress progress) {
+            WorkerScanProgress progress,
+            Optional<ActiveWorkerCandidateDeferral> activeDeferral) {
+        /** Creates a candidate without an active deterministic-failure backoff. */
+        public RecoveryCandidate(
+                DurableTestExecutionCheckpoint checkpoint,
+                WorkerScanProgress progress) {
+            this(checkpoint, progress, Optional.empty());
+        }
+
         /** Requires progress to identify the same candidate and scope. */
         public RecoveryCandidate {
             checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
             progress = Objects.requireNonNull(progress, "progress");
+            activeDeferral = Objects.requireNonNull(activeDeferral, "activeDeferral");
             if (!progress.scope().contains(checkpoint)
                     || !progress.nextRunId().equals(checkpoint.runId())
                     || !progress.nextLeaseExpiresAt().equals(
@@ -699,6 +735,111 @@ public interface DurableTestExecutionCheckpointRepository {
                     || !progress.nextUpdatedAt().equals(checkpoint.lifecycle().updatedAt())) {
                 throw new IllegalArgumentException(
                         "Worker scan progress must identify its exact candidate");
+            }
+        }
+    }
+
+    /** Closed deterministic reasons that may receive a temporary worker scheduling backoff. */
+    enum WorkerCandidateDeferralReason {
+        /** Historical checkpoint lacks the exact target closure required for safe recovery. */
+        LEGACY_PROTOCOL,
+        /** Current authenticated policy deterministically denies this exact checkpoint closure. */
+        AUTHORIZATION_DENIED,
+        /** Current governed dependencies conflict with the persisted checkpoint closure. */
+        AUTHORIZATION_CONFLICT
+    }
+
+    /**
+     * One deterministic ineligibility observation to persist with a worker command.
+     *
+     * @param observedProgress exact candidate and cursor snapshot observed by the worker scan
+     * @param checkpointFingerprint exact immutable closure observed by the worker scan
+     * @param reason closed deterministic failure reason; infrastructure outages are forbidden
+     * @param initialBackoff first retry delay, in whole seconds
+     * @param maximumBackoff bounded retry delay cap, in whole seconds
+     */
+    record WorkerCandidateDeferral(
+            WorkerScanProgress observedProgress,
+            String checkpointFingerprint,
+            WorkerCandidateDeferralReason reason,
+            Duration initialBackoff,
+            Duration maximumBackoff) {
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+        private static final Duration MAXIMUM_ALLOWED_BACKOFF = Duration.ofHours(24);
+
+        /** Rejects unbounded, ambiguous, or infrastructure-shaped observations. */
+        public WorkerCandidateDeferral {
+            observedProgress = Objects.requireNonNull(observedProgress, "observedProgress");
+            checkpointFingerprint = deferralRequired(
+                    checkpointFingerprint, "checkpointFingerprint");
+            reason = Objects.requireNonNull(reason, "reason");
+            initialBackoff = boundedBackoff(initialBackoff, "initialBackoff");
+            maximumBackoff = boundedBackoff(maximumBackoff, "maximumBackoff");
+            if (!FINGERPRINT.matcher(checkpointFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "checkpointFingerprint must be a canonical SHA-256 fingerprint");
+            }
+            if (maximumBackoff.compareTo(initialBackoff) < 0) {
+                throw new IllegalArgumentException(
+                        "maximumBackoff must not be shorter than initialBackoff");
+            }
+        }
+
+        /** @return exact verified queue scope containing the observation */
+        public WorkerAcquisitionScope scope() {
+            return observedProgress.scope();
+        }
+
+        /** @return exact candidate run identity containing the observation */
+        public String runId() {
+            return observedProgress.nextRunId();
+        }
+
+        private static Duration boundedBackoff(Duration value, String field) {
+            Duration result = Objects.requireNonNull(value, field);
+            if (result.compareTo(Duration.ofSeconds(1)) < 0
+                    || result.compareTo(MAXIMUM_ALLOWED_BACKOFF) > 0
+                    || result.getNano() != 0) {
+                throw new IllegalArgumentException(
+                        field + " must be whole seconds between one second and 24 hours");
+            }
+            return result;
+        }
+
+        private static String deferralRequired(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
+        }
+    }
+
+    /**
+     * Integrity-verified active scheduling backoff for one exact candidate checkpoint.
+     *
+     * @param reason closed deterministic failure reason
+     * @param consecutiveFailures positive same-reason failure count
+     * @param firstObservedAt database time of the first consecutive observation
+     * @param lastObservedAt database time of the latest consecutive observation
+     * @param retryAfter database time after which authorization may be attempted again
+     */
+    record ActiveWorkerCandidateDeferral(
+            WorkerCandidateDeferralReason reason,
+            long consecutiveFailures,
+            Instant firstObservedAt,
+            Instant lastObservedAt,
+            Instant retryAfter) {
+        /** Rejects impossible count or time ordering. */
+        public ActiveWorkerCandidateDeferral {
+            reason = Objects.requireNonNull(reason, "reason");
+            firstObservedAt = Objects.requireNonNull(firstObservedAt, "firstObservedAt");
+            lastObservedAt = Objects.requireNonNull(lastObservedAt, "lastObservedAt");
+            retryAfter = Objects.requireNonNull(retryAfter, "retryAfter");
+            if (consecutiveFailures < 1
+                    || firstObservedAt.isAfter(lastObservedAt)
+                    || !retryAfter.isAfter(lastObservedAt)) {
+                throw new IllegalArgumentException("Invalid active worker candidate deferral");
             }
         }
     }

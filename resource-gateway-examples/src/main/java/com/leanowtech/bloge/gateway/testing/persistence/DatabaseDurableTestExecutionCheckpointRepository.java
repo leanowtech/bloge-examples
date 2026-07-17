@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -265,6 +266,28 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                     advanced_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     cursor_fingerprint VARCHAR(80) NOT NULL
                 )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_candidate_deferrals (
+                    scope_key VARCHAR(80) NOT NULL,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    reason VARCHAR(64) NOT NULL,
+                    consecutive_failures BIGINT NOT NULL,
+                    first_observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    last_observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    retry_after TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (scope_key, run_id)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_worker_deferral_slo_idx
+                ON rg_test_durable_worker_candidate_deferrals (retry_after, reason)
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_heartbeats (
@@ -674,12 +697,15 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             WorkerAcquisitionCommand command,
             Optional<WorkerAcquisitionSelection> selection,
             Optional<WorkerScanProgress> scanProgress,
+            List<WorkerCandidateDeferral> deferrals,
             TestRuntimeTransactionMutation companionMutation) {
         WorkerAcquisitionCommand requiredCommand = Objects.requireNonNull(command, "command");
         Optional<WorkerAcquisitionSelection> requiredSelection = Objects.requireNonNull(
                 selection, "selection");
         Optional<WorkerScanProgress> requiredProgress = Objects.requireNonNull(
                 scanProgress, "scanProgress");
+        List<WorkerCandidateDeferral> requiredDeferrals = List.copyOf(
+                Objects.requireNonNull(deferrals, "deferrals"));
         TestRuntimeTransactionMutation requiredMutation = Objects.requireNonNull(
                 companionMutation, "companionMutation");
         requiredProgress.ifPresent(progress -> {
@@ -703,6 +729,8 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                         "Worker selection requires progress through the selected candidate");
             }
         });
+        requireValidWorkerDeferrals(
+                requiredCommand, requiredSelection, requiredProgress, requiredDeferrals);
         try {
             return transactions.execute(status -> {
                 Optional<WorkerAcquisitionResult> existing = replayedWorkerAcquisition(
@@ -726,8 +754,15 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                             objectMapper, selected.authorization(), claimed);
                     outcome = WorkerAcquisitionOutcome.ACQUIRED;
                 }
-                requiredProgress.ifPresent(progress -> advanceWorkerScanCursor(
-                        requiredCommand.scope(), progress, observedAt));
+                boolean scanAdvanced = requiredProgress.map(progress -> advanceWorkerScanCursor(
+                        requiredCommand.scope(), progress, observedAt)).orElse(false);
+                if (scanAdvanced) {
+                    persistWorkerCandidateDeferrals(
+                            requiredCommand.scope(), requiredDeferrals, observedAt);
+                }
+                requiredSelection.ifPresent(value -> clearWorkerCandidateDeferral(
+                        requiredCommand.scope(), value.claim().runId(),
+                        value.claim().expectedCheckpointFingerprint()));
                 StoredWorkerAcquisition stored = newWorkerAcquisition(
                         requiredCommand, outcome, observedAt, claimed, dispatch);
                 insertWorkerAcquisition(stored);
@@ -1653,14 +1688,14 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         if (cursor.position() == null) {
             appendRecoveryCandidates(candidates,
                     queryRecoveryCandidatesFromHead(scope, cutoff, query.limit()),
-                    scope, cursor.cursorFingerprint(), cursor.cycleEpoch());
+                    scope, cursor.cursorFingerprint(), cursor.cycleEpoch(), cutoff);
             return new RecoveryCandidatePage(candidates);
         }
 
         List<DurableTestExecutionCheckpoint> tail = queryRecoveryCandidatesAfter(
                 scope, cutoff, cursor.position(), query.limit());
         appendRecoveryCandidates(candidates, tail, scope, cursor.cursorFingerprint(),
-                cursor.cycleEpoch());
+                cursor.cycleEpoch(), cutoff);
         int remaining = query.limit() - tail.size();
         if (remaining > 0) {
             if (cursor.cycleEpoch() == Long.MAX_VALUE) {
@@ -1668,7 +1703,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             }
             appendRecoveryCandidates(candidates, queryRecoveryCandidatesAtOrBefore(
                             scope, cutoff, cursor.position(), remaining),
-                    scope, cursor.cursorFingerprint(), cursor.cycleEpoch() + 1);
+                    scope, cursor.cursorFingerprint(), cursor.cycleEpoch() + 1, cutoff);
         }
         return new RecoveryCandidatePage(candidates);
     }
@@ -1678,12 +1713,18 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
             List<DurableTestExecutionCheckpoint> checkpoints,
             WorkerAcquisitionScope scope,
             String expectedCursorFingerprint,
-            long cycleEpoch) {
+            long cycleEpoch,
+            Instant observedAt) {
+        Map<String, ActiveWorkerCandidateDeferral> activeDeferrals =
+                activeWorkerCandidateDeferrals(scope, checkpoints, observedAt);
         for (DurableTestExecutionCheckpoint checkpoint : checkpoints) {
             DurableTestExecutionCheckpoint.Lifecycle lifecycle = checkpoint.lifecycle();
-            destination.add(new RecoveryCandidate(checkpoint, new WorkerScanProgress(
+            WorkerScanProgress progress = new WorkerScanProgress(
                     scope, expectedCursorFingerprint, cycleEpoch,
-                    lifecycle.leaseExpiresAt(), lifecycle.updatedAt(), checkpoint.runId())));
+                    lifecycle.leaseExpiresAt(), lifecycle.updatedAt(), checkpoint.runId());
+            destination.add(new RecoveryCandidate(
+                    checkpoint, progress,
+                    Optional.ofNullable(activeDeferrals.get(checkpoint.runId()))));
         }
     }
 
@@ -1753,6 +1794,266 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         return rows.stream().map(this::verifiedCheckpoint).toList();
     }
 
+    private Map<String, ActiveWorkerCandidateDeferral> activeWorkerCandidateDeferrals(
+            WorkerAcquisitionScope scope,
+            List<DurableTestExecutionCheckpoint> checkpoints,
+            Instant observedAt) {
+        if (checkpoints.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",",
+                java.util.Collections.nCopies(checkpoints.size(), "?"));
+        Object[] arguments = new Object[checkpoints.size() + 1];
+        arguments[0] = workerScanScopeKey(scope);
+        Map<String, String> checkpointFingerprints = new HashMap<>();
+        for (int index = 0; index < checkpoints.size(); index++) {
+            DurableTestExecutionCheckpoint checkpoint = checkpoints.get(index);
+            arguments[index + 1] = checkpoint.runId();
+            if (checkpointFingerprints.putIfAbsent(
+                    checkpoint.runId(), checkpoint.checkpointFingerprint()) != null) {
+                throw new IllegalStateException("Worker candidate page contains a duplicate run");
+            }
+        }
+        List<StoredWorkerCandidateDeferral> rows = jdbc.query(("""
+                SELECT scope_key, tenant_id, environment_id, organization_id, project_id,
+                       run_id, checkpoint_fingerprint, reason, consecutive_failures,
+                       first_observed_at, last_observed_at, retry_after, record_fingerprint
+                FROM rg_test_durable_worker_candidate_deferrals
+                WHERE scope_key = ? AND run_id IN (%s)
+                """).formatted(placeholders), this::mapWorkerCandidateDeferral, arguments);
+        Map<String, ActiveWorkerCandidateDeferral> active = new HashMap<>();
+        Set<String> storedRuns = new HashSet<>();
+        for (StoredWorkerCandidateDeferral stored : rows) {
+            requireValidWorkerCandidateDeferral(stored);
+            if (!scope.equals(stored.scope())) {
+                throw new IllegalStateException("Stored worker candidate deferral scope is corrupt");
+            }
+            if (!storedRuns.add(stored.runId())) {
+                throw new IllegalStateException(
+                        "Stored worker candidate deferral contains a duplicate run");
+            }
+            if (stored.checkpointFingerprint().equals(
+                    checkpointFingerprints.get(stored.runId()))
+                    && stored.retryAfter().isAfter(observedAt)) {
+                active.put(stored.runId(), stored.activeDeferral());
+            }
+        }
+        return Map.copyOf(active);
+    }
+
+    private Optional<StoredWorkerCandidateDeferral> findWorkerCandidateDeferral(
+            WorkerAcquisitionScope scope,
+            String runId) {
+        List<StoredWorkerCandidateDeferral> rows = jdbc.query("""
+                        SELECT scope_key, tenant_id, environment_id, organization_id, project_id,
+                               run_id, checkpoint_fingerprint, reason, consecutive_failures,
+                               first_observed_at, last_observed_at, retry_after, record_fingerprint
+                        FROM rg_test_durable_worker_candidate_deferrals
+                        WHERE scope_key = ? AND run_id = ?
+                        """, this::mapWorkerCandidateDeferral,
+                workerScanScopeKey(scope), runId);
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredWorkerCandidateDeferral stored = rows.getFirst();
+        requireValidWorkerCandidateDeferral(stored);
+        if (!scope.equals(stored.scope())) {
+            throw new IllegalStateException("Stored worker candidate deferral scope is corrupt");
+        }
+        return Optional.of(stored);
+    }
+
+    private StoredWorkerCandidateDeferral mapWorkerCandidateDeferral(
+            ResultSet rs,
+            int rowNumber) throws SQLException {
+        return new StoredWorkerCandidateDeferral(
+                rs.getString("scope_key"), rs.getString("tenant_id"),
+                rs.getString("environment_id"), rs.getString("organization_id"),
+                rs.getString("project_id"), rs.getString("run_id"),
+                rs.getString("checkpoint_fingerprint"), rs.getString("reason"),
+                rs.getLong("consecutive_failures"),
+                rs.getTimestamp("first_observed_at").toInstant(),
+                rs.getTimestamp("last_observed_at").toInstant(),
+                rs.getTimestamp("retry_after").toInstant(),
+                rs.getString("record_fingerprint"));
+    }
+
+    private void requireValidWorkerCandidateDeferral(StoredWorkerCandidateDeferral stored) {
+        WorkerAcquisitionScope scope;
+        WorkerCandidateDeferralReason reason;
+        ActiveWorkerCandidateDeferral active;
+        try {
+            scope = stored.scope();
+            reason = WorkerCandidateDeferralReason.valueOf(stored.reason());
+            active = new ActiveWorkerCandidateDeferral(
+                    reason, stored.consecutiveFailures(), stored.firstObservedAt(),
+                    stored.lastObservedAt(), stored.retryAfter());
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException("Stored worker candidate deferral is corrupt", invalid);
+        }
+        String expected = workerCandidateDeferralFingerprint(
+                scope, stored.runId(), stored.checkpointFingerprint(), active);
+        if (!workerScanScopeKey(scope).equals(stored.scopeKey())
+                || !expected.equals(stored.recordFingerprint())) {
+            throw new IllegalStateException("Stored worker candidate deferral is corrupt");
+        }
+    }
+
+    private void requireValidWorkerDeferrals(
+            WorkerAcquisitionCommand command,
+            Optional<WorkerAcquisitionSelection> selection,
+            Optional<WorkerScanProgress> scanProgress,
+            List<WorkerCandidateDeferral> deferrals) {
+        if (!deferrals.isEmpty() && scanProgress.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Worker candidate deferrals require committed scan progress");
+        }
+        Map<String, WorkerCandidateDeferral> unique = new HashMap<>();
+        for (WorkerCandidateDeferral deferral : deferrals) {
+            if (deferral == null) {
+                throw new IllegalArgumentException("Worker candidate deferrals contain null");
+            }
+            WorkerScanProgress observed = deferral.observedProgress();
+            WorkerScanProgress terminal = scanProgress.orElseThrow();
+            if (!command.scope().equals(deferral.scope())
+                    || !observed.expectedCursorFingerprint().equals(
+                    terminal.expectedCursorFingerprint())
+                    || compareWorkerScanProgress(observed, terminal) > 0) {
+                throw new IllegalArgumentException(
+                        "Worker candidate deferral is outside committed scan progress");
+            }
+            if (selection.isPresent()
+                    && selection.orElseThrow().claim().runId().equals(deferral.runId())) {
+                throw new IllegalArgumentException(
+                        "Selected worker candidate cannot also be deferred");
+            }
+            if (unique.putIfAbsent(deferral.runId(), deferral) != null) {
+                throw new IllegalArgumentException(
+                        "Worker candidate deferrals contain a duplicate run");
+            }
+        }
+    }
+
+    private int compareWorkerScanProgress(
+            WorkerScanProgress left,
+            WorkerScanProgress right) {
+        int cycle = Long.compare(left.nextCycleEpoch(), right.nextCycleEpoch());
+        if (cycle != 0) {
+            return cycle;
+        }
+        return new WorkerScanPosition(
+                left.nextLeaseExpiresAt(), left.nextUpdatedAt(), left.nextRunId())
+                .compareTo(new WorkerScanPosition(
+                        right.nextLeaseExpiresAt(), right.nextUpdatedAt(), right.nextRunId()));
+    }
+
+    private void persistWorkerCandidateDeferrals(
+            WorkerAcquisitionScope scope,
+            List<WorkerCandidateDeferral> deferrals,
+            Instant observedAt) {
+        for (WorkerCandidateDeferral deferral : deferrals) {
+            Optional<DurableTestExecutionCheckpoint> current = findInternal(
+                    scope.tenantId(), scope.environmentId(), deferral.runId());
+            if (current.isEmpty()
+                    || !scope.contains(current.orElseThrow())
+                    || !deferral.checkpointFingerprint().equals(
+                    current.orElseThrow().checkpointFingerprint())) {
+                continue;
+            }
+            Optional<StoredWorkerCandidateDeferral> prior = findWorkerCandidateDeferral(
+                    scope, deferral.runId());
+            if (prior.isPresent()
+                    && prior.orElseThrow().checkpointFingerprint().equals(
+                    deferral.checkpointFingerprint())
+                    && prior.orElseThrow().retryAfter().isAfter(observedAt)) {
+                continue;
+            }
+            boolean consecutive = prior.isPresent()
+                    && prior.orElseThrow().checkpointFingerprint().equals(
+                    deferral.checkpointFingerprint())
+                    && prior.orElseThrow().reason().equals(deferral.reason().name());
+            long failures = consecutive
+                    ? saturatingIncrement(prior.orElseThrow().consecutiveFailures()) : 1;
+            Instant firstObservedAt = consecutive
+                    ? prior.orElseThrow().firstObservedAt() : observedAt;
+            Duration delay = exponentialBackoff(
+                    deferral.initialBackoff(), deferral.maximumBackoff(), failures);
+            Instant retryAfter = observedAt.plus(delay);
+            ActiveWorkerCandidateDeferral active = new ActiveWorkerCandidateDeferral(
+                    deferral.reason(), failures, firstObservedAt, observedAt, retryAfter);
+            String fingerprint = workerCandidateDeferralFingerprint(
+                    scope, deferral.runId(), deferral.checkpointFingerprint(), active);
+            jdbc.update("""
+                    MERGE INTO rg_test_durable_worker_candidate_deferrals (
+                        scope_key, tenant_id, environment_id, organization_id, project_id,
+                        run_id, checkpoint_fingerprint, reason, consecutive_failures,
+                        first_observed_at, last_observed_at, retry_after, record_fingerprint
+                    ) KEY (scope_key, run_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, workerScanScopeKey(scope), scope.tenantId(), scope.environmentId(),
+                    scope.organizationId(), scope.projectId(), deferral.runId(),
+                    deferral.checkpointFingerprint(), deferral.reason().name(), failures,
+                    Timestamp.from(firstObservedAt), Timestamp.from(observedAt),
+                    Timestamp.from(retryAfter), fingerprint);
+        }
+    }
+
+    private void clearWorkerCandidateDeferral(
+            WorkerAcquisitionScope scope,
+            String runId,
+            String checkpointFingerprint) {
+        Optional<StoredWorkerCandidateDeferral> stored = findWorkerCandidateDeferral(scope, runId);
+        if (stored.isEmpty()
+                || !stored.orElseThrow().checkpointFingerprint().equals(checkpointFingerprint)) {
+            return;
+        }
+        int deleted = jdbc.update("""
+                        DELETE FROM rg_test_durable_worker_candidate_deferrals
+                        WHERE scope_key = ? AND run_id = ?
+                          AND checkpoint_fingerprint = ? AND record_fingerprint = ?
+                        """, stored.orElseThrow().scopeKey(), runId, checkpointFingerprint,
+                stored.orElseThrow().recordFingerprint());
+        if (deleted != 1) {
+            throw new IllegalStateException(
+                    "Durable worker candidate deferral changed while clearing");
+        }
+    }
+
+    private Duration exponentialBackoff(
+            Duration initial,
+            Duration maximum,
+            long consecutiveFailures) {
+        Duration delay = initial;
+        long remainingDoublings = Math.max(0, consecutiveFailures - 1);
+        while (remainingDoublings > 0 && delay.compareTo(maximum) < 0) {
+            delay = delay.compareTo(maximum.dividedBy(2)) > 0
+                    ? maximum : delay.multipliedBy(2);
+            remainingDoublings--;
+        }
+        return delay.compareTo(maximum) > 0 ? maximum : delay;
+    }
+
+    private long saturatingIncrement(long value) {
+        return value == Long.MAX_VALUE ? Long.MAX_VALUE : value + 1;
+    }
+
+    private String workerCandidateDeferralFingerprint(
+            WorkerAcquisitionScope scope,
+            String runId,
+            String checkpointFingerprint,
+            ActiveWorkerCandidateDeferral active) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerCandidateDeferral.v1"),
+                Map.entry("scope", scope),
+                Map.entry("runId", runId),
+                Map.entry("checkpointFingerprint", checkpointFingerprint),
+                Map.entry("reason", active.reason().name()),
+                Map.entry("consecutiveFailures", active.consecutiveFailures()),
+                Map.entry("firstObservedAt", active.firstObservedAt()),
+                Map.entry("lastObservedAt", active.lastObservedAt()),
+                Map.entry("retryAfter", active.retryAfter())));
+    }
+
     private Optional<WorkerScanCursorSnapshot> findWorkerScanCursor(
             WorkerAcquisitionScope scope) {
         List<StoredWorkerScanCursor> rows = jdbc.query("""
@@ -1784,7 +2085,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 "scope", scope));
     }
 
-    private void advanceWorkerScanCursor(
+    private boolean advanceWorkerScanCursor(
             WorkerAcquisitionScope scope,
             WorkerScanProgress progress,
             Instant advancedAt) {
@@ -1793,7 +2094,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         WorkerScanCursorSnapshot current = currentStored.orElseGet(
                 () -> emptyWorkerScanCursor(scope));
         if (!current.cursorFingerprint().equals(progress.expectedCursorFingerprint())) {
-            return;
+            return false;
         }
         WorkerScanPosition nextPosition = new WorkerScanPosition(
                 progress.nextLeaseExpiresAt(), progress.nextUpdatedAt(), progress.nextRunId());
@@ -1823,6 +2124,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                         "Durable worker scan cursor changed while locked");
             }
         }
+        return true;
     }
 
     private void requireValidWorkerScanAdvance(
@@ -2117,6 +2419,11 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         if (claimUpdate(claimed, claim, claimedAt) != 1) {
             throw conflict(STALE_FENCE, "Durable checkpoint lease changed concurrently");
         }
+        clearWorkerCandidateDeferral(
+                new WorkerAcquisitionScope(
+                        current.scope().tenantId(), current.scope().organizationId(),
+                        current.scope().projectId(), current.scope().environmentId()),
+                current.runId(), current.checkpointFingerprint());
         return claimed;
     }
 
@@ -2666,7 +2973,7 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                        DurableTestExecutionCheckpoint current,
                        Fence expected) {
         var lifecycle = next.lifecycle();
-        return jdbc.update("""
+        int updated = jdbc.update("""
                 UPDATE rg_test_durable_execution_checkpoints
                 SET status = ?, owner_id = ?, lease_epoch = ?, revision = ?,
                     lease_expires_at = ?, plan_fingerprint = ?, fixture_fingerprint = ?,
@@ -2686,6 +2993,14 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 Timestamp.from(lifecycle.updatedAt()), write(next), next.runId(),
                 next.scope().tenantId(), next.scope().environmentId(), expected.ownerId(),
                 expected.leaseEpoch(), expected.revision(), current.checkpointFingerprint());
+        if (updated == 1) {
+            clearWorkerCandidateDeferral(
+                    new WorkerAcquisitionScope(
+                            current.scope().tenantId(), current.scope().organizationId(),
+                            current.scope().projectId(), current.scope().environmentId()),
+                    current.runId(), current.checkpointFingerprint());
+        }
+        return updated;
     }
 
     private void requireTransition(DurableTestExecutionCheckpoint current,
@@ -2948,6 +3263,32 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
         private WorkerScanCursorSnapshot snapshot() {
             return new WorkerScanCursorSnapshot(
                     cycleEpoch, position(), cursorFingerprint);
+        }
+    }
+
+    private record StoredWorkerCandidateDeferral(
+            String scopeKey,
+            String tenantId,
+            String environmentId,
+            String organizationId,
+            String projectId,
+            String runId,
+            String checkpointFingerprint,
+            String reason,
+            long consecutiveFailures,
+            Instant firstObservedAt,
+            Instant lastObservedAt,
+            Instant retryAfter,
+            String recordFingerprint) {
+        private WorkerAcquisitionScope scope() {
+            return new WorkerAcquisitionScope(
+                    tenantId, organizationId, projectId, environmentId);
+        }
+
+        private ActiveWorkerCandidateDeferral activeDeferral() {
+            return new ActiveWorkerCandidateDeferral(
+                    WorkerCandidateDeferralReason.valueOf(reason), consecutiveFailures,
+                    firstObservedAt, lastObservedAt, retryAfter);
         }
     }
 
