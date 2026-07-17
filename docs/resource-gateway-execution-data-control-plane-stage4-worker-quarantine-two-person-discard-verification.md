@@ -184,8 +184,12 @@ passes packaged-Schema, shaded CLI, and public JavaDoc verification.
 ## Honest Boundary
 
 This is an in-process two-person database protocol, not a complete enterprise approval workflow.
-Actor separation is only as trustworthy as the configured identity provider and group lifecycle. It
-does not yet bind an external ticket, approval policy revision, device/session assurance, time-bound
+Actor separation is only as trustworthy as the configured identity provider and group lifecycle.
+The independent signed
+[change-authorization trust foundation](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-change-authorization-trust-verification.md)
+now verifies exact external policy, scope, and mutation bindings, but is not yet enforced by this API
+or atomically consumed by this database protocol. This flow therefore does not yet bind an external
+ticket, approval policy revision, device/session assurance, time-bound
 privileged access grant, or governance callback. Same-database fingerprints detect accidental or
 unsophisticated mutation but are not external WORM evidence.
 

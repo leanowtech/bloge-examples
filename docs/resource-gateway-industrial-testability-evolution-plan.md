@@ -213,6 +213,16 @@ shadow 或 N-1 进程是否仍 serving，direct URI 是否绕过负载均衡，a
 Schema、shaded CLI 与 public JavaDoc；Resource Gateway `clean verify` 执行 2257 tests，0 failures、
 0 errors、2 个既有条件跳过并完成可执行 JAR。
 
+第三十四增量第一阶段开始关闭“应用内 checker 被误当成企业变更审批”的授权根缺口。新增独立
+`WorkerQuarantineChangeAuthorizationTrustStore`，以外部配置的 Ed25519 公钥、精确 policy fingerprint
+和 M-of-N distinct-authority threshold 验证短期 `WORKER_QUARANTINE_DISCARD` 授权；签名材料只包含
+opaque authorization id、identity-derived scope fingerprint、精确 mutation subject fingerprint 与时间窗，
+不包含 ticket 文本、scope/actor 原值、claim token、credential 或业务 payload。模型和 verifier 已以
+8 个真实签名测试覆盖 quorum、binding/policy/time/material/signature/key lifecycle/config 反例。当前仅
+完成 trust foundation，尚未接入 checker API、数据库时钟、唯一占用和一次性消费，因此外部工单绑定
+仍不得宣称关闭。验证见
+[Stage 4 worker-quarantine change-authorization trust verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-change-authorization-trust-verification.md)。
+
 同步 terminal recovery 的进程内 coordinator 现在先用原 dispatch 完成一次认证 heartbeat，确保
 BLOGE 不会在临近过期 fence 下启动；运行中只沿服务端签发的 successor 链周期续租，并逐次验证
 authorization、target、fixture、provider、engine、owner/epoch 闭包不漂移。终态提交前先冻结并等待
