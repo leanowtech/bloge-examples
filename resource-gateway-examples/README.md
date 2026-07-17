@@ -81,11 +81,15 @@ Useful variants:
 ./scripts/start-visual-canvas-demo.sh --port 18080
 ./scripts/start-visual-canvas-demo.sh --no-build
 ./scripts/start-visual-canvas-demo.sh --run-tests
-./scripts/start-visual-canvas-demo.sh --profile staging
 ./scripts/start-visual-canvas-demo.sh --profile production
 ./scripts/visual-canvas-demo.sh status
 ./scripts/visual-canvas-demo.sh restart
 ```
+
+`staging` requires `RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID` and
+`RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING` (`keyId=base64AES256[,oldKeyId=base64AES256]`) to be
+injected by the deployment secret manager before `--profile staging`; the launcher fails early when
+either value is absent. The `test` profile's committed local key is demonstration-only.
 
 The start command becomes ready only after the integration capability probe
 succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;
@@ -279,10 +283,13 @@ execution-capacity permit while idle, or provide tenant weighting/priority/aging
 server-fenced claims, idempotent `RELEASE`, and database-authoritative two-person `DISCARD`. A
 separate approver group creates a token-free, short-lived approval for the exact live maker claim;
 the maker then proves its secret fence and atomically consumes that approval. New direct legacy
-`DISCARD` commands are rejected. Exact semantics are documented in
-[Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md)
+`DISCARD` commands are rejected. Exact claim-response replay is encrypted with a rotation-aware
+AES-256-GCM key ring; `staging` requires the key ring to be injected explicitly. Exact semantics are
+documented in
+[Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md),
 the [worker quarantine maintenance verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md),
-and the [two-person discard verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-two-person-discard-verification.md).
+the [two-person discard verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-two-person-discard-verification.md),
+and the [claim-token protection verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md).
 
 ### Claim an expired durable test lease
 

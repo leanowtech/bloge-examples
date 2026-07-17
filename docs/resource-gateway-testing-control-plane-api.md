@@ -49,9 +49,20 @@ Choose a profile explicitly when needed:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --profile test
-./scripts/start-visual-canvas-demo.sh --profile staging
 ./scripts/start-visual-canvas-demo.sh --profile production
 ```
+
+`staging` has no committed token-protection key. Inject a 32-byte AES key from the deployment secret
+manager before startup; the launcher rejects a missing configuration immediately:
+
+```bash
+export RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID='staging-2026-07'
+export RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING='staging-2026-07=<base64-encoded-32-byte-key>'
+./scripts/start-visual-canvas-demo.sh --profile staging
+```
+
+Do not use the placeholder literally or reuse the local `test` key. The rotation runbook is in the
+[claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md).
 
 `production` intentionally has no `TestExecutionController`, fixture/suite repository,
 child/suite-run repository, or testability capability marker. The capability probe reports
@@ -103,6 +114,8 @@ Independent-store settings:
 | `gateway.testing.durable.worker-quarantines.required-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_GROUP` | `resource-gateway-test-runtime-operators` |
 | `gateway.testing.durable.worker-quarantines.required-approver-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_APPROVER_GROUP` | `resource-gateway-test-runtime-quarantine-approvers` |
 | `gateway.testing.durable.worker-quarantines.required-clearance` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_CLEARANCE` | `RESTRICTED` |
+| `gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id` | `RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID` | local key in `test`; required in `staging` |
+| `gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring` | `RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING` | local key in `test`; required in `staging` |
 | `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
 | `gateway.testing.runtime-slo.outcome-lookback-seconds` | `RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS` | `900` |
 | `gateway.testing.runtime-slo.execution-minimum-samples` | `RG_TEST_RUNTIME_SLO_EXECUTION_MINIMUM_SAMPLES` | `20` |
@@ -1228,6 +1241,11 @@ resolution endpoint with the exact fence and a closed, non-payload reason code. 
 direct `DISCARD` on that endpoint is rejected with
 `RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_REQUIRED`; only an exact replay of a historically
 committed legacy command remains replayable.
+
+The exact-replay copy of `claimToken` is stored as an AES-256-GCM envelope bound to the command
+identity. `staging` refuses to start without an explicit active key and key ring; rotation requires
+the documented two-phase rollout so old replicas never encounter an unknown new key. Upgrade and
+rotation details are in the [claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md).
 
 ```http
 POST /api/testing/durable-state/worker-quarantines/resolutions

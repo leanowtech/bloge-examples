@@ -13,25 +13,26 @@ import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionPolicy
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionRetentionScheduler;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionTelemetry;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpointIntegrity;
+import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
-import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseFixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseReplayPayloadRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
-import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DurableStateProjectionReconciler;
-import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
-import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
-import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
-import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
-import com.leanowtech.bloge.gateway.testing.runtime.DurableTestCreationRuntime;
+import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
+import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTokenProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.CompiledTestRuntimeOptions;
+import com.leanowtech.bloge.gateway.testing.runtime.DurableTestCreationRuntime;
+import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.IndependentDurableTestEngineFactory;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
@@ -88,16 +89,30 @@ public class TestRuntimeConfiguration {
     }
 
     /**
+     * Builds the shared, rotation-aware envelope authority for replayable quarantine claim tokens.
+     */
+    @Bean
+    WorkerQuarantineClaimTokenProtector workerQuarantineClaimTokenProtector(
+            @Value("${gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id}")
+            String activeKeyId,
+            @Value("${gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring}")
+            String keyRing) {
+        return WorkerQuarantineClaimTokenProtector.fromConfiguration(activeKeyId, keyRing);
+    }
+
+    /**
      * Creates exact-checkpoint quarantine maintenance after its automatic authority is initialized.
      */
     @Bean
     DatabaseDurableWorkerQuarantineControlPlane durableWorkerQuarantineControlPlane(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
-            DurableTestExecutionCheckpointRepository checkpointAuthority) {
+            DurableTestExecutionCheckpointRepository checkpointAuthority,
+            WorkerQuarantineClaimTokenProtector claimTokenProtector) {
         java.util.Objects.requireNonNull(checkpointAuthority, "checkpointAuthority");
         return new DatabaseDurableWorkerQuarantineControlPlane(
-                database.jdbc(), database.transactionManager(), objectMapper);
+                database.jdbc(), database.transactionManager(), objectMapper,
+                claimTokenProtector);
     }
 
     /** Assembles the scoped, authenticated, action-audited quarantine owner queue. */

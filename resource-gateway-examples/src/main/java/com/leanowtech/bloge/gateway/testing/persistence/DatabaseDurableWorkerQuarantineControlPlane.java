@@ -42,12 +42,14 @@ import java.util.regex.Pattern;
 public final class DatabaseDurableWorkerQuarantineControlPlane {
 
     private static final int MAX_PAGE_SIZE = 1_000;
+    private static final int TOKEN_MIGRATION_PAGE_SIZE = 1_000;
     private static final Pattern REASON_CODE =
             Pattern.compile("[A-Z][A-Z0-9_.-]{0,127}");
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final DurableTestExecutionCheckpointIntegrity checkpointIntegrity;
+    private final WorkerQuarantineClaimTokenProtector claimTokenProtector;
     private final TransactionTemplate transactions;
     private final TransactionTemplate observations;
 
@@ -57,14 +59,18 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
      * @param jdbc isolated test-runtime JDBC facade
      * @param transactionManager transaction manager for the same datasource
      * @param objectMapper canonical protocol fingerprint mapper
+     * @param claimTokenProtector rotation-aware claim-command token envelope authority
      */
     public DatabaseDurableWorkerQuarantineControlPlane(
             JdbcTemplate jdbc,
             PlatformTransactionManager transactionManager,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            WorkerQuarantineClaimTokenProtector claimTokenProtector) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.checkpointIntegrity = new DurableTestExecutionCheckpointIntegrity(objectMapper);
+        this.claimTokenProtector = Objects.requireNonNull(
+                claimTokenProtector, "claimTokenProtector");
         PlatformTransactionManager safeTransactionManager =
                 Objects.requireNonNull(transactionManager, "transactionManager");
         this.transactions = new TransactionTemplate(safeTransactionManager);
@@ -109,7 +115,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     claim_owner VARCHAR(255) NOT NULL,
                     claim_duration_seconds BIGINT NOT NULL,
                     request_fingerprint VARCHAR(80) NOT NULL,
-                    result_claim_token VARCHAR(255) NOT NULL,
+                    result_claim_token VARCHAR(255) NOT NULL DEFAULT '',
+                    result_claim_token_envelope VARCHAR(1024) NOT NULL DEFAULT '',
                     result_version BIGINT NOT NULL,
                     result_claim_until TIMESTAMP WITH TIME ZONE NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -117,6 +124,12 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     PRIMARY KEY (scope_key, client_request_id)
                 )
                 """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_durable_worker_quarantine_claim_commands
+                ADD COLUMN IF NOT EXISTS result_claim_token_envelope
+                    VARCHAR(1024) NOT NULL DEFAULT ''
+                """);
+        migrateAndRewrapClaimCommandTokens();
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_control_queue_idx
                 ON rg_test_durable_worker_quarantine_controls
@@ -348,10 +361,9 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             Optional<StoredClaimCommand> replay = findClaimCommand(
                     safeScope, safeRequestId, true);
             if (replay.isPresent()) {
-                StoredClaimCommand stored = replay.orElseThrow();
-                requireValid(stored);
+                StoredClaimCommand stored = normalizeClaimCommand(replay.orElseThrow());
                 return stored.requestFingerprint().equals(requestFingerprint)
-                        ? QuarantineClaimResult.replay(stored.claim())
+                        ? QuarantineClaimResult.replay(claimFrom(stored))
                         : QuarantineClaimResult.conflict();
             }
             if (!lockExactCheckpoint(safeScope, safeKey)) {
@@ -359,10 +371,9 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             }
             replay = findClaimCommand(safeScope, safeRequestId, true);
             if (replay.isPresent()) {
-                StoredClaimCommand stored = replay.orElseThrow();
-                requireValid(stored);
+                StoredClaimCommand stored = normalizeClaimCommand(replay.orElseThrow());
                 return stored.requestFingerprint().equals(requestFingerprint)
-                        ? QuarantineClaimResult.replay(stored.claim())
+                        ? QuarantineClaimResult.replay(claimFrom(stored))
                         : QuarantineClaimResult.conflict();
             }
             StoredQuarantine quarantine = findQuarantine(
@@ -1400,7 +1411,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                         SELECT scope_key, client_request_id, tenant_id, environment_id,
                                organization_id, project_id, run_id, checkpoint_fingerprint,
                                claim_owner, claim_duration_seconds, request_fingerprint,
-                               result_claim_token, result_version, result_claim_until,
+                               result_claim_token, result_claim_token_envelope,
+                               result_version, result_claim_until,
                                created_at, record_fingerprint
                         FROM rg_test_durable_worker_quarantine_claim_commands
                         WHERE scope_key = ? AND client_request_id = ?
@@ -1419,7 +1431,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 rs.getString("environment_id"), rs.getString("run_id"),
                 rs.getString("checkpoint_fingerprint"), rs.getString("claim_owner"),
                 rs.getLong("claim_duration_seconds"), rs.getString("request_fingerprint"),
-                rs.getString("result_claim_token"), rs.getLong("result_version"),
+                rs.getString("result_claim_token"),
+                rs.getString("result_claim_token_envelope"), rs.getLong("result_version"),
                 rs.getTimestamp("result_claim_until").toInstant(),
                 rs.getTimestamp("created_at").toInstant(), rs.getString("record_fingerprint"));
     }
@@ -1436,9 +1449,11 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         StoredClaimCommand unsealed = new StoredClaimCommand(scopeKey(scope), requestId,
                 scope.tenantId(), scope.organizationId(), scope.projectId(), scope.environmentId(),
                 key.runId(), key.checkpointFingerprint(), owner, duration.toSeconds(),
-                requestFingerprint, claim.claimToken(), claim.version(), claim.claimUntil(),
-                createdAt, "");
-        return unsealed.withFingerprint(claimCommandFingerprint(unsealed));
+                requestFingerprint, "", "", claim.version(), claim.claimUntil(), createdAt, "");
+        String envelope = claimTokenProtector.protect(
+                claim.claimToken(), claimTokenAssociatedData(unsealed));
+        StoredClaimCommand protectedCommand = unsealed.withProtectedToken(envelope);
+        return protectedCommand.withFingerprint(claimCommandFingerprint(protectedCommand));
     }
 
     private void insertClaimCommand(StoredClaimCommand command) {
@@ -1447,14 +1462,16 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     scope_key, client_request_id, tenant_id, environment_id,
                     organization_id, project_id, run_id, checkpoint_fingerprint,
                     claim_owner, claim_duration_seconds, request_fingerprint,
-                    result_claim_token, result_version, result_claim_until,
+                    result_claim_token, result_claim_token_envelope,
+                    result_version, result_claim_until,
                     created_at, record_fingerprint
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, command.scopeKey(), command.clientRequestId(), command.tenantId(),
                 command.environmentId(), command.organizationId(), command.projectId(),
                 command.runId(), command.checkpointFingerprint(), command.claimOwner(),
                 command.claimDurationSeconds(), command.requestFingerprint(),
-                command.resultClaimToken(), command.resultVersion(),
+                command.legacyResultClaimToken(), command.resultClaimTokenEnvelope(),
+                command.resultVersion(),
                 Timestamp.from(command.resultClaimUntil()), Timestamp.from(command.createdAt()),
                 command.recordFingerprint());
         if (inserted != 1) {
@@ -1466,22 +1483,56 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         WorkerAcquisitionScope scope;
         try {
             scope = command.scope();
-            new QuarantineClaim(command.key(), command.claimOwner(),
-                    command.resultClaimToken(), command.resultVersion(),
-                    command.resultClaimUntil());
+            new QuarantineClaim(command.key(), command.claimOwner(), "validated-separately",
+                    command.resultVersion(), command.resultClaimUntil());
         } catch (RuntimeException invalid) {
             throw new IllegalStateException("Stored worker quarantine claim command is corrupt",
                     invalid);
         }
+        boolean legacy = !command.legacyResultClaimToken().isBlank()
+                && command.resultClaimTokenEnvelope().isBlank();
+        boolean protectedToken = command.legacyResultClaimToken().isBlank()
+                && !command.resultClaimTokenEnvelope().isBlank();
+        if (legacy) {
+            try {
+                new QuarantineClaim(command.key(), command.claimOwner(),
+                        command.legacyResultClaimToken(), command.resultVersion(),
+                        command.resultClaimUntil());
+            } catch (RuntimeException invalid) {
+                throw new IllegalStateException(
+                        "Stored worker quarantine claim command is corrupt", invalid);
+            }
+        }
+        boolean validFingerprint = legacy
+                ? legacyClaimCommandFingerprint(command).equals(command.recordFingerprint())
+                : protectedToken
+                && claimCommandFingerprint(command).equals(command.recordFingerprint());
         if (!scopeKey(scope).equals(command.scopeKey())
                 || command.claimDurationSeconds() < 1
                 || command.claimDurationSeconds() > 3_600
-                || !claimCommandFingerprint(command).equals(command.recordFingerprint())) {
+                || !validFingerprint) {
             throw new IllegalStateException("Stored worker quarantine claim command is corrupt");
+        }
+        if (protectedToken) {
+            claimTokenProtector.keyId(command.resultClaimTokenEnvelope());
         }
     }
 
     private String claimCommandFingerprint(StoredClaimCommand command) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineClaimCommand.v2"),
+                Map.entry("scope", command.scope()),
+                Map.entry("clientRequestId", command.clientRequestId()),
+                Map.entry("key", command.key()), Map.entry("ownerId", command.claimOwner()),
+                Map.entry("claimDurationSeconds", command.claimDurationSeconds()),
+                Map.entry("requestFingerprint", command.requestFingerprint()),
+                Map.entry("resultClaimTokenEnvelope", command.resultClaimTokenEnvelope()),
+                Map.entry("resultVersion", command.resultVersion()),
+                Map.entry("resultClaimUntil", command.resultClaimUntil()),
+                Map.entry("createdAt", command.createdAt())));
+    }
+
+    private String legacyClaimCommandFingerprint(StoredClaimCommand command) {
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
                 Map.entry("schemaVersion", "bloge.durableWorkerQuarantineClaimCommand.v1"),
                 Map.entry("scope", command.scope()),
@@ -1489,10 +1540,95 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 Map.entry("key", command.key()), Map.entry("ownerId", command.claimOwner()),
                 Map.entry("claimDurationSeconds", command.claimDurationSeconds()),
                 Map.entry("requestFingerprint", command.requestFingerprint()),
-                Map.entry("resultClaimToken", command.resultClaimToken()),
+                Map.entry("resultClaimToken", command.legacyResultClaimToken()),
                 Map.entry("resultVersion", command.resultVersion()),
                 Map.entry("resultClaimUntil", command.resultClaimUntil()),
                 Map.entry("createdAt", command.createdAt())));
+    }
+
+    private StoredClaimCommand normalizeClaimCommand(StoredClaimCommand command) {
+        requireValid(command);
+        boolean legacy = !command.legacyResultClaimToken().isBlank();
+        if (!legacy && !claimTokenProtector.requiresRewrap(
+                command.resultClaimTokenEnvelope())) {
+            return command;
+        }
+        String token = legacy
+                ? command.legacyResultClaimToken()
+                : claimTokenProtector.unprotect(command.resultClaimTokenEnvelope(),
+                claimTokenAssociatedData(command));
+        StoredClaimCommand rewrapped = command.withProtectedToken(
+                claimTokenProtector.protect(token, claimTokenAssociatedData(command)));
+        rewrapped = rewrapped.withFingerprint(claimCommandFingerprint(rewrapped));
+        int changed = jdbc.update("""
+                UPDATE rg_test_durable_worker_quarantine_claim_commands
+                SET result_claim_token = '', result_claim_token_envelope = ?,
+                    record_fingerprint = ?
+                WHERE scope_key = ? AND client_request_id = ? AND record_fingerprint = ?
+                """, rewrapped.resultClaimTokenEnvelope(), rewrapped.recordFingerprint(),
+                command.scopeKey(), command.clientRequestId(), command.recordFingerprint());
+        if (changed != 1) {
+            throw new IllegalStateException(
+                    "Worker quarantine claim token migration fence was rejected");
+        }
+        return rewrapped;
+    }
+
+    private QuarantineClaim claimFrom(StoredClaimCommand command) {
+        try {
+            String token = claimTokenProtector.unprotect(
+                    command.resultClaimTokenEnvelope(), claimTokenAssociatedData(command));
+            return new QuarantineClaim(command.key(), command.claimOwner(), token,
+                    command.resultVersion(), command.resultClaimUntil());
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException(
+                    "Stored worker quarantine claim command token is unavailable or corrupt",
+                    invalid);
+        }
+    }
+
+    private String claimTokenAssociatedData(StoredClaimCommand command) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineClaimTokenAad.v1"),
+                Map.entry("scopeKey", command.scopeKey()),
+                Map.entry("clientRequestId", command.clientRequestId()),
+                Map.entry("requestFingerprint", command.requestFingerprint()),
+                Map.entry("runId", command.runId()),
+                Map.entry("checkpointFingerprint", command.checkpointFingerprint()),
+                Map.entry("resultVersion", command.resultVersion()),
+                Map.entry("resultClaimUntil", command.resultClaimUntil())));
+    }
+
+    private void migrateAndRewrapClaimCommandTokens() {
+        while (true) {
+            Integer migrated = transactions.execute(status -> {
+                List<StoredClaimCommand> candidates = jdbc.query("""
+                                SELECT scope_key, client_request_id, tenant_id, environment_id,
+                                       organization_id, project_id, run_id,
+                                       checkpoint_fingerprint, claim_owner,
+                                       claim_duration_seconds, request_fingerprint,
+                                       result_claim_token, result_claim_token_envelope,
+                                       result_version, result_claim_until, created_at,
+                                       record_fingerprint
+                                FROM rg_test_durable_worker_quarantine_claim_commands
+                                WHERE result_claim_token <> ''
+                                   OR result_claim_token_envelope NOT LIKE ?
+                                ORDER BY scope_key, client_request_id
+                                LIMIT ? FOR UPDATE
+                                """, this::mapClaimCommand,
+                        "v1." + claimTokenProtector.activeKeyId() + ".%",
+                        TOKEN_MIGRATION_PAGE_SIZE);
+                candidates.forEach(this::normalizeClaimCommand);
+                return candidates.size();
+            });
+            if (migrated == null) {
+                throw new IllegalStateException(
+                        "Worker quarantine claim token migration returned no result");
+            }
+            if (migrated < TOKEN_MIGRATION_PAGE_SIZE) {
+                return;
+            }
+        }
     }
 
     private String resolutionRequestFingerprint(
@@ -2674,7 +2810,8 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             String claimOwner,
             long claimDurationSeconds,
             String requestFingerprint,
-            String resultClaimToken,
+            String legacyResultClaimToken,
+            String resultClaimTokenEnvelope,
             long resultVersion,
             Instant resultClaimUntil,
             Instant createdAt,
@@ -2688,15 +2825,18 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
             return new QuarantineKey(runId, checkpointFingerprint);
         }
 
-        private QuarantineClaim claim() {
-            return new QuarantineClaim(
-                    key(), claimOwner, resultClaimToken, resultVersion, resultClaimUntil);
+        private StoredClaimCommand withProtectedToken(String envelope) {
+            return new StoredClaimCommand(scopeKey, clientRequestId, tenantId,
+                    organizationId, projectId, environmentId, runId, checkpointFingerprint,
+                    claimOwner, claimDurationSeconds, requestFingerprint, "", envelope,
+                    resultVersion, resultClaimUntil, createdAt, recordFingerprint);
         }
 
         private StoredClaimCommand withFingerprint(String fingerprint) {
             return new StoredClaimCommand(scopeKey, clientRequestId, tenantId,
                     organizationId, projectId, environmentId, runId, checkpointFingerprint,
-                    claimOwner, claimDurationSeconds, requestFingerprint, resultClaimToken,
+                    claimOwner, claimDurationSeconds, requestFingerprint,
+                    legacyResultClaimToken, resultClaimTokenEnvelope,
                     resultVersion, resultClaimUntil, createdAt, fingerprint);
         }
     }

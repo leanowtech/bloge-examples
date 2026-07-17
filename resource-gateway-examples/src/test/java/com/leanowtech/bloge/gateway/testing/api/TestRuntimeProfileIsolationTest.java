@@ -23,6 +23,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQua
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
+import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTokenProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
@@ -93,6 +94,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableWorkerQuarantineControlPlane.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    WorkerQuarantineClaimTokenProtector.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
@@ -150,6 +153,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DatabaseDurableWorkerQuarantineControlPlane.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    WorkerQuarantineClaimTokenProtector.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -234,6 +239,8 @@ class TestRuntimeProfileIsolationTest {
                     DurableStateProjectionFindingService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DatabaseDurableWorkerQuarantineControlPlane.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    WorkerQuarantineClaimTokenProtector.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineController.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableWorkerQuarantineService.class)).isEmpty();
             assertThat(context.getBeansOfType(StagedBlogeDurableStateStore.class)).isEmpty();
@@ -249,9 +256,15 @@ class TestRuntimeProfileIsolationTest {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getEnvironment().setActiveProfiles(profiles);
         String profile = String.join("-", profiles);
-        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test-runtime", Map.of(
-                "gateway.testing.store.jdbc-url", "jdbc:h2:mem:profile-" + profile + ";DB_CLOSE_DELAY=-1",
-                "gateway.testing.store.retention-days", "1")));
+        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
+                "test-runtime", Map.of(
+                "gateway.testing.store.jdbc-url",
+                "jdbc:h2:mem:profile-" + profile + ";DB_CLOSE_DELAY=-1",
+                "gateway.testing.store.retention-days", "1",
+                "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id",
+                "profile-test-v1",
+                "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring",
+                "profile-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")));
         context.registerBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules());
         context.registerBean(GatewayGraphService.class, () -> mock(GatewayGraphService.class));
         context.registerBean(OperatorRegistry.class, () -> mock(OperatorRegistry.class));

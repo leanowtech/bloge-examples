@@ -189,8 +189,12 @@ does not yet bind an external ticket, approval policy revision, device/session a
 privileged access grant, or governance callback. Same-database fingerprints detect accidental or
 unsophisticated mutation but are not external WORM evidence.
 
-Claim-command rows still retain secret tokens for exact lost-response replay and do not yet have
-field-level encryption or bounded retention. Approval/command/history retention and archival are not
-implemented. Alert routing, webhook notification, break-glass workflow, bulk approval limits,
+Claim-command replay tokens now use a rotation-aware AES-256-GCM envelope; valid legacy plaintext
+rows are migrated and old-key envelopes are rewrapped at startup. The active control fence remains
+in the isolated database for its short lease, and approval/command/history retention and archival
+are not implemented. Alert routing, webhook notification, break-glass workflow, bulk approval limits,
 external witness anchoring, non-H2 dialect certification, and production-scale contention tests
 remain future hardening work.
+
+Key setup, two-phase rotation, migration failure semantics, and the narrower remaining boundary are
+specified in the [claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md).

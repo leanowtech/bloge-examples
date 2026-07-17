@@ -50,7 +50,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableTestWorkerQuarantineMaintenance", false)
                 .containsEntry("immutableDurableWorkerQuarantineHistory", false)
                 .containsEntry("twoPersonDurableWorkerQuarantineDiscard", false)
-                .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", false);
+                .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", false)
+                .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", false);
         assertThat(disabled.features())
                 .containsEntry("authenticatedDurableStateProjectionOperations", false)
                 .containsEntry("immutableDurableStateProjectionActionAudit", false)
@@ -124,6 +125,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("immutableDurableWorkerQuarantineHistory", true)
                 .containsEntry("twoPersonDurableWorkerQuarantineDiscard", true)
                 .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", true)
+                .containsEntry("encryptedDurableWorkerQuarantineClaimReplay", true)
                 .containsEntry("immutableDurableWorkerNoWorkResult", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
                 .containsEntry("authenticatedDurableRecoveryHeartbeat", true)

@@ -211,12 +211,17 @@ have zero failures and errors. Exact scope is recorded in the dedicated two-pers
 This increment is a governed test/staging remediation primitive, not a complete enterprise
 dead-letter product. New discards require distinct verified maker/checker actors and separate
 deployment groups, but there is no external ticket binding, governance-gate callback, device/session
-assurance, or proof beyond the configured identity provider. The
-claim-command table retains the token needed to reproduce an exact lost claim response; field-level
-encryption, bounded command-receipt retention, and cryptographic token hashing are not yet present.
+assurance, or proof beyond the configured identity provider. The claim-command table retains the
+token needed to reproduce an exact lost claim response, but its replay copy is now protected by a
+rotation-aware AES-256-GCM envelope and valid legacy plaintext rows are migrated at startup. The
+active short-lived control fence is not yet hashed, and bounded command-receipt retention is not yet
+present.
 History has application-level whole-record fingerprints but remains in the same database; it is not
 externally anchored WORM evidence. History retention/purge, webhook notification, deep links, and
 alert routing are also absent.
+
+See the [claim-token protection verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-claim-token-protection-verification.md)
+for key configuration, two-phase rotation, and fail-closed migration behavior.
 
 Runtime-state dispatch, fair/priority scheduling, cross-process supervision, hard cancellation,
 non-H2 dialect certification, and production-load qualification remain separate Stage 4/5 work.

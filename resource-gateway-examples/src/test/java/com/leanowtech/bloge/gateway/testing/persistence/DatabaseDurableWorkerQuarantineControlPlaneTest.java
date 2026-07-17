@@ -16,6 +16,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,6 +43,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
     private DatabaseDurableTestExecutionCheckpointRepository repository;
     private DatabaseDurableWorkerQuarantineControlPlane controlPlane;
     private DurableTestExecutionCheckpointIntegrity integrity;
+    private WorkerQuarantineClaimTokenProtector tokenProtector;
 
     @BeforeEach
     void setUp() {
@@ -51,8 +55,9 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         repository = new DatabaseDurableTestExecutionCheckpointRepository(
                 database.jdbc(), database.transactionManager(), objectMapper, integrity);
         repository.init();
+        tokenProtector = tokenProtector("key-v1", "key-v1", 1);
         controlPlane = new DatabaseDurableWorkerQuarantineControlPlane(
-                database.jdbc(), database.transactionManager(), objectMapper);
+                database.jdbc(), database.transactionManager(), objectMapper, tokenProtector);
         controlPlane.init();
     }
 
@@ -108,6 +113,15 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         assertThat(claimed.claim().claimToken()).isNotBlank();
         assertThat(claimed.claim().version()).isOne();
         assertThat(auditMutations).hasValue(1);
+        Map<String, Object> storedCommand = database.jdbc().queryForMap("""
+                SELECT result_claim_token, result_claim_token_envelope
+                FROM rg_test_durable_worker_quarantine_claim_commands
+                WHERE client_request_id = ?
+                """, "claim-1");
+        assertThat(storedCommand.get("RESULT_CLAIM_TOKEN")).isEqualTo("");
+        assertThat(storedCommand.get("RESULT_CLAIM_TOKEN_ENVELOPE").toString())
+                .startsWith("v1.key-v1.")
+                .doesNotContain(claimed.claim().claimToken());
         assertThat(controlPlane.quarantines(workerScope(), true, 10)).isEmpty();
         assertThat(controlPlane.quarantines(workerScope(), false, 10))
                 .singleElement().satisfies(record -> {
@@ -116,6 +130,155 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                     assertThat(record.claimOwner()).isEqualTo("operator-a");
                     assertThat(record.version()).isOne();
                 });
+    }
+
+    @Test
+    void exactReplayRewrapsAnOldKeyEnvelopeWithoutChangingTheServerFence() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claimed = controlPlane.claim(workerScope(), key, "operator-a", "claim-rotation",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop());
+        WorkerQuarantineClaimTokenProtector rotatedProtector =
+                new WorkerQuarantineClaimTokenProtector("key-v2",
+                        Map.of("key-v1", keyBytes(1), "key-v2", keyBytes(2)),
+                        new SecureRandom());
+        DatabaseDurableWorkerQuarantineControlPlane rotated =
+                new DatabaseDurableWorkerQuarantineControlPlane(
+                        database.jdbc(), database.transactionManager(), objectMapper,
+                        rotatedProtector);
+        rotated.init();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT result_claim_token_envelope
+                FROM rg_test_durable_worker_quarantine_claim_commands
+                WHERE client_request_id = ?
+                """, String.class, "claim-rotation"))
+                .startsWith("v1.key-v2.");
+
+        var replayed = rotated.claim(workerScope(), key, "operator-a", "claim-rotation",
+                Duration.ofMinutes(2), ignored -> {
+                    throw new AssertionError("key rotation replay must not write another audit");
+                });
+
+        assertThat(replayed.disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition.IDEMPOTENT_REPLAY);
+        assertThat(replayed.claim()).isEqualTo(claimed.claim());
+        assertThat(database.jdbc().queryForObject("""
+                SELECT result_claim_token_envelope
+                FROM rg_test_durable_worker_quarantine_claim_commands
+                WHERE client_request_id = ?
+                """, String.class, "claim-rotation"))
+                .startsWith("v1.key-v2.")
+                .doesNotContain(claimed.claim().claimToken());
+    }
+
+    @Test
+    void startupRefusesAPlaintextCommandWhoseLegacyFingerprintIsInvalid() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claimed = controlPlane.claim(workerScope(), key, "operator-a", "claim-corrupt-legacy",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop());
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_claim_commands
+                SET result_claim_token = ?, result_claim_token_envelope = '',
+                    record_fingerprint = ?
+                WHERE client_request_id = ?
+                """, claimed.claim().claimToken(), SHA_A, "claim-corrupt-legacy");
+        DatabaseDurableWorkerQuarantineControlPlane upgraded =
+                new DatabaseDurableWorkerQuarantineControlPlane(
+                        database.jdbc(), database.transactionManager(), objectMapper,
+                        tokenProtector);
+
+        assertThatThrownBy(upgraded::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("claim command is corrupt")
+                .hasMessageNotContaining(claimed.claim().claimToken());
+        assertThat(database.jdbc().queryForObject("""
+                SELECT result_claim_token
+                FROM rg_test_durable_worker_quarantine_claim_commands
+                WHERE client_request_id = ?
+                """, String.class, "claim-corrupt-legacy"))
+                .isEqualTo(claimed.claim().claimToken());
+    }
+
+    @Test
+    void tamperedClaimTokenEnvelopeFailsClosedWithoutReturningTheToken() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claimed = controlPlane.claim(workerScope(), key, "operator-a", "claim-tampered",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop());
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_claim_commands
+                SET result_claim_token_envelope = result_claim_token_envelope || 'A'
+                WHERE client_request_id = ?
+                """, "claim-tampered");
+
+        assertThatThrownBy(() -> controlPlane.claim(workerScope(), key, "operator-a",
+                "claim-tampered", Duration.ofMinutes(2),
+                ignored -> TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("claim command is corrupt")
+                .hasMessageNotContaining(claimed.claim().claimToken());
+    }
+
+    @Test
+    void startupMigratesAValidLegacyPlaintextCommandAndPreservesExactReplay() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claimed = controlPlane.claim(workerScope(), key, "operator-a", "claim-legacy",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop());
+        Map<String, Object> stored = database.jdbc().queryForMap("""
+                SELECT request_fingerprint, result_version, result_claim_until, created_at
+                FROM rg_test_durable_worker_quarantine_claim_commands
+                WHERE client_request_id = ?
+                """, "claim-legacy");
+        long version = ((Number) stored.get("RESULT_VERSION")).longValue();
+        Instant claimUntil = ((OffsetDateTime) stored.get("RESULT_CLAIM_UNTIL")).toInstant();
+        Instant createdAt = ((OffsetDateTime) stored.get("CREATED_AT")).toInstant();
+        String requestFingerprint = stored.get("REQUEST_FINGERPRINT").toString();
+        String legacyFingerprint = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineClaimCommand.v1"),
+                Map.entry("scope", workerScope()),
+                Map.entry("clientRequestId", "claim-legacy"),
+                Map.entry("key", key), Map.entry("ownerId", "operator-a"),
+                Map.entry("claimDurationSeconds", 120L),
+                Map.entry("requestFingerprint", requestFingerprint),
+                Map.entry("resultClaimToken", claimed.claim().claimToken()),
+                Map.entry("resultVersion", version),
+                Map.entry("resultClaimUntil", claimUntil),
+                Map.entry("createdAt", createdAt)));
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_claim_commands
+                SET result_claim_token = ?, result_claim_token_envelope = '',
+                    record_fingerprint = ?
+                WHERE client_request_id = ?
+                """, claimed.claim().claimToken(), legacyFingerprint, "claim-legacy");
+
+        DatabaseDurableWorkerQuarantineControlPlane upgraded =
+                new DatabaseDurableWorkerQuarantineControlPlane(
+                        database.jdbc(), database.transactionManager(), objectMapper,
+                        tokenProtector);
+        upgraded.init();
+        var replayed = upgraded.claim(workerScope(), key, "operator-a", "claim-legacy",
+                Duration.ofMinutes(2), ignored -> {
+                    throw new AssertionError("legacy migration must preserve the command receipt");
+                });
+
+        assertThat(replayed.disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.ClaimDisposition.IDEMPOTENT_REPLAY);
+        assertThat(replayed.claim()).isEqualTo(claimed.claim());
+        Map<String, Object> migrated = database.jdbc().queryForMap("""
+                SELECT result_claim_token, result_claim_token_envelope
+                FROM rg_test_durable_worker_quarantine_claim_commands
+                WHERE client_request_id = ?
+                """, "claim-legacy");
+        assertThat(migrated.get("RESULT_CLAIM_TOKEN")).isEqualTo("");
+        assertThat(migrated.get("RESULT_CLAIM_TOKEN_ENVELOPE").toString())
+                .startsWith("v1.key-v1.")
+                .doesNotContain(claimed.claim().claimToken());
     }
 
     @Test
@@ -779,6 +942,18 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 claim.version(), claim.claimUntil(), approver, requestId,
                 "AUTHORIZED_RETRY", Duration.ofMinutes(1),
                 ignored -> TestRuntimeTransactionMutation.noop()).approval();
+    }
+
+    private static WorkerQuarantineClaimTokenProtector tokenProtector(
+            String activeKeyId, String keyId, int fill) {
+        return new WorkerQuarantineClaimTokenProtector(
+                activeKeyId, Map.of(keyId, keyBytes(fill)), new SecureRandom());
+    }
+
+    private static byte[] keyBytes(int fill) {
+        byte[] key = new byte[32];
+        Arrays.fill(key, (byte) fill);
+        return key;
     }
 
     private java.util.concurrent.Future<?> holdCheckpointLock(

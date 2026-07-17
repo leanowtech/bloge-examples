@@ -24,6 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "spring.profiles.active=test",
+                "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id=catalog-test-v1",
+                "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring=catalog-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
                 "gateway.seed-descriptors=true",
                 "gateway.base-url=http://127.0.0.1:1",
                 "gateway.integration.identity.environment-id=test",

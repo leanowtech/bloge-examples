@@ -53,6 +53,8 @@ Environment:
   BLOGE_VISUAL_CANVAS_RUN_TESTS        default: 0
   BLOGE_VISUAL_CANVAS_OPEN             default: 0
   BLOGE_VISUAL_CANVAS_PROFILE          default: test
+  RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID  required for staging
+  RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING       required for staging; keyId=base64AES256[,..]
   JAVA_BIN                             default: java
   MVN                                  default: /opt/apache-maven-3.9.16/bin/mvn when present, otherwise mvn
 
@@ -69,6 +71,18 @@ truthy() {
         1|true|TRUE|yes|YES|on|ON) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+validate_profile_secrets() {
+    if [ "${SPRING_PROFILE}" != "staging" ]; then
+        return 0
+    fi
+    if [ -z "${RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID:-}" ] ||
+        [ -z "${RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING:-}" ]; then
+        echo "Staging requires RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID and RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING." >&2
+        echo "Inject both values from the deployment secret manager before startup." >&2
+        return 1
+    fi
 }
 
 pid_file() {
@@ -269,6 +283,7 @@ open_author_if_requested() {
 }
 
 start_service() {
+    validate_profile_secrets
     mkdir -p "${PID_DIR}" "${LOG_DIR}"
 
     local pid
