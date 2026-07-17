@@ -101,6 +101,7 @@ Independent-store settings:
 | `gateway.testing.durable.worker-acquisitions.maximum-backoff-seconds` | `RG_TEST_DURABLE_WORKER_MAXIMUM_BACKOFF_SECONDS` | `300` |
 | `gateway.testing.durable.worker-acquisitions.quarantine-threshold` | `RG_TEST_DURABLE_WORKER_QUARANTINE_THRESHOLD` | `32` |
 | `gateway.testing.durable.worker-quarantines.required-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_GROUP` | `resource-gateway-test-runtime-operators` |
+| `gateway.testing.durable.worker-quarantines.required-approver-group` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_APPROVER_GROUP` | `resource-gateway-test-runtime-quarantine-approvers` |
 | `gateway.testing.durable.worker-quarantines.required-clearance` | `RG_TEST_WORKER_QUARANTINE_REQUIRED_CLEARANCE` | `RESTRICTED` |
 | `gateway.testing.runtime-slo.observation-interval-ms` | `RG_TEST_RUNTIME_SLO_OBSERVATION_INTERVAL_MS` | `30000` |
 | `gateway.testing.runtime-slo.outcome-lookback-seconds` | `RG_TEST_RUNTIME_SLO_OUTCOME_LOOKBACK_SECONDS` | `900` |
@@ -127,6 +128,7 @@ Independent-store settings:
 | `gateway.testing.runtime-slo.worker-quarantine-max-records` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_RECORDS` | `100` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-oldest-age-seconds` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_OLDEST_AGE_SECONDS` | `86400` |
 | `gateway.testing.runtime-slo.worker-quarantine-max-expired-claims` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_EXPIRED_CLAIMS` | `0` |
+| `gateway.testing.runtime-slo.worker-quarantine-max-expired-discard-approvals` | `RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_EXPIRED_DISCARD_APPROVALS` | `0` |
 | `gateway.testing.runtime-slo.max-expired-execution-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_EXECUTION_RECORDS` | `0` |
 | `gateway.testing.runtime-slo.max-expired-suite-records` | `RG_TEST_RUNTIME_SLO_MAX_EXPIRED_SUITE_RECORDS` | `0` |
 | `gateway.testing.runtime-slo.max-terminal-durable-executions` | `RG_TEST_RUNTIME_SLO_MAX_TERMINAL_DURABLE_EXECUTIONS` | `10000` |
@@ -155,7 +157,8 @@ The local test-profile defaults are:
 | immutable test-suite registration | `TEST_SUITE_WRITE` |
 | built-in graph catalog materialization | `TEST_SUITE_WRITE` |
 | global durable projection finding read/claim/resolve | `TEST_RUNTIME_MAINTENANCE` plus configured global group and clearance |
-| scoped durable worker quarantine list/claim/release/discard/history | `TEST_RUNTIME_MAINTENANCE` plus configured group and clearance |
+| scoped durable worker quarantine list/claim/release/approved-discard/history | `TEST_RUNTIME_MAINTENANCE` plus configured operator group and clearance |
+| approve a scoped durable worker quarantine discard | `TEST_RUNTIME_MAINTENANCE` plus the distinct configured approver group and clearance |
 
 The local demo bearer is `bloge-aneke-demo-token` and is granted all listed testing purposes.
 Production credentials should keep fixture authors, suite authors, readers, and runners separate.
@@ -1176,9 +1179,11 @@ registry/exporter before exporting metrics, and should keep detailed health outp
 ### 4.2j Operate exact-checkpoint worker quarantines
 
 Permanent worker quarantine is tenant/project scoped, unlike the global projection-finding queue.
-The service derives tenant, organization, project, environment, and claim owner from the verified
-identity; none is accepted in JSON. Access still requires `test` or `staging`, exact purpose
-`TEST_RUNTIME_MAINTENANCE`, the configured operator group, and minimum clearance.
+The service derives tenant, organization, project, environment, and the mutating owner from verified
+identity. Access still requires `test` or `staging`, exact purpose `TEST_RUNTIME_MAINTENANCE`, and
+minimum clearance. List, claim, release, discard, and history use the configured operator group;
+discard approval uses a separate deployment-owned approver group. The checker repeats a payload-free
+observed `claimOwner`, but the database treats it as an untrusted fence value and revalidates it.
 
 List active payload-free records or token-free action history:
 
@@ -1188,6 +1193,10 @@ curl -sS 'http://localhost:8080/api/testing/durable-state/worker-quarantines?act
   -H 'X-Purpose: TEST_RUNTIME_MAINTENANCE'
 
 curl -sS 'http://localhost:8080/api/testing/durable-state/worker-quarantines/history?limit=100' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_RUNTIME_MAINTENANCE'
+
+curl -sS 'http://localhost:8080/api/testing/durable-state/worker-quarantines/approved-discards/history?limit=100' \
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: TEST_RUNTIME_MAINTENANCE'
 ```
@@ -1214,8 +1223,11 @@ Content-Type: application/json
 ```
 
 The successful response is the only public object containing `claimToken`. Treat `claimToken`,
-`version`, and `claimUntil` as one opaque fence. Resolve with the exact fence and a closed,
-non-payload reason code:
+`version`, and `claimUntil` as one opaque fence. `RELEASE` still uses the legacy-compatible
+resolution endpoint with the exact fence and a closed, non-payload reason code. A newly submitted
+direct `DISCARD` on that endpoint is rejected with
+`RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_REQUIRED`; only an exact replay of a historically
+committed legacy command remains replayable.
 
 ```http
 POST /api/testing/durable-state/worker-quarantines/resolutions
@@ -1225,6 +1237,54 @@ Content-Type: application/json
 
 {
   "schemaVersion": "bloge.durableWorkerQuarantineResolutionRequest.v1",
+  "clientRequestId": "release-quarantine-run-a-1",
+  "key": {
+    "runId": "run-a",
+    "checkpointFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "claimToken": "<server-issued-token>",
+  "claimVersion": 1,
+  "claimUntil": "2026-07-17T12:02:00Z",
+  "action": "RELEASE",
+  "reasonCode": "DEPENDENCY_POLICY_FIXED"
+}
+```
+
+To discard, a distinct checker first approves the exact live claim. The checker request deliberately
+has no `claimToken` and its lifetime is bounded to `1..900` seconds and never exceeds `claimUntil`:
+
+```http
+POST /api/testing/durable-state/worker-quarantines/discard-approvals
+Authorization: Bearer <independent-checker-token>
+X-Purpose: TEST_RUNTIME_MAINTENANCE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.durableWorkerQuarantineDiscardApprovalRequest.v1",
+  "clientRequestId": "approve-discard-run-a-1",
+  "key": {
+    "runId": "run-a",
+    "checkpointFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "claimOwner": "maintenance-operator-a",
+  "claimVersion": 1,
+  "claimUntil": "2026-07-17T12:02:00Z",
+  "reasonCode": "AUTHORIZED_RETRY",
+  "approvalDurationSeconds": 60
+}
+```
+
+The response contains a token-free `approvalId` and `approvalFingerprint`. The original maker then
+consumes that exact approval while still proving the secret claim fence:
+
+```http
+POST /api/testing/durable-state/worker-quarantines/approved-discards
+Authorization: Bearer <maintenance-operator-token>
+X-Purpose: TEST_RUNTIME_MAINTENANCE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.durableWorkerQuarantineApprovedDiscardRequest.v1",
   "clientRequestId": "discard-quarantine-run-a-1",
   "key": {
     "runId": "run-a",
@@ -1233,30 +1293,32 @@ Content-Type: application/json
   "claimToken": "<server-issued-token>",
   "claimVersion": 1,
   "claimUntil": "2026-07-17T12:02:00Z",
-  "action": "DISCARD",
+  "approvalId": "<checker-issued-approval-id>",
   "reasonCode": "AUTHORIZED_RETRY"
 }
 ```
 
-The two actions have intentionally different worker semantics:
+The actions have intentionally different worker and governance semantics:
 
 | Action | Maintenance state | Worker effect | Evidence |
 | --- | --- | --- | --- |
 | `RELEASE` | returns to `AVAILABLE` with a higher version | checkpoint remains quarantined and cannot be acquired | immutable token-free receipt and history row |
-| `DISCARD` | active quarantine is deleted | exact checkpoint becomes eligible for a later worker scan | immutable token-free receipt and retained history row |
+| approved `DISCARD` | approval is atomically consumed and active quarantine is deleted | exact checkpoint becomes eligible for a later worker scan | immutable token-free maker/checker receipt and dedicated retained history row |
 
-Every claim and resolution first locks and revalidates the full checkpoint authority, then the exact
-quarantine/control row. Server token, owner, version, and database expiry all have to match. A
-changed checkpoint, another live owner, stale/forged/expired fence, or reused request ID with changed
-intent returns a stable `409`; malformed requests return `400`. Exact retries return the immutable
-result with `idempotentReplay=true`.
+Every claim, approval, and mutation first locks and revalidates the full checkpoint authority, then
+the exact quarantine/control row. Approved discard additionally locks and verifies the approval.
+Maker and checker identities must differ; claim and approval must bind the same key, owner, version,
+expiry, and reason; both must still be live by database time. A changed checkpoint, stale/forged/
+expired fence, self approval, consumed approval, or reused request ID with changed intent returns a
+stable `409`; malformed requests return `400`. Exact retries return the immutable original result.
 
-State mutation, command receipt, token-free semantic audit, and resolution history commit in one
-local transaction. Audit failure rolls everything back. List, history, resolution response, metrics,
-health detail, logs, and audit facts exclude claim tokens and business payloads. The database command
-receipt currently retains a claim token to reproduce an exact lost claim response; deployments must
-protect the test-runtime database. Encryption-at-rest, bounded command-receipt retention, two-person
-approval for `DISCARD`, external WORM anchoring, and webhook notification remain hardening work.
+Approval creation has a checker-bound audit transaction. Approved discard then consumes the approval,
+deletes the quarantine, writes its immutable command receipt and dedicated maker/checker history, and
+commits semantic audit in one local transaction. Audit failure rolls everything back. Responses,
+history, metrics, health, logs, and audit facts exclude claim tokens and business payloads. The claim
+command table still retains a token to reproduce an exact lost claim response; encryption-at-rest,
+bounded command/approval retention, external workflow identity proof, ticket binding, WORM anchoring,
+and webhook notification remain hardening work.
 
 ### 4.2.1.1 Global test-runtime SLO and capacity observation
 
@@ -1282,9 +1344,9 @@ The health model distinguishes correctness outcomes from runtime correctness:
   ownership failure until the execution is `ACTIVE` or `RESUMING`;
 - deterministic worker-candidate deferrals have independent active-count, retry-due, repeated-failure,
   and oldest-active-age policies; aggregation uses only the closed failure-reason vocabulary;
-- permanent worker-candidate quarantines have independent backlog, oldest-age, and expired
-  maintenance-claim policies; aggregates include closed reason/state counts and retained history
-  size without scope, run, owner, or token identity;
+- permanent worker-candidate quarantines have independent backlog, oldest-age, expired maintenance
+  claim, and expired unconsumed discard-approval policies; aggregates include closed reason/state
+  counts, live/expired approvals, and retained legacy/two-person history sizes without identities;
 - expired child/suite records and terminal durable/work-item rows have explicit cleanup-backlog
   limits. Observation does not silently delete them.
 
@@ -1312,6 +1374,7 @@ WORKER_CANDIDATE_BACKOFF_STALE
 WORKER_CANDIDATE_QUARANTINE_BACKLOG
 WORKER_CANDIDATE_QUARANTINE_STALE
 WORKER_CANDIDATE_QUARANTINE_CLAIM_EXPIRED
+WORKER_CANDIDATE_QUARANTINE_DISCARD_APPROVAL_EXPIRED
 EXECUTION_RETENTION_BACKLOG_EXCEEDED
 SUITE_RETENTION_BACKLOG_EXCEEDED
 DURABLE_TERMINAL_RETENTION_BACKLOG_EXCEEDED
@@ -1338,6 +1401,8 @@ above. Store exception messages are discarded. Micrometer gauges are rooted at
 | `worker.candidate.quarantines.maximum_failures`, `.oldest_age` | none | worst unresolved quarantine pressure |
 | `worker.candidate.quarantines.maintenance` | `state` | effective `AVAILABLE`/`CLAIMED` counts |
 | `worker.candidate.quarantines.claims.expired`, `.history` | none | expired ownership and retained resolution history |
+| `worker.candidate.quarantines.discard.approvals.live`, `.expired` | none | unconsumed checker approval lifecycle |
+| `worker.candidate.quarantines.discards.approved.history` | none | retained two-person discard evidence count |
 | `evidence.incomplete.basis_points` | `scope` | execution/suite incomplete ratio |
 | `storage.records`, `storage.backlog` | `kind` | retained and cleanup-pressure rows |
 | `health` | none | `1` healthy, `-1` violated, `-2` store unavailable |

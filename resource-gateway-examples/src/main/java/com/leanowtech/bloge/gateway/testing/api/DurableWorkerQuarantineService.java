@@ -22,7 +22,9 @@ import java.util.regex.Pattern;
  * <p>Unlike the global projection-finding queue, every quarantine has trustworthy scope
  * projections. The service therefore requires both exact identity-derived scope and the dedicated
  * maintenance purpose, deployment-owned operator group, configured clearance, and a test or
- * staging environment. Owner and scope never come from request JSON.</p>
+ * staging environment. Scope and the mutating owner always come from verified identity. A checker
+ * may repeat the payload-free projected claim owner, but the database treats it only as an
+ * observation and revalidates the exact owner, version, and expiry under lock.</p>
  */
 public final class DurableWorkerQuarantineService {
 
@@ -38,6 +40,7 @@ public final class DurableWorkerQuarantineService {
     private final TestSecurityEventRepository securityEvents;
     private final ObjectMapper objectMapper;
     private final String requiredGroup;
+    private final String requiredApproverGroup;
     private final String requiredClearance;
 
     /**
@@ -47,6 +50,7 @@ public final class DurableWorkerQuarantineService {
      * @param securityEvents append-only semantic security-event sink
      * @param objectMapper canonical audit intent fingerprint mapper
      * @param requiredGroup deployment-owned maintenance operator group
+     * @param requiredApproverGroup deployment-owned independent checker group
      * @param requiredClearance minimum supported identity clearance
      */
     public DurableWorkerQuarantineService(
@@ -54,11 +58,14 @@ public final class DurableWorkerQuarantineService {
             TestSecurityEventRepository securityEvents,
             ObjectMapper objectMapper,
             String requiredGroup,
+            String requiredApproverGroup,
             String requiredClearance) {
         this.controlPlane = Objects.requireNonNull(controlPlane, "controlPlane");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.requiredGroup = required(requiredGroup, "requiredGroup", 255);
+        this.requiredApproverGroup = required(
+                requiredApproverGroup, "requiredApproverGroup", 255);
         this.requiredClearance = required(requiredClearance, "requiredClearance", 32)
                 .toUpperCase(Locale.ROOT);
         if (!CLEARANCES.contains(this.requiredClearance)) {
@@ -100,6 +107,24 @@ public final class DurableWorkerQuarantineService {
             throw expected;
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "Worker quarantine history is unavailable.");
+        }
+    }
+
+    /** Returns bounded, token-free maker-checker evidence for approved discards. */
+    public DurableWorkerQuarantineApprovedDiscardHistoryResponse discardHistory(
+            int limit, IntegrationRequestContext identity) {
+        WorkerAcquisitionScope scope = authorize(identity, "DISCARD_HISTORY_READ");
+        validateLimit(limit, identity, "DISCARD_HISTORY_READ");
+        try {
+            var records = controlPlane.discardHistory(scope, limit);
+            append(identity, event(identity, "DISCARD_HISTORY_READ", "ALLOWED",
+                    "RG.TEST.WORKER_QUARANTINE_DISCARD_HISTORY_READ_ALLOWED", Map.of(
+                            "limit", limit, "resultCount", records.size())));
+            return DurableWorkerQuarantineApprovedDiscardHistoryResponse.from(records);
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "Approved worker discard history is unavailable.");
         }
     }
 
@@ -215,6 +240,10 @@ public final class DurableWorkerQuarantineService {
                         "RG.TEST.WORKER_QUARANTINE_STALE_CHECKPOINT",
                         "The run no longer has the exact quarantined checkpoint.",
                         key, request.clientRequestId());
+                case APPROVAL_REQUIRED -> throw conflict(identity, "RESOLVE",
+                        "RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_REQUIRED",
+                        "New discard commands require the independent approval protocol.",
+                        key, request.clientRequestId());
             };
         } catch (IntegrationProblemException expected) {
             throw expected;
@@ -223,8 +252,172 @@ public final class DurableWorkerQuarantineService {
         }
     }
 
+    /** Idempotently approves an exact claim as a distinct verified checker. */
+    public DurableWorkerQuarantineDiscardApprovalResponse approveDiscard(
+            DurableWorkerQuarantineDiscardApprovalRequest request,
+            IntegrationRequestContext identity) {
+        WorkerAcquisitionScope scope = authorizeApprover(identity, "DISCARD_APPROVE");
+        validateDiscardApproval(request, identity);
+        var key = key(request.key(), identity, "DISCARD_APPROVE");
+        String intentFingerprint = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", request.schemaVersion()),
+                Map.entry("clientRequestId", request.clientRequestId()),
+                Map.entry("key", request.key()),
+                Map.entry("claimOwner", request.claimOwner()),
+                Map.entry("claimVersion", request.claimVersion()),
+                Map.entry("claimUntil", request.claimUntil()),
+                Map.entry("reasonCode", request.reasonCode()),
+                Map.entry("approvalDurationSeconds", request.approvalDurationSeconds()),
+                Map.entry("approverId", identity.actorId())));
+        try {
+            var result = controlPlane.approveDiscard(scope, key, request.claimOwner(),
+                    request.claimVersion(), request.claimUntil(), identity.actorId(),
+                    request.clientRequestId(), request.reasonCode(),
+                    Duration.ofSeconds(request.approvalDurationSeconds()),
+                    approval -> bound(identity, "DISCARD_APPROVE",
+                            "RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_COMMITTED",
+                            Map.ofEntries(
+                                    Map.entry("runId", key.runId()),
+                                    Map.entry("checkpointFingerprint",
+                                            key.checkpointFingerprint()),
+                                    Map.entry("clientRequestId", request.clientRequestId()),
+                                    Map.entry("intentFingerprint", intentFingerprint),
+                                    Map.entry("approvalId", approval.approvalId()),
+                                    Map.entry("claimOwner", approval.claimOwner()),
+                                    Map.entry("claimVersion", approval.claimVersion()),
+                                    Map.entry("reasonCode", approval.reasonCode()),
+                                    Map.entry("approvalFingerprint",
+                                            approval.approvalFingerprint()))));
+            return switch (result.disposition()) {
+                case APPROVED -> DurableWorkerQuarantineDiscardApprovalResponse.from(result);
+                case IDEMPOTENT_REPLAY -> {
+                    append(identity, event(identity, "DISCARD_APPROVE", "ALLOWED",
+                            "RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_IDEMPOTENT_REPLAY",
+                            Map.of("runId", key.runId(),
+                                    "clientRequestId", request.clientRequestId(),
+                                    "approvalId", result.approval().approvalId(),
+                                    "approvalFingerprint",
+                                    result.approval().approvalFingerprint())));
+                    yield DurableWorkerQuarantineDiscardApprovalResponse.from(result);
+                }
+                case SELF_APPROVAL -> throw conflict(identity, "DISCARD_APPROVE",
+                        "RG.TEST.WORKER_QUARANTINE_SELF_APPROVAL_FORBIDDEN",
+                        "The checker must be different from the claim owner.",
+                        key, request.clientRequestId());
+                case FENCE_REJECTED -> throw conflict(identity, "DISCARD_APPROVE",
+                        "RG.TEST.WORKER_QUARANTINE_APPROVAL_FENCE_REJECTED",
+                        "The observed claim is stale, expired, or no longer actionable.",
+                        key, request.clientRequestId());
+                case IDEMPOTENCY_CONFLICT -> throw conflict(identity, "DISCARD_APPROVE",
+                        "RG.TEST.WORKER_QUARANTINE_IDEMPOTENCY_CONFLICT",
+                        "The client request ID was reused with changed approval intent.",
+                        key, request.clientRequestId());
+                case STALE_CHECKPOINT -> throw conflict(identity, "DISCARD_APPROVE",
+                        "RG.TEST.WORKER_QUARANTINE_STALE_CHECKPOINT",
+                        "The run no longer has the exact quarantined checkpoint.",
+                        key, request.clientRequestId());
+            };
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "Worker quarantine approval storage is unavailable.");
+        }
+    }
+
+    /** Idempotently discards an exact claim by consuming an independent checker approval. */
+    public DurableWorkerQuarantineApprovedDiscardResponse discard(
+            DurableWorkerQuarantineApprovedDiscardRequest request,
+            IntegrationRequestContext identity) {
+        WorkerAcquisitionScope scope = authorize(identity, "APPROVED_DISCARD");
+        validateApprovedDiscard(request, identity);
+        var key = key(request.key(), identity, "APPROVED_DISCARD");
+        var claim = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineClaim(
+                key, identity.actorId(), request.claimToken(), request.claimVersion(),
+                request.claimUntil());
+        String intentFingerprint = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", request.schemaVersion()),
+                Map.entry("clientRequestId", request.clientRequestId()),
+                Map.entry("key", request.key()),
+                Map.entry("claimVersion", request.claimVersion()),
+                Map.entry("claimUntil", request.claimUntil()),
+                Map.entry("approvalId", request.approvalId()),
+                Map.entry("reasonCode", request.reasonCode()),
+                Map.entry("ownerId", identity.actorId())));
+        try {
+            var result = controlPlane.discard(scope, claim, request.approvalId(),
+                    request.clientRequestId(), request.reasonCode(),
+                    receipt -> bound(identity, "APPROVED_DISCARD",
+                            "RG.TEST.WORKER_QUARANTINE_APPROVED_DISCARD_COMMITTED",
+                            Map.ofEntries(
+                                    Map.entry("runId", key.runId()),
+                                    Map.entry("checkpointFingerprint",
+                                            key.checkpointFingerprint()),
+                                    Map.entry("clientRequestId", request.clientRequestId()),
+                                    Map.entry("intentFingerprint", intentFingerprint),
+                                    Map.entry("claimVersion", request.claimVersion()),
+                                    Map.entry("approvalId", receipt.approvalId()),
+                                    Map.entry("approverId", receipt.approverId()),
+                                    Map.entry("approvalFingerprint",
+                                            receipt.approvalFingerprint()),
+                                    Map.entry("reasonCode", receipt.reasonCode()),
+                                    Map.entry("receiptFingerprint",
+                                            receipt.receiptFingerprint()))));
+            return switch (result.disposition()) {
+                case DISCARDED -> DurableWorkerQuarantineApprovedDiscardResponse.from(result);
+                case IDEMPOTENT_REPLAY -> {
+                    append(identity, event(identity, "APPROVED_DISCARD", "ALLOWED",
+                            "RG.TEST.WORKER_QUARANTINE_APPROVED_DISCARD_IDEMPOTENT_REPLAY",
+                            Map.of("runId", key.runId(),
+                                    "clientRequestId", request.clientRequestId(),
+                                    "approvalId", result.receipt().approvalId(),
+                                    "receiptFingerprint",
+                                    result.receipt().receiptFingerprint())));
+                    yield DurableWorkerQuarantineApprovedDiscardResponse.from(result);
+                }
+                case FENCE_REJECTED -> throw conflict(identity, "APPROVED_DISCARD",
+                        "RG.TEST.WORKER_QUARANTINE_FENCE_REJECTED",
+                        "The maker claim fence is stale, forged, expired, or consumed.",
+                        key, request.clientRequestId());
+                case APPROVAL_REJECTED -> throw conflict(identity, "APPROVED_DISCARD",
+                        "RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_REJECTED",
+                        "The checker approval is absent, expired, consumed, or mismatched.",
+                        key, request.clientRequestId());
+                case IDEMPOTENCY_CONFLICT -> throw conflict(identity, "APPROVED_DISCARD",
+                        "RG.TEST.WORKER_QUARANTINE_IDEMPOTENCY_CONFLICT",
+                        "The client request ID was reused with changed discard intent.",
+                        key, request.clientRequestId());
+                case STALE_CHECKPOINT -> throw conflict(identity, "APPROVED_DISCARD",
+                        "RG.TEST.WORKER_QUARANTINE_STALE_CHECKPOINT",
+                        "The run no longer has the exact quarantined checkpoint.",
+                        key, request.clientRequestId());
+            };
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "Approved worker quarantine discard is unavailable.");
+        }
+    }
+
     private WorkerAcquisitionScope authorize(
             IntegrationRequestContext identity, String action) {
+        return authorize(identity, action, requiredGroup,
+                "RG.TEST.WORKER_QUARANTINE_ROLE_REQUIRED",
+                "The deployment-owned test-runtime operator role is required.");
+    }
+
+    private WorkerAcquisitionScope authorizeApprover(
+            IntegrationRequestContext identity, String action) {
+        return authorize(identity, action, requiredApproverGroup,
+                "RG.TEST.WORKER_QUARANTINE_APPROVER_ROLE_REQUIRED",
+                "The deployment-owned independent quarantine approver role is required.");
+    }
+
+    private WorkerAcquisitionScope authorize(
+            IntegrationRequestContext identity,
+            String action,
+            String requiredActorGroup,
+            String missingGroupCode,
+            String missingGroupTitle) {
         Objects.requireNonNull(identity, "identity").requireComplete();
         if (!ENABLED_ENVIRONMENTS.contains(identity.environmentId().toLowerCase(Locale.ROOT))) {
             deny(identity, action, "RG.TEST.WORKER_QUARANTINE_ENVIRONMENT_FORBIDDEN",
@@ -234,9 +427,8 @@ public final class DurableWorkerQuarantineService {
             deny(identity, action, "RG.TEST.WORKER_QUARANTINE_PURPOSE_FORBIDDEN",
                     "The dedicated test-runtime maintenance purpose is required.");
         }
-        if (!identity.groups().contains(requiredGroup)) {
-            deny(identity, action, "RG.TEST.WORKER_QUARANTINE_ROLE_REQUIRED",
-                    "The deployment-owned test-runtime operator role is required.");
+        if (!identity.groups().contains(requiredActorGroup)) {
+            deny(identity, action, missingGroupCode, missingGroupTitle);
         }
         if (!identity.hasClearanceAtLeast(requiredClearance)) {
             deny(identity, action, "RG.TEST.WORKER_QUARANTINE_CLEARANCE_REQUIRED",
@@ -287,6 +479,42 @@ public final class DurableWorkerQuarantineService {
                 || !REASON_CODE.matcher(request.reasonCode()).matches()) {
             rejected(identity, "RESOLVE", "RG.TEST.WORKER_QUARANTINE_REQUEST_INVALID", Map.of());
             throw badRequest(identity, "Worker quarantine resolution request is invalid.");
+        }
+    }
+
+    private void validateDiscardApproval(
+            DurableWorkerQuarantineDiscardApprovalRequest request,
+            IntegrationRequestContext identity) {
+        if (request == null
+                || !DurableWorkerQuarantineDiscardApprovalRequest.SCHEMA_VERSION.equals(
+                request.schemaVersion())
+                || !REQUEST_ID.matcher(request.clientRequestId()).matches()
+                || request.key() == null || !bounded(request.claimOwner(), 255)
+                || request.claimVersion() <= 0 || request.claimUntil() == null
+                || request.reasonCode() == null
+                || !REASON_CODE.matcher(request.reasonCode()).matches()
+                || request.approvalDurationSeconds() < 1
+                || request.approvalDurationSeconds() > 900) {
+            rejected(identity, "DISCARD_APPROVE",
+                    "RG.TEST.WORKER_QUARANTINE_REQUEST_INVALID", Map.of());
+            throw badRequest(identity, "Worker quarantine discard approval is invalid.");
+        }
+    }
+
+    private void validateApprovedDiscard(
+            DurableWorkerQuarantineApprovedDiscardRequest request,
+            IntegrationRequestContext identity) {
+        if (request == null
+                || !DurableWorkerQuarantineApprovedDiscardRequest.SCHEMA_VERSION.equals(
+                request.schemaVersion())
+                || !REQUEST_ID.matcher(request.clientRequestId()).matches()
+                || request.key() == null || !bounded(request.claimToken(), 255)
+                || request.claimVersion() <= 0 || request.claimUntil() == null
+                || !validUuid(request.approvalId()) || request.reasonCode() == null
+                || !REASON_CODE.matcher(request.reasonCode()).matches()) {
+            rejected(identity, "APPROVED_DISCARD",
+                    "RG.TEST.WORKER_QUARANTINE_REQUEST_INVALID", Map.of());
+            throw badRequest(identity, "Approved worker quarantine discard is invalid.");
         }
     }
 
@@ -397,6 +625,14 @@ public final class DurableWorkerQuarantineService {
 
     private static boolean bounded(String value, int maximum) {
         return value != null && !value.isBlank() && value.length() <= maximum;
+    }
+
+    private static boolean validUuid(String value) {
+        try {
+            return value != null && java.util.UUID.fromString(value).toString().equals(value);
+        } catch (RuntimeException invalid) {
+            return false;
+        }
     }
 
     private static String required(String value, String field, int maximum) {

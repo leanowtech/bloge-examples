@@ -620,6 +620,166 @@
         }
       }
     },
+    "durableWorkerQuarantineDiscardApprovalRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "clientRequestId", "key", "claimOwner",
+        "claimVersion", "claimUntil", "reasonCode", "approvalDurationSeconds"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.durableWorkerQuarantineDiscardApprovalRequest.v1"
+        },
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "key": {"$ref": "#/$defs/durableWorkerQuarantineKey"},
+        "claimOwner": {"type": "string", "minLength": 1, "maxLength": 255},
+        "claimVersion": {"type": "integer", "minimum": 1},
+        "claimUntil": {"type": "string", "format": "date-time"},
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+        },
+        "approvalDurationSeconds": {"type": "integer", "minimum": 1, "maximum": 900}
+      }
+    },
+    "durableWorkerQuarantineDiscardApprovalResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "disposition", "approvalId", "key", "claimOwner",
+        "claimVersion", "claimUntil", "approverId", "reasonCode", "approvedAt",
+        "approvalUntil", "approvalFingerprint", "idempotentReplay"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.durableWorkerQuarantineDiscardApprovalResponse.v1"
+        },
+        "disposition": {"enum": ["APPROVED", "IDEMPOTENT_REPLAY"]},
+        "approvalId": {"type": "string", "format": "uuid", "maxLength": 36},
+        "key": {"$ref": "#/$defs/durableWorkerQuarantineKey"},
+        "claimOwner": {"type": "string", "minLength": 1, "maxLength": 255},
+        "claimVersion": {"type": "integer", "minimum": 1},
+        "claimUntil": {"type": "string", "format": "date-time"},
+        "approverId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+        },
+        "approvedAt": {"type": "string", "format": "date-time"},
+        "approvalUntil": {"type": "string", "format": "date-time"},
+        "approvalFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "idempotentReplay": {"type": "boolean"}
+      }
+    },
+    "durableWorkerQuarantineApprovedDiscardRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "clientRequestId", "key", "claimToken",
+        "claimVersion", "claimUntil", "approvalId", "reasonCode"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.durableWorkerQuarantineApprovedDiscardRequest.v1"
+        },
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "key": {"$ref": "#/$defs/durableWorkerQuarantineKey"},
+        "claimToken": {"type": "string", "minLength": 1, "maxLength": 255},
+        "claimVersion": {"type": "integer", "minimum": 1},
+        "claimUntil": {"type": "string", "format": "date-time"},
+        "approvalId": {"type": "string", "format": "uuid", "maxLength": 36},
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+        }
+      }
+    },
+    "durableWorkerQuarantineApprovedDiscardResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "disposition", "key", "ownerId", "approvalId",
+        "approverId", "approvalFingerprint", "reasonCode", "version", "actedAt",
+        "receiptFingerprint", "idempotentReplay"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.durableWorkerQuarantineApprovedDiscardResponse.v1"
+        },
+        "disposition": {"enum": ["DISCARDED", "IDEMPOTENT_REPLAY"]},
+        "key": {"$ref": "#/$defs/durableWorkerQuarantineKey"},
+        "ownerId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "approvalId": {"type": "string", "format": "uuid", "maxLength": 36},
+        "approverId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "approvalFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+        },
+        "version": {"type": "integer", "minimum": 1},
+        "actedAt": {"type": "string", "format": "date-time"},
+        "receiptFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "idempotentReplay": {"type": "boolean"}
+      }
+    },
+    "durableWorkerQuarantineApprovedDiscardHistoryResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "history"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.durableWorkerQuarantineApprovedDiscardHistoryResponse.v1"
+        },
+        "history": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["historyId", "key", "quarantineReason", "consecutiveFailures",
+              "quarantineThreshold", "firstObservedAt", "quarantinedAt", "reasonCode",
+              "ownerId", "approvalId", "approverId", "approvalFingerprint", "version",
+              "actedAt", "receiptFingerprint", "recordFingerprint"],
+            "properties": {
+              "historyId": {"type": "string", "format": "uuid", "maxLength": 36},
+              "key": {"$ref": "#/$defs/durableWorkerQuarantineKey"},
+              "quarantineReason": {
+                "enum": ["AUTHORIZATION_DENIED", "AUTHORIZATION_CONFLICT", "LEGACY_PROTOCOL"]
+              },
+              "consecutiveFailures": {"type": "integer", "minimum": 1},
+              "quarantineThreshold": {"type": "integer", "minimum": 1, "maximum": 1000000},
+              "firstObservedAt": {"type": "string", "format": "date-time"},
+              "quarantinedAt": {"type": "string", "format": "date-time"},
+              "reasonCode": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+              },
+              "ownerId": {"type": "string", "minLength": 1, "maxLength": 255},
+              "approvalId": {"type": "string", "format": "uuid", "maxLength": 36},
+              "approverId": {"type": "string", "minLength": 1, "maxLength": 255},
+              "approvalFingerprint": {"$ref": "#/$defs/fingerprint"},
+              "version": {"type": "integer", "minimum": 1},
+              "actedAt": {"type": "string", "format": "date-time"},
+              "receiptFingerprint": {"$ref": "#/$defs/fingerprint"},
+              "recordFingerprint": {"$ref": "#/$defs/fingerprint"}
+            }
+          }
+        }
+      }
+    },
     "durableTestRecoveryHeartbeatRequest": {
       "type": "object",
       "additionalProperties": false,

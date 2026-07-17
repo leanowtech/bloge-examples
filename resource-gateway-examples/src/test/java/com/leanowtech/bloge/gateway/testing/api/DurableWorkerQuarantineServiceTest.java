@@ -36,7 +36,8 @@ class DurableWorkerQuarantineServiceTest {
         when(securityEvents.boundAppend(any())).thenReturn(TestRuntimeTransactionMutation.noop());
         service = new DurableWorkerQuarantineService(controlPlane, securityEvents,
                 new ObjectMapper().findAndRegisterModules(),
-                "resource-gateway-test-runtime-operators", "RESTRICTED");
+                "resource-gateway-test-runtime-operators",
+                "resource-gateway-test-runtime-quarantine-approvers", "RESTRICTED");
     }
 
     @Test
@@ -128,15 +129,15 @@ class DurableWorkerQuarantineServiceTest {
     }
 
     @Test
-    void resolvesAnExactFenceToATokenFreeReceiptAndMapsFenceRejection() {
+    void releasesAnExactFenceToATokenFreeReceiptAndMapsFenceRejection() {
         Instant until = Instant.parse("2026-07-17T12:00:00Z");
         var receipt = new DatabaseDurableWorkerQuarantineControlPlane
                 .QuarantineResolutionReceipt(key(), "operator-a",
-                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD,
-                "AUTHORIZED_RETRY", 2, Instant.parse("2026-07-17T11:00:00Z"), SHA);
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
+                "DEPENDENCY_FIXED", 2, Instant.parse("2026-07-17T11:00:00Z"), SHA);
         when(controlPlane.resolve(eq(scope()), any(), eq("resolve-1"),
-                eq(DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD),
-                eq("AUTHORIZED_RETRY"), any())).thenAnswer(invocation -> {
+                eq(DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE),
+                eq("DEPENDENCY_FIXED"), any())).thenAnswer(invocation -> {
                     var claim = (DatabaseDurableWorkerQuarantineControlPlane.QuarantineClaim)
                             invocation.getArgument(1);
                     assertThat(claim.ownerId()).isEqualTo("operator-a");
@@ -154,10 +155,10 @@ class DurableWorkerQuarantineServiceTest {
         DurableWorkerQuarantineResolutionResponse response = service.resolve(
                 new DurableWorkerQuarantineResolutionRequest("", "resolve-1",
                         new DurableWorkerQuarantineKey("run-a", SHA),
-                        "sensitive-server-token", 1, until, "DISCARD", "AUTHORIZED_RETRY"),
+                        "sensitive-server-token", 1, until, "RELEASE", "DEPENDENCY_FIXED"),
                 authorized());
 
-        assertThat(response.action()).isEqualTo("DISCARD");
+        assertThat(response.action()).isEqualTo("RELEASE");
         assertThat(response.toString()).doesNotContain("sensitive-server-token");
         ArgumentCaptor<TestSecurityEvent> event = ArgumentCaptor.forClass(TestSecurityEvent.class);
         verify(securityEvents).boundAppend(event.capture());
@@ -170,7 +171,7 @@ class DurableWorkerQuarantineServiceTest {
         assertThatThrownBy(() -> service.resolve(
                 new DurableWorkerQuarantineResolutionRequest("", "resolve-fenced",
                         new DurableWorkerQuarantineKey("run-a", SHA),
-                        "sensitive-server-token", 1, until, "DISCARD", "AUTHORIZED_RETRY"),
+                        "sensitive-server-token", 1, until, "RELEASE", "DEPENDENCY_FIXED"),
                 authorized())).isInstanceOfSatisfying(
                 IntegrationProblemException.class, failure -> {
                     assertThat(failure.problem().status()).isEqualTo(409);
@@ -196,6 +197,127 @@ class DurableWorkerQuarantineServiceTest {
         verify(controlPlane, never()).resolve(any(), any(), any(), any(), any(), any());
     }
 
+    @Test
+    void legacyDirectDiscardMapsTheStableIndependentApprovalRequirement() {
+        when(controlPlane.resolve(eq(scope()), any(), eq("legacy-discard"),
+                eq(DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD),
+                eq("AUTHORIZED_RETRY"), any())).thenReturn(
+                new DatabaseDurableWorkerQuarantineControlPlane.QuarantineResolutionResult(
+                        DatabaseDurableWorkerQuarantineControlPlane.ResolutionDisposition
+                                .APPROVAL_REQUIRED, null));
+
+        assertThatThrownBy(() -> service.resolve(
+                new DurableWorkerQuarantineResolutionRequest("", "legacy-discard",
+                        new DurableWorkerQuarantineKey("run-a", SHA),
+                        "sensitive-server-token", 1,
+                        Instant.parse("2026-07-17T12:00:00Z"),
+                        "DISCARD", "AUTHORIZED_RETRY"), authorized()))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(409);
+                    assertThat(failure.problem().code()).isEqualTo(
+                            "RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_REQUIRED");
+                });
+    }
+
+    @Test
+    void checkerApprovalRequiresTheApproverGroupAndNeverCarriesTheClaimToken() {
+        Instant claimUntil = Instant.parse("2026-07-17T12:00:00Z");
+        var approval = new DatabaseDurableWorkerQuarantineControlPlane.DiscardApproval(
+                APPROVAL_ID, key(), "operator-a", 1, claimUntil, "checker-a",
+                "AUTHORIZED_RETRY", Instant.parse("2026-07-17T11:00:00Z"),
+                Instant.parse("2026-07-17T11:05:00Z"), SHA);
+        when(controlPlane.approveDiscard(eq(scope()), eq(key()), eq("operator-a"), eq(1L),
+                eq(claimUntil), eq("checker-a"), eq("approval-1"),
+                eq("AUTHORIZED_RETRY"), eq(java.time.Duration.ofSeconds(300)), any()))
+                .thenAnswer(invocation -> {
+                    Function<DatabaseDurableWorkerQuarantineControlPlane.DiscardApproval,
+                            TestRuntimeTransactionMutation> audit = invocation.getArgument(9);
+                    assertThat(audit.apply(approval)).isNotNull();
+                    return new DatabaseDurableWorkerQuarantineControlPlane.DiscardApprovalResult(
+                            DatabaseDurableWorkerQuarantineControlPlane
+                                    .DiscardApprovalDisposition.APPROVED, approval);
+                });
+        var request = new DurableWorkerQuarantineDiscardApprovalRequest("", "approval-1",
+                new DurableWorkerQuarantineKey("run-a", SHA), "operator-a", 1,
+                claimUntil, "AUTHORIZED_RETRY", 300);
+
+        assertThatThrownBy(() -> service.approveDiscard(request, authorized()))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code()).isEqualTo(
+                                "RG.TEST.WORKER_QUARANTINE_APPROVER_ROLE_REQUIRED"));
+
+        DurableWorkerQuarantineDiscardApprovalResponse response = service.approveDiscard(
+                request, identity("test", "TEST_RUNTIME_MAINTENANCE",
+                        Set.of("resource-gateway-test-runtime-quarantine-approvers"),
+                        "RESTRICTED", "checker-a"));
+
+        assertThat(response.claimOwner()).isEqualTo("operator-a");
+        assertThat(response.approverId()).isEqualTo("checker-a");
+        assertThat(response.toString()).doesNotContain("token", "secret");
+        ArgumentCaptor<TestSecurityEvent> event = ArgumentCaptor.forClass(TestSecurityEvent.class);
+        verify(securityEvents).boundAppend(event.capture());
+        assertThat(event.getValue().reasonCode())
+                .isEqualTo("RG.TEST.WORKER_QUARANTINE_DISCARD_APPROVAL_COMMITTED");
+        assertThat(event.getValue().toString()).doesNotContain("token", "secret");
+    }
+
+    @Test
+    void approvedDiscardDerivesMakerFromIdentityAndReturnsTwoPersonEvidence() {
+        Instant claimUntil = Instant.parse("2026-07-17T12:00:00Z");
+        var receipt = new DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardReceipt(
+                key(), "operator-a", APPROVAL_ID, "checker-a", SHA,
+                "AUTHORIZED_RETRY", 2, Instant.parse("2026-07-17T11:10:00Z"), SHA);
+        when(controlPlane.discard(eq(scope()), any(), eq(APPROVAL_ID), eq("discard-1"),
+                eq("AUTHORIZED_RETRY"), any())).thenAnswer(invocation -> {
+                    var claim = (DatabaseDurableWorkerQuarantineControlPlane.QuarantineClaim)
+                            invocation.getArgument(1);
+                    assertThat(claim.ownerId()).isEqualTo("operator-a");
+                    assertThat(claim.claimToken()).isEqualTo("sensitive-server-token");
+                    Function<DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardReceipt,
+                            TestRuntimeTransactionMutation> audit = invocation.getArgument(5);
+                    assertThat(audit.apply(receipt)).isNotNull();
+                    return new DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardResult(
+                            DatabaseDurableWorkerQuarantineControlPlane
+                                    .ApprovedDiscardDisposition.DISCARDED, receipt);
+                });
+
+        DurableWorkerQuarantineApprovedDiscardResponse response = service.discard(
+                new DurableWorkerQuarantineApprovedDiscardRequest("", "discard-1",
+                        new DurableWorkerQuarantineKey("run-a", SHA),
+                        "sensitive-server-token", 1, claimUntil, APPROVAL_ID,
+                        "AUTHORIZED_RETRY"), authorized());
+
+        assertThat(response.ownerId()).isEqualTo("operator-a");
+        assertThat(response.approverId()).isEqualTo("checker-a");
+        assertThat(response.approvalId()).isEqualTo(APPROVAL_ID);
+        assertThat(response.toString()).doesNotContain("sensitive-server-token");
+        ArgumentCaptor<TestSecurityEvent> event = ArgumentCaptor.forClass(TestSecurityEvent.class);
+        verify(securityEvents).boundAppend(event.capture());
+        assertThat(event.getValue().toString()).doesNotContain("sensitive-server-token");
+    }
+
+    @Test
+    void readsTokenFreeApprovedDiscardHistoryFromTheVerifiedScope() {
+        var history = new DatabaseDurableWorkerQuarantineControlPlane
+                .ApprovedDiscardHistoryRecord("history-discard", key(),
+                DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason
+                        .AUTHORIZATION_DENIED,
+                32, 32, Instant.parse("2026-07-17T10:00:00Z"),
+                Instant.parse("2026-07-17T10:30:00Z"), "AUTHORIZED_RETRY",
+                "operator-a", APPROVAL_ID, "checker-a", SHA, 2,
+                Instant.parse("2026-07-17T11:00:00Z"), SHA, SHA);
+        when(controlPlane.discardHistory(scope(), 25)).thenReturn(List.of(history));
+
+        var response = service.discardHistory(25, authorized());
+
+        assertThat(response.history()).singleElement().satisfies(item -> {
+            assertThat(item.ownerId()).isEqualTo("operator-a");
+            assertThat(item.approverId()).isEqualTo("checker-a");
+            assertThat(item.toString()).doesNotContain("token", "payload", "secret");
+        });
+        verify(controlPlane).discardHistory(scope(), 25);
+    }
+
     private void assertForbidden(IntegrationRequestContext identity, String code) {
         assertThatThrownBy(() -> service.quarantines(false, 10, identity))
                 .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
@@ -205,6 +327,7 @@ class DurableWorkerQuarantineServiceTest {
     }
 
     private static final String SHA = "sha256:" + "a".repeat(64);
+    private static final String APPROVAL_ID = "11111111-1111-1111-1111-111111111111";
 
     private static DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey key() {
         return new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey("run-a", SHA);
@@ -234,8 +357,17 @@ class DurableWorkerQuarantineServiceTest {
 
     private static IntegrationRequestContext identity(
             String environment, String purpose, Set<String> groups, String clearance) {
+        return identity(environment, purpose, groups, clearance, "operator-a");
+    }
+
+    private static IntegrationRequestContext identity(
+            String environment,
+            String purpose,
+            Set<String> groups,
+            String clearance,
+            String actorId) {
         return new IntegrationRequestContext("tenant-a", "org-a", "project-a", environment,
-                "sg", "WORKLOAD", "operator-a", "", purpose, "correlation-a",
+                "sg", "WORKLOAD", actorId, "", purpose, "correlation-a",
                 groups, clearance, "");
     }
 }

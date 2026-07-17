@@ -53,6 +53,9 @@ public final class TestRuntimeSloTelemetry {
             workerQuarantineMaintenanceStates;
     private final AtomicLong workerQuarantineExpiredClaims = new AtomicLong();
     private final AtomicLong workerQuarantineHistory = new AtomicLong();
+    private final AtomicLong workerQuarantineLiveDiscardApprovals = new AtomicLong();
+    private final AtomicLong workerQuarantineExpiredDiscardApprovals = new AtomicLong();
+    private final AtomicLong workerQuarantineApprovedDiscardHistory = new AtomicLong();
     private final AtomicLong health = new AtomicLong();
 
     /**
@@ -120,6 +123,15 @@ public final class TestRuntimeSloTelemetry {
                 .register(meters);
         Gauge.builder(PREFIX + "worker.candidate.quarantines.history",
                         workerQuarantineHistory, AtomicLong::doubleValue)
+                .register(meters);
+        Gauge.builder(PREFIX + "worker.candidate.quarantines.discard.approvals.live",
+                        workerQuarantineLiveDiscardApprovals, AtomicLong::doubleValue)
+                .register(meters);
+        Gauge.builder(PREFIX + "worker.candidate.quarantines.discard.approvals.expired",
+                        workerQuarantineExpiredDiscardApprovals, AtomicLong::doubleValue)
+                .register(meters);
+        Gauge.builder(PREFIX + "worker.candidate.quarantines.discards.approved.history",
+                        workerQuarantineApprovedDiscardHistory, AtomicLong::doubleValue)
                 .register(meters);
         Gauge.builder(PREFIX + "health", health, AtomicLong::doubleValue)
                 .description("Global test-runtime health: 1 healthy, -1 SLO violated, "
@@ -213,6 +225,10 @@ public final class TestRuntimeSloTelemetry {
         replace(workerQuarantineMaintenanceStates, quarantines.totalByMaintenanceState());
         workerQuarantineExpiredClaims.set(quarantines.expiredClaimRecords());
         workerQuarantineHistory.set(quarantines.historyRecords());
+        workerQuarantineLiveDiscardApprovals.set(quarantines.liveDiscardApprovals());
+        workerQuarantineExpiredDiscardApprovals.set(quarantines.expiredDiscardApprovals());
+        workerQuarantineApprovedDiscardHistory.set(
+                quarantines.approvedDiscardHistoryRecords());
         health.set(state == TestRuntimeSloMonitor.State.HEALTHY ? 1 : -1);
     }
 

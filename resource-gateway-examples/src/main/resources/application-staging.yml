@@ -26,6 +26,7 @@ gateway:
         quarantine-threshold: ${RG_TEST_DURABLE_WORKER_QUARANTINE_THRESHOLD:32}
       worker-quarantines:
         required-group: ${RG_TEST_WORKER_QUARANTINE_REQUIRED_GROUP:resource-gateway-test-runtime-operators}
+        required-approver-group: ${RG_TEST_WORKER_QUARANTINE_REQUIRED_APPROVER_GROUP:resource-gateway-test-runtime-quarantine-approvers}
         required-clearance: ${RG_TEST_WORKER_QUARANTINE_REQUIRED_CLEARANCE:RESTRICTED}
       heartbeats:
         lease-duration-seconds: ${RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS:120}
@@ -83,6 +84,7 @@ gateway:
       worker-quarantine-max-records: ${RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_RECORDS:100}
       worker-quarantine-max-oldest-age-seconds: ${RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_OLDEST_AGE_SECONDS:86400}
       worker-quarantine-max-expired-claims: ${RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_EXPIRED_CLAIMS:0}
+      worker-quarantine-max-expired-discard-approvals: ${RG_TEST_RUNTIME_SLO_WORKER_QUARANTINE_MAX_EXPIRED_DISCARD_APPROVALS:0}
       max-expired-execution-records: ${RG_TEST_RUNTIME_SLO_MAX_EXPIRED_EXECUTION_RECORDS:0}
       max-expired-suite-records: ${RG_TEST_RUNTIME_SLO_MAX_EXPIRED_SUITE_RECORDS:0}
       max-terminal-durable-executions: ${RG_TEST_RUNTIME_SLO_MAX_TERMINAL_DURABLE_EXECUTIONS:10000}

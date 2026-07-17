@@ -168,6 +168,41 @@ class TestingControlProtocolSchemaTest {
                 "/$defs/durableWorkerQuarantineHistoryResponse/properties/history/items/properties")
                 .has("claimToken")).isFalse();
         assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineDiscardApprovalRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DurableWorkerQuarantineDiscardApprovalRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineDiscardApprovalResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DurableWorkerQuarantineDiscardApprovalResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineApprovedDiscardRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DurableWorkerQuarantineApprovedDiscardRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineApprovedDiscardResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DurableWorkerQuarantineApprovedDiscardResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineApprovedDiscardHistoryResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DurableWorkerQuarantineApprovedDiscardHistoryResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineDiscardApprovalRequest/additionalProperties")
+                .asBoolean()).isFalse();
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineApprovedDiscardRequest/additionalProperties")
+                .asBoolean()).isFalse();
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineDiscardApprovalResponse/properties")
+                .has("claimToken")).isFalse();
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineApprovedDiscardResponse/properties")
+                .has("claimToken")).isFalse();
+        assertThat(schema.at(
+                "/$defs/durableWorkerQuarantineApprovedDiscardHistoryResponse/properties/history/items/properties")
+                .has("claimToken")).isFalse();
+        assertThat(schema.at(
                 "/$defs/durableTestExecutionView/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestExecutionQueryResponse.SCHEMA_VERSION);
         assertThat(schema.at(

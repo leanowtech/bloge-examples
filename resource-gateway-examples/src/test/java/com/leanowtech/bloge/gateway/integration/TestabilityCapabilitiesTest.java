@@ -19,6 +19,8 @@ import com.leanowtech.bloge.gateway.testing.api.DurableTestTerminalRecoveryRespo
 import com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableStateProjectionFindingResolutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineClaimRequest;
+import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineDiscardApprovalRequest;
+import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineApprovedDiscardResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineResolutionResponse;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
@@ -46,7 +48,9 @@ class TestabilityCapabilitiesTest {
         assertThat(disabled.features()).containsEntry("durableStateProjectionFindingQueue", false);
         assertThat(disabled.features())
                 .containsEntry("durableTestWorkerQuarantineMaintenance", false)
-                .containsEntry("immutableDurableWorkerQuarantineHistory", false);
+                .containsEntry("immutableDurableWorkerQuarantineHistory", false)
+                .containsEntry("twoPersonDurableWorkerQuarantineDiscard", false)
+                .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", false);
         assertThat(disabled.features())
                 .containsEntry("authenticatedDurableStateProjectionOperations", false)
                 .containsEntry("immutableDurableStateProjectionActionAudit", false)
@@ -89,7 +93,12 @@ class TestabilityCapabilitiesTest {
                 "durableWorkerQuarantineClaimRequest",
                 "durableWorkerQuarantineClaimResponse",
                 "durableWorkerQuarantineResolutionRequest",
-                "durableWorkerQuarantineResolutionResponse");
+                "durableWorkerQuarantineResolutionResponse",
+                "durableWorkerQuarantineDiscardApprovalRequest",
+                "durableWorkerQuarantineDiscardApprovalResponse",
+                "durableWorkerQuarantineApprovedDiscardRequest",
+                "durableWorkerQuarantineApprovedDiscardResponse",
+                "durableWorkerQuarantineApprovedDiscardHistoryResponse");
         assertThat(enabled.features()).containsEntry("operatorMicroGraphExecution", true)
                 .containsEntry("dynamicAttemptOccurrenceSelectors", true)
                 .containsEntry("immutableTestSuiteRegistry", true)
@@ -113,6 +122,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableTestWorkerCandidateQuarantine", true)
                 .containsEntry("durableTestWorkerQuarantineMaintenance", true)
                 .containsEntry("immutableDurableWorkerQuarantineHistory", true)
+                .containsEntry("twoPersonDurableWorkerQuarantineDiscard", true)
+                .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", true)
                 .containsEntry("immutableDurableWorkerNoWorkResult", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
                 .containsEntry("authenticatedDurableRecoveryHeartbeat", true)
@@ -187,6 +198,12 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(DurableWorkerQuarantineClaimRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("durableWorkerQuarantineResolutionResponse"))
                 .containsExactly(DurableWorkerQuarantineResolutionResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get(
+                "durableWorkerQuarantineDiscardApprovalRequest"))
+                .containsExactly(DurableWorkerQuarantineDiscardApprovalRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get(
+                "durableWorkerQuarantineApprovedDiscardResponse"))
+                .containsExactly(DurableWorkerQuarantineApprovedDiscardResponse.SCHEMA_VERSION);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.path().equals("/api/testing/executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
@@ -231,6 +248,15 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/durable-state/worker-quarantines/resolutions"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/durable-state/worker-quarantines/discard-approvals"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/durable-state/worker-quarantines/approved-discards"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals(
+                "/api/testing/durable-state/worker-quarantines/approved-discards/history"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("PUT") && endpoint.path().equals("/api/testing/suites/{suiteId}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint ->

@@ -28,23 +28,38 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DurableWorkerQuarantineControllerTest {
 
     private static final String SHA = "sha256:" + "a".repeat(64);
+    private static final String APPROVAL_ID = "11111111-1111-1111-1111-111111111111";
 
     @Test
-    void authenticatesScopedMaintenanceReadsClaimsResolutionsAndHistory() throws Exception {
+    void authenticatesScopedMaintenanceAndTwoPersonDiscardEndpoints() throws Exception {
         DurableWorkerQuarantineService service = mock(DurableWorkerQuarantineService.class);
         when(service.quarantines(eq(true), eq(25), any())).thenReturn(
                 new DurableWorkerQuarantinesResponse("", true, List.of()));
         when(service.history(eq(20), any())).thenReturn(
                 new DurableWorkerQuarantineHistoryResponse("", List.of()));
+        when(service.discardHistory(eq(20), any())).thenReturn(
+                new DurableWorkerQuarantineApprovedDiscardHistoryResponse("", List.of()));
         when(service.claim(any(), any())).thenReturn(new DurableWorkerQuarantineClaimResponse(
                 "", "CLAIMED", new DurableWorkerQuarantineKey("run-a", SHA),
                 "operator-a", "server-token", 1,
                 Instant.parse("2026-07-17T12:00:00Z"), false));
         when(service.resolve(any(), any())).thenReturn(
                 new DurableWorkerQuarantineResolutionResponse("", "RESOLVED",
-                        new DurableWorkerQuarantineKey("run-a", SHA), "operator-a", "DISCARD",
-                        "AUTHORIZED_RETRY", 2, Instant.parse("2026-07-17T11:00:00Z"),
+                        new DurableWorkerQuarantineKey("run-a", SHA), "operator-a", "RELEASE",
+                        "DEPENDENCY_FIXED", 2, Instant.parse("2026-07-17T11:00:00Z"),
                         SHA, false));
+        when(service.approveDiscard(any(), any())).thenReturn(
+                new DurableWorkerQuarantineDiscardApprovalResponse("", "APPROVED",
+                        APPROVAL_ID, new DurableWorkerQuarantineKey("run-a", SHA),
+                        "operator-a", 1, Instant.parse("2026-07-17T12:00:00Z"),
+                        "checker-a", "AUTHORIZED_RETRY",
+                        Instant.parse("2026-07-17T11:00:00Z"),
+                        Instant.parse("2026-07-17T11:05:00Z"), SHA, false));
+        when(service.discard(any(), any())).thenReturn(
+                new DurableWorkerQuarantineApprovedDiscardResponse("", "DISCARDED",
+                        new DurableWorkerQuarantineKey("run-a", SHA), "operator-a",
+                        APPROVAL_ID, "checker-a", SHA, "AUTHORIZED_RETRY", 2,
+                        Instant.parse("2026-07-17T11:00:00Z"), SHA, false));
         MockMvc mvc = mvc(service, Set.of("TEST_RUNTIME_MAINTENANCE"));
 
         mvc.perform(get("/api/testing/durable-state/worker-quarantines")
@@ -61,6 +76,13 @@ class DurableWorkerQuarantineControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.schemaVersion")
                         .value(DurableWorkerQuarantineHistoryResponse.SCHEMA_VERSION));
+        mvc.perform(get("/api/testing/durable-state/worker-quarantines/approved-discards/history")
+                        .queryParam("limit", "20")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_RUNTIME_MAINTENANCE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(
+                        DurableWorkerQuarantineApprovedDiscardHistoryResponse.SCHEMA_VERSION));
         mvc.perform(post("/api/testing/durable-state/worker-quarantines/claims")
                         .header("Authorization", "Bearer test-token")
                         .header("X-Purpose", "TEST_RUNTIME_MAINTENANCE")
@@ -69,13 +91,30 @@ class DurableWorkerQuarantineControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ownerId").value("operator-a"))
                 .andExpect(jsonPath("$.claimToken").value("server-token"));
+        mvc.perform(post("/api/testing/durable-state/worker-quarantines/discard-approvals")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_RUNTIME_MAINTENANCE")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(approvalJson()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvalId").value(APPROVAL_ID))
+                .andExpect(jsonPath("$.claimToken").doesNotExist());
+        mvc.perform(post("/api/testing/durable-state/worker-quarantines/approved-discards")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_RUNTIME_MAINTENANCE")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(approvedDiscardJson()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ownerId").value("operator-a"))
+                .andExpect(jsonPath("$.approverId").value("checker-a"))
+                .andExpect(jsonPath("$.claimToken").doesNotExist());
         mvc.perform(post("/api/testing/durable-state/worker-quarantines/resolutions")
                         .header("Authorization", "Bearer test-token")
                         .header("X-Purpose", "TEST_RUNTIME_MAINTENANCE")
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(resolutionJson()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.action").value("DISCARD"))
+                .andExpect(jsonPath("$.action").value("RELEASE"))
                 .andExpect(jsonPath("$.claimToken").doesNotExist());
 
         verify(service).quarantines(eq(true), eq(25),
@@ -130,10 +169,40 @@ class DurableWorkerQuarantineControllerTest {
                   "claimToken": "server-token",
                   "claimVersion": 1,
                   "claimUntil": "2026-07-17T12:00:00Z",
-                  "action": "DISCARD",
-                  "reasonCode": "AUTHORIZED_RETRY"
+                  "action": "RELEASE",
+                  "reasonCode": "DEPENDENCY_FIXED"
                 }
                 """.formatted(SHA);
+    }
+
+    private static String approvalJson() {
+        return """
+                {
+                  "schemaVersion": "bloge.durableWorkerQuarantineDiscardApprovalRequest.v1",
+                  "clientRequestId": "approval-1",
+                  "key": {"runId": "run-a", "checkpointFingerprint": "%s"},
+                  "claimOwner": "operator-a",
+                  "claimVersion": 1,
+                  "claimUntil": "2026-07-17T12:00:00Z",
+                  "reasonCode": "AUTHORIZED_RETRY",
+                  "approvalDurationSeconds": 300
+                }
+                """.formatted(SHA);
+    }
+
+    private static String approvedDiscardJson() {
+        return """
+                {
+                  "schemaVersion": "bloge.durableWorkerQuarantineApprovedDiscardRequest.v1",
+                  "clientRequestId": "discard-1",
+                  "key": {"runId": "run-a", "checkpointFingerprint": "%s"},
+                  "claimToken": "server-token",
+                  "claimVersion": 1,
+                  "claimUntil": "2026-07-17T12:00:00Z",
+                  "approvalId": "%s",
+                  "reasonCode": "AUTHORIZED_RETRY"
+                }
+                """.formatted(SHA, APPROVAL_ID);
     }
 
     private static MockMvc mvc(

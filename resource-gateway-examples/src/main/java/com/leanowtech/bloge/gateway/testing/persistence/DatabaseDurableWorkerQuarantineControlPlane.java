@@ -174,6 +174,94 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                 ON rg_test_durable_worker_quarantine_history
                     (scope_key, acted_at, history_id)
                 """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_discard_approvals (
+                    scope_key VARCHAR(80) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    approval_id VARCHAR(36) NOT NULL UNIQUE,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    claim_owner VARCHAR(255) NOT NULL,
+                    claim_version BIGINT NOT NULL,
+                    claim_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    approver_id VARCHAR(255) NOT NULL,
+                    reason_code VARCHAR(128) NOT NULL,
+                    approved_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    approval_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    approval_state VARCHAR(32) NOT NULL,
+                    consumed_by_request_id VARCHAR(255) NOT NULL,
+                    consumed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    approval_fingerprint VARCHAR(80) NOT NULL UNIQUE,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (scope_key, client_request_id)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_discard_approval_idx
+                ON rg_test_durable_worker_quarantine_discard_approvals
+                    (scope_key, approval_state, approval_until, approval_id)
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_discards (
+                    scope_key VARCHAR(80) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    resolution_owner VARCHAR(255) NOT NULL,
+                    claim_version BIGINT NOT NULL,
+                    claim_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    approval_id VARCHAR(36) NOT NULL,
+                    approver_id VARCHAR(255) NOT NULL,
+                    reason_code VARCHAR(128) NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    result_version BIGINT NOT NULL,
+                    result_acted_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    result_approval_fingerprint VARCHAR(80) NOT NULL,
+                    result_receipt_fingerprint VARCHAR(80) NOT NULL UNIQUE,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (scope_key, client_request_id)
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_quarantine_discard_history (
+                    history_id VARCHAR(36) PRIMARY KEY,
+                    scope_key VARCHAR(80) NOT NULL,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    quarantine_reason VARCHAR(64) NOT NULL,
+                    consecutive_failures BIGINT NOT NULL,
+                    quarantine_threshold INT NOT NULL,
+                    first_observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    quarantined_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    reason_code VARCHAR(128) NOT NULL,
+                    resolution_owner VARCHAR(255) NOT NULL,
+                    approval_id VARCHAR(36) NOT NULL,
+                    approver_id VARCHAR(255) NOT NULL,
+                    approval_fingerprint VARCHAR(80) NOT NULL,
+                    result_version BIGINT NOT NULL,
+                    acted_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    receipt_fingerprint VARCHAR(80) NOT NULL UNIQUE,
+                    record_fingerprint VARCHAR(80) NOT NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_worker_quarantine_discard_history_scope_idx
+                ON rg_test_durable_worker_quarantine_discard_history
+                    (scope_key, acted_at, history_id)
+                """);
     }
 
     /**
@@ -371,6 +459,9 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                         ? QuarantineResolutionResult.replay(stored.receipt())
                         : QuarantineResolutionResult.conflict();
             }
+            if (safeAction == ResolutionAction.DISCARD) {
+                return QuarantineResolutionResult.approvalRequired();
+            }
             StoredQuarantine quarantine = findQuarantine(
                     safeScope, safeClaim.key(), true).orElse(null);
             if (quarantine == null) {
@@ -447,6 +538,700 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         }
         result.forEach(this::requireValidHistoryRecord);
         return List.copyOf(result);
+    }
+
+    /**
+     * Idempotently approves one exact live claim for a later two-person discard.
+     *
+     * <p>The approver never receives or supplies the claim token. Instead, the approval binds the
+     * database-authoritative claim owner, version, and expiry observed in the payload-free queue.
+     * The checkpoint and maintenance rows are locked before those values are accepted. Self
+     * approval is rejected before mutation, and the resulting approval expires no later than the
+     * claim it authorizes.</p>
+     *
+     * @param scope verified tenant, organization, project, and environment authority
+     * @param key exact run and checkpoint identity
+     * @param claimOwner maker identity projected by the active claim
+     * @param claimVersion exact maintenance generation projected by the active claim
+     * @param claimUntil exact database-clock claim deadline
+     * @param approverId verified checker identity, which must differ from the maker
+     * @param clientRequestId caller-stable approval idempotency key
+     * @param reasonCode exact non-payload rationale later required by discard
+     * @param approvalDuration bounded database-clock approval lifetime
+     * @param committedAudit transaction-bound checker audit mutation
+     * @return approved, replayed, conflicting, stale, rejected, or self-approval disposition
+     */
+    public DiscardApprovalResult approveDiscard(
+            WorkerAcquisitionScope scope,
+            QuarantineKey key,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            String approverId,
+            String clientRequestId,
+            String reasonCode,
+            Duration approvalDuration,
+            Function<DiscardApproval, TestRuntimeTransactionMutation> committedAudit) {
+        WorkerAcquisitionScope safeScope = Objects.requireNonNull(scope, "scope");
+        QuarantineKey safeKey = Objects.requireNonNull(key, "key");
+        String safeClaimOwner = required(claimOwner, "claimOwner", 255);
+        if (claimVersion <= 0) {
+            throw new IllegalArgumentException("claimVersion must be positive");
+        }
+        Instant safeClaimUntil = Objects.requireNonNull(claimUntil, "claimUntil");
+        String safeApprover = required(approverId, "approverId", 255);
+        String safeRequestId = required(clientRequestId, "clientRequestId", 255);
+        String safeReason = reason(reasonCode);
+        Duration safeDuration = boundedApproval(approvalDuration);
+        Function<DiscardApproval, TestRuntimeTransactionMutation> safeAudit =
+                Objects.requireNonNull(committedAudit, "committedAudit");
+        if (safeApprover.equals(safeClaimOwner)) {
+            return DiscardApprovalResult.selfApproval();
+        }
+        String requestFingerprint = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineDiscardApprovalIntent.v1"),
+                Map.entry("scope", safeScope), Map.entry("key", safeKey),
+                Map.entry("claimOwner", safeClaimOwner),
+                Map.entry("claimVersion", claimVersion),
+                Map.entry("claimUntil", safeClaimUntil),
+                Map.entry("approverId", safeApprover),
+                Map.entry("reasonCode", safeReason),
+                Map.entry("approvalDurationSeconds", safeDuration.toSeconds())));
+        DiscardApprovalResult result = transactions.execute(status -> {
+            Optional<StoredDiscardApproval> replay = findDiscardApprovalCommand(
+                    safeScope, safeRequestId, true);
+            if (replay.isPresent()) {
+                StoredDiscardApproval stored = replay.orElseThrow();
+                requireValid(stored);
+                return stored.requestFingerprint().equals(requestFingerprint)
+                        ? DiscardApprovalResult.replay(stored.external())
+                        : DiscardApprovalResult.conflict();
+            }
+            if (!lockExactCheckpoint(safeScope, safeKey)) {
+                return DiscardApprovalResult.staleCheckpoint();
+            }
+            replay = findDiscardApprovalCommand(safeScope, safeRequestId, true);
+            if (replay.isPresent()) {
+                StoredDiscardApproval stored = replay.orElseThrow();
+                requireValid(stored);
+                return stored.requestFingerprint().equals(requestFingerprint)
+                        ? DiscardApprovalResult.replay(stored.external())
+                        : DiscardApprovalResult.conflict();
+            }
+            StoredQuarantine quarantine = findQuarantine(safeScope, safeKey, true).orElse(null);
+            if (quarantine == null) {
+                return DiscardApprovalResult.fenceRejected();
+            }
+            requireValid(quarantine);
+            StoredControl control = findControl(safeScope, safeKey.runId(), true).orElse(null);
+            Instant now = databaseNow();
+            if (control == null) {
+                return DiscardApprovalResult.fenceRejected();
+            }
+            requireValid(control, quarantine);
+            if (control.state() != QuarantineState.CLAIMED
+                    || !control.claimOwner().equals(safeClaimOwner)
+                    || control.version() != claimVersion
+                    || !control.claimUntil().equals(safeClaimUntil)
+                    || !control.claimUntil().isAfter(now)) {
+                return DiscardApprovalResult.fenceRejected();
+            }
+            Instant approvalUntil = earlierOf(now.plus(safeDuration), safeClaimUntil);
+            if (!approvalUntil.isAfter(now)) {
+                return DiscardApprovalResult.fenceRejected();
+            }
+            StoredDiscardApproval stored = storedDiscardApproval(
+                    safeScope, safeRequestId, safeKey, safeClaimOwner, claimVersion,
+                    safeClaimUntil, safeApprover, safeReason, now, approvalUntil,
+                    requestFingerprint);
+            insertDiscardApproval(stored);
+            DiscardApproval approval = stored.external();
+            Objects.requireNonNull(safeAudit.apply(approval), "committedAudit result").apply(jdbc);
+            return DiscardApprovalResult.approved(approval);
+        });
+        if (result == null) {
+            throw new IllegalStateException("Worker quarantine discard approval returned no result");
+        }
+        return result;
+    }
+
+    /**
+     * Discards one exact quarantine after atomically consuming an independent approval.
+     *
+     * <p>The maker must still prove the live secret claim fence. The checker approval is locked,
+     * integrity-verified, matched to the same claim closure and rationale, required to be live,
+     * and consumed in the transaction that deletes the quarantine. The approval, discard command,
+     * retained two-person history, and audit mutation therefore cannot diverge.</p>
+     *
+     * @param scope verified worker scope
+     * @param claim exact maker claim including its secret token
+     * @param approvalId checker approval identity
+     * @param clientRequestId caller-stable discard idempotency key
+     * @param reasonCode rationale that must exactly equal the approval rationale
+     * @param committedAudit transaction-bound maker audit mutation
+     * @return discarded, replayed, conflicting, stale, fence-rejected, or approval-rejected result
+     */
+    public ApprovedDiscardResult discard(
+            WorkerAcquisitionScope scope,
+            QuarantineClaim claim,
+            String approvalId,
+            String clientRequestId,
+            String reasonCode,
+            Function<ApprovedDiscardReceipt, TestRuntimeTransactionMutation> committedAudit) {
+        WorkerAcquisitionScope safeScope = Objects.requireNonNull(scope, "scope");
+        QuarantineClaim safeClaim = Objects.requireNonNull(claim, "claim");
+        String safeApprovalId = required(approvalId, "approvalId", 36);
+        String safeRequestId = required(clientRequestId, "clientRequestId", 255);
+        String safeReason = reason(reasonCode);
+        Function<ApprovedDiscardReceipt, TestRuntimeTransactionMutation> safeAudit =
+                Objects.requireNonNull(committedAudit, "committedAudit");
+        String requestFingerprint = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineApprovedDiscardIntent.v1"),
+                Map.entry("scope", safeScope), Map.entry("key", safeClaim.key()),
+                Map.entry("ownerId", safeClaim.ownerId()),
+                Map.entry("claimToken", safeClaim.claimToken()),
+                Map.entry("claimVersion", safeClaim.version()),
+                Map.entry("claimUntil", safeClaim.claimUntil()),
+                Map.entry("approvalId", safeApprovalId),
+                Map.entry("reasonCode", safeReason)));
+        ApprovedDiscardResult result = transactions.execute(status -> {
+            Optional<StoredApprovedDiscardCommand> replay = findApprovedDiscardCommand(
+                    safeScope, safeRequestId, true);
+            if (replay.isPresent()) {
+                StoredApprovedDiscardCommand stored = replay.orElseThrow();
+                requireValid(stored);
+                return stored.requestFingerprint().equals(requestFingerprint)
+                        ? ApprovedDiscardResult.replay(stored.receipt())
+                        : ApprovedDiscardResult.conflict();
+            }
+            if (!lockExactCheckpoint(safeScope, safeClaim.key())) {
+                return ApprovedDiscardResult.staleCheckpoint();
+            }
+            replay = findApprovedDiscardCommand(safeScope, safeRequestId, true);
+            if (replay.isPresent()) {
+                StoredApprovedDiscardCommand stored = replay.orElseThrow();
+                requireValid(stored);
+                return stored.requestFingerprint().equals(requestFingerprint)
+                        ? ApprovedDiscardResult.replay(stored.receipt())
+                        : ApprovedDiscardResult.conflict();
+            }
+            StoredQuarantine quarantine = findQuarantine(
+                    safeScope, safeClaim.key(), true).orElse(null);
+            if (quarantine == null) {
+                return ApprovedDiscardResult.fenceRejected();
+            }
+            requireValid(quarantine);
+            StoredControl control = findControl(
+                    safeScope, safeClaim.key().runId(), true).orElse(null);
+            Instant now = databaseNow();
+            if (control == null) {
+                return ApprovedDiscardResult.fenceRejected();
+            }
+            requireValid(control, quarantine);
+            if (control.state() != QuarantineState.CLAIMED
+                    || !control.claimOwner().equals(safeClaim.ownerId())
+                    || !control.claimToken().equals(safeClaim.claimToken())
+                    || control.version() != safeClaim.version()
+                    || !control.claimUntil().equals(safeClaim.claimUntil())
+                    || !control.claimUntil().isAfter(now)) {
+                return ApprovedDiscardResult.fenceRejected();
+            }
+            StoredDiscardApproval approval = findDiscardApprovalById(
+                    safeScope, safeApprovalId, true).orElse(null);
+            if (approval == null) {
+                return ApprovedDiscardResult.approvalRejected();
+            }
+            requireValid(approval);
+            if (approval.state() != DiscardApprovalState.APPROVED
+                    || !approval.key().equals(safeClaim.key())
+                    || !approval.claimOwner().equals(safeClaim.ownerId())
+                    || approval.claimVersion() != safeClaim.version()
+                    || !approval.claimUntil().equals(safeClaim.claimUntil())
+                    || !approval.reasonCode().equals(safeReason)
+                    || approval.approverId().equals(safeClaim.ownerId())
+                    || !approval.approvalUntil().isAfter(now)) {
+                return ApprovedDiscardResult.approvalRejected();
+            }
+            long nextVersion = Math.addExact(control.version(), 1);
+            ApprovedDiscardReceipt receipt = approvedDiscardReceipt(
+                    safeScope, safeClaim.key(), safeClaim.ownerId(), approval,
+                    safeReason, nextVersion, now);
+            StoredApprovedDiscardCommand command = storedApprovedDiscardCommand(
+                    safeScope, safeRequestId, safeClaim, approval, safeReason,
+                    requestFingerprint, receipt);
+            StoredApprovedDiscardHistory history = storedApprovedDiscardHistory(
+                    safeScope, quarantine, receipt);
+            deleteQuarantine(quarantine);
+            consumeDiscardApproval(approval, safeRequestId, now);
+            insertApprovedDiscardCommand(command);
+            insertApprovedDiscardHistory(history);
+            Objects.requireNonNull(safeAudit.apply(receipt), "committedAudit result").apply(jdbc);
+            return ApprovedDiscardResult.discarded(receipt);
+        });
+        if (result == null) {
+            throw new IllegalStateException("Approved worker quarantine discard returned no result");
+        }
+        return result;
+    }
+
+    /**
+     * Lists bounded, token-free two-person discard evidence in one verified worker scope.
+     *
+     * @param scope exact tenant, organization, project, and environment authority
+     * @param limit page size from 1 through 1,000
+     * @return newest approved discard evidence first
+     */
+    public List<ApprovedDiscardHistoryRecord> discardHistory(
+            WorkerAcquisitionScope scope, int limit) {
+        WorkerAcquisitionScope safeScope = Objects.requireNonNull(scope, "scope");
+        List<ApprovedDiscardHistoryRecord> result = observations.execute(status -> jdbc.query("""
+                        SELECT history_id, scope_key, tenant_id, environment_id,
+                               organization_id, project_id, run_id, checkpoint_fingerprint,
+                               quarantine_reason, consecutive_failures, quarantine_threshold,
+                               first_observed_at, quarantined_at, reason_code, resolution_owner,
+                               approval_id, approver_id, approval_fingerprint, result_version,
+                               acted_at, receipt_fingerprint, record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_discard_history
+                        WHERE scope_key = ? AND tenant_id = ? AND environment_id = ?
+                          AND organization_id = ? AND project_id = ?
+                        ORDER BY acted_at DESC, history_id
+                        LIMIT ?
+                        """, this::mapApprovedDiscardHistory, scopeKey(safeScope),
+                safeScope.tenantId(), safeScope.environmentId(), safeScope.organizationId(),
+                safeScope.projectId(), bounded(limit)));
+        if (result == null) {
+            throw new IllegalStateException("Approved worker quarantine history returned no result");
+        }
+        result.forEach(Objects::requireNonNull);
+        return List.copyOf(result);
+    }
+
+    private Optional<StoredDiscardApproval> findDiscardApprovalCommand(
+            WorkerAcquisitionScope scope, String requestId, boolean forUpdate) {
+        List<StoredDiscardApproval> rows = jdbc.query(discardApprovalSelect() + """
+                        WHERE scope_key = ? AND client_request_id = ?
+                        """ + (forUpdate ? " FOR UPDATE" : ""),
+                this::mapDiscardApproval, scopeKey(scope), requestId);
+        if (rows.size() > 1) {
+            throw new IllegalStateException("Worker quarantine discard approval is not unique");
+        }
+        return rows.stream().findFirst();
+    }
+
+    private Optional<StoredDiscardApproval> findDiscardApprovalById(
+            WorkerAcquisitionScope scope, String approvalId, boolean forUpdate) {
+        List<StoredDiscardApproval> rows = jdbc.query(discardApprovalSelect() + """
+                        WHERE scope_key = ? AND approval_id = ?
+                        """ + (forUpdate ? " FOR UPDATE" : ""),
+                this::mapDiscardApproval, scopeKey(scope), approvalId);
+        if (rows.size() > 1) {
+            throw new IllegalStateException("Worker quarantine approval identity is not unique");
+        }
+        return rows.stream().findFirst();
+    }
+
+    private String discardApprovalSelect() {
+        return """
+                SELECT scope_key, client_request_id, approval_id, tenant_id, environment_id,
+                       organization_id, project_id, run_id, checkpoint_fingerprint,
+                       claim_owner, claim_version, claim_until, approver_id, reason_code,
+                       approved_at, approval_until, approval_state, consumed_by_request_id,
+                       consumed_at, request_fingerprint, approval_fingerprint,
+                       record_fingerprint
+                FROM rg_test_durable_worker_quarantine_discard_approvals
+                """;
+    }
+
+    private StoredDiscardApproval mapDiscardApproval(
+            ResultSet rs, int rowNumber) throws SQLException {
+        return new StoredDiscardApproval(rs.getString("scope_key"),
+                rs.getString("client_request_id"), rs.getString("approval_id"),
+                rs.getString("tenant_id"), rs.getString("organization_id"),
+                rs.getString("project_id"), rs.getString("environment_id"),
+                rs.getString("run_id"), rs.getString("checkpoint_fingerprint"),
+                rs.getString("claim_owner"), rs.getLong("claim_version"),
+                rs.getTimestamp("claim_until").toInstant(), rs.getString("approver_id"),
+                rs.getString("reason_code"), rs.getTimestamp("approved_at").toInstant(),
+                rs.getTimestamp("approval_until").toInstant(),
+                rs.getString("approval_state"), rs.getString("consumed_by_request_id"),
+                rs.getTimestamp("consumed_at").toInstant(),
+                rs.getString("request_fingerprint"), rs.getString("approval_fingerprint"),
+                rs.getString("record_fingerprint"));
+    }
+
+    private StoredDiscardApproval storedDiscardApproval(
+            WorkerAcquisitionScope scope,
+            String requestId,
+            QuarantineKey key,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            String approverId,
+            String reasonCode,
+            Instant approvedAt,
+            Instant approvalUntil,
+            String requestFingerprint) {
+        StoredDiscardApproval unsealed = new StoredDiscardApproval(scopeKey(scope), requestId,
+                UUID.randomUUID().toString(), scope.tenantId(), scope.organizationId(),
+                scope.projectId(), scope.environmentId(), key.runId(),
+                key.checkpointFingerprint(), claimOwner, claimVersion, claimUntil, approverId,
+                reasonCode, approvedAt, approvalUntil, DiscardApprovalState.APPROVED.name(),
+                "", Instant.EPOCH, requestFingerprint, "", "");
+        StoredDiscardApproval approved = unsealed.withApprovalFingerprint(
+                discardApprovalFingerprint(unsealed));
+        return approved.withRecordFingerprint(discardApprovalRecordFingerprint(approved));
+    }
+
+    private void insertDiscardApproval(StoredDiscardApproval approval) {
+        int inserted = jdbc.update("""
+                INSERT INTO rg_test_durable_worker_quarantine_discard_approvals (
+                    scope_key, client_request_id, approval_id, tenant_id, environment_id,
+                    organization_id, project_id, run_id, checkpoint_fingerprint,
+                    claim_owner, claim_version, claim_until, approver_id, reason_code,
+                    approved_at, approval_until, approval_state, consumed_by_request_id,
+                    consumed_at, request_fingerprint, approval_fingerprint, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, approval.scopeKey(), approval.clientRequestId(), approval.approvalId(),
+                approval.tenantId(), approval.environmentId(), approval.organizationId(),
+                approval.projectId(), approval.runId(), approval.checkpointFingerprint(),
+                approval.claimOwner(), approval.claimVersion(),
+                Timestamp.from(approval.claimUntil()), approval.approverId(),
+                approval.reasonCode(), Timestamp.from(approval.approvedAt()),
+                Timestamp.from(approval.approvalUntil()), approval.state().name(),
+                approval.consumedByRequestId(), Timestamp.from(approval.consumedAt()),
+                approval.requestFingerprint(), approval.approvalFingerprint(),
+                approval.recordFingerprint());
+        if (inserted != 1) {
+            throw new IllegalStateException("Worker quarantine discard approval was not inserted");
+        }
+    }
+
+    private void consumeDiscardApproval(
+            StoredDiscardApproval current, String discardRequestId, Instant consumedAt) {
+        StoredDiscardApproval consumed = current.consumed(discardRequestId, consumedAt);
+        consumed = consumed.withRecordFingerprint(discardApprovalRecordFingerprint(consumed));
+        int changed = jdbc.update("""
+                UPDATE rg_test_durable_worker_quarantine_discard_approvals
+                SET approval_state = ?, consumed_by_request_id = ?, consumed_at = ?,
+                    record_fingerprint = ?
+                WHERE scope_key = ? AND client_request_id = ? AND approval_id = ?
+                  AND approval_state = ? AND record_fingerprint = ?
+                """, consumed.state().name(), consumed.consumedByRequestId(),
+                Timestamp.from(consumed.consumedAt()), consumed.recordFingerprint(),
+                current.scopeKey(), current.clientRequestId(), current.approvalId(),
+                DiscardApprovalState.APPROVED.name(), current.recordFingerprint());
+        if (changed != 1) {
+            throw new IllegalStateException("Worker quarantine discard approval fence was rejected");
+        }
+    }
+
+    private void requireValid(StoredDiscardApproval approval) {
+        WorkerAcquisitionScope scope;
+        DiscardApproval external;
+        try {
+            scope = approval.scope();
+            external = approval.external();
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException("Stored worker quarantine discard approval is corrupt",
+                    invalid);
+        }
+        boolean stateShape = approval.state() == DiscardApprovalState.APPROVED
+                ? approval.consumedByRequestId().isBlank()
+                && approval.consumedAt().equals(Instant.EPOCH)
+                : !approval.consumedByRequestId().isBlank()
+                && !approval.consumedAt().isBefore(approval.approvedAt());
+        if (!scopeKey(scope).equals(approval.scopeKey())
+                || external.claimOwner().equals(external.approverId())
+                || external.approvedAt().isAfter(external.approvalUntil())
+                || external.approvalUntil().isAfter(external.claimUntil())
+                || !stateShape
+                || !discardApprovalFingerprint(approval).equals(
+                        approval.approvalFingerprint())
+                || !discardApprovalRecordFingerprint(approval).equals(
+                        approval.recordFingerprint())) {
+            throw new IllegalStateException("Stored worker quarantine discard approval is corrupt");
+        }
+    }
+
+    private String discardApprovalFingerprint(StoredDiscardApproval approval) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineDiscardApproval.v1"),
+                Map.entry("approvalId", approval.approvalId()),
+                Map.entry("scope", approval.scope()), Map.entry("key", approval.key()),
+                Map.entry("claimOwner", approval.claimOwner()),
+                Map.entry("claimVersion", approval.claimVersion()),
+                Map.entry("claimUntil", approval.claimUntil()),
+                Map.entry("approverId", approval.approverId()),
+                Map.entry("reasonCode", approval.reasonCode()),
+                Map.entry("approvedAt", approval.approvedAt()),
+                Map.entry("approvalUntil", approval.approvalUntil())));
+    }
+
+    private String discardApprovalRecordFingerprint(StoredDiscardApproval approval) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineDiscardApprovalRecord.v1"),
+                Map.entry("clientRequestId", approval.clientRequestId()),
+                Map.entry("approvalFingerprint", approval.approvalFingerprint()),
+                Map.entry("state", approval.state().name()),
+                Map.entry("consumedByRequestId", approval.consumedByRequestId()),
+                Map.entry("consumedAt", approval.consumedAt()),
+                Map.entry("requestFingerprint", approval.requestFingerprint())));
+    }
+
+    private Optional<StoredApprovedDiscardCommand> findApprovedDiscardCommand(
+            WorkerAcquisitionScope scope, String requestId, boolean forUpdate) {
+        List<StoredApprovedDiscardCommand> rows = jdbc.query("""
+                        SELECT scope_key, client_request_id, tenant_id, environment_id,
+                               organization_id, project_id, run_id, checkpoint_fingerprint,
+                               resolution_owner, claim_version, claim_until, approval_id,
+                               approver_id, reason_code, request_fingerprint, result_version,
+                               result_acted_at, result_approval_fingerprint,
+                               result_receipt_fingerprint, record_fingerprint
+                        FROM rg_test_durable_worker_quarantine_discards
+                        WHERE scope_key = ? AND client_request_id = ?
+                        """ + (forUpdate ? " FOR UPDATE" : ""),
+                this::mapApprovedDiscardCommand, scopeKey(scope), requestId);
+        if (rows.size() > 1) {
+            throw new IllegalStateException("Approved worker quarantine discard is not unique");
+        }
+        return rows.stream().findFirst();
+    }
+
+    private StoredApprovedDiscardCommand mapApprovedDiscardCommand(
+            ResultSet rs, int rowNumber) throws SQLException {
+        return new StoredApprovedDiscardCommand(rs.getString("scope_key"),
+                rs.getString("client_request_id"), rs.getString("tenant_id"),
+                rs.getString("organization_id"), rs.getString("project_id"),
+                rs.getString("environment_id"), rs.getString("run_id"),
+                rs.getString("checkpoint_fingerprint"), rs.getString("resolution_owner"),
+                rs.getLong("claim_version"), rs.getTimestamp("claim_until").toInstant(),
+                rs.getString("approval_id"), rs.getString("approver_id"),
+                rs.getString("reason_code"), rs.getString("request_fingerprint"),
+                rs.getLong("result_version"), rs.getTimestamp("result_acted_at").toInstant(),
+                rs.getString("result_approval_fingerprint"),
+                rs.getString("result_receipt_fingerprint"),
+                rs.getString("record_fingerprint"));
+    }
+
+    private StoredApprovedDiscardCommand storedApprovedDiscardCommand(
+            WorkerAcquisitionScope scope,
+            String requestId,
+            QuarantineClaim claim,
+            StoredDiscardApproval approval,
+            String reasonCode,
+            String requestFingerprint,
+            ApprovedDiscardReceipt receipt) {
+        StoredApprovedDiscardCommand unsealed = new StoredApprovedDiscardCommand(
+                scopeKey(scope), requestId, scope.tenantId(), scope.organizationId(),
+                scope.projectId(), scope.environmentId(), claim.key().runId(),
+                claim.key().checkpointFingerprint(), claim.ownerId(), claim.version(),
+                claim.claimUntil(), approval.approvalId(), approval.approverId(), reasonCode,
+                requestFingerprint, receipt.version(), receipt.actedAt(),
+                receipt.approvalFingerprint(), receipt.receiptFingerprint(), "");
+        return unsealed.withRecordFingerprint(approvedDiscardCommandFingerprint(unsealed));
+    }
+
+    private void insertApprovedDiscardCommand(StoredApprovedDiscardCommand command) {
+        int inserted = jdbc.update("""
+                INSERT INTO rg_test_durable_worker_quarantine_discards (
+                    scope_key, client_request_id, tenant_id, environment_id,
+                    organization_id, project_id, run_id, checkpoint_fingerprint,
+                    resolution_owner, claim_version, claim_until, approval_id,
+                    approver_id, reason_code, request_fingerprint, result_version,
+                    result_acted_at, result_approval_fingerprint,
+                    result_receipt_fingerprint, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, command.scopeKey(), command.clientRequestId(), command.tenantId(),
+                command.environmentId(), command.organizationId(), command.projectId(),
+                command.runId(), command.checkpointFingerprint(), command.resolutionOwner(),
+                command.claimVersion(), Timestamp.from(command.claimUntil()),
+                command.approvalId(), command.approverId(), command.reasonCode(),
+                command.requestFingerprint(), command.resultVersion(),
+                Timestamp.from(command.resultActedAt()), command.resultApprovalFingerprint(),
+                command.resultReceiptFingerprint(), command.recordFingerprint());
+        if (inserted != 1) {
+            throw new IllegalStateException("Approved worker quarantine discard was not inserted");
+        }
+    }
+
+    private void requireValid(StoredApprovedDiscardCommand command) {
+        WorkerAcquisitionScope scope;
+        ApprovedDiscardReceipt receipt;
+        try {
+            scope = command.scope();
+            receipt = command.receipt();
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException("Stored approved worker discard is corrupt", invalid);
+        }
+        String expectedReceipt = approvedDiscardReceiptFingerprint(scope, receipt.key(),
+                receipt.ownerId(), receipt.approvalId(), receipt.approverId(),
+                receipt.approvalFingerprint(), receipt.reasonCode(), receipt.version(),
+                receipt.actedAt());
+        if (!scopeKey(scope).equals(command.scopeKey())
+                || command.resolutionOwner().equals(command.approverId())
+                || !expectedReceipt.equals(receipt.receiptFingerprint())
+                || !approvedDiscardCommandFingerprint(command).equals(
+                        command.recordFingerprint())) {
+            throw new IllegalStateException("Stored approved worker discard is corrupt");
+        }
+    }
+
+    private String approvedDiscardCommandFingerprint(StoredApprovedDiscardCommand command) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineApprovedDiscardCommand.v1"),
+                Map.entry("scope", command.scope()),
+                Map.entry("clientRequestId", command.clientRequestId()),
+                Map.entry("key", command.key()),
+                Map.entry("ownerId", command.resolutionOwner()),
+                Map.entry("claimVersion", command.claimVersion()),
+                Map.entry("claimUntil", command.claimUntil()),
+                Map.entry("approvalId", command.approvalId()),
+                Map.entry("approverId", command.approverId()),
+                Map.entry("reasonCode", command.reasonCode()),
+                Map.entry("requestFingerprint", command.requestFingerprint()),
+                Map.entry("resultVersion", command.resultVersion()),
+                Map.entry("resultActedAt", command.resultActedAt()),
+                Map.entry("resultApprovalFingerprint", command.resultApprovalFingerprint()),
+                Map.entry("resultReceiptFingerprint", command.resultReceiptFingerprint())));
+    }
+
+    private ApprovedDiscardReceipt approvedDiscardReceipt(
+            WorkerAcquisitionScope scope,
+            QuarantineKey key,
+            String ownerId,
+            StoredDiscardApproval approval,
+            String reasonCode,
+            long version,
+            Instant actedAt) {
+        String fingerprint = approvedDiscardReceiptFingerprint(scope, key, ownerId,
+                approval.approvalId(), approval.approverId(), approval.approvalFingerprint(),
+                reasonCode, version, actedAt);
+        return new ApprovedDiscardReceipt(key, ownerId, approval.approvalId(),
+                approval.approverId(), approval.approvalFingerprint(), reasonCode,
+                version, actedAt, fingerprint);
+    }
+
+    private String approvedDiscardReceiptFingerprint(
+            WorkerAcquisitionScope scope,
+            QuarantineKey key,
+            String ownerId,
+            String approvalId,
+            String approverId,
+            String approvalFingerprint,
+            String reasonCode,
+            long version,
+            Instant actedAt) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineApprovedDiscardReceipt.v1"),
+                Map.entry("scope", scope), Map.entry("key", key),
+                Map.entry("ownerId", ownerId), Map.entry("approvalId", approvalId),
+                Map.entry("approverId", approverId),
+                Map.entry("approvalFingerprint", approvalFingerprint),
+                Map.entry("reasonCode", reasonCode), Map.entry("version", version),
+                Map.entry("actedAt", actedAt)));
+    }
+
+    private StoredApprovedDiscardHistory storedApprovedDiscardHistory(
+            WorkerAcquisitionScope scope,
+            StoredQuarantine quarantine,
+            ApprovedDiscardReceipt receipt) {
+        ActiveWorkerCandidateQuarantine active = quarantine.quarantine();
+        StoredApprovedDiscardHistory unsealed = new StoredApprovedDiscardHistory(
+                UUID.randomUUID().toString(), scopeKey(scope), scope.tenantId(),
+                scope.organizationId(), scope.projectId(), scope.environmentId(),
+                quarantine.runId(), quarantine.checkpointFingerprint(), active.reason().name(),
+                active.consecutiveFailures(), active.quarantineThreshold(),
+                active.firstObservedAt(), active.quarantinedAt(), receipt.reasonCode(),
+                receipt.ownerId(), receipt.approvalId(), receipt.approverId(),
+                receipt.approvalFingerprint(), receipt.version(), receipt.actedAt(),
+                receipt.receiptFingerprint(), "");
+        return unsealed.withRecordFingerprint(approvedDiscardHistoryFingerprint(unsealed));
+    }
+
+    private void insertApprovedDiscardHistory(StoredApprovedDiscardHistory history) {
+        int inserted = jdbc.update("""
+                INSERT INTO rg_test_durable_worker_quarantine_discard_history (
+                    history_id, scope_key, tenant_id, environment_id, organization_id,
+                    project_id, run_id, checkpoint_fingerprint, quarantine_reason,
+                    consecutive_failures, quarantine_threshold, first_observed_at,
+                    quarantined_at, reason_code, resolution_owner, approval_id, approver_id,
+                    approval_fingerprint, result_version, acted_at, receipt_fingerprint,
+                    record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, history.historyId(), history.scopeKey(), history.tenantId(),
+                history.environmentId(), history.organizationId(), history.projectId(),
+                history.runId(), history.checkpointFingerprint(), history.quarantineReason(),
+                history.consecutiveFailures(), history.quarantineThreshold(),
+                Timestamp.from(history.firstObservedAt()), Timestamp.from(history.quarantinedAt()),
+                history.reasonCode(), history.resolutionOwner(), history.approvalId(),
+                history.approverId(), history.approvalFingerprint(), history.resultVersion(),
+                Timestamp.from(history.actedAt()), history.receiptFingerprint(),
+                history.recordFingerprint());
+        if (inserted != 1) {
+            throw new IllegalStateException("Approved worker discard history was not inserted");
+        }
+    }
+
+    private ApprovedDiscardHistoryRecord mapApprovedDiscardHistory(
+            ResultSet rs, int rowNumber) throws SQLException {
+        StoredApprovedDiscardHistory stored = new StoredApprovedDiscardHistory(
+                rs.getString("history_id"), rs.getString("scope_key"),
+                rs.getString("tenant_id"), rs.getString("organization_id"),
+                rs.getString("project_id"), rs.getString("environment_id"),
+                rs.getString("run_id"), rs.getString("checkpoint_fingerprint"),
+                rs.getString("quarantine_reason"), rs.getLong("consecutive_failures"),
+                rs.getInt("quarantine_threshold"),
+                rs.getTimestamp("first_observed_at").toInstant(),
+                rs.getTimestamp("quarantined_at").toInstant(), rs.getString("reason_code"),
+                rs.getString("resolution_owner"), rs.getString("approval_id"),
+                rs.getString("approver_id"), rs.getString("approval_fingerprint"),
+                rs.getLong("result_version"), rs.getTimestamp("acted_at").toInstant(),
+                rs.getString("receipt_fingerprint"), rs.getString("record_fingerprint"));
+        requireValid(stored);
+        return stored.external();
+    }
+
+    private void requireValid(StoredApprovedDiscardHistory history) {
+        WorkerAcquisitionScope scope;
+        ApprovedDiscardHistoryRecord external;
+        try {
+            scope = history.scope();
+            external = history.external();
+        } catch (RuntimeException invalid) {
+            throw new IllegalStateException("Stored approved worker discard history is corrupt",
+                    invalid);
+        }
+        String expectedReceipt = approvedDiscardReceiptFingerprint(scope, external.key(),
+                external.ownerId(), external.approvalId(), external.approverId(),
+                external.approvalFingerprint(), external.reasonCode(), external.version(),
+                external.actedAt());
+        if (!scopeKey(scope).equals(history.scopeKey())
+                || external.ownerId().equals(external.approverId())
+                || !expectedReceipt.equals(external.receiptFingerprint())
+                || !approvedDiscardHistoryFingerprint(history).equals(
+                        external.recordFingerprint())) {
+            throw new IllegalStateException("Stored approved worker discard history is corrupt");
+        }
+    }
+
+    private String approvedDiscardHistoryFingerprint(StoredApprovedDiscardHistory history) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerQuarantineApprovedDiscardHistory.v1"),
+                Map.entry("historyId", history.historyId()),
+                Map.entry("scope", history.scope()), Map.entry("key", history.key()),
+                Map.entry("quarantineReason", history.quarantineReason()),
+                Map.entry("consecutiveFailures", history.consecutiveFailures()),
+                Map.entry("quarantineThreshold", history.quarantineThreshold()),
+                Map.entry("firstObservedAt", history.firstObservedAt()),
+                Map.entry("quarantinedAt", history.quarantinedAt()),
+                Map.entry("reasonCode", history.reasonCode()),
+                Map.entry("ownerId", history.resolutionOwner()),
+                Map.entry("approvalId", history.approvalId()),
+                Map.entry("approverId", history.approverId()),
+                Map.entry("approvalFingerprint", history.approvalFingerprint()),
+                Map.entry("version", history.resultVersion()),
+                Map.entry("actedAt", history.actedAt()),
+                Map.entry("receiptFingerprint", history.receiptFingerprint())));
     }
 
     private String quarantineSelect() {
@@ -1056,6 +1841,29 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         return safe;
     }
 
+    private static Duration boundedApproval(Duration duration) {
+        Duration safe = Objects.requireNonNull(duration, "approvalDuration");
+        if (safe.compareTo(Duration.ofSeconds(1)) < 0
+                || safe.compareTo(Duration.ofMinutes(15)) > 0
+                || safe.getNano() != 0) {
+            throw new IllegalArgumentException(
+                    "Discard approval duration must be whole seconds from 1 through 900");
+        }
+        return safe;
+    }
+
+    private static Instant earlierOf(Instant first, Instant second) {
+        return first.isBefore(second) ? first : second;
+    }
+
+    private static String reason(String value) {
+        String safe = required(value, "reasonCode", 128).toUpperCase(Locale.ROOT);
+        if (!REASON_CODE.matcher(safe).matches()) {
+            throw new IllegalArgumentException("Worker quarantine reasonCode is invalid");
+        }
+        return safe;
+    }
+
     /** Stable operational state of one automatic quarantine. */
     public enum QuarantineState {
         /** No live maintenance owner; a verified operator may claim the record. */
@@ -1178,7 +1986,9 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
         /** The request ID already identifies different intent. */
         IDEMPOTENCY_CONFLICT,
         /** The run no longer has the exact checkpoint closure named by the claim. */
-        STALE_CHECKPOINT
+        STALE_CHECKPOINT,
+        /** A new discard must use the independent two-person approval protocol. */
+        APPROVAL_REQUIRED
     }
 
     /**
@@ -1255,6 +2065,281 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
 
         private static QuarantineResolutionResult staleCheckpoint() {
             return new QuarantineResolutionResult(ResolutionDisposition.STALE_CHECKPOINT, null);
+        }
+
+        private static QuarantineResolutionResult approvalRequired() {
+            return new QuarantineResolutionResult(ResolutionDisposition.APPROVAL_REQUIRED, null);
+        }
+    }
+
+    /** Durable state of a checker decision for one exact discard claim. */
+    public enum DiscardApprovalState {
+        /** The independent checker decision is live and has not authorized a mutation yet. */
+        APPROVED,
+        /** One exact discard atomically consumed the checker decision. */
+        CONSUMED
+    }
+
+    /** Stable result vocabulary for idempotent discard approvals. */
+    public enum DiscardApprovalDisposition {
+        /** A new checker approval and bound audit mutation committed. */
+        APPROVED,
+        /** The exact immutable approval was returned. */
+        IDEMPOTENT_REPLAY,
+        /** Maker and checker resolve to the same verified actor. */
+        SELF_APPROVAL,
+        /** The projected claim no longer exactly matches the database authority. */
+        FENCE_REJECTED,
+        /** The request ID already identifies a different approval intent. */
+        IDEMPOTENCY_CONFLICT,
+        /** The run no longer has the exact checkpoint closure. */
+        STALE_CHECKPOINT
+    }
+
+    /**
+     * Token-free checker approval for one exact live quarantine claim.
+     *
+     * @param approvalId opaque approval identity
+     * @param key exact quarantine identity
+     * @param claimOwner verified maker identity projected by the claim
+     * @param claimVersion exact maintenance generation
+     * @param claimUntil exact claim deadline
+     * @param approverId distinct verified checker identity
+     * @param reasonCode rationale that a discard must repeat exactly
+     * @param approvedAt database-clock decision time
+     * @param approvalUntil database-clock deadline no later than the claim deadline
+     * @param approvalFingerprint canonical immutable checker-decision fingerprint
+     */
+    public record DiscardApproval(
+            String approvalId,
+            QuarantineKey key,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            String approverId,
+            String reasonCode,
+            Instant approvedAt,
+            Instant approvalUntil,
+            String approvalFingerprint) {
+        /** Validates a complete token-free checker decision. */
+        public DiscardApproval {
+            approvalId = required(approvalId, "approvalId", 36);
+            key = Objects.requireNonNull(key, "key");
+            claimOwner = required(claimOwner, "claimOwner", 255);
+            claimUntil = Objects.requireNonNull(claimUntil, "claimUntil");
+            approverId = required(approverId, "approverId", 255);
+            reasonCode = reason(reasonCode);
+            approvedAt = Objects.requireNonNull(approvedAt, "approvedAt");
+            approvalUntil = Objects.requireNonNull(approvalUntil, "approvalUntil");
+            approvalFingerprint = required(
+                    approvalFingerprint, "approvalFingerprint", 80);
+            if (claimVersion <= 0 || claimOwner.equals(approverId)
+                    || approvedAt.isAfter(approvalUntil)
+                    || approvalUntil.isAfter(claimUntil)) {
+                throw new IllegalArgumentException("Invalid worker quarantine discard approval");
+            }
+        }
+    }
+
+    /** Idempotent result for one checker approval command. */
+    public record DiscardApprovalResult(
+            DiscardApprovalDisposition disposition, DiscardApproval approval) {
+        /** Ensures only successful outcomes expose approval evidence. */
+        public DiscardApprovalResult {
+            disposition = Objects.requireNonNull(disposition, "disposition");
+            boolean carriesApproval = disposition == DiscardApprovalDisposition.APPROVED
+                    || disposition == DiscardApprovalDisposition.IDEMPOTENT_REPLAY;
+            if (carriesApproval != (approval != null)) {
+                throw new IllegalArgumentException("Invalid discard approval result");
+            }
+        }
+
+        private static DiscardApprovalResult approved(DiscardApproval approval) {
+            return new DiscardApprovalResult(DiscardApprovalDisposition.APPROVED, approval);
+        }
+
+        private static DiscardApprovalResult replay(DiscardApproval approval) {
+            return new DiscardApprovalResult(
+                    DiscardApprovalDisposition.IDEMPOTENT_REPLAY, approval);
+        }
+
+        private static DiscardApprovalResult selfApproval() {
+            return new DiscardApprovalResult(DiscardApprovalDisposition.SELF_APPROVAL, null);
+        }
+
+        private static DiscardApprovalResult fenceRejected() {
+            return new DiscardApprovalResult(DiscardApprovalDisposition.FENCE_REJECTED, null);
+        }
+
+        private static DiscardApprovalResult conflict() {
+            return new DiscardApprovalResult(
+                    DiscardApprovalDisposition.IDEMPOTENCY_CONFLICT, null);
+        }
+
+        private static DiscardApprovalResult staleCheckpoint() {
+            return new DiscardApprovalResult(
+                    DiscardApprovalDisposition.STALE_CHECKPOINT, null);
+        }
+    }
+
+    /** Stable result vocabulary for an approved discard command. */
+    public enum ApprovedDiscardDisposition {
+        /** A new discard, approval consumption, history, and audit mutation committed. */
+        DISCARDED,
+        /** The exact immutable discard receipt was returned. */
+        IDEMPOTENT_REPLAY,
+        /** The maker claim token, version, expiry, or quarantine fence failed. */
+        FENCE_REJECTED,
+        /** The checker approval is absent, expired, consumed, self-issued, or mismatched. */
+        APPROVAL_REJECTED,
+        /** The request ID already identifies a different discard intent. */
+        IDEMPOTENCY_CONFLICT,
+        /** The run no longer has the exact checkpoint closure. */
+        STALE_CHECKPOINT
+    }
+
+    /**
+     * Immutable token-free receipt proving an independently approved discard.
+     *
+     * @param key exact quarantine identity
+     * @param ownerId verified maker that held the secret claim
+     * @param approvalId consumed checker approval identity
+     * @param approverId distinct verified checker
+     * @param approvalFingerprint immutable checker-decision fingerprint
+     * @param reasonCode exact shared rationale
+     * @param version resulting maintenance generation
+     * @param actedAt database-clock discard time
+     * @param receiptFingerprint canonical two-person receipt fingerprint
+     */
+    public record ApprovedDiscardReceipt(
+            QuarantineKey key,
+            String ownerId,
+            String approvalId,
+            String approverId,
+            String approvalFingerprint,
+            String reasonCode,
+            long version,
+            Instant actedAt,
+            String receiptFingerprint) {
+        /** Validates complete two-person evidence without exposing the claim token. */
+        public ApprovedDiscardReceipt {
+            key = Objects.requireNonNull(key, "key");
+            ownerId = required(ownerId, "ownerId", 255);
+            approvalId = required(approvalId, "approvalId", 36);
+            approverId = required(approverId, "approverId", 255);
+            approvalFingerprint = required(
+                    approvalFingerprint, "approvalFingerprint", 80);
+            reasonCode = reason(reasonCode);
+            actedAt = Objects.requireNonNull(actedAt, "actedAt");
+            receiptFingerprint = required(
+                    receiptFingerprint, "receiptFingerprint", 80);
+            if (version <= 0 || ownerId.equals(approverId)) {
+                throw new IllegalArgumentException("Invalid approved discard receipt");
+            }
+        }
+    }
+
+    /** Idempotent result of one independently approved discard. */
+    public record ApprovedDiscardResult(
+            ApprovedDiscardDisposition disposition, ApprovedDiscardReceipt receipt) {
+        /** Ensures only successful outcomes expose a token-free receipt. */
+        public ApprovedDiscardResult {
+            disposition = Objects.requireNonNull(disposition, "disposition");
+            boolean carriesReceipt = disposition == ApprovedDiscardDisposition.DISCARDED
+                    || disposition == ApprovedDiscardDisposition.IDEMPOTENT_REPLAY;
+            if (carriesReceipt != (receipt != null)) {
+                throw new IllegalArgumentException("Invalid approved discard result");
+            }
+        }
+
+        private static ApprovedDiscardResult discarded(ApprovedDiscardReceipt receipt) {
+            return new ApprovedDiscardResult(ApprovedDiscardDisposition.DISCARDED, receipt);
+        }
+
+        private static ApprovedDiscardResult replay(ApprovedDiscardReceipt receipt) {
+            return new ApprovedDiscardResult(
+                    ApprovedDiscardDisposition.IDEMPOTENT_REPLAY, receipt);
+        }
+
+        private static ApprovedDiscardResult fenceRejected() {
+            return new ApprovedDiscardResult(ApprovedDiscardDisposition.FENCE_REJECTED, null);
+        }
+
+        private static ApprovedDiscardResult approvalRejected() {
+            return new ApprovedDiscardResult(
+                    ApprovedDiscardDisposition.APPROVAL_REJECTED, null);
+        }
+
+        private static ApprovedDiscardResult conflict() {
+            return new ApprovedDiscardResult(
+                    ApprovedDiscardDisposition.IDEMPOTENCY_CONFLICT, null);
+        }
+
+        private static ApprovedDiscardResult staleCheckpoint() {
+            return new ApprovedDiscardResult(
+                    ApprovedDiscardDisposition.STALE_CHECKPOINT, null);
+        }
+    }
+
+    /**
+     * Immutable retained evidence for a two-person discard.
+     *
+     * @param historyId opaque history identity
+     * @param key exact quarantine identity at discard time
+     * @param quarantineReason automatic isolation reason
+     * @param consecutiveFailures threshold-crossing count
+     * @param quarantineThreshold policy threshold applied at isolation
+     * @param firstObservedAt first same-reason observation
+     * @param quarantinedAt automatic isolation time
+     * @param reasonCode shared maker-checker rationale
+     * @param ownerId verified maker identity
+     * @param approvalId consumed approval identity
+     * @param approverId distinct verified checker identity
+     * @param approvalFingerprint immutable checker-decision fingerprint
+     * @param version resulting maintenance generation
+     * @param actedAt database-clock discard time
+     * @param receiptFingerprint immutable two-person receipt fingerprint
+     * @param recordFingerprint whole retained-record fingerprint
+     */
+    public record ApprovedDiscardHistoryRecord(
+            String historyId,
+            QuarantineKey key,
+            WorkerCandidateDeferralReason quarantineReason,
+            long consecutiveFailures,
+            int quarantineThreshold,
+            Instant firstObservedAt,
+            Instant quarantinedAt,
+            String reasonCode,
+            String ownerId,
+            String approvalId,
+            String approverId,
+            String approvalFingerprint,
+            long version,
+            Instant actedAt,
+            String receiptFingerprint,
+            String recordFingerprint) {
+        /** Validates complete token-free two-person history. */
+        public ApprovedDiscardHistoryRecord {
+            historyId = required(historyId, "historyId", 36);
+            key = Objects.requireNonNull(key, "key");
+            quarantineReason = Objects.requireNonNull(quarantineReason, "quarantineReason");
+            firstObservedAt = Objects.requireNonNull(firstObservedAt, "firstObservedAt");
+            quarantinedAt = Objects.requireNonNull(quarantinedAt, "quarantinedAt");
+            reasonCode = reason(reasonCode);
+            ownerId = required(ownerId, "ownerId", 255);
+            approvalId = required(approvalId, "approvalId", 36);
+            approverId = required(approverId, "approverId", 255);
+            approvalFingerprint = required(
+                    approvalFingerprint, "approvalFingerprint", 80);
+            actedAt = Objects.requireNonNull(actedAt, "actedAt");
+            receiptFingerprint = required(
+                    receiptFingerprint, "receiptFingerprint", 80);
+            recordFingerprint = required(recordFingerprint, "recordFingerprint", 80);
+            if (quarantineThreshold < 1 || consecutiveFailures < quarantineThreshold
+                    || firstObservedAt.isAfter(quarantinedAt) || version <= 0
+                    || ownerId.equals(approverId)) {
+                throw new IllegalArgumentException("Invalid approved discard history record");
+            }
         }
     }
 
@@ -1359,6 +2444,167 @@ public final class DatabaseDurableWorkerQuarantineControlPlane {
                     && (claimOwner.isBlank() || !claimUntil.isAfter(Instant.EPOCH)))) {
                 throw new IllegalArgumentException("Invalid worker quarantine projection");
             }
+        }
+    }
+
+    private record StoredDiscardApproval(
+            String scopeKey,
+            String clientRequestId,
+            String approvalId,
+            String tenantId,
+            String organizationId,
+            String projectId,
+            String environmentId,
+            String runId,
+            String checkpointFingerprint,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            String approverId,
+            String reasonCode,
+            Instant approvedAt,
+            Instant approvalUntil,
+            String approvalState,
+            String consumedByRequestId,
+            Instant consumedAt,
+            String requestFingerprint,
+            String approvalFingerprint,
+            String recordFingerprint) {
+        private WorkerAcquisitionScope scope() {
+            return new WorkerAcquisitionScope(
+                    tenantId, organizationId, projectId, environmentId);
+        }
+
+        private QuarantineKey key() {
+            return new QuarantineKey(runId, checkpointFingerprint);
+        }
+
+        private DiscardApprovalState state() {
+            return DiscardApprovalState.valueOf(approvalState);
+        }
+
+        private DiscardApproval external() {
+            return new DiscardApproval(approvalId, key(), claimOwner, claimVersion, claimUntil,
+                    approverId, reasonCode, approvedAt, approvalUntil, approvalFingerprint);
+        }
+
+        private StoredDiscardApproval withApprovalFingerprint(String fingerprint) {
+            return new StoredDiscardApproval(scopeKey, clientRequestId, approvalId, tenantId,
+                    organizationId, projectId, environmentId, runId, checkpointFingerprint,
+                    claimOwner, claimVersion, claimUntil, approverId, reasonCode, approvedAt,
+                    approvalUntil, approvalState, consumedByRequestId, consumedAt,
+                    requestFingerprint, fingerprint, recordFingerprint);
+        }
+
+        private StoredDiscardApproval withRecordFingerprint(String fingerprint) {
+            return new StoredDiscardApproval(scopeKey, clientRequestId, approvalId, tenantId,
+                    organizationId, projectId, environmentId, runId, checkpointFingerprint,
+                    claimOwner, claimVersion, claimUntil, approverId, reasonCode, approvedAt,
+                    approvalUntil, approvalState, consumedByRequestId, consumedAt,
+                    requestFingerprint, approvalFingerprint, fingerprint);
+        }
+
+        private StoredDiscardApproval consumed(String requestId, Instant at) {
+            return new StoredDiscardApproval(scopeKey, clientRequestId, approvalId, tenantId,
+                    organizationId, projectId, environmentId, runId, checkpointFingerprint,
+                    claimOwner, claimVersion, claimUntil, approverId, reasonCode, approvedAt,
+                    approvalUntil, DiscardApprovalState.CONSUMED.name(), requestId, at,
+                    requestFingerprint, approvalFingerprint, "");
+        }
+    }
+
+    private record StoredApprovedDiscardCommand(
+            String scopeKey,
+            String clientRequestId,
+            String tenantId,
+            String organizationId,
+            String projectId,
+            String environmentId,
+            String runId,
+            String checkpointFingerprint,
+            String resolutionOwner,
+            long claimVersion,
+            Instant claimUntil,
+            String approvalId,
+            String approverId,
+            String reasonCode,
+            String requestFingerprint,
+            long resultVersion,
+            Instant resultActedAt,
+            String resultApprovalFingerprint,
+            String resultReceiptFingerprint,
+            String recordFingerprint) {
+        private WorkerAcquisitionScope scope() {
+            return new WorkerAcquisitionScope(
+                    tenantId, organizationId, projectId, environmentId);
+        }
+
+        private QuarantineKey key() {
+            return new QuarantineKey(runId, checkpointFingerprint);
+        }
+
+        private ApprovedDiscardReceipt receipt() {
+            return new ApprovedDiscardReceipt(key(), resolutionOwner, approvalId, approverId,
+                    resultApprovalFingerprint, reasonCode, resultVersion, resultActedAt,
+                    resultReceiptFingerprint);
+        }
+
+        private StoredApprovedDiscardCommand withRecordFingerprint(String fingerprint) {
+            return new StoredApprovedDiscardCommand(scopeKey, clientRequestId, tenantId,
+                    organizationId, projectId, environmentId, runId, checkpointFingerprint,
+                    resolutionOwner, claimVersion, claimUntil, approvalId, approverId,
+                    reasonCode, requestFingerprint, resultVersion, resultActedAt,
+                    resultApprovalFingerprint, resultReceiptFingerprint, fingerprint);
+        }
+    }
+
+    private record StoredApprovedDiscardHistory(
+            String historyId,
+            String scopeKey,
+            String tenantId,
+            String organizationId,
+            String projectId,
+            String environmentId,
+            String runId,
+            String checkpointFingerprint,
+            String quarantineReason,
+            long consecutiveFailures,
+            int quarantineThreshold,
+            Instant firstObservedAt,
+            Instant quarantinedAt,
+            String reasonCode,
+            String resolutionOwner,
+            String approvalId,
+            String approverId,
+            String approvalFingerprint,
+            long resultVersion,
+            Instant actedAt,
+            String receiptFingerprint,
+            String recordFingerprint) {
+        private WorkerAcquisitionScope scope() {
+            return new WorkerAcquisitionScope(
+                    tenantId, organizationId, projectId, environmentId);
+        }
+
+        private QuarantineKey key() {
+            return new QuarantineKey(runId, checkpointFingerprint);
+        }
+
+        private ApprovedDiscardHistoryRecord external() {
+            return new ApprovedDiscardHistoryRecord(historyId, key(),
+                    WorkerCandidateDeferralReason.valueOf(quarantineReason),
+                    consecutiveFailures, quarantineThreshold, firstObservedAt, quarantinedAt,
+                    reasonCode, resolutionOwner, approvalId, approverId, approvalFingerprint,
+                    resultVersion, actedAt, receiptFingerprint, recordFingerprint);
+        }
+
+        private StoredApprovedDiscardHistory withRecordFingerprint(String fingerprint) {
+            return new StoredApprovedDiscardHistory(historyId, scopeKey, tenantId,
+                    organizationId, projectId, environmentId, runId, checkpointFingerprint,
+                    quarantineReason, consecutiveFailures, quarantineThreshold, firstObservedAt,
+                    quarantinedAt, reasonCode, resolutionOwner, approvalId, approverId,
+                    approvalFingerprint, resultVersion, actedAt, receiptFingerprint,
+                    fingerprint);
         }
     }
 

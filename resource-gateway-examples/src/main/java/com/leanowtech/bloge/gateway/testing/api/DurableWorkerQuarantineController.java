@@ -56,6 +56,14 @@ public final class DurableWorkerQuarantineController {
         return service.history(limit, identity(headers));
     }
 
+    /** Returns bounded token-free maker-checker evidence for approved discards. */
+    @GetMapping("/approved-discards/history")
+    public DurableWorkerQuarantineApprovedDiscardHistoryResponse discardHistory(
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestHeader HttpHeaders headers) {
+        return service.discardHistory(limit, identity(headers));
+    }
+
     /** Claims one exact-checkpoint quarantine for the verified actor. */
     @PostMapping("/claims")
     public DurableWorkerQuarantineClaimResponse claim(
@@ -64,7 +72,23 @@ public final class DurableWorkerQuarantineController {
         return service.claim(request, identity(headers));
     }
 
-    /** Releases or discards one exact live maintenance claim. */
+    /** Approves one exact live claim as an independent verified checker. */
+    @PostMapping("/discard-approvals")
+    public DurableWorkerQuarantineDiscardApprovalResponse approveDiscard(
+            @RequestBody DurableWorkerQuarantineDiscardApprovalRequest request,
+            @RequestHeader HttpHeaders headers) {
+        return service.approveDiscard(request, identity(headers));
+    }
+
+    /** Consumes an independent checker approval and discards one exact live claim. */
+    @PostMapping("/approved-discards")
+    public DurableWorkerQuarantineApprovedDiscardResponse discard(
+            @RequestBody DurableWorkerQuarantineApprovedDiscardRequest request,
+            @RequestHeader HttpHeaders headers) {
+        return service.discard(request, identity(headers));
+    }
+
+    /** Releases a live claim or replays a legacy discard receipt. */
     @PostMapping("/resolutions")
     public DurableWorkerQuarantineResolutionResponse resolve(
             @RequestBody DurableWorkerQuarantineResolutionRequest request,

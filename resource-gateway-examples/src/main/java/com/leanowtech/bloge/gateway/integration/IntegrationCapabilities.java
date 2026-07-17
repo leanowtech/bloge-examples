@@ -290,6 +290,16 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineResolutionRequest.SCHEMA_VERSION));
             objects.put("durableWorkerQuarantineResolutionResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineResolutionResponse.SCHEMA_VERSION));
+            objects.put("durableWorkerQuarantineDiscardApprovalRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineDiscardApprovalRequest.SCHEMA_VERSION));
+            objects.put("durableWorkerQuarantineDiscardApprovalResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineDiscardApprovalResponse.SCHEMA_VERSION));
+            objects.put("durableWorkerQuarantineApprovedDiscardRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineApprovedDiscardRequest.SCHEMA_VERSION));
+            objects.put("durableWorkerQuarantineApprovedDiscardResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineApprovedDiscardResponse.SCHEMA_VERSION));
+            objects.put("durableWorkerQuarantineApprovedDiscardHistoryResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableWorkerQuarantineApprovedDiscardHistoryResponse.SCHEMA_VERSION));
         }
 
         Map<String, Boolean> features = new LinkedHashMap<>();
@@ -399,6 +409,9 @@ public record IntegrationCapabilities(
         features.put("durableTestWorkerCandidateQuarantine", testExecutionEndpointEnabled);
         features.put("durableTestWorkerQuarantineMaintenance", testExecutionEndpointEnabled);
         features.put("immutableDurableWorkerQuarantineHistory", testExecutionEndpointEnabled);
+        features.put("twoPersonDurableWorkerQuarantineDiscard", testExecutionEndpointEnabled);
+        features.put("immutableApprovedWorkerQuarantineDiscardHistory",
+                testExecutionEndpointEnabled);
         features.put("immutableDurableWorkerNoWorkResult", testExecutionEndpointEnabled);
         features.put("durableRecoveryDependencyReauthorization", testExecutionEndpointEnabled);
         features.put("authenticatedDurableRecoveryHeartbeat", testExecutionEndpointEnabled);
@@ -494,6 +507,12 @@ public record IntegrationCapabilities(
                     "/api/testing/durable-state/worker-quarantines/claims"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/durable-state/worker-quarantines/resolutions"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/durable-state/worker-quarantines/discard-approvals"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/durable-state/worker-quarantines/approved-discards"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/durable-state/worker-quarantines/approved-discards/history"));
             endpoints.add(new Endpoint("PUT", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("GET", "/api/testing/fixture-bundles/{fixtureBundleId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/replay-payloads/{replayPayloadId}"));

@@ -185,7 +185,7 @@ class TestRuntimeSloMonitorTest {
                 counts(DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.class,
                         DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.AVAILABLE, 1,
                         DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.CLAIMED, 1),
-                1, 7);
+                1, 7, 1, 2, 3);
         when(controlPlane.operationalSnapshot(Duration.ofMinutes(15)))
                 .thenReturn(snapshot(observedAt, executionOutcomes(), suiteOutcomes(),
                         queue(0, 0, null), queue(0, 0, null),
@@ -206,13 +206,17 @@ class TestRuntimeSloMonitorTest {
         assertThat(violations).containsExactly(
                 "WORKER_CANDIDATE_QUARANTINE_BACKLOG",
                 "WORKER_CANDIDATE_QUARANTINE_STALE",
-                "WORKER_CANDIDATE_QUARANTINE_CLAIM_EXPIRED");
+                "WORKER_CANDIDATE_QUARANTINE_CLAIM_EXPIRED",
+                "WORKER_CANDIDATE_QUARANTINE_DISCARD_APPROVAL_EXPIRED");
         assertThat(health.getDetails().toString())
                 .contains("workerCandidateQuarantines={")
                 .contains("available=1")
                 .contains("claimed=1")
                 .contains("expiredClaims=1")
+                .contains("liveDiscardApprovals=1")
+                .contains("expiredDiscardApprovals=2")
                 .contains("historyRecords=7")
+                .contains("approvedDiscardHistoryRecords=3")
                 .contains("maximumConsecutiveFailures=32")
                 .doesNotContain("tenant", "runId", "checkpointFingerprint");
     }
@@ -235,6 +239,9 @@ class TestRuntimeSloMonitorTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TestRuntimeSloMonitor.WorkerCandidateQuarantinePolicy(
                 0, Duration.ofSeconds(1), -1))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TestRuntimeSloMonitor.WorkerCandidateQuarantinePolicy(
+                0, Duration.ofSeconds(1), 0, -1))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TestRuntimeSloMonitor.Policy(
                 Duration.ofDays(366),
@@ -262,7 +269,7 @@ class TestRuntimeSloMonitorTest {
                 new TestRuntimeSloMonitor.WorkerCandidateDeferralPolicy(
                         1, 0, 2, Duration.ofSeconds(60)),
                 new TestRuntimeSloMonitor.WorkerCandidateQuarantinePolicy(
-                        1, Duration.ofSeconds(60), 0),
+                        1, Duration.ofSeconds(60), 0, 0),
                 new TestRuntimeSloMonitor.StoragePolicy(0, 0, 0, 0));
     }
 

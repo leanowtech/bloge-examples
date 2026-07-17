@@ -106,7 +106,9 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("authenticatedDurableStateProjectionOperations", true)
                 .containsEntry("immutableDurableStateProjectionActionAudit", true)
                 .containsEntry("durableTestWorkerQuarantineMaintenance", true)
-                .containsEntry("immutableDurableWorkerQuarantineHistory", true);
+                .containsEntry("immutableDurableWorkerQuarantineHistory", true)
+                .containsEntry("twoPersonDurableWorkerQuarantineDiscard", true)
+                .containsEntry("immutableApprovedWorkerQuarantineDiscardHistory", true);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/durable-state/projection-findings"));
         assertThat(capabilities.getBody().payload().supportedObjects())
@@ -117,7 +119,11 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("durableWorkerQuarantineClaimRequest",
                         List.of(DurableWorkerQuarantineClaimRequest.SCHEMA_VERSION))
                 .containsEntry("durableWorkerQuarantineResolutionResponse",
-                        List.of(DurableWorkerQuarantineResolutionResponse.SCHEMA_VERSION));
+                        List.of(DurableWorkerQuarantineResolutionResponse.SCHEMA_VERSION))
+                .containsEntry("durableWorkerQuarantineDiscardApprovalRequest",
+                        List.of(DurableWorkerQuarantineDiscardApprovalRequest.SCHEMA_VERSION))
+                .containsEntry("durableWorkerQuarantineApprovedDiscardResponse",
+                        List.of(DurableWorkerQuarantineApprovedDiscardResponse.SCHEMA_VERSION));
         assertThat(capabilities.getBody().payload().endpoints())
                 .anyMatch(endpoint -> endpoint.method().equals("GET")
                         && endpoint.path().equals(
@@ -130,7 +136,16 @@ class TestRuntimeApplicationIntegrationTest {
                         "/api/testing/durable-state/worker-quarantines/claims"))
                 .anyMatch(endpoint -> endpoint.method().equals("POST")
                         && endpoint.path().equals(
-                        "/api/testing/durable-state/worker-quarantines/resolutions"));
+                        "/api/testing/durable-state/worker-quarantines/resolutions"))
+                .anyMatch(endpoint -> endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/testing/durable-state/worker-quarantines/discard-approvals"))
+                .anyMatch(endpoint -> endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/testing/durable-state/worker-quarantines/approved-discards"))
+                .anyMatch(endpoint -> endpoint.method().equals("GET")
+                        && endpoint.path().equals(
+                        "/api/testing/durable-state/worker-quarantines/approved-discards/history"));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("governedTestReplayPayloadCapture", true)
                 .containsEntry("testReplayBehavior", true)

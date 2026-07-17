@@ -276,9 +276,13 @@ This is non-blocking pull control with automatic exact-checkpoint isolation, not
 delivery or a complete scheduler: it does not transfer BLOGE runtime state to the caller, reserve an
 execution-capacity permit while idle, or provide tenant weighting/priority/aging. A separate
 `TEST_RUNTIME_MAINTENANCE` protocol now provides scoped, payload-free quarantine list/history,
-server-fenced claims, and idempotent `RELEASE`/`DISCARD` receipts. Exact semantics are documented in
+server-fenced claims, idempotent `RELEASE`, and database-authoritative two-person `DISCARD`. A
+separate approver group creates a token-free, short-lived approval for the exact live maker claim;
+the maker then proves its secret fence and atomically consumes that approval. New direct legacy
+`DISCARD` commands are rejected. Exact semantics are documented in
 [Stage 4 worker candidate backoff verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-candidate-backoff-verification.md)
-and the [worker quarantine maintenance verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md).
+the [worker quarantine maintenance verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-maintenance-verification.md),
+and the [two-person discard verification](../docs/resource-gateway-execution-data-control-plane-stage4-worker-quarantine-two-person-discard-verification.md).
 
 ### Claim an expired durable test lease
 
@@ -722,7 +726,8 @@ store unavailability produce stable SLO violations. Fixed-vocabulary meters live
 values. Deterministic worker deferrals add only the closed `reason` tag plus untagged retry-due,
 maximum-failure, and oldest-age gauges. Worker quarantines add the same closed `reason` vocabulary,
 fixed `AVAILABLE`/`CLAIMED` maintenance-state gauges, and untagged maximum-failure, oldest-age,
-expired-claim, and retained-history gauges. An expired claim has its own stable health violation.
+expired-claim, retained-history, live/expired discard-approval, and approved-discard-history gauges.
+Expired claims and expired unconsumed approvals have separate stable health violations.
 Configure thresholds through
 `gateway.testing.runtime-slo.*` / `RG_TEST_RUNTIME_SLO_*`; the full table is in the testing
 control-plane guide. Lifecycle/time indexes support these aggregate reads, and the outcome lookback

@@ -108,10 +108,13 @@ public class TestRuntimeConfiguration {
             ObjectMapper objectMapper,
             @Value("${gateway.testing.durable.worker-quarantines.required-group:resource-gateway-test-runtime-operators}")
             String requiredGroup,
+            @Value("${gateway.testing.durable.worker-quarantines.required-approver-group:resource-gateway-test-runtime-quarantine-approvers}")
+            String requiredApproverGroup,
             @Value("${gateway.testing.durable.worker-quarantines.required-clearance:RESTRICTED}")
             String requiredClearance) {
         return new DurableWorkerQuarantineService(
-                controlPlane, securityEvents, objectMapper, requiredGroup, requiredClearance);
+                controlPlane, securityEvents, objectMapper, requiredGroup,
+                requiredApproverGroup, requiredClearance);
     }
 
     /**
@@ -404,6 +407,8 @@ public class TestRuntimeConfiguration {
             long workerQuarantineMaxOldestAgeSeconds,
             @Value("${gateway.testing.runtime-slo.worker-quarantine-max-expired-claims:0}")
             long workerQuarantineMaxExpiredClaims,
+            @Value("${gateway.testing.runtime-slo.worker-quarantine-max-expired-discard-approvals:0}")
+            long workerQuarantineMaxExpiredDiscardApprovals,
             @Value("${gateway.testing.runtime-slo.max-expired-execution-records:0}")
             long maxExpiredExecutionRecords,
             @Value("${gateway.testing.runtime-slo.max-expired-suite-records:0}")
@@ -438,7 +443,8 @@ public class TestRuntimeConfiguration {
                         new TestRuntimeSloMonitor.WorkerCandidateQuarantinePolicy(
                                 workerQuarantineMaxRecords,
                                 Duration.ofSeconds(workerQuarantineMaxOldestAgeSeconds),
-                                workerQuarantineMaxExpiredClaims),
+                                workerQuarantineMaxExpiredClaims,
+                                workerQuarantineMaxExpiredDiscardApprovals),
                         new TestRuntimeSloMonitor.StoragePolicy(
                                 maxExpiredExecutionRecords,
                                 maxExpiredSuiteRecords,

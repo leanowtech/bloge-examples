@@ -138,7 +138,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         assertThat(successor.claim().version()).isEqualTo(2);
         assertThat(successor.claim().claimToken()).isNotEqualTo(expired.claimToken());
         assertThat(controlPlane.resolve(workerScope(), expired, "resolve-expired",
-                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD,
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
                 "EXPIRED_OWNER", ignored -> TestRuntimeTransactionMutation.noop())
                 .disposition()).isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
                 .ResolutionDisposition.FENCE_REJECTED);
@@ -201,9 +201,11 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         assertThat(firstClaim.claim()).isEqualTo(secondClaim.claim());
         assertThat(claimAudits).hasValue(1);
 
+        var approval = approve(firstClaim.claim(), "checker-a", "approve-concurrent");
+
         AtomicInteger resolutionAudits = new AtomicInteger();
-        DatabaseDurableWorkerQuarantineControlPlane.QuarantineResolutionResult firstResolution;
-        DatabaseDurableWorkerQuarantineControlPlane.QuarantineResolutionResult secondResolution;
+        DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardResult firstResolution;
+        DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardResult secondResolution;
         try (var executor = Executors.newFixedThreadPool(3)) {
             CountDownLatch checkpointLocked = new CountDownLatch(1);
             CountDownLatch releaseCheckpoint = new CountDownLatch(1);
@@ -215,19 +217,15 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
             var first = executor.submit(() -> {
                 callersReady.countDown();
                 start.await(5, TimeUnit.SECONDS);
-                return controlPlane.resolve(workerScope(), firstClaim.claim(),
-                        "discard-concurrent-retry",
-                        DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD,
-                        "AUTHORIZED_RETRY",
+                return controlPlane.discard(workerScope(), firstClaim.claim(),
+                        approval.approvalId(), "discard-concurrent-retry", "AUTHORIZED_RETRY",
                         ignored -> jdbc -> resolutionAudits.incrementAndGet());
             });
             var second = executor.submit(() -> {
                 callersReady.countDown();
                 start.await(5, TimeUnit.SECONDS);
-                return controlPlane.resolve(workerScope(), firstClaim.claim(),
-                        "discard-concurrent-retry",
-                        DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD,
-                        "AUTHORIZED_RETRY",
+                return controlPlane.discard(workerScope(), firstClaim.claim(),
+                        approval.approvalId(), "discard-concurrent-retry", "AUTHORIZED_RETRY",
                         ignored -> jdbc -> resolutionAudits.incrementAndGet());
             });
             assertThat(callersReady.await(5, TimeUnit.SECONDS)).isTrue();
@@ -244,13 +242,70 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
 
         assertThat(List.of(firstResolution.disposition(), secondResolution.disposition()))
                 .containsExactlyInAnyOrder(
-                        DatabaseDurableWorkerQuarantineControlPlane.ResolutionDisposition.RESOLVED,
-                        DatabaseDurableWorkerQuarantineControlPlane.ResolutionDisposition
+                        DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardDisposition
+                                .DISCARDED,
+                        DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardDisposition
                                 .IDEMPOTENT_REPLAY);
         assertThat(firstResolution.receipt()).isEqualTo(secondResolution.receipt());
         assertThat(resolutionAudits).hasValue(1);
         assertThat(controlPlane.quarantines(workerScope(), false, 10)).isEmpty();
-        assertThat(controlPlane.history(workerScope(), 10)).hasSize(1);
+        assertThat(controlPlane.discardHistory(workerScope(), 10)).hasSize(1);
+    }
+
+    @Test
+    void oneApprovalCanAuthorizeOnlyOneOfTwoDifferentConcurrentDiscardCommands()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-racing-discards",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var approval = approve(claim, "checker-a", "approve-racing-discards");
+        AtomicInteger audits = new AtomicInteger();
+        DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardResult firstResult;
+        DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardResult secondResult;
+
+        try (var executor = Executors.newFixedThreadPool(3)) {
+            CountDownLatch checkpointLocked = new CountDownLatch(1);
+            CountDownLatch releaseCheckpoint = new CountDownLatch(1);
+            var blocker = holdCheckpointLock(executor, checkpointLocked, releaseCheckpoint);
+            assertThat(checkpointLocked.await(5, TimeUnit.SECONDS)).isTrue();
+            CountDownLatch callersReady = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+            var first = executor.submit(() -> {
+                callersReady.countDown();
+                start.await(5, TimeUnit.SECONDS);
+                return controlPlane.discard(workerScope(), claim, approval.approvalId(),
+                        "discard-race-a", "AUTHORIZED_RETRY",
+                        ignored -> jdbc -> audits.incrementAndGet());
+            });
+            var second = executor.submit(() -> {
+                callersReady.countDown();
+                start.await(5, TimeUnit.SECONDS);
+                return controlPlane.discard(workerScope(), claim, approval.approvalId(),
+                        "discard-race-b", "AUTHORIZED_RETRY",
+                        ignored -> jdbc -> audits.incrementAndGet());
+            });
+            assertThat(callersReady.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            releaseCheckpoint.countDown();
+            blocker.get(5, TimeUnit.SECONDS);
+            firstResult = first.get(5, TimeUnit.SECONDS);
+            secondResult = second.get(5, TimeUnit.SECONDS);
+        }
+
+        assertThat(List.of(firstResult.disposition(), secondResult.disposition()))
+                .containsExactlyInAnyOrder(
+                        DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardDisposition
+                                .DISCARDED,
+                        DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardDisposition
+                                .FENCE_REJECTED);
+        assertThat(audits).hasValue(1);
+        assertThat(controlPlane.discardHistory(workerScope(), 10)).hasSize(1);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_worker_quarantine_discards
+                """, Integer.class)).isOne();
     }
 
     @Test
@@ -306,28 +361,180 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
         var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-discard",
                 Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
 
-        var discarded = controlPlane.resolve(workerScope(), claim, "discard-1",
-                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD,
-                "AUTHORIZED_RETRY", ignored -> TestRuntimeTransactionMutation.noop());
-        var replayed = controlPlane.resolve(workerScope(), claim, "discard-1",
-                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD,
-                "AUTHORIZED_RETRY", ignored -> {
+        var approval = approve(claim, "checker-a", "approve-discard");
+        var discarded = controlPlane.discard(workerScope(), claim, approval.approvalId(),
+                "discard-1", "AUTHORIZED_RETRY",
+                ignored -> TestRuntimeTransactionMutation.noop());
+        var replayed = controlPlane.discard(workerScope(), claim, approval.approvalId(),
+                "discard-1", "AUTHORIZED_RETRY", ignored -> {
                     throw new AssertionError("idempotent replay must not request another audit");
                 });
 
         assertThat(discarded.disposition()).isEqualTo(
-                DatabaseDurableWorkerQuarantineControlPlane.ResolutionDisposition.RESOLVED);
+                DatabaseDurableWorkerQuarantineControlPlane.ApprovedDiscardDisposition.DISCARDED);
         assertThat(replayed.receipt()).isEqualTo(discarded.receipt());
+        assertThat(discarded.receipt().ownerId()).isEqualTo("operator-a");
+        assertThat(discarded.receipt().approverId()).isEqualTo("checker-a");
+        assertThat(discarded.receipt().approvalFingerprint())
+                .isEqualTo(approval.approvalFingerprint());
+        assertThat(discarded.receipt().toString()).doesNotContain(claim.claimToken());
         assertThat(controlPlane.quarantines(workerScope(), false, 10)).isEmpty();
-        assertThat(controlPlane.history(workerScope(), 10)).singleElement()
-                .extracting(DatabaseDurableWorkerQuarantineControlPlane
-                        .QuarantineHistoryRecord::action)
-                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
-                        .ResolutionAction.DISCARD);
+        assertThat(controlPlane.discardHistory(workerScope(), 10)).singleElement()
+                .satisfies(record -> {
+                    assertThat(record.ownerId()).isEqualTo("operator-a");
+                    assertThat(record.approverId()).isEqualTo("checker-a");
+                    assertThat(record.approvalId()).isEqualTo(approval.approvalId());
+                    assertThat(record.toString()).doesNotContain(claim.claimToken());
+                });
         assertThat(repository.findExpiredRecoveryCandidates(
                 new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
                         workerScope(), 1)).candidates()).singleElement()
                 .satisfies(candidate -> assertThat(candidate.activeQuarantine()).isEmpty());
+    }
+
+    @Test
+    void directDiscardAndSelfApprovalAreRejectedWithoutMutatingTheQuarantine() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-approval-required",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+
+        assertThat(controlPlane.resolve(workerScope(), claim, "legacy-direct-discard",
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD,
+                "AUTHORIZED_RETRY", ignored -> TestRuntimeTransactionMutation.noop())
+                .disposition()).isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                .ResolutionDisposition.APPROVAL_REQUIRED);
+        assertThat(controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), claim.ownerId(), "self-approval",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition())
+                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                        .DiscardApprovalDisposition.SELF_APPROVAL);
+
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_worker_quarantine_discard_approvals
+                """, Integer.class)).isZero();
+        assertThat(controlPlane.quarantines(workerScope(), false, 10)).singleElement()
+                .extracting(DatabaseDurableWorkerQuarantineControlPlane
+                        .QuarantineRecord::claimOwner)
+                .isEqualTo("operator-a");
+    }
+
+    @Test
+    void approvalExactlyReplaysRejectsIntentDriftAndMustMatchDiscardReason() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-approval-replay",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        AtomicInteger approvalAudits = new AtomicInteger();
+
+        var approved = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-replay",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                ignored -> jdbc -> approvalAudits.incrementAndGet());
+        var replayed = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-replay",
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                ignored -> jdbc -> approvalAudits.incrementAndGet());
+        var drifted = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-replay",
+                "AUTHORIZED_RETRY", Duration.ofSeconds(30),
+                ignored -> TestRuntimeTransactionMutation.noop());
+
+        assertThat(approved.disposition()).isEqualTo(
+                DatabaseDurableWorkerQuarantineControlPlane.DiscardApprovalDisposition.APPROVED);
+        assertThat(replayed.disposition()).isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                .DiscardApprovalDisposition.IDEMPOTENT_REPLAY);
+        assertThat(replayed.approval()).isEqualTo(approved.approval());
+        assertThat(drifted.disposition()).isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                .DiscardApprovalDisposition.IDEMPOTENCY_CONFLICT);
+        assertThat(approvalAudits).hasValue(1);
+
+        assertThat(controlPlane.discard(workerScope(), claim, approved.approval().approvalId(),
+                "discard-wrong-reason", "DIFFERENT_REASON",
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition())
+                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                        .ApprovedDiscardDisposition.APPROVAL_REJECTED);
+        assertThat(controlPlane.discard(workerScope(), claim, approved.approval().approvalId(),
+                "discard-correct-reason", "AUTHORIZED_RETRY",
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition())
+                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                        .ApprovedDiscardDisposition.DISCARDED);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT approval_state
+                FROM rg_test_durable_worker_quarantine_discard_approvals
+                WHERE approval_id = ?
+                """, String.class, approved.approval().approvalId())).isEqualTo("CONSUMED");
+    }
+
+    @Test
+    void expiredApprovalCannotAuthorizeDiscardEvenWhileTheMakerClaimRemainsLive()
+            throws Exception {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-expiring-approval",
+                Duration.ofSeconds(5), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var approval = controlPlane.approveDiscard(workerScope(), key, claim.ownerId(),
+                claim.version(), claim.claimUntil(), "checker-a", "approval-expiring",
+                "AUTHORIZED_RETRY", Duration.ofSeconds(1),
+                ignored -> TestRuntimeTransactionMutation.noop()).approval();
+
+        Thread.sleep(1_200);
+
+        assertThat(controlPlane.discard(workerScope(), claim, approval.approvalId(),
+                "discard-expired-approval", "AUTHORIZED_RETRY",
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition())
+                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                        .ApprovedDiscardDisposition.APPROVAL_REJECTED);
+        assertThat(controlPlane.quarantines(workerScope(), false, 10)).singleElement()
+                .satisfies(record -> assertThat(record.claimOwner()).isEqualTo("operator-a"));
+        assertThat(controlPlane.discardHistory(workerScope(), 10)).isEmpty();
+    }
+
+    @Test
+    void approvalAndDiscardAuditFailuresRollbackEveryAuthorityAndReceiptMutation() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-two-person-rollback",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+
+        assertThatThrownBy(() -> controlPlane.approveDiscard(workerScope(), key,
+                claim.ownerId(), claim.version(), claim.claimUntil(), "checker-a",
+                "approval-rollback", "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                ignored -> jdbc -> {
+                    throw new IllegalStateException("approval audit unavailable");
+                })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("approval audit unavailable");
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_worker_quarantine_discard_approvals
+                """, Integer.class)).isZero();
+
+        var approval = approve(claim, "checker-a", "approval-rollback");
+        assertThatThrownBy(() -> controlPlane.discard(workerScope(), claim,
+                approval.approvalId(), "discard-rollback", "AUTHORIZED_RETRY",
+                ignored -> jdbc -> {
+                    throw new IllegalStateException("discard audit unavailable");
+                })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("discard audit unavailable");
+        assertThat(database.jdbc().queryForObject("""
+                SELECT approval_state
+                FROM rg_test_durable_worker_quarantine_discard_approvals
+                WHERE approval_id = ?
+                """, String.class, approval.approvalId())).isEqualTo("APPROVED");
+        assertThat(controlPlane.quarantines(workerScope(), false, 10)).hasSize(1);
+        assertThat(controlPlane.discardHistory(workerScope(), 10)).isEmpty();
+
+        assertThat(controlPlane.discard(workerScope(), claim, approval.approvalId(),
+                "discard-rollback", "AUTHORIZED_RETRY",
+                ignored -> TestRuntimeTransactionMutation.noop()).disposition())
+                .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
+                        .ApprovedDiscardDisposition.DISCARDED);
     }
 
     @Test
@@ -377,7 +584,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 key, "operator-a", "forged-token", claimed.claim().version(),
                 claimed.claim().claimUntil());
         assertThat(controlPlane.resolve(workerScope(), forged, "forged-resolution",
-                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD,
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
                 "FORGED", ignored -> TestRuntimeTransactionMutation.noop()).disposition())
                 .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
                         .ResolutionDisposition.FENCE_REJECTED);
@@ -404,7 +611,7 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 "replacement-owner", Duration.ofMinutes(2)));
 
         assertThat(controlPlane.resolve(workerScope(), claim, "discard-stale",
-                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.DISCARD,
+                DatabaseDurableWorkerQuarantineControlPlane.ResolutionAction.RELEASE,
                 "STALE", ignored -> TestRuntimeTransactionMutation.noop()).disposition())
                 .isEqualTo(DatabaseDurableWorkerQuarantineControlPlane
                         .ResolutionDisposition.STALE_CHECKPOINT);
@@ -499,6 +706,51 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                 .hasMessageContaining("quarantine history is corrupt");
     }
 
+    @Test
+    void tamperedDiscardApprovalFailsClosedBeforeMutation() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-approval-tamper",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var approval = approve(claim, "checker-a", "approve-tamper");
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_discard_approvals
+                SET approver_id = 'operator-a'
+                WHERE approval_id = ?
+                """, approval.approvalId());
+
+        assertThatThrownBy(() -> controlPlane.discard(
+                workerScope(), claim, approval.approvalId(), "discard-tampered-approval",
+                "AUTHORIZED_RETRY", ignored -> TestRuntimeTransactionMutation.noop()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("discard approval is corrupt");
+        assertThat(controlPlane.quarantines(workerScope(), false, 10)).hasSize(1);
+        assertThat(controlPlane.discardHistory(workerScope(), 10)).isEmpty();
+    }
+
+    @Test
+    void tamperedApprovedDiscardHistoryFailsClosedAtPublicReadBoundary() {
+        DurableTestExecutionCheckpoint checkpoint = createQuarantine();
+        var key = new DatabaseDurableWorkerQuarantineControlPlane.QuarantineKey(
+                checkpoint.runId(), checkpoint.checkpointFingerprint());
+        var claim = controlPlane.claim(workerScope(), key, "operator-a", "claim-history-tamper",
+                Duration.ofMinutes(2), ignored -> TestRuntimeTransactionMutation.noop()).claim();
+        var approval = approve(claim, "checker-a", "approve-history-tamper");
+        controlPlane.discard(workerScope(), claim, approval.approvalId(),
+                "discard-history-tamper", "AUTHORIZED_RETRY",
+                ignored -> TestRuntimeTransactionMutation.noop());
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_quarantine_discard_history
+                SET approver_id = 'operator-b'
+                WHERE approval_id = ?
+                """, approval.approvalId());
+
+        assertThatThrownBy(() -> controlPlane.discardHistory(workerScope(), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("discard history is corrupt");
+    }
+
     private DurableTestExecutionCheckpoint createQuarantine() {
         DurableTestExecutionCheckpoint checkpoint = expiredCheckpoint();
         repository.create(checkpoint, boundNoop(checkpoint));
@@ -517,6 +769,16 @@ class DatabaseDurableWorkerQuarantineControlPlaneTest {
                                 Duration.ofSeconds(5), Duration.ofMinutes(5), 1)),
                 TestRuntimeTransactionMutation.noop());
         return checkpoint;
+    }
+
+    private DatabaseDurableWorkerQuarantineControlPlane.DiscardApproval approve(
+            DatabaseDurableWorkerQuarantineControlPlane.QuarantineClaim claim,
+            String approver,
+            String requestId) {
+        return controlPlane.approveDiscard(workerScope(), claim.key(), claim.ownerId(),
+                claim.version(), claim.claimUntil(), approver, requestId,
+                "AUTHORIZED_RETRY", Duration.ofMinutes(1),
+                ignored -> TestRuntimeTransactionMutation.noop()).approval();
     }
 
     private java.util.concurrent.Future<?> holdCheckpointLock(

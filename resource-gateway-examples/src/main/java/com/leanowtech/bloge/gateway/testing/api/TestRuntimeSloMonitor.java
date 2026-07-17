@@ -169,6 +169,11 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                 > policy.workerCandidateQuarantines().maxExpiredClaims()) {
             violations.add(Violation.WORKER_CANDIDATE_QUARANTINE_CLAIM_EXPIRED.name());
         }
+        if (quarantines.expiredDiscardApprovals()
+                > policy.workerCandidateQuarantines().maxExpiredDiscardApprovals()) {
+            violations.add(
+                    Violation.WORKER_CANDIDATE_QUARANTINE_DISCARD_APPROVAL_EXPIRED.name());
+        }
         DatabaseTestRuntimeSloControlPlane.StorageSnapshot storage = snapshot.storage();
         if (storage.expiredExecutionRecords()
                 > policy.storage().maxExpiredExecutionRecords()) {
@@ -206,7 +211,9 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                         quarantines.totalByMaintenanceState().get(
                                 DatabaseDurableWorkerQuarantineControlPlane.QuarantineState
                                         .CLAIMED),
-                        quarantines.expiredClaimRecords(), quarantines.historyRecords(),
+                        quarantines.expiredClaimRecords(), quarantines.liveDiscardApprovals(),
+                        quarantines.expiredDiscardApprovals(), quarantines.historyRecords(),
+                        quarantines.approvedDiscardHistoryRecords(),
                         quarantines.maximumConsecutiveFailures(),
                         secondsOrUnknown(oldestQuarantineAge)), storage);
     }
@@ -275,7 +282,10 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
                 "available", quarantines.available(),
                 "claimed", quarantines.claimed(),
                 "expiredClaims", quarantines.expiredClaims(),
+                "liveDiscardApprovals", quarantines.liveDiscardApprovals(),
+                "expiredDiscardApprovals", quarantines.expiredDiscardApprovals(),
                 "historyRecords", quarantines.historyRecords(),
+                "approvedDiscardHistoryRecords", quarantines.approvedDiscardHistoryRecords(),
                 "maximumConsecutiveFailures", quarantines.maximumConsecutiveFailures(),
                 "oldestAgeSeconds", quarantines.oldestAgeSeconds());
     }
@@ -362,6 +372,8 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
         WORKER_CANDIDATE_QUARANTINE_STALE,
         /** One or more maintenance claims expired without release or resolution. */
         WORKER_CANDIDATE_QUARANTINE_CLAIM_EXPIRED,
+        /** One or more independent discard approvals expired without consumption. */
+        WORKER_CANDIDATE_QUARANTINE_DISCARD_APPROVAL_EXPIRED,
         /** Expired child execution records exceed their retention backlog limit. */
         EXECUTION_RETENTION_BACKLOG_EXCEEDED,
         /** Expired suite records exceed their retention backlog limit. */
@@ -519,17 +531,27 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
      * @param maxRecords largest acceptable active quarantine backlog
      * @param maxOldestAge oldest acceptable unresolved quarantine age
      * @param maxExpiredClaims largest acceptable number of expired maintenance claims
+     * @param maxExpiredDiscardApprovals largest acceptable unconsumed expired approvals
      */
     public record WorkerCandidateQuarantinePolicy(
-            long maxRecords, Duration maxOldestAge, long maxExpiredClaims) {
+            long maxRecords,
+            Duration maxOldestAge,
+            long maxExpiredClaims,
+            long maxExpiredDiscardApprovals) {
         /** Creates a compatibility policy that does not add an expired-claim limit. */
         public WorkerCandidateQuarantinePolicy(long maxRecords, Duration maxOldestAge) {
-            this(maxRecords, maxOldestAge, Long.MAX_VALUE);
+            this(maxRecords, maxOldestAge, Long.MAX_VALUE, Long.MAX_VALUE);
+        }
+
+        /** Creates a compatibility policy that does not add an expired-approval limit. */
+        public WorkerCandidateQuarantinePolicy(
+                long maxRecords, Duration maxOldestAge, long maxExpiredClaims) {
+            this(maxRecords, maxOldestAge, maxExpiredClaims, Long.MAX_VALUE);
         }
 
         /** Rejects negative counts or a non-positive age. */
         public WorkerCandidateQuarantinePolicy {
-            if (maxRecords < 0 || maxExpiredClaims < 0) {
+            if (maxRecords < 0 || maxExpiredClaims < 0 || maxExpiredDiscardApprovals < 0) {
                 throw new IllegalArgumentException(
                         "Worker candidate quarantine SLO limits must be non-negative");
             }
@@ -576,7 +598,10 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             long available,
             long claimed,
             long expiredClaims,
+            long liveDiscardApprovals,
+            long expiredDiscardApprovals,
             long historyRecords,
+            long approvedDiscardHistoryRecords,
             long maximumConsecutiveFailures,
             long oldestAgeSeconds) {
     }
@@ -605,7 +630,7 @@ public final class TestRuntimeSloMonitor implements HealthIndicator {
             ObservedWorkerDeferrals deferrals =
                     new ObservedWorkerDeferrals(0, 0, 0, 0, -1);
             ObservedWorkerQuarantines quarantines =
-                    new ObservedWorkerQuarantines(0, 0, 0, 0, 0, 0, -1);
+                    new ObservedWorkerQuarantines(0, 0, 0, 0, 0, 0, 0, 0, 0, -1);
             return new Assessment(State.STORE_UNAVAILABLE,
                     List.of(Violation.TEST_RUNTIME_STORE_UNAVAILABLE.name()), null,
                     0, 0, 0, 0, 0, 0, queue, queue, queue, queue,

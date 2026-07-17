@@ -292,10 +292,26 @@ public final class DatabaseTestRuntimeSloControlPlane {
                 Timestamp.from(observedAt));
         Long historyRecords = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_test_durable_worker_quarantine_history", Long.class);
+        Long liveDiscardApprovals = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_worker_quarantine_discard_approvals
+                WHERE approval_state = 'APPROVED' AND approval_until > ?
+                """, Long.class, Timestamp.from(observedAt));
+        Long expiredDiscardApprovals = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_durable_worker_quarantine_discard_approvals
+                WHERE approval_state = 'APPROVED' AND approval_until <= ?
+                """, Long.class, Timestamp.from(observedAt));
+        Long approvedDiscardHistoryRecords = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_quarantine_discard_history",
+                Long.class);
         return new WorkerCandidateQuarantineSnapshot(
                 Map.copyOf(totals), oldest[0], maximumConsecutiveFailures[0],
                 Map.copyOf(maintenanceStates), expiredClaims[0],
-                historyRecords == null ? 0 : historyRecords);
+                historyRecords == null ? 0 : historyRecords,
+                liveDiscardApprovals == null ? 0 : liveDiscardApprovals,
+                expiredDiscardApprovals == null ? 0 : expiredDiscardApprovals,
+                approvedDiscardHistoryRecords == null ? 0 : approvedDiscardHistoryRecords);
     }
 
     private QueueSnapshot queue(String sql, Instant... instants) {
@@ -622,6 +638,9 @@ public final class DatabaseTestRuntimeSloControlPlane {
      * @param totalByMaintenanceState active records by effective database-clock owner state
      * @param expiredClaimRecords expired claims projected as available for takeover
      * @param historyRecords retained token-free manual action evidence
+     * @param liveDiscardApprovals unconsumed checker approvals valid at database time
+     * @param expiredDiscardApprovals unconsumed checker approvals past their deadline
+     * @param approvedDiscardHistoryRecords retained token-free maker-checker evidence
      */
     public record WorkerCandidateQuarantineSnapshot(
             Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
@@ -631,7 +650,24 @@ public final class DatabaseTestRuntimeSloControlPlane {
             Map<DatabaseDurableWorkerQuarantineControlPlane.QuarantineState, Long>
                     totalByMaintenanceState,
             long expiredClaimRecords,
-            long historyRecords) {
+            long historyRecords,
+            long liveDiscardApprovals,
+            long expiredDiscardApprovals,
+            long approvedDiscardHistoryRecords) {
+        /** Creates a compatibility observation without discard-approval lifecycle counts. */
+        public WorkerCandidateQuarantineSnapshot(
+                Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
+                        totalByReason,
+                Instant oldestQuarantinedAt,
+                long maximumConsecutiveFailures,
+                Map<DatabaseDurableWorkerQuarantineControlPlane.QuarantineState, Long>
+                        totalByMaintenanceState,
+                long expiredClaimRecords,
+                long historyRecords) {
+            this(totalByReason, oldestQuarantinedAt, maximumConsecutiveFailures,
+                    totalByMaintenanceState, expiredClaimRecords, historyRecords, 0, 0, 0);
+        }
+
         /** Creates a compatibility observation with every active record available and no history. */
         public WorkerCandidateQuarantineSnapshot(
                 Map<DurableTestExecutionCheckpointRepository.WorkerCandidateDeferralReason, Long>
@@ -639,7 +675,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
                 Instant oldestQuarantinedAt,
                 long maximumConsecutiveFailures) {
             this(totalByReason, oldestQuarantinedAt, maximumConsecutiveFailures,
-                    allAvailable(totalByReason), 0, 0);
+                    allAvailable(totalByReason), 0, 0, 0, 0, 0);
         }
 
         /** Freezes the closed map and rejects inconsistent aggregates. */
@@ -676,7 +712,8 @@ public final class DatabaseTestRuntimeSloControlPlane {
                     || maintenanceRecords != records || expiredClaimRecords < 0
                     || expiredClaimRecords > totalByMaintenanceState.get(
                     DatabaseDurableWorkerQuarantineControlPlane.QuarantineState.AVAILABLE)
-                    || historyRecords < 0) {
+                    || historyRecords < 0 || liveDiscardApprovals < 0
+                    || expiredDiscardApprovals < 0 || approvedDiscardHistoryRecords < 0) {
                 throw new IllegalArgumentException(
                         "Invalid worker candidate quarantine aggregate");
             }
@@ -697,7 +734,7 @@ public final class DatabaseTestRuntimeSloControlPlane {
                 empty.put(reason, 0L);
             }
             return new WorkerCandidateQuarantineSnapshot(
-                    Map.copyOf(empty), null, 0, allAvailable(empty), 0, 0);
+                    Map.copyOf(empty), null, 0, allAvailable(empty), 0, 0, 0, 0, 0);
         }
 
         private static Map<DatabaseDurableWorkerQuarantineControlPlane.QuarantineState, Long>
