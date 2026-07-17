@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -142,6 +143,53 @@ public interface DurableTestExecutionCheckpointRepository {
      */
     Optional<DurableTestExecutionCheckpoint> findByEngineExecutionId(
             String tenantId, String environmentId, String engineExecutionId);
+
+    /**
+     * Finds a bounded, stably ordered page of expired recovery candidates in one verified scope.
+     *
+     * <p>The persistence implementation must obtain the cutoff from its own database clock, apply
+     * every scope, lifecycle, expiry, and limit predicate in SQL, and integrity-verify every
+     * returned checkpoint. This is candidate discovery only: callers must still re-authorize the
+     * exact dependency closure and use {@link #acquireWorkerCommandIdempotently} for the fenced
+     * state transition.</p>
+     *
+     * @param query server-bounded scope and page size
+     * @return oldest-expiry-first candidates with a stable run-id tie breaker
+     */
+    List<DurableTestExecutionCheckpoint> findExpiredRecoveryCandidates(
+            RecoveryCandidateQuery query);
+
+    /**
+     * Atomically commits one worker pull result and, when selected, claims its exact expired lease.
+     *
+     * <p>Both {@code ACQUIRED} and {@code NO_WORK} are immutable results under the same scoped
+     * idempotency key. For an acquisition, exact lease CAS, authorization-bound hidden dispatch,
+     * result record, and companion audit commit in one local transaction. A no-work result records
+     * only the database observation time and companion audit. Losing a concurrent idempotency race
+     * must roll back any lease transition before replaying the winner.</p>
+     *
+     * @param command authenticated pull identity independent of any selected run
+     * @param selection exact authorized candidate, or empty after a bounded scan found no claimable work
+     * @param companionMutation local payload-free audit mutation
+     * @return immutable original result, marked as replay when already committed
+     */
+    WorkerAcquisitionResult acquireWorkerCommandIdempotently(
+            WorkerAcquisitionCommand command,
+            Optional<WorkerAcquisitionSelection> selection,
+            TestRuntimeTransactionMutation companionMutation);
+
+    /**
+     * Resolves an immutable worker pull outcome before rescanning or re-authorizing dependencies.
+     *
+     * @param scope verified worker tenant, organization, project, and environment
+     * @param clientRequestId caller-stable idempotency key
+     * @param requestFingerprint complete authenticated pull intent
+     * @return exact committed acquisition or no-work result
+     */
+    Optional<WorkerAcquisitionResult> findWorkerAcquisitionResult(
+            WorkerAcquisitionScope scope,
+            String clientRequestId,
+            String requestFingerprint);
 
     /**
      * Atomically fences an expired resumable execution and transfers it to a recovery owner.
@@ -535,6 +583,182 @@ public interface DurableTestExecutionCheckpointRepository {
             ownerId = ownerId == null ? "" : ownerId.trim();
             if (ownerId.isBlank() || leaseEpoch <= 0 || revision < 0) {
                 throw new IllegalArgumentException("Complete owner, lease epoch, and revision are required");
+            }
+        }
+    }
+
+    /**
+     * Non-disclosing worker poll scope derived exclusively from verified identity.
+     *
+     * @param tenantId verified tenant authority
+     * @param organizationId verified organization boundary
+     * @param projectId verified project boundary
+     * @param environmentId verified test or staging environment
+     */
+    record WorkerAcquisitionScope(
+            String tenantId,
+            String organizationId,
+            String projectId,
+            String environmentId) {
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+
+        /** Rejects incomplete or production acquisition scopes before persistence access. */
+        public WorkerAcquisitionScope {
+            tenantId = acquisitionIdentifier(tenantId, "tenantId");
+            organizationId = acquisitionIdentifier(organizationId, "organizationId");
+            projectId = acquisitionIdentifier(projectId, "projectId");
+            environmentId = acquisitionRequired(environmentId, "environmentId")
+                    .toLowerCase(Locale.ROOT);
+            if (!Set.of("test", "staging").contains(environmentId)) {
+                throw new IllegalArgumentException(
+                        "Worker acquisition requires a test or staging environment");
+            }
+        }
+
+        /** Verifies that a candidate belongs to this complete non-disclosure scope. */
+        public boolean contains(DurableTestExecutionCheckpoint checkpoint) {
+            if (checkpoint == null) {
+                return false;
+            }
+            DurableTestExecutionCheckpoint.Scope candidate = checkpoint.scope();
+            return tenantId.equals(candidate.tenantId())
+                    && organizationId.equals(candidate.organizationId())
+                    && projectId.equals(candidate.projectId())
+                    && environmentId.equals(candidate.environmentId());
+        }
+
+        private static String acquisitionIdentifier(String value, String field) {
+            String normalized = acquisitionRequired(value, field);
+            if (!IDENTIFIER.matcher(normalized).matches()) {
+                throw new IllegalArgumentException(field + " must be a bounded stable identifier");
+            }
+            return normalized;
+        }
+
+        private static String acquisitionRequired(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
+        }
+    }
+
+    /**
+     * Bounded candidate discovery request owned by the server.
+     *
+     * @param scope exact verified worker scope
+     * @param limit positive SQL page size no greater than 1,000
+     */
+    record RecoveryCandidateQuery(WorkerAcquisitionScope scope, int limit) {
+        /** Prevents an accidental unbounded scheduler scan. */
+        public RecoveryCandidateQuery {
+            scope = Objects.requireNonNull(scope, "scope");
+            if (limit < 1 || limit > 1_000) {
+                throw new IllegalArgumentException(
+                        "Recovery candidate limit must be between 1 and 1000");
+            }
+        }
+    }
+
+    /**
+     * Authenticated worker pull command independent of queue contents.
+     *
+     * @param clientRequestId caller-stable key scoped by {@code scope}
+     * @param requestFingerprint canonical fingerprint of the complete principal and request
+     * @param scope verified tenant, organization, project, and non-production environment
+     */
+    record WorkerAcquisitionCommand(
+            String clientRequestId,
+            String requestFingerprint,
+            WorkerAcquisitionScope scope) {
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+
+        /** Rejects ambiguous command identity before queue state is consulted. */
+        public WorkerAcquisitionCommand {
+            clientRequestId = workerRequired(clientRequestId, "clientRequestId");
+            requestFingerprint = workerRequired(requestFingerprint, "requestFingerprint");
+            scope = Objects.requireNonNull(scope, "scope");
+            if (!IDENTIFIER.matcher(clientRequestId).matches()) {
+                throw new IllegalArgumentException(
+                        "clientRequestId must be a bounded stable identifier");
+            }
+            if (!FINGERPRINT.matcher(requestFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "requestFingerprint must be a canonical SHA-256 fingerprint");
+            }
+        }
+
+        private static String workerRequired(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
+        }
+    }
+
+    /**
+     * Exact dependency-authorized candidate selected outside the local database transaction.
+     *
+     * @param claim complete expired-checkpoint CAS intent
+     * @param authorization payload-free proof bound to the selected source checkpoint
+     */
+    record WorkerAcquisitionSelection(
+            LeaseClaim claim,
+            DurableTestRecoveryAuthorization authorization) {
+        /** Requires authorization to bind the exact selected source closure. */
+        public WorkerAcquisitionSelection {
+            claim = Objects.requireNonNull(claim, "claim");
+            authorization = Objects.requireNonNull(authorization, "authorization");
+            if (!authorization.sourceCheckpointFingerprint().equals(
+                    claim.expectedCheckpointFingerprint())) {
+                throw new IllegalArgumentException(
+                        "Worker authorization must bind the selected source checkpoint");
+            }
+        }
+    }
+
+    /** Durable worker pull outcomes. */
+    enum WorkerAcquisitionOutcome {
+        /** One exact expired execution was fenced for this worker principal. */
+        ACQUIRED,
+        /** The bounded authorized scan produced no claimable execution. */
+        NO_WORK
+    }
+
+    /**
+     * Immutable outcome of one worker pull command.
+     *
+     * @param outcome acquired assignment or empty bounded observation
+     * @param observedAt persistence-authority time at which the outcome linearized
+     * @param checkpoint claimed checkpoint for {@code ACQUIRED}, otherwise {@code null}
+     * @param dispatch hidden authorization handoff for {@code ACQUIRED}, otherwise {@code null}
+     * @param idempotentReplay whether an earlier committed outcome was replayed
+     */
+    record WorkerAcquisitionResult(
+            WorkerAcquisitionOutcome outcome,
+            Instant observedAt,
+            DurableTestExecutionCheckpoint checkpoint,
+            DurableTestRecoveryDispatch dispatch,
+            boolean idempotentReplay) {
+        /** Enforces the mutually exclusive acquired and no-work result shapes. */
+        public WorkerAcquisitionResult {
+            outcome = Objects.requireNonNull(outcome, "outcome");
+            observedAt = Objects.requireNonNull(observedAt, "observedAt");
+            if (outcome == WorkerAcquisitionOutcome.ACQUIRED) {
+                checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
+                dispatch = Objects.requireNonNull(dispatch, "dispatch");
+                if (!dispatch.agreesWith(checkpoint)) {
+                    throw new IllegalArgumentException(
+                            "Worker dispatch must exactly match its acquired checkpoint");
+                }
+            } else if (checkpoint != null || dispatch != null) {
+                throw new IllegalArgumentException(
+                        "NO_WORK must not carry checkpoint or dispatch material");
             }
         }
     }

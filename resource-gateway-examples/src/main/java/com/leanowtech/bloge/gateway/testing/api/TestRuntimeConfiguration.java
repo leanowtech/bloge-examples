@@ -438,6 +438,25 @@ public class TestRuntimeConfiguration {
                 objectMapper, owner, Duration.ofSeconds(leaseDurationSeconds));
     }
 
+    /** Assembles the scoped, non-blocking and idempotent durable worker pull boundary. */
+    @Bean
+    DurableTestWorkerAcquisitionService durableTestWorkerAcquisitionService(
+            DurableTestExecutionCheckpointRepository checkpoints,
+            DurableTestRecoveryAuthorizer authorizer,
+            TestSecurityEventRepository securityEvents,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.durable.owner-claims.instance-id:}") String instanceId,
+            @Value("${gateway.testing.durable.owner-claims.lease-duration-seconds:120}")
+            long leaseDurationSeconds,
+            @Value("${gateway.testing.durable.worker-acquisitions.candidate-limit:32}")
+            int candidateLimit) {
+        String owner = instanceId == null || instanceId.isBlank()
+                ? "durable-worker-" + UUID.randomUUID() : instanceId.trim();
+        return new DurableTestWorkerAcquisitionService(
+                checkpoints, authorizer, securityEvents, objectMapper, owner,
+                Duration.ofSeconds(leaseDurationSeconds), candidateLimit);
+    }
+
     /** Assembles authenticated heartbeat adaptation over issued internal recovery dispatches. */
     @Bean
     DurableTestRecoveryHeartbeatService durableTestRecoveryHeartbeatService(

@@ -248,6 +248,10 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest.SCHEMA_VERSION));
             objects.put("durableTestOwnerClaimResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse.SCHEMA_VERSION));
+            objects.put("durableTestWorkerAcquisitionRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableTestWorkerAcquisitionRequest.SCHEMA_VERSION));
+            objects.put("durableTestWorkerAcquisitionResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.DurableTestWorkerAcquisitionResponse.SCHEMA_VERSION));
             objects.put("durableTestExecutionView", List.of(
                     com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionQueryResponse.SCHEMA_VERSION));
             objects.put("durableTestExecutionCreateRequest", List.of(
@@ -377,6 +381,8 @@ public record IntegrationCapabilities(
         features.put("durableOperatorTestExecutionCreation", testExecutionEndpointEnabled);
         features.put("durableTestCreationLeaseHeartbeat", testExecutionEndpointEnabled);
         features.put("durableTestOwnerClaim", testExecutionEndpointEnabled);
+        features.put("durableTestWorkerPullAcquisition", testExecutionEndpointEnabled);
+        features.put("immutableDurableWorkerNoWorkResult", testExecutionEndpointEnabled);
         features.put("durableRecoveryDependencyReauthorization", testExecutionEndpointEnabled);
         features.put("authenticatedDurableRecoveryHeartbeat", testExecutionEndpointEnabled);
         features.put("automaticDurableRecoveryHeartbeat", testExecutionEndpointEnabled);
@@ -451,6 +457,8 @@ public record IntegrationCapabilities(
                     "/api/testing/durable-executions/operators/{operatorRef}"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/durable-executions/{runId}/owner-claims"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/durable-executions/worker-acquisitions"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/durable-executions/{runId}/heartbeats"));
             endpoints.add(new Endpoint("POST",

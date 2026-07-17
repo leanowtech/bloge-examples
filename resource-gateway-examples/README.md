@@ -56,6 +56,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/operators/{operatorRef}` | Idempotently freeze an exact operator test at its server-owned start gate (test/staging only) |
 | `GET http://localhost:8080/api/testing/durable-executions/{runId}` | Inspect an integrity-verified, payload-free durable checkpoint view before recovery (test/staging only) |
+| `POST http://localhost:8080/api/testing/durable-executions/worker-acquisitions` | Pull at most one authorized expired execution through an atomic payload-free worker assignment (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/owner-claims` | Re-authorize an exact expired v2 checkpoint and atomically claim its lease; this does not resume BLOGE (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/heartbeats` | Renew one exact issued recovery fence under the same authenticated authority (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/{runId}/terminal-recoveries` | Signal one exact claimed suspension and atomically commit only a server-derived terminal result (test/staging only) |
@@ -226,6 +227,37 @@ is still live after the response was produced.
 
 Missing and cross-organization/project runs both return `404`; malformed run ids return `400`; a
 store outage or any sealed-JSON/index/fingerprint inconsistency returns a payload-free `503`.
+
+### Pull one durable worker assignment
+
+A recovery worker that does not already know a `runId` can ask for at most one assignment in its
+verified tenant, organization, project, and environment scope:
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/testing/durable-executions/worker-acquisitions \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "schemaVersion": "bloge.durableTestWorkerAcquisitionRequest.v1",
+    "clientRequestId": "worker-poll-20260717-001"
+  }'
+```
+
+The caller cannot send a run selector, queue scope, owner, lease, priority, or candidate limit. The
+server scans the oldest expired candidates within the authenticated scope, up to
+`RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT` (default `32`, valid `1..1000`), re-authorizes each exact
+dependency closure, and atomically commits either `ACQUIRED` or `NO_WORK`. `ACQUIRED` contains the
+same payload-free owner/epoch/revision/checkpoint fence used by heartbeat and terminal recovery;
+the authorization-bound dispatch remains internal. `NO_WORK` means that the bounded scan produced
+no claimable assignment, not that a global queue is empty.
+
+Both outcomes are immutable under `clientRequestId`, including `NO_WORK`. Retry a lost response with
+the same key; use a new key for a later poll. Lease CAS, hidden dispatch, command result, and semantic
+audit share one transaction. This is non-blocking pull control: it does not transfer BLOGE runtime
+state to the caller, reserve an execution-capacity permit while idle, provide fairness/priority
+scheduling, or supervise a remote process.
 
 ### Claim an expired durable test lease
 
@@ -681,10 +713,10 @@ bounded pages, and application shutdown releases local permits. Configure limits
 under `gateway.testing.admission.*` / `RG_TEST_ADMISSION_*`; the full table and rollout rules are in the
 [testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#4212-database-authoritative-runtime-admission).
 
-This is immediate admission backpressure, not a queued scheduler. Priority/fairness queues, remote
-worker acquisition, adaptive autoscaling, hard cancellation and wall-clock worker deadlines, external
-alert routing, non-H2 dialect certification, tamper-evident external anchoring, and production-load
-certification remain future work.
+This is immediate admission backpressure, not a queued scheduler. Priority/fairness queues,
+runtime-state delivery to a remote worker, cross-process supervision, adaptive autoscaling, hard
+cancellation and wall-clock worker deadlines, external alert routing, non-H2 dialect certification,
+tamper-evident external anchoring, and production-load certification remain future work.
 
 Wait identity must match the lifecycle identity, and committed wait/work-item ids cannot migrate to
 another execution. Work-item batches validate atomically, and claim, retry, terminal, and dead-letter
@@ -728,8 +760,8 @@ and commits the server-derived final BLOGE mutation, terminal checkpoint, immuta
 and payload-free receipt in one transaction; retries never reapply the engine mutation. Because durable
 state still lacks complete pre-checkpoint node/edge/attempt trace, receipt v1 is always
 `EVIDENCE_INCOMPLETE`, requires explicit gap codes, and blocks promotion. BLOGE streaming
-offset/checkpoint state, complete historical evidence, authenticated
-worker poll/dispatch and multi-boundary orchestration, dispatcher consumption, cross-process worker
+offset/checkpoint state, complete historical evidence, runtime-state worker dispatch and
+multi-boundary orchestration, dispatcher consumption, cross-process worker
 supervision, and a killable worker deadline are not wired yet. These internal primitives are
 not a product claim that durable test
 resume is complete. See

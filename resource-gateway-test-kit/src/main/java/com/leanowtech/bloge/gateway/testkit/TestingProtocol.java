@@ -38,6 +38,12 @@ public final class TestingProtocol {
     /** Payload-free provider-state checkpoint used by deterministic durable resume. */
     public static final String EXECUTION_SERVICE_STATE_SNAPSHOT_V1 =
             "bloge.executionServiceStateSnapshot.v1";
+    /** Non-blocking durable worker acquisition request wire version. */
+    public static final String DURABLE_WORKER_ACQUISITION_REQUEST_V1 =
+            "bloge.durableTestWorkerAcquisitionRequest.v1";
+    /** Payload-free acquired/no-work worker result wire version. */
+    public static final String DURABLE_WORKER_ACQUISITION_RESPONSE_V1 =
+            "bloge.durableTestWorkerAcquisitionResponse.v1";
     /** Detached test-evidence integrity manifest wire version. */
     public static final String TEST_EVIDENCE_INTEGRITY_V1 = "bloge.testEvidenceIntegrity.v1";
     /** Immutable test-suite wire version. */

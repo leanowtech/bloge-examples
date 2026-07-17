@@ -155,6 +155,13 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 )
                 """);
         jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_worker_candidate_idx
+                ON rg_test_durable_execution_checkpoints (
+                    tenant_id, environment_id, organization_id, project_id,
+                    status, lease_expires_at, updated_at, run_id
+                )
+                """);
+        jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_durable_creation_operations_idx
                 ON rg_test_durable_creation_commands (
                     state, lease_expires_at, updated_at
@@ -200,6 +207,32 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 ON rg_test_durable_resume_commands (
                     tenant_id, environment_id, run_id, result_checkpoint_fingerprint
                 )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_durable_worker_acquisitions (
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    request_fingerprint VARCHAR(80) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    outcome VARCHAR(32) NOT NULL,
+                    observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    run_id VARCHAR(255) NOT NULL,
+                    result_checkpoint_fingerprint VARCHAR(80) NOT NULL,
+                    result_dispatch_fingerprint VARCHAR(80) NOT NULL,
+                    result_checkpoint_json CLOB,
+                    result_dispatch_json CLOB,
+                    record_fingerprint VARCHAR(80) NOT NULL,
+                    PRIMARY KEY (
+                        tenant_id, environment_id, organization_id, project_id,
+                        client_request_id
+                    )
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS rg_test_durable_worker_acquisition_operations_idx
+                ON rg_test_durable_worker_acquisitions (outcome, observed_at)
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_durable_recovery_heartbeats (
@@ -589,6 +622,102 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                         """, this::mapRow, normalized(tenantId),
                 normalizedEnvironment(environmentId), normalized(engineExecutionId));
         return rows.stream().findFirst().map(this::verifiedCheckpoint);
+    }
+
+    @Override
+    public List<DurableTestExecutionCheckpoint> findExpiredRecoveryCandidates(
+            RecoveryCandidateQuery query) {
+        RecoveryCandidateQuery requiredQuery = Objects.requireNonNull(query, "query");
+        WorkerAcquisitionScope scope = requiredQuery.scope();
+        List<DurableTestExecutionCheckpoint> candidates = transactions.execute(status -> {
+            Instant cutoff = databaseNow();
+            List<StoredRow> rows = jdbc.query(selectColumns() + """
+                            WHERE tenant_id = ? AND environment_id = ?
+                              AND organization_id = ? AND project_id = ?
+                              AND status IN ('ACTIVE', 'SUSPENDED', 'RESUMING')
+                              AND lease_expires_at <= ?
+                            ORDER BY lease_expires_at, updated_at, run_id
+                            LIMIT ?
+                            """, this::mapRow, scope.tenantId(), scope.environmentId(),
+                    scope.organizationId(), scope.projectId(), Timestamp.from(cutoff),
+                    requiredQuery.limit());
+            return rows.stream().map(this::verifiedCheckpoint).toList();
+        });
+        if (candidates == null) {
+            throw new IllegalStateException(
+                    "Durable recovery candidate transaction returned no result");
+        }
+        return List.copyOf(candidates);
+    }
+
+    @Override
+    public WorkerAcquisitionResult acquireWorkerCommandIdempotently(
+            WorkerAcquisitionCommand command,
+            Optional<WorkerAcquisitionSelection> selection,
+            TestRuntimeTransactionMutation companionMutation) {
+        WorkerAcquisitionCommand requiredCommand = Objects.requireNonNull(command, "command");
+        Optional<WorkerAcquisitionSelection> requiredSelection = Objects.requireNonNull(
+                selection, "selection");
+        TestRuntimeTransactionMutation requiredMutation = Objects.requireNonNull(
+                companionMutation, "companionMutation");
+        requiredSelection.ifPresent(value -> {
+            value.authorization().requireValid(objectMapper);
+            LeaseClaim claim = value.claim();
+            WorkerAcquisitionScope scope = requiredCommand.scope();
+            if (!scope.tenantId().equals(claim.tenantId())
+                    || !scope.environmentId().equals(claim.environmentId())) {
+                throw new IllegalArgumentException(
+                        "Worker selection does not belong to its command scope");
+            }
+        });
+        try {
+            return transactions.execute(status -> {
+                Optional<WorkerAcquisitionResult> existing = replayedWorkerAcquisition(
+                        requiredCommand);
+                if (existing.isPresent()) {
+                    requiredMutation.apply(jdbc);
+                    return existing.get();
+                }
+                Instant observedAt = databaseNow();
+                DurableTestExecutionCheckpoint claimed = null;
+                DurableTestRecoveryDispatch dispatch = null;
+                WorkerAcquisitionOutcome outcome = WorkerAcquisitionOutcome.NO_WORK;
+                if (requiredSelection.isPresent()) {
+                    WorkerAcquisitionSelection selected = requiredSelection.get();
+                    claimed = claimExpiredLeaseAt(selected.claim(), observedAt);
+                    if (!requiredCommand.scope().contains(claimed)) {
+                        throw conflict(STALE_FENCE,
+                                "Selected durable checkpoint left the worker authorization scope");
+                    }
+                    dispatch = DurableTestRecoveryDispatch.issue(
+                            objectMapper, selected.authorization(), claimed);
+                    outcome = WorkerAcquisitionOutcome.ACQUIRED;
+                }
+                StoredWorkerAcquisition stored = newWorkerAcquisition(
+                        requiredCommand, outcome, observedAt, claimed, dispatch);
+                insertWorkerAcquisition(stored);
+                requiredMutation.apply(jdbc);
+                return new WorkerAcquisitionResult(
+                        outcome, observedAt, claimed, dispatch, false);
+            });
+        } catch (DataIntegrityViolationException concurrentCommand) {
+            return transactions.execute(status -> {
+                WorkerAcquisitionResult replay = replayedWorkerAcquisition(requiredCommand)
+                        .orElseThrow(() -> concurrentCommand);
+                requiredMutation.apply(jdbc);
+                return replay;
+            });
+        }
+    }
+
+    @Override
+    public Optional<WorkerAcquisitionResult> findWorkerAcquisitionResult(
+            WorkerAcquisitionScope scope,
+            String clientRequestId,
+            String requestFingerprint) {
+        WorkerAcquisitionCommand command = new WorkerAcquisitionCommand(
+                clientRequestId, requestFingerprint, Objects.requireNonNull(scope, "scope"));
+        return replayedWorkerAcquisition(command);
     }
 
     @Override
@@ -1480,6 +1609,170 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
                 Map.entry("createdAt", createdAt));
     }
 
+    private Optional<WorkerAcquisitionResult> replayedWorkerAcquisition(
+            WorkerAcquisitionCommand command) {
+        List<StoredWorkerAcquisition> rows = findWorkerAcquisitions(
+                command.scope(), command.clientRequestId());
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredWorkerAcquisition stored = rows.getFirst();
+        requireValidWorkerAcquisition(stored);
+        if (!stored.requestFingerprint().equals(command.requestFingerprint())) {
+            throw conflict(IDEMPOTENCY_CONFLICT,
+                    "clientRequestId already identifies different worker acquisition intent");
+        }
+        return Optional.of(workerAcquisitionResult(stored, true));
+    }
+
+    private List<StoredWorkerAcquisition> findWorkerAcquisitions(
+            WorkerAcquisitionScope scope, String clientRequestId) {
+        return jdbc.query("""
+                        SELECT tenant_id, environment_id, client_request_id,
+                               request_fingerprint, organization_id, project_id, outcome,
+                               observed_at, run_id, result_checkpoint_fingerprint,
+                               result_dispatch_fingerprint, result_checkpoint_json,
+                               result_dispatch_json, record_fingerprint
+                        FROM rg_test_durable_worker_acquisitions
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND organization_id = ? AND project_id = ?
+                          AND client_request_id = ?
+                        """, this::mapWorkerAcquisition, scope.tenantId(),
+                scope.environmentId(), scope.organizationId(), scope.projectId(),
+                normalized(clientRequestId));
+    }
+
+    private StoredWorkerAcquisition newWorkerAcquisition(
+            WorkerAcquisitionCommand command,
+            WorkerAcquisitionOutcome outcome,
+            Instant observedAt,
+            DurableTestExecutionCheckpoint checkpoint,
+            DurableTestRecoveryDispatch dispatch) {
+        WorkerAcquisitionScope scope = command.scope();
+        String runId = checkpoint == null ? "" : checkpoint.runId();
+        String checkpointFingerprint = checkpoint == null
+                ? "" : checkpoint.checkpointFingerprint();
+        String dispatchFingerprint = dispatch == null ? "" : dispatch.dispatchFingerprint();
+        String recordFingerprint = workerAcquisitionRecordFingerprint(
+                scope, command.clientRequestId(), command.requestFingerprint(), outcome,
+                observedAt, runId, checkpointFingerprint, dispatchFingerprint);
+        return new StoredWorkerAcquisition(
+                scope.tenantId(), scope.environmentId(), command.clientRequestId(),
+                command.requestFingerprint(), scope.organizationId(), scope.projectId(), outcome,
+                observedAt, runId, checkpointFingerprint, dispatchFingerprint,
+                checkpoint == null ? null : write(checkpoint),
+                dispatch == null ? null : writeDispatch(dispatch), recordFingerprint);
+    }
+
+    private void insertWorkerAcquisition(StoredWorkerAcquisition stored) {
+        jdbc.update("""
+                INSERT INTO rg_test_durable_worker_acquisitions (
+                    tenant_id, environment_id, client_request_id, request_fingerprint,
+                    organization_id, project_id, outcome, observed_at, run_id,
+                    result_checkpoint_fingerprint, result_dispatch_fingerprint,
+                    result_checkpoint_json, result_dispatch_json, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, stored.tenantId(), stored.environmentId(), stored.clientRequestId(),
+                stored.requestFingerprint(), stored.organizationId(), stored.projectId(),
+                stored.outcome().name(), Timestamp.from(stored.observedAt()), stored.runId(),
+                stored.resultCheckpointFingerprint(), stored.resultDispatchFingerprint(),
+                stored.resultCheckpointJson(), stored.resultDispatchJson(),
+                stored.recordFingerprint());
+    }
+
+    private StoredWorkerAcquisition mapWorkerAcquisition(ResultSet rs, int rowNumber)
+            throws SQLException {
+        try {
+            return new StoredWorkerAcquisition(
+                    rs.getString("tenant_id"), rs.getString("environment_id"),
+                    rs.getString("client_request_id"), rs.getString("request_fingerprint"),
+                    rs.getString("organization_id"), rs.getString("project_id"),
+                    WorkerAcquisitionOutcome.valueOf(rs.getString("outcome")),
+                    rs.getTimestamp("observed_at").toInstant(), rs.getString("run_id"),
+                    rs.getString("result_checkpoint_fingerprint"),
+                    rs.getString("result_dispatch_fingerprint"),
+                    rs.getString("result_checkpoint_json"),
+                    rs.getString("result_dispatch_json"), rs.getString("record_fingerprint"));
+        } catch (IllegalArgumentException corrupt) {
+            throw new SQLException("Stored worker acquisition outcome is corrupt", corrupt);
+        }
+    }
+
+    private void requireValidWorkerAcquisition(StoredWorkerAcquisition stored) {
+        WorkerAcquisitionScope scope = stored.scope();
+        String expected = workerAcquisitionRecordFingerprint(
+                scope, stored.clientRequestId(), stored.requestFingerprint(), stored.outcome(),
+                stored.observedAt(), stored.runId(), stored.resultCheckpointFingerprint(),
+                stored.resultDispatchFingerprint());
+        if (!expected.equals(stored.recordFingerprint())) {
+            throw new IllegalStateException("Stored worker acquisition record is corrupt");
+        }
+        boolean acquired = stored.outcome() == WorkerAcquisitionOutcome.ACQUIRED;
+        boolean completeResult = !stored.runId().isBlank()
+                && !stored.resultCheckpointFingerprint().isBlank()
+                && !stored.resultDispatchFingerprint().isBlank()
+                && stored.resultCheckpointJson() != null
+                && stored.resultDispatchJson() != null;
+        boolean emptyResult = stored.runId().isBlank()
+                && stored.resultCheckpointFingerprint().isBlank()
+                && stored.resultDispatchFingerprint().isBlank()
+                && stored.resultCheckpointJson() == null
+                && stored.resultDispatchJson() == null;
+        if ((acquired && !completeResult) || (!acquired && !emptyResult)) {
+            throw new IllegalStateException("Stored worker acquisition result shape is corrupt");
+        }
+    }
+
+    private WorkerAcquisitionResult workerAcquisitionResult(
+            StoredWorkerAcquisition stored, boolean replay) {
+        if (stored.outcome() == WorkerAcquisitionOutcome.NO_WORK) {
+            return new WorkerAcquisitionResult(
+                    stored.outcome(), stored.observedAt(), null, null, replay);
+        }
+        try {
+            DurableTestExecutionCheckpoint checkpoint = objectMapper.readValue(
+                    stored.resultCheckpointJson(), DurableTestExecutionCheckpoint.class);
+            DurableTestRecoveryDispatch dispatch = objectMapper.readValue(
+                    stored.resultDispatchJson(), DurableTestRecoveryDispatch.class);
+            integrity.requireValid(checkpoint);
+            dispatch.requireValid(objectMapper, checkpoint);
+            if (!stored.scope().contains(checkpoint)
+                    || !stored.runId().equals(checkpoint.runId())
+                    || !stored.resultCheckpointFingerprint().equals(
+                    checkpoint.checkpointFingerprint())
+                    || !stored.resultDispatchFingerprint().equals(
+                    dispatch.dispatchFingerprint())) {
+                throw new IllegalArgumentException(
+                        "Worker acquisition result does not agree with its command record");
+            }
+            return new WorkerAcquisitionResult(
+                    stored.outcome(), stored.observedAt(), checkpoint, dispatch, replay);
+        } catch (JsonProcessingException | IllegalArgumentException corrupt) {
+            throw new IllegalStateException("Stored worker acquisition result is corrupt", corrupt);
+        }
+    }
+
+    private String workerAcquisitionRecordFingerprint(
+            WorkerAcquisitionScope scope,
+            String clientRequestId,
+            String requestFingerprint,
+            WorkerAcquisitionOutcome outcome,
+            Instant observedAt,
+            String runId,
+            String checkpointFingerprint,
+            String dispatchFingerprint) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion", "bloge.durableWorkerAcquisitionRecord.v1"),
+                Map.entry("scope", scope),
+                Map.entry("clientRequestId", clientRequestId),
+                Map.entry("requestFingerprint", requestFingerprint),
+                Map.entry("outcome", outcome.name()),
+                Map.entry("observedAt", observedAt),
+                Map.entry("runId", runId),
+                Map.entry("resultCheckpointFingerprint", checkpointFingerprint),
+                Map.entry("resultDispatchFingerprint", dispatchFingerprint)));
+    }
+
     private DurableTestExecutionCheckpoint claimExpiredLeaseAt(LeaseClaim claim, Instant claimedAt) {
         DurableTestExecutionCheckpoint current = findInternal(
                 claim.tenantId(), claim.environmentId(), claim.runId()).orElseThrow(() -> conflict(
@@ -2273,6 +2566,27 @@ public final class DatabaseDurableTestExecutionCheckpointRepository
 
     private static String normalizedEnvironment(String value) {
         return normalized(value).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private record StoredWorkerAcquisition(
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String organizationId,
+            String projectId,
+            WorkerAcquisitionOutcome outcome,
+            Instant observedAt,
+            String runId,
+            String resultCheckpointFingerprint,
+            String resultDispatchFingerprint,
+            String resultCheckpointJson,
+            String resultDispatchJson,
+            String recordFingerprint) {
+        private WorkerAcquisitionScope scope() {
+            return new WorkerAcquisitionScope(
+                    tenantId, organizationId, projectId, environmentId);
+        }
     }
 
     private record StoredRow(

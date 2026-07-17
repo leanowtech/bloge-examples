@@ -48,6 +48,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableTestExecutionQueryService.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimController.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableTestWorkerAcquisitionController.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableTestWorkerAcquisitionService.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestRecoveryHeartbeatController.class)).isEmpty();
@@ -106,6 +108,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableTestExecutionQueryService.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestOwnerClaimController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(DurableTestWorkerAcquisitionController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(DurableTestWorkerAcquisitionService.class)).hasSize(1);
             assertThat(context.getBeansOfType(DurableTestOwnerClaimService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestRecoveryHeartbeatController.class)).hasSize(1);
@@ -183,6 +187,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     DurableTestExecutionQueryService.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimController.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableTestWorkerAcquisitionController.class)).isEmpty();
+            assertThat(context.getBeansOfType(DurableTestWorkerAcquisitionService.class)).isEmpty();
             assertThat(context.getBeansOfType(DurableTestOwnerClaimService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestRecoveryHeartbeatController.class)).isEmpty();
@@ -244,6 +250,7 @@ class TestRuntimeProfileIsolationTest {
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
                 DurableTestExecutionQueryController.class,
                 DurableTestOwnerClaimController.class,
+                DurableTestWorkerAcquisitionController.class,
                 DurableStateProjectionFindingController.class,
                 DurableTestRecoveryHeartbeatController.class,
                 DurableTestTerminalRecoveryController.class);

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query and ownership, recovery heartbeat, terminal recovery, durable projection finding operations, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, terminal recovery, durable projection finding operations, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
@@ -253,6 +253,82 @@
         },
         "idempotentReplay": {"type": "boolean"}
       }
+    },
+    "durableTestWorkerAcquisitionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "clientRequestId"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestWorkerAcquisitionRequest.v1"},
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        }
+      }
+    },
+    "durableTestWorkerAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "status", "ownerId", "leaseEpoch", "revision",
+        "leaseExpiresAt", "checkpointFingerprint", "target"],
+      "properties": {
+        "runId": {
+          "type": "string", "minLength": 1, "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "status": {"const": "RESUMING"},
+        "ownerId": {
+          "type": "string", "minLength": 1, "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "leaseEpoch": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 0},
+        "leaseExpiresAt": {"type": "string", "format": "date-time"},
+        "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "fingerprint"],
+          "properties": {
+            "kind": {"enum": ["GRAPH", "OPERATOR"]},
+            "id": {"type": "string", "minLength": 1, "maxLength": 255},
+            "fingerprint": {"$ref": "#/$defs/fingerprint"}
+          }
+        }
+      }
+    },
+    "durableTestWorkerAcquisitionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "outcome", "observedAt", "assignment", "idempotentReplay"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.durableTestWorkerAcquisitionResponse.v1"},
+        "outcome": {"enum": ["ACQUIRED", "NO_WORK"]},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "assignment": {
+          "oneOf": [
+            {"$ref": "#/$defs/durableTestWorkerAssignment"},
+            {"type": "null"}
+          ]
+        },
+        "idempotentReplay": {"type": "boolean"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "outcome": {"const": "ACQUIRED"},
+            "assignment": {"$ref": "#/$defs/durableTestWorkerAssignment"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "NO_WORK"},
+            "assignment": {"type": "null"}
+          }
+        }
+      ]
     },
     "durableStateProjectionFindingKey": {
       "type": "object",

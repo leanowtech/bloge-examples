@@ -14,6 +14,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
         DurableTestExecutionCreationController.class,
         DurableTestExecutionQueryController.class,
         DurableTestOwnerClaimController.class,
+        DurableTestWorkerAcquisitionController.class,
         DurableStateProjectionFindingController.class,
         DurableTestRecoveryHeartbeatController.class,
         DurableTestTerminalRecoveryController.class})

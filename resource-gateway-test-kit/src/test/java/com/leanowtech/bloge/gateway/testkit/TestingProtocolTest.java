@@ -48,6 +48,10 @@ class TestingProtocolTest {
             assertConstant(definitions, "testRunEvidenceV2", TestingProtocol.TEST_RUN_EVIDENCE_V2);
             assertConstant(definitions, "executionServiceStateSnapshot",
                     TestingProtocol.EXECUTION_SERVICE_STATE_SNAPSHOT_V1);
+            assertConstant(definitions, "durableTestWorkerAcquisitionRequest",
+                    TestingProtocol.DURABLE_WORKER_ACQUISITION_REQUEST_V1);
+            assertConstant(definitions, "durableTestWorkerAcquisitionResponse",
+                    TestingProtocol.DURABLE_WORKER_ACQUISITION_RESPONSE_V1);
             assertThat(definitions.at("/testRunEvidence/oneOf")).hasSize(2);
             assertConstant(definitions, "testSuite", TestingProtocol.TEST_SUITE_V1);
             assertConstant(definitions, "testSuiteV2", TestingProtocol.TEST_SUITE_V2);
@@ -122,6 +126,51 @@ class TestingProtocolTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("executionServiceStateSnapshot")
                 .hasMessageNotContaining("RANDOM requires");
+    }
+
+    @Test
+    void packagedSchemaEnforcesMutuallyExclusiveWorkerAcquisitionOutcomes() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode noWork = mapper.readTree("""
+                {
+                  "schemaVersion":"bloge.durableTestWorkerAcquisitionResponse.v1",
+                  "outcome":"NO_WORK",
+                  "observedAt":"2026-07-17T00:00:00Z",
+                  "assignment":null,
+                  "idempotentReplay":false
+                }
+                """);
+        JsonNode acquired = mapper.readTree("""
+                {
+                  "schemaVersion":"bloge.durableTestWorkerAcquisitionResponse.v1",
+                  "outcome":"ACQUIRED",
+                  "observedAt":"2026-07-17T00:00:00Z",
+                  "assignment":{
+                    "runId":"run-a",
+                    "status":"RESUMING",
+                    "ownerId":"worker-a",
+                    "leaseEpoch":2,
+                    "revision":3,
+                    "leaseExpiresAt":"2026-07-17T00:02:00Z",
+                    "checkpointFingerprint":"sha256:%s",
+                    "target":{"kind":"GRAPH","id":"graph-a","fingerprint":"sha256:%s"}
+                  },
+                  "idempotentReplay":false
+                }
+                """.formatted("a".repeat(64), "b".repeat(64)));
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                noWork, "durableTestWorkerAcquisitionResponse"));
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                acquired, "durableTestWorkerAcquisitionResponse"));
+
+        ((com.fasterxml.jackson.databind.node.ObjectNode) noWork)
+                .set("assignment", acquired.path("assignment"));
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                noWork, "durableTestWorkerAcquisitionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("durableTestWorkerAcquisitionResponse")
+                .hasMessageNotContaining("run-a");
     }
 
     private static void assertConstant(JsonNode definitions, String definition, String expected) {

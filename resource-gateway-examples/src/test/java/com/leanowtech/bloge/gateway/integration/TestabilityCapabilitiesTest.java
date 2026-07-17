@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestWorkerAcquisitionRequest;
+import com.leanowtech.bloge.gateway.testing.api.DurableTestWorkerAcquisitionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionQueryResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCreateRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestExecutionCreateResponse;
@@ -64,6 +66,7 @@ class TestabilityCapabilitiesTest {
                 "testEvidenceIntegrity",
                 "testGraphTargetDescriptor", "testOperatorExecutionRequest", "testOperatorTargetDescriptor",
                 "durableTestOwnerClaimRequest", "durableTestOwnerClaimResponse",
+                "durableTestWorkerAcquisitionRequest", "durableTestWorkerAcquisitionResponse",
                 "durableTestExecutionView", "durableTestExecutionCreateRequest",
                 "durableOperatorTestExecutionCreateRequest",
                 "durableTestExecutionCreateResponse",
@@ -92,6 +95,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("durableOperatorTestExecutionCreation", true)
                 .containsEntry("durableTestCreationLeaseHeartbeat", true)
                 .containsEntry("durableTestOwnerClaim", true)
+                .containsEntry("durableTestWorkerPullAcquisition", true)
+                .containsEntry("immutableDurableWorkerNoWorkResult", true)
                 .containsEntry("durableRecoveryDependencyReauthorization", true)
                 .containsEntry("authenticatedDurableRecoveryHeartbeat", true)
                 .containsEntry("automaticDurableRecoveryHeartbeat", true)
@@ -134,6 +139,10 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(DurableTestOwnerClaimRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("durableTestOwnerClaimResponse"))
                 .containsExactly(DurableTestOwnerClaimResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableTestWorkerAcquisitionRequest"))
+                .containsExactly(DurableTestWorkerAcquisitionRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("durableTestWorkerAcquisitionResponse"))
+                .containsExactly(DurableTestWorkerAcquisitionResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("durableTestExecutionView"))
                 .containsExactly(DurableTestExecutionQueryResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("durableTestExecutionCreateRequest"))
@@ -167,6 +176,9 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/durable-executions/{runId}/owner-claims"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/durable-executions/worker-acquisitions"));
         assertThat(enabled.features())
                 .containsEntry("durableTestExecutionQuery", true);
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")

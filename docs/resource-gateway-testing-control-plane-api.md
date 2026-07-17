@@ -550,7 +550,9 @@ execution.
 This state object remains an internal planner/runtime protocol. The public surface exposes narrow,
 authenticated graph and operator durable-run creators plus a payload-free checkpoint query and the owner-claim,
 recovery-heartbeat, and one-signal terminal-recovery controls described below. It does not expose a
-dispatcher, worker poll API, or general multi-boundary BLOGE resume endpoint. The
+runtime-state dispatcher or general multi-boundary BLOGE resume endpoint. It now exposes a bounded,
+non-blocking worker pull that acquires only a payload-free recovery fence; BLOGE state remains
+server-side. The
 profile-gated staged BLOGE stores persist it inside
 `bloge.durableTestExecutionCheckpoint.v2`, which also binds the immutable plan, exact fixture,
 fixture-consumption cursors, execution/wait/work-item closure, side-effect policy, authority snapshot,
@@ -745,7 +747,7 @@ replay returns the committed terminal result without reapplying the signal or op
 
 The internal gate is included in the compiled invocation inventory and therefore consumes a
 conservative operator admission slot alongside `subject`; caller fixtures must not target it. This
-capability does not add worker polling, multi-boundary orchestration, hard cancellation, or complete
+capability does not add multi-boundary orchestration, hard cancellation, or complete
 pre-checkpoint trace evidence.
 
 ### 4.2f Query one durable execution
@@ -810,7 +812,68 @@ operations but has no `target`, sets `migrationRequired=true`, and is never repo
 query is an observation, not a lease reservation or bearer capability; callers must still submit the
 entire returned fence to owner claim, which rechecks live state and current authorization.
 
-### 4.2g Claim, renew, and terminally recover an exact durable fence
+### 4.2g Pull one durable worker assignment
+
+Workers that do not know a run id use the profile-gated, authenticated non-blocking pull endpoint:
+
+```http
+POST /api/testing/durable-executions/worker-acquisitions
+Authorization: Bearer <workload-token>
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.durableTestWorkerAcquisitionRequest.v1",
+  "clientRequestId": "poll-worker-a-000042"
+}
+```
+
+The verified principal exclusively determines tenant, organization, project, and environment.
+Caller-owned run ids, queue filters, owner ids, lease durations, priorities, and candidate limits are
+unknown fields and fail closed. The repository uses its database clock and an indexed SQL query to
+select at most `RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT` oldest expired `ACTIVE`, `SUSPENDED`, or
+`RESUMING` v2 candidates; default `32`, valid `1..1000`. Each candidate is integrity-verified and
+freshly re-authorized before exact fence CAS. Authorization conflicts are skipped inside the bounded
+window; dependency-store or authority outages fail the entire poll instead of producing false
+`NO_WORK`.
+
+The first successful transaction performs lease CAS, issues the hidden authorization-bound dispatch,
+stores the immutable acquisition result, and appends the semantic audit atomically. If the bounded
+window has no claimable candidate, the same transaction stores `NO_WORK` with database observation
+time and audit. Both outcomes are immutable under the scoped `clientRequestId`; a retry after a lost
+response receives the original result even if queue state later changes. A later observation must use
+a new key.
+
+```json
+{
+  "schemaVersion": "bloge.durableTestWorkerAcquisitionResponse.v1",
+  "outcome": "ACQUIRED",
+  "observedAt": "2026-07-17T12:00:00Z",
+  "assignment": {
+    "runId": "run-42",
+    "status": "RESUMING",
+    "ownerId": "server-issued-owner",
+    "leaseEpoch": 2,
+    "revision": 11,
+    "leaseExpiresAt": "2026-07-17T12:02:00Z",
+    "checkpointFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "target": {
+      "kind": "GRAPH",
+      "id": "credit-score",
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "idempotentReplay": false
+}
+```
+
+`NO_WORK` has `assignment: null`. Neither shape contains dispatch, authorization, fixture/replay
+payload, provider cursor, engine checkpoint, context, or credential. This endpoint acquires recovery
+ownership only. It does not hold an admission permit while idle, execute BLOGE remotely, long-poll,
+guarantee cross-tenant fairness or priority, quarantine unrecoverable candidates, cancel work, or
+supervise worker liveness.
+
+### 4.2h Claim, renew, and terminally recover an exact durable fence
 
 The three public recovery-control commands exist only under `test` or `staging` and require
 `TEST_EXECUTION` or `TEST_REPLAY` purpose:
@@ -2110,9 +2173,10 @@ Still intentionally outside this increment:
   `GovernanceGateResult.v3` through a reconstructable exact-evidence basis, but the ANEKE publish
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,
-  queued priority/fairness scheduling, remote worker acquisition, adaptive quota/autoscaling, external
-  alert routing, and suite-history list/trend APIs; database-authoritative immediate admission now
-  enforces tenant/suite/operator/dependency capacity, but it is not a scheduler;
+  queued priority/fairness scheduling, runtime-state delivery to remote workers, adaptive
+  quota/autoscaling, external alert routing, and suite-history list/trend APIs;
+  database-authoritative immediate admission now enforces tenant/suite/operator/dependency capacity,
+  while payload-free worker acquisition transfers only control ownership, not executable state;
 - dispatcher/polling, cross-process recovery supervision and multi-boundary recovery orchestration,
   hard worker cancellation, typed identity/flag/secret
   authorities, explicit

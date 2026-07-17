@@ -19,6 +19,8 @@ gateway:
       owner-claims:
         instance-id: ${RG_TEST_DURABLE_OWNER_INSTANCE_ID:}
         lease-duration-seconds: ${RG_TEST_DURABLE_OWNER_LEASE_SECONDS:120}
+      worker-acquisitions:
+        candidate-limit: ${RG_TEST_DURABLE_WORKER_CANDIDATE_LIMIT:32}
       heartbeats:
         lease-duration-seconds: ${RG_TEST_DURABLE_HEARTBEAT_LEASE_SECONDS:120}
       recovery-worker:

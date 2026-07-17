@@ -118,6 +118,12 @@ class TestingControlProtocolSchemaTest {
                 "/$defs/durableTestOwnerClaimResponse/properties/schemaVersion/const").asText())
                 .isEqualTo(DurableTestOwnerClaimResponse.SCHEMA_VERSION);
         assertThat(schema.at(
+                "/$defs/durableTestWorkerAcquisitionRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableTestWorkerAcquisitionRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/durableTestWorkerAcquisitionResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(DurableTestWorkerAcquisitionResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
                 "/$defs/durableStateProjectionFindingsResponse/properties/schemaVersion/const")
                 .asText()).isEqualTo(DurableStateProjectionFindingsResponse.SCHEMA_VERSION);
         assertThat(schema.at(
@@ -221,6 +227,8 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimRequest")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimResponse")).isTrue();
+        assertThat(definitions.has("durableTestWorkerAcquisitionRequest")).isTrue();
+        assertThat(definitions.has("durableTestWorkerAcquisitionResponse")).isTrue();
         assertThat(definitions.has("durableTestExecutionView")).isTrue();
         assertThat(definitions.has("durableTestExecutionCreateRequest")).isTrue();
         assertThat(definitions.has("durableOperatorTestExecutionCreateRequest")).isTrue();
@@ -243,6 +251,20 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at(
                 "/durableTestOwnerClaimResponse/properties/target/properties/fingerprint/$ref")
                 .asText()).isEqualTo("#/$defs/fingerprint");
+        assertThat(definitions.at(
+                "/durableTestWorkerAcquisitionRequest/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at("/durableTestWorkerAcquisitionRequest/required"))
+                .extracting(JsonNode::asText)
+                .containsExactly("schemaVersion", "clientRequestId");
+        assertThat(definitions.at(
+                "/durableTestWorkerAcquisitionResponse/properties/outcome/enum"))
+                .extracting(JsonNode::asText).containsExactly("ACQUIRED", "NO_WORK");
+        assertThat(definitions.at(
+                "/durableTestWorkerAcquisitionResponse/properties").has("dispatch")).isFalse();
+        assertThat(definitions.at(
+                "/durableTestWorkerAssignment/properties/checkpointFingerprint/$ref").asText())
+                .isEqualTo("#/$defs/fingerprint");
         assertThat(definitions.at(
                 "/durableTestExecutionView/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/durableTestExecutionView/required"))

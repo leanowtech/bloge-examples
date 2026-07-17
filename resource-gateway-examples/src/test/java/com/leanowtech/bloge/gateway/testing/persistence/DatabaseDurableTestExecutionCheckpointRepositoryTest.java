@@ -30,6 +30,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -1529,6 +1530,159 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
     }
 
     @Test
+    void scansOnlyExpiredCandidatesInExactScopeWithStableOldestFirstLimit() {
+        DurableTestExecutionCheckpoint oldest = identifiedCheckpoint(
+                expiredCheckpoint(), "run-oldest", "engine-oldest", "org-a", "project-a",
+                Instant.parse("2000-01-01T00:00:01Z"));
+        DurableTestExecutionCheckpoint next = identifiedCheckpoint(
+                expiredCheckpoint(), "run-next", "engine-next", "org-a", "project-a",
+                Instant.parse("2000-01-01T00:00:02Z"));
+        DurableTestExecutionCheckpoint later = identifiedCheckpoint(
+                expiredCheckpoint(), "run-later", "engine-later", "org-a", "project-a",
+                Instant.parse("2000-01-01T00:00:03Z"));
+        DurableTestExecutionCheckpoint otherProject = identifiedCheckpoint(
+                expiredCheckpoint(), "run-other", "engine-other", "org-a", "project-other",
+                Instant.parse("2000-01-01T00:00:01Z"));
+        DurableTestExecutionCheckpoint live = identifiedCheckpoint(
+                expiredCheckpoint(), "run-live", "engine-live", "org-a", "project-a",
+                Instant.now().plusSeconds(3_600));
+        for (DurableTestExecutionCheckpoint checkpoint :
+                List.of(later, otherProject, next, live, oldest)) {
+            repository.create(checkpoint, boundNoop(checkpoint));
+        }
+
+        List<DurableTestExecutionCheckpoint> candidates =
+                repository.findExpiredRecoveryCandidates(
+                        new DurableTestExecutionCheckpointRepository.RecoveryCandidateQuery(
+                                workerScope(), 2));
+
+        assertThat(candidates).extracting(DurableTestExecutionCheckpoint::runId)
+                .containsExactly("run-oldest", "run-next");
+    }
+
+    @Test
+    void persistsNoWorkAsAnImmutableDatabaseTimedOutcomeEvenWhenWorkAppearsLater() {
+        var command = workerCommand("worker-poll-1", SHA_A);
+
+        var first = repository.acquireWorkerCommandIdempotently(
+                command, Optional.empty(), TestRuntimeTransactionMutation.noop());
+
+        assertThat(first.outcome()).isEqualTo(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.NO_WORK);
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(first.checkpoint()).isNull();
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+
+        var replay = repository.acquireWorkerCommandIdempotently(
+                command, Optional.of(workerSelection(expired, "worker-a")),
+                TestRuntimeTransactionMutation.noop());
+
+        assertThat(replay.outcome()).isEqualTo(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.NO_WORK);
+        assertThat(replay.observedAt()).isEqualTo(first.observedAt());
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(repository.find("tenant-a", "test", "run-a"))
+                .contains(expired);
+    }
+
+    @Test
+    void atomicallyClaimsWorkerAssignmentDispatchResultAndCompanionAudit() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var command = workerCommand("worker-poll-1", SHA_A);
+
+        var acquired = repository.acquireWorkerCommandIdempotently(
+                command, Optional.of(workerSelection(expired, "worker-a")),
+                jdbc -> jdbc.update("INSERT INTO rg_test_engine_state VALUES (?, ?, ?)",
+                        "worker-audit", "engine-a", 1));
+
+        assertThat(acquired.outcome()).isEqualTo(
+                DurableTestExecutionCheckpointRepository.WorkerAcquisitionOutcome.ACQUIRED);
+        assertThat(acquired.checkpoint().lifecycle().status())
+                .isEqualTo(DurableTestExecutionCheckpoint.Status.RESUMING);
+        assertThat(acquired.checkpoint().lifecycle().ownerId()).isEqualTo("worker-a");
+        acquired.dispatch().requireValid(
+                new ObjectMapper().findAndRegisterModules(), acquired.checkpoint());
+        assertThat(engineCandidateCount("worker-audit")).isOne();
+
+        var replay = repository.findWorkerAcquisitionResult(
+                workerScope(), "worker-poll-1", SHA_A).orElseThrow();
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.checkpoint()).isEqualTo(acquired.checkpoint());
+        assertThat(replay.dispatch()).isEqualTo(acquired.dispatch());
+    }
+
+    @Test
+    void companionAuditFailureRollsBackWorkerClaimDispatchAndCommandResult() {
+        DurableTestExecutionCheckpoint expired = expiredCheckpoint();
+        repository.create(expired, boundNoop(expired));
+        var command = workerCommand("worker-poll-1", SHA_A);
+
+        assertThatThrownBy(() -> repository.acquireWorkerCommandIdempotently(
+                command, Optional.of(workerSelection(expired, "worker-a")),
+                ignored -> {
+                    throw new IllegalStateException("audit unavailable");
+                })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("audit unavailable");
+
+        assertThat(repository.find("tenant-a", "test", "run-a")).contains(expired);
+        assertThat(repository.findWorkerAcquisitionResult(
+                workerScope(), "worker-poll-1", SHA_A)).isEmpty();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_acquisitions", Integer.class))
+                .isZero();
+    }
+
+    @Test
+    void rejectsWorkerAcquisitionRecordTamperingAndScopedKeyReuse() {
+        repository.acquireWorkerCommandIdempotently(
+                workerCommand("worker-poll-1", SHA_A), Optional.empty(),
+                TestRuntimeTransactionMutation.noop());
+
+        assertThatThrownBy(() -> repository.findWorkerAcquisitionResult(
+                workerScope(), "worker-poll-1", SHA_B))
+                .isInstanceOf(DurableTestExecutionCheckpointConflictException.class)
+                .extracting(error -> ((DurableTestExecutionCheckpointConflictException) error)
+                        .reason())
+                .isEqualTo(
+                        DurableTestExecutionCheckpointConflictException.Reason.IDEMPOTENCY_CONFLICT);
+
+        database.jdbc().update("""
+                UPDATE rg_test_durable_worker_acquisitions SET outcome = 'ACQUIRED'
+                WHERE client_request_id = 'worker-poll-1'
+                """);
+        assertThatThrownBy(() -> repository.findWorkerAcquisitionResult(
+                workerScope(), "worker-poll-1", SHA_A))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("record is corrupt");
+    }
+
+    @Test
+    void sameWorkerPollKeyIsIndependentAcrossProjectsInOneTenant() {
+        var projectA = workerCommand("worker-poll-shared", SHA_A);
+        var projectBScope = new DurableTestExecutionCheckpointRepository.WorkerAcquisitionScope(
+                "tenant-a", "org-a", "project-b", "test");
+        var projectB = new DurableTestExecutionCheckpointRepository.WorkerAcquisitionCommand(
+                "worker-poll-shared", SHA_B, projectBScope);
+
+        var first = repository.acquireWorkerCommandIdempotently(
+                projectA, Optional.empty(), TestRuntimeTransactionMutation.noop());
+        var second = repository.acquireWorkerCommandIdempotently(
+                projectB, Optional.empty(), TestRuntimeTransactionMutation.noop());
+
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(second.idempotentReplay()).isFalse();
+        assertThat(repository.findWorkerAcquisitionResult(
+                workerScope(), "worker-poll-shared", SHA_A)).isPresent();
+        assertThat(repository.findWorkerAcquisitionResult(
+                projectBScope, "worker-poll-shared", SHA_B)).isPresent();
+        assertThat(database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM rg_test_durable_worker_acquisitions", Integer.class))
+                .isEqualTo(2);
+    }
+
+    @Test
     void rejectsLeaseFenceCounterOverflowWithoutChangingTheCheckpoint() {
         DurableTestExecutionCheckpoint exhausted = withLifecycle(
                 checkpoint(0, "checkpoint-0"),
@@ -1787,6 +1941,25 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
         return mutation(checkpoint, ignored -> { });
     }
 
+    private DurableTestExecutionCheckpointRepository.WorkerAcquisitionScope workerScope() {
+        return new DurableTestExecutionCheckpointRepository.WorkerAcquisitionScope(
+                "tenant-a", "org-a", "project-a", "test");
+    }
+
+    private DurableTestExecutionCheckpointRepository.WorkerAcquisitionCommand workerCommand(
+            String clientRequestId, String requestFingerprint) {
+        return new DurableTestExecutionCheckpointRepository.WorkerAcquisitionCommand(
+                clientRequestId, requestFingerprint, workerScope());
+    }
+
+    private DurableTestExecutionCheckpointRepository.WorkerAcquisitionSelection workerSelection(
+            DurableTestExecutionCheckpoint checkpoint, String ownerId) {
+        DurableTestExecutionCheckpointRepository.ResumeLeaseCommand resume =
+                resumeCommand(checkpoint, "authorization-only", SHA_D, ownerId);
+        return new DurableTestExecutionCheckpointRepository.WorkerAcquisitionSelection(
+                resume.claim(), resume.authorization());
+    }
+
     private DurableTestExecutionCheckpointRepository.BoundEngineStateMutation mutation(
             DurableTestExecutionCheckpoint checkpoint,
             Consumer<JdbcTemplate> action) {
@@ -1903,6 +2076,26 @@ class DatabaseDurableTestExecutionCheckpointRepositoryTest {
                 checkpoint.fixtureConsumptionState(), checkpoint.executionServiceState(),
                 checkpoint.engineState(), new DurableTestExecutionCheckpoint.Lifecycle(
                 status, ownerId, leaseEpoch, revision, createdAt, updatedAt, leaseExpiresAt), ""));
+    }
+
+    private DurableTestExecutionCheckpoint identifiedCheckpoint(
+            DurableTestExecutionCheckpoint checkpoint,
+            String runId,
+            String engineExecutionId,
+            String organizationId,
+            String projectId,
+            Instant leaseExpiresAt) {
+        DurableTestExecutionCheckpoint.Lifecycle lifecycle = checkpoint.lifecycle();
+        return integrity.seal(new DurableTestExecutionCheckpoint(
+                checkpoint.schemaVersion(), new DurableTestExecutionCheckpoint.Scope(
+                checkpoint.scope().tenantId(), organizationId, projectId,
+                checkpoint.scope().environmentId(), checkpoint.scope().actorId()),
+                runId, engineExecutionId, checkpoint.dependencies(),
+                checkpoint.fixtureConsumptionState(), checkpoint.executionServiceState(),
+                checkpoint.engineState(), new DurableTestExecutionCheckpoint.Lifecycle(
+                lifecycle.status(), lifecycle.ownerId(), lifecycle.leaseEpoch(),
+                lifecycle.revision(), lifecycle.createdAt(), lifecycle.updatedAt(),
+                leaseExpiresAt), ""));
     }
 
     private DurableTestExecutionCheckpoint expiredCheckpoint() {
