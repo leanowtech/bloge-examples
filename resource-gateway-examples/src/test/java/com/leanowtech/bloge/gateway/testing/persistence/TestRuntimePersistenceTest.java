@@ -261,6 +261,58 @@ class TestRuntimePersistenceTest {
                 .isEqualTo(com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation
                         .SCHEMA_VERSION_V3);
         assertThat(restored.attestation().childEvidenceRefs()).isEmpty();
+
+        Instant reconciledAt = now.plusSeconds(31);
+        var abandoned = suiteRuns.findAbandoned(reconciledAt, 10).getFirst();
+        TestSuiteRunEvidence.CaseResult incompleteCase = new TestSuiteRunEvidence.CaseResult(
+                pendingCase.caseId(), pendingCase.caseType(), pendingCase.fixtureBundleRef(),
+                TestSuiteRunEvidence.CaseStatus.EVIDENCE_INCOMPLETE, "", null, null,
+                0, 0, "ABANDONED_RUN_RECONCILED", "");
+        TestSuiteRunEvidenceV3.AdmissionCaseResult incompleteAdmission =
+                new TestSuiteRunEvidenceV3.AdmissionCaseResult(
+                        pendingAdmission.caseId(),
+                        TestSuiteRunEvidenceV3.AdmissionCaseStatus.EVIDENCE_INCOMPLETE,
+                        pendingAdmission.expectedOutcome(), null,
+                        pendingAdmission.expectedValidationCodes(), List.of(),
+                        "ABANDONED_RUN_RECONCILED");
+        TestSuiteRunEvidenceV3 terminalEvidence = new TestSuiteRunEvidenceV3(
+                "", evidence.suiteRunId(), evidence.clientRequestId(),
+                TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE, evidence.executionPurpose(),
+                evidence.suiteRef(), evidence.target(), evidence.startedAt(), reconciledAt,
+                List.of(incompleteCase), TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
+                new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.BLOCKED,
+                        List.of(TestSuiteRunEvidenceV3.BUSINESS_EXECUTION_NOT_PERFORMED,
+                                TestSuiteRunEvidenceV3.SCHEMA_ADMISSION_ONLY,
+                                "ABANDONED_RUN_RECONCILED", "EVIDENCE_INCOMPLETE"),
+                        false, 0, 0, false, false, false),
+                evidence.evaluationMode(), evidence.boundaryPlanFingerprint(),
+                evidence.inputSchemaFingerprint(), evidence.generatorVersion(),
+                evidence.verificationMode(), evidence.sourcePlanStatus(),
+                evidence.sourceCoverageGapCount(), evidence.coverageGapsAccepted(),
+                List.of(incompleteAdmission),
+                new TestSuiteRunEvidenceV3.AdmissionCoverageVerdict(
+                        TestSuiteRunEvidenceV3.AdmissionCoverageStatus.INCOMPLETE,
+                        1, 0, 0, List.of(), List.of(), List.of(pendingCase.caseId()), false),
+                List.of("ABANDONED_RUN_RECONCILED"),
+                Map.of("reconciliationMode", "LEASE_EXPIRY_TERMINALIZATION"));
+        var terminalAttestation = suiteAttestations.seal(terminalEvidence, requestFingerprint,
+                List.of(), TestSuiteRunAttestation.Scope.TERMINAL).attestation();
+        TestSuiteRunRecord terminalRecord = new TestSuiteRunRecord(
+                record.suiteRunId(), record.clientRequestId(), record.requestFingerprint(),
+                record.tenantId(), record.organizationId(), record.projectId(),
+                record.environmentId(), record.actorId(), record.classification(),
+                terminalAttestation.aggregateEvidenceFingerprint(), terminalEvidence,
+                terminalAttestation, record.createdAt(), record.expiresAt());
+
+        assertThat(suiteRuns.reconcileAbandoned(abandoned, terminalRecord, reconciledAt)).isTrue();
+        TestSuiteRunRecord reconciled = suiteRuns.find(
+                "tenant-a", "test", evidence.suiteRunId()).orElseThrow();
+        assertThat(reconciled.evidence()).isInstanceOf(TestSuiteRunEvidenceV3.class)
+                .isEqualTo(terminalEvidence);
+        assertThat(reconciled.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V3);
+        assertThat(reconciled.attestation().childEvidenceRefs()).isEmpty();
     }
 
     @Test

@@ -16,6 +16,11 @@ Implemented chain:
 6. completed child references survive terminalization, pending cases become evidence-incomplete,
    and no case is automatically rerun.
 
+The v3 extension applies the same lease/version/CAS protocol to schema-admission checkpoints without
+inventing business-child semantics. It preserves completed typed validator observations, converts
+only pending common/admission results to evidence-incomplete, keeps the child closure empty, retains
+the exact plan/schema/generator proof coordinates, and signs a v3 terminal aggregate.
+
 ## 2. Safety invariants
 
 | Invariant | Enforcement |
@@ -26,6 +31,8 @@ Implemented chain:
 | Stale scan cannot overwrite live progress | checkpoint version CAS and owner/expiry predicate |
 | Duplicate side effects are not introduced | terminalization only; no automatic resume |
 | Partial evidence is not promotable | aggregate `EVIDENCE_INCOMPLETE`, coverage `INCOMPLETE`, promotion `BLOCKED` |
+| Schema admission is not rewritten as business execution | v3 structural coverage remains `NOT_EVALUATED`; typed admission coverage alone becomes `INCOMPLETE`; child closure remains empty |
+| Evidence generations do not drift during recovery | v1/v2/v3 terminal evidence and attestations retain matching protocol generations |
 | Reconciliation does not leak fixtures or topology | new fields contain counters, owner fingerprint, version, and time only |
 | One bad row does not block the batch | per-candidate isolation and next-sweep retry |
 | Production cannot activate the machinery | beans remain under `!production & (test | staging)` |
@@ -45,6 +52,10 @@ Focused proof covers:
   stale-candidate rejection after a concurrent heartbeat;
 - real scheduled heartbeat loss changing the local guard to not-held;
 - preservation of passed/failed child facts and conversion of pending cases;
+- v3 preservation of completed validator facts, typed pending-case conversion, empty child closure,
+  plan/schema fingerprint retention, and verified terminal attestation;
+- refusal to derive any terminal evidence when checkpoint verification/signing authority is
+  unavailable;
 - blocked promotion, incomplete coverage, canonical evidence fingerprint, CAS-race accounting, and
   per-candidate failure isolation;
 - Spring test-profile assembly and machine-readable capability advertisement.
@@ -66,6 +77,12 @@ Verified result on 2026-07-16:
 - full Resource Gateway verification: 1763 tests, 0 failures, 0 errors, 34 conditional skips;
 - npm audit: 0 vulnerabilities; production frontend build, real-browser regression, and Spring Boot
   executable JAR packaging succeeded.
+
+Schema-admission v3 extension verified on 2026-07-17:
+
+- execution/reconciliation/persistence/attestation/codec matrix: 44 tests, 0 failures, 0 errors;
+- full Resource Gateway verification: 2364 tests, 0 failures, 0 errors, 2 conditional skips;
+- JavaDoc generation and Spring Boot executable JAR packaging succeeded.
 
 ## 5. Honest residual boundary
 

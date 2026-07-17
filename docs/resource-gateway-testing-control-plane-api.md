@@ -2273,19 +2273,25 @@ The test and staging profiles run a bounded anti-entropy sweep. When a process c
 heartbeats stop. After the lease expires, the sweeper converts the latest durable checkpoint to
 `EVIDENCE_INCOMPLETE` with diagnostic `ABANDONED_RUN_RECONCILED`:
 
-- completed child case results and child `runId` references are preserved exactly;
-- still-`PENDING` cases become case-level `EVIDENCE_INCOMPLETE`;
-- aggregate coverage becomes `INCOMPLETE` and promotion becomes `BLOCKED`;
+- for structural/semantic v1-v2 evidence, completed child case results and child `runId`
+  references are preserved exactly, pending cases become case-level `EVIDENCE_INCOMPLETE`, and
+  business coverage becomes `INCOMPLETE`;
+- for schema-admission v3 evidence, the child closure remains empty, completed typed validator
+  observations are preserved, pending common/admission results become `EVIDENCE_INCOMPLETE`, and
+  exact target, plan, input-schema, generator, and verification-mode fingerprints remain bound;
+- v3 structural DAG coverage remains `NOT_EVALUATED`; its admission coverage becomes
+  `INCOMPLETE`, and every evidence generation sets promotion to `BLOCKED`;
 - reconciliation metadata records only owner fingerprint/version/timestamps, never raw owner,
   fixture, or node payloads;
 - a status/version/owner/expiry compare-and-set prevents an old scan from overwriting a concurrent
   heartbeat, checkpoint, or terminal result;
 - a failed candidate does not stop the batch, and the next scheduled sweep retries unresolved rows.
 
-This is **terminalization, not resume**. The sweeper never reruns a case because an abandoned case
-may have produced an unconfirmed external side effect. A caller may query the existing
-`suiteRunId`, inspect the fail-closed evidence, and decide whether a new idempotent suite execution
-is appropriate.
+This is **terminalization, not resume**. The sweeper never reruns a business child or a schema
+validator case. A business case may have produced an unconfirmed external side effect; a schema
+case must not be silently evaluated after the reviewed run lost ownership. A caller may query the
+existing `suiteRunId`, inspect the fail-closed evidence, and decide whether a new idempotent suite
+execution is appropriate.
 
 | Environment variable | Default | Meaning |
 |---|---:|---|
