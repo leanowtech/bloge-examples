@@ -104,6 +104,18 @@ public final class TestingProtocol {
     /** Exact immutable mutation-suite execution request wire version. */
     public static final String TEST_MUTATION_SUITE_EXECUTION_REQUEST_V1 =
             "bloge.testMutationSuiteExecutionRequest.v1";
+    /** Bounded idempotent suite-stability rerun request wire version. */
+    public static final String TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1 =
+            "bloge.testSuiteStabilityExecutionRequest.v1";
+    /** Payload-free bounded suite-stability evidence wire version. */
+    public static final String TEST_SUITE_STABILITY_EVIDENCE_V1 =
+            "bloge.testSuiteStabilityEvidence.v1";
+    /** Domain-separated detached suite-stability attestation wire version. */
+    public static final String TEST_SUITE_STABILITY_ATTESTATION_V1 =
+            "bloge.testSuiteStabilityAttestation.v1";
+    /** Signed terminal suite-stability execution response wire version. */
+    public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1 =
+            "bloge.testSuiteStabilityExecutionResponse.v1";
     /** Immutable suite execution response wire version. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteExecutionResponse.v1";

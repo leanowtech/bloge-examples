@@ -86,6 +86,14 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_EXECUTION_REQUEST_V1);
             assertConstant(definitions, "testMutationSuiteExecutionRequest",
                     TestingProtocol.TEST_MUTATION_SUITE_EXECUTION_REQUEST_V1);
+            assertConstant(definitions, "testSuiteStabilityExecutionRequest",
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1);
+            assertConstant(definitions, "testSuiteStabilityEvidence",
+                    TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V1);
+            assertConstant(definitions, "testSuiteStabilityAttestation",
+                    TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1);
+            assertConstant(definitions, "testSuiteStabilityExecutionResponse",
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV1",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV2",
@@ -219,6 +227,143 @@ class TestingProtocolTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("authoritative schema")
                 .hasMessageNotContaining("mutant-run-killed");
+    }
+
+    @Test
+    void packagedSchemaAcceptsStableEvidenceAndRejectsAmplificationPayloadAndUnsignedClaims()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode response = mapper.readTree(stabilityResponse());
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                response, "testSuiteStabilityExecutionResponse"));
+
+        JsonNode amplified = response.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) amplified.at("/evidence"))
+                .put("requestedAttempts", 21);
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                amplified, "testSuiteStabilityExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema");
+
+        JsonNode payloadLeak = response.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) payloadLeak.at(
+                "/evidence/caseResults/0/observations/0"))
+                .putObject("input").put("accountNumber", "raw-business-payload");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                payloadLeak, "testSuiteStabilityExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema")
+                .hasMessageNotContaining("accountNumber");
+
+        JsonNode nestedMetadata = response.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) nestedMetadata.at("/evidence/metadata"))
+                .putObject("pipeline").put("name", "nightly");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                nestedMetadata, "testSuiteStabilityExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema");
+
+        JsonNode unsigned = response.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) unsigned.at("/attestation"))
+                .put("signatureStatus", "UNSIGNED")
+                .put("independentlyVerifiable", false)
+                .put("keyId", "")
+                .put("algorithm", "")
+                .put("signature", "");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                unsigned, "testSuiteStabilityExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema");
+    }
+
+    @Test
+    void packagedSchemaRejectsStabilityRequestOutsideThreeToTwentyAttempts() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode request = mapper.readTree("""
+                {"schemaVersion":"bloge.testSuiteStabilityExecutionRequest.v1",
+                 "suiteRef":{"suiteId":"orders-suite","revision":7,
+                   "fingerprint":"sha256:%s"},
+                 "clientRequestId":"stability-ci-42","attempts":3,
+                 "metadata":{"pipeline":"nightly","build":42,"protected":true}}
+                """.formatted("a".repeat(64)));
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                request, "testSuiteStabilityExecutionRequest"));
+        for (int attempts : new int[]{2, 21}) {
+            JsonNode invalid = request.deepCopy();
+            ((com.fasterxml.jackson.databind.node.ObjectNode) invalid).put("attempts", attempts);
+            assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                    invalid, "testSuiteStabilityExecutionRequest"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("authoritative schema");
+        }
+    }
+
+    private static String stabilityResponse() {
+        String suite = "a".repeat(64);
+        String target = "b".repeat(64);
+        String fixture = "c".repeat(64);
+        String plan = "d".repeat(64);
+        String semantic = "e".repeat(64);
+        String evidence = "f".repeat(64);
+        String request = "1".repeat(64);
+        String runId = "stability-" + "2".repeat(64);
+        return """
+                {"schemaVersion":"bloge.testSuiteStabilityExecutionResponse.v1",
+                 "stabilityRunId":"%8$s","evidenceFingerprint":"sha256:%6$s",
+                 "evidence":{"schemaVersion":"bloge.testSuiteStabilityEvidence.v1",
+                   "stabilityRunId":"%8$s","clientRequestId":"stability-ci-42",
+                   "suiteRef":{"suiteId":"orders-suite","revision":7,"fingerprint":"sha256:%1$s"},
+                   "target":{"kind":"GRAPH","id":"orders","fingerprint":"sha256:%2$s"},
+                   "requestedAttempts":3,"status":"STABLE","attempts":[
+                     {"attempt":1,"status":"VERIFIED","suiteRunId":"suite-run-1",
+                      "aggregateEvidenceFingerprint":"sha256:%7$s","suiteStatus":"PASSED",
+                      "startedAt":"2026-07-18T01:00:00Z","completedAt":"2026-07-18T01:00:01Z",
+                      "diagnosticCode":""},
+                     {"attempt":2,"status":"VERIFIED","suiteRunId":"suite-run-2",
+                      "aggregateEvidenceFingerprint":"sha256:%3$s","suiteStatus":"PASSED",
+                      "startedAt":"2026-07-18T01:01:00Z","completedAt":"2026-07-18T01:01:01Z",
+                      "diagnosticCode":""},
+                     {"attempt":3,"status":"VERIFIED","suiteRunId":"suite-run-3",
+                      "aggregateEvidenceFingerprint":"sha256:%4$s","suiteStatus":"PASSED",
+                      "startedAt":"2026-07-18T01:02:00Z","completedAt":"2026-07-18T01:02:01Z",
+                      "diagnosticCode":""}],
+                   "caseResults":[{"caseId":"golden","caseType":"GOLDEN",
+                     "fixtureBundleRef":{"fixtureBundleId":"orders-fixture","revision":2,
+                       "fingerprint":"sha256:%3$s"},"status":"STABLE_PASS","observations":[
+                       {"attempt":1,"status":"VERIFIED","runId":"child-run-1",
+                        "evidenceFingerprint":"sha256:%6$s","evidenceStatus":"PASSED",
+                        "evidenceClass":"CERTIFIABLE","fixtureBundleFingerprint":"sha256:%3$s",
+                        "planFingerprint":"sha256:%4$s","semanticResultFingerprint":"sha256:%5$s",
+                        "diagnosticCode":""},
+                       {"attempt":2,"status":"VERIFIED","runId":"child-run-2",
+                        "evidenceFingerprint":"sha256:%6$s","evidenceStatus":"PASSED",
+                        "evidenceClass":"CERTIFIABLE","fixtureBundleFingerprint":"sha256:%3$s",
+                        "planFingerprint":"sha256:%4$s","semanticResultFingerprint":"sha256:%5$s",
+                        "diagnosticCode":""},
+                       {"attempt":3,"status":"VERIFIED","runId":"child-run-3",
+                        "evidenceFingerprint":"sha256:%6$s","evidenceStatus":"PASSED",
+                        "evidenceClass":"CERTIFIABLE","fixtureBundleFingerprint":"sha256:%3$s",
+                        "planFingerprint":"sha256:%4$s","semanticResultFingerprint":"sha256:%5$s",
+                        "diagnosticCode":""}],"distinctVerifiedOutcomes":1,"diagnosticCodes":[]}],
+                   "promotion":{"status":"ELIGIBLE","reasons":[],"stableCases":1,
+                     "flakyCases":0,"consistentFailureCases":0,"inconclusiveCases":0,
+                     "allAttemptsVerified":true},
+                   "quarantine":{"status":"NOT_REQUIRED","caseIds":[],"reason":""},
+                   "startedAt":"2026-07-18T01:00:00Z","completedAt":"2026-07-18T01:02:01Z",
+                   "diagnostics":[],"metadata":{"pipeline":"nightly"}},
+                 "attestation":{"schemaVersion":"bloge.testSuiteStabilityAttestation.v1",
+                   "signatureStatus":"VERIFIED","stabilityRunId":"%8$s",
+                   "suiteRef":{"suiteId":"orders-suite","revision":7,"fingerprint":"sha256:%1$s"},
+                   "requestFingerprint":"sha256:%7$s","evidenceFingerprint":"sha256:%6$s",
+                   "sourceSuiteEvidenceRefs":[
+                     {"attempt":1,"suiteRunId":"suite-run-1","aggregateEvidenceFingerprint":"sha256:%7$s"},
+                     {"attempt":2,"suiteRunId":"suite-run-2","aggregateEvidenceFingerprint":"sha256:%3$s"},
+                     {"attempt":3,"suiteRunId":"suite-run-3","aggregateEvidenceFingerprint":"sha256:%4$s"}],
+                   "signedAt":"2026-07-18T01:02:02Z","keyId":"test-key","algorithm":"Ed25519",
+                   "signature":"c2lnbmF0dXJl","independentlyVerifiable":true}}
+                """.formatted(suite, target, fixture, plan, semantic, evidence, request, runId);
     }
 
     private static String schemaAdmissionSuiteResponse() {

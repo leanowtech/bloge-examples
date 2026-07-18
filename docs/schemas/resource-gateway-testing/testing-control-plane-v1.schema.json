@@ -2,11 +2,27 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, validator-proven bounded boundary-case plans, immutable fixtures and suites, controlled execution, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, one-signal suspended-or-terminal recovery steps, terminal recovery, durable projection finding operations, externally authorized exact-checkpoint worker quarantine maintenance, signed request-index rollout proofs, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, validator-proven bounded boundary-case plans, immutable fixtures and suites, controlled execution, signed bounded suite-stability analysis, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, one-signal suspended-or-terminal recovery steps, terminal recovery, durable projection finding operations, externally authorized exact-checkpoint worker quarantine maintenance, signed request-index rollout proofs, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "stabilityRunId": {
+      "type": "string",
+      "pattern": "^stability-[a-f0-9]{64}$"
+    },
+    "stabilityProvenanceMetadata": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"},
+      "additionalProperties": {
+        "oneOf": [
+          {"type": "string", "maxLength": 512},
+          {"type": "number"},
+          {"type": "boolean"}
+        ]
+      }
     },
     "workerQuarantineChangeAuthorizationScope": {
       "type": "object",
@@ -2430,6 +2446,314 @@
         "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
         "strategy": {"enum": ["COLLECT_ALL", "STOP_AFTER_KILL"]},
         "metadata": {"type": "object", "maxProperties": 100}
+      }
+    },
+    "testSuiteStabilityExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRef", "clientRequestId", "attempts", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionRequest.v1"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "attempts": {"type": "integer", "minimum": 3, "maximum": 20},
+        "metadata": {"$ref": "#/$defs/stabilityProvenanceMetadata"}
+      }
+    },
+    "testSuiteStabilityAttemptResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "status", "suiteRunId", "aggregateEvidenceFingerprint",
+        "suiteStatus", "startedAt", "completedAt", "diagnosticCode"],
+      "properties": {
+        "attempt": {"type": "integer", "minimum": 1, "maximum": 20},
+        "status": {"enum": ["VERIFIED", "INCONCLUSIVE"]},
+        "suiteRunId": {"type": "string", "maxLength": 255},
+        "aggregateEvidenceFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "suiteStatus": {
+          "type": ["string", "null"],
+          "enum": ["RUNNING", "PASSED", "COMPLETED_WITH_FAILURES", "PARTIAL",
+            "EVIDENCE_INCOMPLETE", null]
+        },
+        "startedAt": {"type": ["string", "null"], "format": "date-time"},
+        "completedAt": {"type": ["string", "null"], "format": "date-time"},
+        "diagnosticCode": {
+          "type": "string", "maxLength": 128,
+          "pattern": "^$|^[A-Z][A-Z0-9_]{0,127}$"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": {"const": "VERIFIED"},
+            "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+            "aggregateEvidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+            "suiteStatus": {"enum": ["PASSED", "COMPLETED_WITH_FAILURES", "PARTIAL",
+              "EVIDENCE_INCOMPLETE"]},
+            "startedAt": {"type": "string", "format": "date-time"},
+            "completedAt": {"type": "string", "format": "date-time"},
+            "diagnosticCode": {"const": ""}
+          }
+        },
+        {"properties": {"status": {"const": "INCONCLUSIVE"}}}
+      ]
+    },
+    "testSuiteStabilityCaseObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "status", "runId", "evidenceFingerprint", "evidenceStatus",
+        "evidenceClass", "fixtureBundleFingerprint", "planFingerprint",
+        "semanticResultFingerprint", "diagnosticCode"],
+      "properties": {
+        "attempt": {"type": "integer", "minimum": 1, "maximum": 20},
+        "status": {"enum": ["VERIFIED", "INCONCLUSIVE"]},
+        "runId": {"type": "string", "maxLength": 255},
+        "evidenceFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "evidenceStatus": {"oneOf": [{"$ref": "#/$defs/runStatus"}, {"type": "null"}]},
+        "evidenceClass": {
+          "type": ["string", "null"], "enum": ["EXPLORATORY", "CERTIFIABLE", null]
+        },
+        "fixtureBundleFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "planFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "semanticResultFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "diagnosticCode": {
+          "type": "string", "maxLength": 128,
+          "pattern": "^$|^[A-Z][A-Z0-9_]{0,127}$"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": {"const": "VERIFIED"},
+            "runId": {"type": "string", "minLength": 1, "maxLength": 255},
+            "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+            "evidenceStatus": {"$ref": "#/$defs/runStatus"},
+            "evidenceClass": {"enum": ["EXPLORATORY", "CERTIFIABLE"]},
+            "fixtureBundleFingerprint": {"$ref": "#/$defs/fingerprint"},
+            "planFingerprint": {"$ref": "#/$defs/fingerprint"},
+            "semanticResultFingerprint": {"$ref": "#/$defs/fingerprint"},
+            "diagnosticCode": {"const": ""}
+          }
+        },
+        {"properties": {"status": {"const": "INCONCLUSIVE"}}}
+      ]
+    },
+    "testSuiteStabilityCaseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "caseType", "fixtureBundleRef", "status", "observations",
+        "distinctVerifiedOutcomes", "diagnosticCodes"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "caseType": {"enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"]},
+        "fixtureBundleRef": {"$ref": "#/$defs/governedFixtureBundleRef"},
+        "status": {"enum": ["STABLE_PASS", "CONSISTENT_FAILURE", "FLAKY", "INCONCLUSIVE"]},
+        "observations": {
+          "type": "array", "minItems": 3, "maxItems": 20,
+          "items": {"$ref": "#/$defs/testSuiteStabilityCaseObservation"}
+        },
+        "distinctVerifiedOutcomes": {"type": "integer", "minimum": 0, "maximum": 20},
+        "diagnosticCodes": {
+          "type": "array", "uniqueItems": true, "maxItems": 20,
+          "items": {
+            "type": "string", "minLength": 1, "maxLength": 128,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+          }
+        }
+      },
+      "oneOf": [
+        {"properties": {"status": {"const": "STABLE_PASS"},
+          "distinctVerifiedOutcomes": {"const": 1}}},
+        {"properties": {"status": {"const": "CONSISTENT_FAILURE"},
+          "distinctVerifiedOutcomes": {"const": 1}}},
+        {"properties": {"status": {"const": "FLAKY"},
+          "distinctVerifiedOutcomes": {"minimum": 2}}},
+        {"properties": {"status": {"const": "INCONCLUSIVE"},
+          "distinctVerifiedOutcomes": {"maximum": 1}}}
+      ]
+    },
+    "testSuiteStabilityPromotionVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reasons", "stableCases", "flakyCases",
+        "consistentFailureCases", "inconclusiveCases", "allAttemptsVerified"],
+      "properties": {
+        "status": {"enum": ["ELIGIBLE", "BLOCKED"]},
+        "reasons": {
+          "type": "array", "uniqueItems": true, "maxItems": 3,
+          "items": {"enum": ["FLAKY_CASE_OBSERVED", "CONSISTENT_TEST_FAILURE",
+            "STABILITY_EVIDENCE_INCOMPLETE"]}
+        },
+        "stableCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "flakyCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "consistentFailureCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "inconclusiveCases": {"type": "integer", "minimum": 0, "maximum": 100},
+        "allAttemptsVerified": {"type": "boolean"}
+      },
+      "oneOf": [
+        {"properties": {"status": {"const": "ELIGIBLE"}, "reasons": {"maxItems": 0},
+          "flakyCases": {"const": 0}, "consistentFailureCases": {"const": 0},
+          "inconclusiveCases": {"const": 0}, "allAttemptsVerified": {"const": true}}},
+        {"properties": {"status": {"const": "BLOCKED"}}}
+      ]
+    },
+    "testSuiteStabilityQuarantineVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "caseIds", "reason"],
+      "properties": {
+        "status": {"enum": ["NOT_REQUIRED", "REQUIRED", "UNDETERMINED"]},
+        "caseIds": {
+          "type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}
+        },
+        "reason": {"enum": ["", "FLAKY_CASE_OBSERVED", "STABILITY_EVIDENCE_INCOMPLETE"]}
+      },
+      "oneOf": [
+        {"properties": {"status": {"const": "NOT_REQUIRED"},
+          "caseIds": {"maxItems": 0}, "reason": {"const": ""}}},
+        {"properties": {"status": {"const": "REQUIRED"},
+          "caseIds": {"minItems": 1}, "reason": {"const": "FLAKY_CASE_OBSERVED"}}},
+        {"properties": {"status": {"const": "UNDETERMINED"},
+          "caseIds": {"maxItems": 0}, "reason": {"const": "STABILITY_EVIDENCE_INCOMPLETE"}}}
+      ]
+    },
+    "testSuiteStabilityEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "stabilityRunId", "clientRequestId", "suiteRef", "target",
+        "requestedAttempts", "status", "attempts", "caseResults", "promotion", "quarantine",
+        "startedAt", "completedAt", "diagnostics", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v1"},
+        "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
+        "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "target": {"$ref": "#/$defs/exactTarget"},
+        "requestedAttempts": {"type": "integer", "minimum": 3, "maximum": 20},
+        "status": {"enum": ["STABLE", "FLAKY", "CONSISTENT_FAILURE", "INCONCLUSIVE"]},
+        "attempts": {
+          "type": "array", "minItems": 3, "maxItems": 20,
+          "items": {"$ref": "#/$defs/testSuiteStabilityAttemptResult"}
+        },
+        "caseResults": {
+          "type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteStabilityCaseResult"}
+        },
+        "promotion": {"$ref": "#/$defs/testSuiteStabilityPromotionVerdict"},
+        "quarantine": {"$ref": "#/$defs/testSuiteStabilityQuarantineVerdict"},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "completedAt": {"type": "string", "format": "date-time"},
+        "diagnostics": {
+          "type": "array", "uniqueItems": true, "maxItems": 100,
+          "items": {
+            "type": "string", "minLength": 1, "maxLength": 128,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+          }
+        },
+        "metadata": {"$ref": "#/$defs/stabilityProvenanceMetadata"}
+      },
+      "oneOf": [
+        {"properties": {"status": {"const": "STABLE"},
+          "promotion": {"properties": {"status": {"const": "ELIGIBLE"}}},
+          "quarantine": {"properties": {"status": {"const": "NOT_REQUIRED"}}}}},
+        {"properties": {"status": {"const": "FLAKY"},
+          "promotion": {"properties": {"status": {"const": "BLOCKED"}}},
+          "quarantine": {"properties": {"status": {"const": "REQUIRED"}}}}},
+        {"properties": {"status": {"const": "CONSISTENT_FAILURE"},
+          "promotion": {"properties": {"status": {"const": "BLOCKED"}}},
+          "quarantine": {"properties": {"status": {"const": "NOT_REQUIRED"}}}}},
+        {"properties": {"status": {"const": "INCONCLUSIVE"},
+          "promotion": {"properties": {"status": {"const": "BLOCKED"}}},
+          "quarantine": {"properties": {"status": {"const": "UNDETERMINED"}}}}}
+      ]
+    },
+    "testSuiteStabilitySourceEvidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "suiteRunId", "aggregateEvidenceFingerprint"],
+      "properties": {
+        "attempt": {"type": "integer", "minimum": 1, "maximum": 20},
+        "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "aggregateEvidenceFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteStabilityAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "signatureStatus", "stabilityRunId", "suiteRef",
+        "requestFingerprint", "evidenceFingerprint", "sourceSuiteEvidenceRefs", "signedAt",
+        "keyId", "algorithm", "signature", "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityAttestation.v1"},
+        "signatureStatus": {"enum": ["VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE"]},
+        "stabilityRunId": {"type": "string", "maxLength": 74},
+        "suiteRef": {"oneOf": [{"$ref": "#/$defs/testSuiteRef"}, {"type": "null"}]},
+        "requestFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "evidenceFingerprint": {
+          "oneOf": [{"$ref": "#/$defs/fingerprint"}, {"const": ""}]
+        },
+        "sourceSuiteEvidenceRefs": {
+          "type": "array", "maxItems": 20,
+          "items": {"$ref": "#/$defs/testSuiteStabilitySourceEvidenceRef"}
+        },
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "maxLength": 512},
+        "algorithm": {"type": "string", "maxLength": 128},
+        "signature": {"type": "string", "maxLength": 4096},
+        "independentlyVerifiable": {"type": "boolean"}
+      },
+      "oneOf": [
+        {"properties": {"signatureStatus": {"const": "VERIFIED"},
+          "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
+          "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+          "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+          "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+          "keyId": {"type": "string", "minLength": 1, "maxLength": 512},
+          "algorithm": {"type": "string", "minLength": 1, "maxLength": 128},
+          "signature": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "independentlyVerifiable": {"const": true}}},
+        {"properties": {"signatureStatus": {"const": "VERIFICATION_UNAVAILABLE"},
+          "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
+          "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+          "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+          "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+          "keyId": {"const": ""}, "algorithm": {"const": ""}, "signature": {"const": ""},
+          "independentlyVerifiable": {"const": false}}},
+        {"properties": {"signatureStatus": {"const": "UNSIGNED"},
+          "keyId": {"const": ""}, "algorithm": {"const": ""}, "signature": {"const": ""},
+          "independentlyVerifiable": {"const": false}}}
+      ]
+    },
+    "testSuiteStabilityExecutionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "stabilityRunId", "evidenceFingerprint", "evidence",
+        "attestation"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionResponse.v1"},
+        "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidence": {"$ref": "#/$defs/testSuiteStabilityEvidence"},
+        "attestation": {
+          "allOf": [
+            {"$ref": "#/$defs/testSuiteStabilityAttestation"},
+            {"properties": {"signatureStatus": {"const": "VERIFIED"},
+              "independentlyVerifiable": {"const": true}}}
+          ]
+        }
       }
     },
     "testSuiteCaseResult": {

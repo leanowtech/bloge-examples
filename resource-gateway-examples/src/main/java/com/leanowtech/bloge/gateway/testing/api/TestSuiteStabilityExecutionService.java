@@ -36,11 +36,15 @@ import java.util.regex.Pattern;
 public final class TestSuiteStabilityExecutionService {
     private static final int MAX_CLIENT_REQUEST_ID_LENGTH = 255;
     private static final int MAX_METADATA_BYTES = 16_384;
+    private static final int MAX_METADATA_PROPERTIES = 32;
+    private static final int MAX_METADATA_STRING_LENGTH = 512;
     private static final Set<String> ENABLED_ENVIRONMENTS = Set.of("test", "staging");
     private static final Set<String> EXECUTION_PURPOSES = Set.of("TEST_EXECUTION", "TEST_REPLAY");
     private static final List<String> CLASSIFICATIONS = List.of(
             "PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+    private static final Pattern METADATA_KEY = Pattern.compile(
+            "[A-Za-z][A-Za-z0-9_.-]{0,127}");
 
     private final TestSuiteRegistryService suiteRegistry;
     private final TestSuiteExecutionService suiteExecutions;
@@ -275,9 +279,12 @@ public final class TestSuiteStabilityExecutionService {
             throw badRequest(identity, "RG.TEST.STABILITY_IDEMPOTENCY_KEY_INVALID",
                     "clientRequestId must be a bounded non-empty idempotency key.");
         }
-        if (request.metadata().containsKey(null) || request.metadata().containsValue(null)) {
+        if (request.metadata().size() > MAX_METADATA_PROPERTIES
+                || request.metadata().entrySet().stream().anyMatch(entry ->
+                entry.getKey() == null || !METADATA_KEY.matcher(entry.getKey()).matches()
+                        || !metadataValue(entry.getValue()))) {
             throw badRequest(identity, "RG.TEST.STABILITY_METADATA_INVALID",
-                    "Stability metadata keys and values must be non-null.");
+                    "Stability metadata must contain only bounded scalar provenance facts.");
         }
         try {
             if (objectMapper.writeValueAsBytes(request.metadata()).length > MAX_METADATA_BYTES) {
@@ -288,6 +295,17 @@ public final class TestSuiteStabilityExecutionService {
             throw badRequest(identity, "RG.TEST.STABILITY_METADATA_INVALID",
                     "Stability metadata cannot be serialized as protocol JSON.");
         }
+    }
+
+    private static boolean metadataValue(Object value) {
+        if (value instanceof Double number) {
+            return Double.isFinite(number);
+        }
+        if (value instanceof Float number) {
+            return Float.isFinite(number);
+        }
+        return value instanceof Boolean || value instanceof Number
+                || value instanceof String text && text.length() <= MAX_METADATA_STRING_LENGTH;
     }
 
     private static void requireSupportedSuite(

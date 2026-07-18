@@ -29,6 +29,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -146,6 +147,26 @@ class TestSuiteStabilityExecutionServiceTest {
                             .isEqualTo("RG.TEST.STABILITY_ATTESTATION_UNAVAILABLE");
                 });
         assertThat(repository.records).isEmpty();
+    }
+
+    @Test
+    void nestedMetadataIsRejectedBeforeSuiteResolutionOrExecution() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+        TestSuiteStabilityExecutionRequest request = new TestSuiteStabilityExecutionRequest("",
+                new TestSuiteExecutionRequest.SuiteRef(
+                        suite.suiteId(), suite.revision(), SUITE_FINGERPRINT),
+                "stability-ci-nested-metadata", 3,
+                Map.of("pipeline", Map.of("name", "nightly")));
+
+        assertThatThrownBy(() -> service.execute(suite.suiteId(), request, identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(400);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.STABILITY_METADATA_INVALID");
+                });
+        verify(suites, times(0)).find(any(), anyLong(), eq(identity));
+        verify(suiteExecutions, times(0)).execute(any(), any(), eq(identity));
     }
 
     @Test

@@ -65,6 +65,20 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
     }
 
     @Test
+    void rejectsNestedMetadataAtTheEvidenceDomainBoundary() {
+        List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> observations = List.of(
+                attempt(1, outcomes("same")),
+                attempt(2, outcomes("same")),
+                attempt(3, outcomes("same")));
+
+        assertThatThrownBy(() -> evaluator.evaluate(suite, suiteRef,
+                STABILITY_RUN, "stability-request", 3, observations,
+                Map.of("pipeline", Map.of("name", "nightly"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("bounded scalar provenance");
+    }
+
+    @Test
     void detectsDifferentPassingSemanticsAndRequiresQuarantine() {
         TestSuiteStabilityEvidence evidence = evaluator.evaluate(suite, suiteRef,
                 STABILITY_RUN, "stability-request", 3, List.of(

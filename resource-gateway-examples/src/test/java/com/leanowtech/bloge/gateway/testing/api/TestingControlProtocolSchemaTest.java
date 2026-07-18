@@ -16,6 +16,8 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
@@ -77,6 +79,17 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(StoredTestSuite.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityExecutionRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteStabilityEvidence/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityAttestation/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityExecutionResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV1/properties/schemaVersion/const").asText())
@@ -402,6 +415,10 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("storedTestSuite")).isTrue();
         assertThat(definitions.has("testSuiteExecutionRequest")).isTrue();
         assertThat(definitions.has("testMutationSuiteExecutionRequest")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityExecutionRequest")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityEvidence")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityAttestation")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityExecutionResponse")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponse")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV1")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV2")).isTrue();
@@ -947,6 +964,45 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at("/testEvidenceIntegrity/properties/signatureStatus/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly("VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE");
+    }
+
+    @Test
+    void stabilitySchemaIsStrictBoundedAndPayloadFree() throws Exception {
+        JsonNode definitions = new ObjectMapper().readTree(Files.readString(Path.of("..", "docs",
+                "schemas", "resource-gateway-testing",
+                "testing-control-plane-v1.schema.json"))).path("$defs");
+
+        assertThat(definitions.at(
+                "/testSuiteStabilityExecutionRequest/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at(
+                "/testSuiteStabilityExecutionRequest/properties/attempts/minimum").asInt())
+                .isEqualTo(TestSuiteStabilityEvidence.MIN_ATTEMPTS);
+        assertThat(definitions.at(
+                "/testSuiteStabilityExecutionRequest/properties/attempts/maximum").asInt())
+                .isEqualTo(TestSuiteStabilityEvidence.MAX_ATTEMPTS);
+        assertThat(definitions.at("/stabilityProvenanceMetadata/maxProperties").asInt())
+                .isEqualTo(32);
+        assertThat(definitions.at(
+                "/stabilityProvenanceMetadata/additionalProperties/oneOf"))
+                .extracting(node -> node.path("type").asText())
+                .containsExactly("string", "number", "boolean");
+        assertThat(definitions.at(
+                "/testSuiteStabilityCaseObservation/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at(
+                "/testSuiteStabilityCaseObservation/properties").has("input")).isFalse();
+        assertThat(definitions.at(
+                "/testSuiteStabilityCaseObservation/properties").has("output")).isFalse();
+        assertThat(definitions.at(
+                "/testSuiteStabilityEvidence/properties/attempts/minItems").asInt())
+                .isEqualTo(TestSuiteStabilityEvidence.MIN_ATTEMPTS);
+        assertThat(definitions.at(
+                "/testSuiteStabilityEvidence/properties/attempts/maxItems").asInt())
+                .isEqualTo(TestSuiteStabilityEvidence.MAX_ATTEMPTS);
+        assertThat(definitions.at("/testSuiteStabilityEvidence/oneOf")).hasSize(4);
+        assertThat(definitions.at("/testSuiteStabilityAttestation/oneOf")).hasSize(3);
+        assertThat(definitions.at(
+                "/testSuiteStabilityExecutionResponse/properties/attestation/allOf/1/properties"
+                        + "/signatureStatus/const").asText()).isEqualTo("VERIFIED");
     }
 
     @Test

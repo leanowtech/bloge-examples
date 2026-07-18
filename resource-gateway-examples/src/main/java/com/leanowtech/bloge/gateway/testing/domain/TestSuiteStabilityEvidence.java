@@ -62,6 +62,10 @@ public record TestSuiteStabilityEvidence(
     public static final int MAX_ATTEMPTS = 20;
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final Pattern STABILITY_RUN_ID = Pattern.compile("stability-[a-f0-9]{64}");
+    private static final Pattern METADATA_KEY = Pattern.compile(
+            "[A-Za-z][A-Za-z0-9_.-]{0,127}");
+    private static final int MAX_METADATA_PROPERTIES = 32;
+    private static final int MAX_METADATA_STRING_LENGTH = 512;
 
     /** Aggregate stability outcome. */
     public enum Status {
@@ -326,6 +330,10 @@ public record TestSuiteStabilityEvidence(
         diagnostics = sortedStrings(diagnostics);
         metadata = metadata == null ? Map.of()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        if (!validMetadata(metadata)) {
+            throw new IllegalArgumentException(
+                    "Stability metadata must contain only bounded scalar provenance facts");
+        }
         if (!SCHEMA_VERSION.equals(schemaVersion)
                 || !STABILITY_RUN_ID.matcher(stabilityRunId).matches()
                 || clientRequestId.isBlank() || suiteRef == null || target == null
@@ -474,6 +482,24 @@ public record TestSuiteStabilityEvidence(
 
     private static boolean fingerprint(String value) {
         return FINGERPRINT.matcher(normalized(value)).matches();
+    }
+
+    private static boolean validMetadata(Map<String, Object> metadata) {
+        return metadata.size() <= MAX_METADATA_PROPERTIES
+                && metadata.entrySet().stream().allMatch(entry -> entry.getKey() != null
+                && METADATA_KEY.matcher(entry.getKey()).matches()
+                && metadataValue(entry.getValue()));
+    }
+
+    private static boolean metadataValue(Object value) {
+        if (value instanceof Double number) {
+            return Double.isFinite(number);
+        }
+        if (value instanceof Float number) {
+            return Float.isFinite(number);
+        }
+        return value instanceof Boolean || value instanceof Number
+                || value instanceof String text && text.length() <= MAX_METADATA_STRING_LENGTH;
     }
 
     private static String defaulted(String value, String fallback) {
