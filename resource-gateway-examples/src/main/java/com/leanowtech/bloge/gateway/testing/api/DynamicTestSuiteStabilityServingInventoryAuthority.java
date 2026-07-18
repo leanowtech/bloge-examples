@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,6 +76,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
     private final int witnessSignatureThreshold;
     private final Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
             indexedWitnessKeys;
+    private final DynamicTestSuiteStabilityServingInventoryTrustRootAuthority managedTrustRoots;
     private final Settings settings;
     private final DocumentFetcher fetcher;
     private final Object refreshLock = new Object();
@@ -114,7 +116,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             Settings settings) {
         this(objectMapper, Clock.systemUTC(), trustDomain, acceptedPolicyFingerprints,
                 signatureThreshold, authorityKeys, binding, publicationFloor, witnessDomain,
-                witnessSignatureThreshold, witnessKeys, settings, null, true);
+                witnessSignatureThreshold, witnessKeys, settings, null, true, null);
     }
 
     DynamicTestSuiteStabilityServingInventoryAuthority(
@@ -133,6 +135,28 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             Settings settings,
             DocumentFetcher fetcher,
             boolean startScheduler) {
+        this(objectMapper, clock, trustDomain, acceptedPolicyFingerprints,
+                signatureThreshold, authorityKeys, binding, publicationFloor, witnessDomain,
+                witnessSignatureThreshold, witnessKeys, settings, fetcher, startScheduler, null);
+    }
+
+    private DynamicTestSuiteStabilityServingInventoryAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            String trustDomain,
+            Set<String> acceptedPolicyFingerprints,
+            int signatureThreshold,
+            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    authorityKeys,
+            ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding binding,
+            TestSuiteStabilityServingInventoryPublicationFloor publicationFloor,
+            String witnessDomain,
+            int witnessSignatureThreshold,
+            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> witnessKeys,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler,
+            DynamicTestSuiteStabilityServingInventoryTrustRootAuthority managedTrustRoots) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper").copy()
                 .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -155,6 +179,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
         this.indexedWitnessKeys =
                 ConfiguredTestSuiteStabilityServingInventoryAuthority.indexedKeys(
                         witnessKeys, witnessSignatureThreshold);
+        this.managedTrustRoots = managedTrustRoots;
         this.settings = Objects.requireNonNull(settings, "settings").validated();
         if (!this.publicationFloor.durable()) {
             throw new IllegalArgumentException(
@@ -172,6 +197,62 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                     "Dynamic serving-inventory publication bootstrap is unavailable");
         }
         this.scheduler = startScheduler ? scheduler() : null;
+    }
+
+    /**
+     * Bootstraps a remote serving-inventory publication using restart-free managed runtime keys.
+     *
+     * @param objectMapper application protocol mapper
+     * @param acceptedPolicyFingerprints accepted inventory/publication policy revisions
+     * @param binding exact local deployment binding
+     * @param publicationFloor durable publication/witness floor
+     * @param managedTrustRoots atomic dual-quorum runtime-key authority
+     * @param settings remote inventory refresh settings
+     */
+    public DynamicTestSuiteStabilityServingInventoryAuthority(
+            ObjectMapper objectMapper,
+            Set<String> acceptedPolicyFingerprints,
+            ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding binding,
+            TestSuiteStabilityServingInventoryPublicationFloor publicationFloor,
+            DynamicTestSuiteStabilityServingInventoryTrustRootAuthority managedTrustRoots,
+            Settings settings) {
+        this(objectMapper, Clock.systemUTC(), acceptedPolicyFingerprints, binding,
+                publicationFloor, managedTrustRoots, settings, null, true);
+    }
+
+    DynamicTestSuiteStabilityServingInventoryAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            Set<String> acceptedPolicyFingerprints,
+            ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding binding,
+            TestSuiteStabilityServingInventoryPublicationFloor publicationFloor,
+            DynamicTestSuiteStabilityServingInventoryTrustRootAuthority managedTrustRoots,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler) {
+        this(objectMapper, clock, acceptedPolicyFingerprints, binding, publicationFloor,
+                Objects.requireNonNull(managedTrustRoots, "managedTrustRoots"), settings,
+                fetcher, startScheduler, managedMaterial(managedTrustRoots));
+    }
+
+    private DynamicTestSuiteStabilityServingInventoryAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            Set<String> acceptedPolicyFingerprints,
+            ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding binding,
+            TestSuiteStabilityServingInventoryPublicationFloor publicationFloor,
+            DynamicTestSuiteStabilityServingInventoryTrustRootAuthority managedTrustRoots,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler,
+            ManagedMaterial material) {
+        this(objectMapper, clock,
+                material.deploymentTrustDomain(),
+                acceptedPolicyFingerprints,
+                material.deploymentSignatureThreshold(), material.deploymentKeys(),
+                binding, publicationFloor,
+                material.witnessTrustDomain(), material.witnessSignatureThreshold(),
+                material.witnessKeys(), settings, fetcher, startScheduler, managedTrustRoots);
     }
 
     /**
@@ -232,6 +313,8 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             throw new IllegalStateException("Serving-inventory publication is not bootstrapped");
         }
         Observation inventory = observed.inventoryAuthority().observation();
+        DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.Snapshot rootSnapshot =
+                managedTrustRoots == null ? null : managedTrustRoots.snapshot();
         Instant now = clock.instant();
         boolean available = false;
         String status;
@@ -239,6 +322,12 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             status = "CLOSED";
         } else if (observed.state() != LocalState.HEALTHY) {
             status = "REFRESH_UNAVAILABLE";
+        } else if (rootSnapshot != null && !rootSnapshot.available()) {
+            status = "TRUST_ROOT_" + rootSnapshot.status();
+        } else if (managedTrustRoots != null
+                && !observed.trustRootGenerationFingerprint().equals(
+                managedTrustRoots.generationFingerprint())) {
+            status = "TRUST_ROOT_GENERATION_UNVERIFIED";
         } else if (observed.lastSuccessfulRefreshAt() == null
                 || !now.isBefore(observed.lastSuccessfulRefreshAt()
                 .plus(settings.maximumSnapshotAge()))) {
@@ -264,7 +353,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
         }
         return new Observation(Observation.SCHEMA_VERSION, true, true, available,
                 status, SOURCE_TYPE, observed.publication().material().sequence(),
-                observed.publication().witness().materialFingerprint(), inventory.revision(),
+                sourceGenerationFingerprint(observed), inventory.revision(),
                 inventory.materialFingerprint(), inventory.policyFingerprint(),
                 inventory.expectedInstanceIds(), inventory.expiresAt(),
                 inventory.validSignatureCount(), inventory.requiredSignatureCount());
@@ -294,8 +383,11 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                         Map.entry("protocolVersion",
                                 TestSuiteStabilityServingInventoryPublication.SCHEMA_VERSION),
                         Map.entry("witnessSignatureThreshold",
-                                witnessSignatureThreshold),
-                        Map.entry("durablePublicationFloor", true)));
+                                currentWitnessSignatureThreshold()),
+                        Map.entry("durablePublicationFloor", true),
+                        Map.entry("managedTrustRootRefresh", managedTrustRoots != null),
+                        Map.entry("atomicDualTrustRootPublication",
+                                managedTrustRoots != null)));
     }
 
     /**
@@ -315,7 +407,8 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                 sequence, observed.lastSuccessfulRefreshAt(),
                 observed.refreshSuccessCount(), observed.refreshFailureCount(),
                 observed.lastFailureCode(), settings.refreshInterval().toSeconds(),
-                settings.maximumSnapshotAge().toSeconds(), witnessSignatureThreshold, true);
+                settings.maximumSnapshotAge().toSeconds(),
+                currentWitnessSignatureThreshold(), true);
     }
 
     /** Stops background refresh and immediately makes the local authority unavailable. */
@@ -353,6 +446,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                         settings.publicationUri(), previous.etag(), settings.requestTimeout());
                 TestSuiteStabilityServingInventoryPublication publication;
                 ConfiguredTestSuiteStabilityServingInventoryAuthority inventoryAuthority;
+                String trustRootGenerationFingerprint;
                 if (fetched.notModified()) {
                     if (previous.publication() == null
                             || previous.inventoryAuthority() == null) {
@@ -360,13 +454,28 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                                 "Serving-inventory source returned 304 before bootstrap");
                     }
                     publication = previous.publication();
-                    inventoryAuthority = previous.inventoryAuthority();
+                    if (managedTrustRoots != null
+                            && !previous.trustRootGenerationFingerprint().equals(
+                            managedTrustRoots.generationFingerprint())) {
+                        VerifiedPublication verified = verify(publication, previous, now);
+                        inventoryAuthority = verified.inventoryAuthority();
+                        trustRootGenerationFingerprint =
+                                verified.trustRootGenerationFingerprint();
+                    } else {
+                        inventoryAuthority = previous.inventoryAuthority();
+                        trustRootGenerationFingerprint =
+                                previous.trustRootGenerationFingerprint();
+                    }
                 } else {
                     publication = parse(fetched.body());
-                    inventoryAuthority = verify(publication, previous, now);
+                    VerifiedPublication verified = verify(publication, previous, now);
+                    inventoryAuthority = verified.inventoryAuthority();
+                    trustRootGenerationFingerprint =
+                            verified.trustRootGenerationFingerprint();
                 }
                 String etag = fetched.etag().isBlank() ? previous.etag() : fetched.etag();
-                state = new RefreshState(publication, inventoryAuthority, etag,
+                state = new RefreshState(publication, inventoryAuthority,
+                        trustRootGenerationFingerprint, etag,
                         LocalState.HEALTHY, now,
                         previous.refreshSuccessCount() + 1,
                         previous.refreshFailureCount(), "");
@@ -393,13 +502,15 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
         }
     }
 
-    private ConfiguredTestSuiteStabilityServingInventoryAuthority verify(
+    private VerifiedPublication verify(
             TestSuiteStabilityServingInventoryPublication publication,
             RefreshState previous,
             Instant now) {
+        VerificationTrust verificationTrust = verificationTrust(publication);
         if (!publication.fingerprintVerified(objectMapper)
                 || !publication.witness().fingerprintVerified(objectMapper)
-                || !trustDomain.equals(publication.material().trustDomain())
+                || !verificationTrust.deploymentTrustDomain().equals(
+                publication.material().trustDomain())
                 || !acceptedPolicyFingerprints.contains(
                 publication.material().policyFingerprint())) {
             throw new IllegalArgumentException(
@@ -409,14 +520,15 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                 publication.material().notBefore(), publication.material().expiresAt(), now,
                 "Serving-inventory publication");
         ConfiguredTestSuiteStabilityServingInventoryAuthority.verifyDetachedSignatures(
-                indexedAuthorityKeys, signatureThreshold, publication.signatures(),
+                verificationTrust.deploymentKeys(),
+                verificationTrust.deploymentSignatureThreshold(), publication.signatures(),
                 publication.materialFingerprint(), publication.material().issuedAt(),
                 publication.material().expiresAt(), now,
                 "Serving-inventory publication");
 
         TestSuiteStabilityServingInventoryPublication.WitnessMaterial witness =
                 publication.witness().material();
-        if (!witnessDomain.equals(witness.witnessDomain())
+        if (!verificationTrust.witnessTrustDomain().equals(witness.witnessDomain())
                 || witness.notBefore().isAfter(
                 publication.material().notBefore().plus(CLOCK_SKEW))
                 || witness.expiresAt().isBefore(publication.material().expiresAt())) {
@@ -426,7 +538,8 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
         requireCurrentWindow(witness.issuedAt(), witness.notBefore(),
                 witness.expiresAt(), now, "Serving-inventory witness");
         ConfiguredTestSuiteStabilityServingInventoryAuthority.verifyDetachedSignatures(
-                indexedWitnessKeys, witnessSignatureThreshold,
+                verificationTrust.witnessKeys(),
+                verificationTrust.witnessSignatureThreshold(),
                 publication.witness().signatures(),
                 publication.witness().materialFingerprint(), witness.issuedAt(),
                 witness.expiresAt(), now, "Serving-inventory witness");
@@ -434,10 +547,13 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
 
         ConfiguredTestSuiteStabilityServingInventoryAuthority inventoryAuthority =
                 new ConfiguredTestSuiteStabilityServingInventoryAuthority(
-                objectMapper, clock, trustDomain, acceptedPolicyFingerprints,
-                signatureThreshold, authorityKeys, publication.inventory(), binding);
+                objectMapper, clock, verificationTrust.deploymentTrustDomain(),
+                acceptedPolicyFingerprints,
+                verificationTrust.deploymentSignatureThreshold(),
+                verificationTrust.deploymentKeyList(), publication.inventory(), binding);
         publicationFloor.accept(publicationGeneration(publication));
-        return inventoryAuthority;
+        return new VerifiedPublication(inventoryAuthority,
+                verificationTrust.trustRootGenerationFingerprint());
     }
 
     private TestSuiteStabilityServingInventoryPublicationFloor.Generation
@@ -449,6 +565,42 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                 publication.witness().materialFingerprint(),
                 publication.material().previousPublicationFingerprint(),
                 publication.witness().material().previousWitnessFingerprint());
+    }
+
+    private VerificationTrust verificationTrust(
+            TestSuiteStabilityServingInventoryPublication publication) {
+        if (managedTrustRoots == null) {
+            return new VerificationTrust(trustDomain, witnessDomain, signatureThreshold,
+                    witnessSignatureThreshold, indexedAuthorityKeys, indexedWitnessKeys,
+                    authorityKeys, "");
+        }
+        var keys = managedTrustRoots.keysFor(
+                publication.signatures(), publication.witness().signatures());
+        return new VerificationTrust(keys.deploymentTrustDomain(),
+                keys.witnessTrustDomain(), keys.deploymentSignatureThreshold(),
+                keys.witnessSignatureThreshold(), keys.deploymentKeys(), keys.witnessKeys(),
+                List.copyOf(keys.deploymentKeys().values()),
+                managedTrustRoots.generationFingerprint());
+    }
+
+    private int currentWitnessSignatureThreshold() {
+        return managedTrustRoots == null ? witnessSignatureThreshold
+                : managedTrustRoots.snapshot().witnessSignatureThreshold();
+    }
+
+    private String sourceGenerationFingerprint(RefreshState observed) {
+        if (observed.trustRootGenerationFingerprint().isBlank()) {
+            return observed.publication().witness().materialFingerprint();
+        }
+        return ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion",
+                "bloge.testSuiteStabilityServingInventoryManagedGeneration.v1",
+                "publicationMaterialFingerprint",
+                observed.publication().materialFingerprint(),
+                "witnessMaterialFingerprint",
+                observed.publication().witness().materialFingerprint(),
+                "trustRootGenerationFingerprint",
+                observed.trustRootGenerationFingerprint()));
     }
 
     private static void requireCurrentWindow(
@@ -559,6 +711,25 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
         BOOTSTRAPPING,
         HEALTHY,
         UNAVAILABLE
+    }
+
+    private record VerificationTrust(
+            String deploymentTrustDomain,
+            String witnessTrustDomain,
+            int deploymentSignatureThreshold,
+            int witnessSignatureThreshold,
+            Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    deploymentKeys,
+            Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    witnessKeys,
+            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    deploymentKeyList,
+            String trustRootGenerationFingerprint) {
+    }
+
+    private record VerifiedPublication(
+            ConfiguredTestSuiteStabilityServingInventoryAuthority inventoryAuthority,
+            String trustRootGenerationFingerprint) {
     }
 
     /**
@@ -740,6 +911,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
     private record RefreshState(
             TestSuiteStabilityServingInventoryPublication publication,
             ConfiguredTestSuiteStabilityServingInventoryAuthority inventoryAuthority,
+            String trustRootGenerationFingerprint,
             String etag,
             LocalState state,
             Instant lastSuccessfulRefreshAt,
@@ -748,18 +920,20 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             String lastFailureCode) {
 
         private RefreshState {
+            trustRootGenerationFingerprint = normalized(trustRootGenerationFingerprint);
             etag = normalized(etag);
             state = state == null ? LocalState.UNAVAILABLE : state;
             lastFailureCode = normalized(lastFailureCode);
         }
 
         private static RefreshState empty() {
-            return new RefreshState(null, null, "", LocalState.BOOTSTRAPPING,
+            return new RefreshState(null, null, "", "", LocalState.BOOTSTRAPPING,
                     null, 0, 0, "");
         }
 
         private RefreshState failed(String failureCode) {
-            return new RefreshState(publication, inventoryAuthority, etag,
+            return new RefreshState(publication, inventoryAuthority,
+                    trustRootGenerationFingerprint, etag,
                     LocalState.UNAVAILABLE, lastSuccessfulRefreshAt,
                     refreshSuccessCount, refreshFailureCount + 1, failureCode);
         }
@@ -848,6 +1022,27 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             }
         }
         return true;
+    }
+
+    private static ManagedMaterial managedMaterial(
+            DynamicTestSuiteStabilityServingInventoryTrustRootAuthority authority) {
+        var keys = Objects.requireNonNull(authority, "managedTrustRoots")
+                .keysFor(List.of(), List.of());
+        return new ManagedMaterial(keys.deploymentTrustDomain(),
+                keys.deploymentSignatureThreshold(),
+                List.copyOf(keys.deploymentKeys().values()),
+                keys.witnessTrustDomain(), keys.witnessSignatureThreshold(),
+                List.copyOf(keys.witnessKeys().values()));
+    }
+
+    private record ManagedMaterial(
+            String deploymentTrustDomain,
+            int deploymentSignatureThreshold,
+            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    deploymentKeys,
+            String witnessTrustDomain,
+            int witnessSignatureThreshold,
+            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> witnessKeys) {
     }
 
     private static String normalized(String value) {
