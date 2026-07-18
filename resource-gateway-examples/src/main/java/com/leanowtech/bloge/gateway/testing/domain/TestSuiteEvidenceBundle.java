@@ -32,6 +32,8 @@ public record TestSuiteEvidenceBundle(
     public static final String SCHEMA_VERSION_V3 = "bloge.testSuiteEvidenceBundle.v3";
     /** Portable bundle version carrying bounded-property aggregate evidence and attestation. */
     public static final String SCHEMA_VERSION_V4 = "bloge.testSuiteEvidenceBundle.v4";
+    /** Portable bundle version carrying pure-DSL mutation score evidence and attestation. */
+    public static final String SCHEMA_VERSION_V5 = "bloge.testSuiteEvidenceBundle.v5";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Payload handling for this first portable bundle version. */
@@ -69,15 +71,24 @@ public record TestSuiteEvidenceBundle(
                 && TestSuiteRunEvidenceV4.SCHEMA_VERSION.equals(property.schemaVersion())
                 && attestation != null
                 && TestSuiteRunAttestation.SCHEMA_VERSION_V4.equals(attestation.schemaVersion());
+        boolean v5 = SCHEMA_VERSION_V5.equals(schemaVersion)
+                && evidence instanceof TestSuiteRunEvidenceV5 mutation
+                && TestSuiteRunEvidenceV5.SCHEMA_VERSION.equals(mutation.schemaVersion())
+                && attestation != null
+                && TestSuiteRunAttestation.SCHEMA_VERSION_V5.equals(attestation.schemaVersion());
         if (suiteRunId.isBlank() || !FINGERPRINT.matcher(bundleFingerprint).matches()
                 || attestation == null || !attestation.terminallyVerifiable()
                 || evidence == null || !suiteRunId.equals(evidence.suiteRunId())
-                || !suiteRunId.equals(attestation.suiteRunId()) || (!v1 && !v2 && !v3 && !v4)) {
+                || !suiteRunId.equals(attestation.suiteRunId())
+                || (!v1 && !v2 && !v3 && !v4 && !v5)) {
             throw new IllegalArgumentException("Portable suite evidence bundle is incomplete");
         }
     }
 
     private static String versionFor(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV5) {
+            return SCHEMA_VERSION_V5;
+        }
         if (evidence instanceof TestSuiteRunEvidenceV4) {
             return SCHEMA_VERSION_V4;
         }

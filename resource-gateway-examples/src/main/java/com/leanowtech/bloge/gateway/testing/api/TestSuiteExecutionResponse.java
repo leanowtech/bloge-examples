@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 
 /**
  * Public response for one idempotent immutable suite execution.
@@ -33,6 +34,8 @@ public record TestSuiteExecutionResponse(
     public static final String SCHEMA_VERSION_V4 = "bloge.testSuiteExecutionResponse.v4";
     /** Suite-execution response carrying bounded-property aggregate evidence v4. */
     public static final String SCHEMA_VERSION_V5 = "bloge.testSuiteExecutionResponse.v5";
+    /** Suite-execution response carrying pure-DSL mutation aggregate evidence v5. */
+    public static final String SCHEMA_VERSION_V6 = "bloge.testSuiteExecutionResponse.v6";
 
     /** Applies current protocol defaults to service-created responses. */
     public TestSuiteExecutionResponse {
@@ -63,7 +66,11 @@ public record TestSuiteExecutionResponse(
                 && evidence instanceof TestSuiteRunEvidenceV4 property
                 && TestSuiteRunEvidenceV4.SCHEMA_VERSION.equals(property.schemaVersion())
                 && TestSuiteRunAttestation.SCHEMA_VERSION_V4.equals(attestation.schemaVersion());
-        if (!v1 && !v2 && !v3 && !v4 && !v5) {
+        boolean v6 = SCHEMA_VERSION_V6.equals(schemaVersion)
+                && evidence instanceof TestSuiteRunEvidenceV5 mutation
+                && TestSuiteRunEvidenceV5.SCHEMA_VERSION.equals(mutation.schemaVersion())
+                && TestSuiteRunAttestation.SCHEMA_VERSION_V5.equals(attestation.schemaVersion());
+        if (!v1 && !v2 && !v3 && !v4 && !v5 && !v6) {
             throw new IllegalArgumentException(
                     "Suite execution response, evidence, and attestation generations must match");
         }
@@ -77,6 +84,9 @@ public record TestSuiteExecutionResponse(
     }
 
     private static String versionFor(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV5) {
+            return SCHEMA_VERSION_V6;
+        }
         if (evidence instanceof TestSuiteRunEvidenceV4) {
             return SCHEMA_VERSION_V5;
         }

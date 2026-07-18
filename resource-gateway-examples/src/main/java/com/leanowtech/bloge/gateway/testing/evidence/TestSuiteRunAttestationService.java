@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
@@ -173,6 +174,9 @@ public final class TestSuiteRunAttestationService {
     }
 
     private static String attestationVersion(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV5) {
+            return TestSuiteRunAttestation.SCHEMA_VERSION_V5;
+        }
         if (evidence instanceof TestSuiteRunEvidenceV4) {
             return TestSuiteRunAttestation.SCHEMA_VERSION_V4;
         }

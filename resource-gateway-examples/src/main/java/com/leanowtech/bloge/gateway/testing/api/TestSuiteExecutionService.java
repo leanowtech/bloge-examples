@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoverageVerdict;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestPropertySuiteEvidenceEvaluator;
@@ -1198,6 +1199,9 @@ public final class TestSuiteExecutionService {
     }
 
     private static String responseVersion(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV5) {
+            return TestSuiteExecutionResponse.SCHEMA_VERSION_V6;
+        }
         if (evidence instanceof TestSuiteRunEvidenceV4) {
             return TestSuiteExecutionResponse.SCHEMA_VERSION_V5;
         }
@@ -1210,6 +1214,9 @@ public final class TestSuiteExecutionService {
     }
 
     private static String bundleVersion(TestSuiteRunEvidenceProtocol evidence) {
+        if (evidence instanceof TestSuiteRunEvidenceV5) {
+            return TestSuiteEvidenceBundle.SCHEMA_VERSION_V5;
+        }
         if (evidence instanceof TestSuiteRunEvidenceV4) {
             return TestSuiteEvidenceBundle.SCHEMA_VERSION_V4;
         }

@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
@@ -86,6 +87,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V4);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV5/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V5);
+        assertThat(schema.at("/$defs/testSuiteExecutionResponseV6/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V6);
         assertThat(schema.at("/$defs/testSuiteRunAttestation/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRunAttestationV2/properties/schemaVersion/const").asText())
@@ -94,6 +97,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V3);
         assertThat(schema.at("/$defs/testSuiteRunAttestationV4/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V4);
+        assertThat(schema.at("/$defs/testSuiteRunAttestationV5/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V5);
         assertThat(schema.at("/$defs/testSuiteEvidenceBundleV1/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteEvidenceBundleV2/properties/schemaVersion/const").asText())
@@ -102,6 +107,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V3);
         assertThat(schema.at("/$defs/testSuiteEvidenceBundleV4/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V4);
+        assertThat(schema.at("/$defs/testSuiteEvidenceBundleV5/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V5);
         assertThat(schema.at("/$defs/evidenceVerificationKeySet/properties/schemaVersion/const").asText())
                 .isEqualTo(EvidenceVerificationKeySet.SCHEMA_VERSION);
         assertThat(schema.at(
@@ -115,6 +122,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteRunEvidenceV3.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRunEvidenceV4/properties/schemaVersion/const").asText())
                 .isEqualTo(com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteRunEvidenceV5/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteRunEvidenceV5.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testGraphTargetDescriptor/properties/schemaVersion/const").asText())
                 .isEqualTo(TestGraphTargetDescriptor.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testBoundaryCasePlan/properties/schemaVersion/const").asText())
@@ -398,15 +407,18 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteExecutionResponseV3")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV4")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV5")).isTrue();
+        assertThat(definitions.has("testSuiteExecutionResponseV6")).isTrue();
         assertThat(definitions.has("testSuiteRunAttestation")).isTrue();
         assertThat(definitions.has("testSuiteRunAttestationV3")).isTrue();
         assertThat(definitions.has("testSuiteRunAttestationV4")).isTrue();
+        assertThat(definitions.has("testSuiteRunAttestationV5")).isTrue();
         assertThat(definitions.has("testSuiteEvidenceBundle")).isTrue();
         assertThat(definitions.has("evidenceVerificationKeySet")).isTrue();
         assertThat(definitions.has("testSuiteCatalogMaterialization")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidence")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidenceV3")).isTrue();
         assertThat(definitions.has("testSuiteRunEvidenceV4")).isTrue();
+        assertThat(definitions.has("testSuiteRunEvidenceV5")).isTrue();
         assertThat(definitions.has("testEvidenceIntegrity")).isTrue();
         assertThat(definitions.has("testBoundaryCasePlan")).isTrue();
         assertThat(definitions.has("testPropertyCasePlan")).isTrue();
@@ -764,8 +776,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo("#/$defs/testSuiteRunAttestation");
         assertThat(definitions.at("/testSuiteEvidenceBundleV1/properties/payloadPolicy/const").asText())
                 .isEqualTo("OMITTED");
-        assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(4);
-        assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(5);
+        assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(5);
+        assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(6);
         assertThat(definitions.at(
                 "/testSuiteExecutionResponseV4/properties/evidence/$ref").asText())
                 .isEqualTo("#/$defs/testSuiteRunEvidenceV3");
@@ -808,6 +820,24 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at(
                 "/testSuiteEvidenceBundleV4/properties/evidence/$ref").asText())
                 .isEqualTo("#/$defs/testSuiteRunEvidenceV4");
+        assertThat(definitions.at(
+                "/testSuiteExecutionResponseV6/properties/evidence/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteRunEvidenceV5");
+        assertThat(definitions.at(
+                "/testSuiteExecutionResponseV6/properties/attestation/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteRunAttestationV5");
+        assertThat(definitions.at(
+                "/testSuiteRunAttestationV5/properties/childEvidenceRefs/maxItems").asInt())
+                .isEqualTo(272);
+        assertThat(definitions.at(
+                "/testSuiteMutationScoreVerdict/properties/equivalentMutantsExcluded/const")
+                .asInt()).isZero();
+        assertThat(definitions.at(
+                "/testSuiteRunEvidenceV5/properties/executionPurpose/const").asText())
+                .isEqualTo(TestSuiteRunEvidenceV5.EXECUTION_PURPOSE);
+        assertThat(definitions.at(
+                "/testSuiteEvidenceBundleV5/properties/evidence/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteRunEvidenceV5");
         assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(5);
         assertThat(definitions.at("/testSuiteV3/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/testSuiteV3/properties/evaluationMode/const").asText())
