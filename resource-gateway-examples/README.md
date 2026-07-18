@@ -181,6 +181,13 @@ ambiguous. Queue capacity, fairness, retry, lease, deadline, and retention setti
 `application-staging.yml`. Worker environment/lane and heartbeat/lease contradictions also fail
 startup. See the focused
 [worker wiring verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-wiring-verification.md).
+Actuator now exposes a separate stability-queue health contributor. The
+`RG_TEST_STABILITY_JOB_SLO_*` settings bound per-environment queue depth, oldest wait, observation
+interval, and expired live leases; the depth SLO cannot exceed hard queue capacity. Micrometer
+publishes only closed environment/status/outcome dimensions. Business test failures remain visible
+status totals but do not make the deployment unhealthy. Database observation failure is `DOWN`, and
+metric-registry failure cannot stop worker execution. See
+[queue observability verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-queue-observability-verification.md).
 
 ### Create a durable graph test
 

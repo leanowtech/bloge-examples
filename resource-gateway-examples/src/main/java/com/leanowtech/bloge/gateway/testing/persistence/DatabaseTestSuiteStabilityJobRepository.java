@@ -653,39 +653,33 @@ public final class DatabaseTestSuiteStabilityJobRepository
     @Override
     public TestSuiteStabilityQueueSnapshot observe(String environmentId) {
         String environment = environment(environmentId);
-        Instant observedAt = currentTime();
-        EnumMap<TestSuiteStabilityJobRecord.Status, Long> totals =
-                new EnumMap<>(TestSuiteStabilityJobRecord.Status.class);
-        List<Map.Entry<TestSuiteStabilityJobRecord.Status, Long>> statusTotals = jdbc.query("""
-                SELECT status, COUNT(*) AS total
+        TestSuiteStabilityQueueSnapshot snapshot = jdbc.queryForObject("""
+                SELECT CURRENT_TIMESTAMP AS observed_at,
+                  COUNT(*) AS all_records,
+                  COALESCE(SUM(CASE WHEN status = 'QUEUED' THEN 1 ELSE 0 END), 0) AS queued,
+                  COALESCE(SUM(CASE WHEN status = 'RUNNING' THEN 1 ELSE 0 END), 0) AS running,
+                  COALESCE(SUM(CASE WHEN status = 'CANCEL_REQUESTED' THEN 1 ELSE 0 END), 0)
+                    AS cancel_requested,
+                  COALESCE(SUM(CASE WHEN status = 'COMMITTING' THEN 1 ELSE 0 END), 0)
+                    AS committing,
+                  COALESCE(SUM(CASE WHEN status = 'SUCCEEDED' THEN 1 ELSE 0 END), 0) AS succeeded,
+                  COALESCE(SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END), 0) AS failed,
+                  COALESCE(SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END), 0) AS cancelled,
+                  COALESCE(SUM(CASE WHEN status = 'EXPIRED' THEN 1 ELSE 0 END), 0) AS expired,
+                  COALESCE(SUM(CASE WHEN status = 'QUARANTINED' THEN 1 ELSE 0 END), 0)
+                    AS quarantined,
+                  MIN(CASE WHEN status = 'QUEUED' THEN created_at ELSE NULL END) AS oldest_queued_at,
+                  COALESCE(SUM(CASE
+                    WHEN status IN ('RUNNING', 'CANCEL_REQUESTED', 'COMMITTING')
+                      AND (lease_expires_at IS NULL
+                        OR lease_expires_at <= CURRENT_TIMESTAMP) THEN 1 ELSE 0 END), 0)
+                    AS expired_live_leases,
+                  COUNT(DISTINCT CASE WHEN status = 'QUEUED' THEN tenant_id ELSE NULL END)
+                    AS distinct_queued_tenants
                 FROM rg_test_suite_stability_jobs
                 WHERE environment_id = ?
-                GROUP BY status
-                """, (rs, rowNum) -> Map.entry(
-                TestSuiteStabilityJobRecord.Status.valueOf(rs.getString("status")),
-                rs.getLong("total")), environment);
-        statusTotals.forEach(entry -> totals.put(entry.getKey(), entry.getValue()));
-        Timestamp oldest = jdbc.queryForObject("""
-                SELECT MIN(created_at)
-                FROM rg_test_suite_stability_jobs
-                WHERE environment_id = ? AND status = 'QUEUED'
-                """, Timestamp.class, environment);
-        Long expiredLeases = jdbc.queryForObject("""
-                SELECT COUNT(*)
-                FROM rg_test_suite_stability_jobs
-                WHERE environment_id = ?
-                  AND status IN ('RUNNING', 'CANCEL_REQUESTED', 'COMMITTING')
-                  AND lease_expires_at <= ?
-                """, Long.class, environment, Timestamp.from(observedAt));
-        Long tenants = jdbc.queryForObject("""
-                SELECT COUNT(DISTINCT tenant_id)
-                FROM rg_test_suite_stability_jobs
-                WHERE environment_id = ? AND status = 'QUEUED'
-                """, Long.class, environment);
-        return new TestSuiteStabilityQueueSnapshot(observedAt, totals,
-                oldest == null ? null : oldest.toInstant(),
-                expiredLeases == null ? 0 : expiredLeases,
-                tenants == null ? 0 : tenants);
+                """, (rs, rowNum) -> queueSnapshot(rs), environment);
+        return required(snapshot, "Suite-stability queue observation returned no result");
     }
 
     @Override
@@ -1293,6 +1287,33 @@ public final class DatabaseTestSuiteStabilityJobRepository
             throw new IllegalStateException("Suite-stability queue database time is unavailable");
         }
         return value.toInstant();
+    }
+
+    private static TestSuiteStabilityQueueSnapshot queueSnapshot(ResultSet rs)
+            throws SQLException {
+        EnumMap<TestSuiteStabilityJobRecord.Status, Long> totals =
+                new EnumMap<>(TestSuiteStabilityJobRecord.Status.class);
+        totals.put(TestSuiteStabilityJobRecord.Status.QUEUED, rs.getLong("queued"));
+        totals.put(TestSuiteStabilityJobRecord.Status.RUNNING, rs.getLong("running"));
+        totals.put(TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED,
+                rs.getLong("cancel_requested"));
+        totals.put(TestSuiteStabilityJobRecord.Status.COMMITTING, rs.getLong("committing"));
+        totals.put(TestSuiteStabilityJobRecord.Status.SUCCEEDED, rs.getLong("succeeded"));
+        totals.put(TestSuiteStabilityJobRecord.Status.FAILED, rs.getLong("failed"));
+        totals.put(TestSuiteStabilityJobRecord.Status.CANCELLED, rs.getLong("cancelled"));
+        totals.put(TestSuiteStabilityJobRecord.Status.EXPIRED, rs.getLong("expired"));
+        totals.put(TestSuiteStabilityJobRecord.Status.QUARANTINED, rs.getLong("quarantined"));
+        long knownRecords = totals.values().stream().mapToLong(Long::longValue).sum();
+        if (knownRecords != rs.getLong("all_records")) {
+            throw new IllegalStateException(
+                    "Suite-stability queue contains an unknown lifecycle status");
+        }
+        Timestamp oldest = rs.getTimestamp("oldest_queued_at");
+        return new TestSuiteStabilityQueueSnapshot(
+                rs.getTimestamp("observed_at").toInstant(), totals,
+                oldest == null ? null : oldest.toInstant(),
+                rs.getLong("expired_live_leases"),
+                rs.getLong("distinct_queued_tenants"));
     }
 
     private String json(Object value) {

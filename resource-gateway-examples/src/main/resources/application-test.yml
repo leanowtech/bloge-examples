@@ -125,6 +125,12 @@ gateway:
         initial-delay-ms: ${RG_TEST_STABILITY_JOB_INITIAL_DELAY_MS:1000}
         poll-interval-ms: ${RG_TEST_STABILITY_JOB_POLL_INTERVAL_MS:1000}
         drain-timeout-seconds: ${RG_TEST_STABILITY_JOB_DRAIN_TIMEOUT_SECONDS:30}
+      slo:
+        environments: ${RG_TEST_STABILITY_JOB_SLO_ENVIRONMENTS:test}
+        observation-interval-ms: ${RG_TEST_STABILITY_JOB_SLO_INTERVAL_MS:30000}
+        maximum-queued-jobs: ${RG_TEST_STABILITY_JOB_SLO_MAX_QUEUED:800}
+        maximum-oldest-queued-age-seconds: ${RG_TEST_STABILITY_JOB_SLO_MAX_QUEUE_AGE_SECONDS:300}
+        maximum-expired-live-leases: ${RG_TEST_STABILITY_JOB_SLO_MAX_EXPIRED_LEASES:0}
     replay-payloads:
       maximum-retention-days: ${RG_TEST_REPLAY_MAX_RETENTION_DAYS:30}
       sweep-interval-ms: ${RG_TEST_REPLAY_SWEEP_INTERVAL_MS:60000}

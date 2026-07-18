@@ -77,8 +77,10 @@ worker is disabled, and resource cleanup after failed refresh.
 ## 6. Remaining gap
 
 This increment closes product wiring, not product exposure. Before the asynchronous path can be
-declared available, Resource Gateway still needs aggregate-only worker telemetry, database-clock
-backlog/readiness policy, bounded terminal retention and poison-row handling, authenticated HTTP
-submit/query/cancel, strict Schema, capability truth, and independent test-kit support. A real
+declared available, Resource Gateway still needs bounded terminal retention and poison-row handling,
+authenticated HTTP submit/query/cancel, strict Schema, capability truth, and independent test-kit
+support. Aggregate-only worker telemetry and database-clock backlog/readiness are now closed by the
+[queue observability increment](resource-gateway-execution-data-control-plane-stage5-suite-stability-queue-observability-verification.md).
+A real
 deployment IAM adapter must also be supplied and conformance-tested; enabling the environment flag
 alone intentionally fails.

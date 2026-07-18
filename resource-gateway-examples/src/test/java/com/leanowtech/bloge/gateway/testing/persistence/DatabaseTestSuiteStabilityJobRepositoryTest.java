@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobPrincipal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueueSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -508,6 +509,65 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         assertThat(repository.purgeExpired(1)).isZero();
         assertThat(repository.find("tenant-b", "test", cancelled.jobId())).isPresent();
         assertThat(repository.find("tenant-a", "test", queued.jobId())).isPresent();
+    }
+
+    @Test
+    void queueObservationUsesOneDatabaseClockSnapshotForExpiredLiveLeases() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        repository.claimNext("test", "worker-a", policy);
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_jobs
+                SET lease_expires_at = DATEADD('SECOND', -1, CURRENT_TIMESTAMP)
+                WHERE job_id = ?
+                """, submission.jobId());
+
+        TestSuiteStabilityQueueSnapshot snapshot = repository.observe("test");
+        TestSuiteStabilityQueueSnapshot empty = repository.observe("staging");
+
+        assertThat(snapshot.totals())
+                .containsEntry(TestSuiteStabilityJobRecord.Status.RUNNING, 1L)
+                .containsEntry(TestSuiteStabilityJobRecord.Status.QUEUED, 0L);
+        assertThat(snapshot.expiredLiveLeases()).isEqualTo(1);
+        assertThat(snapshot.oldestQueuedAt()).isNull();
+        assertThat(snapshot.distinctQueuedTenants()).isZero();
+        assertThat(snapshot.observedAt()).isNotNull();
+        assertThat(empty.totals().values()).containsOnly(0L);
+        assertThat(empty.oldestQueuedAt()).isNull();
+        assertThat(empty.expiredLiveLeases()).isZero();
+    }
+
+    @Test
+    void queueObservationFailsClosedWhenAStoredStatusLeavesTheClosedVocabulary() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_jobs SET status = 'UNKNOWN'
+                WHERE job_id = ?
+                """, submission.jobId());
+
+        assertThatThrownBy(() -> repository.observe("test"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unknown lifecycle status");
+    }
+
+    @Test
+    void queueObservationTreatsMissingLiveLeaseAsStaleOwnerBacklog() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        repository.claimNext("test", "worker-a", policy);
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_jobs SET lease_expires_at = NULL
+                WHERE job_id = ?
+                """, submission.jobId());
+
+        assertThat(repository.observe("test").expiredLiveLeases()).isEqualTo(1);
     }
 
     @Test

@@ -140,6 +140,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobSloMonitor.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobExecutionCoordinator.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).isEmpty();
@@ -253,10 +255,16 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobRepository.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobTelemetry.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobSloMonitor.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobExecutionCoordinator.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).isEmpty();
+            TestSuiteStabilityJobSloMonitor stabilityQueueSlo =
+                    context.getBean(TestSuiteStabilityJobSloMonitor.class);
+            stabilityQueueSlo.refresh();
+            assertThat(stabilityQueueSlo.health().getStatus()).isEqualTo(Status.UP);
             ObjectMapper mapper = context.getBean(ObjectMapper.class);
             TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
                     new TestRunEvidence("", "profile-run",
@@ -332,6 +340,30 @@ class TestRuntimeProfileIsolationTest {
                     .hasMessageContaining("Invalid suite-stability queue policy");
         } finally {
             context.close();
+        }
+
+        AnnotationConfigApplicationContext invalidSlo = unrefreshedContext(Map.of(
+                "gateway.testing.stability-jobs.slo.maximum-queued-jobs", "-1"),
+                0, "test");
+        try {
+            assertThatThrownBy(invalidSlo::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("between 0 and 100000");
+        } finally {
+            invalidSlo.close();
+        }
+
+        AnnotationConfigApplicationContext inertSlo = unrefreshedContext(Map.of(
+                "gateway.testing.stability-jobs.slo.maximum-queued-jobs", "1001"),
+                0, "test");
+        try {
+            assertThatThrownBy(inertSlo::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("cannot exceed hard queue capacity");
+        } finally {
+            inertSlo.close();
         }
     }
 
@@ -417,6 +449,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobSloMonitor.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobExecutionCoordinator.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).isEmpty();

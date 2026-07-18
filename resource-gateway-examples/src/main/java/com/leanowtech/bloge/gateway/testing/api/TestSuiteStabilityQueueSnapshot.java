@@ -33,7 +33,8 @@ public record TestSuiteStabilityQueueSnapshot(
         if (normalized.values().stream().anyMatch(value -> value == null || value < 0)
                 || expiredLiveLeases < 0 || distinctQueuedTenants < 0
                 || (normalized.get(TestSuiteStabilityJobRecord.Status.QUEUED) == 0)
-                != (oldestQueuedAt == null)) {
+                != (oldestQueuedAt == null)
+                || oldestQueuedAt != null && oldestQueuedAt.isAfter(observedAt)) {
             throw new IllegalArgumentException("Invalid suite-stability queue snapshot");
         }
         totals = Map.copyOf(normalized);

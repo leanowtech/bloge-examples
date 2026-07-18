@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -12,6 +13,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -109,11 +113,82 @@ class TestSuiteStabilityJobSchedulerTest {
                 .hasMessageContaining("at least one polling lane");
     }
 
+    @Test
+    void reportsClosedPollOutcomesAndLifecycleWithoutJobIdentity() throws Exception {
+        TestSuiteStabilityJobWorker worker = mock(TestSuiteStabilityJobWorker.class);
+        when(worker.processNext("test")).thenReturn(TestSuiteStabilityJobWorkResult.noWork());
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        TestSuiteStabilityJobTelemetry telemetry =
+                new TestSuiteStabilityJobTelemetry(registry);
+        TestSuiteStabilityJobScheduler scheduler = new TestSuiteStabilityJobScheduler(
+                worker, Set.of("test"), 1, Duration.ZERO,
+                Duration.ofMillis(100), Duration.ofSeconds(2), telemetry);
+
+        try {
+            awaitCounter(registry,
+                    "resource.gateway.test.stability.jobs.worker.polls", 1.0);
+            assertThat(registry.get("resource.gateway.test.stability.jobs.worker.configured")
+                    .gauge().value()).isEqualTo(1.0);
+            assertThat(registry.get("resource.gateway.test.stability.jobs.worker.active")
+                    .gauge().value()).isZero();
+        } finally {
+            scheduler.close();
+        }
+
+        assertThat(registry.get("resource.gateway.test.stability.jobs.worker.polls")
+                .tags("environment", "test", "outcome", "no_work")
+                .counter().count()).isGreaterThanOrEqualTo(1.0);
+        assertThat(registry.get("resource.gateway.test.stability.jobs.worker.closed")
+                .gauge().value()).isEqualTo(1.0);
+        assertThat(registry.getMeters()).allSatisfy(meter ->
+                assertThat(meter.getId().getTags()).allSatisfy(tag ->
+                        assertThat(tag.getKey()).isNotIn(
+                                "jobId", "tenantId", "failureCode", "exception")));
+    }
+
+    @Test
+    void telemetryOutageCannotKillAWorkerLane() throws Exception {
+        TestSuiteStabilityJobWorker worker = mock(TestSuiteStabilityJobWorker.class);
+        CountDownLatch polledTwice = new CountDownLatch(2);
+        when(worker.processNext("test")).thenAnswer(invocation -> {
+            polledTwice.countDown();
+            return TestSuiteStabilityJobWorkResult.noWork();
+        });
+        TestSuiteStabilityJobTelemetry telemetry = mock(TestSuiteStabilityJobTelemetry.class);
+        doThrow(new IllegalStateException("meter outage")).when(telemetry).workerStarted();
+        doThrow(new IllegalStateException("meter outage")).when(telemetry).activePolls(anyInt());
+        doThrow(new IllegalStateException("meter outage")).when(telemetry)
+                .recordPoll(anyString(), any(TestSuiteStabilityJobWorkResult.class));
+
+        try (TestSuiteStabilityJobScheduler ignored = new TestSuiteStabilityJobScheduler(
+                worker, Set.of("test"), 1, Duration.ZERO,
+                Duration.ofMillis(100), Duration.ofSeconds(2), telemetry)) {
+            assertThat(polledTwice.await(2, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
     private static TestSuiteStabilityJobScheduler scheduler(
             TestSuiteStabilityJobWorker worker,
             int lanes) {
         return new TestSuiteStabilityJobScheduler(
                 worker, Set.of("test"), lanes, Duration.ZERO,
                 Duration.ofMillis(100), Duration.ofSeconds(2));
+    }
+
+    private static void awaitCounter(
+            SimpleMeterRegistry registry, String name, double minimum) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            double count = registry.get(name)
+                    .tags("environment", "test", "outcome", "no_work")
+                    .counter().count();
+            if (count >= minimum) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        assertThat(registry.get(name)
+                .tags("environment", "test", "outcome", "no_work")
+                .counter().count()).isGreaterThanOrEqualTo(minimum);
     }
 }

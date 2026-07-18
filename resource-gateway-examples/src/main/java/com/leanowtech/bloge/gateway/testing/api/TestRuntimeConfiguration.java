@@ -614,6 +614,42 @@ public class TestRuntimeConfiguration {
                 Duration.ofDays(terminalRetentionDays));
     }
 
+    /** Registers only fixed environment/status/outcome stability queue metrics. */
+    @Bean
+    TestSuiteStabilityJobTelemetry testSuiteStabilityJobTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new TestSuiteStabilityJobTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
+    }
+
+    /** Fails readiness closed on stale backlog, excessive depth, expired leases, or store outage. */
+    @Bean
+    TestSuiteStabilityJobSloMonitor testSuiteStabilityJobSloMonitor(
+            TestSuiteStabilityJobRepository repository,
+            TestSuiteStabilityJobTelemetry telemetry,
+            TestSuiteStabilityQueuePolicy queuePolicy,
+            @Value("${gateway.testing.stability-jobs.slo.environments:test}")
+            String environments,
+            @Value("${gateway.testing.stability-jobs.slo.observation-interval-ms:30000}")
+            long observationIntervalMillis,
+            @Value("${gateway.testing.stability-jobs.slo.maximum-queued-jobs:800}")
+            long maximumQueuedJobs,
+            @Value("${gateway.testing.stability-jobs.slo.maximum-oldest-queued-age-seconds:300}")
+            long maximumOldestQueuedAgeSeconds,
+            @Value("${gateway.testing.stability-jobs.slo.maximum-expired-live-leases:0}")
+            long maximumExpiredLiveLeases) {
+        if (maximumQueuedJobs > queuePolicy.maximumQueued()) {
+            throw new IllegalArgumentException(
+                    "Stability queue SLO depth cannot exceed hard queue capacity");
+        }
+        return new TestSuiteStabilityJobSloMonitor(
+                repository, telemetry, stabilityJobEnvironments(environments),
+                new TestSuiteStabilityJobSloMonitor.Policy(
+                        Duration.ofMillis(observationIntervalMillis), maximumQueuedJobs,
+                        Duration.ofSeconds(maximumOldestQueuedAgeSeconds),
+                        maximumExpiredLiveLeases));
+    }
+
     @Bean
     TestRunRepository testRunRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
         return new DatabaseTestRunRepository(database.jdbc(), objectMapper);
@@ -1214,6 +1250,7 @@ public class TestRuntimeConfiguration {
             name = "enabled", havingValue = "true")
     TestSuiteStabilityJobScheduler testSuiteStabilityJobScheduler(
             TestSuiteStabilityJobWorker worker,
+            TestSuiteStabilityJobTelemetry telemetry,
             @Value("${gateway.testing.stability-jobs.worker.environments:test}")
             String environments,
             @Value("${gateway.testing.stability-jobs.worker.maximum-pollers:1}")
@@ -1224,13 +1261,11 @@ public class TestRuntimeConfiguration {
             long pollIntervalMillis,
             @Value("${gateway.testing.stability-jobs.worker.drain-timeout-seconds:30}")
             long drainTimeoutSeconds) {
-        Set<String> enabledEnvironments = new LinkedHashSet<>(Arrays.asList(
-                environments == null ? new String[0] : environments.split(",", -1)));
         return new TestSuiteStabilityJobScheduler(
-                worker, enabledEnvironments, maximumPollers,
+                worker, stabilityJobEnvironments(environments), maximumPollers,
                 Duration.ofMillis(initialDelayMillis),
                 Duration.ofMillis(pollIntervalMillis),
-                Duration.ofSeconds(drainTimeoutSeconds));
+                Duration.ofSeconds(drainTimeoutSeconds), telemetry);
     }
 
     /** Marker consumed by the unauthenticated capability probe. */
@@ -1240,5 +1275,10 @@ public class TestRuntimeConfiguration {
             WorkerQuarantineChangeAuthorizationTrustStore changeAuthorizationTrust) {
         return new TestabilityAvailability(true, controlPlane.requestIndexMode(),
                 changeAuthorizationTrust.descriptor());
+    }
+
+    private static Set<String> stabilityJobEnvironments(String environments) {
+        return new LinkedHashSet<>(Arrays.asList(
+                environments == null ? new String[0] : environments.split(",", -1)));
     }
 }

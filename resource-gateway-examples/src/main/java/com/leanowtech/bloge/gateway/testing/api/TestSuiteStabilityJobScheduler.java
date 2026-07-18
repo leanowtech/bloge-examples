@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -28,10 +29,12 @@ public final class TestSuiteStabilityJobScheduler implements AutoCloseable {
             TestSuiteStabilityJobScheduler.class);
 
     private final TestSuiteStabilityJobWorker worker;
+    private final TestSuiteStabilityJobTelemetry telemetry;
     private final Duration drainTimeout;
     private final ScheduledThreadPoolExecutor executor;
     private final List<ScheduledFuture<?>> lanes;
     private final AtomicInteger activePolls = new AtomicInteger();
+    private final AtomicBoolean telemetryFailureLogged = new AtomicBoolean();
     private volatile boolean closed;
 
     /**
@@ -51,7 +54,31 @@ public final class TestSuiteStabilityJobScheduler implements AutoCloseable {
             Duration initialDelay,
             Duration pollInterval,
             Duration drainTimeout) {
+        this(worker, environments, maximumPollers, initialDelay, pollInterval, drainTimeout,
+                TestSuiteStabilityJobTelemetry.noop());
+    }
+
+    /**
+     * Starts bounded lanes with fixed-cardinality operational telemetry.
+     *
+     * @param worker fully guarded single-poll worker
+     * @param environments enabled exact non-production queues
+     * @param maximumPollers process-local polling lanes
+     * @param initialDelay delay before the first poll in each lane
+     * @param pollInterval fixed delay after one lane finishes a poll
+     * @param drainTimeout graceful shutdown wait before interruption
+     * @param telemetry payload-free worker metric adapter
+     */
+    public TestSuiteStabilityJobScheduler(
+            TestSuiteStabilityJobWorker worker,
+            Set<String> environments,
+            int maximumPollers,
+            Duration initialDelay,
+            Duration pollInterval,
+            Duration drainTimeout,
+            TestSuiteStabilityJobTelemetry telemetry) {
         this.worker = Objects.requireNonNull(worker, "worker");
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry");
         List<String> queues = environments(environments);
         if (maximumPollers <= 0 || maximumPollers > 1_024) {
             throw new IllegalArgumentException(
@@ -88,6 +115,7 @@ public final class TestSuiteStabilityJobScheduler implements AutoCloseable {
                     interval.toMillis(), TimeUnit.MILLISECONDS));
         }
         lanes = List.copyOf(scheduled);
+        observeTelemetry(telemetry::workerStarted);
     }
 
     /** @return current local worker calls, never a queue cardinality */
@@ -123,6 +151,8 @@ public final class TestSuiteStabilityJobScheduler implements AutoCloseable {
         } catch (InterruptedException interrupted) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
+        } finally {
+            observeTelemetry(() -> telemetry.workerStopped(activePolls.get()));
         }
     }
 
@@ -130,13 +160,33 @@ public final class TestSuiteStabilityJobScheduler implements AutoCloseable {
         if (closed) {
             return;
         }
-        activePolls.incrementAndGet();
+        int active = activePolls.incrementAndGet();
+        observeTelemetry(() -> telemetry.activePolls(active));
         try {
-            worker.processNext(environment);
+            TestSuiteStabilityJobWorkResult result = worker.processNext(environment);
+            if (result == null) {
+                observeTelemetry(() -> telemetry.recordUnexpectedPoll(environment));
+                log.warn("Suite-stability worker returned no bounded poll result");
+            } else {
+                observeTelemetry(() -> telemetry.recordPoll(environment, result));
+            }
         } catch (RuntimeException failure) {
+            observeTelemetry(() -> telemetry.recordUnexpectedPoll(environment));
             log.warn("Suite-stability worker poll failed before a bounded result was produced");
         } finally {
-            activePolls.decrementAndGet();
+            int remaining = activePolls.decrementAndGet();
+            observeTelemetry(() -> telemetry.activePolls(remaining));
+        }
+    }
+
+    private void observeTelemetry(Runnable observation) {
+        try {
+            observation.run();
+        } catch (RuntimeException unavailable) {
+            if (telemetryFailureLogged.compareAndSet(false, true)) {
+                log.warn("Suite-stability worker telemetry update failed; further metric "
+                        + "failures are suppressed for this scheduler lifecycle");
+            }
         }
     }
 
