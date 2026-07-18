@@ -171,6 +171,17 @@ and the focused
 [execution-lease verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md)
 and [durable-progress verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md).
 
+The durable stability queue is now present in the isolated `test`/`staging` datastore, while its
+background worker remains opt-in and the public stability endpoint remains synchronous. Set
+`RG_TEST_STABILITY_JOB_WORKER_ENABLED=true` only in a deployment that contributes exactly one
+`TestSuiteStabilityJobAuthorizer` Spring bean backed by current IAM/delegation state; there is no
+allow-all default, so the application intentionally fails startup when the provider is absent or
+ambiguous. Queue capacity, fairness, retry, lease, deadline, and retention settings use the
+`RG_TEST_STABILITY_JOB_*` variables documented in `application-test.yml` and
+`application-staging.yml`. Worker environment/lane and heartbeat/lease contradictions also fail
+startup. See the focused
+[worker wiring verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-wiring-verification.md).
+
 ### Create a durable graph test
 
 Freeze the target through graph discovery and publish an immutable fixture revision first. Then create

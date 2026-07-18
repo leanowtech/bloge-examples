@@ -26,6 +26,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepositor
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
@@ -48,11 +49,16 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /** Profile-gated composition root for the isolated test control plane. */
@@ -545,6 +551,67 @@ public class TestRuntimeConfiguration {
             TestRuntimeDatabase database, ObjectMapper objectMapper) {
         return new DatabaseTestSuiteStabilityRunRepository(
                 database.jdbc(), objectMapper, database.transactionManager());
+    }
+
+    /** Verifies every queue terminal against the retained signed parent stability run. */
+    @Bean
+    TestSuiteStabilityJobParentAuthority testSuiteStabilityJobParentAuthority(
+            TestSuiteStabilityRunRepository repository,
+            ObjectMapper objectMapper,
+            TestSuiteStabilityAttestationService attestations) {
+        return new RepositoryTestSuiteStabilityJobParentAuthority(
+                repository, objectMapper, attestations);
+    }
+
+    /** Creates the database-authoritative stability queue even while worker execution is off. */
+    @Bean
+    TestSuiteStabilityJobRepository testSuiteStabilityJobRepository(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            TestSuiteStabilityJobParentAuthority parentAuthority) {
+        return new DatabaseTestSuiteStabilityJobRepository(
+                database.jdbc(), objectMapper, parentAuthority,
+                database.transactionManager());
+    }
+
+    /**
+     * Builds the exact cross-replica queue policy; invalid capacity or duration fails startup.
+     */
+    @Bean
+    TestSuiteStabilityQueuePolicy testSuiteStabilityQueuePolicy(
+            @Value("${gateway.testing.stability-jobs.queue.policy-generation:1}")
+            long generation,
+            @Value("${gateway.testing.stability-jobs.queue.maximum-queued:1000}")
+            int maximumQueued,
+            @Value("${gateway.testing.stability-jobs.queue.maximum-queued-per-tenant:100}")
+            int maximumQueuedPerTenant,
+            @Value("${gateway.testing.stability-jobs.queue.maximum-running:16}")
+            int maximumRunning,
+            @Value("${gateway.testing.stability-jobs.queue.maximum-running-per-tenant:4}")
+            int maximumRunningPerTenant,
+            @Value("${gateway.testing.stability-jobs.queue.lease-duration-seconds:30}")
+            long leaseDurationSeconds,
+            @Value("${gateway.testing.stability-jobs.queue.aging-interval-seconds:300}")
+            long agingIntervalSeconds,
+            @Value("${gateway.testing.stability-jobs.queue.initial-retry-delay-seconds:1}")
+            long initialRetryDelaySeconds,
+            @Value("${gateway.testing.stability-jobs.queue.maximum-retry-delay-seconds:60}")
+            long maximumRetryDelaySeconds,
+            @Value("${gateway.testing.stability-jobs.queue.maximum-retries:3}")
+            int maximumRetries,
+            @Value("${gateway.testing.stability-jobs.queue.maximum-deadline-horizon-days:7}")
+            long maximumDeadlineHorizonDays,
+            @Value("${gateway.testing.stability-jobs.queue.terminal-retention-days:30}")
+            long terminalRetentionDays) {
+        return new TestSuiteStabilityQueuePolicy(
+                generation, maximumQueued, maximumQueuedPerTenant,
+                maximumRunning, maximumRunningPerTenant,
+                Duration.ofSeconds(leaseDurationSeconds),
+                Duration.ofSeconds(agingIntervalSeconds),
+                Duration.ofSeconds(initialRetryDelaySeconds),
+                Duration.ofSeconds(maximumRetryDelaySeconds), maximumRetries,
+                Duration.ofDays(maximumDeadlineHorizonDays),
+                Duration.ofDays(terminalRetentionDays));
     }
 
     @Bean
@@ -1084,6 +1151,86 @@ public class TestRuntimeConfiguration {
                 suiteRegistry, suiteExecutions, childExecutions, repository, objectMapper,
                 attestations, leaseCoordinator,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
+    }
+
+    /**
+     * Starts one shared heartbeat coordinator only for explicitly enabled background execution.
+     */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = "gateway.testing.stability-jobs.worker",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityJobExecutionCoordinator testSuiteStabilityJobExecutionCoordinator(
+            TestSuiteStabilityJobRepository repository,
+            ObjectMapper objectMapper,
+            TestSuiteStabilityQueuePolicy policy,
+            @Value("${gateway.testing.stability-jobs.worker.heartbeat-interval-seconds:5}")
+            long heartbeatIntervalSeconds) {
+        Duration heartbeat = Duration.ofSeconds(heartbeatIntervalSeconds);
+        if (heartbeat.multipliedBy(3).compareTo(policy.leaseDuration()) > 0) {
+            throw new IllegalArgumentException(
+                    "Stability job heartbeat must be at most one-third of its lease");
+        }
+        return new TestSuiteStabilityJobExecutionCoordinator(
+                repository, objectMapper, heartbeat);
+    }
+
+    /**
+     * Creates the worker only when one unambiguous external current-authority provider exists.
+     *
+     * <p>No permissive local authorizer exists: enabling the worker without exactly one provider
+     * fails application startup instead of treating the submission-time principal as perpetual
+     * authority.</p>
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "gateway.testing.stability-jobs.worker",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityJobWorker testSuiteStabilityJobWorker(
+            TestSuiteStabilityJobRepository repository,
+            TestSuiteStabilityExecutionService executions,
+            TestSuiteStabilityJobExecutionCoordinator coordinator,
+            ObjectProvider<TestSuiteStabilityJobAuthorizer> authorizers,
+            TestSuiteStabilityQueuePolicy policy,
+            @Value("${gateway.testing.stability-jobs.worker.instance-id:}") String instanceId,
+            @Value("${gateway.testing.stability-jobs.worker.maximum-local-executions:4}")
+            int maximumLocalExecutions) {
+        List<TestSuiteStabilityJobAuthorizer> currentAuthorities =
+                authorizers.orderedStream().toList();
+        if (currentAuthorities.size() != 1) {
+            throw new IllegalStateException(
+                    "Enabled stability worker requires exactly one "
+                            + "TestSuiteStabilityJobAuthorizer bean");
+        }
+        String ownerId = instanceId == null || instanceId.isBlank()
+                ? "stability-worker-" + UUID.randomUUID()
+                : instanceId.trim();
+        return new TestSuiteStabilityJobWorker(
+                repository, executions, coordinator, currentAuthorities.getFirst(),
+                policy, ownerId, maximumLocalExecutions);
+    }
+
+    /** Starts bounded fixed-delay lanes after all worker safety dependencies are assembled. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = "gateway.testing.stability-jobs.worker",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityJobScheduler testSuiteStabilityJobScheduler(
+            TestSuiteStabilityJobWorker worker,
+            @Value("${gateway.testing.stability-jobs.worker.environments:test}")
+            String environments,
+            @Value("${gateway.testing.stability-jobs.worker.maximum-pollers:1}")
+            int maximumPollers,
+            @Value("${gateway.testing.stability-jobs.worker.initial-delay-ms:1000}")
+            long initialDelayMillis,
+            @Value("${gateway.testing.stability-jobs.worker.poll-interval-ms:1000}")
+            long pollIntervalMillis,
+            @Value("${gateway.testing.stability-jobs.worker.drain-timeout-seconds:30}")
+            long drainTimeoutSeconds) {
+        Set<String> enabledEnvironments = new LinkedHashSet<>(Arrays.asList(
+                environments == null ? new String[0] : environments.split(",", -1)));
+        return new TestSuiteStabilityJobScheduler(
+                worker, enabledEnvironments, maximumPollers,
+                Duration.ofMillis(initialDelayMillis),
+                Duration.ofMillis(pollIntervalMillis),
+                Duration.ofSeconds(drainTimeoutSeconds));
     }
 
     /** Marker consumed by the unauthenticated capability probe. */

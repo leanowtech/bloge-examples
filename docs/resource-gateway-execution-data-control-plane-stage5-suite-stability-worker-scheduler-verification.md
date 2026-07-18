@@ -57,7 +57,9 @@ unserved enabled environment.
 
 ## 5. Required next step
 
-The composition root must now create the parent authority, queue repository, execution coordinator,
-policy, worker, and scheduler from startup-validated configuration. Scheduler enablement must fail
-when no unique current-authority authorizer is available. Metrics, readiness/backlog SLOs, retention,
-HTTP, Schema, test-kit, and capability truth remain separate required increments.
+The successor composition-root increment now creates the parent authority, queue repository,
+execution coordinator, policy, worker, and scheduler from startup-validated configuration.
+Scheduler enablement fails unless exactly one current-authority authorizer is available. See
+[worker wiring verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-wiring-verification.md).
+Metrics, readiness/backlog SLOs, retention, HTTP, Schema, test-kit, and capability truth remain
+separate required increments.

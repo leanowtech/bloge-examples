@@ -38,10 +38,12 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.core.env.MapPropertySource;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 class TestRuntimeProfileIsolationTest {
@@ -133,6 +135,15 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
             assertThat(context.getBeansOfType(WaitStore.class)).isEmpty();
             assertThat(context.getBeansOfType(WorkItemStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobParentAuthority.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRepository.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobExecutionCoordinator.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
     }
@@ -237,6 +248,15 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBean(TestabilityAvailability.class)
                     .workerQuarantineRequestIndexMode())
                     .isEqualTo(WorkerQuarantineRequestIndexMode.KEYED_ONLY);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobParentAuthority.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRepository.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobExecutionCoordinator.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).isEmpty();
             ObjectMapper mapper = context.getBean(ObjectMapper.class);
             TestRunEvidence evidence = TestSemanticResultFingerprint.attach(mapper,
                     new TestRunEvidence("", "profile-run",
@@ -248,6 +268,70 @@ class TestRuntimeProfileIsolationTest {
                     .getBean(TestEvidenceIntegrityService.class).seal(evidence);
             assertThat(seal.verified()).isTrue();
             assertThat(seal.failureCode()).isEmpty();
+        }
+    }
+
+    @Test
+    void explicitlyEnabledStabilityWorkerRequiresExactlyOneCurrentAuthority() {
+        for (int authorizerCount : List.of(0, 2)) {
+            AnnotationConfigApplicationContext context = unrefreshedContext(
+                    enabledStabilityWorkerProperties(), authorizerCount, "test");
+            try {
+                assertThatThrownBy(context::refresh)
+                        .rootCause()
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("requires exactly one")
+                        .hasMessageContaining("TestSuiteStabilityJobAuthorizer");
+            } finally {
+                context.close();
+            }
+        }
+    }
+
+    @Test
+    void explicitlyEnabledStabilityWorkerAssemblesGuardedBoundedLifecycle() {
+        try (AnnotationConfigApplicationContext context = context(
+                enabledStabilityWorkerProperties(), 1, "test")) {
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobAuthorizer.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobExecutionCoordinator.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).hasSize(1);
+            assertThat(context.getBean(TestSuiteStabilityJobScheduler.class).closed()).isFalse();
+        }
+    }
+
+    @Test
+    void invalidWorkerTimingAndEnvironmentCapacityFailDuringStartup() {
+        Map<String, Object> invalidHeartbeat = new LinkedHashMap<>(
+                enabledStabilityWorkerProperties());
+        invalidHeartbeat.put(
+                "gateway.testing.stability-jobs.worker.heartbeat-interval-seconds", "11");
+        assertWorkerStartupRootCause(invalidHeartbeat,
+                "heartbeat must be at most one-third");
+
+        Map<String, Object> starvedEnvironment = new LinkedHashMap<>(
+                enabledStabilityWorkerProperties());
+        starvedEnvironment.put(
+                "gateway.testing.stability-jobs.worker.environments", "test,staging");
+        starvedEnvironment.put(
+                "gateway.testing.stability-jobs.worker.maximum-pollers", "1");
+        assertWorkerStartupRootCause(starvedEnvironment,
+                "Every enabled stability queue requires at least one polling lane");
+    }
+
+    @Test
+    void invalidStabilityQueuePolicyFailsStartupWhileWorkerIsDisabled() {
+        AnnotationConfigApplicationContext context = unrefreshedContext(Map.of(
+                "gateway.testing.stability-jobs.queue.maximum-running", "0"),
+                0, "test");
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Invalid suite-stability queue policy");
+        } finally {
+            context.close();
         }
     }
 
@@ -328,16 +412,41 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(ExecutionCheckpointStore.class)).isEmpty();
             assertThat(context.getBeansOfType(WaitStore.class)).isEmpty();
             assertThat(context.getBeansOfType(WorkItemStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobParentAuthority.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRepository.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobExecutionCoordinator.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
     }
 
     private static AnnotationConfigApplicationContext context(String... profiles) {
+        return context(Map.of(), 0, profiles);
+    }
+
+    private static AnnotationConfigApplicationContext context(
+            Map<String, Object> overrides,
+            int authorizerCount,
+            String... profiles) {
+        AnnotationConfigApplicationContext context =
+                unrefreshedContext(overrides, authorizerCount, profiles);
+        context.refresh();
+        return context;
+    }
+
+    private static AnnotationConfigApplicationContext unrefreshedContext(
+            Map<String, Object> overrides,
+            int authorizerCount,
+            String... profiles) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getEnvironment().setActiveProfiles(profiles);
         String profile = String.join("-", profiles);
-        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
-                "test-runtime", Map.of(
+        Map<String, Object> properties = new LinkedHashMap<>(Map.of(
                 "gateway.testing.store.jdbc-url",
                 "jdbc:h2:mem:profile-" + profile + ";DB_CLOSE_DELAY=-1",
                 "gateway.testing.store.retention-days", "1",
@@ -354,7 +463,10 @@ class TestRuntimeProfileIsolationTest {
                 "gateway.testing.durable.worker-quarantines.request-index-rollout.instance-id",
                 "profile-replica-a",
                 "gateway.testing.durable.worker-quarantines.request-index-rollout.artifact-fingerprint",
-                "sha256:" + "f".repeat(64))));
+                "sha256:" + "f".repeat(64)));
+        properties.putAll(overrides);
+        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
+                "test-runtime", properties));
         context.registerBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules());
         context.registerBean(GatewayGraphService.class, () -> mock(GatewayGraphService.class));
         context.registerBean(OperatorRegistry.class, () -> mock(OperatorRegistry.class));
@@ -364,6 +476,11 @@ class TestRuntimeProfileIsolationTest {
         context.registerBean(IntegrationRequestAuthenticator.class,
                 () -> mock(IntegrationRequestAuthenticator.class));
         context.registerBean(VisualEvidenceSigner.class, InMemoryVisualEvidenceSigner::new);
+        for (int index = 0; index < authorizerCount; index++) {
+            context.registerBean("testSuiteStabilityJobAuthorizer" + index,
+                    TestSuiteStabilityJobAuthorizer.class,
+                    () -> job -> TestSuiteStabilityJobAuthorizer.Authorization.authorized());
+        }
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
                 TestSuiteStabilityController.class,
                 DurableTestExecutionQueryController.class,
@@ -376,7 +493,29 @@ class TestRuntimeProfileIsolationTest {
                 DurableTestTerminalRecoveryController.class,
                 DurableTestRecoveryStepController.class,
                 DurableTestRecoverySequenceController.class);
-        context.refresh();
         return context;
+    }
+
+    private static Map<String, Object> enabledStabilityWorkerProperties() {
+        return Map.of(
+                "gateway.testing.stability-jobs.worker.enabled", "true",
+                "gateway.testing.stability-jobs.worker.environments", "test",
+                "gateway.testing.stability-jobs.worker.maximum-pollers", "1",
+                "gateway.testing.stability-jobs.worker.initial-delay-ms", "300000",
+                "gateway.testing.stability-jobs.worker.poll-interval-ms", "60000");
+    }
+
+    private static void assertWorkerStartupRootCause(
+            Map<String, Object> properties, String message) {
+        AnnotationConfigApplicationContext context =
+                unrefreshedContext(properties, 1, "test");
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(message);
+        } finally {
+            context.close();
+        }
     }
 }

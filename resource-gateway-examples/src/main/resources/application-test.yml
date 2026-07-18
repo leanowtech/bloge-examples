@@ -101,6 +101,30 @@ gateway:
       heartbeat-interval-seconds: ${RG_TEST_STABILITY_HEARTBEAT_SECONDS:5}
       lease-cleanup-interval-ms: ${RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS:15000}
       lease-cleanup-batch-size: ${RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE:1000}
+    stability-jobs:
+      queue:
+        policy-generation: ${RG_TEST_STABILITY_JOB_POLICY_GENERATION:1}
+        maximum-queued: ${RG_TEST_STABILITY_JOB_MAX_QUEUED:1000}
+        maximum-queued-per-tenant: ${RG_TEST_STABILITY_JOB_MAX_QUEUED_PER_TENANT:100}
+        maximum-running: ${RG_TEST_STABILITY_JOB_MAX_RUNNING:16}
+        maximum-running-per-tenant: ${RG_TEST_STABILITY_JOB_MAX_RUNNING_PER_TENANT:4}
+        lease-duration-seconds: ${RG_TEST_STABILITY_JOB_LEASE_SECONDS:30}
+        aging-interval-seconds: ${RG_TEST_STABILITY_JOB_AGING_SECONDS:300}
+        initial-retry-delay-seconds: ${RG_TEST_STABILITY_JOB_INITIAL_RETRY_SECONDS:1}
+        maximum-retry-delay-seconds: ${RG_TEST_STABILITY_JOB_MAX_RETRY_SECONDS:60}
+        maximum-retries: ${RG_TEST_STABILITY_JOB_MAX_RETRIES:3}
+        maximum-deadline-horizon-days: ${RG_TEST_STABILITY_JOB_MAX_DEADLINE_DAYS:7}
+        terminal-retention-days: ${RG_TEST_STABILITY_JOB_TERMINAL_RETENTION_DAYS:30}
+      worker:
+        enabled: ${RG_TEST_STABILITY_JOB_WORKER_ENABLED:false}
+        instance-id: ${RG_TEST_STABILITY_JOB_WORKER_INSTANCE_ID:}
+        environments: ${RG_TEST_STABILITY_JOB_WORKER_ENVIRONMENTS:test}
+        maximum-local-executions: ${RG_TEST_STABILITY_JOB_MAX_LOCAL_EXECUTIONS:4}
+        maximum-pollers: ${RG_TEST_STABILITY_JOB_MAX_POLLERS:1}
+        heartbeat-interval-seconds: ${RG_TEST_STABILITY_JOB_HEARTBEAT_SECONDS:5}
+        initial-delay-ms: ${RG_TEST_STABILITY_JOB_INITIAL_DELAY_MS:1000}
+        poll-interval-ms: ${RG_TEST_STABILITY_JOB_POLL_INTERVAL_MS:1000}
+        drain-timeout-seconds: ${RG_TEST_STABILITY_JOB_DRAIN_TIMEOUT_SECONDS:30}
     replay-payloads:
       maximum-retention-days: ${RG_TEST_REPLAY_MAX_RETENTION_DAYS:30}
       sweep-interval-ms: ${RG_TEST_REPLAY_SWEEP_INTERVAL_MS:60000}
