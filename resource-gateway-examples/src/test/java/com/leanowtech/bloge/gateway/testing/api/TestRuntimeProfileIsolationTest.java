@@ -50,6 +50,7 @@ class TestRuntimeProfileIsolationTest {
     void productionProfileHasNoTestingControllerStoreOrCapabilityMarker() {
         try (AnnotationConfigApplicationContext context = context("production")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestExecutionQueryController.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -140,6 +141,7 @@ class TestRuntimeProfileIsolationTest {
     void testProfileAssemblesIndependentStoreControllerAndCapabilityMarker() {
         try (AnnotationConfigApplicationContext context = context("test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestExecutionQueryController.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -253,6 +255,7 @@ class TestRuntimeProfileIsolationTest {
     void productionProfileVetoesTestingBeansEvenWhenTestIsAlsoActive() {
         try (AnnotationConfigApplicationContext context = context("production", "test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestExecutionQueryController.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -362,6 +365,7 @@ class TestRuntimeProfileIsolationTest {
                 () -> mock(IntegrationRequestAuthenticator.class));
         context.registerBean(VisualEvidenceSigner.class, InMemoryVisualEvidenceSigner::new);
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
+                TestSuiteStabilityController.class,
                 DurableTestExecutionQueryController.class,
                 DurableTestOwnerClaimController.class,
                 DurableTestWorkerAcquisitionController.class,

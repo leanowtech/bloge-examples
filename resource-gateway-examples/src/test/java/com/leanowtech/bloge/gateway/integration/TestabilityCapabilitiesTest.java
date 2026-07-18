@@ -13,6 +13,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterialization
 import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteMaterializationRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteMaterializationResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
@@ -55,6 +57,8 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import org.junit.jupiter.api.Test;
 
@@ -126,13 +130,17 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("boundedCardinalityTestRuntimeAdmissionMetrics", false)
                 .containsEntry("pureDslMutationPlanning", false)
                 .containsEntry("pureDslMutationExecution", false)
-                .containsEntry("mutationScoreEvidence", false);
+                .containsEntry("mutationScoreEvidence", false)
+                .containsEntry("signedSuiteStabilityAnalysis", false)
+                .containsEntry("idempotentSuiteStabilityRerun", false);
         assertThat(enabled.testability().executionEndpointEnabled()).isTrue();
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
                 "storedFixtureBundle", "testSuite", "testSuiteRegistrationRequest", "storedTestSuite",
                 "replayPayloadCaptureRequest", "replayPayloadDescriptor", "storedReplayPayload",
                 "testSuiteExecutionRequest", "testMutationSuiteExecutionRequest",
+                "testSuiteStabilityExecutionRequest", "testSuiteStabilityEvidence",
+                "testSuiteStabilityAttestation", "testSuiteStabilityExecutionResponse",
                 "testSuiteExecutionResponse", "testSuiteRunEvidence",
                 "testSuiteRunAttestation", "testSuiteEvidenceBundle", "testSuiteRunReconciliation",
                 "semanticCorrectnessWorkbookBundle",
@@ -243,6 +251,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("pureDslMutationExecution", true)
                 .containsEntry("mutationScoreEvidence", true)
                 .containsEntry("mutationSuiteMaterialization", true)
+                .containsEntry("signedSuiteStabilityAnalysis", false)
+                .containsEntry("idempotentSuiteStabilityRerun", false)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)
@@ -260,6 +270,14 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(TestMutationCasePlan.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testMutationSuiteExecutionRequest"))
                 .containsExactly(TestMutationSuiteExecutionRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuiteStabilityExecutionRequest"))
+                .containsExactly(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuiteStabilityEvidence"))
+                .containsExactly(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuiteStabilityAttestation"))
+                .containsExactly(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuiteStabilityExecutionResponse"))
+                .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterializationRequest"))
                 .containsExactly(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterialization"))
@@ -398,6 +416,12 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/suites/{suiteId}/mutation-executions"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/suites/{suiteId}/stability-executions"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals(
+                "/api/testing/stability-executions/{stabilityRunId}"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/targets/operators/{operatorRef}/boundary-suites"));

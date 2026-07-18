@@ -265,6 +265,18 @@ public record IntegrationCapabilities(
             objects.put("testMutationSuiteExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteExecutionRequest
                             .SCHEMA_VERSION));
+            objects.put("testSuiteStabilityExecutionRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest
+                            .SCHEMA_VERSION));
+            objects.put("testSuiteStabilityEvidence", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence
+                            .SCHEMA_VERSION));
+            objects.put("testSuiteStabilityAttestation", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation
+                            .SCHEMA_VERSION));
+            objects.put("testSuiteStabilityExecutionResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse
+                            .SCHEMA_VERSION));
             objects.put("testSuiteExecutionResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION,
@@ -507,6 +519,10 @@ public record IntegrationCapabilities(
         features.put("pureDslMutationExecution", testExecutionEndpointEnabled);
         features.put("mutationScoreEvidence", testExecutionEndpointEnabled);
         features.put("mutationSuiteMaterialization", testExecutionEndpointEnabled);
+        features.put("signedSuiteStabilityAnalysis",
+                testExecutionEndpointEnabled && signer.available());
+        features.put("idempotentSuiteStabilityRerun",
+                testExecutionEndpointEnabled && signer.available());
         features.put("propertySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);
@@ -701,6 +717,10 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("POST", "/api/testing/suites/{suiteId}/executions"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/suites/{suiteId}/mutation-executions"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/suites/{suiteId}/stability-executions"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/stability-executions/{stabilityRunId}"));
             endpoints.add(new Endpoint("GET", "/api/testing/suite-executions/{suiteRunId}"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/suite-executions/{suiteRunId}/evidence-bundle"));

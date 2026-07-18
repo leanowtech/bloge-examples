@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoin
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
@@ -25,6 +26,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepositor
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DurableStateProjectionReconciler;
@@ -537,6 +539,13 @@ public class TestRuntimeConfiguration {
         return new DatabaseTestSuiteRunRepository(database.jdbc(), objectMapper);
     }
 
+    /** @return immutable terminal stability store isolated from production run tables */
+    @Bean
+    TestSuiteStabilityRunRepository testSuiteStabilityRunRepository(
+            TestRuntimeDatabase database, ObjectMapper objectMapper) {
+        return new DatabaseTestSuiteStabilityRunRepository(database.jdbc(), objectMapper);
+    }
+
     @Bean
     TestRunRepository testRunRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
         return new DatabaseTestRunRepository(database.jdbc(), objectMapper);
@@ -869,6 +878,14 @@ public class TestRuntimeConfiguration {
                 evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
     }
 
+    /** Reuses the configured signing authority in a distinct stability-analysis domain. */
+    @Bean
+    TestSuiteStabilityAttestationService testSuiteStabilityAttestationService(
+            ObjectMapper objectMapper, ObjectProvider<VisualEvidenceSigner> evidenceSigner) {
+        return new TestSuiteStabilityAttestationService(objectMapper,
+                evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
+    }
+
     /** Captures exact sanitized outputs from signed run history into the isolated replay vault. */
     @Bean
     TestReplayPayloadService testReplayPayloadService(
@@ -1028,6 +1045,21 @@ public class TestRuntimeConfiguration {
                 suiteRegistry, executionService, suiteRunRepository, objectMapper, securityEvents,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), leaseCoordinator,
                 attestations, admissions);
+    }
+
+    /** Assembles bounded reruns over the ordinary suite runner and signed terminal store. */
+    @Bean
+    TestSuiteStabilityExecutionService testSuiteStabilityExecutionService(
+            TestSuiteRegistryService suiteRegistry,
+            TestSuiteExecutionService suiteExecutions,
+            TestExecutionApiService childExecutions,
+            TestSuiteStabilityRunRepository repository,
+            ObjectMapper objectMapper,
+            TestSuiteStabilityAttestationService attestations,
+            @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
+        return new TestSuiteStabilityExecutionService(
+                suiteRegistry, suiteExecutions, childExecutions, repository, objectMapper,
+                attestations, Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
     }
 
     /** Marker consumed by the unauthenticated capability probe. */
