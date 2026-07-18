@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.example/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json",
   "title": "Resource Gateway Testing Control Plane v1",
-  "description": "Wire contracts for target discovery, validator-proven bounded boundary-case plans, immutable fixtures and suites, controlled execution, signed bounded suite-stability analysis and payload-free durable parent progress, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, one-signal suspended-or-terminal recovery steps, terminal recovery, durable projection finding operations, externally authorized exact-checkpoint worker quarantine maintenance, signed request-index rollout proofs, plans, and sanitized evidence.",
+  "description": "Wire contracts for target discovery, validator-proven bounded boundary-case plans, immutable fixtures and suites, controlled execution, signed bounded suite-stability analysis, payload-free durable parent progress, authenticated asynchronous suite-stability job submission/query/cancellation, durable graph and operator execution creation, query, ownership and worker acquisition, recovery heartbeat, one-signal suspended-or-terminal recovery steps, terminal recovery, durable projection finding operations, externally authorized exact-checkpoint worker quarantine maintenance, signed request-index rollout proofs, plans, and sanitized evidence.",
   "$defs": {
     "fingerprint": {
       "type": "string",
@@ -11,6 +11,10 @@
     "stabilityRunId": {
       "type": "string",
       "pattern": "^stability-[a-f0-9]{64}$"
+    },
+    "stabilityJobId": {
+      "type": "string",
+      "pattern": "^stability-job-[a-f0-9]{64}$"
     },
     "stabilityProvenanceMetadata": {
       "type": "object",
@@ -2470,7 +2474,10 @@
         "schemaVersion": {"enum": ["bloge.testSuiteStabilityExecutionRequest.v1",
           "bloge.testSuiteStabilityExecutionRequest.v2"]},
         "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
-        "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "clientRequestId": {
+          "type": "string", "minLength": 1, "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
         "attempts": {"type": "integer", "minimum": 3, "maximum": 1000},
         "statisticalPolicy": {"$ref": "#/$defs/testSuiteStabilityStatisticalPolicy"},
         "metadata": {"$ref": "#/$defs/stabilityProvenanceMetadata"}
@@ -2484,6 +2491,118 @@
           "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionRequest.v2"},
           "attempts": {"maximum": 1000}}}
       ]
+    },
+    "testSuiteStabilityJobSubmitRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "execution", "priority", "deadlineAt"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityJobSubmitRequest.v1"},
+        "execution": {"$ref": "#/$defs/testSuiteStabilityExecutionRequest"},
+        "priority": {"enum": ["LOW", "NORMAL", "HIGH"]},
+        "deadlineAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        }
+      }
+    },
+    "testSuiteStabilityJobCancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "clientRequestId"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityJobCancelRequest.v1"},
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        }
+      }
+    },
+    "testSuiteStabilityJobView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "jobId", "suiteRef", "clientRequestId",
+        "requestFingerprint", "priority", "status", "retryCount", "nextEligibleAt",
+        "deadlineAt", "createdAt", "updatedAt", "expiresAt", "terminal"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityJobView.v1"},
+        "jobId": {"$ref": "#/$defs/stabilityJobId"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "priority": {"enum": ["LOW", "NORMAL", "HIGH"]},
+        "status": {"enum": ["QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMMITTING",
+          "SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED", "QUARANTINED"]},
+        "retryCount": {"type": "integer", "minimum": 0, "maximum": 100},
+        "nextEligibleAt": {"type": "string", "format": "date-time"},
+        "deadlineAt": {"type": "string", "format": "date-time"},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "updatedAt": {"type": "string", "format": "date-time"},
+        "expiresAt": {"type": "string", "format": "date-time"},
+        "terminal": {"type": "boolean"},
+        "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "failureCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": ["stabilityRunId", "evidenceFingerprint"],
+              "properties": {"status": {"const": "SUCCEEDED"}}
+            },
+            {
+              "properties": {"status": {"enum": ["QUEUED", "RUNNING",
+                "CANCEL_REQUESTED", "COMMITTING", "FAILED", "CANCELLED", "EXPIRED",
+                "QUARANTINED"]}},
+              "not": {"anyOf": [
+                {"required": ["stabilityRunId"]},
+                {"required": ["evidenceFingerprint"]}
+              ]}
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "status": {"enum": ["QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMMITTING"]},
+                "terminal": {"const": false}
+              }
+            },
+            {
+              "properties": {
+                "status": {"enum": ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED",
+                  "QUARANTINED"]},
+                "terminal": {"const": true}
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "testSuiteStabilityJobSubmitResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "job", "idempotentReplay"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityJobSubmitResponse.v1"},
+        "job": {"$ref": "#/$defs/testSuiteStabilityJobView"},
+        "idempotentReplay": {"type": "boolean"}
+      }
     },
     "testSuiteStabilityAttemptResult": {
       "type": "object",

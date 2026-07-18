@@ -26,6 +26,34 @@ public interface TestSuiteStabilityJobRepository {
             TestSuiteStabilityQueuePolicy policy);
 
     /**
+     * Submits a job while preserving whether the durable command was newly admitted or replayed.
+     *
+     * <p>The default keeps non-database test doubles source compatible. Authoritative
+     * implementations should override this method so admission and replay disposition are decided
+     * in the same serialized transaction.</p>
+     *
+     * @param submission exact authenticated job intent
+     * @param policy active cross-replica queue policy
+     * @return retained job and transaction-authoritative replay disposition
+     */
+    default SubmissionResult submitDetailed(
+            TestSuiteStabilityJobSubmission submission,
+            TestSuiteStabilityQueuePolicy policy) {
+        return new SubmissionResult(submit(submission, policy), false);
+    }
+
+    /** Payload-free result of one serialized queue admission command. */
+    record SubmissionResult(
+            TestSuiteStabilityJobRecord job,
+            boolean idempotentReplay) {
+
+        /** Requires a concrete retained job for both fresh and replayed commands. */
+        public SubmissionResult {
+            job = java.util.Objects.requireNonNull(job, "job");
+        }
+    }
+
+    /**
      * Claims at most one job using tenant round-robin and within-tenant aged priority.
      *
      * @param environmentId server-owned test or staging queue

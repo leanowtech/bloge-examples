@@ -16,6 +16,10 @@ import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteExecutionReques
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCancelRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmitRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmitResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobView;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
@@ -66,6 +70,47 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TestabilityCapabilitiesTest {
+
+    @Test
+    void asynchronousStabilitySubmissionIsAdvertisedOnlyWhenWorkerRuntimeIsEnabled() {
+        IntegrationCapabilities queryOnly = IntegrationCapabilities.current(
+                VisualEvidenceSigner.unavailable().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true,
+                EvidenceKeySetTrustStore.unavailable().descriptor(),
+                WorkerQuarantineRequestIndexMode.KEYED_ONLY,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                false);
+        IntegrationCapabilities executable = IntegrationCapabilities.current(
+                VisualEvidenceSigner.unavailable().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true,
+                EvidenceKeySetTrustStore.unavailable().descriptor(),
+                WorkerQuarantineRequestIndexMode.KEYED_ONLY,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                true);
+
+        assertThat(queryOnly.testability().suiteStabilityJobSubmissionEnabled()).isFalse();
+        assertThat(queryOnly.features())
+                .containsEntry("asyncSuiteStabilityJobProtocol", true)
+                .containsEntry("asyncSuiteStabilityJobSubmission", false)
+                .containsEntry("asyncSuiteStabilityJobQuery", true)
+                .containsEntry("asyncSuiteStabilityJobCancellation", true);
+        assertThat(executable.testability().suiteStabilityJobSubmissionEnabled()).isTrue();
+        assertThat(executable.features())
+                .containsEntry("asyncSuiteStabilityJobSubmission", true);
+        assertThat(executable.supportedObjects())
+                .containsEntry("testSuiteStabilityJobSubmitRequest",
+                        java.util.List.of(TestSuiteStabilityJobSubmitRequest.SCHEMA_VERSION))
+                .containsEntry("testSuiteStabilityJobCancelRequest",
+                        java.util.List.of(TestSuiteStabilityJobCancelRequest.SCHEMA_VERSION))
+                .containsEntry("testSuiteStabilityJobView",
+                        java.util.List.of(TestSuiteStabilityJobView.SCHEMA_VERSION))
+                .containsEntry("testSuiteStabilityJobSubmitResponse",
+                        java.util.List.of(TestSuiteStabilityJobSubmitResponse.SCHEMA_VERSION));
+        assertThat(executable.endpoints()).extracting(IntegrationCapabilities.Endpoint::path)
+                .contains("/api/testing/suites/{suiteId}/stability-jobs",
+                        "/api/testing/stability-jobs/{jobId}",
+                        "/api/testing/stability-jobs/{jobId}/cancellations");
+    }
 
     @Test
     void executionEndpointIsAdvertisedOnlyWhenProfileMarkerEnablesIt() {

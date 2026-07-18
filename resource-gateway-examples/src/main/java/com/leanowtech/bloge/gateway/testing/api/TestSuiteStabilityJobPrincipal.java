@@ -52,7 +52,7 @@ public record TestSuiteStabilityJobPrincipal(
         tenantId = normalized(tenantId);
         organizationId = normalized(organizationId);
         projectId = normalized(projectId);
-        environmentId = normalized(environmentId);
+        environmentId = normalized(environmentId).toLowerCase(Locale.ROOT);
         region = normalized(region);
         actorType = normalized(actorType).toUpperCase(Locale.ROOT);
         actorId = normalized(actorId);

@@ -699,6 +699,25 @@ public class TestRuntimeConfiguration {
                 Duration.ofDays(terminalRetentionDays));
     }
 
+    /**
+     * Exposes query and cancellation throughout maintenance while gating only fresh submission on
+     * the explicitly enabled worker runtime.
+     */
+    @Bean
+    TestSuiteStabilityJobService testSuiteStabilityJobService(
+            TestSuiteStabilityJobRepository repository,
+            TestSuiteStabilityExecutionService executions,
+            TestSuiteStabilityQueuePolicy policy,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.stability-jobs.worker.enabled:false}")
+            boolean submissionEnabled,
+            @Value("${gateway.testing.stability-jobs.api.retry-after-seconds:5}")
+            long retryAfterSeconds) {
+        return new TestSuiteStabilityJobService(
+                repository, executions, policy, objectMapper, submissionEnabled,
+                Duration.ofSeconds(retryAfterSeconds));
+    }
+
     /** Registers only fixed environment/status/outcome stability queue metrics. */
     @Bean
     TestSuiteStabilityJobTelemetry testSuiteStabilityJobTelemetry(
@@ -1357,8 +1376,11 @@ public class TestRuntimeConfiguration {
     @Bean
     TestabilityAvailability testabilityAvailability(
             DatabaseDurableWorkerQuarantineControlPlane controlPlane,
-            WorkerQuarantineChangeAuthorizationTrustStore changeAuthorizationTrust) {
-        return new TestabilityAvailability(true, controlPlane.requestIndexMode(),
+            WorkerQuarantineChangeAuthorizationTrustStore changeAuthorizationTrust,
+            @Value("${gateway.testing.stability-jobs.worker.enabled:false}")
+            boolean suiteStabilityJobSubmissionEnabled) {
+        return new TestabilityAvailability(true, suiteStabilityJobSubmissionEnabled,
+                controlPlane.requestIndexMode(),
                 changeAuthorizationTrust.descriptor());
     }
 

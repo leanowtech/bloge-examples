@@ -102,6 +102,8 @@ gateway:
       lease-cleanup-interval-ms: ${RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS:15000}
       lease-cleanup-batch-size: ${RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE:1000}
     stability-jobs:
+      api:
+        retry-after-seconds: ${RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS:5}
       retention:
         instance-id: ${RG_TEST_STABILITY_JOB_RETENTION_INSTANCE_ID:}
         lease-duration-seconds: ${RG_TEST_STABILITY_JOB_RETENTION_LEASE_SECONDS:120}

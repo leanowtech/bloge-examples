@@ -22,6 +22,7 @@ integration something the business flow can see, reason about, test, and change.
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Schema-gated table tests | Run 14 built-in cases across all seven resource graphs with F3 transport fixtures, bounded retry consumption, coverage gates, and fidelity evidence |
 | Isolated testing control plane | Test/staging-only graph/operator discovery, validator-proven boundary-case planning, reviewed plan-to-suite materialization, immutable fixture registry, caller-driven DAG and operator micro-graph execution, attempt/occurrence-specific doubles, sanitized evidence retention, batch runs, and production control-field guard |
+| Durable stability jobs | Authenticated non-blocking submit/query/cancel protocol, deterministic idempotency, database capacity/fairness/deadline control, payload-free lifecycle views, opt-in current-authority worker, and honest capability discovery |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
 | Dynamic workload identity | Atomic JWKS/revocation refresh, zero-restart key rotation, bounded propagation SLO, group/clearance/delegation claims, and explicit 401/503 semantics |
@@ -63,6 +64,9 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-executions` | Execute one exact V1/V2/V4 suite with deterministic request v1 (3..20) or exact-binomial request v2 (3..1000, bounded work), under a cross-replica parent lease, then retain signed payload-free evidence (test/staging only) |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}` | Read one retained stability analysis with its exact ordered source-run closure and detached signature (test/staging only) |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}/progress` | Poll payload-free `RUNNING`, `RECOVERABLE`, or `COMPLETED` durable parent progress without exposing owner/epoch/source ids/payloads (test/staging only) |
+| `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-jobs` | Submit an exact stability request without blocking; returns `202`, deterministic `jobId`, query `Location`, and payload-free lifecycle (test/staging only; fresh submission requires the opt-in worker) |
+| `GET http://localhost:8080/api/testing/stability-jobs/{jobId}` | Read one organization/project-scoped durable job without exposing principal, request metadata, lease fence, cancellation fingerprint, or row seal (test/staging only) |
+| `POST http://localhost:8080/api/testing/stability-jobs/{jobId}/cancellations` | Idempotently cancel queued work or request cooperative running cancellation; `COMMITTING` is explicitly too late (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/operators/{operatorRef}` | Idempotently freeze an exact operator test at its server-owned start gate (test/staging only) |
@@ -171,15 +175,20 @@ and the focused
 [execution-lease verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md)
 and [durable-progress verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md).
 
-The durable stability queue is now present in the isolated `test`/`staging` datastore, while its
-background worker remains opt-in and the public stability endpoint remains synchronous. Set
+The durable stability queue and authenticated asynchronous submit/query/cancel protocol are present
+in the isolated `test`/`staging` datastore. Query and cancellation remain available while the worker
+is disabled or draining; fresh submission then returns
+`503 RG.TEST.STABILITY_JOB_SUBMISSION_UNAVAILABLE`. Set
 `RG_TEST_STABILITY_JOB_WORKER_ENABLED=true` only in a deployment that contributes exactly one
 `TestSuiteStabilityJobAuthorizer` Spring bean backed by current IAM/delegation state; there is no
 allow-all default, so the application intentionally fails startup when the provider is absent or
 ambiguous. Queue capacity, fairness, retry, lease, deadline, and retention settings use the
 `RG_TEST_STABILITY_JOB_*` variables documented in `application-test.yml` and
 `application-staging.yml`. Worker environment/lane and heartbeat/lease contradictions also fail
-startup. See the focused
+startup. The capability probe separates `asyncSuiteStabilityJobProtocol` from
+`asyncSuiteStabilityJobSubmission`, so clients do not infer executability merely because the routes
+or Schema exist. Capacity responses use `Retry-After`, configured with
+`RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` (default `5`). See the focused
 [worker wiring verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-wiring-verification.md).
 Actuator now exposes a separate stability-queue health contributor. The
 `RG_TEST_STABILITY_JOB_SLO_*` settings bound per-environment queue depth, oldest wait, observation

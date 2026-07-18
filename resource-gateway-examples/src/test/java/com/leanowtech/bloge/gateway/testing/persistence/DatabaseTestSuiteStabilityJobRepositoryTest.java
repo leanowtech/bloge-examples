@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLeaseCheck;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobParentAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobPrincipal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRetentionAttempt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
@@ -103,6 +104,49 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityJobConflictException.Reason.IDEMPOTENCY_CONFLICT));
+    }
+
+    @Test
+    void detailedSubmissionDistinguishesFreshAdmissionAndCorrelationIndependentReplay() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission original = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        TestSuiteStabilityJobPrincipal first = original.principal();
+        TestSuiteStabilityJobPrincipal replayPrincipal = new TestSuiteStabilityJobPrincipal(
+                first.tenantId(), first.organizationId(), first.projectId(),
+                first.environmentId(), first.region(), first.actorType(), first.actorId(),
+                first.delegatedBy(), first.purpose(), "correlation-2", first.groups(),
+                first.clearance(), first.delegationGrantId());
+        TestSuiteStabilityJobSubmission replay = new TestSuiteStabilityJobSubmission(
+                original.jobId(), original.request(), original.requestFingerprint(),
+                original.classification(), replayPrincipal, original.priority(),
+                original.deadlineAt());
+
+        TestSuiteStabilityJobRepository.SubmissionResult fresh =
+                repository.submitDetailed(original, policy);
+        TestSuiteStabilityJobRepository.SubmissionResult retained =
+                repository.submitDetailed(replay, policy);
+
+        assertThat(fresh.idempotentReplay()).isFalse();
+        assertThat(retained.idempotentReplay()).isTrue();
+        assertThat(retained.job()).isEqualTo(fresh.job());
+        assertThat(retained.job().principal().correlationId()).isEqualTo("correlation-1");
+    }
+
+    @Test
+    void rejectsDeadlineOutsideDatabaseOwnedHorizonWithDedicatedReason() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission original = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        TestSuiteStabilityJobSubmission expired = new TestSuiteStabilityJobSubmission(
+                original.jobId(), original.request(), original.requestFingerprint(),
+                original.classification(), original.principal(), original.priority(),
+                Instant.parse("2000-01-01T00:00:00Z"));
+
+        assertThatThrownBy(() -> repository.submit(expired, policy))
+                .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityJobConflictException.Reason.DEADLINE_INVALID));
     }
 
     @Test

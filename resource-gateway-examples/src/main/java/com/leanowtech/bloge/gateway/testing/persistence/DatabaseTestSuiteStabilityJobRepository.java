@@ -226,9 +226,16 @@ public final class DatabaseTestSuiteStabilityJobRepository
     public TestSuiteStabilityJobRecord submit(
             TestSuiteStabilityJobSubmission submission,
             TestSuiteStabilityQueuePolicy policy) {
+        return submitDetailed(submission, policy).job();
+    }
+
+    @Override
+    public SubmissionResult submitDetailed(
+            TestSuiteStabilityJobSubmission submission,
+            TestSuiteStabilityQueuePolicy policy) {
         Objects.requireNonNull(submission, "submission");
         Objects.requireNonNull(policy, "policy");
-        TestSuiteStabilityJobRecord result = mutations.execute(status -> {
+        SubmissionResult result = mutations.execute(status -> {
             String environment = submission.principal().environmentId();
             lockEnvironment(environment);
             Instant observedAt = currentTime();
@@ -240,13 +247,13 @@ public final class DatabaseTestSuiteStabilityJobRepository
                     submission.request().clientRequestId());
             if (existing.isPresent()) {
                 requireSameSubmission(existing.get(), submission, submissionFingerprint);
-                return existing.get().record();
+                return new SubmissionResult(existing.get().record(), true);
             }
             requireNotRetired(submission, submissionFingerprint, observedAt);
             if (!submission.deadlineAt().isAfter(observedAt)
                     || submission.deadlineAt().isAfter(
                     observedAt.plus(policy.maximumDeadlineHorizon()))) {
-                throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
+                throw conflict(TestSuiteStabilityJobConflictException.Reason.DEADLINE_INVALID,
                         "Suite-stability job deadline is outside the accepted horizon");
             }
             long global = activeCount(environment, null, observedAt);
@@ -274,7 +281,7 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 throw conflict(TestSuiteStabilityJobConflictException.Reason.IDEMPOTENCY_CONFLICT,
                         "Suite-stability job identity already belongs to another intent");
             }
-            return inserted.record();
+            return new SubmissionResult(inserted.record(), false);
         });
         return required(result, "Suite-stability job submission returned no result");
     }
@@ -1786,10 +1793,28 @@ public final class DatabaseTestSuiteStabilityJobRepository
         material.put("request", submission.request());
         material.put("requestFingerprint", submission.requestFingerprint());
         material.put("classification", submission.classification());
-        material.put("principal", submission.principal());
+        material.put("principal", stableSubmissionPrincipal(submission.principal()));
         material.put("priority", submission.priority().name());
         material.put("deadlineAt", submission.deadlineAt());
         return ProtocolFingerprint.of(objectMapper, material);
+    }
+
+    private static Map<String, Object> stableSubmissionPrincipal(
+            TestSuiteStabilityJobPrincipal principal) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("tenantId", principal.tenantId());
+        material.put("organizationId", principal.organizationId());
+        material.put("projectId", principal.projectId());
+        material.put("environmentId", principal.environmentId());
+        material.put("region", principal.region());
+        material.put("actorType", principal.actorType());
+        material.put("actorId", principal.actorId());
+        material.put("delegatedBy", principal.delegatedBy());
+        material.put("purpose", principal.purpose());
+        material.put("groups", principal.groups().stream().sorted().toList());
+        material.put("clearance", principal.clearance());
+        material.put("delegationGrantId", principal.delegationGrantId());
+        return material;
     }
 
     private void requireSameSubmission(

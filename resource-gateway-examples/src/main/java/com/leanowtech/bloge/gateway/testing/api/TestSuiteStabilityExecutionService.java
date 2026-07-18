@@ -49,6 +49,8 @@ public final class TestSuiteStabilityExecutionService {
     private static final List<String> CLASSIFICATIONS = List.of(
             "PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+    private static final Pattern IDENTIFIER =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
     private static final Pattern METADATA_KEY = Pattern.compile(
             "[A-Za-z][A-Za-z0-9_.-]{0,127}");
 
@@ -143,20 +145,10 @@ public final class TestSuiteStabilityExecutionService {
             return response;
         }
 
-        StoredTestSuite stored = suiteRegistry.find(request.suiteRef().suiteId(),
-                request.suiteRef().revision(), identity);
-        requireClearance(stored.suite().classification(), identity);
-        if (!request.suiteRef().fingerprint().equals(stored.fingerprint())) {
-            throw conflict(identity, "RG.TEST.STABILITY_SUITE_FINGERPRINT_CONFLICT",
-                    "Stored suite differs from the exact stability execution reference.");
-        }
-        requireSupportedSuite(stored.suite(), identity);
-        requireStatisticalWorkBudget(stored.suite(), request, identity);
-
-        TestSuiteStabilityExecutionDescriptor execution =
-                TestSuiteStabilityExecutionIdentity.descriptor(
-                        objectMapper, identity, request.clientRequestId(),
-                        requestFingerprint, stored.suite().classification());
+        AuthorizedSubmission authorized = authorizeCurrentSuite(
+                request, identity, requestFingerprint);
+        StoredTestSuite stored = authorized.suite();
+        TestSuiteStabilityExecutionDescriptor execution = authorized.descriptor();
         String stabilityRunId = execution.stabilityRunId();
         executionControl.executionStarted(execution);
         TestSuiteStabilityLeaseRequest leaseRequest;
@@ -205,6 +197,48 @@ public final class TestSuiteStabilityExecutionService {
             return executeOwned(stored, request, identity, requestFingerprint,
                     stabilityRunId, claim.progress(), lease, executionControl);
         }
+    }
+
+    /**
+     * Authorizes a fresh asynchronous submission without starting any suite attempt.
+     *
+     * <p>The caller must resolve a retained queue replay before invoking this method. Fresh work
+     * is checked against the same request bounds, immutable suite fingerprint, classification,
+     * executable generation, and statistical work budget as synchronous execution. The returned
+     * descriptor contains no suite cases, fixtures, credentials, or business payload.</p>
+     *
+     * @param suiteId path-bound immutable suite identity
+     * @param request exact stability execution intent
+     * @param identity verified non-production workload identity
+     * @return payload-free deterministic execution descriptor for durable queue admission
+     */
+    public TestSuiteStabilityExecutionDescriptor authorizeSubmission(
+            String suiteId,
+            TestSuiteStabilityExecutionRequest request,
+            IntegrationRequestContext identity) {
+        requireExecutionIdentity(identity);
+        validateRequest(suiteId, request, identity);
+        String requestFingerprint = ProtocolFingerprint.of(objectMapper, request);
+        return authorizeCurrentSuite(request, identity, requestFingerprint).descriptor();
+    }
+
+    private AuthorizedSubmission authorizeCurrentSuite(
+            TestSuiteStabilityExecutionRequest request,
+            IntegrationRequestContext identity,
+            String requestFingerprint) {
+        StoredTestSuite stored = suiteRegistry.find(request.suiteRef().suiteId(),
+                request.suiteRef().revision(), identity);
+        requireClearance(stored.suite().classification(), identity);
+        if (!request.suiteRef().fingerprint().equals(stored.fingerprint())) {
+            throw conflict(identity, "RG.TEST.STABILITY_SUITE_FINGERPRINT_CONFLICT",
+                    "Stored suite differs from the exact stability execution reference.");
+        }
+        requireSupportedSuite(stored.suite(), identity);
+        requireStatisticalWorkBudget(stored.suite(), request, identity);
+        return new AuthorizedSubmission(stored,
+                TestSuiteStabilityExecutionIdentity.descriptor(
+                        objectMapper, identity, request.clientRequestId(), requestFingerprint,
+                        stored.suite().classification()));
     }
 
     private void releaseUnmonitored(TestSuiteStabilityExecutionLease lease) {
@@ -613,7 +647,7 @@ public final class TestSuiteStabilityExecutionService {
                         "The statistical confidence target exceeds the bounded protocol horizon.");
             }
         }
-        if (request.clientRequestId().isBlank()
+        if (!IDENTIFIER.matcher(request.clientRequestId()).matches()
                 || request.clientRequestId().length() > MAX_CLIENT_REQUEST_ID_LENGTH) {
             throw badRequest(identity, "RG.TEST.STABILITY_IDEMPOTENCY_KEY_INVALID",
                     "clientRequestId must be a bounded non-empty idempotency key.");
@@ -738,6 +772,11 @@ public final class TestSuiteStabilityExecutionService {
 
     private static String normalized(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private record AuthorizedSubmission(
+            StoredTestSuite suite,
+            TestSuiteStabilityExecutionDescriptor descriptor) {
     }
 
     private static IntegrationProblemException badRequest(

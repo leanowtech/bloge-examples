@@ -121,6 +121,7 @@ Independent-store settings:
 | `gateway.testing.stability-runs.heartbeat-interval-seconds` | `RG_TEST_STABILITY_HEARTBEAT_SECONDS` | `5` |
 | `gateway.testing.stability-runs.lease-cleanup-interval-ms` | `RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS` | `15000` |
 | `gateway.testing.stability-runs.lease-cleanup-batch-size` | `RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE` | `1000` |
+| `gateway.testing.stability-jobs.api.retry-after-seconds` | `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` | `5` |
 | `gateway.testing.replay-payloads.maximum-retention-days` | `RG_TEST_REPLAY_MAX_RETENTION_DAYS` | `30` |
 | `gateway.testing.replay-payloads.sweep-interval-ms` | `RG_TEST_REPLAY_SWEEP_INTERVAL_MS` | `60000` |
 | `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |
@@ -2760,8 +2761,10 @@ substitute. Bounded cleanup removes expired orphan leases, while derived child i
 the narrower source-terminal-before-parent-checkpoint crash window. See
 [Stage 5 suite-stability execution-lease verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md)
 and [durable parent-progress verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md)
-for the state, shutdown, crash-window, and failure matrices. This is resumable single-owner
-coordination, not asynchronous queueing or distributed attempt scheduling.
+for the state, shutdown, crash-window, and failure matrices. The synchronous endpoint remains a
+resumable single-owner call. The durable non-blocking job protocol below uses the same execution
+semantics behind database-authoritative admission; neither path claims distributed attempt-level
+scheduling.
 
 Request v1 returns complete terminal response/evidence/attestation v2. Request v2 returns matching
 v3 objects containing the signed statistical assessment. Retained v1 responses remain queryable for
@@ -2833,6 +2836,91 @@ trust decision. CLI options `--confidence-bps` and `--max-instability-rate-bps` 
 when `--attempts` is omitted, the exact minimum horizon is used. See
 [Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)
 for the implementation boundary and negative proofs.
+
+#### Submit, inspect, and cancel a durable stability job
+
+The asynchronous protocol is a separate application boundary over the same exact execution request.
+It never returns the stored principal, execution metadata, source attempt ids, lease owner/epoch,
+cancellation fingerprint, policy generation, or row-integrity seal. Submit is authenticated with the
+dedicated `TEST_SUITE_STABILITY_JOB_SUBMIT` operation and returns `202 Accepted` plus a canonical
+`Location` header:
+
+```http
+POST /api/testing/suites/loan-decision-regression/stability-jobs
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+```
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteStabilityJobSubmitRequest.v1",
+  "execution": {
+    "schemaVersion": "bloge.testSuiteStabilityExecutionRequest.v1",
+    "suiteRef": {
+      "suiteId": "loan-decision-regression",
+      "revision": 1,
+      "fingerprint": "sha256:<returned-by-suite-registration>"
+    },
+    "clientRequestId": "risk-ci-1842-stability-job",
+    "attempts": 10,
+    "metadata": {"pipeline": "nightly", "buildId": "1842"}
+  },
+  "priority": "NORMAL",
+  "deadlineAt": "2026-07-19T00:00:00Z"
+}
+```
+
+`deadlineAt` is an integral-second UTC timestamp. Database time accepts it only when it is in the
+future and inside `maximum-deadline-horizon-days`. `clientRequestId`, tenant, and environment derive
+the stable `stability-job-<sha256>` identity. Exact replay is resolved before rereading the mutable
+suite registry, so a retained accepted command remains observable during authority outages or after
+registry evolution. Changing execution, priority, or deadline under the same request identity returns
+`409 RG.TEST.STABILITY_JOB_IDEMPOTENCY_CONFLICT`.
+
+Poll with the returned location:
+
+```bash
+curl -sS http://localhost:8080/api/testing/stability-jobs/<jobId> \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+The closed status vocabulary is `QUEUED`, `RUNNING`, `CANCEL_REQUESTED`, `COMMITTING`, `SUCCEEDED`,
+`FAILED`, `CANCELLED`, `EXPIRED`, and `QUARANTINED`. Only `SUCCEEDED` carries `stabilityRunId` and
+`evidenceFingerprint`; only the five terminal states report `terminal=true`. Query first scopes by
+verified tenant/environment and then verifies organization/project. A mismatch is the same
+`404 RG.TEST.STABILITY_JOB_NOT_FOUND` as absence, preventing cross-scope probing.
+
+Cancel with a separate caller-stable command identity:
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/testing/stability-jobs/<jobId>/cancellations \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION' \
+  -H 'Content-Type: application/json' \
+  -d '{"schemaVersion":"bloge.testSuiteStabilityJobCancelRequest.v1",\
+       "clientRequestId":"cancel-risk-ci-1842"}'
+```
+
+Queued work becomes `CANCELLED`; running work becomes `CANCEL_REQUESTED` and stops at the next
+cooperative checkpoint. `COMMITTING` has already crossed the final cancellation/deadline
+linearization point and is returned unchanged. Cancellation replay is bound to the authenticated
+actor/delegation command but not transient correlation ids.
+
+Fresh submit is available only when
+`gateway.testing.stability-jobs.worker.enabled=true` and startup has found exactly one current-IAM
+`TestSuiteStabilityJobAuthorizer`. When disabled, query/cancel remain operational and submit returns
+`503 RG.TEST.STABILITY_JOB_SUBMISSION_UNAVAILABLE` with `Retry-After`. Queue and tenant capacity
+return `429`; policy drift returns retryable `503`; expired retained detail returns `410`. Discover
+the distinction through `testability.suiteStabilityJobSubmissionEnabled` and the
+`asyncSuiteStabilityJobProtocol`, `asyncSuiteStabilityJobSubmission`,
+`asyncSuiteStabilityJobQuery`, and `asyncSuiteStabilityJobCancellation` feature flags. The strict
+request/response definitions live in
+[`testing-control-plane-v1.schema.json`](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
+Implementation evidence and deliberately unclaimed guarantees are recorded in
+[Stage 5 suite-stability public protocol verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-public-protocol-verification.md).
 
 ### 4.2.5 Materialize the built-in graph catalog
 

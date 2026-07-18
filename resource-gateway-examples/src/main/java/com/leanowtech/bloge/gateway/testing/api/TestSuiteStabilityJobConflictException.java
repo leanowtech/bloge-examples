@@ -10,6 +10,7 @@ public final class TestSuiteStabilityJobConflictException extends RuntimeExcepti
         POLICY_DRIFT,
         GLOBAL_QUEUE_FULL,
         TENANT_QUEUE_FULL,
+        DEADLINE_INVALID,
         NOT_FOUND,
         LEASE_LOST,
         TERMINAL_CONFLICT,

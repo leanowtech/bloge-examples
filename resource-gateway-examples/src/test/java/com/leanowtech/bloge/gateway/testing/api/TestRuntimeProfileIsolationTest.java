@@ -54,6 +54,8 @@ class TestRuntimeProfileIsolationTest {
         try (AnnotationConfigApplicationContext context = context("production")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobController.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestExecutionQueryController.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -164,6 +166,8 @@ class TestRuntimeProfileIsolationTest {
         try (AnnotationConfigApplicationContext context = context("test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     DurableTestExecutionQueryController.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -257,6 +261,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBean(TestabilityAvailability.class).executionEndpointEnabled())
                     .isTrue();
             assertThat(context.getBean(TestabilityAvailability.class)
+                    .suiteStabilityJobSubmissionEnabled()).isFalse();
+            assertThat(context.getBean(TestabilityAvailability.class)
                     .workerQuarantineRequestIndexMode())
                     .isEqualTo(WorkerQuarantineRequestIndexMode.KEYED_ONLY);
             assertThat(context.getBeansOfType(
@@ -323,6 +329,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).hasSize(1);
             assertThat(context.getBean(TestSuiteStabilityJobScheduler.class).closed()).isFalse();
+            assertThat(context.getBean(TestabilityAvailability.class)
+                    .suiteStabilityJobSubmissionEnabled()).isTrue();
         }
     }
 
@@ -385,6 +393,21 @@ class TestRuntimeProfileIsolationTest {
     }
 
     @Test
+    void invalidStabilityJobApiRetryHintFailsStartupWhileWorkerIsDisabled() {
+        AnnotationConfigApplicationContext context = unrefreshedContext(Map.of(
+                "gateway.testing.stability-jobs.api.retry-after-seconds", "0"),
+                0, "test");
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("retryAfter must be whole seconds");
+        } finally {
+            context.close();
+        }
+    }
+
+    @Test
     void invalidStabilityJobRequestIndexKeyFailsStartupWhileWorkerIsDisabled() {
         AnnotationConfigApplicationContext context = unrefreshedContext(Map.of(
                 "gateway.testing.stability-jobs.retention.request-key-protection.key-ring",
@@ -424,6 +447,8 @@ class TestRuntimeProfileIsolationTest {
         try (AnnotationConfigApplicationContext context = context("production", "test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobController.class)).isEmpty();
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     DurableTestExecutionQueryController.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -588,6 +613,7 @@ class TestRuntimeProfileIsolationTest {
         }
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
                 TestSuiteStabilityController.class,
+                TestSuiteStabilityJobController.class,
                 DurableTestExecutionQueryController.class,
                 DurableTestOwnerClaimController.class,
                 DurableTestWorkerAcquisitionController.class,

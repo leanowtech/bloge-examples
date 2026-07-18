@@ -105,6 +105,18 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityProgress/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteStabilityProgressResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityJobSubmitRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityJobSubmitRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityJobCancelRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityJobCancelRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityJobView/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityJobView.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityJobSubmitResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityJobSubmitResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV1/properties/schemaVersion/const").asText())
@@ -1053,6 +1065,37 @@ class TestingControlProtocolSchemaTest {
                 .isFalse();
         assertThat(definitions.at("/testSuiteStabilityProgress/properties").has("attempts"))
                 .isFalse();
+    }
+
+    @Test
+    void asynchronousStabilityJobSchemaIsStrictStateBoundAndPayloadFree() throws Exception {
+        JsonNode definitions = new ObjectMapper().readTree(Files.readString(Path.of("..", "docs",
+                "schemas", "resource-gateway-testing",
+                "testing-control-plane-v1.schema.json"))).path("$defs");
+
+        JsonNode submit = definitions.path("testSuiteStabilityJobSubmitRequest");
+        JsonNode cancel = definitions.path("testSuiteStabilityJobCancelRequest");
+        JsonNode view = definitions.path("testSuiteStabilityJobView");
+        assertThat(submit.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(cancel.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(view.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(submit.path("required")).extracting(JsonNode::asText)
+                .containsExactly("schemaVersion", "execution", "priority", "deadlineAt");
+        assertThat(submit.at("/properties/deadlineAt/pattern").asText()).endsWith("Z$");
+        assertThat(cancel.at("/properties/clientRequestId/pattern").asText())
+                .isEqualTo("^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$");
+        assertThat(view.at("/properties/status/enum")).extracting(JsonNode::asText)
+                .containsExactly("QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMMITTING",
+                        "SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED", "QUARANTINED");
+        assertThat(view.path("allOf")).hasSize(2);
+        assertThat(view.at("/allOf/0/oneOf")).hasSize(2);
+        assertThat(view.at("/allOf/1/oneOf")).hasSize(2);
+        assertThat(java.util.List.of("principal", "execution", "metadata", "leaseOwner",
+                        "leaseEpoch", "cancellationFingerprint", "recordFingerprint"))
+                .noneMatch(view.path("properties")::has);
+        assertThat(definitions.at(
+                "/testSuiteStabilityJobSubmitResponse/properties/job/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteStabilityJobView");
     }
 
     @Test

@@ -54,6 +54,7 @@ public class ToolStudioIntegrationService {
     private EvidenceKeySetTrustPublicationRepository evidenceTrustPublications;
     private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
+    private boolean suiteStabilityJobSubmissionEnabled;
     private WorkerQuarantineRequestIndexMode workerQuarantineRequestIndexMode;
     private WorkerQuarantineChangeAuthorizationTrustStore.Descriptor
             workerQuarantineChangeAuthorizationTrust =
@@ -92,6 +93,8 @@ public class ToolStudioIntegrationService {
     @Autowired(required = false)
     void configureTestability(TestabilityAvailability availability) {
         this.testExecutionEndpointEnabled = availability != null && availability.executionEndpointEnabled();
+        this.suiteStabilityJobSubmissionEnabled = availability != null
+                && availability.suiteStabilityJobSubmissionEnabled();
         this.workerQuarantineRequestIndexMode = this.testExecutionEndpointEnabled
                 ? availability.workerQuarantineRequestIndexMode() : null;
         this.workerQuarantineChangeAuthorizationTrust = availability == null
@@ -194,7 +197,8 @@ public class ToolStudioIntegrationService {
                         sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor(),
                         testExecutionEndpointEnabled, evidenceTrustStore.descriptor(),
                         workerQuarantineRequestIndexMode,
-                        workerQuarantineChangeAuthorizationTrust));
+                        workerQuarantineChangeAuthorizationTrust,
+                        suiteStabilityJobSubmissionEnabled));
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,
