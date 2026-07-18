@@ -307,6 +307,18 @@ parent terminal 已存在的 replay 仍必须执行 `executionStarted -> prepare
 继续关闭；验证与下一步 guard 条件见
 [Stage 5 suite-stability controlled execution verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-controlled-execution-verification.md)。
 
+第五十三增量第三子步进一步根治 queue stop 与 parent stop 跨事务提交的 crash window。队列不再先写
+`CANCELLED/EXPIRED/FAILED` 后补 parent tombstone；每条 stop path 都先由 parent authority 在独立事务
+提交 exact、payload-free、可重放 tombstone 并消费 progress/lease，再允许外层 queue 提交终态。即使
+外层 rollback，留下的也只是禁止恢复的保守 stop；不会再出现 queue 已终态而同步 parent 可复活的状态。
+若 signed parent 已先完成，authority 只有在 scope/request/classification、canonical evidence fingerprint
+与 detached signature 全部验证通过后才返回 completed winner，queue 随之收敛 `SUCCEEDED`；普通哈希
+字段一致但签名被篡改的记录不能成为成功证据。同步与异步路径也已共用 deterministic parent identity
+实现。51 项聚焦测试证明 parent-first rollback、retry exhaustion 防穿透、stop replay、签名 winner 和
+corrupted-signature fail-closed。该子步仍不等于 worker 已可用，heartbeat、delegated authority
+revalidation、HTTP/Schema/capability/test-kit 与 SLO 仍待接线。验证见
+[Stage 5 suite-stability parent-first terminal verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-parent-first-terminal-verification.md)。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

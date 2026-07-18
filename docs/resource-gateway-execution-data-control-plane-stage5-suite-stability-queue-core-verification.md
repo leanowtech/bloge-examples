@@ -20,7 +20,9 @@ The new core owns:
 8. deterministic bounded retry backoff, retry exhaustion, and irrevocable publication recovery;
 9. payload-free closed-status queue observations;
 10. whole-row integrity verification and bounded terminal retention deletion;
-11. payload-free parent stop tombstones that atomically consume resumable progress and leases.
+11. payload-free parent stop tombstones that atomically consume resumable progress and leases;
+12. parent-first queue termination that cannot leave a terminal queue row above resumable parent
+    progress after an outer transaction failure.
 
 ## 2. Root-cause decision
 
@@ -64,11 +66,13 @@ poison-row quarantine is not implemented by this atomic step and therefore is no
 
 The queue state alone cannot prevent an older synchronous entry point from reclaiming durable
 parent progress. The parent repository therefore has a second terminal authority:
-`TestSuiteStabilityExecutionStop`. In the same scoped transaction, a cancellation, deadline, or
-worker failure writes an integrity-fingerprinted, payload-free tombstone and consumes the exact
-parent progress plus lease. Future claims return `STOPPED`; stale owners cannot checkpoint or
-publish. Conversely, once signed terminal evidence exists, a late stop is rejected. A stop and
-signed evidence therefore have one serialized winner.
+`TestSuiteStabilityExecutionStop`. A cancellation, deadline, or worker failure first commits an
+integrity-fingerprinted, payload-free parent tombstone in an independent transaction and consumes
+the exact parent progress plus lease. Only then may the outer queue transaction commit
+`CANCELLED`, `EXPIRED`, or `FAILED`. Future claims return `STOPPED`; stale owners cannot checkpoint
+or publish. Conversely, once cryptographically verified signed terminal evidence exists, it wins
+and the queue converges to `SUCCEEDED`. Stop and signed evidence therefore have one serialized,
+fail-closed winner.
 
 ## 4. Cross-replica invariants
 
@@ -84,6 +88,11 @@ signed evidence therefore have one serialized winner.
   remains capacity-accounted and cannot be failed or cancelled.
 - Parent stop and signed terminal publication share the same scoped lock; stop creation, progress
   deletion, and lease deletion are one transaction.
+- Queue stop transitions are parent-first: outer rollback may retain a conservative idempotent
+  parent stop, but can never retain a terminal queue row above a resumable parent.
+- A completed-parent winner is accepted only after exact scope/request/classification binding,
+  canonical evidence fingerprint recomputation, source-closure validation, and detached-signature
+  verification. Hash-consistent database tampering does not become queue success.
 - Stop replay must match run id, request fingerprint, classification, reason, failure code, actor,
   and retention. Its canonical fingerprint is recomputed on every read.
 - Stored request and principal JSON are decoded only after scope lookup and are re-fingerprinted on
@@ -97,17 +106,20 @@ Focused command:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=DatabaseTestSuiteStabilityJobRepositoryTest,DatabaseTestSuiteStabilityRunRepositoryTest test
+  -Dtest=DatabaseTestSuiteStabilityJobRepositoryTest,\
+RepositoryTestSuiteStabilityJobParentAuthorityTest,\
+DatabaseTestSuiteStabilityRunRepositoryTest,TestSuiteStabilityExecutionServiceTest test
 ```
 
-The 28 focused tests cover scoped submission replay, priority/deadline/principal idempotency conflict,
+The 51 focused tests cover scoped submission replay, priority/deadline/principal idempotency conflict,
 tenant/global capacity, tenant rotation, tenant-local priority, cross-replica running limits,
 queued and running cancellation, cancellation-versus-retry ordering, retry exhaustion, policy
 drift and drain-time advancement, fixed-cardinality observation, retained-row integrity failure,
 non-premature retention deletion, the `COMMITTING` cancellation linearization point and recovery
 lane, stop-before-claim, stop-after-checkpoint, stale-owner fencing, strict stop replay, late-stop
-rejection after signed evidence, and corrupted-stop fail-closed behavior.
-The 13 affected service tests additionally prove that a retained stop maps to a stable payload-free
+rejection after signed evidence, corrupted-stop fail-closed behavior, parent-first rollback,
+cryptographically verified parent completion, and corrupted-signature rejection.
+The 17 affected service tests additionally prove that a retained stop maps to a stable payload-free
 conflict and cannot be bypassed through the synchronous execution entry point.
 
 ## 6. Required next step
@@ -117,8 +129,8 @@ This core must not be advertised as a usable asynchronous runtime until the next
 1. authenticated submit/query/cancel protocol and strict JSON Schema;
 2. a worker that claims only when it owns a local execution slot and heartbeats while running;
 3. a control checkpoint in the parent runner before each attempt and before terminal publication;
-4. a worker guard that invokes parent stop while its parent lease is live and enters
-   `COMMITTING` before signed terminal publication;
+4. a worker guard that delegates every terminal stop to the queue repository's parent-first
+   authority and enters `COMMITTING` before signed terminal publication;
 5. current authorization revalidation for delegated principals;
 6. bounded-cardinality Micrometer projection and SLO/readiness thresholds;
 7. retention scheduler, test-kit typed client, capability truth, and full build evidence;

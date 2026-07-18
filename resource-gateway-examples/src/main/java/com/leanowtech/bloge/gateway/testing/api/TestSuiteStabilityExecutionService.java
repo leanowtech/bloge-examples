@@ -153,11 +153,12 @@ public final class TestSuiteStabilityExecutionService {
         requireSupportedSuite(stored.suite(), identity);
         requireStatisticalWorkBudget(stored.suite(), request, identity);
 
-        String stabilityRunId = stabilityRunId(identity, requestFingerprint);
-        executionControl.executionStarted(new TestSuiteStabilityExecutionDescriptor(
-                stabilityRunId, identity.tenantId(), identity.environmentId(),
-                request.clientRequestId(), requestFingerprint,
-                stored.suite().classification()));
+        TestSuiteStabilityExecutionDescriptor execution =
+                TestSuiteStabilityExecutionIdentity.descriptor(
+                        objectMapper, identity, request.clientRequestId(),
+                        requestFingerprint, stored.suite().classification());
+        String stabilityRunId = execution.stabilityRunId();
+        executionControl.executionStarted(execution);
         TestSuiteStabilityLeaseRequest leaseRequest;
         try {
             leaseRequest = leaseCoordinator.request(
@@ -667,17 +668,6 @@ public final class TestSuiteStabilityExecutionService {
             throw badRequest(identity, "RG.TEST.STABILITY_STATISTICAL_WORK_BUDGET_EXCEEDED",
                     "The statistical horizon exceeds the bounded attempt-by-case work budget.");
         }
-    }
-
-    private String stabilityRunId(
-            IntegrationRequestContext identity,
-            String requestFingerprint) {
-        String fingerprint = ProtocolFingerprint.of(objectMapper, Map.of(
-                "schemaVersion", "bloge.testSuiteStabilityRunIdentity.v1",
-                "tenantId", identity.tenantId(),
-                "environmentId", identity.environmentId(),
-                "requestFingerprint", requestFingerprint));
-        return "stability-" + fingerprint.substring("sha256:".length());
     }
 
     private String attemptClientRequestId(

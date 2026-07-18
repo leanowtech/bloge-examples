@@ -17,6 +17,8 @@ public record TestSuiteStabilityJobLeaseCheck(
         CONTINUE,
         CANCELLED,
         DEADLINE_EXCEEDED,
+        /** Signed parent evidence won while a stop was being linearized. */
+        PARENT_COMPLETED,
         LEASE_LOST
     }
 

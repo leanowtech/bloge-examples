@@ -310,6 +310,17 @@ source verified/pre-checkpoint、evidence seal 与 terminal publication 边界 f
 验证见
 [Stage 5 suite-stability controlled execution verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-controlled-execution-verification.md)。
 
+第五十三增量第三子步关闭 queue terminal 与 resumable parent 分属两个事务时的崩溃反序窗口。此前若先
+提交 `CANCELLED/EXPIRED/FAILED` 再写 parent stop，中间 crash 会留下“queue 已终态、同步入口仍可恢复并
+发布”的矛盾状态。现在所有 queue stop path 先调用 parent authority：独立事务提交 payload-free stop、
+消费 progress/lease 后，外层 queue 才能终态；外层回滚至多留下可幂等重放的保守 stop，不可能留下危险
+反序。若 signed parent 先赢，则必须通过 scope/request/classification 精确回绑、canonical evidence hash
+重算和 detached signature 验证，queue 才收敛 `SUCCEEDED`；签名损坏或验证不可用一律 fail closed。
+同步与 queued execution 同时复用唯一 deterministic parent identity derivation，避免算法漂移。51 项聚焦
+测试覆盖 parent-first rollback、retry exhaustion 回滚、stop replay、合法签名获胜与损坏签名拒绝。
+worker/heartbeat/authorization revalidation 与公开协议仍未接线，能力声明保持关闭。验证见
+[Stage 5 suite-stability parent-first terminal verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-parent-first-terminal-verification.md)。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制

@@ -3,9 +3,11 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLeaseCheck;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobParentAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobPrincipal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
@@ -34,6 +36,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
     private DriverManagerDataSource dataSource;
     private JdbcTemplate jdbc;
     private DatabaseTestSuiteStabilityJobRepository repository;
+    private FakeParentAuthority parentAuthority;
 
     @BeforeEach
     void setUp() {
@@ -42,8 +45,9 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 "jdbc:h2:mem:test-stability-jobs-" + System.nanoTime()
                         + ";DB_CLOSE_DELAY=-1", "sa", "");
         jdbc = new JdbcTemplate(dataSource);
+        parentAuthority = new FakeParentAuthority();
         repository = new DatabaseTestSuiteStabilityJobRepository(
-                jdbc, mapper, new DataSourceTransactionManager(dataSource));
+                jdbc, mapper, parentAuthority, new DataSourceTransactionManager(dataSource));
         repository.init();
     }
 
@@ -131,6 +135,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 TestSuiteStabilityJobSubmission.Priority.NORMAL), policy);
         DatabaseTestSuiteStabilityJobRepository replica =
                 new DatabaseTestSuiteStabilityJobRepository(new JdbcTemplate(dataSource), mapper,
+                        parentAuthority,
                         new DataSourceTransactionManager(dataSource));
         replica.init();
         CountDownLatch start = new CountDownLatch(1);
@@ -203,6 +208,60 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityJobConflictException.Reason.CANCELLATION_CONFLICT));
+        assertThat(parentAuthority.invocations).singleElement().satisfies(invocation -> {
+            assertThat(invocation.status())
+                    .isEqualTo(TestSuiteStabilityJobRecord.Status.QUEUED);
+            assertThat(invocation.reason())
+                    .isEqualTo(TestSuiteStabilityExecutionStop.Reason.CANCELLED);
+            assertThat(invocation.failureCode())
+                    .isEqualTo("RG.TEST.STABILITY_JOB_CANCELLED");
+            assertThat(invocation.retention()).isEqualTo(policy.terminalRetention());
+        });
+    }
+
+    @Test
+    void signedParentWinnerConvergesQueuedCancellationToSuccess() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        parentAuthority.resolution = TestSuiteStabilityJobParentAuthority.Resolution.completed(
+                "stability-signed-winner",
+                TestSuiteStabilityProtocolFixtures.fingerprint('6'));
+
+        TestSuiteStabilityJobRecord result = repository.cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
+
+        assertThat(result.status()).isEqualTo(TestSuiteStabilityJobRecord.Status.SUCCEEDED);
+        assertThat(result.terminalStabilityRunId()).isEqualTo("stability-signed-winner");
+        assertThat(result.terminalEvidenceFingerprint())
+                .isEqualTo(TestSuiteStabilityProtocolFixtures.fingerprint('6'));
+        assertThat(result.cancellationRequestId()).isBlank();
+        assertThat(result.failureCode()).isBlank();
+    }
+
+    @Test
+    void parentAuthorityFailureRollsBackQueuedCancellation() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        parentAuthority.failure = new IllegalStateException("parent stop unavailable");
+
+        assertThatThrownBy(() -> repository.cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("parent stop unavailable");
+
+        assertThat(repository.find("tenant-a", "test", submission.jobId()))
+                .get().satisfies(retained -> {
+                    assertThat(retained.status())
+                            .isEqualTo(TestSuiteStabilityJobRecord.Status.QUEUED);
+                    assertThat(retained.cancellationRequestId()).isBlank();
+                    assertThat(retained.failureCode()).isBlank();
+                });
     }
 
     @Test
@@ -238,6 +297,31 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         assertThat(failed.retryCount()).isEqualTo(1);
         assertThat(repository.checkAndRenew(claim.lease(), policy).decision())
                 .isEqualTo(TestSuiteStabilityJobLeaseCheck.Decision.LEASE_LOST);
+        assertThat(parentAuthority.invocations).singleElement()
+                .extracting(FakeParentAuthority.Invocation::reason)
+                .isEqualTo(TestSuiteStabilityExecutionStop.Reason.WORKER_FAILED);
+    }
+
+    @Test
+    void retryExhaustionCannotCommitBeforeParentStopAuthority() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 0);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
+        parentAuthority.failure = new IllegalStateException("parent stop unavailable");
+
+        assertThatThrownBy(() -> repository.retry(claim.lease(),
+                "RG.TEST.STABILITY_JOB_SOURCE_UNAVAILABLE", policy))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("parent stop unavailable");
+
+        assertThat(repository.find("tenant-a", "test", submission.jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.RUNNING);
+        parentAuthority.failure = null;
+        assertThat(repository.checkAndRenew(claim.lease(), policy).decision())
+                .isEqualTo(TestSuiteStabilityJobLeaseCheck.Decision.CONTINUE);
     }
 
     @Test
@@ -373,5 +457,33 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                         "ci-runner", "", "TEST_EXECUTION", "correlation-1",
                         Set.of("test-runners"), "INTERNAL", ""),
                 priority, Instant.now().plus(Duration.ofHours(1)));
+    }
+
+    private static final class FakeParentAuthority
+            implements TestSuiteStabilityJobParentAuthority {
+        private final List<Invocation> invocations =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private Resolution resolution = Resolution.stopped();
+        private RuntimeException failure;
+
+        @Override
+        public Resolution stop(
+                TestSuiteStabilityJobRecord job,
+                TestSuiteStabilityExecutionStop.Reason reason,
+                String failureCode,
+                Duration retention) {
+            invocations.add(new Invocation(job.status(), reason, failureCode, retention));
+            if (failure != null) {
+                throw failure;
+            }
+            return resolution;
+        }
+
+        private record Invocation(
+                TestSuiteStabilityJobRecord.Status status,
+                TestSuiteStabilityExecutionStop.Reason reason,
+                String failureCode,
+                Duration retention) {
+        }
     }
 }

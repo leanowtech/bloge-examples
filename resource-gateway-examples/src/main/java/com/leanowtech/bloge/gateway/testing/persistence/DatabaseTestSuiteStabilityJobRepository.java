@@ -3,11 +3,13 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLeaseCheck;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobPrincipal;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobParentAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
@@ -43,7 +45,10 @@ import java.util.regex.Pattern;
  * <p>One environment lock serializes policy convergence, capacity admission, stale-owner recovery,
  * tenant cursor movement, and claims. This intentionally trades peak claim throughput for a simple
  * proof that independently deployed replicas cannot over-admit or select different next tenants.
- * Execution itself occurs outside the transaction under an exact per-job lease.</p>
+ * Execution itself occurs outside the transaction under an exact per-job lease. Every queue
+ * terminal stop invokes the parent-first authority before its queue transition; a failed outer
+ * transaction can therefore leave only a conservative replayable parent stop, never a terminal
+ * queue row with resumable parent progress.</p>
  */
 public final class DatabaseTestSuiteStabilityJobRepository
         implements TestSuiteStabilityJobRepository {
@@ -57,19 +62,23 @@ public final class DatabaseTestSuiteStabilityJobRepository
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final TestSuiteStabilityJobParentAuthority parentAuthority;
     private final TransactionTemplate mutations;
 
     /**
      * @param jdbc isolated test-runtime JDBC adapter
      * @param objectMapper canonical protocol mapper
+     * @param parentAuthority parent-first stop or signed-winner resolver
      * @param transactionManager transaction manager for the same datasource
      */
     public DatabaseTestSuiteStabilityJobRepository(
             JdbcTemplate jdbc,
             ObjectMapper objectMapper,
+            TestSuiteStabilityJobParentAuthority parentAuthority,
             PlatformTransactionManager transactionManager) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.parentAuthority = Objects.requireNonNull(parentAuthority, "parentAuthority");
         mutations = new TransactionTemplate(
                 Objects.requireNonNull(transactionManager, "transactionManager"));
         mutations.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -285,10 +294,18 @@ public final class DatabaseTestSuiteStabilityJobRepository
             StoredJob stored = candidate.get();
             if (stored.record().status()
                     == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
-                StoredJob cancelled = terminal(stored,
-                        TestSuiteStabilityJobRecord.Status.CANCELLED, observedAt,
-                        "RG.TEST.STABILITY_JOB_CANCELLED", policy);
+                StoredJob cancelled = parentTerminal(stored,
+                        TestSuiteStabilityJobRecord.Status.CANCELLED,
+                        TestSuiteStabilityExecutionStop.Reason.CANCELLED, observedAt,
+                        "RG.TEST.STABILITY_JOB_CANCELLED", policy,
+                        stored.record().retryCount());
                 updateExact(stored, cancelled);
+                if (cancelled.record().status()
+                        == TestSuiteStabilityJobRecord.Status.SUCCEEDED) {
+                    return TestSuiteStabilityJobLeaseCheck.stopped(
+                            TestSuiteStabilityJobLeaseCheck.Decision.PARENT_COMPLETED,
+                            "RG.TEST.STABILITY_JOB_PARENT_COMPLETED");
+                }
                 return TestSuiteStabilityJobLeaseCheck.stopped(
                         TestSuiteStabilityJobLeaseCheck.Decision.CANCELLED,
                         "RG.TEST.STABILITY_JOB_CANCELLED");
@@ -309,10 +326,18 @@ public final class DatabaseTestSuiteStabilityJobRepository
                         "RG.TEST.STABILITY_JOB_LEASE_LOST");
             }
             if (!stored.record().deadlineAt().isAfter(observedAt)) {
-                StoredJob expired = terminal(stored,
-                        TestSuiteStabilityJobRecord.Status.EXPIRED, observedAt,
-                        "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy);
+                StoredJob expired = parentTerminal(stored,
+                        TestSuiteStabilityJobRecord.Status.EXPIRED,
+                        TestSuiteStabilityExecutionStop.Reason.DEADLINE_EXCEEDED, observedAt,
+                        "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy,
+                        stored.record().retryCount());
                 updateExact(stored, expired);
+                if (expired.record().status()
+                        == TestSuiteStabilityJobRecord.Status.SUCCEEDED) {
+                    return TestSuiteStabilityJobLeaseCheck.stopped(
+                            TestSuiteStabilityJobLeaseCheck.Decision.PARENT_COMPLETED,
+                            "RG.TEST.STABILITY_JOB_PARENT_COMPLETED");
+                }
                 return TestSuiteStabilityJobLeaseCheck.stopped(
                         TestSuiteStabilityJobLeaseCheck.Decision.DEADLINE_EXCEEDED,
                         "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED");
@@ -342,17 +367,21 @@ public final class DatabaseTestSuiteStabilityJobRepository
             StoredJob stored = requireLive(lease, observedAt);
             if (stored.record().status()
                     == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
-                StoredJob cancelled = terminal(stored,
-                        TestSuiteStabilityJobRecord.Status.CANCELLED, observedAt,
-                        "RG.TEST.STABILITY_JOB_CANCELLED", policy);
+                StoredJob cancelled = parentTerminal(stored,
+                        TestSuiteStabilityJobRecord.Status.CANCELLED,
+                        TestSuiteStabilityExecutionStop.Reason.CANCELLED, observedAt,
+                        "RG.TEST.STABILITY_JOB_CANCELLED", policy,
+                        stored.record().retryCount());
                 updateExact(stored, cancelled);
                 return CompletionPreparation.rejected(
                         "Cancellation won before suite-stability terminal publication");
             }
             if (!stored.record().deadlineAt().isAfter(observedAt)) {
-                StoredJob expired = terminal(stored,
-                        TestSuiteStabilityJobRecord.Status.EXPIRED, observedAt,
-                        "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy);
+                StoredJob expired = parentTerminal(stored,
+                        TestSuiteStabilityJobRecord.Status.EXPIRED,
+                        TestSuiteStabilityExecutionStop.Reason.DEADLINE_EXCEEDED, observedAt,
+                        "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy,
+                        stored.record().retryCount());
                 updateExact(stored, expired);
                 return CompletionPreparation.rejected(
                         "Deadline won before suite-stability terminal publication");
@@ -395,9 +424,11 @@ public final class DatabaseTestSuiteStabilityJobRepository
             StoredJob stored = requireLive(lease, observedAt);
             if (stored.record().status()
                     == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
-                StoredJob cancelled = terminal(stored,
-                        TestSuiteStabilityJobRecord.Status.CANCELLED, observedAt,
-                        "RG.TEST.STABILITY_JOB_CANCELLED", policy);
+                StoredJob cancelled = parentTerminal(stored,
+                        TestSuiteStabilityJobRecord.Status.CANCELLED,
+                        TestSuiteStabilityExecutionStop.Reason.CANCELLED, observedAt,
+                        "RG.TEST.STABILITY_JOB_CANCELLED", policy,
+                        stored.record().retryCount());
                 updateExact(stored, cancelled);
                 return cancelled.record();
             }
@@ -413,16 +444,20 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 return recoverable.record();
             }
             if (!stored.record().deadlineAt().isAfter(observedAt)) {
-                StoredJob expired = terminal(stored,
-                        TestSuiteStabilityJobRecord.Status.EXPIRED, observedAt,
-                        "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy);
+                StoredJob expired = parentTerminal(stored,
+                        TestSuiteStabilityJobRecord.Status.EXPIRED,
+                        TestSuiteStabilityExecutionStop.Reason.DEADLINE_EXCEEDED, observedAt,
+                        "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy,
+                        stored.record().retryCount());
                 updateExact(stored, expired);
                 return expired.record();
             }
             int retryCount = Math.addExact(stored.record().retryCount(), 1);
             StoredJob successor;
             if (retryCount > policy.maximumRetries()) {
-                successor = terminal(stored, TestSuiteStabilityJobRecord.Status.FAILED,
+                successor = parentTerminal(stored,
+                        TestSuiteStabilityJobRecord.Status.FAILED,
+                        TestSuiteStabilityExecutionStop.Reason.WORKER_FAILED,
                         observedAt, code, policy, retryCount);
             } else {
                 successor = transition(stored, TestSuiteStabilityJobRecord.Status.QUEUED,
@@ -451,9 +486,11 @@ public final class DatabaseTestSuiteStabilityJobRepository
             StoredJob stored = requireLive(lease, observedAt);
             if (stored.record().status()
                     == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
-                StoredJob cancelled = terminal(stored,
-                        TestSuiteStabilityJobRecord.Status.CANCELLED, observedAt,
-                        "RG.TEST.STABILITY_JOB_CANCELLED", policy);
+                StoredJob cancelled = parentTerminal(stored,
+                        TestSuiteStabilityJobRecord.Status.CANCELLED,
+                        TestSuiteStabilityExecutionStop.Reason.CANCELLED, observedAt,
+                        "RG.TEST.STABILITY_JOB_CANCELLED", policy,
+                        stored.record().retryCount());
                 updateExact(stored, cancelled);
                 return cancelled.record();
             }
@@ -462,8 +499,10 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
                         "Linearized suite-stability publication cannot be failed");
             }
-            StoredJob failed = terminal(stored, TestSuiteStabilityJobRecord.Status.FAILED,
-                    observedAt, code, policy);
+            StoredJob failed = parentTerminal(stored,
+                    TestSuiteStabilityJobRecord.Status.FAILED,
+                    TestSuiteStabilityExecutionStop.Reason.WORKER_FAILED,
+                    observedAt, code, policy, stored.record().retryCount());
             updateExact(stored, failed);
             return failed.record();
         });
@@ -548,12 +587,23 @@ public final class DatabaseTestSuiteStabilityJobRepository
                     == TestSuiteStabilityJobRecord.Status.QUEUED
                     ? TestSuiteStabilityJobRecord.Status.CANCELLED
                     : TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED;
-            Instant expiresAt = next.terminal()
-                    ? observedAt.plus(policy.terminalRetention()) : stored.record().expiresAt();
-            StoredJob cancelled = transition(stored, next, stored.record().retryCount(),
-                    stored.record().nextEligibleAt(), observedAt, expiresAt,
-                    stored.ownerId(), stored.leaseEpoch(), stored.leaseExpiresAt(), "", "",
-                    "RG.TEST.STABILITY_JOB_CANCELLED", requestId, cancellationFingerprint);
+            TestSuiteStabilityJobParentAuthority.Resolution parent = parentAuthority.stop(
+                    stored.record(), TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                    "RG.TEST.STABILITY_JOB_CANCELLED", policy.terminalRetention());
+            StoredJob cancelled;
+            if (parent.outcome()
+                    == TestSuiteStabilityJobParentAuthority.Outcome.COMPLETED) {
+                cancelled = parentCompleted(stored, parent, observedAt, policy,
+                        stored.record().retryCount());
+            } else {
+                Instant expiresAt = next.terminal()
+                        ? observedAt.plus(policy.terminalRetention())
+                        : stored.record().expiresAt();
+                cancelled = transition(stored, next, stored.record().retryCount(),
+                        stored.record().nextEligibleAt(), observedAt, expiresAt,
+                        stored.ownerId(), stored.leaseEpoch(), stored.leaseExpiresAt(), "", "",
+                        "RG.TEST.STABILITY_JOB_CANCELLED", requestId, cancellationFingerprint);
+            }
             updateExact(stored, cancelled);
             return cancelled.record();
         });
@@ -648,15 +698,22 @@ public final class DatabaseTestSuiteStabilityJobRepository
         for (StoredJob job : stale) {
             StoredJob successor;
             if (job.record().status() == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
-                successor = terminal(job, TestSuiteStabilityJobRecord.Status.CANCELLED,
-                        observedAt, "RG.TEST.STABILITY_JOB_CANCELLED", policy);
+                successor = parentTerminal(job,
+                        TestSuiteStabilityJobRecord.Status.CANCELLED,
+                        TestSuiteStabilityExecutionStop.Reason.CANCELLED, observedAt,
+                        "RG.TEST.STABILITY_JOB_CANCELLED", policy,
+                        job.record().retryCount());
             } else if (!job.record().deadlineAt().isAfter(observedAt)) {
-                successor = terminal(job, TestSuiteStabilityJobRecord.Status.EXPIRED,
-                        observedAt, "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy);
+                successor = parentTerminal(job,
+                        TestSuiteStabilityJobRecord.Status.EXPIRED,
+                        TestSuiteStabilityExecutionStop.Reason.DEADLINE_EXCEEDED, observedAt,
+                        "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy,
+                        job.record().retryCount());
             } else {
                 int retryCount = Math.addExact(job.record().retryCount(), 1);
                 successor = retryCount > policy.maximumRetries()
-                        ? terminal(job, TestSuiteStabilityJobRecord.Status.FAILED, observedAt,
+                        ? parentTerminal(job, TestSuiteStabilityJobRecord.Status.FAILED,
+                        TestSuiteStabilityExecutionStop.Reason.WORKER_FAILED, observedAt,
                         "RG.TEST.STABILITY_JOB_WORKER_LEASE_EXPIRED", policy, retryCount)
                         : transition(job, TestSuiteStabilityJobRecord.Status.QUEUED,
                         retryCount, observedAt.plus(policy.retryDelay(retryCount)), observedAt,
@@ -976,6 +1033,40 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 source.leaseEpoch(), null, "", "", failureCode,
                 source.record().cancellationRequestId(),
                 source.record().cancellationFingerprint());
+    }
+
+    private StoredJob parentTerminal(
+            StoredJob source,
+            TestSuiteStabilityJobRecord.Status status,
+            TestSuiteStabilityExecutionStop.Reason reason,
+            Instant observedAt,
+            String failureCode,
+            TestSuiteStabilityQueuePolicy policy,
+            int retryCount) {
+        if (!Set.of(TestSuiteStabilityJobRecord.Status.CANCELLED,
+                TestSuiteStabilityJobRecord.Status.EXPIRED,
+                TestSuiteStabilityJobRecord.Status.FAILED).contains(status)) {
+            throw new IllegalArgumentException(
+                    "Parent-first transition requires a queue stop state");
+        }
+        TestSuiteStabilityJobParentAuthority.Resolution parent = parentAuthority.stop(
+                source.record(), reason, failureCode, policy.terminalRetention());
+        if (parent.outcome() == TestSuiteStabilityJobParentAuthority.Outcome.COMPLETED) {
+            return parentCompleted(source, parent, observedAt, policy, retryCount);
+        }
+        return terminal(source, status, observedAt, failureCode, policy, retryCount);
+    }
+
+    private StoredJob parentCompleted(
+            StoredJob source,
+            TestSuiteStabilityJobParentAuthority.Resolution parent,
+            Instant observedAt,
+            TestSuiteStabilityQueuePolicy policy,
+            int retryCount) {
+        return transition(source, TestSuiteStabilityJobRecord.Status.SUCCEEDED,
+                retryCount, source.record().nextEligibleAt(), observedAt,
+                observedAt.plus(policy.terminalRetention()), "", source.leaseEpoch(), null,
+                parent.stabilityRunId(), parent.evidenceFingerprint(), "", "", "");
     }
 
     private void insert(StoredJob job) {

@@ -79,7 +79,8 @@ The next atomic increment must provide a worker guard that:
 
 1. heartbeats the exact queue owner/epoch fence during long source attempts;
 2. verifies the bound descriptor exactly matches the claimed job;
-3. writes the parent stop tombstone when cancellation or deadline wins;
+3. delegates cancellation, deadline, and failure terminalization to the queue repository, whose
+   parent-first authority commits the exact parent tombstone before the queue transition;
 4. calls queue `prepareCompletion` from `prepareTerminal`;
 5. preserves `COMMITTING` across crash recovery and completes the queue from replayed evidence;
 6. fails closed on delegated authority ambiguity and classifies retryable versus terminal failures.
