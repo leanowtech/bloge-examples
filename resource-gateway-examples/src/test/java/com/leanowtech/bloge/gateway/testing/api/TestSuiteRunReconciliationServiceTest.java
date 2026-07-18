@@ -7,8 +7,10 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -215,6 +217,110 @@ class TestSuiteRunReconciliationServiceTest {
                 .containsExactly("property-001");
         assertThat(attestations.verify(terminal.evidence(), terminal.attestation()))
                 .isEqualTo(TestSuiteRunAttestationService.Verification.VERIFIED);
+    }
+
+    @Test
+    void expiredMutationCheckpointPreservesKillsAndTerminalizesEveryPendingCoordinate() {
+        Instant sweepAt = Instant.parse("2026-07-16T10:42:00Z");
+        TestSuiteRunRepository repository = mock(TestSuiteRunRepository.class);
+        TestSuiteRunRecord running = runningMutationRecord();
+        AbandonedTestSuiteRun abandoned = new AbandonedTestSuiteRun(
+                running, 14, "instance-mutation-dead", sweepAt.minusSeconds(2));
+        when(repository.findAbandoned(sweepAt, 10)).thenReturn(List.of(abandoned));
+        when(repository.reconcileAbandoned(eq(abandoned), any(), eq(sweepAt))).thenReturn(true);
+        TestSuiteRunReconciliationService service = new TestSuiteRunReconciliationService(
+                repository, objectMapper, attestations,
+                Clock.fixed(sweepAt, ZoneOffset.UTC));
+
+        TestSuiteRunReconciliationResult result = service.reconcileExpired(10);
+
+        assertThat(result.reconciled()).isOne();
+        var terminalCaptor = org.mockito.ArgumentCaptor.forClass(TestSuiteRunRecord.class);
+        verify(repository).reconcileAbandoned(eq(abandoned), terminalCaptor.capture(), eq(sweepAt));
+        TestSuiteRunRecord terminal = terminalCaptor.getValue();
+        assertThat(terminal.evidence()).isInstanceOfSatisfying(TestSuiteRunEvidenceV5.class,
+                evidence -> {
+                    assertThat(evidence.status())
+                            .isEqualTo(TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE);
+                    assertThat(evidence.completedAt()).isEqualTo(sweepAt);
+                    assertThat(evidence.caseResults())
+                            .extracting(TestSuiteRunEvidence.CaseResult::status)
+                            .containsExactly(TestSuiteRunEvidence.CaseStatus.PASSED,
+                                    TestSuiteRunEvidence.CaseStatus.EVIDENCE_INCOMPLETE);
+                    assertThat(evidence.caseResults().getFirst())
+                            .isEqualTo(((TestSuiteRunEvidenceV5) running.evidence())
+                                    .caseResults().getFirst());
+                    assertThat(evidence.baselineStatus())
+                            .isEqualTo(TestSuiteRunEvidenceV5.BaselineStatus.EVIDENCE_INCOMPLETE);
+                    assertThat(evidence.mutantResults())
+                            .extracting(TestSuiteRunEvidenceV5.MutantResult::status)
+                            .containsExactly(TestSuiteRunEvidenceV5.MutantStatus.KILLED,
+                                    TestSuiteRunEvidenceV5.MutantStatus.NOT_SCHEDULED);
+                    assertThat(evidence.mutantResults().getFirst().caseResults().getFirst())
+                            .isEqualTo(((TestSuiteRunEvidenceV5) running.evidence())
+                                    .mutantResults().getFirst().caseResults().getFirst());
+                    assertThat(evidence.mutantResults().getFirst().caseResults().get(1))
+                            .satisfies(caseResult -> {
+                                assertThat(caseResult.status()).isEqualTo(
+                                        TestSuiteRunEvidenceV5.MutantCaseStatus.NOT_SCHEDULED);
+                                assertThat(caseResult.diagnosticCode()).isEqualTo(
+                                        TestSuiteRunReconciliationService.ABANDONED_RUN_RECONCILED);
+                            });
+                    assertThat(evidence.mutationScore())
+                            .extracting(TestSuiteRunEvidenceV5.MutationScoreVerdict::status,
+                                    TestSuiteRunEvidenceV5.MutationScoreVerdict::killedMutants,
+                                    TestSuiteRunEvidenceV5.MutationScoreVerdict::unclassifiedMutants,
+                                    TestSuiteRunEvidenceV5.MutationScoreVerdict::scoreBasisPoints)
+                            .containsExactly(TestSuiteRunEvidenceV5.MutationScoreStatus.INCOMPLETE,
+                                    1, 1, 0);
+                    assertThat(evidence.promotion().status())
+                            .isEqualTo(TestSuiteRunEvidence.PromotionStatus.BLOCKED);
+                    assertThat(evidence.diagnostics())
+                            .contains(TestSuiteRunReconciliationService.ABANDONED_RUN_RECONCILED);
+                    assertThat(evidence.metadata())
+                            .containsEntry("reconciliationMode", "LEASE_EXPIRY_TERMINALIZATION")
+                            .containsEntry("expiredCheckpointVersion", 14L);
+                });
+        assertThat(terminal.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V5);
+        assertThat(terminal.attestation().terminallyVerifiable()).isTrue();
+        assertThat(terminal.attestation().childEvidenceRefs())
+                .extracting(TestSuiteRunAttestation.ChildEvidenceRef::caseId)
+                .containsExactly("baseline/golden", "mutant-001/golden");
+        assertThat(attestations.verify(terminal.evidence(), terminal.attestation()))
+                .isEqualTo(TestSuiteRunAttestationService.Verification.VERIFIED);
+    }
+
+    @Test
+    void mutationCheckpointWithValidSignatureButWrongClosureCoordinatesIsRejected() {
+        Instant sweepAt = Instant.parse("2026-07-16T10:43:00Z");
+        TestSuiteRunRepository repository = mock(TestSuiteRunRepository.class);
+        TestSuiteRunRecord valid = runningMutationRecord();
+        List<TestSuiteRunAttestation.ChildEvidenceRef> mislabeledChildren = List.of(
+                new TestSuiteRunAttestation.ChildEvidenceRef(
+                        "golden", "baseline-golden", fingerprint('b')),
+                new TestSuiteRunAttestation.ChildEvidenceRef(
+                        "golden", "mutant-1-golden", fingerprint('c')));
+        TestSuiteRunAttestation mislabeled = attestations.seal(
+                valid.evidence(), valid.requestFingerprint(), mislabeledChildren,
+                TestSuiteRunAttestation.Scope.CHECKPOINT).attestation();
+        TestSuiteRunRecord invalid = new TestSuiteRunRecord(
+                valid.suiteRunId(), valid.clientRequestId(), valid.requestFingerprint(),
+                valid.tenantId(), valid.organizationId(), valid.projectId(), valid.environmentId(),
+                valid.actorId(), valid.classification(), "", valid.evidence(), mislabeled,
+                valid.createdAt(), valid.expiresAt());
+        AbandonedTestSuiteRun abandoned = new AbandonedTestSuiteRun(
+                invalid, 15, "instance-mutation-dead", sweepAt.minusSeconds(2));
+        when(repository.findAbandoned(sweepAt, 10)).thenReturn(List.of(abandoned));
+        TestSuiteRunReconciliationService service = new TestSuiteRunReconciliationService(
+                repository, objectMapper, attestations,
+                Clock.fixed(sweepAt, ZoneOffset.UTC));
+
+        TestSuiteRunReconciliationResult result = service.reconcileExpired(10);
+
+        assertThat(result.failed()).isOne();
+        assertThat(result.reconciled()).isZero();
+        verify(repository, never()).reconcileAbandoned(any(), any(), any());
     }
 
     @Test
@@ -453,6 +559,105 @@ class TestSuiteRunReconciliationServiceTest {
                 evidence.suiteRunId(), evidence.clientRequestId(), requestFingerprint,
                 "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL", "",
                 evidence, attestation, started, started.plusSeconds(3600));
+    }
+
+    private TestSuiteRunRecord runningMutationRecord() {
+        Instant started = Instant.parse("2026-07-16T10:41:00Z");
+        TestSuiteExecutionRequest.SuiteRef suiteRef = new TestSuiteExecutionRequest.SuiteRef(
+                "mutation-suite", 2, fingerprint('1'));
+        TestSuite.Target target = new TestSuite.Target("GRAPH", "graph-mutation", fingerprint('2'));
+        TestSuite.FixtureBundleRef goldenFixture = new TestSuite.FixtureBundleRef(
+                "fixture-golden", 1, fingerprint('3'));
+        TestSuite.FixtureBundleRef negativeFixture = new TestSuite.FixtureBundleRef(
+                "fixture-negative", 1, fingerprint('4'));
+        List<TestSuiteRunEvidence.CaseResult> baseline = List.of(
+                new TestSuiteRunEvidence.CaseResult(
+                        "golden", TestSuite.CaseType.GOLDEN, goldenFixture,
+                        TestSuiteRunEvidence.CaseStatus.PASSED, "baseline-golden",
+                        TestRunEvidence.Status.PASSED, TestRunEvidence.EvidenceClass.CERTIFIABLE,
+                        1, 1, "", ""),
+                new TestSuiteRunEvidence.CaseResult(
+                        "negative", TestSuite.CaseType.NEGATIVE, negativeFixture,
+                        TestSuiteRunEvidence.CaseStatus.PENDING, "", null, null,
+                        0, 0, "", ""));
+        TestSuiteV5.MutantRef first = mutationRef(1);
+        TestSuiteV5.MutantRef second = mutationRef(2);
+        List<TestSuiteRunEvidenceV5.MutantResult> mutants = List.of(
+                new TestSuiteRunEvidenceV5.MutantResult(first,
+                        TestSuiteRunEvidenceV5.MutantStatus.RUNNING,
+                        List.of(new TestSuiteRunEvidenceV5.MutantCaseResult(
+                                        "golden", goldenFixture, first.mutantTargetFingerprint(),
+                                        TestSuiteRunEvidenceV5.MutantCaseStatus.ASSERTION_KILLED,
+                                        "mutant-1-golden", fingerprint('5'),
+                                        TestRunEvidence.Status.ASSERTION_FAILED,
+                                        TestRunEvidence.EvidenceClass.CERTIFIABLE,
+                                        1, 0, "ASSERTION_FAILED"),
+                                pendingMutationCase("negative", negativeFixture, first)),
+                        List.of("golden")),
+                new TestSuiteRunEvidenceV5.MutantResult(second,
+                        TestSuiteRunEvidenceV5.MutantStatus.PENDING,
+                        List.of(pendingMutationCase("golden", goldenFixture, second),
+                                pendingMutationCase("negative", negativeFixture, second)),
+                        List.of()));
+        TestSuiteV5.MutationScorePolicy scorePolicy = new TestSuiteV5.MutationScorePolicy(
+                5_000, 1, false, false);
+        TestSuiteRunEvidenceV5 evidence = new TestSuiteRunEvidenceV5(
+                "", "suite-run-mutation", "request-mutation",
+                TestSuiteRunEvidence.Status.RUNNING,
+                TestSuiteRunEvidenceV5.EXECUTION_PURPOSE, suiteRef, target,
+                started, null, baseline, TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
+                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(),
+                TestSuiteV5.EvaluationMode.PURE_DSL_MUTATION, TestSuiteV5.SOURCE_FORMAT,
+                fingerprint('6'), fingerprint('7'), fingerprint('8'),
+                new TestSuiteV5.MutationPolicy(TestSuiteV5.PLANNER_VERSION, 2,
+                        TestSuiteV5.SOURCE_FORMAT, TestSuiteV5.VERIFICATION_MODE, false, false),
+                TestSuiteV5.SourcePlanStatus.GENERATED, false, List.of(),
+                new TestSuiteV5.OracleSuiteRef(
+                        "oracle", 1, fingerprint('9'), TestSuite.SCHEMA_VERSION),
+                TestSuiteRunEvidenceV5.BaselineStatus.RUNNING, mutants,
+                TestSuiteRunEvidenceV5.score(
+                        TestSuiteRunEvidenceV5.BaselineStatus.RUNNING, mutants, scorePolicy),
+                List.of(), Map.of("strategy", "COLLECT_ALL"));
+        String requestFingerprint = fingerprint('a');
+        List<TestSuiteRunAttestation.ChildEvidenceRef> children = List.of(
+                new TestSuiteRunAttestation.ChildEvidenceRef(
+                        "baseline/golden", "baseline-golden", fingerprint('b')),
+                new TestSuiteRunAttestation.ChildEvidenceRef(
+                        "mutant-001/golden", "mutant-1-golden", fingerprint('c')));
+        TestSuiteRunAttestation attestation = attestations.seal(evidence, requestFingerprint,
+                children, TestSuiteRunAttestation.Scope.CHECKPOINT).attestation();
+        return new TestSuiteRunRecord(
+                evidence.suiteRunId(), evidence.clientRequestId(), requestFingerprint,
+                "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL", "",
+                evidence, attestation, started, started.plusSeconds(3600));
+    }
+
+    private static TestSuiteRunEvidenceV5.MutantCaseResult pendingMutationCase(
+            String caseId,
+            TestSuite.FixtureBundleRef fixture,
+            TestSuiteV5.MutantRef mutant) {
+        return new TestSuiteRunEvidenceV5.MutantCaseResult(
+                caseId, fixture, mutant.mutantTargetFingerprint(),
+                TestSuiteRunEvidenceV5.MutantCaseStatus.PENDING,
+                "", "", null, null, 0, 0, "");
+    }
+
+    private static TestSuiteV5.MutantRef mutationRef(int index) {
+        return new TestSuiteV5.MutantRef(
+                "mutant-%03d".formatted(index),
+                TestSuiteV5.MutationKind.DECISION_CONDITION_NEGATED,
+                "/members/%d/predicate".formatted(index), index, 1,
+                indexedFingerprint(index), indexedFingerprint(100 + index),
+                indexedFingerprint(200 + index),
+                TestSuiteV5.EquivalenceClassification.UNKNOWN);
+    }
+
+    private static String fingerprint(char value) {
+        return "sha256:" + String.valueOf(value).repeat(64);
+    }
+
+    private static String indexedFingerprint(int value) {
+        return "sha256:" + "%064x".formatted(value);
     }
 
     private TestSuiteRunRecord withId(TestSuiteRunRecord source, String runId, String requestId) {

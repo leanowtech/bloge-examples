@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestPropertySuiteEvidenceEvaluator;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
@@ -32,7 +33,9 @@ import java.util.Objects;
  * Schema-admission checkpoints retain their exact typed validator observations and empty business
  * child closure while unfinished admission cases become explicitly incomplete. Property
  * checkpoints retain completed root/shrink outcomes and terminalize only pending coordinates;
- * they never regenerate input or repeat a potentially effectful child invocation.</p>
+ * mutation checkpoints likewise preserve completed baseline and mutant facts, convert pending
+ * coordinates to explicit recovery gaps, and recompute the immutable score policy. Neither path
+ * regenerates input nor repeats a potentially effectful child invocation.</p>
  */
 public final class TestSuiteRunReconciliationService {
     /** Stable evidence diagnostic emitted by lease-expiry terminalization. */
@@ -231,6 +234,10 @@ public final class TestSuiteRunReconciliationService {
             TestSuiteRunEvidence.CoverageVerdict coverage,
             TestSuiteRunEvidence.PromotionVerdict promotion, Map<String, Object> metadata) {
         List<String> diagnostics = merged(previous.diagnostics(), List.of(ABANDONED_RUN_RECONCILED));
+        if (previous instanceof TestSuiteRunEvidenceV5 v5) {
+            return reconciledMutationEvidence(
+                    v5, completedAt, cases, coverage, promotion, diagnostics, metadata);
+        }
         if (previous instanceof TestSuiteRunEvidenceV4 v4) {
             java.util.Set<String> unfinished = previous.caseResults().stream()
                     .filter(result -> result.status() == TestSuiteRunEvidence.CaseStatus.PENDING)
@@ -276,6 +283,83 @@ public final class TestSuiteRunReconciliationService {
                 coverage, promotion, diagnostics, metadata);
     }
 
+    /** Preserves completed mutation facts and terminalizes only coordinates never executed. */
+    private static TestSuiteRunEvidenceV5 reconciledMutationEvidence(
+            TestSuiteRunEvidenceV5 previous,
+            Instant completedAt,
+            List<TestSuiteRunEvidence.CaseResult> baselineCases,
+            TestSuiteRunEvidence.CoverageVerdict coverage,
+            TestSuiteRunEvidence.PromotionVerdict promotion,
+            List<String> diagnostics,
+            Map<String, Object> metadata) {
+        TestSuiteRunEvidenceV5.BaselineStatus baselineStatus =
+                terminalBaselineStatus(baselineCases);
+        List<TestSuiteRunEvidenceV5.MutantResult> mutants = previous.mutantResults().stream()
+                .map(TestSuiteRunReconciliationService::terminalMutant)
+                .toList();
+        TestSuiteRunEvidenceV5.MutationScoreVerdict score = TestSuiteRunEvidenceV5.score(
+                baselineStatus, mutants, previous.mutationScore().policy());
+        List<String> promotionReasons = merged(promotion.reasons(), score.reasons());
+        TestSuiteRunEvidence.PromotionVerdict blocked =
+                new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.BLOCKED, promotionReasons,
+                        promotion.allCasesPassed(), promotion.certifiableCases(),
+                        promotion.minimumCertifiableCases(),
+                        promotion.targetCertificationEligible(), promotion.coverageSatisfied(),
+                        promotion.allCasesCompleted());
+        return new TestSuiteRunEvidenceV5("", previous.suiteRunId(),
+                previous.clientRequestId(), TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                previous.executionPurpose(), previous.suiteRef(), previous.target(),
+                previous.startedAt(), completedAt, baselineCases, coverage, blocked,
+                previous.evaluationMode(), previous.sourceFormat(),
+                previous.baselineSourceFingerprint(),
+                previous.baselineGraphArtifactFingerprint(), previous.mutationPlanFingerprint(),
+                previous.mutationPolicy(), previous.sourcePlanStatus(),
+                previous.planningGapsAccepted(), previous.planningGaps(),
+                previous.oracleSuiteRef(), baselineStatus, mutants, score, diagnostics, metadata);
+    }
+
+    private static TestSuiteRunEvidenceV5.MutantResult terminalMutant(
+            TestSuiteRunEvidenceV5.MutantResult previous) {
+        List<TestSuiteRunEvidenceV5.MutantCaseResult> cases = previous.caseResults().stream()
+                .map(TestSuiteRunReconciliationService::terminalMutationCase)
+                .toList();
+        return new TestSuiteRunEvidenceV5.MutantResult(previous.mutant(),
+                TestSuiteRunEvidenceV5.classify(cases), cases,
+                cases.stream().filter(value -> value.status()
+                        == TestSuiteRunEvidenceV5.MutantCaseStatus.ASSERTION_KILLED)
+                        .map(TestSuiteRunEvidenceV5.MutantCaseResult::caseId)
+                        .toList());
+    }
+
+    private static TestSuiteRunEvidenceV5.MutantCaseResult terminalMutationCase(
+            TestSuiteRunEvidenceV5.MutantCaseResult previous) {
+        if (previous.status() != TestSuiteRunEvidenceV5.MutantCaseStatus.PENDING) {
+            return previous;
+        }
+        return new TestSuiteRunEvidenceV5.MutantCaseResult(
+                previous.caseId(), previous.fixtureBundleRef(),
+                previous.mutantTargetFingerprint(),
+                TestSuiteRunEvidenceV5.MutantCaseStatus.NOT_SCHEDULED,
+                "", "", null, null, 0, 0, ABANDONED_RUN_RECONCILED);
+    }
+
+    private static TestSuiteRunEvidenceV5.BaselineStatus terminalBaselineStatus(
+            List<TestSuiteRunEvidence.CaseResult> cases) {
+        if (cases.stream().allMatch(value ->
+                value.status() == TestSuiteRunEvidence.CaseStatus.PASSED)) {
+            return TestSuiteRunEvidenceV5.BaselineStatus.PASSED;
+        }
+        if (cases.stream().anyMatch(value -> List.of(
+                TestSuiteRunEvidence.CaseStatus.PENDING,
+                TestSuiteRunEvidence.CaseStatus.NOT_SCHEDULED,
+                TestSuiteRunEvidence.CaseStatus.EVIDENCE_INCOMPLETE)
+                .contains(value.status()))) {
+            return TestSuiteRunEvidenceV5.BaselineStatus.EVIDENCE_INCOMPLETE;
+        }
+        return TestSuiteRunEvidenceV5.BaselineStatus.FAILED;
+    }
+
     /**
      * Converts only an admission case that never reached the validator into an explicit recovery
      * gap. Completed validator observations remain byte-for-byte stable evidence facts.
@@ -298,27 +382,9 @@ public final class TestSuiteRunReconciliationService {
                 || !record.requestFingerprint().equals(record.attestation().requestFingerprint())
                 || attestations.verify(record.evidence(), record.attestation())
                 != TestSuiteRunAttestationService.Verification.VERIFIED
-                || !closureMatches(record)) {
+                || !TestSuiteRunChildClosure.matches(record)) {
             throw new IllegalStateException("Abandoned suite checkpoint failed integrity verification");
         }
-    }
-
-    private static boolean closureMatches(TestSuiteRunRecord record) {
-        List<TestSuiteRunAttestation.ChildEvidenceRef> children = record.attestation().childEvidenceRefs();
-        int childIndex = 0;
-        for (TestSuiteRunEvidence.CaseResult result : record.evidence().caseResults()) {
-            if (result.runId().isBlank()) {
-                continue;
-            }
-            if (childIndex >= children.size()) {
-                return false;
-            }
-            TestSuiteRunAttestation.ChildEvidenceRef child = children.get(childIndex++);
-            if (!result.caseId().equals(child.caseId()) || !result.runId().equals(child.runId())) {
-                return false;
-            }
-        }
-        return childIndex == children.size();
     }
 
     private TestSuiteRunEvidence.CaseResult terminalCase(TestSuiteRunEvidence.CaseResult result) {

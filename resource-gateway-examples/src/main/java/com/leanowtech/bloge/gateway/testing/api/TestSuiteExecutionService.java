@@ -1169,31 +1169,14 @@ public final class TestSuiteExecutionService {
                 : record.evidenceFingerprint().equals(record.attestation().aggregateEvidenceFingerprint());
         if (verification != TestSuiteRunAttestationService.Verification.VERIFIED
                 || !record.requestFingerprint().equals(record.attestation().requestFingerprint())
-                || !expectedScope || !fingerprintMatches || !closureMatches(record)) {
+                || !expectedScope || !fingerprintMatches
+                || !TestSuiteRunChildClosure.matches(record)) {
             securityEvent(identity, "TEST_SUITE_ATTESTATION_INVALID", "REJECTED",
                     "RG.TEST.SUITE_ATTESTATION_INVALID", Map.of("suiteRunId", record.suiteRunId()));
             throw conflict(identity, "RG.TEST.SUITE_ATTESTATION_INVALID",
                     "Suite evidence or its ordered child closure failed integrity verification.",
                     Map.of("suiteRunId", record.suiteRunId()));
         }
-    }
-
-    private static boolean closureMatches(TestSuiteRunRecord record) {
-        List<TestSuiteRunAttestation.ChildEvidenceRef> children = record.attestation().childEvidenceRefs();
-        int childIndex = 0;
-        for (TestSuiteRunEvidence.CaseResult result : record.evidence().caseResults()) {
-            if (result.runId().isBlank()) {
-                continue;
-            }
-            if (childIndex >= children.size()) {
-                return false;
-            }
-            TestSuiteRunAttestation.ChildEvidenceRef child = children.get(childIndex++);
-            if (!result.caseId().equals(child.caseId()) || !result.runId().equals(child.runId())) {
-                return false;
-            }
-        }
-        return childIndex == children.size();
     }
 
     private static TestSuiteRunRecord withEvidence(

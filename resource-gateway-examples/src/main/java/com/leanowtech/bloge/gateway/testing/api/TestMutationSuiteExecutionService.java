@@ -914,39 +914,13 @@ public final class TestMutationSuiteExecutionService {
         }
         if (verification != TestSuiteRunAttestationService.Verification.VERIFIED
                 || !record.requestFingerprint().equals(record.attestation().requestFingerprint())
-                || !scope || !fingerprint || !closureMatches(record)) {
+                || !scope || !fingerprint || !TestSuiteRunChildClosure.matches(record)) {
             securityEvent(identity, "TEST_SUITE_ATTESTATION_INVALID", "REJECTED",
                     "RG.TEST.SUITE_ATTESTATION_INVALID",
                     Map.of("suiteRunId", record.suiteRunId()));
             throw conflict(identity, "RG.TEST.SUITE_ATTESTATION_INVALID",
                     "Mutation evidence or child closure failed integrity verification.", Map.of());
         }
-    }
-
-    private static boolean closureMatches(TestSuiteRunRecord record) {
-        if (!(record.evidence() instanceof TestSuiteRunEvidenceV5 evidence)) {
-            return false;
-        }
-        List<ExpectedChild> expected = new ArrayList<>();
-        evidence.caseResults().stream().filter(value -> !value.runId().isBlank())
-                .forEach(value -> expected.add(new ExpectedChild(
-                        "baseline/" + value.caseId(), value.runId())));
-        evidence.mutantResults().forEach(mutant -> mutant.caseResults().stream()
-                .filter(value -> !value.runId().isBlank())
-                .forEach(value -> expected.add(new ExpectedChild(
-                        mutant.mutant().mutantId() + "/" + value.caseId(), value.runId()))));
-        List<TestSuiteRunAttestation.ChildEvidenceRef> actual =
-                record.attestation().childEvidenceRefs();
-        if (expected.size() != actual.size()) {
-            return false;
-        }
-        for (int index = 0; index < expected.size(); index++) {
-            if (!expected.get(index).caseId().equals(actual.get(index).caseId())
-                    || !expected.get(index).runId().equals(actual.get(index).runId())) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private TestSuiteRunRecord updateOwned(
@@ -1110,6 +1084,4 @@ public final class TestMutationSuiteExecutionService {
                 code, title, identity.correlationId(), Map.of()));
     }
 
-    private record ExpectedChild(String caseId, String runId) {
-    }
 }
