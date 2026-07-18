@@ -100,8 +100,11 @@ public final class TestSuiteStabilityEvidenceEvaluator {
                 observations.add(reusedSourceAttempts.contains(source.attempt())
                         ? incomplete(source.attempt(), SOURCE_RUN_REUSED) : observation);
             }
-            byCase.add(closePlanDrift(closeReusedChildRuns(observations)));
+            byCase.add(List.copyOf(observations));
         }
+        byCase = closeReusedChildRuns(byCase, requestedAttempts);
+        byCase = byCase.stream().map(
+                TestSuiteStabilityEvidenceEvaluator::closePlanDrift).toList();
 
         List<TestSuiteStabilityEvidence.CaseStabilityResult> caseResults = new ArrayList<>();
         for (int caseIndex = 0; caseIndex < suite.cases().size(); caseIndex++) {
@@ -346,16 +349,23 @@ public final class TestSuiteStabilityEvidenceEvaluator {
                 ? incomplete(value.attempt(), PLAN_DRIFT) : value).toList();
     }
 
-    private static List<TestSuiteStabilityEvidence.CaseObservation> closeReusedChildRuns(
-            List<TestSuiteStabilityEvidence.CaseObservation> observations) {
+    private static List<List<TestSuiteStabilityEvidence.CaseObservation>> closeReusedChildRuns(
+            List<List<TestSuiteStabilityEvidence.CaseObservation>> observationsByCase,
+            int attempts) {
+        List<List<TestSuiteStabilityEvidence.CaseObservation>> closed = new ArrayList<>();
+        observationsByCase.forEach(row -> closed.add(new ArrayList<>(row)));
         Set<String> observed = new LinkedHashSet<>();
-        return observations.stream().map(value -> {
-            if (value.status() != TestSuiteStabilityEvidence.ObservationStatus.VERIFIED) {
-                return value;
+        for (int attemptIndex = 0; attemptIndex < attempts; attemptIndex++) {
+            for (List<TestSuiteStabilityEvidence.CaseObservation> observations : closed) {
+                TestSuiteStabilityEvidence.CaseObservation value = observations.get(attemptIndex);
+                if (value.status() == TestSuiteStabilityEvidence.ObservationStatus.VERIFIED
+                        && !observed.add(value.runId())) {
+                    observations.set(attemptIndex,
+                            incomplete(value.attempt(), CHILD_RUN_REUSED));
+                }
             }
-            return observed.add(value.runId()) ? value
-                    : incomplete(value.attempt(), CHILD_RUN_REUSED);
-        }).toList();
+        }
+        return closed.stream().map(List::copyOf).toList();
     }
 
     private static Set<Integer> reusedSourceAttempts(List<SourceEvaluation> sources) {

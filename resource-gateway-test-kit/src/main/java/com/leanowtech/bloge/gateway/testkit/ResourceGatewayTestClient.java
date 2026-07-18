@@ -375,6 +375,70 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Executes a bounded idempotent stability analysis over one exact immutable suite revision.
+     *
+     * <p>The response is schema-validated and its semantic aggregate, evidence fingerprint, and
+     * ordered source closure are independently re-derived. Call
+     * {@link #verifySuiteStability(String)} or the pinned-key-set overload before using the result
+     * as release evidence.</p>
+     *
+     * @param suiteId exact suite id
+     * @param revision exact immutable revision
+     * @param fingerprint full SHA-256 suite fingerprint
+     * @param clientRequestId caller-stable parent idempotency key
+     * @param attempts independent rerun count from 3 through 20
+     * @param metadata bounded scalar provenance metadata
+     * @return typed terminal stability result
+     */
+    public TestSuiteStabilityRun executeSuiteStability(
+            String suiteId,
+            long revision,
+            String fingerprint,
+            String clientRequestId,
+            int attempts,
+            Map<String, ?> metadata) {
+        String id = requiredIdentifier(clientRequestId, "clientRequestId", 255);
+        String exactSuiteId = requiredIdentifier(suiteId, "suiteId", 255);
+        if (revision < 1 || attempts < 3 || attempts > 20) {
+            throw new IllegalArgumentException(
+                    "revision must be positive and stability attempts must be 3..20");
+        }
+        String exactFingerprint = requiredFingerprint(fingerprint);
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion",
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1);
+        ObjectNode suiteRef = request.putObject("suiteRef");
+        suiteRef.put("suiteId", exactSuiteId);
+        suiteRef.put("revision", revision);
+        suiteRef.put("fingerprint", exactFingerprint);
+        request.put("clientRequestId", id);
+        request.put("attempts", attempts);
+        request.set("metadata", metadata == null
+                ? JSON.createObjectNode() : JSON.valueToTree(metadata));
+        TestingProtocolSchemaValidator.require(
+                request, "testSuiteStabilityExecutionRequest");
+        JsonNode response = exchange("POST", "/api/testing/suites/"
+                        + segment(exactSuiteId) + "/stability-executions", "",
+                "TEST_EXECUTION", request);
+        requireVersion(response,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1);
+        TestSuiteStabilityRun run = projectStabilityRun(response);
+        try {
+            run.requireExecutionIdentity(
+                    exactSuiteId, revision, exactFingerprint, id);
+            if (!EvidenceVerificationSupport.sha256(request)
+                    .equals(run.attestation().requestFingerprint())) {
+                throw new IllegalArgumentException(
+                        "Stability request fingerprint does not match the request");
+            }
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned a mismatched stability execution identity.");
+        }
+        return run;
+    }
+
+    /**
      * Executes one exact immutable V5 suite in the isolated pure-DSL mutation runtime.
      *
      * <p>The strategy is scoped to each mutant; it can never truncate later mutants. The returned
@@ -441,6 +505,78 @@ public final class ResourceGatewayTestClient {
             throw responseContractInvalid("The server returned a mismatched suite-run identity.");
         }
         return run;
+    }
+
+    /**
+     * Retrieves one retained terminal suite-stability analysis.
+     *
+     * @param stabilityRunId deterministic stability analysis id
+     * @return typed result with independently re-derived semantics and source closure
+     */
+    public TestSuiteStabilityRun findSuiteStability(String stabilityRunId) {
+        String exactId = requiredIdentifier(stabilityRunId, "stabilityRunId", 255);
+        JsonNode response = exchange("GET", "/api/testing/stability-executions/"
+                + segment(exactId), "", "TEST_EXECUTION", null);
+        requireVersion(response,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1);
+        TestSuiteStabilityRun run = projectStabilityRun(response);
+        try {
+            run.requireRunIdentity(exactId);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned a mismatched stability analysis identity.");
+        }
+        return run;
+    }
+
+    /**
+     * Fetches and independently verifies one retained stability analysis with its public key.
+     *
+     * @param stabilityRunId deterministic stability analysis id
+     * @return payload-free offline verification result
+     */
+    public TestSuiteStabilityEvidenceVerifier.VerificationResult verifySuiteStability(
+            String stabilityRunId) {
+        TestSuiteStabilityRun run = findSuiteStability(stabilityRunId);
+        EvidenceVerificationKey key;
+        try {
+            key = findEvidenceVerificationKey(run.attestation().keyId());
+        } catch (ResourceGatewayTestException failure) {
+            if ("RG.INTEGRATION.EVIDENCE_KEY_NOT_FOUND".equals(failure.code())
+                    || "RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE".equals(
+                    failure.code())) {
+                return new TestSuiteStabilityEvidenceVerifier().verify(run, null);
+            }
+            throw failure;
+        }
+        return new TestSuiteStabilityEvidenceVerifier().verify(run, key);
+    }
+
+    /**
+     * Performs release-grade stability verification against an independently pinned key set.
+     *
+     * @param stabilityRunId deterministic stability analysis id
+     * @param trustedKeySetFingerprint key-set fingerprint pinned outside the Gateway response
+     * @return payload-free lifecycle-aware verification result
+     */
+    public TestSuiteStabilityEvidenceVerifier.VerificationResult verifySuiteStability(
+            String stabilityRunId,
+            String trustedKeySetFingerprint) {
+        TestSuiteStabilityRun run = findSuiteStability(stabilityRunId);
+        EvidenceVerificationKeySet keySet;
+        try {
+            keySet = findEvidenceVerificationKeySet();
+        } catch (ResourceGatewayTestException failure) {
+            if ("RG.INTEGRATION.EVIDENCE_KEY_SET_PROVIDER_UNAVAILABLE".equals(failure.code())
+                    || "RG.INTEGRATION.EVIDENCE_KEY_SET_ATTESTATION_UNAVAILABLE".equals(
+                    failure.code())) {
+                return new TestSuiteStabilityEvidenceVerifier().verify(
+                        run, null, trustedKeySetFingerprint);
+            }
+            throw failure;
+        }
+        return new TestSuiteStabilityEvidenceVerifier().verify(
+                run, keySet, trustedKeySetFingerprint);
     }
 
     /**
@@ -985,6 +1121,15 @@ public final class ResourceGatewayTestClient {
             return TestSuiteRun.from(response);
         } catch (IllegalArgumentException failure) {
             throw responseContractInvalid("The server returned an invalid suite-run projection.");
+        }
+    }
+
+    private static TestSuiteStabilityRun projectStabilityRun(JsonNode response) {
+        try {
+            return TestSuiteStabilityRun.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid suite-stability projection.");
         }
     }
 

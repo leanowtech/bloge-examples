@@ -1,26 +1,20 @@
 package com.leanowtech.bloge.gateway.testkit;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
-import java.security.MessageDigest;
-import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,7 +31,6 @@ import java.util.Set;
 public final class TestSuiteEvidenceVerifier {
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final Duration KEY_CREATION_SKEW = Duration.ofMinutes(5);
     private final Clock clock;
 
     /** Creates a dependency-light verifier with the protocol's fixed Ed25519 policy. */
@@ -189,12 +182,14 @@ public final class TestSuiteEvidenceVerifier {
                     bundle.suiteRunId(), attestation.keyId());
         }
         if (!key.verificationAllowed()
-                || attestation.signedAt().isBefore(key.createdAt().minus(KEY_CREATION_SKEW))) {
+                || attestation.signedAt().isBefore(key.createdAt().minus(
+                EvidenceVerificationSupport.KEY_CREATION_SKEW))) {
             return result(Outcome.POLICY_REJECTED, "VERIFICATION_KEY_POLICY_REJECTED",
                     bundle.suiteRunId(), attestation.keyId());
         }
         try {
-            if (!sha256(bundle.evidence()).equals(attestation.aggregateEvidenceFingerprint())) {
+            if (!EvidenceVerificationSupport.sha256(bundle.evidence())
+                    .equals(attestation.aggregateEvidenceFingerprint())) {
                 return result(Outcome.INVALID, "AGGREGATE_FINGERPRINT_INVALID",
                         bundle.suiteRunId(), attestation.keyId());
             }
@@ -216,12 +211,15 @@ public final class TestSuiteEvidenceVerifier {
             bundleMaterial.put("payloadPolicy", bundle.payloadPolicy().name());
             bundleMaterial.set("attestation", bundle.rawResponse().path("attestation").deepCopy());
             bundleMaterial.set("evidence", bundle.evidence());
-            if (!sha256(bundleMaterial).equals(bundle.bundleFingerprint())) {
+            if (!EvidenceVerificationSupport.sha256(bundleMaterial)
+                    .equals(bundle.bundleFingerprint())) {
                 return result(Outcome.INVALID, "BUNDLE_FINGERPRINT_INVALID",
                         bundle.suiteRunId(), attestation.keyId());
             }
-            String materialFingerprint = sha256(signatureMaterial(attestation));
-            if (!verifyEd25519(materialFingerprint, attestation.signature(), key.encodedPublicKey())) {
+            String materialFingerprint = EvidenceVerificationSupport.sha256(
+                    signatureMaterial(attestation));
+            if (!EvidenceVerificationSupport.verifyEd25519(
+                    materialFingerprint, attestation.signature(), key.encodedPublicKey())) {
                 return result(Outcome.INVALID, "ATTESTATION_SIGNATURE_INVALID",
                         bundle.suiteRunId(), attestation.keyId());
             }
@@ -328,7 +326,8 @@ public final class TestSuiteEvidenceVerifier {
             return keySetResult(Outcome.POLICY_REJECTED, "KEY_SET_STALE",
                     keySet.snapshotFingerprint(), keySet.attestation().keyId());
         }
-        if (keySet.generatedAt().isAfter(now.plus(KEY_CREATION_SKEW))) {
+        if (keySet.generatedAt().isAfter(now.plus(
+                EvidenceVerificationSupport.KEY_CREATION_SKEW))) {
             return keySetResult(Outcome.POLICY_REJECTED, "KEY_SET_NOT_YET_VALID",
                     keySet.snapshotFingerprint(), keySet.attestation().keyId());
         }
@@ -342,7 +341,7 @@ public final class TestSuiteEvidenceVerifier {
             material.put("policyCompleteness", keySet.policyCompleteness().name());
             material.set("keys", keySet.rawSnapshot().path("keys"));
             material.set("events", keySet.rawSnapshot().path("events"));
-            if (!sha256(material).equals(keySet.snapshotFingerprint())
+            if (!EvidenceVerificationSupport.sha256(material).equals(keySet.snapshotFingerprint())
                     || !keySet.snapshotFingerprint().equals(
                     keySet.attestation().materialFingerprint())) {
                 return keySetResult(Outcome.INVALID, "KEY_SET_MATERIAL_INVALID",
@@ -362,16 +361,20 @@ public final class TestSuiteEvidenceVerifier {
                         keySet.snapshotFingerprint(), keySet.attestation().keyId());
             }
             Instant signedAt = keySet.attestation().signedAt();
-            if (signedAt.isBefore(keySet.generatedAt().minus(KEY_CREATION_SKEW))
+            if (signedAt.isBefore(keySet.generatedAt().minus(
+                    EvidenceVerificationSupport.KEY_CREATION_SKEW))
                     || !signedAt.isBefore(keySet.expiresAt())
-                    || signedAt.isAfter(now.plus(KEY_CREATION_SKEW))
-                    || signedAt.isBefore(attestationKey.notBefore().minus(KEY_CREATION_SKEW))
+                    || signedAt.isAfter(now.plus(
+                    EvidenceVerificationSupport.KEY_CREATION_SKEW))
+                    || signedAt.isBefore(attestationKey.notBefore().minus(
+                    EvidenceVerificationSupport.KEY_CREATION_SKEW))
                     || (attestationKey.notAfter() != null
                     && !signedAt.isBefore(attestationKey.notAfter()))) {
                 return keySetResult(Outcome.POLICY_REJECTED, "KEY_SET_SIGNING_TIME_REJECTED",
                         keySet.snapshotFingerprint(), keySet.attestation().keyId());
             }
-            if (!verifyEd25519(keySet.snapshotFingerprint(), keySet.attestation().signature(),
+            if (!EvidenceVerificationSupport.verifyEd25519(
+                    keySet.snapshotFingerprint(), keySet.attestation().signature(),
                     attestationKey.encodedPublicKey())) {
                 return keySetResult(Outcome.INVALID, "KEY_SET_SIGNATURE_INVALID",
                         keySet.snapshotFingerprint(), keySet.attestation().keyId());
@@ -392,48 +395,10 @@ public final class TestSuiteEvidenceVerifier {
     private VerificationResult applyLifecyclePolicy(
             TestSuiteEvidenceBundle bundle, EvidenceVerificationKeySet keySet,
             EvidenceVerificationKeySet.KeyPolicy key) {
-        Instant signedAt = bundle.attestation().signedAt();
-        if (signedAt.isBefore(key.notBefore().minus(KEY_CREATION_SKEW))
-                || (key.notAfter() != null && !signedAt.isBefore(key.notAfter()))) {
-            return result(Outcome.POLICY_REJECTED, "EVIDENCE_KEY_NOT_VALID_AT_SIGNING_TIME",
-                    bundle.suiteRunId(), key.keyId());
-        }
-        List<EvidenceVerificationKeySet.LifecycleEvent> relevant = keySet.events().stream()
-                .filter(event -> event.keyId().equals(key.keyId()))
-                .sorted(Comparator.comparing(EvidenceVerificationKeySet.LifecycleEvent::effectiveAt)
-                        .thenComparingLong(EvidenceVerificationKeySet.LifecycleEvent::sequence))
-                .toList();
-        EvidenceVerificationKeySet.EventType stateAtSigning = null;
-        for (EvidenceVerificationKeySet.LifecycleEvent event : relevant) {
-            boolean revocation = event.type() == EvidenceVerificationKeySet.EventType.REVOKED
-                    || event.type() == EvidenceVerificationKeySet.EventType.COMPROMISE_DECLARED;
-            if (revocation
-                    && event.revocationMode() == EvidenceVerificationKeySet.RevocationMode.RETROACTIVE
-                    && !signedAt.isBefore(event.invalidFrom())) {
-                return result(Outcome.POLICY_REJECTED,
-                        "EVIDENCE_KEY_REVOKED_AT_SIGNING_TIME",
-                        bundle.suiteRunId(), key.keyId());
-            }
-            if (event.type() != EvidenceVerificationKeySet.EventType.CREATED
-                    && !signedAt.isBefore(event.effectiveAt())) {
-                stateAtSigning = event.type();
-            }
-        }
-        if (stateAtSigning == null) {
-            return result(Outcome.POLICY_REJECTED,
-                    "EVIDENCE_KEY_NOT_ACTIVE_AT_SIGNING_TIME", bundle.suiteRunId(), key.keyId());
-        }
-        return switch (stateAtSigning) {
-            case ACTIVATED -> null;
-            case RETIRED -> result(Outcome.POLICY_REJECTED,
-                    "EVIDENCE_KEY_RETIRED_AT_SIGNING_TIME", bundle.suiteRunId(), key.keyId());
-            case DISABLED -> result(Outcome.POLICY_REJECTED,
-                    "EVIDENCE_KEY_DISABLED_AT_SIGNING_TIME", bundle.suiteRunId(), key.keyId());
-            case REVOKED, COMPROMISE_DECLARED -> result(Outcome.POLICY_REJECTED,
-                    "EVIDENCE_KEY_REVOKED_AT_SIGNING_TIME", bundle.suiteRunId(), key.keyId());
-            case CREATED -> result(Outcome.POLICY_REJECTED,
-                    "EVIDENCE_KEY_NOT_ACTIVE_AT_SIGNING_TIME", bundle.suiteRunId(), key.keyId());
-        };
+        String reason = EvidenceVerificationSupport.signingTimePolicyReason(
+                keySet, key.keyId(), bundle.attestation().signedAt());
+        return reason.isBlank() ? null : result(Outcome.POLICY_REJECTED, reason,
+                bundle.suiteRunId(), key.keyId());
     }
 
     private static String lifecyclePolicyReason(EvidenceVerificationKeySet keySet) {
@@ -594,44 +559,6 @@ public final class TestSuiteEvidenceVerifier {
         });
         material.put("signedAt", value.signedAt().toString());
         return material;
-    }
-
-    private static boolean verifyEd25519(String materialFingerprint, String encodedSignature,
-                                         String encodedPublicKey) throws GeneralSecurityException {
-        byte[] publicKey = Base64.getDecoder().decode(encodedPublicKey);
-        byte[] signatureBytes = Base64.getDecoder().decode(encodedSignature);
-        Signature verifier = Signature.getInstance("Ed25519");
-        verifier.initVerify(KeyFactory.getInstance("Ed25519")
-                .generatePublic(new X509EncodedKeySpec(publicKey)));
-        verifier.update(materialFingerprint.getBytes(StandardCharsets.UTF_8));
-        return verifier.verify(signatureBytes);
-    }
-
-    private static String sha256(JsonNode value) {
-        try {
-            byte[] bytes = JSON.writeValueAsBytes(canonical(value));
-            return "sha256:" + HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (JsonProcessingException | GeneralSecurityException failure) {
-            throw new IllegalArgumentException("Canonical evidence cannot be fingerprinted", failure);
-        }
-    }
-
-    private static JsonNode canonical(JsonNode value) {
-        if (value.isObject()) {
-            ObjectNode sorted = JSON.createObjectNode();
-            List<String> names = new ArrayList<>();
-            value.fieldNames().forEachRemaining(names::add);
-            names.sort(Comparator.naturalOrder());
-            names.forEach(name -> sorted.set(name, canonical(value.get(name))));
-            return sorted;
-        }
-        if (value.isArray()) {
-            ArrayNode array = JSON.createArrayNode();
-            value.forEach(item -> array.add(canonical(item)));
-            return array;
-        }
-        return value.deepCopy();
     }
 
     private static VerificationResult result(Outcome outcome, String reason,

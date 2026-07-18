@@ -218,6 +218,28 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
     }
 
     @Test
+    void rejectsAChildRunReusedByAnotherCaseInALaterAttempt() {
+        TestSuiteStabilityEvidenceEvaluator.AttemptObservation first =
+                attempt(1, outcomes("same"));
+        TestSuiteStabilityEvidenceEvaluator.AttemptObservation second =
+                reuseGoldenChildAsNegative(first, attempt(2, outcomes("same")));
+
+        TestSuiteStabilityEvidence evidence = evaluator.evaluate(suite, suiteRef,
+                STABILITY_RUN, "stability-request", 3,
+                List.of(first, second, attempt(3, outcomes("same"))), Map.of());
+
+        assertThat(evidence.status())
+                .isEqualTo(TestSuiteStabilityEvidence.Status.INCONCLUSIVE);
+        assertThat(evidence.attempts().get(1).diagnosticCode())
+                .isEqualTo(TestSuiteStabilityEvidenceEvaluator.CHILD_RUN_REUSED);
+        assertThat(evidence.caseResults()).filteredOn(result ->
+                        result.caseId().equals("negative"))
+                .singleElement().satisfies(result ->
+                        assertThat(result.observations().get(1).diagnosticCode())
+                                .isEqualTo(TestSuiteStabilityEvidenceEvaluator.CHILD_RUN_REUSED));
+    }
+
+    @Test
     void rejectsAggregatePassThatContradictsVerifiedChildFailure() {
         Map<String, Outcome> failed = Map.of(
                 "golden", outcome(TestRunEvidence.Status.ASSERTION_FAILED, "same-failure"),
@@ -398,6 +420,41 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
                 evidence.diagnostics(), evidence.metadata());
         return attemptObservation(attempt, replacement,
                 original.attestation().childEvidenceRefs(), source.childrenByRunId());
+    }
+
+    private TestSuiteStabilityEvidenceEvaluator.AttemptObservation reuseGoldenChildAsNegative(
+            TestSuiteStabilityEvidenceEvaluator.AttemptObservation source,
+            TestSuiteStabilityEvidenceEvaluator.AttemptObservation destination) {
+        TestSuiteRunAttestation.ChildEvidenceRef reusedRef = source.suiteExecution().attestation()
+                .childEvidenceRefs().stream().filter(ref -> ref.caseId().equals("golden"))
+                .findFirst().orElseThrow();
+        TestSuiteRunEvidence destinationEvidence =
+                (TestSuiteRunEvidence) destination.suiteExecution().evidence();
+        List<TestSuiteRunEvidence.CaseResult> results = destinationEvidence.caseResults().stream()
+                .map(result -> result.caseId().equals("negative")
+                        ? new TestSuiteRunEvidence.CaseResult(result.caseId(), result.caseType(),
+                        result.fixtureBundleRef(), result.status(), reusedRef.runId(),
+                        result.evidenceStatus(), result.evidenceClass(), result.assertionsEvaluated(),
+                        result.assertionsPassed(), result.diagnosticCode(), result.diagnostic())
+                        : result)
+                .toList();
+        TestSuiteRunEvidence replacement = new TestSuiteRunEvidence("",
+                destinationEvidence.suiteRunId(), destinationEvidence.clientRequestId(),
+                destinationEvidence.status(), destinationEvidence.executionPurpose(),
+                destinationEvidence.suiteRef(), destinationEvidence.target(),
+                destinationEvidence.startedAt(), destinationEvidence.completedAt(), results,
+                destinationEvidence.coverage(), destinationEvidence.promotion(),
+                destinationEvidence.diagnostics(), destinationEvidence.metadata());
+        List<TestSuiteRunAttestation.ChildEvidenceRef> refs = destination.suiteExecution()
+                .attestation().childEvidenceRefs().stream()
+                .map(ref -> ref.caseId().equals("negative")
+                        ? new TestSuiteRunAttestation.ChildEvidenceRef(
+                        "negative", reusedRef.runId(), reusedRef.evidenceFingerprint()) : ref)
+                .toList();
+        Map<String, TestSuiteStabilityEvidenceEvaluator.ChildObservation> children =
+                new LinkedHashMap<>(destination.childrenByRunId());
+        children.put(reusedRef.runId(), source.childrenByRunId().get(reusedRef.runId()));
+        return attemptObservation(destination.attempt(), replacement, refs, children);
     }
 
     private TestSuiteStabilityEvidenceEvaluator.AttemptObservation withSuiteStatus(

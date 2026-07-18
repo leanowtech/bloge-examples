@@ -30,9 +30,11 @@ class ResourceGatewayTestClientTest {
     private final List<CapturedRequest> requests = new ArrayList<>();
     private EvidenceTrustTestFixtures.Fixture trustFixture;
     private ObjectNode trustPublication;
+    private TestSuiteStabilityTestFixtures.Fixture stabilityFixture;
 
     @BeforeEach
     void startServer() throws IOException {
+        stabilityFixture = TestSuiteStabilityTestFixtures.fixture();
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/testing", this::handle);
         server.createContext("/api/integration", this::handle);
@@ -247,6 +249,60 @@ class ResourceGatewayTestClientTest {
         assertThat(requests.get(2).body().path("strategy").asText()).isEqualTo("FAIL_FAST");
         assertThat(requests.get(2).body().path("metadata").path("source").asText()).isEqualTo("ci");
         assertThat(requests.get(3).rawPath()).endsWith("/suite-executions/suite-run%2F42");
+    }
+
+    @Test
+    void executesAndFindsTypedSuiteStabilityEvidenceWithExactRequestBinding() {
+        ResourceGatewayTestClient client = client();
+
+        TestSuiteStabilityRun executed = client.executeSuiteStability(
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID, 3,
+                Map.of("pipeline", "nightly"));
+        TestSuiteStabilityRun found = client.findSuiteStability(
+                TestSuiteStabilityTestFixtures.STABILITY_RUN_ID);
+
+        assertThat(executed.stable()).isTrue();
+        assertThat(executed.attestation().requestFingerprint())
+                .isEqualTo(EvidenceVerificationSupport.sha256(requests.get(0).body()));
+        assertThat(found.stabilityRunId())
+                .isEqualTo(TestSuiteStabilityTestFixtures.STABILITY_RUN_ID);
+        assertThat(requests).extracting(CapturedRequest::purpose)
+                .containsExactly("TEST_EXECUTION", "TEST_EXECUTION");
+        assertThat(requests.get(0).method()).isEqualTo("POST");
+        assertThat(requests.get(0).rawPath())
+                .endsWith("/suites/orders-suite/stability-executions");
+        assertThat(requests.get(0).body().path("attempts").asInt()).isEqualTo(3);
+        assertThat(requests.get(1).method()).isEqualTo("GET");
+        assertThat(requests.get(1).rawPath()).endsWith(
+                "/stability-executions/" + TestSuiteStabilityTestFixtures.STABILITY_RUN_ID);
+    }
+
+    @Test
+    void rejectsInvalidStabilityBoundsAndMismatchedParentRequestFingerprints() {
+        ResourceGatewayTestClient client = client();
+
+        assertThatThrownBy(() -> client.executeSuiteStability(
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID, 2, Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("3..20");
+        assertThat(requests).isEmpty();
+
+        assertThatThrownBy(() -> client.executeSuiteStability(
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID, 3,
+                Map.of("forceMismatchedFingerprint", true)))
+                .isInstanceOfSatisfying(ResourceGatewayTestException.class, failure ->
+                        assertThat(failure.code())
+                                .isEqualTo("RG.TESTKIT.RESPONSE_CONTRACT_INVALID"));
+        assertThat(requests).hasSize(1);
     }
 
     @Test
@@ -726,7 +782,18 @@ class ResourceGatewayTestClientTest {
                     + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
             return;
         }
-        if (path.endsWith("suite-run%2Fmutation/evidence-bundle")) {
+        if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith("/stability-executions")) {
+            String requestFingerprint = body.path("metadata")
+                    .path("forceMismatchedFingerprint").asBoolean(false)
+                    ? "sha256:" + "1".repeat(64)
+                    : EvidenceVerificationSupport.sha256(body);
+            respond(exchange, 200, TestSuiteStabilityTestFixtures.response(
+                    requestFingerprint, stabilityFixture.keyPair()).toString());
+        } else if ("GET".equals(exchange.getRequestMethod())
+                && path.contains("/stability-executions/")) {
+            respond(exchange, 200, stabilityFixture.response().toString());
+        } else if (path.endsWith("suite-run%2Fmutation/evidence-bundle")) {
             respond(exchange, 200, mutationSuiteEvidenceBundleResponse());
         } else if (path.endsWith("suite-run%2Fmutation")) {
             respond(exchange, 200, mutationSuiteRunResponse());
