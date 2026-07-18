@@ -397,22 +397,90 @@ public final class ResourceGatewayTestClient {
             String clientRequestId,
             int attempts,
             Map<String, ?> metadata) {
-        String id = requiredIdentifier(clientRequestId, "clientRequestId", 255);
-        String exactSuiteId = requiredIdentifier(suiteId, "suiteId", 255);
         if (revision < 1 || attempts < 3 || attempts > 20) {
             throw new IllegalArgumentException(
                     "revision must be positive and stability attempts must be 3..20");
         }
+        return executeSuiteStabilityRequest(suiteId, revision, fingerprint, clientRequestId,
+                attempts, null, metadata,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2);
+    }
+
+    /**
+     * Executes a precommitted fixed-horizon statistical analysis of one immutable suite revision.
+     *
+     * <p>The test-kit rejects an insufficient horizon before network I/O. The returned v3 response
+     * is schema-validated, independently reconstructed from its attempt-by-case closure, and bound
+     * to the exact request and policy. Cryptographic verification is still required before the
+     * result can enter a release gate.</p>
+     *
+     * @param suiteId exact suite id
+     * @param revision exact immutable revision
+     * @param fingerprint full SHA-256 suite fingerprint
+     * @param clientRequestId caller-stable parent idempotency key
+     * @param attempts precommitted rerun horizon from 3 through 1000
+     * @param policy exact supported statistical policy
+     * @param metadata bounded scalar provenance metadata
+     * @return typed terminal statistical stability result
+     */
+    public TestSuiteStabilityRun executeStatisticalSuiteStability(
+            String suiteId,
+            long revision,
+            String fingerprint,
+            String clientRequestId,
+            int attempts,
+            TestSuiteStabilityStatisticalPolicy policy,
+            Map<String, ?> metadata) {
+        Objects.requireNonNull(policy, "statistical stability policy is required");
+        if (revision < 1 || attempts < TestSuiteStabilityStatisticalPolicy.MIN_ATTEMPTS
+                || attempts > TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS) {
+            throw new IllegalArgumentException(
+                    "revision must be positive and statistical stability attempts must be 3..1000");
+        }
+        int minimum = policy.minimumRequiredAttempts();
+        if (attempts < minimum || !policy.horizonSufficient(attempts)) {
+            throw new IllegalArgumentException(
+                    "statistical stability attempts must satisfy the precommitted horizon; minimum="
+                            + minimum);
+        }
+        return executeSuiteStabilityRequest(suiteId, revision, fingerprint, clientRequestId,
+                attempts, policy, metadata,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3);
+    }
+
+    private TestSuiteStabilityRun executeSuiteStabilityRequest(
+            String suiteId,
+            long revision,
+            String fingerprint,
+            String clientRequestId,
+            int attempts,
+            TestSuiteStabilityStatisticalPolicy policy,
+            Map<String, ?> metadata,
+            String requestVersion,
+            String responseVersion) {
+        String id = requiredIdentifier(clientRequestId, "clientRequestId", 255);
+        String exactSuiteId = requiredIdentifier(suiteId, "suiteId", 255);
         String exactFingerprint = requiredFingerprint(fingerprint);
         ObjectNode request = JSON.createObjectNode();
-        request.put("schemaVersion",
-                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1);
+        request.put("schemaVersion", requestVersion);
         ObjectNode suiteRef = request.putObject("suiteRef");
         suiteRef.put("suiteId", exactSuiteId);
         suiteRef.put("revision", revision);
         suiteRef.put("fingerprint", exactFingerprint);
         request.put("clientRequestId", id);
         request.put("attempts", attempts);
+        if (policy != null) {
+            ObjectNode statistical = request.putObject("statisticalPolicy");
+            statistical.put("model", policy.model().name());
+            statistical.put("claimScope", policy.claimScope().name());
+            statistical.put("stoppingRule", policy.stoppingRule().name());
+            statistical.put("censoringPolicy", policy.censoringPolicy().name());
+            statistical.put("confidenceLevelBps", policy.confidenceLevelBps());
+            statistical.put("maximumInstabilityRateBps",
+                    policy.maximumInstabilityRateBps());
+        }
         request.set("metadata", metadata == null
                 ? JSON.createObjectNode() : JSON.valueToTree(metadata));
         TestingProtocolSchemaValidator.require(
@@ -420,8 +488,7 @@ public final class ResourceGatewayTestClient {
         JsonNode response = exchange("POST", "/api/testing/suites/"
                         + segment(exactSuiteId) + "/stability-executions", "",
                 "TEST_EXECUTION", request);
-        requireVersion(response,
-                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2);
+        requireVersion(response, responseVersion);
         TestSuiteStabilityRun run = projectStabilityRun(response);
         try {
             run.requireExecutionIdentity(
@@ -430,6 +497,11 @@ public final class ResourceGatewayTestClient {
                     .equals(run.attestation().requestFingerprint())) {
                 throw new IllegalArgumentException(
                         "Stability request fingerprint does not match the request");
+            }
+            if (policy != null && (!run.statisticalConfidenceAvailable()
+                    || !policy.equals(run.statisticalAssessment().policy()))) {
+                throw new IllegalArgumentException(
+                        "Statistical stability policy does not match the request");
             }
         } catch (IllegalArgumentException failure) {
             throw responseContractInvalid(
@@ -1173,7 +1245,8 @@ public final class ResourceGatewayTestClient {
     private static void requireStabilityResponseVersion(JsonNode response) {
         String actual = response.path("schemaVersion").asText();
         if (!TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1.equals(actual)
-                && !TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2.equals(actual)) {
+                && !TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2.equals(actual)
+                && !TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3.equals(actual)) {
             throw ResourceGatewayTestException.local(
                     "RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported suite-stability response version.", null);

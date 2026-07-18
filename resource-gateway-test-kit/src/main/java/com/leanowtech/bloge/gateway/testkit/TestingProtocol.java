@@ -107,24 +107,36 @@ public final class TestingProtocol {
     /** Bounded idempotent suite-stability rerun request wire version. */
     public static final String TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1 =
             "bloge.testSuiteStabilityExecutionRequest.v1";
+    /** Statistical fixed-horizon suite-stability request wire version. */
+    public static final String TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2 =
+            "bloge.testSuiteStabilityExecutionRequest.v2";
     /** Payload-free bounded suite-stability evidence wire version. */
     public static final String TEST_SUITE_STABILITY_EVIDENCE_V1 =
             "bloge.testSuiteStabilityEvidence.v1";
     /** Source-promotion-closed suite-stability evidence wire version. */
     public static final String TEST_SUITE_STABILITY_EVIDENCE_V2 =
             "bloge.testSuiteStabilityEvidence.v2";
+    /** Exact-binomial statistical suite-stability evidence wire version. */
+    public static final String TEST_SUITE_STABILITY_EVIDENCE_V3 =
+            "bloge.testSuiteStabilityEvidence.v3";
     /** Domain-separated detached suite-stability attestation wire version. */
     public static final String TEST_SUITE_STABILITY_ATTESTATION_V1 =
             "bloge.testSuiteStabilityAttestation.v1";
     /** Source-promotion-closed suite-stability attestation wire version. */
     public static final String TEST_SUITE_STABILITY_ATTESTATION_V2 =
             "bloge.testSuiteStabilityAttestation.v2";
+    /** Exact-binomial statistical suite-stability attestation wire version. */
+    public static final String TEST_SUITE_STABILITY_ATTESTATION_V3 =
+            "bloge.testSuiteStabilityAttestation.v3";
     /** Signed terminal suite-stability execution response wire version. */
     public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteStabilityExecutionResponse.v1";
     /** Signed terminal suite-stability response with source-promotion closure. */
     public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2 =
             "bloge.testSuiteStabilityExecutionResponse.v2";
+    /** Signed terminal statistical suite-stability response wire version. */
+    public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3 =
+            "bloge.testSuiteStabilityExecutionResponse.v3";
     /** Immutable suite execution response wire version. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteExecutionResponse.v1";

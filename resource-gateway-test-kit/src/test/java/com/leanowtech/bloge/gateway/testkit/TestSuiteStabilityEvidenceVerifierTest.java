@@ -13,6 +13,98 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TestSuiteStabilityEvidenceVerifierTest {
 
     @Test
+    void independentlyReconstructsAndVerifiesStatisticalV3Evidence() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.statisticalFixture();
+        TestSuiteStabilityRun run = fixture.run();
+
+        TestSuiteStabilityEvidenceVerifier.VerificationResult result =
+                verifier().verify(run, fixture.key());
+
+        assertThat(result.verified()).isTrue();
+        assertThat(run.statisticalConfidenceAvailable()).isTrue();
+        assertThat(run.statisticalConfidenceSatisfied()).isTrue();
+        assertThat(run.statisticalPromotionEligible()).isTrue();
+        assertThat(run.statisticalAssessment().requiredAttempts()).isEqualTo(29);
+        assertThat(run.statisticalAssessment().observedAttempts()).isEqualTo(29);
+        assertThat(run.statisticalAssessment().verifiedAttempts()).isEqualTo(29);
+        assertThat(run.statisticalAssessment().observedInstabilityEvents()).isZero();
+        assertThat(run.statisticalAssessment().achievedConfidenceBps())
+                .isGreaterThanOrEqualTo(9_500);
+    }
+
+    @Test
+    void rejectsResignedProducerStatisticalArithmeticThatDoesNotReconstruct() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.statisticalFixture();
+        ObjectNode response = fixture.copyResponse();
+        ((ObjectNode) response.at("/evidence/statisticalAssessment"))
+                .put("achievedConfidenceBps", 9_999);
+        TestSuiteStabilityTestFixtures.seal(response, fixture.keyPair(), false);
+
+        assertThatThrownBy(() -> TestSuiteStabilityRun.from(response))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("aggregate");
+    }
+
+    @Test
+    void preservesNegativeProofWhenAStatisticalAttemptVectorChanges() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.statisticalFixture();
+        ObjectNode response = fixture.copyResponse();
+        TestSuiteStabilityTestFixtures.makeStatisticalFlaky(response, fixture.keyPair());
+
+        TestSuiteStabilityRun run = TestSuiteStabilityRun.from(response);
+        TestSuiteStabilityEvidenceVerifier.VerificationResult result =
+                verifier().verify(run, fixture.key());
+
+        assertThat(result.verified()).isTrue();
+        assertThat(run.statisticalAssessment().status())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStatus.REJECTED);
+        assertThat(run.statisticalAssessment().observedInstabilityEvents()).isEqualTo(1);
+        assertThat(run.statisticalConfidenceSatisfied()).isFalse();
+        assertThat(run.promotion().reasons())
+                .containsExactly("FLAKY_CASE_OBSERVED", "STATISTICAL_CONFIDENCE_REJECTED");
+    }
+
+    @Test
+    void failsClosedWhenOneAttemptIsCensoredWithoutRepairingTheDenominator() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.statisticalFixture();
+        ObjectNode response = fixture.copyResponse();
+        TestSuiteStabilityTestFixtures.makeStatisticalCensored(response, fixture.keyPair());
+
+        TestSuiteStabilityRun run = TestSuiteStabilityRun.from(response);
+
+        assertThat(verifier().verify(run, fixture.key()).verified()).isTrue();
+        assertThat(run.statisticalAssessment().status())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStatus.INCONCLUSIVE);
+        assertThat(run.statisticalAssessment().observedAttempts()).isEqualTo(29);
+        assertThat(run.statisticalAssessment().verifiedAttempts()).isEqualTo(28);
+        assertThat(run.statisticalAssessment().censoredAttempts()).isEqualTo(1);
+        assertThat(run.statisticalAssessment().achievedConfidenceBps()).isZero();
+        assertThat(run.promotion().reasons()).containsExactly(
+                "STABILITY_EVIDENCE_INCOMPLETE", "STATISTICAL_CONFIDENCE_INCONCLUSIVE");
+    }
+
+    @Test
+    void keepsRepeatabilityConfidenceOrthogonalToConsistentBusinessFailure() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.statisticalFixture();
+        ObjectNode response = fixture.copyResponse();
+        TestSuiteStabilityTestFixtures.makeStatisticalConsistentFailure(
+                response, fixture.keyPair());
+
+        TestSuiteStabilityRun run = TestSuiteStabilityRun.from(response);
+
+        assertThat(verifier().verify(run, fixture.key()).verified()).isTrue();
+        assertThat(run.status()).isEqualTo(TestSuiteStabilityRun.Status.CONSISTENT_FAILURE);
+        assertThat(run.statisticalConfidenceSatisfied()).isTrue();
+        assertThat(run.promotionEligible()).isFalse();
+        assertThat(run.promotion().reasons()).containsExactly("CONSISTENT_TEST_FAILURE");
+    }
+
+    @Test
     void projectsStableEvidenceAndVerifiesItsRealDetachedSignature() {
         TestSuiteStabilityTestFixtures.Fixture fixture = TestSuiteStabilityTestFixtures.fixture();
         TestSuiteStabilityRun run = fixture.run();

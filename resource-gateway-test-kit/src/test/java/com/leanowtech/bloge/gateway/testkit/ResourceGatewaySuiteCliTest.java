@@ -339,6 +339,84 @@ class ResourceGatewaySuiteCliTest {
     }
 
     @Test
+    void runsAnExactStatisticalStabilityGateWithTheDerivedDefaultHorizon() throws Exception {
+        Path report = temporaryDirectory.resolve("ci/statistical-stability.xml");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                        "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                        "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                        "--client-request-id", TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                        "--mode", "STABILITY",
+                        "--confidence-bps", "9500",
+                        "--max-instability-rate-bps", "1000",
+                        "--trusted-key-set-fingerprint",
+                        stabilityFixture.keySet().snapshotFingerprint(),
+                        "--report", report.toString(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(output), new PrintStream(error));
+
+        assertThat(exit).isZero();
+        assertThat(requestBody)
+                .contains("bloge.testSuiteStabilityExecutionRequest.v2")
+                .contains("\"attempts\":29")
+                .contains("\"confidenceLevelBps\":9500")
+                .contains("\"maximumInstabilityRateBps\":1000");
+        assertThat(output.toString(StandardCharsets.UTF_8))
+                .contains("statisticalStatus=SATISFIED")
+                .contains("requiredAttempts=29")
+                .contains("achievedConfidenceBps=")
+                .doesNotContain("ci-secret-token");
+        assertThat(error.toString(StandardCharsets.UTF_8)).isEmpty();
+        assertThat(Files.readString(report))
+                .contains("statisticalModel=ZERO_INSTABILITY_EXACT_BINOMIAL")
+                .contains("statisticalStatus=SATISFIED")
+                .contains("requiredAttempts=29");
+    }
+
+    @Test
+    void rejectsPartialOrInsufficientStatisticalCliPoliciesBeforeNetwork() {
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+        String[] partial = {
+                "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                "--client-request-id", TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                "--mode", "STABILITY", "--confidence-bps", "9500",
+                "--trusted-key-set-fingerprint", stabilityFixture.keySet().snapshotFingerprint()
+        };
+
+        int partialExit = ResourceGatewaySuiteCli.run(partial,
+                Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(new ByteArrayOutputStream()), new PrintStream(error));
+
+        assertThat(partialExit).isEqualTo(2);
+        assertThat(error.toString(StandardCharsets.UTF_8))
+                .contains("must be configured together");
+        assertThat(requestPath).isEmpty();
+
+        int insufficientExit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                        "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                        "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                        "--client-request-id", TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                        "--mode", "STABILITY", "--attempts", "28",
+                        "--confidence-bps", "9500",
+                        "--max-instability-rate-bps", "1000",
+                        "--trusted-key-set-fingerprint",
+                        stabilityFixture.keySet().snapshotFingerprint(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(new ByteArrayOutputStream()), new PrintStream(error));
+        assertThat(insufficientExit).isEqualTo(2);
+        assertThat(requestPath).isEmpty();
+    }
+
+    @Test
     void returnsOneForCryptographicallyVerifiedFlakyEvidence() throws Exception {
         Path report = temporaryDirectory.resolve("ci/stability-flaky.xml");
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -492,7 +570,11 @@ class ResourceGatewaySuiteCliTest {
         requestPath = exchange.getRequestURI().getPath();
         requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         ObjectNode request = (ObjectNode) JSON.readTree(requestBody);
-        ObjectNode response = TestSuiteStabilityTestFixtures.response(
+        ObjectNode response = TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2.equals(
+                request.path("schemaVersion").asText())
+                ? TestSuiteStabilityTestFixtures.statisticalResponse(
+                EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair())
+                : TestSuiteStabilityTestFixtures.response(
                 EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair());
         ((ObjectNode) response.path("evidence"))
                 .put("clientRequestId", request.path("clientRequestId").asText());

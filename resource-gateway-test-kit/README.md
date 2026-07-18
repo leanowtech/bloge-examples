@@ -256,7 +256,27 @@ JUnitXmlReportWriter.writeStability(
         stabilityVerification);
 ```
 
-Stability execution always runs `COLLECT_ALL` exactly 3..20 times. A case is compared by
+For an exact probability claim, precommit the model and let the policy derive the minimum horizon:
+
+```java
+TestSuiteStabilityStatisticalPolicy policy =
+        TestSuiteStabilityStatisticalPolicy.exactBinomial(9_500, 1_000);
+TestSuiteStabilityRun statistical = client.executeStatisticalSuiteStability(
+        storedSuite.suiteId(), storedSuite.revision(), storedSuite.fingerprint(),
+        "stability-ci-983", policy.minimumRequiredAttempts(), policy,
+        Map.of("source", "nightly"));
+
+TestSuiteStabilityEvidenceVerifier.VerificationResult verified =
+        client.verifySuiteStability(statistical.stabilityRunId(), trustedPin);
+TestSuiteStabilityAssertions.assertStatisticalReleaseEligible(statistical, verified);
+JUnitXmlReportWriter.writeStability(
+        Path.of("target/surefire-reports/resource-gateway-statistical-stability.xml"),
+        statistical, verified, true);
+```
+
+Deterministic stability always runs `COLLECT_ALL` exactly 3..20 times. Statistical request v2 uses a
+precommitted 3..1000 horizon, exact integer arithmetic, and a 10,000 attempt-by-case work bound. A
+case is compared by
 `evidenceStatus + semanticResultFingerprint`, not only by pass/fail status. The aggregate is
 `STABLE`, `FLAKY`, `CONSISTENT_FAILURE`, or `INCONCLUSIVE`; plan drift, reused source/child run ids,
 missing evidence, an invalid signature, or an incomplete source closure can never be promoted to
@@ -264,9 +284,9 @@ stable. Stability response v2 also binds each source suite's promotion status an
 may therefore be `STABLE + BLOCKED`: its behavior is invariant, but at least one source run was not
 certifiable. Signed v1 responses remain verifiable for audit, while
 `sourcePromotionClosureAvailable()` is false and every release assertion fails closed. A `FLAKY`
-result carries a quarantine recommendation, but the API does not mutate suite
-state or bypass a business failure. This is bounded deterministic rerun evidence, not a statistical
-confidence interval or adaptive stopping policy.
+result carries a quarantine recommendation, but the API does not mutate suite state or bypass a
+business failure. V3 confidence is a conditional zero-instability-event bound, not a correctness
+proof, non-zero-event confidence interval, adaptive stopping policy, or historical flake-rate trend.
 
 Execute a reviewed `bloge.testSuite.v3` reference returned by the server's boundary-suite
 materialization API without confusing schema admission with business execution:
@@ -570,10 +590,28 @@ java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0
   --report target/test-results/resource-gateway-stability.xml
 ```
 
+Add both statistical coordinates to select request v2 and the v3 confidence gate. When
+`--attempts` is omitted, the CLI uses the exact minimum horizon; this example derives 29 attempts:
+
+```bash
+java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  --base-uri http://localhost:8080 \
+  --suite-id normalization-regression \
+  --revision 1 \
+  --fingerprint 'sha256:<64 lowercase hex characters>' \
+  --client-request-id "${CI_PIPELINE_ID}-${CI_JOB_ID}-statistical-stability" \
+  --mode STABILITY \
+  --confidence-bps 9500 \
+  --max-instability-rate-bps 1000 \
+  --report target/test-results/resource-gateway-statistical-stability.xml
+```
+
 `STANDARD` is the default mode and accepts `COLLECT_ALL` or `FAIL_FAST`. `MUTATION` accepts
 `COLLECT_ALL` or `STOP_AFTER_KILL`; the latter stops only the current mutant after a signed assertion
-kill and still visits every later mutant. `STABILITY` accepts 3..20 attempts, rejects `--strategy`
-and `--allow-non-eligible`, and requires `--trusted-key-set-fingerprint` or
+kill and still visits every later mutant. Deterministic `STABILITY` accepts 3..20 attempts;
+statistical mode is selected by the paired confidence/rate options and accepts a sufficient 3..1000
+horizon. Both reject `--strategy` and `--allow-non-eligible`, and require
+`--trusted-key-set-fingerprint` or
 `RESOURCE_GATEWAY_TRUSTED_KEY_SET_FINGERPRINT`. A mode-incompatible option is rejected before any
 network request.
 
@@ -582,8 +620,9 @@ The command returns:
 - `0` only when the selected evaluation mode's typed verdict passes and, by default, promotion status
   is `ELIGIBLE`; mutation mode additionally requires a passing baseline and independently re-derived
   `SATISFIED` score policy, while stability mode requires `STABLE`, promotion eligibility, exact
-  v2 source-promotion closure, exact source evidence closure, and a signature rooted in the
-  externally pinned key set;
+  v2+ source-promotion closure, exact source evidence closure, and a signature rooted in the
+  externally pinned key set; a configured statistical policy additionally requires independently
+  re-derived v3 `SATISFIED` confidence;
 - `1` when governed terminal evidence was obtained but its quality, promotion, or trust gate failed;
 - `2` when configuration, transport, protocol validation, report generation, or a non-terminal
   `RUNNING` checkpoint prevents a trustworthy gate verdict.

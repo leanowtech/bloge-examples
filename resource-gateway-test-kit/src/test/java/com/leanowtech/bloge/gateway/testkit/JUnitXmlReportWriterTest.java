@@ -213,6 +213,48 @@ class JUnitXmlReportWriterTest {
     }
 
     @Test
+    void writesStatisticalModelCoordinatesAndPassesOnlyTheExplicitV3Gate() throws Exception {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.statisticalFixture();
+        TestSuiteStabilityRun run = fixture.run();
+        TestSuiteStabilityEvidenceVerifier.VerificationResult verification =
+                stabilityVerifier().verify(
+                        run, fixture.keySet(), fixture.keySet().snapshotFingerprint());
+        Path report = temporaryDirectory.resolve("reports/statistical-stability.xml");
+
+        JUnitXmlReportWriter.Report result = JUnitXmlReportWriter.writeStability(
+                report, run, verification, true);
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(Files.readString(report))
+                .contains("statisticalModel=ZERO_INSTABILITY_EXACT_BINOMIAL")
+                .contains("statisticalStatus=SATISFIED")
+                .contains("requiredAttempts=29")
+                .contains("observedAttempts=29")
+                .contains("instabilityEvents=0")
+                .contains("confidenceLevelBps=9500")
+                .doesNotContain("nightly");
+    }
+
+    @Test
+    void failsClosedWhenAStatisticalGateReceivesDeterministicEvidence() throws Exception {
+        TestSuiteStabilityTestFixtures.Fixture fixture = TestSuiteStabilityTestFixtures.fixture();
+        TestSuiteStabilityRun run = fixture.run();
+        TestSuiteStabilityEvidenceVerifier.VerificationResult verification =
+                stabilityVerifier().verify(
+                        run, fixture.keySet(), fixture.keySet().snapshotFingerprint());
+        Path report = temporaryDirectory.resolve("reports/statistical-unavailable.xml");
+
+        JUnitXmlReportWriter.Report result = JUnitXmlReportWriter.writeStability(
+                report, run, verification, true);
+
+        assertThat(result.exitCode()).isEqualTo(1);
+        assertThat(Files.readString(report))
+                .contains("STATISTICAL_CONFIDENCE_UNAVAILABLE")
+                .contains("statisticalConfidence=UNAVAILABLE");
+    }
+
+    @Test
     void failsFlakyAndUntrustedStabilityEvidenceDeterministically() throws Exception {
         TestSuiteStabilityTestFixtures.Fixture fixture = TestSuiteStabilityTestFixtures.fixture();
         ObjectNode response = fixture.copyResponse();

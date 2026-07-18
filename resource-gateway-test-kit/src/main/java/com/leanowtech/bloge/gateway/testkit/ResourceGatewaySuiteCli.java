@@ -114,7 +114,7 @@ public final class ResourceGatewaySuiteCli {
                 new TestSuiteStabilityEvidenceVerifier().verify(
                         run, keySet, options.trustedKeySetFingerprint());
         JUnitXmlReportWriter.Report report = JUnitXmlReportWriter.writeStability(
-                options.report(), run, verification);
+                options.report(), run, verification, options.statisticalPolicy() != null);
         output.println("stabilityRunId=" + safe(run.stabilityRunId(), 256)
                 + "; status=" + run.status()
                 + "; promotion=" + run.promotion().status()
@@ -123,6 +123,7 @@ public final class ResourceGatewaySuiteCli {
                 + "; quarantine=" + run.quarantine().status()
                 + "; attempts=" + run.requestedAttempts()
                 + "; cases=" + run.caseResults().size()
+                + statisticalSummary(run)
                 + "; verification=" + verification.outcome()
                 + "; verificationReason=" + safe(verification.reasonCode(), 255)
                 + "; report=" + options.report().toAbsolutePath());
@@ -155,6 +156,19 @@ public final class ResourceGatewaySuiteCli {
                 + "; mutationScoreStatus=" + score.status()).orElse("");
     }
 
+    private static String statisticalSummary(TestSuiteStabilityRun run) {
+        if (!run.statisticalConfidenceAvailable()) {
+            return "; statisticalConfidence=UNAVAILABLE";
+        }
+        TestSuiteStabilityRun.StatisticalAssessment value = run.statisticalAssessment();
+        return "; statisticalStatus=" + value.status()
+                + "; requiredAttempts=" + value.requiredAttempts()
+                + "; confidenceLevelBps=" + value.policy().confidenceLevelBps()
+                + "; maximumInstabilityRateBps="
+                + value.policy().maximumInstabilityRateBps()
+                + "; achievedConfidenceBps=" + value.achievedConfidenceBps();
+    }
+
     private enum RunMode {
         STANDARD,
         MUTATION,
@@ -174,6 +188,7 @@ public final class ResourceGatewaySuiteCli {
             Duration timeout,
             boolean requirePromotionEligible,
             int stabilityAttempts,
+            TestSuiteStabilityStatisticalPolicy statisticalPolicy,
             String trustedKeySetFingerprint
     ) {
         private TestSuiteRun executeSuite(ResourceGatewayTestClient client) {
@@ -191,6 +206,11 @@ public final class ResourceGatewaySuiteCli {
         }
 
         private TestSuiteStabilityRun executeStability(ResourceGatewayTestClient client) {
+            if (statisticalPolicy != null) {
+                return client.executeStatisticalSuiteStability(
+                        suiteId, revision, fingerprint, clientRequestId, stabilityAttempts,
+                        statisticalPolicy, Map.of("source", "resource-gateway-suite-cli"));
+            }
             return client.executeSuiteStability(suiteId, revision, fingerprint, clientRequestId,
                     stabilityAttempts, Map.of("source", "resource-gateway-suite-cli"));
         }
@@ -239,11 +259,39 @@ public final class ResourceGatewaySuiteCli {
                     && !"true".equalsIgnoreCase(normalized(environment.get(
                             "RESOURCE_GATEWAY_ALLOW_NON_ELIGIBLE")));
             int stabilityAttempts = 3;
+            TestSuiteStabilityStatisticalPolicy statisticalPolicy = null;
             String trustedKeySetFingerprint = value(options, "trusted-key-set-fingerprint",
                     environment, "RESOURCE_GATEWAY_TRUSTED_KEY_SET_FINGERPRINT");
             if (mode == RunMode.STABILITY) {
+                String confidenceBps = value(options, "confidence-bps", environment,
+                        "RESOURCE_GATEWAY_STABILITY_CONFIDENCE_BPS");
+                String maximumRateBps = value(options, "max-instability-rate-bps", environment,
+                        "RESOURCE_GATEWAY_STABILITY_MAX_INSTABILITY_RATE_BPS");
+                if (confidenceBps.isBlank() != maximumRateBps.isBlank()) {
+                    throw new IllegalArgumentException(
+                            "confidence-bps and max-instability-rate-bps must be configured together");
+                }
+                if (!confidenceBps.isBlank()) {
+                    statisticalPolicy = TestSuiteStabilityStatisticalPolicy.exactBinomial(
+                            boundedInteger(confidenceBps, "confidence-bps",
+                                    TestSuiteStabilityStatisticalPolicy.MIN_CONFIDENCE_BPS,
+                                    TestSuiteStabilityStatisticalPolicy.MAX_CONFIDENCE_BPS),
+                            boundedInteger(maximumRateBps, "max-instability-rate-bps",
+                                    TestSuiteStabilityStatisticalPolicy.MIN_INSTABILITY_RATE_BPS,
+                                    TestSuiteStabilityStatisticalPolicy.MAX_INSTABILITY_RATE_BPS));
+                }
+                String defaultAttempts = statisticalPolicy == null ? "3"
+                        : Integer.toString(statisticalPolicy.minimumRequiredAttempts());
                 stabilityAttempts = boundedAttempts(value(options, "attempts", environment,
-                        "RESOURCE_GATEWAY_STABILITY_ATTEMPTS", "3"));
+                                "RESOURCE_GATEWAY_STABILITY_ATTEMPTS", defaultAttempts),
+                        statisticalPolicy == null ? 20
+                                : TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS);
+                if (statisticalPolicy != null
+                        && !statisticalPolicy.horizonSufficient(stabilityAttempts)) {
+                    throw new IllegalArgumentException(
+                            "attempts do not satisfy the configured statistical horizon; minimum="
+                                    + statisticalPolicy.minimumRequiredAttempts());
+                }
                 if (options.containsKey("strategy")
                         || !normalized(environment.get("RESOURCE_GATEWAY_SUITE_STRATEGY")).isBlank()) {
                     throw new IllegalArgumentException(
@@ -256,14 +304,20 @@ public final class ResourceGatewaySuiteCli {
                 trustedKeySetFingerprint = requiredFingerprint(
                         trustedKeySetFingerprint, "trusted-key-set-fingerprint");
             } else if (options.containsKey("attempts")
-                    || options.containsKey("trusted-key-set-fingerprint")) {
+                    || options.containsKey("trusted-key-set-fingerprint")
+                    || options.containsKey("confidence-bps")
+                    || options.containsKey("max-instability-rate-bps")
+                    || !normalized(environment.get(
+                    "RESOURCE_GATEWAY_STABILITY_CONFIDENCE_BPS")).isBlank()
+                    || !normalized(environment.get(
+                    "RESOURCE_GATEWAY_STABILITY_MAX_INSTABILITY_RATE_BPS")).isBlank()) {
                 throw new IllegalArgumentException(
                         "stability-only options require STABILITY mode");
             }
             return new CliOptions(URI.create(baseUri), token, suiteId, parsedRevision,
                     fingerprint, clientRequestId, mode, strategy, Path.of(report),
                     Duration.ofSeconds(timeoutSeconds), requirePromotion, stabilityAttempts,
-                    trustedKeySetFingerprint);
+                    statisticalPolicy, trustedKeySetFingerprint);
         }
 
         private static Map<String, String> parseArguments(String[] args) {
@@ -283,7 +337,8 @@ public final class ResourceGatewaySuiteCli {
                 }
                 if (!List.of("base-uri", "suite-id", "revision", "fingerprint", "client-request-id",
                         "mode", "strategy", "report", "timeout-seconds", "attempts",
-                        "trusted-key-set-fingerprint").contains(name)) {
+                        "trusted-key-set-fingerprint", "confidence-bps",
+                        "max-instability-rate-bps").contains(name)) {
                     throw new IllegalArgumentException("Unknown option: --" + name);
                 }
                 if (++index >= values.length || normalized(values[index]).startsWith("--")) {
@@ -330,12 +385,26 @@ public final class ResourceGatewaySuiteCli {
             }
         }
 
-        private static int boundedAttempts(String value) {
+        private static int boundedAttempts(String value, int maximum) {
             long attempts = positiveLong(value, "attempts");
-            if (attempts < 3 || attempts > 20) {
-                throw new IllegalArgumentException("attempts must be between 3 and 20");
+            if (attempts < 3 || attempts > maximum) {
+                throw new IllegalArgumentException(
+                        "attempts must be between 3 and " + maximum);
             }
             return (int) attempts;
+        }
+
+        private static int boundedInteger(
+                String value,
+                String field,
+                int minimum,
+                int maximum) {
+            long parsed = positiveLong(value, field);
+            if (parsed < minimum || parsed > maximum) {
+                throw new IllegalArgumentException(field + " must be between "
+                        + minimum + " and " + maximum);
+            }
+            return (int) parsed;
         }
 
         private static String requiredFingerprint(String value, String field) {

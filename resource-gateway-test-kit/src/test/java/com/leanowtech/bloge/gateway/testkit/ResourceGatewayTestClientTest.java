@@ -281,6 +281,62 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void executesStatisticalStabilityWithAnExactPrecommittedPolicy() {
+        ResourceGatewayTestClient client = client();
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.exactBinomial(9_500, 1_000);
+
+        TestSuiteStabilityRun run = client.executeStatisticalSuiteStability(
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                29, policy, Map.of("pipeline", "nightly"));
+
+        assertThat(run.statisticalConfidenceSatisfied()).isTrue();
+        assertThat(run.statisticalAssessment().policy()).isEqualTo(policy);
+        assertThat(requests).hasSize(1);
+        assertThat(requests.get(0).body().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2);
+        assertThat(requests.get(0).body().path("attempts").asInt()).isEqualTo(29);
+        assertThat(requests.get(0).body().at("/statisticalPolicy/confidenceLevelBps").asInt())
+                .isEqualTo(9_500);
+        assertThat(requests.get(0).body()
+                .at("/statisticalPolicy/maximumInstabilityRateBps").asInt())
+                .isEqualTo(1_000);
+    }
+
+    @Test
+    void rejectsInsufficientStatisticalHorizonsBeforeNetworkAndMismatchedPoliciesAfterResponse() {
+        ResourceGatewayTestClient client = client();
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.exactBinomial(9_500, 1_000);
+
+        assertThatThrownBy(() -> client.executeStatisticalSuiteStability(
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                28, policy, Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("minimum=29");
+        assertThat(requests).isEmpty();
+
+        TestSuiteStabilityStatisticalPolicy differentPolicy =
+                TestSuiteStabilityStatisticalPolicy.exactBinomial(9_500, 500);
+        assertThatThrownBy(() -> client.executeStatisticalSuiteStability(
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                59, differentPolicy, Map.of()))
+                .isInstanceOfSatisfying(ResourceGatewayTestException.class, failure ->
+                        assertThat(failure.code())
+                                .isEqualTo("RG.TESTKIT.RESPONSE_CONTRACT_INVALID"));
+        assertThat(requests).hasSize(1);
+    }
+
+    @Test
     void rejectsInvalidStabilityBoundsAndMismatchedParentRequestFingerprints() {
         ResourceGatewayTestClient client = client();
 
@@ -798,8 +854,16 @@ class ResourceGatewayTestClientTest {
                     .path("forceMismatchedFingerprint").asBoolean(false)
                     ? "sha256:" + "1".repeat(64)
                     : EvidenceVerificationSupport.sha256(body);
-            respond(exchange, 200, TestSuiteStabilityTestFixtures.response(
-                    requestFingerprint, stabilityFixture.keyPair()).toString());
+            ObjectNode response = TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2.equals(
+                    body.path("schemaVersion").asText())
+                    ? TestSuiteStabilityTestFixtures.statisticalResponse(
+                    requestFingerprint, stabilityFixture.keyPair())
+                    : TestSuiteStabilityTestFixtures.response(
+                    requestFingerprint, stabilityFixture.keyPair());
+            ((ObjectNode) response.path("evidence"))
+                    .put("clientRequestId", body.path("clientRequestId").asText());
+            TestSuiteStabilityTestFixtures.seal(response, stabilityFixture.keyPair(), false);
+            respond(exchange, 200, response.toString());
         } else if ("GET".equals(exchange.getRequestMethod())
                 && path.contains("/stability-executions/")) {
             respond(exchange, 200, stabilityFixture.response().toString());

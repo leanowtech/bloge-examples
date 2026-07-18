@@ -86,23 +86,29 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_EXECUTION_REQUEST_V1);
             assertConstant(definitions, "testMutationSuiteExecutionRequest",
                     TestingProtocol.TEST_MUTATION_SUITE_EXECUTION_REQUEST_V1);
-            assertConstant(definitions, "testSuiteStabilityExecutionRequest",
-                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1);
+            assertThat(definitions.at(
+                    "/testSuiteStabilityExecutionRequest/properties/schemaVersion/enum"))
+                    .extracting(JsonNode::asText).containsExactly(
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1,
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2);
             assertThat(definitions.at(
                     "/testSuiteStabilityEvidence/properties/schemaVersion/enum"))
                     .extracting(JsonNode::asText).containsExactly(
                             TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V1,
-                            TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V2);
+                            TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V2,
+                            TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V3);
             assertThat(definitions.at(
                     "/testSuiteStabilityAttestation/properties/schemaVersion/enum"))
                     .extracting(JsonNode::asText).containsExactly(
                             TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1,
-                            TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2);
+                            TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2,
+                            TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V3);
             assertThat(definitions.at(
                     "/testSuiteStabilityExecutionResponse/properties/schemaVersion/enum"))
                     .extracting(JsonNode::asText).containsExactly(
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1,
-                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2);
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2,
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3);
             assertConstant(definitions, "testSuiteExecutionResponseV1",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV2",
@@ -307,6 +313,35 @@ class TestingProtocolTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("authoritative schema");
         }
+    }
+
+    @Test
+    void packagedSchemaAcceptsStatisticalRequestV2AndRejectsCrossFieldV3Contradictions()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode request = mapper.readTree("""
+                {"schemaVersion":"bloge.testSuiteStabilityExecutionRequest.v2",
+                 "suiteRef":{"suiteId":"orders-suite","revision":7,
+                   "fingerprint":"sha256:%s"},
+                 "clientRequestId":"stability-ci-42","attempts":29,
+                 "statisticalPolicy":{"model":"ZERO_INSTABILITY_EXACT_BINOMIAL",
+                   "claimScope":"SUITE_ATTEMPT_ANY_CASE",
+                   "stoppingRule":"PRECOMMITTED_FIXED_HORIZON",
+                   "censoringPolicy":"FAIL_CLOSED","confidenceLevelBps":9500,
+                   "maximumInstabilityRateBps":1000},"metadata":{}}
+                """.formatted("a".repeat(64)));
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                request, "testSuiteStabilityExecutionRequest"));
+
+        com.fasterxml.jackson.databind.node.ObjectNode contradictory =
+                TestSuiteStabilityTestFixtures.statisticalFixture().copyResponse();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) contradictory
+                .at("/evidence/promotion")).put("statisticalConfidenceSatisfied", false);
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                contradictory, "testSuiteStabilityExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema");
     }
 
     private static String stabilityResponse() {

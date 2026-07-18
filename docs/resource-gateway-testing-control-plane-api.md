@@ -2702,16 +2702,43 @@ Content-Type: application/json
 }
 ```
 
-`attempts` is an integer from 3 through 20. Every attempt uses `COLLECT_ALL`; the service derives a
+Deterministic request v1 accepts 3 through 20 attempts. To precommit an exact probability claim, use
+request v2:
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteStabilityExecutionRequest.v2",
+  "suiteRef": {
+    "suiteId": "loan-decision-regression",
+    "revision": 1,
+    "fingerprint": "sha256:<returned-by-suite-registration>"
+  },
+  "clientRequestId": "risk-ci-1842-statistical-stability",
+  "attempts": 29,
+  "statisticalPolicy": {
+    "model": "ZERO_INSTABILITY_EXACT_BINOMIAL",
+    "claimScope": "SUITE_ATTEMPT_ANY_CASE",
+    "stoppingRule": "PRECOMMITTED_FIXED_HORIZON",
+    "censoringPolicy": "FAIL_CLOSED",
+    "confidenceLevelBps": 9500,
+    "maximumInstabilityRateBps": 1000
+  },
+  "metadata": {"pipeline": "nightly", "buildId": "1842"}
+}
+```
+
+Statistical request v2 accepts 3 through 1000 attempts, requires an exact sufficient horizon, and
+caps `attempts * suiteCaseCount` at 10,000. The example's 95% confidence/10% instability ceiling
+requires exactly 29 clean attempts. Every attempt uses `COLLECT_ALL`; the service derives a
 stable child idempotency key for each attempt and delegates to the ordinary durable suite runner.
 Repeating the parent request therefore reuses the same retained terminal analysis, while reusing its
 `clientRequestId` with different suite, attempt count, or metadata returns
 `RG.TEST.STABILITY_IDEMPOTENCY_CONFLICT`. Use `TEST_REPLAY` when the exact suite contains a governed
 replay fixture.
 
-New executions return complete terminal `bloge.testSuiteStabilityExecutionResponse.v2` containing
-`bloge.testSuiteStabilityEvidence.v2` and `bloge.testSuiteStabilityAttestation.v2`. Retained v1
-responses remain queryable for audit. For each exact case and attempt, v2 evidence binds the source
+Request v1 returns complete terminal response/evidence/attestation v2. Request v2 returns matching
+v3 objects containing the signed statistical assessment. Retained v1 responses remain queryable for
+audit. For each exact case and attempt, v2+ evidence binds the source
 suite promotion status/reasons plus child run/evidence, fixture, effective-plan, evidence-class, and
 semantic-result fingerprints without copying payload values. Classification uses the complete
 outcome identity `evidenceStatus + semanticResultFingerprint`:
@@ -2727,11 +2754,17 @@ The aggregate status is `STABLE`, `FLAKY`, `CONSISTENT_FAILURE`, or `INCONCLUSIV
 necessary but not sufficient for promotion: every verified source suite must also be promotion
 `ELIGIBLE`. If one source is `BLOCKED`, the aggregate remains `STABLE` but promotion becomes
 `BLOCKED` with `SOURCE_SUITE_PROMOTION_BLOCKED`. `FLAKY` produces a quarantine recommendation; it does not change suite
-state, suppress a failure, or authorize publication. `INCONCLUSIVE` remains fail closed. The protocol
-is bounded deterministic rerun evidence, not a confidence interval, probability estimate, adaptive
-stopping policy, or proof that future runs cannot vary.
+state, suppress a failure, or authorize publication. `INCONCLUSIVE` remains fail closed.
 
-The v2 attestation signs the canonical parent request fingerprint, evidence fingerprint, and exact
+V3 treats one complete ordered suite-attempt outcome vector as a trial. Any verified vector that
+differs from the first verified vector is one instability event. The test-kit independently evaluates
+`(10000-Q)^n * 10000 <= (10000-C) * 10000^n` with integer arithmetic. Zero events plus complete
+closure yields `SATISFIED`; any event yields `REJECTED`; censoring with no proven event yields
+`INCONCLUSIVE`. This is a conditional zero-event bound under signed exchangeability/stationarity
+assumptions, not a correctness proof, non-zero-event confidence interval, adaptive stopping policy,
+or guarantee that future runs cannot vary.
+
+The v2/v3 attestation signs the canonical parent request fingerprint, evidence fingerprint, and exact
 ordered source-suite closure including source promotion status and reasons. A source suite run or child run reused across attempts, an omitted
 source, an invalid source/child signature, or plan drift can never produce `STABLE`. Retention uses
 `gateway.testing.store.retention-days` (default 30, bounded to 1..3650) and is capped from the earliest
@@ -2747,11 +2780,14 @@ curl -sS http://localhost:8080/api/testing/stability-executions/<stabilityRunId>
 
 The independent test-kit re-derives case/aggregate classification, source promotion closure,
 promotion and quarantine verdicts, request/evidence/source-closure fingerprints, source suite
-evidence, child evidence, and the detached Ed25519 signature. A valid v1 signature can be verified
+evidence, child evidence, and the detached Ed25519 signature. For v3 it also reconstructs the exact
+horizon, attempt vectors, censor/event counts, achieved confidence, assumptions, assessment and
+promotion flag. A valid v1 signature can be verified
 for audit, but v1 fails every release gate because source promotion closure is unavailable. Its CI
 `STABILITY` mode additionally requires an externally supplied
 atomic-key-set fingerprint pin; accepting a key set only because the producer returned it is not a
-trust decision. See
+trust decision. CLI options `--confidence-bps` and `--max-instability-rate-bps` select the v3 gate;
+when `--attempts` is omitted, the exact minimum horizon is used. See
 [Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)
 for the implementation boundary and negative proofs.
 

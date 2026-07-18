@@ -110,12 +110,32 @@ public final class JUnitXmlReportWriter {
             TestSuiteStabilityRun run,
             TestSuiteStabilityEvidenceVerifier.VerificationResult verification)
             throws IOException {
+        return writeStability(output, run, verification, false);
+    }
+
+    /**
+     * Writes payload-free stability evidence with an optional v3 statistical-confidence gate.
+     *
+     * @param output destination XML file
+     * @param run immutable stability analysis projection
+     * @param verification offline signature and key-policy verification result
+     * @param requireStatisticalConfidence whether deterministic v1/v2 evidence must fail closed
+     * @return emitted report counters
+     * @throws IOException when directories or XML cannot be written
+     */
+    public static Report writeStability(
+            Path output,
+            TestSuiteStabilityRun run,
+            TestSuiteStabilityEvidenceVerifier.VerificationResult verification,
+            boolean requireStatisticalConfidence)
+            throws IOException {
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(run, "run");
         Objects.requireNonNull(verification, "verification");
         boolean identityMatches = run.stabilityRunId().equals(verification.stabilityRunId());
         boolean trustVerified = identityMatches && verification.verified();
-        boolean gatePassed = trustVerified && run.stable() && run.promotionEligible();
+        boolean gatePassed = trustVerified && run.stable() && run.promotionEligible()
+                && (!requireStatisticalConfidence || run.statisticalConfidenceSatisfied());
         int caseFailures = (int) run.caseResults().stream()
                 .filter(result -> result.status()
                         != TestSuiteStabilityRun.CaseStatus.STABLE_PASS)
@@ -128,7 +148,8 @@ public final class JUnitXmlReportWriter {
                 writeStabilityCase(xml, result);
             }
             writeStabilityVerification(xml, run, verification, trustVerified);
-            writeStabilityGate(xml, run, verification, trustVerified, gatePassed);
+            writeStabilityGate(xml, run, verification, trustVerified, gatePassed,
+                    requireStatisticalConfidence);
         });
         return new Report(tests, failures);
     }
@@ -376,7 +397,8 @@ public final class JUnitXmlReportWriter {
             TestSuiteStabilityRun run,
             TestSuiteStabilityEvidenceVerifier.VerificationResult verification,
             boolean trustVerified,
-            boolean gatePassed) throws XMLStreamException {
+            boolean gatePassed,
+            boolean requireStatisticalConfidence) throws XMLStreamException {
         xml.writeStartElement("testcase");
         xml.writeAttribute("classname", "resource-gateway.stability");
         xml.writeAttribute("name", "stability-gate");
@@ -394,6 +416,16 @@ public final class JUnitXmlReportWriter {
                     reasons.add("SOURCE_PROMOTION_CLOSURE_UNAVAILABLE");
                 }
                 reasons.addAll(run.promotion().reasons());
+            }
+            if (requireStatisticalConfidence && !run.statisticalConfidenceSatisfied()) {
+                if (!run.statisticalConfidenceAvailable()) {
+                    reasons.add("STATISTICAL_CONFIDENCE_UNAVAILABLE");
+                } else if (run.statisticalAssessment().status()
+                        == TestSuiteStabilityRun.StatisticalStatus.REJECTED) {
+                    reasons.add("STATISTICAL_CONFIDENCE_REJECTED");
+                } else {
+                    reasons.add("STATISTICAL_CONFIDENCE_INCONCLUSIVE");
+                }
             }
             xml.writeStartElement("failure");
             xml.writeAttribute("type", "ResourceGateway.STABILITY_GATE_BLOCKED");
@@ -417,9 +449,28 @@ public final class JUnitXmlReportWriter {
                 + "; verifiedAttempts=" + verifiedAttempts
                 + "; promotion=" + run.promotion().status()
                 + "; quarantine=" + run.quarantine().status()
-                + "; trustVerified=" + trustVerified);
+                + "; trustVerified=" + trustVerified
+                + statisticalSummary(run));
         xml.writeEndElement();
         xml.writeEndElement();
+    }
+
+    private static String statisticalSummary(TestSuiteStabilityRun run) {
+        if (!run.statisticalConfidenceAvailable()) {
+            return "; statisticalConfidence=UNAVAILABLE";
+        }
+        TestSuiteStabilityRun.StatisticalAssessment value = run.statisticalAssessment();
+        return "; statisticalModel=" + value.policy().model()
+                + "; statisticalStatus=" + value.status()
+                + "; requiredAttempts=" + value.requiredAttempts()
+                + "; observedAttempts=" + value.observedAttempts()
+                + "; verifiedAttempts=" + value.verifiedAttempts()
+                + "; censoredAttempts=" + value.censoredAttempts()
+                + "; instabilityEvents=" + value.observedInstabilityEvents()
+                + "; confidenceLevelBps=" + value.policy().confidenceLevelBps()
+                + "; maximumInstabilityRateBps="
+                + value.policy().maximumInstabilityRateBps()
+                + "; achievedConfidenceBps=" + value.achievedConfidenceBps();
     }
 
     private static String bounded(String value, int maximum) {

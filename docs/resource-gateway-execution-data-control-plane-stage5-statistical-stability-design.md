@@ -1,5 +1,10 @@
 # Stage 5 statistical suite-stability design
 
+**Implementation status (2026-07-18): implemented.** Request v2, evidence/attestation/response v3,
+exact server evaluation, immutable persistence, strict Schema, capability discovery, independent
+test-kit re-derivation, pinned-key verification, JUnit and opt-in CLI gate are present. The
+deliberately unclaimed items in section 10 remain open work.
+
 ## 1. Decision
 
 Resource Gateway will add an opt-in statistical generation above deterministic suite-stability
@@ -104,7 +109,8 @@ Every requested attempt remains in the ordered signed closure. A source or child
 missing evidence, reused source/child run, effective-plan drift, or incomplete terminal result is a
 censored attempt. Under `FAIL_CLOSED`, one censored attempt makes the statistical assessment
 `INCONCLUSIVE`; the service does not drop it, replace it, or increase the denominator with a later
-run.
+run. A verified instability event has monotonic negative-proof precedence: if an analysis contains
+both a proven variant and censoring, its assessment is `REJECTED`, not weakened to `INCONCLUSIVE`.
 
 Distinct server-derived request ids and rejection of reused source/child run ids prove only that the
 same durable run was not counted twice. They do not prove stochastic independence or stationarity.
@@ -145,8 +151,8 @@ The statistical assessment has exactly three terminal statuses:
 | Status | Derivation |
 | --- | --- |
 | `SATISFIED` | horizon sufficient, every attempt verified, and zero suite-level instability events |
-| `REJECTED` | at least one verified suite-level instability event |
-| `INCONCLUSIVE` | one or more requested attempts are censored |
+| `REJECTED` | at least one verified suite-level instability event, including when other attempts are censored |
+| `INCONCLUSIVE` | one or more requested attempts are censored and no instability event was proven |
 
 Deterministic case and aggregate statuses remain unchanged. A suite can be statistically repeatable
 but consistently wrong. Consequently v3 promotion is eligible only when all existing conditions are

@@ -25,13 +25,22 @@ final class TestSuiteStabilityTestFixtures {
     static Fixture fixture() {
         EvidenceTrustTestFixtures.Fixture trust = EvidenceTrustTestFixtures.fixture();
         ObjectNode response = response(fingerprint('1'), trust.evidence());
+        return fixture(response, trust.evidence());
+    }
+
+    static Fixture statisticalFixture() {
+        EvidenceTrustTestFixtures.Fixture trust = EvidenceTrustTestFixtures.fixture();
+        ObjectNode response = statisticalResponse(fingerprint('1'), trust.evidence());
+        return fixture(response, trust.evidence());
+    }
+
+    private static Fixture fixture(ObjectNode response, KeyPair keyPair) {
         EvidenceVerificationKey key = new EvidenceVerificationKey(
                 TestingProtocol.EVIDENCE_VERIFICATION_KEY_V1, "evidence-key-a", "Ed25519",
-                Base64.getEncoder().encodeToString(trust.evidence().getPublic().getEncoded()),
+                Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()),
                 SIGNED_AT.minusSeconds(600), "ACTIVE", "test-evidence-authority");
         return new Fixture(response, key,
-                EvidenceVerificationKeySet.fromPayload(longLivedKeySet(trust.evidence())),
-                trust.evidence());
+                EvidenceVerificationKeySet.fromPayload(longLivedKeySet(keyPair)), keyPair);
     }
 
     static ObjectNode response(String requestFingerprint, KeyPair signingKey) {
@@ -119,6 +128,150 @@ final class TestSuiteStabilityTestFixtures {
         attestation.put("independentlyVerifiable", true);
         seal(response, signingKey, true);
         return response;
+    }
+
+    static ObjectNode statisticalResponse(String requestFingerprint, KeyPair signingKey) {
+        ObjectNode response = response(requestFingerprint, signingKey);
+        response.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3);
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V3);
+        evidence.put("requestedAttempts", 29);
+        ArrayNode attempts = evidence.putArray("attempts");
+        ArrayNode observations = (ArrayNode) evidence.at("/caseResults/0/observations");
+        observations.removeAll();
+        for (int attempt = 1; attempt <= 29; attempt++) {
+            Instant startedAt = SIGNED_AT.minusSeconds((30L - attempt) * 2L);
+            ObjectNode source = attempts.addObject();
+            source.put("attempt", attempt);
+            source.put("status", "VERIFIED");
+            source.put("suiteRunId", "suite-run-statistical-" + attempt);
+            source.put("aggregateEvidenceFingerprint", attemptFingerprint(attempt));
+            source.put("suiteStatus", "PASSED");
+            source.put("sourcePromotionStatus", "ELIGIBLE");
+            source.put("startedAt", startedAt.toString());
+            source.put("completedAt", startedAt.plusSeconds(1).toString());
+            source.put("diagnosticCode", "");
+
+            ObjectNode observation = observations.addObject();
+            observation.put("attempt", attempt);
+            observation.put("status", "VERIFIED");
+            observation.put("runId", "child-run-statistical-" + attempt);
+            observation.put("evidenceFingerprint", fingerprint('f'));
+            observation.put("evidenceStatus", "PASSED");
+            observation.put("evidenceClass", "CERTIFIABLE");
+            observation.put("fixtureBundleFingerprint", fingerprint('c'));
+            observation.put("planFingerprint", fingerprint('d'));
+            observation.put("semanticResultFingerprint", fingerprint('e'));
+            observation.put("diagnosticCode", "");
+        }
+        ObjectNode policy = evidence.putObject("statisticalAssessment").putObject("policy");
+        TestSuiteStabilityStatisticalPolicy statisticalPolicy =
+                TestSuiteStabilityStatisticalPolicy.exactBinomial(9_500, 1_000);
+        policy.put("model", statisticalPolicy.model().name());
+        policy.put("claimScope", statisticalPolicy.claimScope().name());
+        policy.put("stoppingRule", statisticalPolicy.stoppingRule().name());
+        policy.put("censoringPolicy", statisticalPolicy.censoringPolicy().name());
+        policy.put("confidenceLevelBps", statisticalPolicy.confidenceLevelBps());
+        policy.put("maximumInstabilityRateBps",
+                statisticalPolicy.maximumInstabilityRateBps());
+        ObjectNode assessment = (ObjectNode) evidence.path("statisticalAssessment");
+        assessment.put("requiredAttempts", 29);
+        assessment.put("observedAttempts", 29);
+        assessment.put("verifiedAttempts", 29);
+        assessment.put("censoredAttempts", 0);
+        assessment.put("observedInstabilityEvents", 0);
+        assessment.put("achievedConfidenceBps",
+                statisticalPolicy.achievedConfidenceBps(29));
+        assessment.put("status", "SATISFIED");
+        assessment.put("stopReason", "FIXED_HORIZON_REACHED");
+        ArrayNode assumptions = assessment.putArray("assumptions");
+        TestSuiteStabilityRun.STATISTICAL_MODEL_ASSUMPTIONS.forEach(assumptions::add);
+        ((ObjectNode) evidence.path("promotion"))
+                .put("statisticalConfidenceSatisfied", true);
+        evidence.put("startedAt", SIGNED_AT.minusSeconds(58).toString());
+        evidence.put("completedAt", SIGNED_AT.minusSeconds(1).toString());
+        ((ObjectNode) response.path("attestation")).put("schemaVersion",
+                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V3);
+        seal(response, signingKey, true);
+        return response;
+    }
+
+    static void makeStatisticalFlaky(ObjectNode response, KeyPair keyPair) {
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        ObjectNode result = (ObjectNode) evidence.path("caseResults").get(0);
+        ((ObjectNode) result.path("observations").get(1))
+                .put("semanticResultFingerprint", fingerprint('9'));
+        result.put("status", "FLAKY");
+        result.put("distinctVerifiedOutcomes", 2);
+        evidence.put("status", "FLAKY");
+        ObjectNode assessment = (ObjectNode) evidence.path("statisticalAssessment");
+        assessment.put("observedInstabilityEvents", 1);
+        assessment.put("achievedConfidenceBps", 0);
+        assessment.put("status", "REJECTED");
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons")
+                .add("FLAKY_CASE_OBSERVED")
+                .add("STATISTICAL_CONFIDENCE_REJECTED");
+        promotion.put("stableCases", 0);
+        promotion.put("flakyCases", 1);
+        promotion.put("statisticalConfidenceSatisfied", false);
+        ObjectNode quarantine = (ObjectNode) evidence.path("quarantine");
+        quarantine.put("status", "REQUIRED");
+        quarantine.putArray("caseIds").add("golden");
+        quarantine.put("reason", "FLAKY_CASE_OBSERVED");
+        seal(response, keyPair, false);
+    }
+
+    static void makeStatisticalCensored(ObjectNode response, KeyPair keyPair) {
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        ObjectNode attempt = (ObjectNode) evidence.path("attempts").get(1);
+        attempt.put("status", "INCONCLUSIVE");
+        attempt.put("diagnosticCode", "SOURCE_EVIDENCE_INCOMPLETE");
+        ObjectNode result = (ObjectNode) evidence.path("caseResults").get(0);
+        ObjectNode observation = (ObjectNode) result.path("observations").get(1);
+        observation.put("status", "INCONCLUSIVE");
+        observation.put("diagnosticCode", "SOURCE_EVIDENCE_INCOMPLETE");
+        result.put("status", "INCONCLUSIVE");
+        result.putArray("diagnosticCodes").add("SOURCE_EVIDENCE_INCOMPLETE");
+        evidence.put("status", "INCONCLUSIVE");
+        evidence.putArray("diagnostics").add("SOURCE_EVIDENCE_INCOMPLETE");
+        ObjectNode assessment = (ObjectNode) evidence.path("statisticalAssessment");
+        assessment.put("verifiedAttempts", 28);
+        assessment.put("censoredAttempts", 1);
+        assessment.put("achievedConfidenceBps", 0);
+        assessment.put("status", "INCONCLUSIVE");
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons")
+                .add("STABILITY_EVIDENCE_INCOMPLETE")
+                .add("STATISTICAL_CONFIDENCE_INCONCLUSIVE");
+        promotion.put("stableCases", 0);
+        promotion.put("inconclusiveCases", 1);
+        promotion.put("allAttemptsVerified", false);
+        promotion.put("allSourceSuitesPromotionEligible", false);
+        promotion.put("statisticalConfidenceSatisfied", false);
+        ObjectNode quarantine = (ObjectNode) evidence.path("quarantine");
+        quarantine.put("status", "UNDETERMINED");
+        quarantine.putArray("caseIds");
+        quarantine.put("reason", "STABILITY_EVIDENCE_INCOMPLETE");
+        seal(response, keyPair, true);
+    }
+
+    static void makeStatisticalConsistentFailure(ObjectNode response, KeyPair keyPair) {
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        ObjectNode result = (ObjectNode) evidence.path("caseResults").get(0);
+        result.path("observations").forEach(value ->
+                ((ObjectNode) value).put("evidenceStatus", "ASSERTION_FAILED"));
+        result.put("status", "CONSISTENT_FAILURE");
+        evidence.put("status", "CONSISTENT_FAILURE");
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons").add("CONSISTENT_TEST_FAILURE");
+        promotion.put("stableCases", 0);
+        promotion.put("consistentFailureCases", 1);
+        promotion.put("statisticalConfidenceSatisfied", true);
+        seal(response, keyPair, false);
     }
 
     static void seal(ObjectNode response, KeyPair keyPair, boolean synchronizeSources) {
@@ -270,6 +423,10 @@ final class TestSuiteStabilityTestFixtures {
         } catch (GeneralSecurityException failure) {
             throw new IllegalStateException(failure);
         }
+    }
+
+    private static String attemptFingerprint(int attempt) {
+        return "sha256:" + String.format(java.util.Locale.ROOT, "%064x", attempt);
     }
 
     private static String fingerprint(char value) {

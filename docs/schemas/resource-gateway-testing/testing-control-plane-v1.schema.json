@@ -2805,7 +2805,18 @@
           ]}},
           "promotion": {"required": ["allSourceSuitesPromotionEligible",
             "statisticalConfidenceSatisfied"]}
-        }}
+        }, "allOf": [{"oneOf": [
+          {"properties": {
+            "statisticalAssessment": {"properties": {"status": {"const": "SATISFIED"}}},
+            "promotion": {"properties": {"statisticalConfidenceSatisfied": {"const": true}}}
+          }},
+          {"properties": {
+            "statisticalAssessment": {"properties": {
+              "status": {"enum": ["REJECTED", "INCONCLUSIVE"]}}},
+            "promotion": {"properties": {"statisticalConfidenceSatisfied": {"const": false}}}
+          }}
+        ]}]
+        }
       ]}]
     },
     "testSuiteStabilitySourceEvidenceRef": {

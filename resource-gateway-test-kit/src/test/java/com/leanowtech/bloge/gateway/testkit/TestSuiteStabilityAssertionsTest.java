@@ -14,6 +14,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TestSuiteStabilityAssertionsTest {
 
     @Test
+    void acceptsOnlyIndependentlyReconstructedStatisticalConfidenceAtTheV3Gate() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.statisticalFixture();
+        TestSuiteStabilityRun run = fixture.run();
+        TestSuiteStabilityEvidenceVerifier.VerificationResult verification =
+                verifier().verify(run, fixture.keySet(), fixture.keySet().snapshotFingerprint());
+
+        assertThatNoException().isThrownBy(() -> {
+            TestSuiteStabilityAssertions.assertStatisticalConfidenceSatisfied(run);
+            TestSuiteStabilityAssertions.assertStatisticalReleaseEligible(run, verification);
+        });
+    }
+
+    @Test
+    void rejectsDeterministicEvidenceAtAStatisticalConfidenceGate() {
+        TestSuiteStabilityRun deterministic = TestSuiteStabilityTestFixtures.fixture().run();
+
+        assertThatThrownBy(() -> TestSuiteStabilityAssertions
+                .assertStatisticalConfidenceSatisfied(deterministic))
+                .isInstanceOf(AssertionFailedError.class)
+                .hasMessageContaining("no independently reconstructable statistical confidence");
+    }
+
+    @Test
     void acceptsOnlyStablePromotionEligibleAndExactlyVerifiedEvidence() {
         TestSuiteStabilityTestFixtures.Fixture fixture = TestSuiteStabilityTestFixtures.fixture();
         TestSuiteStabilityRun run = fixture.run();

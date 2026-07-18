@@ -89,7 +89,8 @@ public record TestSuiteStabilityAttestation(
             sourcePromotionReasons = sourcePromotionReasons == null
                     ? List.of() : sourcePromotionReasons.stream().map(
                     TestSuiteStabilityAttestation::machineCode).distinct().sorted().toList();
-            if (attempt < 1 || attempt > 20 || suiteRunId.isBlank()
+            if (attempt < 1 || attempt > TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS
+                    || suiteRunId.isBlank()
                     || !fingerprint(aggregateEvidenceFingerprint)
                     || sourcePromotionReasons.size() > 20
                     || (sourcePromotionStatus == null && !sourcePromotionReasons.isEmpty())
@@ -122,7 +123,8 @@ public record TestSuiteStabilityAttestation(
         }
         if (signatureStatus == SignatureStatus.VERIFIED
                 && (!List.of(TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1,
-                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2).contains(schemaVersion)
+                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2,
+                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V3).contains(schemaVersion)
                 || !stabilityRunId(stabilityRunId) || suiteRef == null
                 || !fingerprint(requestFingerprint) || !fingerprint(evidenceFingerprint)
                 || Instant.EPOCH.equals(signedAt) || keyId.isBlank() || algorithm.isBlank()
