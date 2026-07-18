@@ -1,10 +1,15 @@
 # Stage 5 pure-DSL mutation evidence protocol verification
 
+> Historical protocol-only verification. The statements below about a missing public runner and
+> disabled execution capabilities describe this increment at delivery time. They are superseded
+> operationally by
+> [Stage 5 mutation execution verification](resource-gateway-execution-data-control-plane-stage5-mutation-execution-verification.md).
+
 ## 1. Verified claim
 
-This increment defines the immutable, payload-free protocol needed to classify and score an exact
-`bloge.testSuite.v5` mutation matrix. It does **not** claim that the public mutation runner exists.
-`pureDslMutationExecution` and `mutationScoreEvidence` therefore remain disabled in capabilities.
+At the time of this increment, it defined the immutable, payload-free protocol needed to classify and
+score an exact `bloge.testSuite.v5` mutation matrix. It did **not** claim that the public mutation
+runner existed, so `pureDslMutationExecution` and `mutationScoreEvidence` remained disabled then.
 
 The protocol closes these integrity boundaries:
 
@@ -75,7 +80,7 @@ inconclusive and no-survivor gates, partial-scheduling suppression, child target
 score rejection, V5 codec round trip, v5 signature-domain selection, response/bundle pairing, and
 schema constants/bounds. `jq empty` and `git diff --check` also pass.
 
-## 6. Deliberately unclaimed work
+## 6. Deliberately unclaimed in this historical increment
 
 The following remain required before enabling mutation execution or score evidence capabilities:
 

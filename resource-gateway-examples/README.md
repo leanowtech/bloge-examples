@@ -55,9 +55,11 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/boundary-cases` | Generate bounded, validator-proven graph input candidates and explicit coverage gaps (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/property-cases?seed=...` | Generate reproducible, bounded graph trials with validator-proven shrink paths; this is an authoring plan, not execution evidence (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/mutation-cases?maxMutants=...` | Plan bounded, independently compiling pure-DSL graph mutants without changing external operators; planning is not execution, evidence, or a score (test/staging only) |
+| `POST http://localhost:8080/api/testing/targets/graphs/{graphName}/mutation-suites` | Freeze an exact reviewed mutation plan, baseline fingerprints, oracle suite, complete matrix, and score policy as immutable V5 (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/graphs/{graphName}/boundary-suites` | Materialize an explicitly selected, fingerprint-locked boundary-plan subset as an immutable schema-admission suite (test/staging only) |
 | `POST http://localhost:8080/api/testing/targets/graphs/{graphName}/property-suites` | Freeze one exact property plan's complete root/shrink closure against an existing assertion-bearing fixture (test/staging only) |
-| `POST http://localhost:8080/api/testing/suites/{suiteId}/executions` | Execute an exact immutable suite revision, including bounded V4 property root/shrink closures, and emit signed aggregate evidence (test/staging only) |
+| `POST http://localhost:8080/api/testing/suites/{suiteId}/executions` | Execute an exact immutable V1-V4 suite revision, including bounded property root/shrink closures, and emit signed aggregate evidence (test/staging only) |
+| `POST http://localhost:8080/api/testing/suites/{suiteId}/mutation-executions` | Execute an exact V5 suite baseline-first, classify every regenerated mutant, and emit signed mutation-score evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/operators/{operatorRef}` | Idempotently freeze an exact operator test at its server-owned start gate (test/staging only) |
@@ -698,14 +700,23 @@ Capability discovery reports both `propertySuiteMaterialization=true` and
 [property materialization API](../docs/resource-gateway-testing-control-plane-api.md#415-materialize-a-reviewed-property-plan)
 and [property execution verification](../docs/resource-gateway-execution-data-control-plane-stage5-property-execution-verification.md).
 
-Pure-DSL mutation authoring is now a separate bounded protocol. The graph endpoint validates the
-recoverable `bloge-dsl.ast.v1` source against the current graph and frozen resource dependencies,
-then returns only independently compiling orchestration mutations with AST coordinates and content
-fingerprints. The plan never rewrites external operator bindings or carries executable source and it
-cannot be treated as a mutation run, score, or correctness evidence. Capability discovery therefore
-advertises planning independently from the still-disabled execution and score-evidence features. See
-the [mutation planning API](../docs/resource-gateway-testing-control-plane-api.md#414-plan-bounded-pure-dsl-mutants)
-and [Stage 5 mutation-plan verification](../docs/resource-gateway-execution-data-control-plane-stage5-mutation-plan-verification.md).
+Pure-DSL mutation testing has a bounded, evidence-bearing lifecycle. Planning validates recoverable
+`bloge-dsl.ast.v1` against the current graph and frozen dependencies, and returns only independently
+compiling orchestration mutations with content fingerprints. V5 materialization then regenerates the
+reviewed plan, binds exact baseline/source/artifact/target fingerprints, an executable V1/V2/V4 oracle
+suite and every fixture, and freezes at most 16 mutants x 16 cases under one score policy. Callers
+cannot upload mutated source or trim the matrix.
+
+The dedicated mutation runner executes the full baseline first, regenerates each mutant server-side,
+and reuses the baseline-bound inputs and fixtures in the isolated test engine. Only signed assertion
+failure kills a mutant; runtime, fixture, timeout, control, target, or evidence failures remain
+inconclusive. `STOP_AFTER_KILL` stops only the current mutant and never skips later mutants. Durable
+idempotency, lease checkpoints, V5 terminal signatures, portable bundles, and abandoned-run
+reconciliation remain fail closed without re-executing completed children. Capability discovery
+advertises planning, materialization, execution, and score evidence independently and enables all four
+only with the isolated testing runtime. See the
+[mutation lifecycle API](../docs/resource-gateway-testing-control-plane-api.md#419-materialize-an-exact-mutation-matrix)
+and [Stage 5 mutation execution verification](../docs/resource-gateway-execution-data-control-plane-stage5-mutation-execution-verification.md).
 
 ANEKE remains the workbook and publish-gate authority. Historical `GovernanceGateResult.v2` stays readable, while a
 semantic `PASSED` decision uses `GovernanceGateResult.v3`: it records the exact suite target, reconstructable ordered

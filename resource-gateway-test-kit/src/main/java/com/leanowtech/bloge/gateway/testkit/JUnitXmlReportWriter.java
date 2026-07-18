@@ -56,10 +56,12 @@ public final class JUnitXmlReportWriter {
     }
 
     /**
-     * Writes one payload-free testcase per governed case plus one fail-closed aggregate gate.
-     * Business suites require structural coverage; schema-admission suites require exact validator
-     * matches and never imply business execution. Promotion eligibility is optional only when the
-     * caller explicitly disables it.
+     * Writes payload-free governed-suite testcases plus one fail-closed aggregate gate. Mutation
+     * suites additionally emit one informational testcase per mutant; a survivor is not itself a
+     * JUnit failure because the immutable score policy, rather than an individual classification,
+     * owns the gate verdict. Business suites require structural coverage; schema-admission suites
+     * require exact validator matches and never imply business execution. Promotion eligibility is
+     * optional only when the caller explicitly disables it.
      *
      * @param output destination XML file
      * @param run immutable suite-run projection
@@ -74,14 +76,21 @@ public final class JUnitXmlReportWriter {
         int caseFailures = (int) run.caseResults().stream().filter(result -> !result.passed()).count();
         boolean gatePassed = run.gateFailureCodes(requirePromotionEligible).isEmpty();
         int failures = caseFailures + (gatePassed ? 0 : 1);
+        boolean mutation = run.evaluationMode() == TestSuiteRun.EvaluationMode.PURE_DSL_MUTATION;
+        int mutantTests = mutation ? run.mutantResults().size() : 0;
         writeDocument(output, "resource-gateway suite " + run.suiteId(),
-                run.caseResults().size() + 1, failures, xml -> {
+                run.caseResults().size() + mutantTests + 1, failures, xml -> {
             for (TestSuiteRun.CaseResult result : run.caseResults()) {
                 writeSuiteCase(xml, result, run.evaluationMode());
             }
+            if (mutation) {
+                for (TestSuiteRun.MutantResult result : run.mutantResults()) {
+                    writeMutationResult(xml, result);
+                }
+            }
             writeSuiteGate(xml, run, requirePromotionEligible, gatePassed);
         });
-        return new Report(run.caseResults().size() + 1, failures);
+        return new Report(run.caseResults().size() + mutantTests + 1, failures);
     }
 
     /**
@@ -201,6 +210,24 @@ public final class JUnitXmlReportWriter {
         xml.writeEndElement();
     }
 
+    private static void writeMutationResult(XMLStreamWriter xml,
+                                            TestSuiteRun.MutantResult result)
+            throws XMLStreamException {
+        TestSuiteRun.MutantRef mutant = result.mutant();
+        xml.writeStartElement("testcase");
+        xml.writeAttribute("classname", "resource-gateway.mutation-suite");
+        xml.writeAttribute("name", bounded(mutant.mutantId(), 512));
+        xml.writeStartElement("system-out");
+        xml.writeCharacters("mutantId=" + bounded(mutant.mutantId(), 256)
+                + "; kind=" + mutant.kind()
+                + "; status=" + result.status()
+                + "; targetFingerprint=" + bounded(mutant.mutantTargetFingerprint(), 80)
+                + "; cases=" + result.caseResults().size()
+                + "; killingCases=" + result.killingCaseIds().size());
+        xml.writeEndElement();
+        xml.writeEndElement();
+    }
+
     private static void writeSuiteGate(XMLStreamWriter xml, TestSuiteRun run,
                                        boolean requirePromotionEligible, boolean gatePassed)
             throws XMLStreamException {
@@ -230,6 +257,18 @@ public final class JUnitXmlReportWriter {
                 .map(value -> value.status().name()).orElse("NOT_APPLICABLE")
                 + "; promotion=" + run.promotionStatus()
                 + "; promotionRequired=" + requirePromotionEligible);
+        var mutationScore = run.mutationScore();
+        if (mutationScore.isPresent()) {
+            TestSuiteRun.MutationScore score = mutationScore.orElseThrow();
+            xml.writeCharacters("; mutationBaseline=" + run.mutationBaselineStatus()
+                    .map(Enum::name).orElse("UNAVAILABLE")
+                    + "; mutationScore=" + score.scoreBasisPoints()
+                    + "; mutationScoreStatus=" + score.status()
+                    + "; killed=" + score.killedMutants()
+                    + "; survived=" + score.survivedMutants()
+                    + "; inconclusive=" + score.inconclusiveMutants()
+                    + "; unclassified=" + score.unclassifiedMutants());
+        }
         xml.writeEndElement();
         xml.writeEndElement();
     }

@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testkit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Document;
@@ -131,6 +132,58 @@ class JUnitXmlReportWriterTest {
         assertThat(document.getDocumentElement().getAttribute("tests")).isEqualTo("2");
         assertThat(document.getDocumentElement().getAttribute("failures")).isEqualTo("0");
         assertThat(document.getElementsByTagName("failure").getLength()).isZero();
+    }
+
+    @Test
+    void writesMutationClassificationAndLetsTheImmutableScorePolicyOwnTheGate() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        TestSuiteRun run = TestSuiteRun.from(
+                mapper.readTree(TestSuiteRunAssertionsTest.mutationSuiteResponse()));
+        Path report = temporaryDirectory.resolve("reports/mutation.xml");
+
+        JUnitXmlReportWriter.Report result = JUnitXmlReportWriter.writeSuite(report, run, true);
+
+        assertThat(result.tests()).isEqualTo(4);
+        assertThat(result.failures()).isZero();
+        assertThat(result.exitCode()).isZero();
+        assertThat(Files.readString(report))
+                .contains("name=\"mutant-001\"")
+                .contains("name=\"mutant-002\"")
+                .contains("status=KILLED")
+                .contains("status=SURVIVED")
+                .contains("mutationBaseline=PASSED")
+                .contains("mutationScore=5000")
+                .contains("mutationScoreStatus=SATISFIED")
+                .doesNotContain("/members/")
+                .doesNotContain("/fallback");
+    }
+
+    @Test
+    void writesOneAggregateFailureWhenMutationPolicyRejectsAnOtherwiseValidScore()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode response = (ObjectNode) mapper.readTree(
+                TestSuiteRunAssertionsTest.mutationSuiteResponse());
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("status", "COMPLETED_WITH_FAILURES");
+        ObjectNode score = (ObjectNode) evidence.path("mutationScore");
+        ((ObjectNode) score.path("policy")).put("minimumScoreBasisPoints", 6_000);
+        score.put("status", "UNSATISFIED");
+        score.putArray("reasons").add("MUTATION_SCORE_BELOW_THRESHOLD");
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons").add("MUTATION_SCORE_UNSATISFIED");
+        TestSuiteRun run = TestSuiteRun.from(response);
+        Path report = temporaryDirectory.resolve("reports/mutation-failed.xml");
+
+        JUnitXmlReportWriter.Report result = JUnitXmlReportWriter.writeSuite(report, run, false);
+
+        assertThat(result.tests()).isEqualTo(4);
+        assertThat(result.failures()).isEqualTo(1);
+        assertThat(result.exitCode()).isEqualTo(1);
+        assertThat(Files.readString(report))
+                .contains("MUTATION_SCORE_UNSATISFIED")
+                .contains("MUTATION_SCORE_BELOW_THRESHOLD");
     }
 
     private static String run(String runId, String status, String evidenceClass, String diagnostic) {

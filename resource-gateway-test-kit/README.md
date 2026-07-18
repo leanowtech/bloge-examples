@@ -5,9 +5,9 @@ Resource Gateway testing control plane without depending on its Spring Boot
 implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
-  registries, deterministic property planning and V4 materialization, pure-DSL mutation planning, built-in graph-catalog
-  materialization, graph/operator execution, suite execution, and persisted child/aggregate-run
-  lookup;
+  registries, deterministic property planning/materialization/execution, pure-DSL mutation
+  planning/V5 materialization/V6 execution, built-in graph-catalog materialization,
+  graph/operator execution, suite execution, and persisted child/aggregate-run lookup;
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level protocol fixtures,
   including one-based attempt/occurrence selectors;
 - a dependency-closed `TestSuiteBuilder` with exact target/fixture references and typed semantic
@@ -19,13 +19,15 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - typed v2 child-evidence integrity manifests with v1 migration compatibility;
 - signed suite checkpoint/terminal attestations, payload-free evidence-bundle export, verification
   key lookup, and dependency-light offline Ed25519 verification, including schema-admission v3
-  evidence with a signed empty business-child closure;
+  evidence with a signed empty business-child closure, bounded-property v4 evidence, and mutation
+  v5 score/child-closure re-derivation;
 - challenge-bound request-index replica proof collection plus an offline exact-inventory rollout
   gate that rejects missing, duplicate, unexpected, stale, mixed-scope/artifact/protocol/mode, or
   cryptographically invalid cohorts against an externally pinned key set;
 - occurrence-addressable node, retry-attempt, and edge summaries without payload fields;
-- payload-free JUnit XML with deterministic CI exit codes;
-- an executable `-cli.jar` that fails closed on suite, coverage, or promotion-policy failure.
+- payload-free JUnit XML with deterministic CI exit codes and per-mutant classification rows;
+- an executable `-cli.jar` that fails closed on suite, coverage, promotion, or immutable mutation
+  score-policy failure.
 
 ## Build
 
@@ -40,9 +42,11 @@ The module is intentionally independent of `resource-gateway-examples`. The
 server and client can therefore build and release separately against the
 versioned wire schema.
 
-The checkpoint object is schema support only in this release. The client exposes no checkpoint or
-resume call because Resource Gateway has not yet connected the protocol to BLOGE durable/suspend
-storage or a public endpoint.
+Resource Gateway now exposes authenticated durable create/query/claim/heartbeat/recovery endpoints
+backed by BLOGE suspend state. This test-kit deliberately does not yet expose that broad control
+surface as a typed Java client; it packages the checkpoint schema and only the narrow request-index
+rollout proof needed by the fleet gate. Direct durable-control consumers should use the authoritative
+testing API/schema until a generation-matched typed client is added.
 
 ## Use
 
@@ -103,19 +107,63 @@ JUnitXmlReportWriter.write(
         List.of(run));
 ```
 
-Plan pure-DSL graph mutations without receiving or executing mutated source:
+Plan pure-DSL graph mutations without receiving mutated source, then freeze and execute the exact
+reviewed plan against a governed oracle:
 
 ```java
-JsonNode mutationPlan = client.planGraphMutationCases("loanDecisionPolicy", 64);
+JsonNode mutationPlan = client.planGraphMutationCases("loanDecisionPolicy", 16);
 if (!mutationPlan.path("status").asText().equals("GENERATED")) {
     mutationPlan.path("gaps").forEach(System.out::println);
 }
+
+ObjectNode materializationRequest = new ObjectMapper().createObjectNode();
+materializationRequest.put("schemaVersion",
+        "bloge.testMutationSuiteMaterializationRequest.v1");
+materializationRequest.put("suiteId", "loan-decision-mutations");
+materializationRequest.put("classification", "INTERNAL");
+materializationRequest.put("expectedTargetFingerprint",
+        mutationPlan.path("target").path("fingerprint").asText());
+materializationRequest.put("expectedSourceFingerprint",
+        mutationPlan.path("sourceFingerprint").asText());
+materializationRequest.put("expectedGraphArtifactFingerprint",
+        mutationPlan.path("graphArtifactFingerprint").asText());
+materializationRequest.put("expectedPlanFingerprint",
+        mutationPlan.path("planFingerprint").asText());
+materializationRequest.put("maxMutants", 16);
+materializationRequest.put("acceptPlanningGaps",
+        mutationPlan.path("status").asText().equals("PARTIAL"));
+materializationRequest.putObject("oracleSuiteRef")
+        .put("suiteId", "loan-decision-regression")
+        .put("revision", 7)
+        .put("fingerprint", "sha256:<exact-oracle-suite-fingerprint>");
+materializationRequest.putObject("scorePolicy")
+        .put("minimumScoreBasisPoints", 8000)
+        .put("maximumInconclusiveMutants", 0)
+        .put("requireNoSurvivors", false)
+        .put("excludeEquivalentMutants", false);
+JsonNode materialized = client.materializeGraphMutationSuite(
+        "loanDecisionPolicy", materializationRequest);
+JsonNode mutationSuite = materialized.path("suiteRef");
+
+TestSuiteRun mutationRun = client.executeMutationSuite(
+        mutationSuite.path("suiteId").asText(),
+        mutationSuite.path("revision").asLong(),
+        mutationSuite.path("fingerprint").asText(),
+        "mutation-ci-1842",
+        ResourceGatewayTestClient.MutationStrategy.STOP_AFTER_KILL,
+        Map.of("pipeline", "release-candidate", "buildId", "1842"));
+
+TestSuiteRunAssertions.assertMutationSatisfied(mutationRun);
+TestSuiteRun.MutationScore mutationScore = mutationRun.requireMutationScore();
+List<TestSuiteRun.MutantResult> mutants = mutationRun.mutantResults();
 ```
 
-The client validates `bloge.testMutationCasePlan.v1` against its packaged authoritative Schema.
-Each returned entry is an independently compiling AST rewrite identified by content fingerprints.
-This API is planning only: `pureDslMutationExecution` and `mutationScoreEvidence` remain false, and
-the plan cannot be used as test evidence.
+The client validates the plan, materialization, V6 response, V5 evidence, and V5 attestation against
+its packaged authoritative Schema and binds every response back to the caller's exact graph, plan,
+oracle, suite, and idempotency identities. It independently re-derives baseline status, mutant
+classification, killing cases, denominator, score, and policy verdict. Planning by itself remains an
+authoring asset; only the terminal generation-matched bundle is evidence. Verify that bundle against
+an independently pinned key set before a governance gate consumes it.
 
 Run an exact synchronous operator binding with the same governed fixture and evidence protocol:
 
@@ -454,19 +502,40 @@ java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0
   --report target/test-results/resource-gateway-suite.xml
 ```
 
+V5 mutation suites must opt into the dedicated endpoint and its per-mutant strategy:
+
+```bash
+java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  --base-uri http://localhost:8080 \
+  --suite-id loan-decision-mutations \
+  --revision 5 \
+  --fingerprint 'sha256:<64 lowercase hex characters>' \
+  --client-request-id "${CI_PIPELINE_ID}-${CI_JOB_ID}-mutation" \
+  --mode MUTATION \
+  --strategy STOP_AFTER_KILL \
+  --report target/test-results/resource-gateway-mutation.xml
+```
+
+`STANDARD` is the default mode and accepts `COLLECT_ALL` or `FAIL_FAST`. `MUTATION` accepts
+`COLLECT_ALL` or `STOP_AFTER_KILL`; the latter stops only the current mutant after a signed assertion
+kill and still visits every later mutant. A strategy from the other mode is rejected before any
+network request.
+
 The command returns:
 
-- `0` only when suite status is `PASSED`, coverage is `SATISFIED`, every case passed, and promotion
-  status is `ELIGIBLE`;
+- `0` only when the selected evaluation mode's typed verdict passes and, by default, promotion status
+  is `ELIGIBLE`; mutation mode additionally requires a passing baseline and independently re-derived
+  `SATISFIED` score policy;
 - `1` when governed evidence was obtained but the suite gate failed;
 - `2` when configuration, transport, protocol validation, report generation, or a non-terminal
   `RUNNING` checkpoint prevents a trustworthy gate verdict.
 
-`--allow-non-eligible` disables only the promotion-eligibility requirement; execution, all cases,
-and coverage must still pass. The CLI never accepts a token argument, never generates an idempotency
-key implicitly, and writes a one-test infrastructure failure report when execution fails before
-governed terminal suite evidence is available. Unknown options and positional arguments are reported
-without echoing their values.
+`--allow-non-eligible` disables only the promotion-eligibility requirement; the mode-specific typed
+verdict must still pass. Mutation JUnit XML includes one payload-free row per baseline case and mutant,
+but individual survivors are informational because the immutable aggregate score policy owns the gate
+verdict. The CLI never accepts a token argument, never generates an idempotency key implicitly, and
+writes a one-test infrastructure failure report when execution fails before governed terminal suite
+evidence is available. Unknown options and positional arguments are reported without echoing values.
 
 `EXECUTABLE_UNIT` does not by itself imply certification. The server also requires a frozen
 implementation closure, runtime state, and v2 composability manifest. Stateless operators satisfy

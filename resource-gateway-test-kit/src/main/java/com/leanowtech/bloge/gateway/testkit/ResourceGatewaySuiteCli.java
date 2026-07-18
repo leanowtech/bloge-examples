@@ -16,7 +16,8 @@ import java.util.Map;
  * <p>The bearer credential is accepted only from {@code RESOURCE_GATEWAY_TOKEN}; command-line
  * token arguments are intentionally unsupported to keep secrets out of process listings. A stable
  * client request id is mandatory so infrastructure retries cannot silently execute side effects
- * twice.</p>
+ * twice. Standard and pure-DSL mutation suites use distinct endpoints and scheduling strategies;
+ * callers must select mutation mode explicitly.</p>
  */
 public final class ResourceGatewaySuiteCli {
 
@@ -65,9 +66,7 @@ public final class ResourceGatewaySuiteCli {
                     .bearerToken(() -> options.token())
                     .requestTimeout(options.timeout())
                     .build();
-            TestSuiteRun run = client.executeSuite(options.suiteId(), options.revision(),
-                    options.fingerprint(), options.clientRequestId(), options.strategy(),
-                    Map.of("source", "resource-gateway-suite-cli"));
+            TestSuiteRun run = options.execute(client);
             if (run.status() == TestSuiteRun.Status.RUNNING) {
                 writeInfrastructureFailure(options, "RG.TESTKIT.SUITE_NON_TERMINAL",
                         "The suite returned a non-terminal checkpoint; no gate verdict is available.",
@@ -84,6 +83,7 @@ public final class ResourceGatewaySuiteCli {
                     .map(value -> value.status().name()).orElse("NOT_APPLICABLE")
                     + "; promotion=" + run.promotionStatus()
                     + "; cases=" + run.caseResults().size()
+                    + mutationSummary(run)
                     + "; report=" + options.report().toAbsolutePath());
             return report.exitCode();
         } catch (ResourceGatewayTestException failure) {
@@ -118,6 +118,19 @@ public final class ResourceGatewaySuiteCli {
         return normalized.length() <= maximum ? normalized : normalized.substring(0, maximum);
     }
 
+    private static String mutationSummary(TestSuiteRun run) {
+        return run.mutationScore().map(score -> "; mutationBaseline="
+                + run.mutationBaselineStatus().map(Enum::name).orElse("UNAVAILABLE")
+                + "; mutants=" + score.plannedMutants()
+                + "; mutationScore=" + score.scoreBasisPoints()
+                + "; mutationScoreStatus=" + score.status()).orElse("");
+    }
+
+    private enum RunMode {
+        STANDARD,
+        MUTATION
+    }
+
     private record CliOptions(
             URI baseUri,
             String token,
@@ -125,11 +138,26 @@ public final class ResourceGatewaySuiteCli {
             long revision,
             String fingerprint,
             String clientRequestId,
-            ResourceGatewayTestClient.SuiteStrategy strategy,
+            RunMode mode,
+            String strategy,
             Path report,
             Duration timeout,
             boolean requirePromotionEligible
     ) {
+        private TestSuiteRun execute(ResourceGatewayTestClient client) {
+            Map<String, String> metadata = Map.of("source", "resource-gateway-suite-cli");
+            if (mode == RunMode.MUTATION) {
+                ResourceGatewayTestClient.MutationStrategy mutationStrategy = enumValue(
+                        ResourceGatewayTestClient.MutationStrategy.class, strategy, "strategy");
+                return client.executeMutationSuite(suiteId, revision, fingerprint,
+                        clientRequestId, mutationStrategy, metadata);
+            }
+            ResourceGatewayTestClient.SuiteStrategy suiteStrategy = enumValue(
+                    ResourceGatewayTestClient.SuiteStrategy.class, strategy, "strategy");
+            return client.executeSuite(suiteId, revision, fingerprint, clientRequestId,
+                    suiteStrategy, metadata);
+        }
+
         private static CliOptions parse(String[] args, Map<String, String> environment) {
             Map<String, String> options = parseArguments(args);
             List<String> missing = new ArrayList<>();
@@ -153,18 +181,26 @@ public final class ResourceGatewaySuiteCli {
             long parsedRevision = positiveLong(revision, "revision");
             long timeoutSeconds = positiveLong(value(options, "timeout-seconds", environment,
                     "RESOURCE_GATEWAY_TIMEOUT_SECONDS", "60"), "timeout-seconds");
-            ResourceGatewayTestClient.SuiteStrategy strategy = enumValue(
-                    ResourceGatewayTestClient.SuiteStrategy.class,
-                    value(options, "strategy", environment, "RESOURCE_GATEWAY_SUITE_STRATEGY", "COLLECT_ALL"),
-                    "strategy");
+            RunMode mode = enumValue(RunMode.class,
+                    value(options, "mode", environment, "RESOURCE_GATEWAY_SUITE_MODE", "STANDARD"),
+                    "mode");
+            String strategy = value(options, "strategy", environment,
+                    "RESOURCE_GATEWAY_SUITE_STRATEGY", "COLLECT_ALL");
+            if (mode == RunMode.MUTATION) {
+                strategy = enumValue(ResourceGatewayTestClient.MutationStrategy.class,
+                        strategy, "strategy").name();
+            } else {
+                strategy = enumValue(ResourceGatewayTestClient.SuiteStrategy.class,
+                        strategy, "strategy").name();
+            }
             String report = value(options, "report", environment, "RESOURCE_GATEWAY_JUNIT_XML",
                     "target/resource-gateway-suite.xml");
             boolean requirePromotion = !options.containsKey("allow-non-eligible")
                     && !"true".equalsIgnoreCase(normalized(environment.get(
                             "RESOURCE_GATEWAY_ALLOW_NON_ELIGIBLE")));
-            return new CliOptions(URI.create(baseUri), token, suiteId, parsedRevision, fingerprint,
-                    clientRequestId, strategy, Path.of(report), Duration.ofSeconds(timeoutSeconds),
-                    requirePromotion);
+            return new CliOptions(URI.create(baseUri), token, suiteId, parsedRevision,
+                    fingerprint, clientRequestId, mode, strategy, Path.of(report),
+                    Duration.ofSeconds(timeoutSeconds), requirePromotion);
         }
 
         private static Map<String, String> parseArguments(String[] args) {
@@ -183,7 +219,7 @@ public final class ResourceGatewaySuiteCli {
                     continue;
                 }
                 if (!List.of("base-uri", "suite-id", "revision", "fingerprint", "client-request-id",
-                        "strategy", "report", "timeout-seconds").contains(name)) {
+                        "mode", "strategy", "report", "timeout-seconds").contains(name)) {
                     throw new IllegalArgumentException("Unknown option: --" + name);
                 }
                 if (++index >= values.length || normalized(values[index]).startsWith("--")) {

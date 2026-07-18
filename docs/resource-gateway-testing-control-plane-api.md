@@ -401,9 +401,10 @@ foreach/loop/parallel scopes are not expanded in this generation and therefore p
 The plan is bounded to 1 through 128 mutants. It contains AST coordinates and source/artifact/target
 fingerprints, but deliberately omits executable mutated source and business literals. Every mutant's
 `equivalenceClassification` is `UNKNOWN`; v1 performs no equivalent-mutant detection. This endpoint
-does not execute mutants, materialize a suite, calculate a score, or emit evidence. Capability clients
-must therefore observe `pureDslMutationPlanning=true`, `pureDslMutationExecution=false`, and
-`mutationScoreEvidence=false` as three independent facts.
+itself does not execute mutants, materialize a suite, calculate a score, or emit evidence. Capability
+clients must observe `pureDslMutationPlanning`, `mutationSuiteMaterialization`,
+`pureDslMutationExecution`, and `mutationScoreEvidence` as independent facts. When the isolated test
+runtime is assembled, all four are currently true; the plan alone is still only an authoring asset.
 
 ### 4.1.5 Materialize a reviewed property plan
 
@@ -609,6 +610,119 @@ Exact request replay returns the same checkpoint or terminal result. Changed sui
 idempotency conflict. Target/schema/plan drift fails before evaluation, signer unavailability fails
 closed without publishing unsigned v3 evidence, and abandoned checkpoints reconcile to signed
 `EVIDENCE_INCOMPLETE` while preserving completed observations and the empty business-child closure.
+
+### 4.1.9 Materialize an exact mutation matrix
+
+After reviewing a mutation plan, bind it to one exact executable graph oracle. The service accepts
+only the complete regenerated plan closure; callers cannot upload mutated source, select favorable
+mutants, or substitute a mutable/latest oracle.
+
+```http
+POST /api/testing/targets/graphs/loanDecisionPolicy/mutation-suites
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_SUITE_WRITE
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.testMutationSuiteMaterializationRequest.v1",
+  "suiteId": "loan-decision-mutations",
+  "classification": "INTERNAL",
+  "expectedTargetFingerprint": "sha256:<target>",
+  "expectedSourceFingerprint": "sha256:<recoverable-source>",
+  "expectedGraphArtifactFingerprint": "sha256:<baseline-artifact>",
+  "expectedPlanFingerprint": "sha256:<reviewed-plan>",
+  "maxMutants": 16,
+  "oracleSuiteRef": {
+    "suiteId": "loan-decision-regression",
+    "revision": 7,
+    "fingerprint": "sha256:<oracle-suite>"
+  },
+  "acceptPlanningGaps": false,
+  "scorePolicy": {
+    "minimumScoreBasisPoints": 8000,
+    "maximumInconclusiveMutants": 0,
+    "requireNoSurvivors": false,
+    "excludeEquivalentMutants": false
+  }
+}
+```
+
+Materialization is deliberately narrower than authoring planning: generation one freezes at most 16
+mutants, at most 16 oracle cases, and at most 256 mutant-case executions. The oracle may be an
+executable V1, V2, or V4 graph suite for the same exact target. Every oracle fixture fingerprint and
+target binding is reread, and every case must contain at least one governed business assertion. V3
+schema-admission suites, V5 mutation suites, target drift, assertion-free fixtures, and oversized
+matrices fail before registration.
+
+The service regenerates the plan using `maxMutants` and requires exact target, source, artifact, and
+plan fingerprints. `PARTIAL` requires `acceptPlanningGaps=true`; `UNAVAILABLE` cannot be materialized.
+Success returns `bloge.testMutationSuiteMaterialization.v1` plus a content-derived
+`bloge.testSuite.v5` ref. V5 freezes the complete mutant and oracle closure, score policy, and
+generation-one `equivalenceClassification=UNKNOWN`; `excludeEquivalentMutants` must remain false.
+
+### 4.1.10 Execute and verify a mutation suite
+
+V5 uses a dedicated endpoint so an ordinary suite runner cannot accidentally flatten mutation
+semantics into structural coverage:
+
+```http
+POST /api/testing/suites/loan-decision-mutations/mutation-executions
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.testMutationSuiteExecutionRequest.v1",
+  "suiteRef": {
+    "suiteId": "loan-decision-mutations",
+    "revision": 5,
+    "fingerprint": "sha256:<materialized-suite>"
+  },
+  "clientRequestId": "mutation-ci-1842",
+  "strategy": "STOP_AFTER_KILL",
+  "metadata": {"pipeline": "release-candidate", "buildId": "1842"}
+}
+```
+
+The runner first executes the complete oracle against the unmodified exact graph. A failed or
+incomplete baseline prevents all mutant scheduling. It then regenerates each reviewed mutant through
+the same planner and runs it in the isolated test engine with the baseline-bound case inputs and
+governed fixtures. `COLLECT_ALL` runs every case. `STOP_AFTER_KILL` stops only the current mutant's
+remaining cases after a signed assertion failure; every later mutant is still visited, so scheduling
+cannot selectively inflate the score.
+
+Only a child with `evidenceStatus=ASSERTION_FAILED` and a failed governed assertion produces
+`ASSERTION_KILLED`. A fully passing case contributes to survival. Timeout, fixture, control, runtime,
+target, persistence, and evidence failures are inconclusive, never kills. A partially scheduled
+mutant without a valid kill stays unclassified. The generation-one denominator is exactly
+`killed + survived`; an unclassified mutant forces score zero, and no equivalent mutant is excluded.
+
+| Object | Version | Required interpretation |
+| --- | --- | --- |
+| response | `bloge.testSuiteExecutionResponse.v6` | exact V5 mutation run, not an ordinary suite response |
+| evidence | `bloge.testSuiteRunEvidence.v5` | baseline, complete mutant matrix, classification, and score |
+| attestation | `bloge.testSuiteRunAttestation.v5` | signed ordered baseline and mutant child closure |
+| portable bundle | `bloge.testSuiteEvidenceBundle.v5` | payload-free terminal export for offline verification |
+
+Child attestation labels are structural coordinates: `baseline/<caseId>` for the unmodified graph and
+`<mutantId>/<caseId>` for mutant execution. Their run id, evidence fingerprint, fixture identity, and
+mutant target fingerprint must match the aggregate result exactly. Exact idempotency replay returns
+the existing checkpoint or terminal result without a second child execution. If a lease is abandoned,
+reconciliation preserves completed children, marks pending baseline work incomplete and pending
+mutant work `NOT_SCHEDULED` with `ABANDONED_RUN_RECONCILED`, recomputes the score, signs terminal V5
+evidence, and never reruns a potentially side-effecting child.
+
+The standalone test-kit exposes `materializeGraphMutationSuite(...)`,
+`executeMutationSuite(...)`, `requireMutationScore()`, `mutantResults()`, and
+`TestSuiteRunAssertions.assertMutationSatisfied(...)`. Its offline verifier independently re-derives
+classification, kill provenance, counts, denominator, score, policy verdict, and prefixed child
+closure before accepting a V5 bundle. The shaded CLI selects this endpoint with `--mode MUTATION`;
+`--strategy` accepts only `COLLECT_ALL` or `STOP_AFTER_KILL` in that mode.
+
+This is a bounded generation-one mutation score, not semantic equivalent-mutant proof, flaky-run
+analysis, statistical confidence, cross-process scheduling, or deployment-level physical isolation.
+Implementation and failure evidence are recorded in
+[Stage 5 mutation execution verification](resource-gateway-execution-data-control-plane-stage5-mutation-execution-verification.md).
 
 ### 4.2 Register an immutable governed fixture
 
@@ -2508,6 +2622,14 @@ reference, property coverage, and payload-free minimum observed counterexamples.
 `evaluationMode=PROPERTY_EXECUTION` and the typed property verdict. A normal structural `PASSED`
 predicate or an empty counterexample list cannot be used as a substitute for property coverage.
 
+A mutation v5 suite returns `bloge.testSuiteExecutionResponse.v6`,
+`bloge.testSuiteRunEvidence.v5`, and `bloge.testSuiteRunAttestation.v5`; its portable export is
+`bloge.testSuiteEvidenceBundle.v5`. Consumers must branch on
+`evaluationMode=PURE_DSL_MUTATION`, independently re-derive baseline status, mutant classification,
+kill provenance, denominator, score, and policy reasons, and require the exact prefixed child closure.
+An ordinary structural `PASSED`, a producer-supplied score, or a detached list of killed mutant ids is
+not sufficient evidence.
+
 The Canvas executable operator suite and standalone test-kit both consume this exact protocol; they
 do not reconstruct an aggregate result from mutable row responses.
 
@@ -2526,6 +2648,10 @@ heartbeats stop. After the lease expires, the sweeper converts the latest durabl
 - for property v4 evidence, completed root/shrink child results and their signed references remain
   unchanged, only pending property cases become `EVIDENCE_INCOMPLETE`, property coverage becomes
   `INCOMPLETE`, and no input is regenerated or executed during reconciliation;
+- for mutation v5 evidence, completed baseline and mutant children remain unchanged, pending baseline
+  cases become `EVIDENCE_INCOMPLETE`, pending mutant cases become `NOT_SCHEDULED` with
+  `ABANDONED_RUN_RECONCILED`, classification and score are recomputed, and no mutant is regenerated or
+  executed during reconciliation;
 - v3 structural DAG coverage remains `NOT_EVALUATED`; its admission coverage becomes
   `INCOMPLETE`, and every evidence generation sets promotion to `BLOCKED`;
 - reconciliation metadata records only owner fingerprint/version/timestamps, never raw owner,
@@ -3188,7 +3314,8 @@ Still intentionally outside this increment:
 - streaming/suspendable controls and evidence, including an explicit stream offset/checkpoint
   recovery protocol;
 - signed certification decisions, transparency-log proof, trusted pin distribution, ANEKE
-  N/N-1 release-matrix conformance, and mutation testing; semantic workbook fingerprints now enter
+  N/N-1 release-matrix conformance, semantic equivalent-mutant proof, flaky/quarantine rerun analysis,
+  and statistical mutation confidence; semantic workbook fingerprints now enter
   `GovernanceGateResult.v3` through a reconstructable exact-evidence basis, but the ANEKE publish
   decision itself remains outside Resource Gateway;
 - automatic case resume after an abandoned run, independent cross-failure-domain recovery queues,

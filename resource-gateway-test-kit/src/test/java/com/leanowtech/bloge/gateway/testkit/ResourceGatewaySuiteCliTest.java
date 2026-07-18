@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.testkit;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -21,10 +23,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ResourceGatewaySuiteCliTest {
 
     private static final String FINGERPRINT = "sha256:" + "a".repeat(64);
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private HttpServer server;
     private volatile String purpose = "";
     private volatile String authorization = "";
+    private volatile String requestPath = "";
+    private volatile String requestBody = "";
 
     @TempDir
     Path temporaryDirectory;
@@ -36,6 +41,8 @@ class ResourceGatewaySuiteCliTest {
         server.createContext("/api/testing/suites/blocked-policy/executions", this::executeBlockedSuite);
         server.createContext("/api/testing/suites/running-policy/executions", this::executeRunningSuite);
         server.createContext("/api/testing/suites/suite-boundary/executions", this::executeAdmissionSuite);
+        server.createContext("/api/testing/suites/suite-mutation/mutation-executions",
+                this::executeMutationSuite);
         server.start();
     }
 
@@ -179,6 +186,101 @@ class ResourceGatewaySuiteCliTest {
     }
 
     @Test
+    void runsMutationSuiteThroughDedicatedEndpointAndReportsEveryMutant() throws Exception {
+        Path report = temporaryDirectory.resolve("ci/mutation.xml");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", "suite-mutation",
+                        "--revision", "5",
+                        "--fingerprint", FINGERPRINT,
+                        "--client-request-id", "mutation-ci-1",
+                        "--mode", "MUTATION",
+                        "--strategy", "STOP_AFTER_KILL",
+                        "--report", report.toString(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(output), new PrintStream(error));
+
+        assertThat(exit).isZero();
+        assertThat(purpose).isEqualTo("TEST_EXECUTION");
+        assertThat(requestPath)
+                .isEqualTo("/api/testing/suites/suite-mutation/mutation-executions");
+        assertThat(requestBody)
+                .contains("bloge.testMutationSuiteExecutionRequest.v1")
+                .contains("\"strategy\":\"STOP_AFTER_KILL\"")
+                .doesNotContain("ci-secret-token");
+        assertThat(output.toString(StandardCharsets.UTF_8))
+                .contains("evaluationMode=PURE_DSL_MUTATION")
+                .contains("mutationBaseline=PASSED")
+                .contains("mutants=2")
+                .contains("mutationScore=5000")
+                .contains("mutationScoreStatus=SATISFIED");
+        assertThat(error.toString(StandardCharsets.UTF_8)).isEmpty();
+        assertThat(Files.readString(report))
+                .contains("tests=\"4\"")
+                .contains("mutant-001")
+                .contains("mutant-002")
+                .contains("status=KILLED")
+                .contains("status=SURVIVED")
+                .contains("mutationScore=5000")
+                .doesNotContain("/members/");
+    }
+
+    @Test
+    void rejectsSuiteStrategyThatDoesNotBelongToSelectedModeBeforeNetwork() {
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", "suite-mutation",
+                        "--revision", "5",
+                        "--fingerprint", FINGERPRINT,
+                        "--client-request-id", "mutation-ci-1",
+                        "--mode", "MUTATION",
+                        "--strategy", "FAIL_FAST",
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(new ByteArrayOutputStream()), new PrintStream(error));
+
+        assertThat(exit).isEqualTo(2);
+        assertThat(error.toString(StandardCharsets.UTF_8))
+                .contains("strategy has an unsupported value")
+                .doesNotContain("ci-secret-token");
+        assertThat(purpose).isEmpty();
+    }
+
+    @Test
+    void returnsOneWhenTerminalMutationEvidenceFailsItsFrozenScorePolicy() throws Exception {
+        Path report = temporaryDirectory.resolve("ci/mutation-failed.xml");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", "suite-mutation",
+                        "--revision", "5",
+                        "--fingerprint", FINGERPRINT,
+                        "--client-request-id", "mutation-ci-failed",
+                        "--mode", "MUTATION",
+                        "--report", report.toString(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(output), new PrintStream(error));
+
+        assertThat(exit).isEqualTo(1);
+        assertThat(output.toString(StandardCharsets.UTF_8))
+                .contains("status=COMPLETED_WITH_FAILURES")
+                .contains("mutationScore=5000")
+                .contains("mutationScoreStatus=UNSATISFIED");
+        assertThat(error.toString(StandardCharsets.UTF_8)).isEmpty();
+        assertThat(Files.readString(report))
+                .contains("failures=\"1\"")
+                .contains("MUTATION_SCORE_UNSATISFIED")
+                .contains("MUTATION_SCORE_BELOW_THRESHOLD")
+                .doesNotContain("customer payload");
+    }
+
+    @Test
     void neverEchoesUnexpectedPositionalArgumentThatMayContainASecret() {
         String accidentalSecret = "accidental-secret-value";
         ByteArrayOutputStream error = new ByteArrayOutputStream();
@@ -231,6 +333,37 @@ class ResourceGatewaySuiteCliTest {
         exchange.sendResponseHeaders(200, response.length);
         exchange.getResponseBody().write(response);
         exchange.close();
+    }
+
+    private void executeMutationSuite(HttpExchange exchange) throws IOException {
+        purpose = exchange.getRequestHeaders().getFirst("X-Purpose");
+        authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        requestPath = exchange.getRequestURI().getPath();
+        requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        String responseBody = requestBody.contains("mutation-ci-failed")
+                ? failedMutationSuiteResponse()
+                : TestSuiteRunAssertionsTest.mutationSuiteResponse();
+        byte[] response = responseBody.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, response.length);
+        exchange.getResponseBody().write(response);
+        exchange.close();
+    }
+
+    private static String failedMutationSuiteResponse() throws IOException {
+        ObjectNode response = (ObjectNode) JSON.readTree(
+                TestSuiteRunAssertionsTest.mutationSuiteResponse());
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("clientRequestId", "mutation-ci-failed");
+        evidence.put("status", "COMPLETED_WITH_FAILURES");
+        ObjectNode score = (ObjectNode) evidence.path("mutationScore");
+        ((ObjectNode) score.path("policy")).put("minimumScoreBasisPoints", 6_000);
+        score.put("status", "UNSATISFIED");
+        score.putArray("reasons").add("MUTATION_SCORE_BELOW_THRESHOLD");
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons").add("MUTATION_SCORE_UNSATISFIED");
+        return JSON.writeValueAsString(response);
     }
 
     private static String suiteResponse() {
