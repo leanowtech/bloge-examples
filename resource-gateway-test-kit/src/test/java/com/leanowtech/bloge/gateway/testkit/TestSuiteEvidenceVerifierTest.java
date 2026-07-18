@@ -98,6 +98,75 @@ class TestSuiteEvidenceVerifierTest {
     }
 
     @Test
+    void verifiesMutationBundleWithPrefixedBaselineAndMutantClosure() throws Exception {
+        Fixture fixture = mutationFixture(mutationEvidence(), List.of(
+                child("baseline/golden", "baseline-run-golden", CHILD),
+                child("mutant-001/golden", "mutant-run-killed", SUITE),
+                child("mutant-002/golden", "mutant-run-survived", SUITE)));
+
+        TestSuiteEvidenceVerifier.VerificationResult result =
+                new TestSuiteEvidenceVerifier().verify(fixture.bundle(), fixture.key());
+
+        assertThat(result.verified()).isTrue();
+        assertThat(fixture.bundle().attestation().schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V5);
+        assertThat(fixture.bundle().attestation().childEvidenceRefs())
+                .extracting(TestSuiteRunAttestation.ChildEvidenceRef::caseId)
+                .containsExactly("baseline/golden", "mutant-001/golden",
+                        "mutant-002/golden");
+        assertThat(fixture.bundle().rawResponse().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V5);
+    }
+
+    @Test
+    void rejectsSignedMutationClosureWithMislabeledMutantCoordinate() throws Exception {
+        Fixture fixture = mutationFixture(mutationEvidence(), List.of(
+                child("baseline/golden", "baseline-run-golden", CHILD),
+                child("mutant-001/golden", "mutant-run-killed", SUITE),
+                child("mutant-001/golden", "mutant-run-survived", SUITE)));
+
+        TestSuiteEvidenceVerifier.VerificationResult result =
+                new TestSuiteEvidenceVerifier().verify(fixture.bundle(), fixture.key());
+
+        assertThat(result.outcome()).isEqualTo(TestSuiteEvidenceVerifier.Outcome.INVALID);
+        assertThat(result.reasonCode()).isEqualTo("CHILD_EVIDENCE_CLOSURE_INVALID");
+    }
+
+    @Test
+    void rejectsSignedMutationClosureWithDriftingChildFingerprint() throws Exception {
+        Fixture fixture = mutationFixture(mutationEvidence(), List.of(
+                child("baseline/golden", "baseline-run-golden", CHILD),
+                child("mutant-001/golden", "mutant-run-killed",
+                        "sha256:" + "f".repeat(64)),
+                child("mutant-002/golden", "mutant-run-survived", SUITE)));
+
+        TestSuiteEvidenceVerifier.VerificationResult result =
+                new TestSuiteEvidenceVerifier().verify(fixture.bundle(), fixture.key());
+
+        assertThat(result.outcome()).isEqualTo(TestSuiteEvidenceVerifier.Outcome.INVALID);
+        assertThat(result.reasonCode()).isEqualTo("CHILD_EVIDENCE_CLOSURE_INVALID");
+    }
+
+    @Test
+    void rejectsCryptographicallyValidButProducerInflatedMutationScore() throws Exception {
+        ObjectNode evidence = mutationEvidence();
+        ObjectNode score = (ObjectNode) evidence.path("mutationScore");
+        score.put("killedMutants", 2);
+        score.put("survivedMutants", 0);
+        score.put("scoreBasisPoints", 10_000);
+        Fixture fixture = mutationFixture(evidence, List.of(
+                child("baseline/golden", "baseline-run-golden", CHILD),
+                child("mutant-001/golden", "mutant-run-killed", SUITE),
+                child("mutant-002/golden", "mutant-run-survived", SUITE)));
+
+        TestSuiteEvidenceVerifier.VerificationResult result =
+                new TestSuiteEvidenceVerifier().verify(fixture.bundle(), fixture.key());
+
+        assertThat(result.outcome()).isEqualTo(TestSuiteEvidenceVerifier.Outcome.INVALID);
+        assertThat(result.reasonCode()).isEqualTo("MUTATION_EVIDENCE_SEMANTICS_INVALID");
+    }
+
+    @Test
     void aggregateMutationAndSignatureMutationAreRejected() throws Exception {
         Fixture fixture = fixture(List.of(child("golden", "child-run-1", CHILD)));
         ObjectNode alteredEvidence = (ObjectNode) fixture.bundle().evidence();
@@ -300,6 +369,13 @@ class TestSuiteEvidenceVerifierTest {
                         child("property-001", "child-property-root", CHILD),
                         child("property-001-shrink-001", "child-property-shrink",
                                 "sha256:" + "f".repeat(64))));
+    }
+
+    private static Fixture mutationFixture(
+            ObjectNode evidence,
+            List<TestSuiteRunAttestation.ChildEvidenceRef> children) throws Exception {
+        return fixture(evidence, TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V5,
+                TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V5, children);
     }
 
     private static Fixture fixture(
@@ -616,6 +692,25 @@ class TestSuiteEvidenceVerifierTest {
         ((ObjectNode) trial.path("rootResult")).put("runId", "child-property-root");
         ((ObjectNode) trial.path("shrinkResults").get(0))
                 .put("runId", "child-property-shrink");
+        ((ObjectNode) value.path("metadata")).put("requestMetadataFingerprint", REQUEST);
+        return value;
+    }
+
+    private static ObjectNode mutationEvidence() throws Exception {
+        ObjectNode response = (ObjectNode) JSON.readTree(
+                TestSuiteRunAssertionsTest.mutationSuiteResponse());
+        ObjectNode value = (ObjectNode) response.path("evidence").deepCopy();
+        value.put("suiteRunId", "suite-run-1");
+        ObjectNode suiteRef = (ObjectNode) value.path("suiteRef");
+        suiteRef.put("suiteId", "suite-a");
+        suiteRef.put("revision", 3);
+        suiteRef.put("fingerprint", SUITE);
+        ((ObjectNode) value.path("target")).put("fingerprint", TARGET);
+        ((ObjectNode) value.path("caseResults").get(0)
+                .path("fixtureBundleRef")).put("fingerprint", FIXTURE);
+        value.path("mutantResults").forEach(mutant -> mutant.path("caseResults")
+                .forEach(result -> ((ObjectNode) result.path("fixtureBundleRef"))
+                        .put("fingerprint", FIXTURE)));
         ((ObjectNode) value.path("metadata")).put("requestMetadataFingerprint", REQUEST);
         return value;
     }

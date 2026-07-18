@@ -388,6 +388,67 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void materializesExecutesAndReadsExactMutationSuiteV6Evidence() throws Exception {
+        ResourceGatewayTestClient client = client();
+        JsonNode materialization = client.materializeGraphMutationSuite(
+                "loanDecision", JSON.readTree(mutationMaterializationRequest()));
+        TestSuiteRun executed = client.executeMutationSuite(
+                "suite-mutation", 5, FINGERPRINT, "mutation-ci-1",
+                ResourceGatewayTestClient.MutationStrategy.STOP_AFTER_KILL,
+                Map.of("pipeline", "release"));
+        TestSuiteRun queried = client.findSuiteRun("suite-run/mutation");
+        TestSuiteEvidenceBundle bundle = client.findSuiteEvidenceBundle("suite-run/mutation");
+
+        assertThat(materialization.path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_MUTATION_SUITE_MATERIALIZATION_V1);
+        assertThat(materialization.path("suiteRef").path("suiteId").asText())
+                .isEqualTo("suite-mutation");
+        assertThat(executed.evaluationMode())
+                .isEqualTo(TestSuiteRun.EvaluationMode.PURE_DSL_MUTATION);
+        assertThat(executed.mutationPassed()).isTrue();
+        assertThat(executed.requireMutationScore().scoreBasisPoints()).isEqualTo(5_000);
+        assertThat(queried.mutantResults()).hasSize(2);
+        assertThat(bundle.rawResponse().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V5);
+        assertThat(bundle.evidence().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V5);
+
+        assertThat(requests).extracting(CapturedRequest::purpose)
+                .containsExactly("TEST_SUITE_WRITE", "TEST_EXECUTION",
+                        "TEST_EXECUTION", "TEST_EXECUTION");
+        assertThat(requests.get(0).rawPath())
+                .isEqualTo("/api/testing/targets/graphs/loanDecision/mutation-suites");
+        assertThat(requests.get(1).rawPath())
+                .isEqualTo("/api/testing/suites/suite-mutation/mutation-executions");
+        assertThat(requests.get(1).body().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_MUTATION_SUITE_EXECUTION_REQUEST_V1);
+        assertThat(requests.get(1).body().path("strategy").asText())
+                .isEqualTo("STOP_AFTER_KILL");
+        assertThat(requests.get(1).body().path("suiteRef").path("fingerprint").asText())
+                .isEqualTo(FINGERPRINT);
+        assertThat(requests.get(1).body().path("metadata").path("pipeline").asText())
+                .isEqualTo("release");
+    }
+
+    @Test
+    void rejectsMutationMaterializationAndExecutionIdentityDrift() throws Exception {
+        ResourceGatewayTestClient client = client();
+
+        assertThatThrownBy(() -> client.materializeGraphMutationSuite(
+                "different-graph", JSON.readTree(mutationMaterializationRequest())))
+                .isInstanceOf(ResourceGatewayTestException.class)
+                .extracting(failure -> ((ResourceGatewayTestException) failure).code())
+                .isEqualTo("RG.TESTKIT.RESPONSE_CONTRACT_INVALID");
+        assertThatThrownBy(() -> client.executeMutationSuite(
+                "different-suite", 5, FINGERPRINT, "mutation-ci-1",
+                ResourceGatewayTestClient.MutationStrategy.COLLECT_ALL, Map.of()))
+                .isInstanceOf(ResourceGatewayTestException.class)
+                .hasMessageContaining("response identity");
+
+        assertThat(requests).hasSize(2);
+    }
+
+    @Test
     void retrievesSchemaValidatedSemanticWorkbookWithLeastPrivilegePurpose() {
         ResourceGatewayTestClient client = client();
 
@@ -665,7 +726,13 @@ class ResourceGatewayTestClientTest {
                     + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
             return;
         }
-        if (path.endsWith("suite-run%2Fproperty/evidence-bundle")) {
+        if (path.endsWith("suite-run%2Fmutation/evidence-bundle")) {
+            respond(exchange, 200, mutationSuiteEvidenceBundleResponse());
+        } else if (path.endsWith("suite-run%2Fmutation")) {
+            respond(exchange, 200, mutationSuiteRunResponse());
+        } else if (path.endsWith("/mutation-executions")) {
+            respond(exchange, 200, mutationSuiteRunResponse());
+        } else if (path.endsWith("suite-run%2Fproperty/evidence-bundle")) {
             respond(exchange, 200, propertySuiteEvidenceBundleResponse());
         } else if (path.endsWith("suite-run%2Fproperty")) {
             respond(exchange, 200, propertySuiteRunResponse());
@@ -698,6 +765,8 @@ class ResourceGatewayTestClientTest {
             respond(exchange, 200, propertyPlanResponse());
         } else if (path.endsWith("/property-suites")) {
             respond(exchange, 200, propertyMaterializationResponse());
+        } else if (path.endsWith("/mutation-suites")) {
+            respond(exchange, 200, mutationMaterializationResponse());
         } else if (path.endsWith("/catalogs/gateway-graph-contract-v1")) {
             respond(exchange, 200, catalogMaterializationResponse());
         } else if (path.contains("/suite-executions/") || path.endsWith("/executions") && path.contains("/suites/")) {
@@ -766,6 +835,43 @@ class ResourceGatewayTestClientTest {
                    "mutantTargetFingerprint":"%1$s","equivalenceClassification":"UNKNOWN"}],
                  "gaps":[]}
                 """.formatted(FINGERPRINT);
+    }
+
+    private static String mutationMaterializationRequest() {
+        return """
+                {"schemaVersion":"bloge.testMutationSuiteMaterializationRequest.v1",
+                 "suiteId":"suite-mutation","classification":"INTERNAL",
+                 "expectedTargetFingerprint":"%1$s","expectedSourceFingerprint":"%1$s",
+                 "expectedGraphArtifactFingerprint":"sha256:%2$s",
+                 "expectedPlanFingerprint":"sha256:%3$s","maxMutants":2,
+                 "oracleSuiteRef":{"suiteId":"suite-oracle","revision":2,
+                   "fingerprint":"%1$s"},"acceptPlanningGaps":false,
+                 "scorePolicy":{"minimumScoreBasisPoints":5000,
+                   "maximumInconclusiveMutants":0,"requireNoSurvivors":false,
+                   "excludeEquivalentMutants":false}}
+                """.formatted(FINGERPRINT, "b".repeat(64), "c".repeat(64));
+    }
+
+    private static String mutationMaterializationResponse() {
+        return """
+                {"schemaVersion":"bloge.testMutationSuiteMaterialization.v1",
+                 "materializationFingerprint":"%1$s",
+                 "target":{"kind":"GRAPH","id":"loanDecision","fingerprint":"%1$s"},
+                 "baselineSourceFingerprint":"%1$s",
+                 "baselineGraphArtifactFingerprint":"sha256:%2$s",
+                 "mutationPlanFingerprint":"sha256:%3$s","sourcePlanStatus":"GENERATED",
+                 "planningGapsAccepted":false,
+                 "mutationPolicy":{"plannerVersion":"pure-dsl-mutations-v1","maxMutants":2,
+                   "sourceFormat":"bloge-dsl.ast.v1",
+                   "verificationMode":"BLOGE_DSL_AST_RECOMPILE_PROOF",
+                   "externalOperatorMutation":false,"equivalentMutantDetection":false},
+                 "mutantIds":["mutant-001","mutant-002"],"oracleCaseIds":["golden"],
+                 "mutantCaseExecutions":2,
+                 "oracleSuiteRef":{"suiteId":"suite-oracle","revision":2,
+                   "fingerprint":"%1$s"},
+                 "suiteRef":{"suiteId":"suite-mutation","revision":5,
+                   "fingerprint":"%1$s"}}
+                """.formatted(FINGERPRINT, "b".repeat(64), "c".repeat(64));
     }
 
     private static String propertyMaterializationResponse() {
@@ -1070,6 +1176,27 @@ class ResourceGatewayTestClientTest {
         ObjectNode bundle = JSON.createObjectNode();
         bundle.put("schemaVersion", TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4);
         bundle.put("suiteRunId", "suite-run/property");
+        bundle.put("bundleFingerprint", FINGERPRINT);
+        bundle.put("payloadPolicy", "OMITTED");
+        bundle.set("attestation", response.path("attestation").deepCopy());
+        bundle.set("evidence", response.path("evidence").deepCopy());
+        return bundle.toString();
+    }
+
+    private static String mutationSuiteRunResponse() throws IOException {
+        ObjectNode response = (ObjectNode) JSON.readTree(
+                TestSuiteRunAssertionsTest.mutationSuiteResponse());
+        response.put("suiteRunId", "suite-run/mutation");
+        ((ObjectNode) response.path("evidence")).put("suiteRunId", "suite-run/mutation");
+        ((ObjectNode) response.path("attestation")).put("suiteRunId", "suite-run/mutation");
+        return response.toString();
+    }
+
+    private static String mutationSuiteEvidenceBundleResponse() throws IOException {
+        JsonNode response = JSON.readTree(mutationSuiteRunResponse());
+        ObjectNode bundle = JSON.createObjectNode();
+        bundle.put("schemaVersion", TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V5);
+        bundle.put("suiteRunId", "suite-run/mutation");
         bundle.put("bundleFingerprint", FINGERPRINT);
         bundle.put("payloadPolicy", "OMITTED");
         bundle.set("attestation", response.path("attestation").deepCopy());

@@ -256,6 +256,79 @@ class TestSuiteRunAssertionsTest {
                 .hasMessageContaining("compatibility closure");
     }
 
+    @Test
+    void projectsPureDslMutationBaselineMutantsAndIndependentlyDerivedScore()
+            throws Exception {
+        TestSuiteRun run = TestSuiteRun.from(JSON.readTree(mutationSuiteResponse()));
+
+        assertThat(run.evaluationMode())
+                .isEqualTo(TestSuiteRun.EvaluationMode.PURE_DSL_MUTATION);
+        assertThat(run.passed()).isFalse();
+        assertThat(run.mutationPassed()).isTrue();
+        assertThat(run.evaluationPassed()).isTrue();
+        assertThat(run.mutationBaselineStatus())
+                .contains(TestSuiteRun.MutationBaselineStatus.PASSED);
+        assertThat(run.mutationPlan().orElseThrow().policy().maxMutants()).isEqualTo(2);
+        assertThat(run.mutantResults())
+                .extracting(TestSuiteRun.MutantResult::status)
+                .containsExactly(TestSuiteRun.MutantStatus.KILLED,
+                        TestSuiteRun.MutantStatus.SURVIVED);
+        assertThat(run.requireMutationScore()).satisfies(score -> {
+            assertThat(score.status()).isEqualTo(TestSuiteRun.MutationScoreStatus.SATISFIED);
+            assertThat(score.killedMutants()).isEqualTo(1);
+            assertThat(score.survivedMutants()).isEqualTo(1);
+            assertThat(score.denominatorMutants()).isEqualTo(2);
+            assertThat(score.scoreBasisPoints()).isEqualTo(5_000);
+            assertThat(score.equivalentMutantsExcluded()).isZero();
+        });
+        assertThat(run.gateFailureCodes(false)).isEmpty();
+        assertThatCode(() -> TestSuiteRunAssertions.assertMutationSatisfied(run))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(run::requirePropertyCoverage)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("PROPERTY_COVERAGE_UNAVAILABLE");
+    }
+
+    @Test
+    void rejectsProducerOwnedMutationScoreCounterDrift() throws Exception {
+        ObjectNode response = (ObjectNode) JSON.readTree(mutationSuiteResponse());
+        ObjectNode score = (ObjectNode) response.at("/evidence/mutationScore");
+        score.put("killedMutants", 2);
+        score.put("survivedMutants", 0);
+        score.put("scoreBasisPoints", 10_000);
+
+        assertThatThrownBy(() -> TestSuiteRun.from(response))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("independently derived");
+    }
+
+    @Test
+    void exposesMutationPolicyFailureCodesWithoutPayloads() throws Exception {
+        ObjectNode response = (ObjectNode) JSON.readTree(mutationSuiteResponse());
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("status", "COMPLETED_WITH_FAILURES");
+        ObjectNode score = (ObjectNode) evidence.path("mutationScore");
+        ((ObjectNode) score.path("policy")).put("minimumScoreBasisPoints", 6_000);
+        score.put("status", "UNSATISFIED");
+        score.putArray("reasons").add("MUTATION_SCORE_BELOW_THRESHOLD");
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons").add("MUTATION_SCORE_UNSATISFIED");
+
+        TestSuiteRun run = TestSuiteRun.from(response);
+
+        assertThat(run.mutationPassed()).isFalse();
+        assertThat(run.gateFailureCodes(false)).containsExactly(
+                "SUITE_STATUS_COMPLETED_WITH_FAILURES",
+                "MUTATION_SCORE_UNSATISFIED",
+                "MUTATION_SCORE_BELOW_THRESHOLD");
+        assertThatThrownBy(() -> TestSuiteRunAssertions.assertMutationSatisfied(run))
+                .hasMessageContaining("UNSATISFIED:5000")
+                .hasMessageNotContaining("applicant")
+                .hasMessageNotContaining("request")
+                .hasMessageNotContaining("response");
+    }
+
     private static TestSuiteRun run(String status, String caseStatus, String coverage,
                                     String promotion, String reason) throws Exception {
         return TestSuiteRun.from(suiteResponse(status, caseStatus, coverage, promotion, reason));
@@ -418,5 +491,99 @@ class TestSuiteRunAssertionsTest {
                    "signedAt":"2026-07-17T02:00:02Z","keyId":"test-key-1",
                    "algorithm":"Ed25519","signature":"AA==","independentlyVerifiable":true}}
                 """.formatted(FINGERPRINT, "b".repeat(64));
+    }
+
+    static String mutationSuiteResponse() {
+        return """
+                {"schemaVersion":"bloge.testSuiteExecutionResponse.v6","suiteRunId":"suite-run-mutation",
+                 "evidenceFingerprint":"%1$s","evidence":{"schemaVersion":"bloge.testSuiteRunEvidence.v5",
+                   "suiteRunId":"suite-run-mutation","clientRequestId":"mutation-ci-1","status":"PASSED",
+                   "executionPurpose":"MUTATION_SUITE_EXECUTION",
+                   "suiteRef":{"suiteId":"suite-mutation","revision":5,"fingerprint":"%1$s"},
+                   "target":{"kind":"GRAPH","id":"loanDecision","fingerprint":"%1$s"},
+                   "startedAt":"2026-07-17T03:00:00Z","completedAt":"2026-07-17T03:00:03Z",
+                   "caseResults":[{"caseId":"golden","caseType":"GOLDEN",
+                     "fixtureBundleRef":{"fixtureBundleId":"loan-fixture","revision":1,
+                       "fingerprint":"%1$s"},"status":"PASSED","runId":"baseline-run-golden",
+                     "evidenceStatus":"PASSED","evidenceClass":"CERTIFIABLE",
+                     "assertionsEvaluated":2,"assertionsPassed":2,"diagnosticCode":"",
+                     "diagnostic":""}],
+                   "coverage":{"status":"SATISFIED","minimumCases":1,"completedCases":1,
+                     "requiredCaseTypes":["GOLDEN"],"observedCaseTypes":["GOLDEN"],
+                     "missingCaseTypes":[],"requiredInvocationSiteIds":[],
+                     "observedInvocationSiteIds":[],"missingInvocationSiteIds":[],
+                     "requiredEdgeTransfers":[],"observedEdgeTransfers":[],
+                     "missingEdgeTransfers":[],"minimumAssertionsPerCase":1,
+                     "assertionDensityViolations":[],"fixtureConsumptionViolations":[],
+                     "allCasesCompleted":true},
+                   "promotion":{"status":"ELIGIBLE","reasons":[],"allCasesPassed":true,
+                     "certifiableCases":1,"minimumCertifiableCases":1,
+                     "targetCertificationEligible":true,"coverageSatisfied":true,
+                     "allCasesCompleted":true},
+                   "evaluationMode":"PURE_DSL_MUTATION","sourceFormat":"bloge-dsl.ast.v1",
+                   "baselineSourceFingerprint":"%1$s",
+                   "baselineGraphArtifactFingerprint":"sha256:%2$s",
+                   "mutationPlanFingerprint":"sha256:%3$s",
+                   "mutationPolicy":{"plannerVersion":"pure-dsl-mutations-v1","maxMutants":2,
+                     "sourceFormat":"bloge-dsl.ast.v1",
+                     "verificationMode":"BLOGE_DSL_AST_RECOMPILE_PROOF",
+                     "externalOperatorMutation":false,"equivalentMutantDetection":false},
+                   "sourcePlanStatus":"GENERATED","planningGapsAccepted":false,
+                   "planningGaps":[],
+                   "oracleSuiteRef":{"suiteId":"suite-oracle","revision":2,
+                     "fingerprint":"%1$s","schemaVersion":"bloge.testSuite.v1"},
+                   "baselineStatus":"PASSED","mutantResults":[
+                     {"mutant":{"mutantId":"mutant-001","kind":"FALLBACK_REMOVED",
+                       "astPath":"/members/0/fallback","sourceLine":2,"sourceColumn":3,
+                       "mutantSourceFingerprint":"sha256:%4$s",
+                       "mutantGraphArtifactFingerprint":"sha256:%5$s",
+                       "mutantTargetFingerprint":"sha256:%6$s",
+                       "equivalenceClassification":"UNKNOWN"},"status":"KILLED",
+                      "caseResults":[{"caseId":"golden",
+                        "fixtureBundleRef":{"fixtureBundleId":"loan-fixture","revision":1,
+                          "fingerprint":"%1$s"},"mutantTargetFingerprint":"sha256:%6$s",
+                        "status":"ASSERTION_KILLED","runId":"mutant-run-killed",
+                        "evidenceFingerprint":"%1$s","evidenceStatus":"ASSERTION_FAILED",
+                        "evidenceClass":"CERTIFIABLE","assertionsEvaluated":2,
+                        "assertionsPassed":1,"diagnosticCode":"ASSERTION_FAILED"}],
+                      "killingCaseIds":["golden"]},
+                     {"mutant":{"mutantId":"mutant-002","kind":"DECISION_CONDITION_NEGATED",
+                       "astPath":"/members/1/rules/0/condition","sourceLine":8,"sourceColumn":5,
+                       "mutantSourceFingerprint":"sha256:%7$s",
+                       "mutantGraphArtifactFingerprint":"sha256:%8$s",
+                       "mutantTargetFingerprint":"sha256:%9$s",
+                       "equivalenceClassification":"UNKNOWN"},"status":"SURVIVED",
+                      "caseResults":[{"caseId":"golden",
+                        "fixtureBundleRef":{"fixtureBundleId":"loan-fixture","revision":1,
+                          "fingerprint":"%1$s"},"mutantTargetFingerprint":"sha256:%9$s",
+                        "status":"SURVIVED","runId":"mutant-run-survived",
+                        "evidenceFingerprint":"%1$s","evidenceStatus":"PASSED",
+                        "evidenceClass":"CERTIFIABLE","assertionsEvaluated":2,
+                        "assertionsPassed":2,"diagnosticCode":""}],"killingCaseIds":[]}],
+                   "mutationScore":{"status":"SATISFIED","policy":{
+                     "minimumScoreBasisPoints":5000,"maximumInconclusiveMutants":0,
+                     "requireNoSurvivors":false,"excludeEquivalentMutants":false},
+                     "plannedMutants":2,"killedMutants":1,"survivedMutants":1,
+                     "inconclusiveMutants":0,"unclassifiedMutants":0,
+                     "denominatorMutants":2,"scoreBasisPoints":5000,
+                     "equivalentMutantsExcluded":0,"reasons":[]},
+                   "diagnostics":[],"metadata":{}},
+                 "attestation":{"schemaVersion":"bloge.testSuiteRunAttestation.v5",
+                   "signatureStatus":"VERIFIED","scope":"TERMINAL",
+                   "suiteRunId":"suite-run-mutation",
+                   "suiteRef":{"suiteId":"suite-mutation","revision":5,"fingerprint":"%1$s"},
+                   "requestFingerprint":"%1$s","aggregateEvidenceFingerprint":"%1$s",
+                   "childEvidenceRefs":[
+                     {"caseId":"baseline/golden","runId":"baseline-run-golden",
+                      "evidenceFingerprint":"%1$s"},
+                     {"caseId":"mutant-001/golden","runId":"mutant-run-killed",
+                      "evidenceFingerprint":"%1$s"},
+                     {"caseId":"mutant-002/golden","runId":"mutant-run-survived",
+                      "evidenceFingerprint":"%1$s"}],
+                   "signedAt":"2026-07-17T03:00:03Z","keyId":"test-key-1",
+                   "algorithm":"Ed25519","signature":"AA==","independentlyVerifiable":true}}
+                """.formatted(FINGERPRINT, "b".repeat(64), "c".repeat(64),
+                "d".repeat(64), "e".repeat(64), "f".repeat(64),
+                "1".repeat(64), "2".repeat(64), "3".repeat(64));
     }
 }

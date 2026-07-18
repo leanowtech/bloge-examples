@@ -30,8 +30,9 @@ import java.util.Set;
  *
  * <p>The verifier recomputes bundle, aggregate, and signature-material fingerprints. For bounded
  * property evidence it also re-derives the typed trial, minimum-counterexample, and coverage
- * closure. It does not trust the producer's {@code signatureStatus} claim and never requires child
- * payload values.</p>
+ * closure. For mutation evidence it re-derives baseline state, mutant classification, score, and
+ * the prefixed baseline/mutant child closure. It does not trust the producer's
+ * {@code signatureStatus} claim and never requires child payload values.</p>
  */
 public final class TestSuiteEvidenceVerifier {
 
@@ -156,7 +157,10 @@ public final class TestSuiteEvidenceVerifier {
         String evidenceVersion = bundle.evidence().path("schemaVersion").asText();
         String expectedAttestationVersion;
         String expectedBundleVersion;
-        if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V4.equals(evidenceVersion)) {
+        if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V5.equals(evidenceVersion)) {
+            expectedAttestationVersion = TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V5;
+            expectedBundleVersion = TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V5;
+        } else if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V4.equals(evidenceVersion)) {
             expectedAttestationVersion = TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V4;
             expectedBundleVersion = TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4;
         } else if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3.equals(evidenceVersion)) {
@@ -203,6 +207,11 @@ public final class TestSuiteEvidenceVerifier {
                 return result(Outcome.INVALID, "PROPERTY_EVIDENCE_SEMANTICS_INVALID",
                         bundle.suiteRunId(), attestation.keyId());
             }
+            if (TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V5.equals(evidenceVersion)
+                    && !mutationSemanticsMatch(bundle)) {
+                return result(Outcome.INVALID, "MUTATION_EVIDENCE_SEMANTICS_INVALID",
+                        bundle.suiteRunId(), attestation.keyId());
+            }
             ObjectNode bundleMaterial = JSON.createObjectNode();
             bundleMaterial.put("payloadPolicy", bundle.payloadPolicy().name());
             bundleMaterial.set("attestation", bundle.rawResponse().path("attestation").deepCopy());
@@ -226,6 +235,22 @@ public final class TestSuiteEvidenceVerifier {
     private static boolean propertySemanticsMatch(TestSuiteEvidenceBundle bundle) {
         ObjectNode response = JSON.createObjectNode();
         response.put("schemaVersion", TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V5);
+        response.put("suiteRunId", bundle.suiteRunId());
+        response.put("evidenceFingerprint",
+                bundle.attestation().aggregateEvidenceFingerprint());
+        response.set("evidence", bundle.evidence().deepCopy());
+        response.set("attestation", bundle.rawResponse().path("attestation").deepCopy());
+        try {
+            TestSuiteRun.from(response);
+            return true;
+        } catch (IllegalArgumentException failure) {
+            return false;
+        }
+    }
+
+    private static boolean mutationSemanticsMatch(TestSuiteEvidenceBundle bundle) {
+        ObjectNode response = JSON.createObjectNode();
+        response.put("schemaVersion", TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V6);
         response.put("suiteRunId", bundle.suiteRunId());
         response.put("evidenceFingerprint",
                 bundle.attestation().aggregateEvidenceFingerprint());
@@ -501,14 +526,52 @@ public final class TestSuiteEvidenceVerifier {
     private static boolean closureMatches(
             JsonNode evidence, List<TestSuiteRunAttestation.ChildEvidenceRef> children) {
         List<String> expected = new ArrayList<>();
+        boolean mutation = TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V5.equals(
+                evidence.path("schemaVersion").asText());
         evidence.path("caseResults").forEach(result -> {
             if (!result.path("runId").asText().isBlank()) {
-                expected.add(result.path("caseId").asText() + "\u0000" + result.path("runId").asText());
+                String caseId = mutation ? "baseline/" + result.path("caseId").asText()
+                        : result.path("caseId").asText();
+                expected.add(caseId + "\u0000" + result.path("runId").asText());
             }
         });
+        if (mutation) {
+            evidence.path("mutantResults").forEach(mutant -> {
+                String mutantId = mutant.path("mutant").path("mutantId").asText();
+                mutant.path("caseResults").forEach(result -> {
+                    if (!result.path("runId").asText().isBlank()) {
+                        expected.add(mutantId + "/" + result.path("caseId").asText()
+                                + "\u0000" + result.path("runId").asText());
+                    }
+                });
+            });
+        }
         List<String> actual = children.stream()
                 .map(child -> child.caseId() + "\u0000" + child.runId()).toList();
-        return expected.equals(actual);
+        if (!expected.equals(actual)) {
+            return false;
+        }
+        if (mutation) {
+            Map<String, TestSuiteRunAttestation.ChildEvidenceRef> childrenByCoordinate =
+                    new HashMap<>();
+            children.forEach(child -> childrenByCoordinate.put(
+                    child.caseId() + "\u0000" + child.runId(), child));
+            for (JsonNode mutant : evidence.path("mutantResults")) {
+                String mutantId = mutant.path("mutant").path("mutantId").asText();
+                for (JsonNode result : mutant.path("caseResults")) {
+                    if (!result.path("runId").asText().isBlank()) {
+                        TestSuiteRunAttestation.ChildEvidenceRef child = childrenByCoordinate.get(
+                                mutantId + "/" + result.path("caseId").asText()
+                                        + "\u0000" + result.path("runId").asText());
+                        if (child == null || !child.evidenceFingerprint().equals(
+                                result.path("evidenceFingerprint").asText())) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     private static ObjectNode signatureMaterial(TestSuiteRunAttestation value) {

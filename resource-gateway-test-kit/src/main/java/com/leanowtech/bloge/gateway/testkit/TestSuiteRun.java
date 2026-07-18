@@ -106,7 +106,9 @@ public record TestSuiteRun(
         /** Inputs were checked by the exact shared schema validator without invoking the target. */
         SCHEMA_ADMISSION,
         /** Exact seeded roots and their frozen shrink paths were executed as bounded properties. */
-        PROPERTY_EXECUTION
+        PROPERTY_EXECUTION,
+        /** An exact baseline oracle and every planned pure-DSL mutant were executed. */
+        PURE_DSL_MUTATION
     }
 
     /** Typed lifecycle of one schema-admission case. */
@@ -494,6 +496,416 @@ public record TestSuiteRun(
         }
     }
 
+    /** Typed state of the unmodified graph under the exact mutation oracle. */
+    public enum MutationBaselineStatus {
+        /** No baseline child has completed. */
+        PENDING,
+        /** Some baseline children completed while the checkpoint remains active. */
+        RUNNING,
+        /** Every baseline oracle child passed with governed assertion evidence. */
+        PASSED,
+        /** Complete baseline evidence contains an assertion or execution failure. */
+        FAILED,
+        /** Baseline child integrity or completeness cannot be proven. */
+        EVIDENCE_INCOMPLETE
+    }
+
+    /** Typed interpretation of one mutant against one immutable oracle case. */
+    public enum MutationCaseStatus {
+        /** Child scheduling has not started. */
+        PENDING,
+        /** A signed assertion failure killed the mutant. */
+        ASSERTION_KILLED,
+        /** The mutant passed every governed assertion for this case. */
+        SURVIVED,
+        /** Runtime failure cannot establish a kill. */
+        EXECUTION_FAILED,
+        /** Required child evidence is absent or incomplete. */
+        EVIDENCE_INCOMPLETE,
+        /** Scheduling deliberately or fail-closedly stopped. */
+        NOT_SCHEDULED
+    }
+
+    /** Aggregate classification of one exact planned mutant. */
+    public enum MutantStatus {
+        /** No oracle case has started. */
+        PENDING,
+        /** At least one case completed while a later case remains pending. */
+        RUNNING,
+        /** At least one assertion-failure child killed the mutant. */
+        KILLED,
+        /** Every oracle case passed against the mutant. */
+        SURVIVED,
+        /** No kill exists and at least one result is not a valid pass. */
+        INCONCLUSIVE,
+        /** The complete mutant was skipped before classification. */
+        NOT_SCHEDULED
+    }
+
+    /** Mutation score and policy evaluation state. */
+    public enum MutationScoreStatus {
+        /** Baseline execution has not yet established a usable oracle. */
+        NOT_EVALUATED,
+        /** Every mutant is classified and the immutable policy is satisfied. */
+        SATISFIED,
+        /** Classification completed but the baseline or score policy failed. */
+        UNSATISFIED,
+        /** Baseline or mutant evidence cannot be completely classified. */
+        INCOMPLETE
+    }
+
+    /** Deterministic generation-one pure-DSL mutation operator. */
+    public enum MutationKind {
+        /** Toggles one branch between first-match and collect behavior. */
+        BRANCH_MODE_TOGGLED,
+        /** Replaces one explicit branch case target with another valid target. */
+        BRANCH_CASE_TARGET_REPLACED,
+        /** Replaces one branch otherwise target with another valid target. */
+        BRANCH_OTHERWISE_TARGET_REPLACED,
+        /** Negates one decision-table rule condition. */
+        DECISION_CONDITION_NEGATED,
+        /** Swaps the first two decision-table rules. */
+        DECISION_FIRST_RULE_ORDER_SWAPPED,
+        /** Relaxes a decision table from unique to first-hit behavior. */
+        DECISION_HIT_POLICY_RELAXED,
+        /** Swaps two transform output bindings. */
+        TRANSFORM_BINDINGS_SWAPPED,
+        /** Removes one declared fallback path. */
+        FALLBACK_REMOVED,
+        /** Decrements one retry attempt bound. */
+        RETRY_ATTEMPTS_DECREMENTED
+    }
+
+    /** Completeness state of the exact reviewed mutation plan. */
+    public enum MutationSourcePlanStatus {
+        /** Every supported discovered site fit within the reviewed bound. */
+        GENERATED,
+        /** Omitted or unsupported sites are disclosed and explicitly accepted. */
+        PARTIAL
+    }
+
+    /**
+     * One payload-free mutation planning limitation.
+     *
+     * @param code stable limitation category
+     * @param astPath bounded structural source coordinate
+     * @param mutationKind affected mutation kind, blank for source-level gaps
+     */
+    public record MutationPlanningGap(String code, String astPath, String mutationKind) {
+        /** Normalizes and validates payload-free planning coordinates. */
+        public MutationPlanningGap {
+            code = machineCode(code, "mutation planning gap code");
+            astPath = normalized(astPath);
+            mutationKind = normalized(mutationKind);
+            if (code.isBlank() || !astPath.startsWith("/") || astPath.length() > 2_048
+                    || mutationKind.length() > 128) {
+                throw new IllegalArgumentException("Mutation planning gap is invalid");
+            }
+        }
+    }
+
+    /**
+     * Exact immutable mutation generation policy.
+     *
+     * @param plannerVersion deterministic planner generation
+     * @param maxMutants reviewed generation bound
+     * @param sourceFormat recoverable source format
+     * @param verificationMode baseline and candidate compiler proof
+     * @param externalOperatorMutation fixed false in generation one
+     * @param equivalentMutantDetection fixed false in generation one
+     */
+    public record MutationPolicy(
+            String plannerVersion,
+            int maxMutants,
+            String sourceFormat,
+            String verificationMode,
+            boolean externalOperatorMutation,
+            boolean equivalentMutantDetection
+    ) {
+        /** Enforces the generation-one planner and compiler-proof contract. */
+        public MutationPolicy {
+            plannerVersion = normalized(plannerVersion);
+            sourceFormat = normalized(sourceFormat);
+            verificationMode = normalized(verificationMode);
+            if (!"pure-dsl-mutations-v1".equals(plannerVersion)
+                    || maxMutants < 1 || maxMutants > 16
+                    || !"bloge-dsl.ast.v1".equals(sourceFormat)
+                    || !"BLOGE_DSL_AST_RECOMPILE_PROOF".equals(verificationMode)
+                    || externalOperatorMutation || equivalentMutantDetection) {
+                throw new IllegalArgumentException("Mutation policy is inconsistent");
+            }
+        }
+    }
+
+    /**
+     * Payload-free exact mutation plan identity.
+     *
+     * @param sourceFormat recoverable source format
+     * @param baselineSourceFingerprint exact baseline AST fingerprint
+     * @param baselineGraphArtifactFingerprint exact compiled baseline graph fingerprint
+     * @param mutationPlanFingerprint exact reviewed plan fingerprint
+     * @param policy deterministic mutation policy
+     * @param sourcePlanStatus complete or explicitly accepted partial plan
+     * @param planningGapsAccepted whether partial-plan gaps were accepted
+     * @param planningGaps exact structural limitations
+     */
+    public record MutationPlan(
+            String sourceFormat,
+            String baselineSourceFingerprint,
+            String baselineGraphArtifactFingerprint,
+            String mutationPlanFingerprint,
+            MutationPolicy policy,
+            MutationSourcePlanStatus sourcePlanStatus,
+            boolean planningGapsAccepted,
+            List<MutationPlanningGap> planningGaps
+    ) {
+        /** Freezes exact source identities and rejects dishonest plan completeness. */
+        public MutationPlan {
+            sourceFormat = normalized(sourceFormat);
+            baselineSourceFingerprint = normalized(baselineSourceFingerprint);
+            baselineGraphArtifactFingerprint = normalized(baselineGraphArtifactFingerprint);
+            mutationPlanFingerprint = normalized(mutationPlanFingerprint);
+            planningGaps = planningGaps == null ? List.of() : List.copyOf(planningGaps);
+            boolean complete = sourcePlanStatus == MutationSourcePlanStatus.GENERATED
+                    && !planningGapsAccepted && planningGaps.isEmpty();
+            boolean partial = sourcePlanStatus == MutationSourcePlanStatus.PARTIAL
+                    && planningGapsAccepted && !planningGaps.isEmpty();
+            if (!"bloge-dsl.ast.v1".equals(sourceFormat)
+                    || !fingerprint(baselineSourceFingerprint)
+                    || !fingerprint(baselineGraphArtifactFingerprint)
+                    || !fingerprint(mutationPlanFingerprint) || policy == null
+                    || (!complete && !partial)) {
+                throw new IllegalArgumentException("Mutation plan identity is inconsistent");
+            }
+        }
+    }
+
+    /**
+     * Exact payload-free coordinate of one planned mutant.
+     *
+     * @param mutantId ordered suite-local id
+     * @param kind deterministic mutation operator
+     * @param astPath structural source location
+     * @param sourceLine one-based source line
+     * @param sourceColumn one-based source column
+     * @param mutantSourceFingerprint exact mutated AST fingerprint
+     * @param mutantGraphArtifactFingerprint exact compiled mutant graph fingerprint
+     * @param mutantTargetFingerprint exact mutant graph plus dependency fingerprint
+     */
+    public record MutantRef(
+            String mutantId,
+            MutationKind kind,
+            String astPath,
+            int sourceLine,
+            int sourceColumn,
+            String mutantSourceFingerprint,
+            String mutantGraphArtifactFingerprint,
+            String mutantTargetFingerprint
+    ) {
+        /** Normalizes and validates the complete mutant coordinate. */
+        public MutantRef {
+            mutantId = normalized(mutantId);
+            astPath = normalized(astPath);
+            mutantSourceFingerprint = normalized(mutantSourceFingerprint);
+            mutantGraphArtifactFingerprint = normalized(mutantGraphArtifactFingerprint);
+            mutantTargetFingerprint = normalized(mutantTargetFingerprint);
+            if (!mutantId.matches("mutant-[0-9]{3}") || kind == null
+                    || !astPath.startsWith("/") || sourceLine < 1 || sourceColumn < 1
+                    || !fingerprint(mutantSourceFingerprint)
+                    || !fingerprint(mutantGraphArtifactFingerprint)
+                    || !fingerprint(mutantTargetFingerprint)) {
+                throw new IllegalArgumentException("Mutation coordinate is inconsistent");
+            }
+        }
+    }
+
+    /**
+     * Payload-free child interpretation for one mutant and oracle case.
+     *
+     * @param caseId exact oracle case id
+     * @param fixtureBundleId exact fixture id
+     * @param fixtureRevision exact fixture revision
+     * @param fixtureFingerprint exact fixture fingerprint
+     * @param mutantTargetFingerprint exact regenerated mutant target fingerprint
+     * @param status typed mutation result
+     * @param runId durable child run id when present
+     * @param evidenceFingerprint exact child evidence fingerprint when present
+     * @param evidenceStatus child execution status when present
+     * @param evidenceClass child evidence class when present
+     * @param assertionsEvaluated governed assertion count
+     * @param assertionsPassed passing assertion count
+     * @param diagnosticCode stable payload-free diagnostic
+     */
+    public record MutationCaseResult(
+            String caseId,
+            String fixtureBundleId,
+            long fixtureRevision,
+            String fixtureFingerprint,
+            String mutantTargetFingerprint,
+            MutationCaseStatus status,
+            String runId,
+            String evidenceFingerprint,
+            String evidenceStatus,
+            String evidenceClass,
+            int assertionsEvaluated,
+            int assertionsPassed,
+            String diagnosticCode
+    ) {
+        /** Rejects false kill, survival, and child-integrity claims. */
+        public MutationCaseResult {
+            caseId = normalized(caseId);
+            fixtureBundleId = normalized(fixtureBundleId);
+            fixtureFingerprint = normalized(fixtureFingerprint);
+            mutantTargetFingerprint = normalized(mutantTargetFingerprint);
+            runId = normalized(runId);
+            evidenceFingerprint = normalized(evidenceFingerprint);
+            evidenceStatus = normalized(evidenceStatus);
+            evidenceClass = normalized(evidenceClass);
+            diagnosticCode = machineCode(diagnosticCode, "mutation diagnostic code");
+            if (caseId.isBlank() || fixtureBundleId.isBlank() || fixtureRevision < 1
+                    || !fingerprint(fixtureFingerprint) || !fingerprint(mutantTargetFingerprint)
+                    || status == null || assertionsEvaluated < 0 || assertionsPassed < 0
+                    || assertionsPassed > assertionsEvaluated) {
+                throw new IllegalArgumentException("Mutation case result is inconsistent");
+            }
+            boolean child = !runId.isBlank() && fingerprint(evidenceFingerprint)
+                    && validEvidenceStatus(evidenceStatus)
+                    && List.of("EXPLORATORY", "CERTIFIABLE").contains(evidenceClass);
+            boolean noChild = runId.isBlank() && evidenceFingerprint.isBlank()
+                    && evidenceStatus.isBlank() && evidenceClass.isBlank();
+            if (!child && !noChild) {
+                throw new IllegalArgumentException("Mutation child identity is incomplete");
+            }
+            if (status == MutationCaseStatus.ASSERTION_KILLED
+                    && (!child || !"ASSERTION_FAILED".equals(evidenceStatus)
+                    || assertionsEvaluated < 1 || assertionsPassed >= assertionsEvaluated)
+                    || status == MutationCaseStatus.SURVIVED
+                    && (!child || !"PASSED".equals(evidenceStatus)
+                    || assertionsEvaluated < 1 || assertionsPassed != assertionsEvaluated
+                    || !diagnosticCode.isBlank())
+                    || status == MutationCaseStatus.EXECUTION_FAILED
+                    && (!child || List.of("PASSED", "ASSERTION_FAILED", "EVIDENCE_INCOMPLETE")
+                    .contains(evidenceStatus) || diagnosticCode.isBlank())
+                    || status == MutationCaseStatus.EVIDENCE_INCOMPLETE
+                    && (diagnosticCode.isBlank()
+                    || child && !"EVIDENCE_INCOMPLETE".equals(evidenceStatus))
+                    || status == MutationCaseStatus.PENDING
+                    && (!noChild || assertionsEvaluated != 0 || assertionsPassed != 0
+                    || !diagnosticCode.isBlank())
+                    || status == MutationCaseStatus.NOT_SCHEDULED
+                    && (!noChild || assertionsEvaluated != 0 || assertionsPassed != 0
+                    || diagnosticCode.isBlank())) {
+                throw new IllegalArgumentException(
+                        "Mutation case status contradicts child evidence");
+            }
+        }
+    }
+
+    /**
+     * Complete typed classification of one exact mutant.
+     *
+     * @param mutant exact immutable mutation coordinate
+     * @param status server-emitted classification
+     * @param caseResults complete oracle case closure
+     * @param killingCaseIds cases carrying assertion-failure kills
+     */
+    public record MutantResult(
+            MutantRef mutant,
+            MutantStatus status,
+            List<MutationCaseResult> caseResults,
+            List<String> killingCaseIds
+    ) {
+        /** Re-derives classification and kill provenance from the child closure. */
+        public MutantResult {
+            caseResults = caseResults == null ? List.of() : List.copyOf(caseResults);
+            killingCaseIds = immutableIds(killingCaseIds);
+            if (mutant == null || status == null || caseResults.isEmpty()
+                    || status != deriveMutantStatus(caseResults)) {
+                throw new IllegalArgumentException("Mutant classification is inconsistent");
+            }
+            List<String> derivedKills = caseResults.stream()
+                    .filter(result -> result.status() == MutationCaseStatus.ASSERTION_KILLED)
+                    .map(MutationCaseResult::caseId).toList();
+            if (!derivedKills.equals(killingCaseIds)) {
+                throw new IllegalArgumentException("Mutant killing cases are inconsistent");
+            }
+        }
+    }
+
+    /**
+     * Immutable mutation score policy.
+     *
+     * @param minimumScoreBasisPoints required killed percentage in basis points
+     * @param maximumInconclusiveMutants maximum tolerated inconclusive mutants
+     * @param requireNoSurvivors whether any survivor blocks policy satisfaction
+     * @param excludeEquivalentMutants fixed false until equivalence proof exists
+     */
+    public record MutationScorePolicy(
+            int minimumScoreBasisPoints,
+            int maximumInconclusiveMutants,
+            boolean requireNoSurvivors,
+            boolean excludeEquivalentMutants
+    ) {
+        /** Enforces bounded and honest generation-one score policy. */
+        public MutationScorePolicy {
+            if (minimumScoreBasisPoints < 0 || minimumScoreBasisPoints > 10_000
+                    || maximumInconclusiveMutants < 0 || maximumInconclusiveMutants > 16
+                    || excludeEquivalentMutants) {
+                throw new IllegalArgumentException("Mutation score policy is inconsistent");
+            }
+        }
+    }
+
+    /**
+     * Deterministic payload-free mutation score verdict.
+     *
+     * @param status score evaluation state
+     * @param policy exact immutable threshold policy
+     * @param plannedMutants complete planned mutant count
+     * @param killedMutants assertion-killed count
+     * @param survivedMutants fully passing count
+     * @param inconclusiveMutants terminal inconclusive count
+     * @param unclassifiedMutants pending, running, or unscheduled count
+     * @param denominatorMutants killed plus survived count
+     * @param scoreBasisPoints floored killed ratio, zero while incomplete
+     * @param equivalentMutantsExcluded fixed zero in generation one
+     * @param reasons stable fail-closed policy reasons
+     */
+    public record MutationScore(
+            MutationScoreStatus status,
+            MutationScorePolicy policy,
+            int plannedMutants,
+            int killedMutants,
+            int survivedMutants,
+            int inconclusiveMutants,
+            int unclassifiedMutants,
+            int denominatorMutants,
+            int scoreBasisPoints,
+            int equivalentMutantsExcluded,
+            List<String> reasons
+    ) {
+        /** Validates count closure and the generation-one denominator. */
+        public MutationScore {
+            reasons = immutableCodes(reasons);
+            if (status == null || policy == null || plannedMutants < 1 || plannedMutants > 16
+                    || killedMutants < 0 || survivedMutants < 0 || inconclusiveMutants < 0
+                    || unclassifiedMutants < 0 || plannedMutants != killedMutants
+                    + survivedMutants + inconclusiveMutants + unclassifiedMutants
+                    || denominatorMutants != killedMutants + survivedMutants
+                    || scoreBasisPoints < 0 || scoreBasisPoints > 10_000
+                    || equivalentMutantsExcluded != 0) {
+                throw new IllegalArgumentException("Mutation score count closure is invalid");
+            }
+            int derived = unclassifiedMutants > 0 || denominatorMutants == 0
+                    ? 0 : (int) ((long) killedMutants * 10_000 / denominatorMutants);
+            if (scoreBasisPoints != derived
+                    || status == MutationScoreStatus.SATISFIED && !reasons.isEmpty()
+                    || status != MutationScoreStatus.SATISFIED && reasons.isEmpty()) {
+                throw new IllegalArgumentException("Mutation score verdict is inconsistent");
+            }
+        }
+    }
+
     /** Semantic coverage states emitted only by suite evidence v2. */
     public enum SemanticCoverageStatus {
         /** A running checkpoint has not evaluated semantic coverage. */
@@ -666,10 +1078,13 @@ public record TestSuiteRun(
         }
         AdmissionProjection admission = admissionProjection(rawResponse);
         PropertyProjection property = propertyProjection(rawResponse);
-        if (admission != null && property != null) {
-            throw new IllegalArgumentException("Suite evidence cannot have two evaluation modes");
+        MutationProjection mutation = mutationProjection(rawResponse);
+        int projections = (admission == null ? 0 : 1) + (property == null ? 0 : 1)
+                + (mutation == null ? 0 : 1);
+        if (projections > 1) {
+            throw new IllegalArgumentException("Suite evidence cannot have multiple evaluation modes");
         }
-        if (admission == null && property == null && status == Status.PASSED
+        if (projections == 0 && status == Status.PASSED
                 && (coverageStatus != CoverageStatus.SATISFIED
                 || caseResults.stream().anyMatch(result -> !result.passed()))) {
             throw new IllegalArgumentException(
@@ -681,6 +1096,10 @@ public record TestSuiteRun(
         }
         if (property != null) {
             validatePropertyRun(status, caseResults, property);
+        }
+        if (mutation != null) {
+            validateMutationRun(status, targetKind, coverageStatus, promotionStatus,
+                    caseResults, mutation, rawResponse);
         }
         rawResponse = rawResponse == null ? null : rawResponse.deepCopy();
     }
@@ -718,7 +1137,8 @@ public record TestSuiteRun(
                 TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2,
                 TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3,
                 TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V4,
-                TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V5).contains(responseVersion)
+                TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V5,
+                TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V6).contains(responseVersion)
                 ? TestSuiteRunAttestation.from(response.path("attestation"))
                 : TestSuiteRunAttestation.unsigned();
         return new TestSuiteRun(response.path("suiteRunId").asText(evidence.path("suiteRunId").asText()),
@@ -780,6 +1200,7 @@ public record TestSuiteRun(
             case BUSINESS_EXECUTION -> passed();
             case SCHEMA_ADMISSION -> admissionPassed();
             case PROPERTY_EXECUTION -> propertyPassed();
+            case PURE_DSL_MUTATION -> mutationPassed();
         };
     }
 
@@ -792,8 +1213,11 @@ public record TestSuiteRun(
         if (admissionProjection(rawResponse) != null) {
             return EvaluationMode.SCHEMA_ADMISSION;
         }
-        return propertyProjection(rawResponse) == null
-                ? EvaluationMode.BUSINESS_EXECUTION : EvaluationMode.PROPERTY_EXECUTION;
+        if (propertyProjection(rawResponse) != null) {
+            return EvaluationMode.PROPERTY_EXECUTION;
+        }
+        return mutationProjection(rawResponse) == null
+                ? EvaluationMode.BUSINESS_EXECUTION : EvaluationMode.PURE_DSL_MUTATION;
     }
 
     /**
@@ -866,6 +1290,71 @@ public record TestSuiteRun(
     public List<CounterexampleRef> minimalObservedCounterexamples() {
         return propertyCoverage().map(PropertyCoverage::minimalObservedCounterexamples)
                 .orElse(List.of());
+    }
+
+    /**
+     * Returns the exact payload-free mutation plan identity when evidence v5 was emitted.
+     *
+     * @return empty for all non-mutation evidence generations
+     */
+    public Optional<MutationPlan> mutationPlan() {
+        MutationProjection projection = mutationProjection(rawResponse);
+        return projection == null ? Optional.empty() : Optional.of(projection.plan());
+    }
+
+    /**
+     * Returns the baseline oracle state for pure-DSL mutation evidence.
+     *
+     * @return empty for all non-mutation evidence generations
+     */
+    public Optional<MutationBaselineStatus> mutationBaselineStatus() {
+        MutationProjection projection = mutationProjection(rawResponse);
+        return projection == null ? Optional.empty() : Optional.of(projection.baselineStatus());
+    }
+
+    /**
+     * Returns the complete ordered mutant classification closure.
+     *
+     * @return immutable empty list for all non-mutation evidence generations
+     */
+    public List<MutantResult> mutantResults() {
+        MutationProjection projection = mutationProjection(rawResponse);
+        return projection == null ? List.of() : projection.mutants();
+    }
+
+    /**
+     * Returns the independently re-derived mutation score verdict.
+     *
+     * @return empty for all non-mutation evidence generations
+     */
+    public Optional<MutationScore> mutationScore() {
+        MutationProjection projection = mutationProjection(rawResponse);
+        return projection == null ? Optional.empty() : Optional.of(projection.score());
+    }
+
+    /**
+     * Requires pure-DSL mutation evidence instead of treating ordinary coverage as a score.
+     *
+     * @return typed mutation score
+     * @throws IllegalStateException when this is not pure-DSL mutation evidence
+     */
+    public MutationScore requireMutationScore() {
+        return mutationScore().orElseThrow(() -> new IllegalStateException(
+                "MUTATION_SCORE_UNAVAILABLE"));
+    }
+
+    /**
+     * Indicates whether the baseline passed and the exact mutation policy is satisfied.
+     *
+     * @return true only for terminal complete mutation evidence with a satisfied score
+     */
+    public boolean mutationPassed() {
+        MutationProjection projection = mutationProjection(rawResponse);
+        return projection != null && status == Status.PASSED
+                && projection.baselineStatus() == MutationBaselineStatus.PASSED
+                && projection.score().status() == MutationScoreStatus.SATISFIED
+                && coverageStatus == CoverageStatus.SATISFIED
+                && caseResults.stream().allMatch(CaseResult::passed);
     }
 
     /**
@@ -947,6 +1436,28 @@ public record TestSuiteRun(
             if (!property.incompleteCaseIds().isEmpty()) {
                 codes.add("PROPERTY_EVIDENCE_INCOMPLETE");
             }
+        } else if (evaluationMode() == EvaluationMode.PURE_DSL_MUTATION) {
+            MutationBaselineStatus baseline = mutationBaselineStatus().orElseThrow();
+            MutationScore mutation = requireMutationScore();
+            if (baseline != MutationBaselineStatus.PASSED) {
+                codes.add("MUTATION_BASELINE_" + baseline.name());
+            }
+            if (coverageStatus != CoverageStatus.SATISFIED) {
+                codes.add("MUTATION_BASELINE_COVERAGE_" + coverageStatus.name());
+            }
+            if (mutation.status() != MutationScoreStatus.SATISFIED) {
+                codes.add("MUTATION_SCORE_" + mutation.status().name());
+            }
+            if (mutation.reasons().contains("MUTATION_SURVIVOR_FORBIDDEN")) {
+                codes.add("MUTATION_SURVIVORS_PRESENT");
+            }
+            if (mutation.reasons().contains("MUTATION_INCONCLUSIVE_LIMIT_EXCEEDED")) {
+                codes.add("MUTATION_INCONCLUSIVE_PRESENT");
+            }
+            if (mutation.unclassifiedMutants() > 0) {
+                codes.add("MUTATION_CLASSIFICATION_INCOMPLETE");
+            }
+            codes.addAll(mutation.reasons());
         } else {
             if (coverageStatus != CoverageStatus.SATISFIED) {
                 codes.add("COVERAGE_" + coverageStatus.name());
@@ -1104,6 +1615,93 @@ public record TestSuiteRun(
         return new PropertyProjection(List.copyOf(trials), coverage);
     }
 
+    private static MutationProjection mutationProjection(JsonNode response) {
+        JsonNode evidence = response == null ? null : response.path("evidence");
+        if (evidence == null || !TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V5.equals(
+                evidence.path("schemaVersion").asText())) {
+            return null;
+        }
+        JsonNode policyValue = evidence.path("mutationPolicy");
+        MutationPolicy policy = new MutationPolicy(
+                policyValue.path("plannerVersion").asText(),
+                policyValue.path("maxMutants").asInt(),
+                policyValue.path("sourceFormat").asText(),
+                policyValue.path("verificationMode").asText(),
+                policyValue.path("externalOperatorMutation").asBoolean(),
+                policyValue.path("equivalentMutantDetection").asBoolean());
+        List<MutationPlanningGap> gaps = new ArrayList<>();
+        evidence.path("planningGaps").forEach(value -> gaps.add(new MutationPlanningGap(
+                value.path("code").asText(), value.path("astPath").asText(),
+                value.path("mutationKind").asText())));
+        MutationPlan plan = new MutationPlan(evidence.path("sourceFormat").asText(),
+                evidence.path("baselineSourceFingerprint").asText(),
+                evidence.path("baselineGraphArtifactFingerprint").asText(),
+                evidence.path("mutationPlanFingerprint").asText(), policy,
+                enumValue(MutationSourcePlanStatus.class,
+                        evidence.path("sourcePlanStatus").asText(),
+                        "mutation source plan status"),
+                evidence.path("planningGapsAccepted").asBoolean(), gaps);
+        List<MutantResult> mutants = new ArrayList<>();
+        evidence.path("mutantResults").forEach(value -> {
+            JsonNode coordinate = value.path("mutant");
+            if (!"UNKNOWN".equals(coordinate.path("equivalenceClassification").asText())) {
+                throw new IllegalArgumentException(
+                        "Mutation equivalence cannot be claimed without proof");
+            }
+            MutantRef mutant = new MutantRef(coordinate.path("mutantId").asText(),
+                    enumValue(MutationKind.class, coordinate.path("kind").asText(),
+                            "mutation kind"),
+                    coordinate.path("astPath").asText(),
+                    coordinate.path("sourceLine").asInt(),
+                    coordinate.path("sourceColumn").asInt(),
+                    coordinate.path("mutantSourceFingerprint").asText(),
+                    coordinate.path("mutantGraphArtifactFingerprint").asText(),
+                    coordinate.path("mutantTargetFingerprint").asText());
+            List<MutationCaseResult> cases = new ArrayList<>();
+            value.path("caseResults").forEach(item -> {
+                JsonNode fixture = item.path("fixtureBundleRef");
+                cases.add(new MutationCaseResult(item.path("caseId").asText(),
+                        fixture.path("fixtureBundleId").asText(),
+                        fixture.path("revision").asLong(), fixture.path("fingerprint").asText(),
+                        item.path("mutantTargetFingerprint").asText(),
+                        enumValue(MutationCaseStatus.class, item.path("status").asText(),
+                                "mutation case status"),
+                        item.path("runId").asText(), item.path("evidenceFingerprint").asText(),
+                        nullableText(item.path("evidenceStatus")),
+                        nullableText(item.path("evidenceClass")),
+                        item.path("assertionsEvaluated").asInt(),
+                        item.path("assertionsPassed").asInt(),
+                        item.path("diagnosticCode").asText()));
+            });
+            mutants.add(new MutantResult(mutant,
+                    enumValue(MutantStatus.class, value.path("status").asText(),
+                            "mutant status"), cases, strings(value.path("killingCaseIds"))));
+        });
+        JsonNode scoreValue = evidence.path("mutationScore");
+        JsonNode scorePolicyValue = scoreValue.path("policy");
+        MutationScorePolicy scorePolicy = new MutationScorePolicy(
+                scorePolicyValue.path("minimumScoreBasisPoints").asInt(),
+                scorePolicyValue.path("maximumInconclusiveMutants").asInt(),
+                scorePolicyValue.path("requireNoSurvivors").asBoolean(),
+                scorePolicyValue.path("excludeEquivalentMutants").asBoolean());
+        MutationScore score = new MutationScore(
+                enumValue(MutationScoreStatus.class, scoreValue.path("status").asText(),
+                        "mutation score status"),
+                scorePolicy, scoreValue.path("plannedMutants").asInt(),
+                scoreValue.path("killedMutants").asInt(),
+                scoreValue.path("survivedMutants").asInt(),
+                scoreValue.path("inconclusiveMutants").asInt(),
+                scoreValue.path("unclassifiedMutants").asInt(),
+                scoreValue.path("denominatorMutants").asInt(),
+                scoreValue.path("scoreBasisPoints").asInt(),
+                scoreValue.path("equivalentMutantsExcluded").asInt(),
+                strings(scoreValue.path("reasons")));
+        return new MutationProjection(plan,
+                enumValue(MutationBaselineStatus.class,
+                        evidence.path("baselineStatus").asText(),
+                        "mutation baseline status"), List.copyOf(mutants), score);
+    }
+
     private static PropertyCaseResult propertyCase(JsonNode value) {
         return new PropertyCaseResult(value.path("caseId").asText(),
                 enumValue(PropertyCaseRole.class, value.path("role").asText(),
@@ -1171,6 +1769,177 @@ public record TestSuiteRun(
             throw new IllegalArgumentException(
                     "Property aggregate and compatibility closure are inconsistent");
         }
+    }
+
+    private static void validateMutationRun(
+            Status status,
+            String targetKind,
+            CoverageStatus coverageStatus,
+            PromotionStatus promotionStatus,
+            List<CaseResult> baselineCases,
+            MutationProjection mutation,
+            JsonNode response) {
+        if (!"GRAPH".equals(targetKind) || mutation.mutants().isEmpty()
+                || mutation.mutants().size() > mutation.plan().policy().maxMutants()) {
+            throw new IllegalArgumentException("Mutation execution scope is inconsistent");
+        }
+        MutationBaselineStatus derivedBaseline = deriveMutationBaseline(status, baselineCases);
+        if (mutation.baselineStatus() != derivedBaseline) {
+            throw new IllegalArgumentException("Mutation baseline status must be derived");
+        }
+        LinkedHashSet<String> sourceFingerprints = new LinkedHashSet<>();
+        for (int mutantIndex = 0; mutantIndex < mutation.mutants().size(); mutantIndex++) {
+            MutantResult result = mutation.mutants().get(mutantIndex);
+            if (!("mutant-%03d".formatted(mutantIndex + 1)).equals(result.mutant().mutantId())
+                    || !sourceFingerprints.add(result.mutant().mutantSourceFingerprint())
+                    || result.caseResults().size() != baselineCases.size()) {
+                throw new IllegalArgumentException("Mutation result closure is inconsistent");
+            }
+            for (int caseIndex = 0; caseIndex < baselineCases.size(); caseIndex++) {
+                CaseResult baseline = baselineCases.get(caseIndex);
+                MutationCaseResult candidate = result.caseResults().get(caseIndex);
+                if (!baseline.caseId().equals(candidate.caseId())
+                        || !baseline.fixtureBundleId().equals(candidate.fixtureBundleId())
+                        || baseline.fixtureRevision() != candidate.fixtureRevision()
+                        || !baseline.fixtureFingerprint().equals(candidate.fixtureFingerprint())
+                        || !result.mutant().mutantTargetFingerprint().equals(
+                        candidate.mutantTargetFingerprint())) {
+                    throw new IllegalArgumentException(
+                            "Mutation oracle, fixture, and target closure is inconsistent");
+                }
+            }
+        }
+        MutationScore derivedScore = deriveMutationScore(mutation.baselineStatus(),
+                mutation.mutants(), mutation.score().policy());
+        if (!derivedScore.equals(mutation.score())) {
+            throw new IllegalArgumentException("Mutation score must be independently derived");
+        }
+        boolean terminalScore = List.of(MutationScoreStatus.SATISFIED,
+                MutationScoreStatus.UNSATISFIED).contains(mutation.score().status());
+        if (status == Status.RUNNING) {
+            if (terminalScore) {
+                throw new IllegalArgumentException(
+                        "Running mutation evidence cannot claim a terminal score");
+            }
+        } else if (status == Status.EVIDENCE_INCOMPLETE && terminalScore) {
+            JsonNode diagnostics = response.path("evidence").path("diagnostics");
+            if (promotionStatus != PromotionStatus.BLOCKED || diagnostics.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Outer mutation evidence failure must be disclosed and block promotion");
+            }
+        } else {
+            Status expected = mutation.baselineStatus() == MutationBaselineStatus.EVIDENCE_INCOMPLETE
+                    || List.of(MutationScoreStatus.NOT_EVALUATED,
+                    MutationScoreStatus.INCOMPLETE).contains(mutation.score().status())
+                    ? Status.EVIDENCE_INCOMPLETE
+                    : mutation.baselineStatus() == MutationBaselineStatus.FAILED
+                    || mutation.score().status() == MutationScoreStatus.UNSATISFIED
+                    ? Status.COMPLETED_WITH_FAILURES
+                    : mutation.baselineStatus() == MutationBaselineStatus.PASSED
+                    && mutation.score().status() == MutationScoreStatus.SATISFIED
+                    ? Status.PASSED : Status.EVIDENCE_INCOMPLETE;
+            if (status != expected) {
+                throw new IllegalArgumentException(
+                        "Mutation aggregate lifecycle contradicts baseline and score evidence");
+            }
+        }
+        if (promotionStatus == PromotionStatus.ELIGIBLE
+                && (status != Status.PASSED || coverageStatus != CoverageStatus.SATISFIED
+                || mutation.score().status() != MutationScoreStatus.SATISFIED)) {
+            throw new IllegalArgumentException(
+                    "Mutation promotion requires baseline coverage and a satisfied score");
+        }
+    }
+
+    private static MutationBaselineStatus deriveMutationBaseline(
+            Status aggregate, List<CaseResult> cases) {
+        boolean allPending = cases.stream().allMatch(
+                result -> result.status() == CaseStatus.PENDING);
+        boolean somePending = cases.stream().anyMatch(
+                result -> result.status() == CaseStatus.PENDING);
+        boolean allPassed = cases.stream().allMatch(CaseResult::passed);
+        boolean incomplete = cases.stream().anyMatch(result -> List.of(
+                CaseStatus.PENDING, CaseStatus.NOT_SCHEDULED,
+                CaseStatus.EVIDENCE_INCOMPLETE).contains(result.status()));
+        if (allPending) {
+            return MutationBaselineStatus.PENDING;
+        }
+        if (aggregate == Status.RUNNING && somePending) {
+            return MutationBaselineStatus.RUNNING;
+        }
+        if (allPassed) {
+            return MutationBaselineStatus.PASSED;
+        }
+        return incomplete ? MutationBaselineStatus.EVIDENCE_INCOMPLETE
+                : MutationBaselineStatus.FAILED;
+    }
+
+    private static MutantStatus deriveMutantStatus(List<MutationCaseResult> cases) {
+        if (cases.stream().allMatch(result -> result.status() == MutationCaseStatus.PENDING)) {
+            return MutantStatus.PENDING;
+        }
+        if (cases.stream().anyMatch(result -> result.status() == MutationCaseStatus.PENDING)) {
+            return MutantStatus.RUNNING;
+        }
+        if (cases.stream().anyMatch(
+                result -> result.status() == MutationCaseStatus.ASSERTION_KILLED)) {
+            return MutantStatus.KILLED;
+        }
+        if (cases.stream().anyMatch(
+                result -> result.status() == MutationCaseStatus.NOT_SCHEDULED)) {
+            return MutantStatus.NOT_SCHEDULED;
+        }
+        if (cases.stream().allMatch(
+                result -> result.status() == MutationCaseStatus.SURVIVED)) {
+            return MutantStatus.SURVIVED;
+        }
+        return MutantStatus.INCONCLUSIVE;
+    }
+
+    private static MutationScore deriveMutationScore(
+            MutationBaselineStatus baseline,
+            List<MutantResult> mutants,
+            MutationScorePolicy policy) {
+        int killed = (int) mutants.stream()
+                .filter(result -> result.status() == MutantStatus.KILLED).count();
+        int survived = (int) mutants.stream()
+                .filter(result -> result.status() == MutantStatus.SURVIVED).count();
+        int inconclusive = (int) mutants.stream()
+                .filter(result -> result.status() == MutantStatus.INCONCLUSIVE).count();
+        int unclassified = mutants.size() - killed - survived - inconclusive;
+        int denominator = killed + survived;
+        int basisPoints = unclassified > 0 || denominator == 0
+                ? 0 : (int) ((long) killed * 10_000 / denominator);
+        List<String> reasons = new ArrayList<>();
+        MutationScoreStatus status;
+        if (List.of(MutationBaselineStatus.PENDING,
+                MutationBaselineStatus.RUNNING).contains(baseline)) {
+            reasons.add("BASELINE_NOT_EVALUATED");
+            status = MutationScoreStatus.NOT_EVALUATED;
+        } else if (baseline == MutationBaselineStatus.EVIDENCE_INCOMPLETE) {
+            reasons.add("BASELINE_EVIDENCE_INCOMPLETE");
+            status = MutationScoreStatus.INCOMPLETE;
+        } else if (baseline == MutationBaselineStatus.FAILED) {
+            reasons.add("BASELINE_ORACLE_FAILED");
+            status = MutationScoreStatus.UNSATISFIED;
+        } else if (unclassified > 0) {
+            reasons.add("MUTANT_CLASSIFICATION_INCOMPLETE");
+            status = MutationScoreStatus.INCOMPLETE;
+        } else {
+            if (basisPoints < policy.minimumScoreBasisPoints()) {
+                reasons.add("MUTATION_SCORE_BELOW_THRESHOLD");
+            }
+            if (inconclusive > policy.maximumInconclusiveMutants()) {
+                reasons.add("MUTATION_INCONCLUSIVE_LIMIT_EXCEEDED");
+            }
+            if (policy.requireNoSurvivors() && survived > 0) {
+                reasons.add("MUTATION_SURVIVOR_FORBIDDEN");
+            }
+            status = reasons.isEmpty()
+                    ? MutationScoreStatus.SATISFIED : MutationScoreStatus.UNSATISFIED;
+        }
+        return new MutationScore(status, policy, mutants.size(), killed, survived,
+                inconclusive, unclassified, denominator, basisPoints, 0, reasons);
     }
 
     private static boolean propertyCoverageMatches(
@@ -1337,5 +2106,19 @@ public record TestSuiteRun(
             List<PropertyTrialResult> trials,
             PropertyCoverage coverage
     ) {
+    }
+
+    private record MutationProjection(
+            MutationPlan plan,
+            MutationBaselineStatus baselineStatus,
+            List<MutantResult> mutants,
+            MutationScore score
+    ) {
+        private MutationProjection {
+            mutants = mutants == null ? List.of() : List.copyOf(mutants);
+            if (plan == null || baselineStatus == null || mutants.isEmpty() || score == null) {
+                throw new IllegalArgumentException("Mutation projection is incomplete");
+            }
+        }
     }
 }

@@ -64,6 +64,29 @@ public final class TestSuiteRunAssertions {
     }
 
     /**
+     * Requires the exact baseline oracle to pass and the independently derived mutation score to
+     * satisfy its immutable policy. Runtime failures and incomplete evidence never count as kills.
+     *
+     * @param run pure-DSL mutation suite run
+     */
+    public static void assertMutationSatisfied(TestSuiteRun run) {
+        required(run);
+        if (!run.mutationPassed()) {
+            String baseline = run.mutationBaselineStatus()
+                    .map(Enum::name).orElse("UNAVAILABLE");
+            String score = run.mutationScore()
+                    .map(value -> value.status().name() + ":" + value.scoreBasisPoints())
+                    .orElse("UNAVAILABLE");
+            throw new AssertionFailedError("Resource Gateway mutation suite "
+                    + run.suiteRunId() + " was not satisfied; mode=" + run.evaluationMode()
+                    + ", status=" + run.status() + ", baseline=" + baseline
+                    + ", mutationScore=" + score,
+                    "PURE_DSL_MUTATION PASSED with a SATISFIED score",
+                    run.status() + " with " + score);
+        }
+    }
+
+    /**
      * Requires at least one path-local counterexample and returns its payload-free coordinate.
      *
      * @param run bounded-property suite run

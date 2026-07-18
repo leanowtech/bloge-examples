@@ -65,7 +65,8 @@ class TestingProtocolTest {
             assertConstant(definitions, "testSuiteV2", TestingProtocol.TEST_SUITE_V2);
             assertConstant(definitions, "testSuiteV3", TestingProtocol.TEST_SUITE_V3);
             assertConstant(definitions, "testSuiteV4", TestingProtocol.TEST_SUITE_V4);
-            assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(4);
+            assertConstant(definitions, "testSuiteV5", TestingProtocol.TEST_SUITE_V5);
+            assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(5);
             assertConstant(definitions, "testPropertyCasePlan",
                     TestingProtocol.TEST_PROPERTY_CASE_PLAN_V1);
             assertConstant(definitions, "testMutationCasePlan",
@@ -74,11 +75,17 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_PROPERTY_SUITE_MATERIALIZATION_REQUEST_V1);
             assertConstant(definitions, "testPropertySuiteMaterialization",
                     TestingProtocol.TEST_PROPERTY_SUITE_MATERIALIZATION_V1);
+            assertConstant(definitions, "testMutationSuiteMaterializationRequest",
+                    TestingProtocol.TEST_MUTATION_SUITE_MATERIALIZATION_REQUEST_V1);
+            assertConstant(definitions, "testMutationSuiteMaterialization",
+                    TestingProtocol.TEST_MUTATION_SUITE_MATERIALIZATION_V1);
             assertConstant(definitions, "testSuiteRegistrationRequest",
                     TestingProtocol.TEST_SUITE_REGISTRATION_REQUEST_V1);
             assertConstant(definitions, "storedTestSuite", TestingProtocol.STORED_TEST_SUITE_V1);
             assertConstant(definitions, "testSuiteExecutionRequest",
                     TestingProtocol.TEST_SUITE_EXECUTION_REQUEST_V1);
+            assertConstant(definitions, "testMutationSuiteExecutionRequest",
+                    TestingProtocol.TEST_MUTATION_SUITE_EXECUTION_REQUEST_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV1",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV2",
@@ -89,7 +96,9 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V4);
             assertConstant(definitions, "testSuiteExecutionResponseV5",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V5);
-            assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(5);
+            assertConstant(definitions, "testSuiteExecutionResponseV6",
+                    TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V6);
+            assertThat(definitions.at("/testSuiteExecutionResponse/oneOf")).hasSize(6);
             assertConstant(definitions, "testSuiteRunEvidence",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V1);
             assertConstant(definitions, "testSuiteRunEvidenceV2",
@@ -98,6 +107,8 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V3);
             assertConstant(definitions, "testSuiteRunEvidenceV4",
                     TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V4);
+            assertConstant(definitions, "testSuiteRunEvidenceV5",
+                    TestingProtocol.TEST_SUITE_RUN_EVIDENCE_V5);
             assertConstant(definitions, "testSuiteRunAttestation",
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V1);
             assertConstant(definitions, "testSuiteRunAttestationV2",
@@ -106,6 +117,8 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V3);
             assertConstant(definitions, "testSuiteRunAttestationV4",
                     TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V4);
+            assertConstant(definitions, "testSuiteRunAttestationV5",
+                    TestingProtocol.TEST_SUITE_RUN_ATTESTATION_V5);
             assertConstant(definitions, "testSuiteEvidenceBundleV1",
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1);
             assertConstant(definitions, "testSuiteEvidenceBundleV2",
@@ -114,7 +127,9 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3);
             assertConstant(definitions, "testSuiteEvidenceBundleV4",
                     TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4);
-            assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(4);
+            assertConstant(definitions, "testSuiteEvidenceBundleV5",
+                    TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V5);
+            assertThat(definitions.at("/testSuiteEvidenceBundle/oneOf")).hasSize(5);
             assertConstant(definitions, "evidenceVerificationKeySet",
                     TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
             assertConstant(definitions, "testSuiteCatalogMaterialization",
@@ -183,6 +198,27 @@ class TestingProtocolTest {
                 incompleteChild, "testSuiteExecutionResponse"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("authoritative schema");
+    }
+
+    @Test
+    void packagedSchemaAcceptsMutationEvidenceAndRejectsFalseKillClaims() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode response = mapper.readTree(TestSuiteRunAssertionsTest.mutationSuiteResponse());
+
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                response, "testSuiteExecutionResponse"));
+
+        JsonNode invalid = response.deepCopy();
+        com.fasterxml.jackson.databind.node.ObjectNode killed =
+                (com.fasterxml.jackson.databind.node.ObjectNode) invalid
+                        .at("/evidence/mutantResults/0/caseResults/0");
+        killed.put("evidenceStatus", "TIMED_OUT");
+
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                invalid, "testSuiteExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema")
+                .hasMessageNotContaining("mutant-run-killed");
     }
 
     private static String schemaAdmissionSuiteResponse() {

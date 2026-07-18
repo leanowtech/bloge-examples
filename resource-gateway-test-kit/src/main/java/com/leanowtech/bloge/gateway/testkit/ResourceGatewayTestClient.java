@@ -51,6 +51,14 @@ public final class ResourceGatewayTestClient {
         FAIL_FAST
     }
 
+    /** Per-mutant scheduling strategy for an immutable mutation-suite run. */
+    public enum MutationStrategy {
+        /** Execute every oracle case for every planned mutant. */
+        COLLECT_ALL,
+        /** Stop only the current mutant's remaining cases after a signed assertion kill. */
+        STOP_AFTER_KILL
+    }
+
     /** Supplies a short-lived bearer credential at request time. */
     @FunctionalInterface
     public interface BearerTokenProvider {
@@ -158,6 +166,44 @@ public final class ResourceGatewayTestClient {
      */
     public JsonNode materializeGraphPropertySuite(String graphName, JsonNode request) {
         return materializePropertySuite("graphs", graphName, request);
+    }
+
+    /**
+     * Materializes one reviewed graph mutation plan and exact business oracle as a V5 suite.
+     *
+     * @param graphName registered graph name
+     * @param request schema-complete exact-plan and exact-oracle materialization request
+     * @return defensive schema-validated mutation materialization JSON
+     */
+    public JsonNode materializeGraphMutationSuite(String graphName, JsonNode request) {
+        String exactGraphName = requiredIdentifier(graphName, "graphName", 512);
+        JsonNode exactRequest = requiredObject(request, "request");
+        TestingProtocolSchemaValidator.require(
+                exactRequest, "testMutationSuiteMaterializationRequest");
+        JsonNode response = exchange("POST", "/api/testing/targets/graphs/"
+                        + segment(exactGraphName) + "/mutation-suites", "",
+                "TEST_SUITE_WRITE", exactRequest);
+        requireVersion(response, TestingProtocol.TEST_MUTATION_SUITE_MATERIALIZATION_V1);
+        TestingProtocolSchemaValidator.require(response, "testMutationSuiteMaterialization");
+        boolean exactIdentity = exactGraphName.equals(response.path("target").path("id").asText())
+                && exactRequest.path("suiteId").asText().equals(
+                response.path("suiteRef").path("suiteId").asText())
+                && exactRequest.path("expectedTargetFingerprint").asText().equals(
+                response.path("target").path("fingerprint").asText())
+                && exactRequest.path("expectedSourceFingerprint").asText().equals(
+                response.path("baselineSourceFingerprint").asText())
+                && exactRequest.path("expectedGraphArtifactFingerprint").asText().equals(
+                response.path("baselineGraphArtifactFingerprint").asText())
+                && exactRequest.path("expectedPlanFingerprint").asText().equals(
+                response.path("mutationPlanFingerprint").asText())
+                && exactRequest.path("maxMutants").asInt()
+                == response.path("mutationPolicy").path("maxMutants").asInt()
+                && exactRequest.path("oracleSuiteRef").equals(response.path("oracleSuiteRef"));
+        if (!exactIdentity) {
+            throw responseContractInvalid(
+                    "The server materialized a mutation suite for a different plan or oracle identity.");
+        }
+        return response.deepCopy();
     }
 
     /**
@@ -325,6 +371,55 @@ public final class ResourceGatewayTestClient {
         requireSuiteExecutionResponseVersion(response);
         TestSuiteRun run = projectSuiteRun(response);
         requireSuiteRunIdentity(run, exactSuiteId, revision, exactFingerprint, id);
+        return run;
+    }
+
+    /**
+     * Executes one exact immutable V5 suite in the isolated pure-DSL mutation runtime.
+     *
+     * <p>The strategy is scoped to each mutant; it can never truncate later mutants. The returned
+     * projection independently re-derives baseline, mutant classification, and score closure
+     * before it can be consumed by CI.</p>
+     *
+     * @param suiteId exact V5 suite id
+     * @param revision exact immutable revision
+     * @param fingerprint full SHA-256 suite fingerprint
+     * @param clientRequestId stable idempotency key for this mutation intent
+     * @param strategy per-mutant scheduling strategy, defaulting to COLLECT_ALL
+     * @param metadata bounded provenance metadata
+     * @return typed pure-DSL mutation run projection
+     */
+    public TestSuiteRun executeMutationSuite(
+            String suiteId, long revision, String fingerprint, String clientRequestId,
+            MutationStrategy strategy, Map<String, ?> metadata) {
+        String id = requiredIdentifier(clientRequestId, "clientRequestId", 255);
+        String exactSuiteId = requiredIdentifier(suiteId, "suiteId", 255);
+        if (revision < 1) {
+            throw new IllegalArgumentException("revision must be at least 1");
+        }
+        String exactFingerprint = requiredFingerprint(fingerprint);
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion", TestingProtocol.TEST_MUTATION_SUITE_EXECUTION_REQUEST_V1);
+        ObjectNode suiteRef = request.putObject("suiteRef");
+        suiteRef.put("suiteId", exactSuiteId);
+        suiteRef.put("revision", revision);
+        suiteRef.put("fingerprint", exactFingerprint);
+        request.put("clientRequestId", id);
+        request.put("strategy", (strategy == null
+                ? MutationStrategy.COLLECT_ALL : strategy).name());
+        request.set("metadata", metadata == null
+                ? JSON.createObjectNode() : JSON.valueToTree(metadata));
+        TestingProtocolSchemaValidator.require(request, "testMutationSuiteExecutionRequest");
+        JsonNode response = exchange("POST", "/api/testing/suites/"
+                        + segment(exactSuiteId) + "/mutation-executions", "",
+                "TEST_EXECUTION", request);
+        requireSuiteExecutionResponseVersion(response);
+        TestSuiteRun run = projectSuiteRun(response);
+        requireSuiteRunIdentity(run, exactSuiteId, revision, exactFingerprint, id);
+        if (run.evaluationMode() != TestSuiteRun.EvaluationMode.PURE_DSL_MUTATION) {
+            throw responseContractInvalid(
+                    "The mutation endpoint returned a non-mutation suite run.");
+        }
         return run;
     }
 
@@ -937,7 +1032,8 @@ public final class ResourceGatewayTestClient {
                 && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V2.equals(actual)
                 && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V3.equals(actual)
                 && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V4.equals(actual)
-                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V5.equals(actual)) {
+                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V5.equals(actual)
+                && !TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V6.equals(actual)) {
             throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported suite execution response version.", null);
         }
@@ -948,7 +1044,8 @@ public final class ResourceGatewayTestClient {
         if (!TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V1.equals(actual)
                 && !TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V2.equals(actual)
                 && !TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V3.equals(actual)
-                && !TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4.equals(actual)) {
+                && !TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V4.equals(actual)
+                && !TestingProtocol.TEST_SUITE_EVIDENCE_BUNDLE_V5.equals(actual)) {
             throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported suite evidence bundle version.", null);
         }

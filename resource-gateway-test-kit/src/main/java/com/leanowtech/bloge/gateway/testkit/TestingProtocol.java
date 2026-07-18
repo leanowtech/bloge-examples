@@ -75,6 +75,8 @@ public final class TestingProtocol {
     public static final String TEST_SUITE_V3 = "bloge.testSuite.v3";
     /** Immutable bounded-property suite generation bound to one seeded plan. */
     public static final String TEST_SUITE_V4 = "bloge.testSuite.v4";
+    /** Immutable pure-DSL mutation suite generation bound to one exact oracle and plan. */
+    public static final String TEST_SUITE_V5 = "bloge.testSuite.v5";
     /** Seeded validator-proven property case plan wire version. */
     public static final String TEST_PROPERTY_CASE_PLAN_V1 = "bloge.testPropertyCasePlan.v1";
     /** Bounded independently compiling pure-DSL mutation authoring plan wire version. */
@@ -85,6 +87,12 @@ public final class TestingProtocol {
     /** Exact property-suite materialization response wire version. */
     public static final String TEST_PROPERTY_SUITE_MATERIALIZATION_V1 =
             "bloge.testPropertySuiteMaterialization.v1";
+    /** Exact pure-DSL mutation-suite materialization request wire version. */
+    public static final String TEST_MUTATION_SUITE_MATERIALIZATION_REQUEST_V1 =
+            "bloge.testMutationSuiteMaterializationRequest.v1";
+    /** Exact pure-DSL mutation-suite materialization response wire version. */
+    public static final String TEST_MUTATION_SUITE_MATERIALIZATION_V1 =
+            "bloge.testMutationSuiteMaterialization.v1";
     /** Test-suite registration request wire version. */
     public static final String TEST_SUITE_REGISTRATION_REQUEST_V1 =
             "bloge.testSuiteRegistrationRequest.v1";
@@ -93,6 +101,9 @@ public final class TestingProtocol {
     /** Exact immutable suite execution request wire version. */
     public static final String TEST_SUITE_EXECUTION_REQUEST_V1 =
             "bloge.testSuiteExecutionRequest.v1";
+    /** Exact immutable mutation-suite execution request wire version. */
+    public static final String TEST_MUTATION_SUITE_EXECUTION_REQUEST_V1 =
+            "bloge.testMutationSuiteExecutionRequest.v1";
     /** Immutable suite execution response wire version. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteExecutionResponse.v1";
@@ -108,6 +119,9 @@ public final class TestingProtocol {
     /** Signed suite response carrying bounded-property execution evidence. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V5 =
             "bloge.testSuiteExecutionResponse.v5";
+    /** Signed suite response carrying pure-DSL mutation score evidence. */
+    public static final String TEST_SUITE_EXECUTION_RESPONSE_V6 =
+            "bloge.testSuiteExecutionResponse.v6";
     /** Aggregate immutable suite-run evidence wire version. */
     public static final String TEST_SUITE_RUN_EVIDENCE_V1 = "bloge.testSuiteRunEvidence.v1";
     /** Aggregate suite evidence with a typed semantic coverage verdict. */
@@ -116,6 +130,8 @@ public final class TestingProtocol {
     public static final String TEST_SUITE_RUN_EVIDENCE_V3 = "bloge.testSuiteRunEvidence.v3";
     /** Aggregate bounded-property evidence with root/shrink lineage and honest minimality. */
     public static final String TEST_SUITE_RUN_EVIDENCE_V4 = "bloge.testSuiteRunEvidence.v4";
+    /** Aggregate pure-DSL mutation evidence with baseline and mutant child closure. */
+    public static final String TEST_SUITE_RUN_EVIDENCE_V5 = "bloge.testSuiteRunEvidence.v5";
     /** Signed suite checkpoint and terminal closure wire version. */
     public static final String TEST_SUITE_RUN_ATTESTATION_V1 =
             "bloge.testSuiteRunAttestation.v1";
@@ -128,6 +144,9 @@ public final class TestingProtocol {
     /** Domain-separated attestation for bounded-property aggregate and child closure. */
     public static final String TEST_SUITE_RUN_ATTESTATION_V4 =
             "bloge.testSuiteRunAttestation.v4";
+    /** Domain-separated attestation for baseline and prefixed mutant child closure. */
+    public static final String TEST_SUITE_RUN_ATTESTATION_V5 =
+            "bloge.testSuiteRunAttestation.v5";
     /** Portable payload-free terminal suite evidence bundle wire version. */
     public static final String TEST_SUITE_EVIDENCE_BUNDLE_V1 =
             "bloge.testSuiteEvidenceBundle.v1";
@@ -140,6 +159,9 @@ public final class TestingProtocol {
     /** Portable payload-free bundle carrying bounded-property evidence. */
     public static final String TEST_SUITE_EVIDENCE_BUNDLE_V4 =
             "bloge.testSuiteEvidenceBundle.v4";
+    /** Portable payload-free bundle carrying pure-DSL mutation evidence. */
+    public static final String TEST_SUITE_EVIDENCE_BUNDLE_V5 =
+            "bloge.testSuiteEvidenceBundle.v5";
     /** Resource Gateway evidence verification key wire version. */
     public static final String EVIDENCE_VERIFICATION_KEY_V1 =
             "toolStudio.resourceGateway.evidenceVerificationKey.v1";
