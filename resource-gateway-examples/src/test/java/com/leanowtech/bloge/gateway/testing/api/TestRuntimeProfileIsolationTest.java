@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloCo
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.RecoverySequenceRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
+import com.leanowtech.bloge.gateway.testing.persistence.TestSuiteStabilityJobRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTokenProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
@@ -139,6 +140,8 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityJobParentAuthority.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobRepository.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRequestKeyProtector.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobSloMonitor.class)).isEmpty();
@@ -254,6 +257,8 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityJobParentAuthority.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobRepository.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRequestKeyProtector.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityJobTelemetry.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityJobSloMonitor.class)).hasSize(1);
@@ -364,6 +369,22 @@ class TestRuntimeProfileIsolationTest {
                     .hasMessageContaining("cannot exceed hard queue capacity");
         } finally {
             inertSlo.close();
+        }
+    }
+
+    @Test
+    void invalidStabilityJobRequestIndexKeyFailsStartupWhileWorkerIsDisabled() {
+        AnnotationConfigApplicationContext context = unrefreshedContext(Map.of(
+                "gateway.testing.stability-jobs.retention.request-key-protection.key-ring",
+                "profile-stability-job-v1=AAAAAAAAAAAAAAAAAAAAAA=="),
+                0, "test");
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("32 bytes");
+        } finally {
+            context.close();
         }
     }
 
@@ -480,24 +501,37 @@ class TestRuntimeProfileIsolationTest {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getEnvironment().setActiveProfiles(profiles);
         String profile = String.join("-", profiles);
-        Map<String, Object> properties = new LinkedHashMap<>(Map.of(
-                "gateway.testing.store.jdbc-url",
-                "jdbc:h2:mem:profile-" + profile + ";DB_CLOSE_DELAY=-1",
-                "gateway.testing.store.retention-days", "1",
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("gateway.testing.store.jdbc-url",
+                "jdbc:h2:mem:profile-" + profile + ";DB_CLOSE_DELAY=-1");
+        properties.put("gateway.testing.store.retention-days", "1");
+        properties.put(
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id",
-                "profile-test-v1",
+                "profile-test-v1");
+        properties.put(
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring",
-                "profile-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+                "profile-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
+        properties.put(
                 "gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id",
-                "profile-request-index-v1",
+                "profile-request-index-v1");
+        properties.put(
                 "gateway.testing.durable.worker-quarantines.request-key-protection.key-ring",
-                "profile-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=",
+                "profile-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=");
+        properties.put(
                 "gateway.testing.durable.worker-quarantines.request-key-protection.write-mode",
-                "KEYED_ONLY",
+                "KEYED_ONLY");
+        properties.put(
+                "gateway.testing.stability-jobs.retention.request-key-protection.active-key-id",
+                "profile-stability-job-v1");
+        properties.put(
+                "gateway.testing.stability-jobs.retention.request-key-protection.key-ring",
+                "profile-stability-job-v1=QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=");
+        properties.put(
                 "gateway.testing.durable.worker-quarantines.request-index-rollout.instance-id",
-                "profile-replica-a",
+                "profile-replica-a");
+        properties.put(
                 "gateway.testing.durable.worker-quarantines.request-index-rollout.artifact-fingerprint",
-                "sha256:" + "f".repeat(64)));
+                "sha256:" + "f".repeat(64));
         properties.putAll(overrides);
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
                 "test-runtime", properties));

@@ -14,14 +14,17 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueueSnapshot;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,7 +52,8 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         jdbc = new JdbcTemplate(dataSource);
         parentAuthority = new FakeParentAuthority();
         repository = new DatabaseTestSuiteStabilityJobRepository(
-                jdbc, mapper, parentAuthority, new DataSourceTransactionManager(dataSource));
+                jdbc, mapper, parentAuthority, requestKeys("key-a"),
+                new DataSourceTransactionManager(dataSource));
         repository.init();
     }
 
@@ -137,7 +141,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 TestSuiteStabilityJobSubmission.Priority.NORMAL), policy);
         DatabaseTestSuiteStabilityJobRepository replica =
                 new DatabaseTestSuiteStabilityJobRepository(new JdbcTemplate(dataSource), mapper,
-                        parentAuthority,
+                        parentAuthority, requestKeys("key-a"),
                         new DataSourceTransactionManager(dataSource));
         replica.init();
         CountDownLatch start = new CountDownLatch(1);
@@ -506,9 +510,171 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 .hasSize(TestSuiteStabilityJobRecord.Status.values().length);
         assertThat(snapshot.distinctQueuedTenants()).isEqualTo(1);
         assertThat(snapshot.oldestQueuedAt()).isNotNull();
-        assertThat(repository.purgeExpired(1)).isZero();
+        assertThat(repository.retainExpired(Duration.ofDays(365), 1).jobsTombstoned())
+                .isZero();
         assertThat(repository.find("tenant-b", "test", cancelled.jobId())).isPresent();
         assertThat(repository.find("tenant-a", "test", queued.jobId())).isPresent();
+    }
+
+    @Test
+    void retentionReplacesDetailWithNonReversibleReplayTombstone() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
+        expireJob(cancelled);
+
+        var retained = repository.retainExpired(Duration.ofDays(365), 10);
+
+        assertThat(retained.jobsTombstoned()).isEqualTo(1);
+        assertThat(retained.tombstonesPurged()).isZero();
+        assertThat(repository.find("tenant-a", "test", submission.jobId())).isEmpty();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_job_tombstones",
+                Long.class)).isEqualTo(1L);
+        Map<String, Object> tombstone = jdbc.queryForMap(
+                "SELECT * FROM rg_test_suite_stability_job_tombstones");
+        assertThat(tombstone.keySet()).doesNotContain("CLIENT_REQUEST_ID", "JOB_ID");
+        assertThat(tombstone.values()).noneMatch(
+                value -> "request-a".equals(String.valueOf(value)));
+
+        assertThatThrownBy(() -> repository.submit(submission, policy))
+                .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityJobConflictException.Reason
+                                        .REPLAY_WINDOW_EXPIRED));
+
+        TestSuiteStabilityJobSubmission changed = new TestSuiteStabilityJobSubmission(
+                submission.jobId(), submission.request(), submission.requestFingerprint(),
+                submission.classification(), submission.principal(),
+                TestSuiteStabilityJobSubmission.Priority.HIGH, submission.deadlineAt());
+        assertThatThrownBy(() -> repository.submit(changed, policy))
+                .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityJobConflictException.Reason
+                                        .IDEMPOTENCY_CONFLICT));
+    }
+
+    @Test
+    void keyRotationReadsOldTombstonesAndMissingLiveGenerationFailsStartup() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
+        expireJob(cancelled);
+        repository.retainExpired(Duration.ofDays(365), 10);
+
+        var rotatedKeys = new TestSuiteStabilityJobRequestKeyProtector(
+                "key-b", Map.of("key-a", new byte[32], "key-b", bytes(32)));
+        DatabaseTestSuiteStabilityJobRepository rotated = repository(rotatedKeys);
+        rotated.init();
+
+        assertThatThrownBy(() -> rotated.submit(submission, policy))
+                .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityJobConflictException.Reason
+                                        .REPLAY_WINDOW_EXPIRED));
+
+        DatabaseTestSuiteStabilityJobRepository missingOld = repository(
+                new TestSuiteStabilityJobRequestKeyProtector(
+                        "key-b", Map.of("key-b", bytes(32))));
+        assertThatThrownBy(missingOld::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unavailable key");
+    }
+
+    @Test
+    void corruptExpiredSourceRollsBackTombstoneInsertionAndDetailDeletion() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
+        expireJob(cancelled);
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_jobs
+                SET failure_code = 'RG.TEST.TAMPERED'
+                WHERE job_id = ?
+                """, submission.jobId());
+
+        assertThatThrownBy(() -> repository.retainExpired(Duration.ofDays(365), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("integrity");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_jobs", Long.class))
+                .isEqualTo(1L);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_job_tombstones", Long.class))
+                .isZero();
+    }
+
+    @Test
+    void corruptLiveTombstoneFailsClosedWithoutRecreatingAJob() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
+        expireJob(cancelled);
+        repository.retainExpired(Duration.ofDays(365), 10);
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_job_tombstones
+                SET submission_fingerprint = ?
+                """, TestSuiteStabilityProtocolFixtures.fingerprint('8'));
+
+        assertThatThrownBy(() -> repository.submit(submission, policy))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("integrity");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_jobs", Long.class))
+                .isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_job_tombstones", Long.class))
+                .isEqualTo(1L);
+    }
+
+    @Test
+    void expiredTombstoneIsPurgedBeforeItsRequestIdentityCanBeReused() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
+        expireJob(cancelled);
+        repository.retainExpired(Duration.ofDays(365), 10);
+        expireTombstone();
+
+        var retained = repository.retainExpired(Duration.ofDays(365), 10);
+
+        assertThat(retained.jobsTombstoned()).isZero();
+        assertThat(retained.tombstonesPurged()).isEqualTo(1);
+        assertThat(repository.submit(submission, policy).status())
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.QUEUED);
+    }
+
+    @Test
+    void retentionRejectsSilentClampingOfUnsafeBounds() {
+        assertThatThrownBy(() -> repository.retainExpired(Duration.ofHours(23), 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("between 1 and 3650 days");
+        assertThatThrownBy(() -> repository.retainExpired(Duration.ofDays(365), 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("between 1 and 10000");
+        assertThatThrownBy(() -> repository.retainExpired(Duration.ofDays(365), 10_001))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("between 1 and 10000");
     }
 
     @Test
@@ -599,6 +765,95 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 Duration.ofSeconds(30), Duration.ofMinutes(5), Duration.ofSeconds(1),
                 Duration.ofMinutes(1), maximumRetries, Duration.ofDays(7),
                 Duration.ofDays(30));
+    }
+
+    private static TestSuiteStabilityJobRequestKeyProtector requestKeys(String activeKeyId) {
+        return new TestSuiteStabilityJobRequestKeyProtector(
+                activeKeyId, Map.of(activeKeyId, new byte[32]));
+    }
+
+    private DatabaseTestSuiteStabilityJobRepository repository(
+            TestSuiteStabilityJobRequestKeyProtector requestKeys) {
+        return new DatabaseTestSuiteStabilityJobRepository(
+                new JdbcTemplate(dataSource), mapper, parentAuthority, requestKeys,
+                new DataSourceTransactionManager(dataSource));
+    }
+
+    private void expireJob(TestSuiteStabilityJobRecord record) {
+        Instant createdAt = Instant.parse("2019-01-01T00:00:00Z");
+        Instant expiresAt = Instant.parse("2020-01-01T00:00:00Z");
+        Map<String, Object> row = jdbc.queryForMap("""
+                SELECT submission_fingerprint, owner_id, lease_epoch, lease_expires_at,
+                       policy_generation
+                FROM rg_test_suite_stability_jobs WHERE job_id = ?
+                """, record.jobId());
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", "bloge.testSuiteStabilityJobRecord.v1");
+        material.put("jobId", record.jobId());
+        material.put("request", record.request());
+        material.put("submissionFingerprint", row.get("SUBMISSION_FINGERPRINT"));
+        material.put("requestFingerprint", record.requestFingerprint());
+        material.put("classification", record.classification());
+        material.put("principal", record.principal());
+        material.put("priority", record.priority().name());
+        material.put("status", record.status().name());
+        material.put("retryCount", record.retryCount());
+        material.put("nextEligibleAt", record.nextEligibleAt());
+        material.put("deadlineAt", record.deadlineAt());
+        material.put("createdAt", createdAt);
+        material.put("updatedAt", record.updatedAt());
+        material.put("expiresAt", expiresAt);
+        material.put("ownerId", row.get("OWNER_ID"));
+        material.put("leaseEpoch", ((Number) row.get("LEASE_EPOCH")).longValue());
+        Timestamp leaseExpiresAt = (Timestamp) row.get("LEASE_EXPIRES_AT");
+        material.put("leaseExpiresAt",
+                leaseExpiresAt == null ? null : leaseExpiresAt.toInstant());
+        material.put("policyGeneration",
+                ((Number) row.get("POLICY_GENERATION")).longValue());
+        material.put("terminalStabilityRunId", record.terminalStabilityRunId());
+        material.put("terminalEvidenceFingerprint", record.terminalEvidenceFingerprint());
+        material.put("failureCode", record.failureCode());
+        material.put("cancellationRequestId", record.cancellationRequestId());
+        material.put("cancellationFingerprint", record.cancellationFingerprint());
+        String fingerprint = ProtocolFingerprint.of(mapper, material);
+        assertThat(jdbc.update("""
+                UPDATE rg_test_suite_stability_jobs
+                SET created_at = ?, expires_at = ?, record_fingerprint = ?
+                WHERE job_id = ? AND record_fingerprint = ?
+                """, Timestamp.from(createdAt), Timestamp.from(expiresAt), fingerprint,
+                record.jobId(), record.recordFingerprint())).isEqualTo(1);
+    }
+
+    private void expireTombstone() {
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT * FROM rg_test_suite_stability_job_tombstones");
+        Instant tombstonedAt = Instant.parse("2019-01-01T00:00:00Z");
+        Instant expiresAt = Instant.parse("2020-01-01T00:00:00Z");
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", "bloge.testSuiteStabilityJobTombstone.v1");
+        material.put("tenantId", row.get("TENANT_ID"));
+        material.put("environmentId", row.get("ENVIRONMENT_ID"));
+        material.put("requestKeyId", row.get("REQUEST_KEY_ID"));
+        material.put("requestKey", row.get("REQUEST_KEY"));
+        material.put("submissionFingerprint", row.get("SUBMISSION_FINGERPRINT"));
+        material.put("tombstonedAt", tombstonedAt);
+        material.put("expiresAt", expiresAt);
+        material.put("recordVersion", ((Number) row.get("RECORD_VERSION")).intValue());
+        String fingerprint = ProtocolFingerprint.of(mapper, material);
+        assertThat(jdbc.update("""
+                UPDATE rg_test_suite_stability_job_tombstones
+                SET tombstoned_at = ?, expires_at = ?, record_fingerprint = ?
+                WHERE record_fingerprint = ?
+                """, Timestamp.from(tombstonedAt), Timestamp.from(expiresAt), fingerprint,
+                row.get("RECORD_FINGERPRINT"))).isEqualTo(1);
+    }
+
+    private static byte[] bytes(int offset) {
+        byte[] value = new byte[32];
+        for (int index = 0; index < value.length; index++) {
+            value[index] = (byte) (offset + index);
+        }
+        return value;
     }
 
     private static TestSuiteStabilityJobSubmission submission(

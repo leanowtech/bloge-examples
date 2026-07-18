@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityRunRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.TestSuiteStabilityJobRequestKeyProtector;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,7 +47,11 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
         authority = new RepositoryTestSuiteStabilityJobParentAuthority(
                 runs, mapper, attestations);
         jobs = new DatabaseTestSuiteStabilityJobRepository(
-                jdbc, mapper, authority, new DataSourceTransactionManager(dataSource));
+                jdbc, mapper, authority,
+                TestSuiteStabilityJobRequestKeyProtector.fromConfiguration(
+                        "key-a",
+                        "key-a=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+                new DataSourceTransactionManager(dataSource));
         jobs.init();
     }
 

@@ -189,6 +189,17 @@ status totals but do not make the deployment unhealthy. Database observation fai
 metric-registry failure cannot stop worker execution. See
 [queue observability verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-queue-observability-verification.md).
 
+Expired terminal job detail can now be replaced transactionally by a payload-free request tombstone.
+Exact replay then returns `REPLAY_WINDOW_EXPIRED`; another intent using the same scoped request key
+remains an idempotency conflict. Tombstones keep only a tenant/environment-bound, independently
+domain-separated keyed HMAC index and an integrity fingerprint, never the plaintext request id or
+job payload. Configure `RG_TEST_STABILITY_JOB_REQUEST_KEY_ACTIVE_ID` and
+`RG_TEST_STABILITY_JOB_REQUEST_KEY_RING` with deployment secrets; append the new generation fleet-
+wide before changing active, and keep every old verification key until its final tombstone expires.
+Startup fails when a live tombstone references a missing generation. The repository primitive is
+present, but its cross-replica retention scheduler and freshness SLO are not yet wired. See
+[job tombstone verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-job-tombstone-verification.md).
+
 ### Create a durable graph test
 
 Freeze the target through graph discovery and publish an immutable fixture revision first. Then create

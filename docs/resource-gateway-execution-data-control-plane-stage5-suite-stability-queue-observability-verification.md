@@ -84,6 +84,7 @@ complete serving inventory or detect all workers stopping immediately. That requ
 fleet heartbeat/membership protocol or an external orchestrator inventory proof; this increment does
 not manufacture one from process memory.
 
-Bounded terminal retention, poison-row quarantine/repair, authenticated job HTTP, strict Schema,
-capability truth, independent test-kit support, alert routing, and non-H2/soak/chaos evidence remain
-required before asynchronous execution is a product capability.
+The transaction-safe terminal-detail-to-HMAC-tombstone primitive now exists, but its cross-replica
+lease, scheduler, counters, and freshness SLO are still absent. Poison-row quarantine/repair,
+authenticated job HTTP, strict Schema, capability truth, independent test-kit support, alert routing,
+and non-H2/soak/chaos evidence remain required before asynchronous execution is a product capability.

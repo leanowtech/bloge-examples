@@ -6,6 +6,7 @@ public final class TestSuiteStabilityJobConflictException extends RuntimeExcepti
     /** Closed conflict vocabulary mapped by the application service. */
     public enum Reason {
         IDEMPOTENCY_CONFLICT,
+        REPLAY_WINDOW_EXPIRED,
         POLICY_DRIFT,
         GLOBAL_QUEUE_FULL,
         TENANT_QUEUE_FULL,

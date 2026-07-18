@@ -33,6 +33,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloCo
 import com.leanowtech.bloge.gateway.testing.persistence.DurableStateProjectionReconciler;
 import com.leanowtech.bloge.gateway.testing.persistence.RecoverySequenceRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.StagedBlogeDurableStateStore;
+import com.leanowtech.bloge.gateway.testing.persistence.TestSuiteStabilityJobRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTokenProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineRequestKeyProtector;
@@ -563,14 +564,26 @@ public class TestRuntimeConfiguration {
                 repository, objectMapper, attestations);
     }
 
+    /** Builds the independently domain-separated HMAC authority for retired job requests. */
+    @Bean
+    TestSuiteStabilityJobRequestKeyProtector testSuiteStabilityJobRequestKeyProtector(
+            @Value("${gateway.testing.stability-jobs.retention.request-key-protection.active-key-id:local-stability-job-v1}")
+            String activeKeyId,
+            @Value("${gateway.testing.stability-jobs.retention.request-key-protection.key-ring:local-stability-job-v1=QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=}")
+            String keyRing) {
+        return TestSuiteStabilityJobRequestKeyProtector.fromConfiguration(
+                activeKeyId, keyRing);
+    }
+
     /** Creates the database-authoritative stability queue even while worker execution is off. */
     @Bean
     TestSuiteStabilityJobRepository testSuiteStabilityJobRepository(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
-            TestSuiteStabilityJobParentAuthority parentAuthority) {
+            TestSuiteStabilityJobParentAuthority parentAuthority,
+            TestSuiteStabilityJobRequestKeyProtector requestKeys) {
         return new DatabaseTestSuiteStabilityJobRepository(
-                database.jdbc(), objectMapper, parentAuthority,
+                database.jdbc(), objectMapper, parentAuthority, requestKeys,
                 database.transactionManager());
     }
 

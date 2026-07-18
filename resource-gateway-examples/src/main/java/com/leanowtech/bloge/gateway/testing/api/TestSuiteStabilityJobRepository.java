@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -129,6 +130,14 @@ public interface TestSuiteStabilityJobRepository {
     /** Returns a payload-free fixed-cardinality queue observation for one environment. */
     TestSuiteStabilityQueueSnapshot observe(String environmentId);
 
-    /** Deletes at most {@code limit} oldest terminal jobs past retention. */
-    int purgeExpired(int limit);
+    /**
+     * Replaces expired terminal jobs with non-reversible idempotency tombstones and purges expired
+     * tombstones in one bounded transaction.
+     *
+     * @param tombstoneRetention request-key reservation after detailed job erasure
+     * @param limit independent job and tombstone page bound
+     * @return committed aggregate without request or job identities
+     */
+    TestSuiteStabilityJobRetentionResult retainExpired(
+            Duration tombstoneRetention, int limit);
 }

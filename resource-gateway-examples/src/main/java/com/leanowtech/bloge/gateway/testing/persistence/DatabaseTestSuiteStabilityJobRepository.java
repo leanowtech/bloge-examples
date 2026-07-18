@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobPrincipal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobParentAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRepository;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRetentionResult;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueueSnapshot;
@@ -30,6 +31,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -62,33 +64,40 @@ public final class DatabaseTestSuiteStabilityJobRepository
     private static final Pattern FAILURE_CODE = Pattern.compile("[A-Z][A-Z0-9_.-]{0,127}");
     private static final int MAXIMUM_PURGE_BATCH = 10_000;
     private static final int RECONCILIATION_BATCH = 1_000;
+    private static final int TOMBSTONE_VERSION = 1;
+    private static final Duration MINIMUM_TOMBSTONE_RETENTION = Duration.ofDays(1);
+    private static final Duration MAXIMUM_TOMBSTONE_RETENTION = Duration.ofDays(3650);
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final TestSuiteStabilityJobParentAuthority parentAuthority;
+    private final TestSuiteStabilityJobRequestKeyProtector requestKeys;
     private final TransactionTemplate mutations;
 
     /**
      * @param jdbc isolated test-runtime JDBC adapter
      * @param objectMapper canonical protocol mapper
      * @param parentAuthority parent-first stop or signed-winner resolver
+     * @param requestKeys non-reversible retired request identity authority
      * @param transactionManager transaction manager for the same datasource
      */
     public DatabaseTestSuiteStabilityJobRepository(
             JdbcTemplate jdbc,
             ObjectMapper objectMapper,
             TestSuiteStabilityJobParentAuthority parentAuthority,
+            TestSuiteStabilityJobRequestKeyProtector requestKeys,
             PlatformTransactionManager transactionManager) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.parentAuthority = Objects.requireNonNull(parentAuthority, "parentAuthority");
+        this.requestKeys = Objects.requireNonNull(requestKeys, "requestKeys");
         mutations = new TransactionTemplate(
                 Objects.requireNonNull(transactionManager, "transactionManager"));
         mutations.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         mutations.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
-    /** Creates queue, environment lock, policy, cursor, and bounded lookup indexes. */
+    /** Creates queue, tombstone, environment lock, policy, cursor, and bounded lookup indexes. */
     @PostConstruct
     public void init() {
         jdbc.execute("""
@@ -161,6 +170,25 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_jobs_retention
                 ON rg_test_suite_stability_jobs (expires_at, job_id)
                 """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_job_tombstones (
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(255) NOT NULL,
+                    request_key_id VARCHAR(64) NOT NULL,
+                    request_key VARCHAR(80) NOT NULL,
+                    submission_fingerprint VARCHAR(71) NOT NULL,
+                    tombstoned_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_version INTEGER NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL,
+                    PRIMARY KEY (tenant_id, environment_id, request_key_id, request_key)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_job_tombstone_expiry
+                ON rg_test_suite_stability_job_tombstones (expires_at, request_key_id, request_key)
+                """);
+        requireRetainedTombstoneKeys();
     }
 
     @Override
@@ -183,6 +211,7 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 requireSameSubmission(existing.get(), submission, submissionFingerprint);
                 return existing.get().record();
             }
+            requireNotRetired(submission, submissionFingerprint, observedAt);
             if (!submission.deadlineAt().isAfter(observedAt)
                     || submission.deadlineAt().isAfter(
                     observedAt.plus(policy.maximumDeadlineHorizon()))) {
@@ -683,28 +712,57 @@ public final class DatabaseTestSuiteStabilityJobRepository
     }
 
     @Override
-    public int purgeExpired(int limit) {
-        int bounded = Math.max(1, Math.min(MAXIMUM_PURGE_BATCH, limit));
-        Integer removed = mutations.execute(status -> {
+    public TestSuiteStabilityJobRetentionResult retainExpired(
+            Duration tombstoneRetention, int limit) {
+        Duration retention = boundedTombstoneRetention(tombstoneRetention);
+        int bounded = boundedRetentionPage(limit);
+        TestSuiteStabilityJobRetentionResult result = mutations.execute(status -> {
             Instant observedAt = currentTime();
             List<StoredJob> expired = jdbc.query("""
                     SELECT * FROM rg_test_suite_stability_jobs
                     WHERE status IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'EXPIRED', 'QUARANTINED')
                       AND expires_at <= ?
-                    ORDER BY expires_at, job_id
-                    FETCH FIRST ? ROWS ONLY
+                    ORDER BY expires_at, job_id LIMIT ? FOR UPDATE
                     """, this::storedJob, Timestamp.from(observedAt), bounded);
-            int total = 0;
+            int tombstoned = 0;
             for (StoredJob job : expired) {
-                total += jdbc.update("""
+                insertTombstone(job, observedAt, retention);
+                int removed = jdbc.update("""
                         DELETE FROM rg_test_suite_stability_jobs
                         WHERE job_id = ? AND record_fingerprint = ?
                           AND status IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'EXPIRED', 'QUARANTINED')
                         """, job.record().jobId(), job.record().recordFingerprint());
+                if (removed != 1) {
+                    throw new IllegalStateException(
+                            "Stability-job retention source fence was rejected");
+                }
+                tombstoned = Math.addExact(tombstoned, 1);
             }
-            return total;
+            List<StoredTombstone> expiredTombstones = jdbc.query("""
+                    SELECT * FROM rg_test_suite_stability_job_tombstones
+                    WHERE expires_at <= ?
+                    ORDER BY expires_at, request_key_id, request_key LIMIT ? FOR UPDATE
+                    """, this::storedTombstone, Timestamp.from(observedAt), bounded);
+            int purged = 0;
+            for (StoredTombstone tombstone : expiredTombstones) {
+                int removed = jdbc.update("""
+                        DELETE FROM rg_test_suite_stability_job_tombstones
+                        WHERE tenant_id = ? AND environment_id = ?
+                          AND request_key_id = ? AND request_key = ?
+                          AND record_fingerprint = ?
+                        """, tombstone.tenantId(), tombstone.environmentId(),
+                        tombstone.requestKeyId(), tombstone.requestKey(),
+                        tombstone.recordFingerprint());
+                if (removed != 1) {
+                    throw new IllegalStateException(
+                            "Stability-job tombstone retention fence was rejected");
+                }
+                purged = Math.addExact(purged, 1);
+            }
+            return new TestSuiteStabilityJobRetentionResult(
+                    tombstoned, purged, currentTime());
         });
-        return removed == null ? 0 : removed;
+        return required(result, "Stability-job retention returned no result");
     }
 
     private void reconcile(
@@ -928,6 +986,209 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
                 """, this::storedJob, tenant, environment, clientRequestId);
         return one(rows, "Duplicate suite-stability job request rows");
+    }
+
+    private void requireNotRetired(
+            TestSuiteStabilityJobSubmission submission,
+            String submissionFingerprint,
+            Instant observedAt) {
+        String tenant = submission.principal().tenantId();
+        String environment = submission.principal().environmentId();
+        String requestId = submission.request().clientRequestId();
+        List<StoredTombstone> live = new ArrayList<>();
+        for (TestSuiteStabilityJobRequestKeyProtector.IndexKey candidate
+                : requestKeys.lookupCandidates(tenant, environment, requestId)) {
+            List<StoredTombstone> rows = tombstone(candidate, tenant, environment);
+            if (rows.size() > 1) {
+                throw new IllegalStateException(
+                        "Duplicate suite-stability job tombstone rows");
+            }
+            for (StoredTombstone tombstone : rows) {
+                if (!requestKeys.matches(tenant, environment, requestId,
+                        tombstone.requestKeyId(), tombstone.requestKey())) {
+                    throw new IllegalStateException(
+                            "Stored suite-stability job tombstone request index failed");
+                }
+                if (tombstone.expiresAt().isAfter(observedAt)) {
+                    live.add(tombstone);
+                } else {
+                    deleteTombstoneExact(tombstone);
+                }
+            }
+        }
+        if (live.size() > 1) {
+            throw new IllegalStateException(
+                    "One suite-stability request has multiple live tombstones");
+        }
+        if (live.isEmpty()) {
+            return;
+        }
+        StoredTombstone tombstone = live.getFirst();
+        if (tombstone.submissionFingerprint().equals(submissionFingerprint)) {
+            throw conflict(
+                    TestSuiteStabilityJobConflictException.Reason.REPLAY_WINDOW_EXPIRED,
+                    "Suite-stability job replay detail has expired");
+        }
+        throw conflict(TestSuiteStabilityJobConflictException.Reason.IDEMPOTENCY_CONFLICT,
+                "clientRequestId identifies a retired stability job intent");
+    }
+
+    private List<StoredTombstone> tombstone(
+            TestSuiteStabilityJobRequestKeyProtector.IndexKey candidate,
+            String tenant,
+            String environment) {
+        return jdbc.query("""
+                SELECT * FROM rg_test_suite_stability_job_tombstones
+                WHERE tenant_id = ? AND environment_id = ?
+                  AND request_key_id = ? AND request_key = ?
+                FOR UPDATE
+                """, this::storedTombstone, tenant, environment,
+                candidate.keyId(), candidate.value());
+    }
+
+    private void insertTombstone(
+            StoredJob job, Instant observedAt, Duration retention) {
+        if (!Set.of(TestSuiteStabilityJobRecord.Status.SUCCEEDED,
+                TestSuiteStabilityJobRecord.Status.FAILED,
+                TestSuiteStabilityJobRecord.Status.CANCELLED,
+                TestSuiteStabilityJobRecord.Status.EXPIRED,
+                TestSuiteStabilityJobRecord.Status.QUARANTINED)
+                .contains(job.record().status())) {
+            throw new IllegalStateException(
+                    "Only terminal suite-stability jobs may become tombstones");
+        }
+        TestSuiteStabilityJobRequestKeyProtector.IndexKey requestKey = requestKeys.protect(
+                job.record().tenantId(), job.record().environmentId(),
+                job.record().request().clientRequestId());
+        List<StoredTombstone> existing = tombstone(requestKey,
+                job.record().tenantId(), job.record().environmentId());
+        if (existing.size() > 1) {
+            throw new IllegalStateException(
+                    "Duplicate suite-stability job tombstone rows");
+        }
+        if (!existing.isEmpty()) {
+            StoredTombstone retained = existing.getFirst();
+            if (retained.expiresAt().isAfter(observedAt)) {
+                throw new IllegalStateException(
+                        "Live tombstone overlaps retained suite-stability job detail");
+            }
+            deleteTombstoneExact(retained);
+        }
+        Instant expiresAt = safePlus(observedAt, retention);
+        String recordFingerprint = tombstoneFingerprint(
+                job.record().tenantId(), job.record().environmentId(),
+                requestKey.keyId(), requestKey.value(), job.submissionFingerprint(),
+                observedAt, expiresAt, TOMBSTONE_VERSION);
+        try {
+            int inserted = jdbc.update("""
+                    INSERT INTO rg_test_suite_stability_job_tombstones (
+                        tenant_id, environment_id, request_key_id, request_key,
+                        submission_fingerprint, tombstoned_at, expires_at,
+                        record_version, record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, job.record().tenantId(), job.record().environmentId(),
+                    requestKey.keyId(), requestKey.value(), job.submissionFingerprint(),
+                    Timestamp.from(observedAt), Timestamp.from(expiresAt),
+                    TOMBSTONE_VERSION, recordFingerprint);
+            if (inserted != 1) {
+                throw new IllegalStateException(
+                        "Suite-stability job tombstone was not persisted");
+            }
+        } catch (DuplicateKeyException collision) {
+            throw new IllegalStateException(
+                    "Suite-stability job tombstone changed while retention was locked",
+                    collision);
+        }
+    }
+
+    private void deleteTombstoneExact(StoredTombstone tombstone) {
+        int removed = jdbc.update("""
+                DELETE FROM rg_test_suite_stability_job_tombstones
+                WHERE tenant_id = ? AND environment_id = ?
+                  AND request_key_id = ? AND request_key = ?
+                  AND record_fingerprint = ?
+                """, tombstone.tenantId(), tombstone.environmentId(),
+                tombstone.requestKeyId(), tombstone.requestKey(),
+                tombstone.recordFingerprint());
+        if (removed != 1) {
+            throw new IllegalStateException(
+                    "Suite-stability job tombstone changed while locked");
+        }
+    }
+
+    private StoredTombstone storedTombstone(ResultSet rs, int rowNum) throws SQLException {
+        try {
+            String tenant = identifier(rs.getString("tenant_id"), "tenantId");
+            String environment = environment(rs.getString("environment_id"));
+            TestSuiteStabilityJobRequestKeyProtector.IndexKey requestKey =
+                    new TestSuiteStabilityJobRequestKeyProtector.IndexKey(
+                            rs.getString("request_key_id"), rs.getString("request_key"));
+            String submissionFingerprint = fingerprint(
+                    rs.getString("submission_fingerprint"), "submissionFingerprint");
+            Instant tombstonedAt = rs.getTimestamp("tombstoned_at").toInstant();
+            Instant expiresAt = rs.getTimestamp("expires_at").toInstant();
+            int recordVersion = rs.getInt("record_version");
+            String recordFingerprint = fingerprint(
+                    rs.getString("record_fingerprint"), "recordFingerprint");
+            if (recordVersion != TOMBSTONE_VERSION || !expiresAt.isAfter(tombstonedAt)) {
+                throw new IllegalStateException(
+                        "Stored suite-stability job tombstone lifecycle is invalid");
+            }
+            String expected = tombstoneFingerprint(tenant, environment,
+                    requestKey.keyId(), requestKey.value(), submissionFingerprint,
+                    tombstonedAt, expiresAt, recordVersion);
+            if (!expected.equals(recordFingerprint)) {
+                throw new IllegalStateException(
+                        "Stored suite-stability job tombstone integrity failed");
+            }
+            return new StoredTombstone(tenant, environment, requestKey.keyId(),
+                    requestKey.value(), submissionFingerprint, tombstonedAt, expiresAt,
+                    recordVersion, recordFingerprint);
+        } catch (IllegalArgumentException corrupt) {
+            throw new IllegalStateException(
+                    "Stored suite-stability job tombstone is corrupt", corrupt);
+        }
+    }
+
+    private String tombstoneFingerprint(
+            String tenantId,
+            String environmentId,
+            String requestKeyId,
+            String requestKey,
+            String submissionFingerprint,
+            Instant tombstonedAt,
+            Instant expiresAt,
+            int recordVersion) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", "bloge.testSuiteStabilityJobTombstone.v1");
+        material.put("tenantId", tenantId);
+        material.put("environmentId", environmentId);
+        material.put("requestKeyId", requestKeyId);
+        material.put("requestKey", requestKey);
+        material.put("submissionFingerprint", submissionFingerprint);
+        material.put("tombstonedAt", tombstonedAt);
+        material.put("expiresAt", expiresAt);
+        material.put("recordVersion", recordVersion);
+        return ProtocolFingerprint.of(objectMapper, material);
+    }
+
+    private void requireRetainedTombstoneKeys() {
+        List<String> retainedKeyIds = jdbc.query("""
+                SELECT DISTINCT request_key_id
+                FROM rg_test_suite_stability_job_tombstones
+                WHERE expires_at > CURRENT_TIMESTAMP
+                """, (rs, rowNum) -> rs.getString(1));
+        for (String keyId : retainedKeyIds) {
+            try {
+                if (!requestKeys.containsKey(keyId)) {
+                    throw new IllegalStateException(
+                            "A live suite-stability tombstone references an unavailable key");
+                }
+            } catch (IllegalArgumentException malformed) {
+                throw new IllegalStateException(
+                        "A live suite-stability tombstone has an invalid key id", malformed);
+            }
+        }
     }
 
     private Optional<StoredJob> byJobId(
@@ -1347,6 +1608,25 @@ public final class DatabaseTestSuiteStabilityJobRepository
         }
     }
 
+    private static Duration boundedTombstoneRetention(Duration retention) {
+        Duration safe = Objects.requireNonNull(retention, "tombstoneRetention");
+        if (safe.getNano() != 0
+                || safe.compareTo(MINIMUM_TOMBSTONE_RETENTION) < 0
+                || safe.compareTo(MAXIMUM_TOMBSTONE_RETENTION) > 0) {
+            throw new IllegalArgumentException(
+                    "Tombstone retention must be whole seconds between 1 and 3650 days");
+        }
+        return safe;
+    }
+
+    private static int boundedRetentionPage(int limit) {
+        if (limit < 1 || limit > MAXIMUM_PURGE_BATCH) {
+            throw new IllegalArgumentException(
+                    "Stability-job retention page must be between 1 and 10000");
+        }
+        return limit;
+    }
+
     private static String environment(String value) {
         String result = normalized(value).toLowerCase(Locale.ROOT);
         if (!Set.of("test", "staging").contains(result)) {
@@ -1419,6 +1699,18 @@ public final class DatabaseTestSuiteStabilityJobRepository
             long leaseEpoch,
             Instant leaseExpiresAt,
             long policyGeneration) {
+    }
+
+    private record StoredTombstone(
+            String tenantId,
+            String environmentId,
+            String requestKeyId,
+            String requestKey,
+            String submissionFingerprint,
+            Instant tombstonedAt,
+            Instant expiresAt,
+            int recordVersion,
+            String recordFingerprint) {
     }
 
 }
