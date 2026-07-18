@@ -136,8 +136,11 @@ public interface TestSuiteStabilityJobRepository {
      *
      * @param tombstoneRetention request-key reservation after detailed job erasure
      * @param limit independent job and tombstone page bound
-     * @return committed aggregate without request or job identities
+     * @return committed aggregate or normal live-lease contention
      */
-    TestSuiteStabilityJobRetentionResult retainExpired(
+    TestSuiteStabilityJobRetentionAttempt retainExpired(
             Duration tombstoneRetention, int limit);
+
+    /** Returns one business-identity-free database-clock retention lifecycle snapshot. */
+    TestSuiteStabilityJobRetentionSnapshot observeRetention();
 }

@@ -581,10 +581,82 @@ public class TestRuntimeConfiguration {
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
             TestSuiteStabilityJobParentAuthority parentAuthority,
-            TestSuiteStabilityJobRequestKeyProtector requestKeys) {
+            TestSuiteStabilityJobRequestKeyProtector requestKeys,
+            @Value("${gateway.testing.stability-jobs.retention.instance-id:}")
+            String retentionInstanceId,
+            @Value("${gateway.testing.stability-jobs.retention.lease-duration-seconds:120}")
+            long retentionLeaseDurationSeconds) {
+        String retentionOwner = retentionInstanceId == null || retentionInstanceId.isBlank()
+                ? "stability-job-retention-" + UUID.randomUUID()
+                : retentionInstanceId.trim();
         return new DatabaseTestSuiteStabilityJobRepository(
                 database.jdbc(), objectMapper, parentAuthority, requestKeys,
+                retentionOwner, Duration.ofSeconds(retentionLeaseDurationSeconds),
                 database.transactionManager());
+    }
+
+    /** Runs one database-leased, bounded stability-job retention page per scheduled tick. */
+    @Bean
+    TestSuiteStabilityJobRetentionScheduler testSuiteStabilityJobRetentionScheduler(
+            TestSuiteStabilityJobRepository repository,
+            TestSuiteStabilityJobRetentionTelemetry telemetry,
+            @Value("${gateway.testing.stability-jobs.retention.tombstone-retention-days:365}")
+            long tombstoneRetentionDays,
+            @Value("${gateway.testing.stability-jobs.retention.page-size:100}")
+            int pageSize,
+            @Value("${gateway.testing.stability-jobs.retention.interval-ms:3600000}")
+            long intervalMillis) {
+        return new TestSuiteStabilityJobRetentionScheduler(
+                repository, Duration.ofDays(tombstoneRetentionDays), pageSize,
+                telemetry, Duration.ofMillis(intervalMillis));
+    }
+
+    /** Registers aggregate-only stability-job retention metrics. */
+    @Bean
+    TestSuiteStabilityJobRetentionTelemetry testSuiteStabilityJobRetentionTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new TestSuiteStabilityJobRetentionTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
+    }
+
+    /** Fails readiness closed on stale retention or overdue lifecycle backlog. */
+    @Bean
+    TestSuiteStabilityJobRetentionSloMonitor testSuiteStabilityJobRetentionSloMonitor(
+            TestSuiteStabilityJobRepository repository,
+            TestSuiteStabilityJobRetentionTelemetry telemetry,
+            @Value("${gateway.testing.stability-jobs.retention.interval-ms:3600000}")
+            long retentionIntervalMillis,
+            @Value("${gateway.testing.stability-jobs.retention.lease-duration-seconds:120}")
+            long retentionLeaseDurationSeconds,
+            @Value("${gateway.testing.stability-jobs.retention.slo.observation-interval-ms:30000}")
+            long observationIntervalMillis,
+            @Value("${gateway.testing.stability-jobs.retention.slo.startup-grace-seconds:180}")
+            long startupGraceSeconds,
+            @Value("${gateway.testing.stability-jobs.retention.slo.max-retention-staleness-seconds:10800}")
+            long maxRetentionStalenessSeconds,
+            @Value("${gateway.testing.stability-jobs.retention.slo.max-overdue-jobs:0}")
+            long maxOverdueJobs,
+            @Value("${gateway.testing.stability-jobs.retention.slo.max-oldest-overdue-job-age-seconds:3600}")
+            long maxOldestOverdueJobAgeSeconds,
+            @Value("${gateway.testing.stability-jobs.retention.slo.max-expired-tombstones:0}")
+            long maxExpiredTombstones,
+            @Value("${gateway.testing.stability-jobs.retention.slo.max-oldest-expired-tombstone-age-seconds:3600}")
+            long maxOldestExpiredTombstoneAgeSeconds) {
+        Duration maximumStaleness = Duration.ofSeconds(maxRetentionStalenessSeconds);
+        Duration maximumExpectedGap = Duration.ofMillis(retentionIntervalMillis)
+                .plus(Duration.ofSeconds(retentionLeaseDurationSeconds));
+        if (maximumStaleness.compareTo(maximumExpectedGap) < 0) {
+            throw new IllegalArgumentException(
+                    "Stability-job retention freshness SLO must cover one schedule and lease window");
+        }
+        return new TestSuiteStabilityJobRetentionSloMonitor(
+                repository, telemetry,
+                new TestSuiteStabilityJobRetentionSloMonitor.Policy(
+                        Duration.ofMillis(observationIntervalMillis),
+                        Duration.ofSeconds(startupGraceSeconds), maximumStaleness,
+                        maxOverdueJobs, Duration.ofSeconds(maxOldestOverdueJobAgeSeconds),
+                        maxExpiredTombstones,
+                        Duration.ofSeconds(maxOldestExpiredTombstoneAgeSeconds)));
     }
 
     /**

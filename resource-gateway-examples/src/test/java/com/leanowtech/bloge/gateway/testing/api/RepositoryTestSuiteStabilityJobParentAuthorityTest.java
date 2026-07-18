@@ -51,6 +51,7 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
                 TestSuiteStabilityJobRequestKeyProtector.fromConfiguration(
                         "key-a",
                         "key-a=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+                "retention-parent-test", Duration.ofSeconds(30),
                 new DataSourceTransactionManager(dataSource));
         jobs.init();
     }

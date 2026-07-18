@@ -103,9 +103,22 @@ gateway:
       lease-cleanup-batch-size: ${RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE:1000}
     stability-jobs:
       retention:
+        instance-id: ${RG_TEST_STABILITY_JOB_RETENTION_INSTANCE_ID:}
+        lease-duration-seconds: ${RG_TEST_STABILITY_JOB_RETENTION_LEASE_SECONDS:120}
+        tombstone-retention-days: ${RG_TEST_STABILITY_JOB_TOMBSTONE_RETENTION_DAYS:365}
+        page-size: ${RG_TEST_STABILITY_JOB_RETENTION_PAGE_SIZE:100}
+        interval-ms: ${RG_TEST_STABILITY_JOB_RETENTION_INTERVAL_MS:3600000}
         request-key-protection:
           active-key-id: ${RG_TEST_STABILITY_JOB_REQUEST_KEY_ACTIVE_ID:local-stability-job-v1}
           key-ring: ${RG_TEST_STABILITY_JOB_REQUEST_KEY_RING:local-stability-job-v1=QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=}
+        slo:
+          observation-interval-ms: ${RG_TEST_STABILITY_JOB_RETENTION_SLO_INTERVAL_MS:30000}
+          startup-grace-seconds: ${RG_TEST_STABILITY_JOB_RETENTION_SLO_STARTUP_GRACE_SECONDS:180}
+          max-retention-staleness-seconds: ${RG_TEST_STABILITY_JOB_RETENTION_SLO_MAX_STALENESS_SECONDS:10800}
+          max-overdue-jobs: ${RG_TEST_STABILITY_JOB_RETENTION_SLO_MAX_OVERDUE_JOBS:0}
+          max-oldest-overdue-job-age-seconds: ${RG_TEST_STABILITY_JOB_RETENTION_SLO_MAX_JOB_AGE_SECONDS:3600}
+          max-expired-tombstones: ${RG_TEST_STABILITY_JOB_RETENTION_SLO_MAX_EXPIRED_TOMBSTONES:0}
+          max-oldest-expired-tombstone-age-seconds: ${RG_TEST_STABILITY_JOB_RETENTION_SLO_MAX_TOMBSTONE_AGE_SECONDS:3600}
       queue:
         policy-generation: ${RG_TEST_STABILITY_JOB_POLICY_GENERATION:1}
         maximum-queued: ${RG_TEST_STABILITY_JOB_MAX_QUEUED:1000}

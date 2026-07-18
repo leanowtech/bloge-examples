@@ -13,7 +13,9 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobPrincipal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobParentAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRepository;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRetentionAttempt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRetentionResult;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRetentionSnapshot;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueueSnapshot;
@@ -41,6 +43,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -65,13 +68,18 @@ public final class DatabaseTestSuiteStabilityJobRepository
     private static final int MAXIMUM_PURGE_BATCH = 10_000;
     private static final int RECONCILIATION_BATCH = 1_000;
     private static final int TOMBSTONE_VERSION = 1;
+    private static final String RETENTION_JOB = "suite-stability-job-retention-v1";
     private static final Duration MINIMUM_TOMBSTONE_RETENTION = Duration.ofDays(1);
     private static final Duration MAXIMUM_TOMBSTONE_RETENTION = Duration.ofDays(3650);
+    private static final Duration MINIMUM_RETENTION_LEASE = Duration.ofSeconds(1);
+    private static final Duration MAXIMUM_RETENTION_LEASE = Duration.ofHours(1);
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final TestSuiteStabilityJobParentAuthority parentAuthority;
     private final TestSuiteStabilityJobRequestKeyProtector requestKeys;
+    private final String retentionOwnerId;
+    private final Duration retentionLeaseDuration;
     private final TransactionTemplate mutations;
 
     /**
@@ -79,6 +87,8 @@ public final class DatabaseTestSuiteStabilityJobRepository
      * @param objectMapper canonical protocol mapper
      * @param parentAuthority parent-first stop or signed-winner resolver
      * @param requestKeys non-reversible retired request identity authority
+     * @param retentionOwnerId stable process identity for cross-replica maintenance
+     * @param retentionLeaseDuration database-clock page ownership window
      * @param transactionManager transaction manager for the same datasource
      */
     public DatabaseTestSuiteStabilityJobRepository(
@@ -86,11 +96,15 @@ public final class DatabaseTestSuiteStabilityJobRepository
             ObjectMapper objectMapper,
             TestSuiteStabilityJobParentAuthority parentAuthority,
             TestSuiteStabilityJobRequestKeyProtector requestKeys,
+            String retentionOwnerId,
+            Duration retentionLeaseDuration,
             PlatformTransactionManager transactionManager) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.parentAuthority = Objects.requireNonNull(parentAuthority, "parentAuthority");
         this.requestKeys = Objects.requireNonNull(requestKeys, "requestKeys");
+        this.retentionOwnerId = requiredRetentionOwner(retentionOwnerId);
+        this.retentionLeaseDuration = boundedRetentionLease(retentionLeaseDuration);
         mutations = new TransactionTemplate(
                 Objects.requireNonNull(transactionManager, "transactionManager"));
         mutations.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -188,6 +202,23 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_job_tombstone_expiry
                 ON rg_test_suite_stability_job_tombstones (expires_at, request_key_id, request_key)
                 """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_job_retention (
+                    job_name VARCHAR(128) PRIMARY KEY,
+                    lease_owner VARCHAR(255) NOT NULL,
+                    lease_token VARCHAR(255) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    lease_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    revision BIGINT NOT NULL,
+                    total_jobs_tombstoned BIGINT NOT NULL,
+                    total_tombstones_purged BIGINT NOT NULL,
+                    last_success_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL
+                )
+                """);
+        initializeRetentionState();
+        retentionState(false);
         requireRetainedTombstoneKeys();
     }
 
@@ -712,12 +743,107 @@ public final class DatabaseTestSuiteStabilityJobRepository
     }
 
     @Override
-    public TestSuiteStabilityJobRetentionResult retainExpired(
+    public TestSuiteStabilityJobRetentionAttempt retainExpired(
             Duration tombstoneRetention, int limit) {
         Duration retention = boundedTombstoneRetention(tombstoneRetention);
         int bounded = boundedRetentionPage(limit);
-        TestSuiteStabilityJobRetentionResult result = mutations.execute(status -> {
+        Optional<RetentionLease> lease = acquireRetentionLease();
+        if (lease.isEmpty()) {
+            return TestSuiteStabilityJobRetentionAttempt.leaseBusy();
+        }
+        try {
+            return retainClaimedPage(lease.orElseThrow(), retention, bounded);
+        } catch (RuntimeException failure) {
+            try {
+                releaseRetentionLease(lease.orElseThrow());
+            } catch (RuntimeException releaseFailure) {
+                failure.addSuppressed(releaseFailure);
+            }
+            throw failure;
+        }
+    }
+
+    @Override
+    public TestSuiteStabilityJobRetentionSnapshot observeRetention() {
+        TestSuiteStabilityJobRetentionSnapshot snapshot = jdbc.queryForObject("""
+                SELECT s.*, CURRENT_TIMESTAMP AS observed_at,
+                  (SELECT COUNT(*) FROM rg_test_suite_stability_jobs)
+                    AS detailed_job_records,
+                  (SELECT COUNT(*) FROM rg_test_suite_stability_job_tombstones)
+                    AS tombstone_records,
+                  (SELECT COUNT(*) FROM rg_test_suite_stability_jobs
+                   WHERE status IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'EXPIRED', 'QUARANTINED')
+                     AND expires_at <= CURRENT_TIMESTAMP) AS overdue_job_records,
+                  (SELECT MIN(expires_at) FROM rg_test_suite_stability_jobs
+                   WHERE status IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'EXPIRED', 'QUARANTINED')
+                     AND expires_at <= CURRENT_TIMESTAMP) AS oldest_overdue_job,
+                  (SELECT COUNT(*) FROM rg_test_suite_stability_job_tombstones
+                   WHERE expires_at <= CURRENT_TIMESTAMP) AS expired_tombstone_records,
+                  (SELECT MIN(expires_at) FROM rg_test_suite_stability_job_tombstones
+                   WHERE expires_at <= CURRENT_TIMESTAMP) AS oldest_expired_tombstone
+                FROM rg_test_suite_stability_job_retention s
+                WHERE s.job_name = ?
+                """, (rs, rowNum) -> {
+            RetentionState state = retentionState(rs);
+            requireValidRetentionState(state);
+            Timestamp lastSuccess = rs.getTimestamp("last_success_at");
+            Timestamp oldestJob = rs.getTimestamp("oldest_overdue_job");
+            Timestamp oldestTombstone = rs.getTimestamp("oldest_expired_tombstone");
+            return new TestSuiteStabilityJobRetentionSnapshot(
+                    state.leaseOwner(), state.leaseEpoch(), state.leaseUntil(),
+                    state.revision(), state.totalJobsTombstoned(),
+                    state.totalTombstonesPurged(), rs.getLong("detailed_job_records"),
+                    rs.getLong("tombstone_records"), rs.getLong("overdue_job_records"),
+                    rs.getLong("expired_tombstone_records"),
+                    oldestJob == null ? null : oldestJob.toInstant(),
+                    oldestTombstone == null ? null : oldestTombstone.toInstant(),
+                    lastSuccess == null ? null : lastSuccess.toInstant(),
+                    rs.getTimestamp("observed_at").toInstant());
+        }, RETENTION_JOB);
+        return required(snapshot, "Stability-job retention observation returned no result");
+    }
+
+    Optional<RetentionLease> acquireRetentionLease() {
+        Optional<RetentionLease> result = mutations.execute(status -> {
+            RetentionState current = retentionState(true);
+            Instant now = currentTime();
+            if (current.leaseUntil().isAfter(now)) {
+                return Optional.empty();
+            }
+            String token = UUID.randomUUID().toString();
+            RetentionState next = new RetentionState(
+                    retentionOwnerId, token, Math.addExact(current.leaseEpoch(), 1),
+                    safePlus(now, retentionLeaseDuration),
+                    Math.addExact(current.revision(), 1),
+                    current.totalJobsTombstoned(), current.totalTombstonesPurged(),
+                    current.lastSuccessAt(), now, "");
+            next = next.withFingerprint(retentionStateFingerprint(next));
+            int updated = jdbc.update("""
+                    UPDATE rg_test_suite_stability_job_retention
+                    SET lease_owner = ?, lease_token = ?, lease_epoch = ?, lease_until = ?,
+                        revision = ?, updated_at = ?, record_fingerprint = ?
+                    WHERE job_name = ? AND revision = ? AND record_fingerprint = ?
+                    """, next.leaseOwner(), next.leaseToken(), next.leaseEpoch(),
+                    Timestamp.from(next.leaseUntil()), next.revision(),
+                    Timestamp.from(next.updatedAt()), next.recordFingerprint(),
+                    RETENTION_JOB, current.revision(), current.recordFingerprint());
+            if (updated != 1) {
+                throw new IllegalStateException(
+                        "Stability-job retention lease changed concurrently");
+            }
+            return Optional.of(new RetentionLease(next.leaseOwner(), next.leaseToken(),
+                    next.leaseEpoch(), next.leaseUntil()));
+        });
+        return required(result, "Stability-job retention lease returned no result");
+    }
+
+    TestSuiteStabilityJobRetentionAttempt retainClaimedPage(
+            RetentionLease lease, Duration retention, int bounded) {
+        RetentionLease requiredLease = Objects.requireNonNull(lease, "lease");
+        TestSuiteStabilityJobRetentionAttempt attempt = mutations.execute(status -> {
+            RetentionState current = retentionState(true);
             Instant observedAt = currentTime();
+            requireLiveRetentionFence(current, requiredLease, observedAt);
             List<StoredJob> expired = jdbc.query("""
                     SELECT * FROM rg_test_suite_stability_jobs
                     WHERE status IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'EXPIRED', 'QUARANTINED')
@@ -759,10 +885,38 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 }
                 purged = Math.addExact(purged, 1);
             }
-            return new TestSuiteStabilityJobRetentionResult(
-                    tombstoned, purged, currentTime());
+            Instant completedAt = currentTime();
+            requireLiveRetentionFence(current, requiredLease, completedAt);
+            RetentionState next = new RetentionState(
+                    "", "", current.leaseEpoch(), Instant.EPOCH,
+                    Math.addExact(current.revision(), 1),
+                    Math.addExact(current.totalJobsTombstoned(), tombstoned),
+                    Math.addExact(current.totalTombstonesPurged(), purged),
+                    completedAt, completedAt, "");
+            next = next.withFingerprint(retentionStateFingerprint(next));
+            int stateUpdated = jdbc.update("""
+                    UPDATE rg_test_suite_stability_job_retention
+                    SET lease_owner = '', lease_token = '', lease_until = ?,
+                        revision = ?, total_jobs_tombstoned = ?,
+                        total_tombstones_purged = ?, last_success_at = ?,
+                        updated_at = ?, record_fingerprint = ?
+                    WHERE job_name = ? AND lease_owner = ? AND lease_token = ?
+                      AND lease_epoch = ? AND revision = ? AND record_fingerprint = ?
+                    """, Timestamp.from(next.leaseUntil()), next.revision(),
+                    next.totalJobsTombstoned(), next.totalTombstonesPurged(),
+                    Timestamp.from(next.lastSuccessAt()), Timestamp.from(next.updatedAt()),
+                    next.recordFingerprint(), RETENTION_JOB, requiredLease.ownerId(),
+                    requiredLease.token(), requiredLease.epoch(), current.revision(),
+                    current.recordFingerprint());
+            if (stateUpdated != 1) {
+                throw new IllegalStateException(
+                        "Stability-job retention fence changed before commit");
+            }
+            return TestSuiteStabilityJobRetentionAttempt.completed(
+                    new TestSuiteStabilityJobRetentionResult(
+                            tombstoned, purged, completedAt));
         });
-        return required(result, "Stability-job retention returned no result");
+        return required(attempt, "Stability-job retention page returned no result");
     }
 
     private void reconcile(
@@ -1189,6 +1343,147 @@ public final class DatabaseTestSuiteStabilityJobRepository
                         "A live suite-stability tombstone has an invalid key id", malformed);
             }
         }
+    }
+
+    private void initializeRetentionState() {
+        try {
+            Instant now = currentTime();
+            RetentionState initial = new RetentionState(
+                    "", "", 0, Instant.EPOCH, 0, 0, 0, null, now, "");
+            initial = initial.withFingerprint(retentionStateFingerprint(initial));
+            jdbc.update("""
+                    INSERT INTO rg_test_suite_stability_job_retention (
+                        job_name, lease_owner, lease_token, lease_epoch, lease_until,
+                        revision, total_jobs_tombstoned, total_tombstones_purged,
+                        last_success_at, updated_at, record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, RETENTION_JOB, initial.leaseOwner(), initial.leaseToken(),
+                    initial.leaseEpoch(), Timestamp.from(initial.leaseUntil()),
+                    initial.revision(), initial.totalJobsTombstoned(),
+                    initial.totalTombstonesPurged(), initial.lastSuccessAt(),
+                    Timestamp.from(initial.updatedAt()), initial.recordFingerprint());
+        } catch (DuplicateKeyException alreadyInitialized) {
+            // Another replica initialized the singleton maintenance row first.
+        }
+    }
+
+    private RetentionState retentionState(boolean lock) {
+        List<RetentionState> rows = jdbc.query("""
+                SELECT lease_owner, lease_token, lease_epoch, lease_until, revision,
+                       total_jobs_tombstoned, total_tombstones_purged,
+                       last_success_at, updated_at, record_fingerprint
+                FROM rg_test_suite_stability_job_retention
+                WHERE job_name = ?
+                """ + (lock ? " FOR UPDATE" : ""),
+                (rs, rowNum) -> retentionState(rs), RETENTION_JOB);
+        if (rows.size() != 1) {
+            throw new IllegalStateException(
+                    "Stability-job retention state is not initialized");
+        }
+        RetentionState state = rows.getFirst();
+        requireValidRetentionState(state);
+        return state;
+    }
+
+    private static RetentionState retentionState(ResultSet rs) throws SQLException {
+        Timestamp lastSuccess = rs.getTimestamp("last_success_at");
+        return new RetentionState(
+                rs.getString("lease_owner"), rs.getString("lease_token"),
+                rs.getLong("lease_epoch"), rs.getTimestamp("lease_until").toInstant(),
+                rs.getLong("revision"), rs.getLong("total_jobs_tombstoned"),
+                rs.getLong("total_tombstones_purged"),
+                lastSuccess == null ? null : lastSuccess.toInstant(),
+                rs.getTimestamp("updated_at").toInstant(),
+                rs.getString("record_fingerprint"));
+    }
+
+    private void requireValidRetentionState(RetentionState state) {
+        boolean idle = state.leaseOwner().isBlank() && state.leaseToken().isBlank();
+        boolean fullyIdle = idle && state.leaseUntil().equals(Instant.EPOCH);
+        boolean active = !state.leaseOwner().isBlank() && !state.leaseToken().isBlank()
+                && state.leaseUntil().isAfter(state.updatedAt());
+        if (state.leaseEpoch() < 0 || state.revision() < 0
+                || state.totalJobsTombstoned() < 0 || state.totalTombstonesPurged() < 0
+                || (!fullyIdle && !active)
+                || (state.lastSuccessAt() != null
+                && state.lastSuccessAt().isAfter(state.updatedAt()))) {
+            throw new IllegalStateException(
+                    "Stored stability-job retention state is invalid");
+        }
+        if (active) {
+            identifier(state.leaseOwner(), "retention lease owner");
+            try {
+                UUID.fromString(state.leaseToken());
+            } catch (IllegalArgumentException invalidToken) {
+                throw new IllegalStateException(
+                        "Stored stability-job retention lease token is invalid",
+                        invalidToken);
+            }
+        }
+        if (!fingerprint(state.recordFingerprint(), "recordFingerprint")
+                .equals(retentionStateFingerprint(state))) {
+            throw new IllegalStateException(
+                    "Stored stability-job retention state integrity failed");
+        }
+    }
+
+    private String retentionStateFingerprint(RetentionState state) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", "bloge.testSuiteStabilityJobRetentionState.v1");
+        material.put("jobName", RETENTION_JOB);
+        material.put("leaseOwner", state.leaseOwner());
+        material.put("leaseToken", state.leaseToken());
+        material.put("leaseEpoch", state.leaseEpoch());
+        material.put("leaseUntil", state.leaseUntil());
+        material.put("revision", state.revision());
+        material.put("totalJobsTombstoned", state.totalJobsTombstoned());
+        material.put("totalTombstonesPurged", state.totalTombstonesPurged());
+        material.put("lastSuccessAt", state.lastSuccessAt());
+        material.put("updatedAt", state.updatedAt());
+        return ProtocolFingerprint.of(objectMapper, material);
+    }
+
+    private static void requireLiveRetentionFence(
+            RetentionState state, RetentionLease lease, Instant now) {
+        if (!state.leaseOwner().equals(lease.ownerId())
+                || !state.leaseToken().equals(lease.token())
+                || state.leaseEpoch() != lease.epoch()
+                || !state.leaseUntil().equals(lease.leaseUntil())
+                || !state.leaseUntil().isAfter(now)) {
+            throw new IllegalStateException(
+                    "Stability-job retention fence is stale or expired");
+        }
+    }
+
+    boolean releaseRetentionLease(RetentionLease lease) {
+        RetentionLease requiredLease = Objects.requireNonNull(lease, "lease");
+        Boolean released = mutations.execute(status -> {
+            RetentionState current = retentionState(true);
+            if (!current.leaseOwner().equals(requiredLease.ownerId())
+                    || !current.leaseToken().equals(requiredLease.token())
+                    || current.leaseEpoch() != requiredLease.epoch()) {
+                return false;
+            }
+            Instant now = currentTime();
+            RetentionState next = new RetentionState(
+                    "", "", current.leaseEpoch(), Instant.EPOCH,
+                    Math.addExact(current.revision(), 1),
+                    current.totalJobsTombstoned(), current.totalTombstonesPurged(),
+                    current.lastSuccessAt(), now, "");
+            next = next.withFingerprint(retentionStateFingerprint(next));
+            int updated = jdbc.update("""
+                    UPDATE rg_test_suite_stability_job_retention
+                    SET lease_owner = '', lease_token = '', lease_until = ?,
+                        revision = ?, updated_at = ?, record_fingerprint = ?
+                    WHERE job_name = ? AND lease_owner = ? AND lease_token = ?
+                      AND lease_epoch = ? AND revision = ? AND record_fingerprint = ?
+                    """, Timestamp.from(next.leaseUntil()), next.revision(),
+                    Timestamp.from(next.updatedAt()), next.recordFingerprint(),
+                    RETENTION_JOB, requiredLease.ownerId(), requiredLease.token(),
+                    requiredLease.epoch(), current.revision(), current.recordFingerprint());
+            return updated == 1;
+        });
+        return Boolean.TRUE.equals(released);
     }
 
     private Optional<StoredJob> byJobId(
@@ -1627,6 +1922,21 @@ public final class DatabaseTestSuiteStabilityJobRepository
         return limit;
     }
 
+    private static String requiredRetentionOwner(String value) {
+        return identifier(value, "retentionOwnerId");
+    }
+
+    private static Duration boundedRetentionLease(Duration value) {
+        Duration safe = Objects.requireNonNull(value, "retentionLeaseDuration");
+        if (safe.getNano() != 0
+                || safe.compareTo(MINIMUM_RETENTION_LEASE) < 0
+                || safe.compareTo(MAXIMUM_RETENTION_LEASE) > 0) {
+            throw new IllegalArgumentException(
+                    "retentionLeaseDuration must be whole seconds between 1 second and 1 hour");
+        }
+        return safe;
+    }
+
     private static String environment(String value) {
         String result = normalized(value).toLowerCase(Locale.ROOT);
         if (!Set.of("test", "staging").contains(result)) {
@@ -1711,6 +2021,33 @@ public final class DatabaseTestSuiteStabilityJobRepository
             Instant expiresAt,
             int recordVersion,
             String recordFingerprint) {
+    }
+
+    record RetentionLease(
+            String ownerId,
+            String token,
+            long epoch,
+            Instant leaseUntil) {
+    }
+
+    private record RetentionState(
+            String leaseOwner,
+            String leaseToken,
+            long leaseEpoch,
+            Instant leaseUntil,
+            long revision,
+            long totalJobsTombstoned,
+            long totalTombstonesPurged,
+            Instant lastSuccessAt,
+            Instant updatedAt,
+            String recordFingerprint) {
+
+        private RetentionState withFingerprint(String fingerprint) {
+            return new RetentionState(
+                    leaseOwner, leaseToken, leaseEpoch, leaseUntil, revision,
+                    totalJobsTombstoned, totalTombstonesPurged,
+                    lastSuccessAt, updatedAt, fingerprint);
+        }
     }
 
 }

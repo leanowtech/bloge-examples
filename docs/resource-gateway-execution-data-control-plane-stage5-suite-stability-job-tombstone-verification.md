@@ -98,12 +98,14 @@ TestRuntimeProfileIsolationTest test
 
 The 45 focused tests pass with zero failures, errors, or skips.
 
-## 7. Explicit remaining gap
+## 7. Superseded delivery boundary
 
-No background component invokes retention yet. A product-ready follow-up must add a database-clock,
-cross-replica lease and fenced scheduler, aggregate-only success/failure counters, last-success
-freshness readiness, bounded retry/backoff, and operator runbook. Until that lands, this increment is
-a correctness-preserving repository primitive and must not be described as automated retention.
+At the time of this increment, no background component invoked retention, so the delivered boundary
+was correctly limited to a repository primitive. The subsequent
+[retention service increment](resource-gateway-execution-data-control-plane-stage5-suite-stability-retention-service-verification.md)
+now adds a database-clock cross-replica lease, fenced bounded scheduler, durable counters,
+aggregate-only telemetry, freshness/backlog readiness, and an operator runbook. The primitive and
+its replay/key-rotation rules remain authoritative; only the automation gap is superseded.
 
 Authenticated job HTTP, strict Schema, capability truth, independent test-kit support, poison-row
 quarantine/repair, non-H2 dialect certification, backup erasure, and soak/chaos/DR evidence remain

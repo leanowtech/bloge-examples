@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLeaseCheck;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobParentAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobPrincipal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRetentionAttempt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueueSnapshot;
@@ -53,6 +54,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         parentAuthority = new FakeParentAuthority();
         repository = new DatabaseTestSuiteStabilityJobRepository(
                 jdbc, mapper, parentAuthority, requestKeys("key-a"),
+                "retention-a", Duration.ofSeconds(30),
                 new DataSourceTransactionManager(dataSource));
         repository.init();
     }
@@ -142,6 +144,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         DatabaseTestSuiteStabilityJobRepository replica =
                 new DatabaseTestSuiteStabilityJobRepository(new JdbcTemplate(dataSource), mapper,
                         parentAuthority, requestKeys("key-a"),
+                        "retention-b", Duration.ofSeconds(30),
                         new DataSourceTransactionManager(dataSource));
         replica.init();
         CountDownLatch start = new CountDownLatch(1);
@@ -510,7 +513,8 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 .hasSize(TestSuiteStabilityJobRecord.Status.values().length);
         assertThat(snapshot.distinctQueuedTenants()).isEqualTo(1);
         assertThat(snapshot.oldestQueuedAt()).isNotNull();
-        assertThat(repository.retainExpired(Duration.ofDays(365), 1).jobsTombstoned())
+        assertThat(repository.retainExpired(Duration.ofDays(365), 1)
+                .result().jobsTombstoned())
                 .isZero();
         assertThat(repository.find("tenant-b", "test", cancelled.jobId())).isPresent();
         assertThat(repository.find("tenant-a", "test", queued.jobId())).isPresent();
@@ -529,8 +533,8 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
 
         var retained = repository.retainExpired(Duration.ofDays(365), 10);
 
-        assertThat(retained.jobsTombstoned()).isEqualTo(1);
-        assertThat(retained.tombstonesPurged()).isZero();
+        assertThat(retained.result().jobsTombstoned()).isEqualTo(1);
+        assertThat(retained.result().tombstonesPurged()).isZero();
         assertThat(repository.find("tenant-a", "test", submission.jobId())).isEmpty();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_test_suite_stability_job_tombstones",
@@ -556,6 +560,154 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityJobConflictException.Reason
                                         .IDEMPOTENCY_CONFLICT));
+    }
+
+    @Test
+    void crossReplicaRetentionUsesOneDatabaseLeaseAndRejectsStaleRelease() {
+        DatabaseTestSuiteStabilityJobRepository replica = repository(
+                requestKeys("key-a"), "retention-b", Duration.ofSeconds(30));
+        replica.init();
+        DatabaseTestSuiteStabilityJobRepository.RetentionLease first =
+                repository.acquireRetentionLease().orElseThrow();
+
+        TestSuiteStabilityJobRetentionAttempt busy =
+                replica.retainExpired(Duration.ofDays(365), 10);
+
+        assertThat(busy.status())
+                .isEqualTo(TestSuiteStabilityJobRetentionAttempt.Status.LEASE_BUSY);
+        assertThat(busy.result()).isNull();
+        assertThat(repository.releaseRetentionLease(first)).isTrue();
+        assertThat(replica.retainExpired(Duration.ofDays(365), 10).status())
+                .isEqualTo(TestSuiteStabilityJobRetentionAttempt.Status.COMPLETED);
+        assertThat(repository.releaseRetentionLease(first)).isFalse();
+    }
+
+    @Test
+    void expiredRetentionLeaseCanBeTakenOverWithAHigherFence() throws Exception {
+        DatabaseTestSuiteStabilityJobRepository shortLease = repository(
+                requestKeys("key-a"), "retention-short", Duration.ofSeconds(1));
+        DatabaseTestSuiteStabilityJobRepository takeover = repository(
+                requestKeys("key-a"), "retention-takeover", Duration.ofSeconds(30));
+        shortLease.init();
+        takeover.init();
+        DatabaseTestSuiteStabilityJobRepository.RetentionLease stale =
+                shortLease.acquireRetentionLease().orElseThrow();
+
+        Thread.sleep(1_100);
+        DatabaseTestSuiteStabilityJobRepository.RetentionLease current =
+                takeover.acquireRetentionLease().orElseThrow();
+
+        assertThat(current.epoch()).isEqualTo(stale.epoch() + 1);
+        assertThat(current.ownerId()).isEqualTo("retention-takeover");
+        assertThat(shortLease.releaseRetentionLease(stale)).isFalse();
+        assertThat(takeover.releaseRetentionLease(current)).isTrue();
+    }
+
+    @Test
+    void staleRetentionFenceCannotDeleteDetailOrAdvanceCounters() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
+        expireJob(cancelled);
+        DatabaseTestSuiteStabilityJobRepository.RetentionLease live =
+                repository.acquireRetentionLease().orElseThrow();
+        var stale = new DatabaseTestSuiteStabilityJobRepository.RetentionLease(
+                live.ownerId(), java.util.UUID.randomUUID().toString(),
+                live.epoch(), live.leaseUntil());
+
+        assertThatThrownBy(() -> repository.retainClaimedPage(
+                stale, Duration.ofDays(365), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("stale or expired");
+        assertThat(repository.find("tenant-a", "test", submission.jobId())).isPresent();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_job_tombstones", Long.class))
+                .isZero();
+        assertThat(repository.observeRetention()).satisfies(snapshot -> {
+            assertThat(snapshot.totalJobsTombstoned()).isZero();
+            assertThat(snapshot.totalTombstonesPurged()).isZero();
+            assertThat(snapshot.lastSuccessAt()).isNull();
+        });
+        assertThat(repository.releaseRetentionLease(live)).isTrue();
+    }
+
+    @Test
+    void retentionPagesAdvanceDurableCountersAndExposeExactBacklog() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission first = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        TestSuiteStabilityJobSubmission second = submission('2', "tenant-b", "request-b",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(first, policy);
+        repository.submit(second, policy);
+        expireJob(repository.cancel("tenant-a", "test", first.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy));
+        expireJob(repository.cancel("tenant-b", "test", second.jobId(), "cancel-b",
+                TestSuiteStabilityProtocolFixtures.fingerprint('8'), policy));
+
+        assertThat(repository.observeRetention()).satisfies(snapshot -> {
+            assertThat(snapshot.lastSuccessAt()).isNull();
+            assertThat(snapshot.overdueJobRecords()).isEqualTo(2);
+            assertThat(snapshot.oldestOverdueJobExpiresAt()).isNotNull();
+        });
+        assertThat(repository.retainExpired(Duration.ofDays(365), 1)
+                .result().jobsTombstoned()).isEqualTo(1);
+        assertThat(repository.observeRetention()).satisfies(snapshot -> {
+            assertThat(snapshot.totalJobsTombstoned()).isEqualTo(1);
+            assertThat(snapshot.detailedJobRecords()).isEqualTo(1);
+            assertThat(snapshot.tombstoneRecords()).isEqualTo(1);
+            assertThat(snapshot.overdueJobRecords()).isEqualTo(1);
+            assertThat(snapshot.lastSuccessAt()).isNotNull();
+            assertThat(snapshot.leaseOwner()).isBlank();
+        });
+        expireTombstone();
+
+        TestSuiteStabilityJobRetentionAttempt secondPage =
+                repository.retainExpired(Duration.ofDays(365), 1);
+
+        assertThat(secondPage.result().jobsTombstoned()).isEqualTo(1);
+        assertThat(secondPage.result().tombstonesPurged()).isEqualTo(1);
+        assertThat(repository.observeRetention()).satisfies(snapshot -> {
+            assertThat(snapshot.totalJobsTombstoned()).isEqualTo(2);
+            assertThat(snapshot.totalTombstonesPurged()).isEqualTo(1);
+            assertThat(snapshot.detailedJobRecords()).isZero();
+            assertThat(snapshot.tombstoneRecords()).isEqualTo(1);
+            assertThat(snapshot.overdueJobRecords()).isZero();
+            assertThat(snapshot.oldestOverdueJobExpiresAt()).isNull();
+            assertThat(snapshot.expiredTombstoneRecords()).isZero();
+            assertThat(snapshot.oldestExpiredTombstoneExpiresAt()).isNull();
+        });
+    }
+
+    @Test
+    void tamperedRetentionStateFailsClosedBeforeAnyDetailIsDeleted() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
+        expireJob(cancelled);
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_job_retention
+                SET total_jobs_tombstoned = 99
+                """);
+
+        assertThatThrownBy(repository::observeRetention)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("integrity");
+        assertThatThrownBy(() -> repository.retainExpired(Duration.ofDays(365), 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("integrity");
+        assertThat(repository.find("tenant-a", "test", submission.jobId())).isPresent();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_job_tombstones", Long.class))
+                .isZero();
     }
 
     @Test
@@ -614,6 +766,12 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_test_suite_stability_job_tombstones", Long.class))
                 .isZero();
+        assertThat(repository.observeRetention()).satisfies(snapshot -> {
+            assertThat(snapshot.totalJobsTombstoned()).isZero();
+            assertThat(snapshot.totalTombstonesPurged()).isZero();
+            assertThat(snapshot.lastSuccessAt()).isNull();
+            assertThat(snapshot.leaseOwner()).isBlank();
+        });
     }
 
     @Test
@@ -658,8 +816,8 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
 
         var retained = repository.retainExpired(Duration.ofDays(365), 10);
 
-        assertThat(retained.jobsTombstoned()).isZero();
-        assertThat(retained.tombstonesPurged()).isEqualTo(1);
+        assertThat(retained.result().jobsTombstoned()).isZero();
+        assertThat(retained.result().tombstonesPurged()).isEqualTo(1);
         assertThat(repository.submit(submission, policy).status())
                 .isEqualTo(TestSuiteStabilityJobRecord.Status.QUEUED);
     }
@@ -675,6 +833,22 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         assertThatThrownBy(() -> repository.retainExpired(Duration.ofDays(365), 10_001))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("between 1 and 10000");
+    }
+
+    @Test
+    void retentionLeaseIdentityAndDurationAreValidatedAtAssemblyTime() {
+        assertThatThrownBy(() -> repository(
+                requestKeys("key-a"), " ", Duration.ofSeconds(30)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("retentionOwnerId");
+        assertThatThrownBy(() -> repository(
+                requestKeys("key-a"), "retention-b", Duration.ofMillis(999)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("retentionLeaseDuration");
+        assertThatThrownBy(() -> repository(
+                requestKeys("key-a"), "retention-b", Duration.ofHours(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("retentionLeaseDuration");
     }
 
     @Test
@@ -774,8 +948,16 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
 
     private DatabaseTestSuiteStabilityJobRepository repository(
             TestSuiteStabilityJobRequestKeyProtector requestKeys) {
+        return repository(requestKeys, "retention-replica", Duration.ofSeconds(30));
+    }
+
+    private DatabaseTestSuiteStabilityJobRepository repository(
+            TestSuiteStabilityJobRequestKeyProtector requestKeys,
+            String retentionOwner,
+            Duration retentionLeaseDuration) {
         return new DatabaseTestSuiteStabilityJobRepository(
                 new JdbcTemplate(dataSource), mapper, parentAuthority, requestKeys,
+                retentionOwner, retentionLeaseDuration,
                 new DataSourceTransactionManager(dataSource));
     }
 

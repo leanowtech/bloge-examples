@@ -142,6 +142,12 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityJobRepository.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobRequestKeyProtector.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRetentionScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRetentionTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRetentionSloMonitor.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobSloMonitor.class)).isEmpty();
@@ -259,6 +265,12 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityJobRepository.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobRequestKeyProtector.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRetentionScheduler.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRetentionTelemetry.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRetentionSloMonitor.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityJobTelemetry.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityJobSloMonitor.class)).hasSize(1);
@@ -389,6 +401,25 @@ class TestRuntimeProfileIsolationTest {
     }
 
     @Test
+    void invalidStabilityJobRetentionLifecycleFailsStartupWhileWorkerIsDisabled() {
+        assertRetentionStartupRootCause(Map.of(
+                "gateway.testing.stability-jobs.retention.lease-duration-seconds", "0"),
+                "retentionLeaseDuration");
+        assertRetentionStartupRootCause(Map.of(
+                "gateway.testing.stability-jobs.retention.page-size", "1001"),
+                "pageSize");
+        assertRetentionStartupRootCause(Map.of(
+                "gateway.testing.stability-jobs.retention.interval-ms", "999"),
+                "scheduleInterval");
+        assertRetentionStartupRootCause(Map.of(
+                "gateway.testing.stability-jobs.retention.interval-ms", "3600000",
+                "gateway.testing.stability-jobs.retention.lease-duration-seconds", "120",
+                "gateway.testing.stability-jobs.retention.slo.max-retention-staleness-seconds",
+                "3600"),
+                "must cover one schedule and lease window");
+    }
+
+    @Test
     void productionProfileVetoesTestingBeansEvenWhenTestIsAlsoActive() {
         try (AnnotationConfigApplicationContext context = context("production", "test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
@@ -469,6 +500,12 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityJobParentAuthority.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobRepository.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRetentionScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRetentionTelemetry.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityJobRetentionSloMonitor.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityQueuePolicy.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobTelemetry.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobSloMonitor.class)).isEmpty();
@@ -577,6 +614,20 @@ class TestRuntimeProfileIsolationTest {
             Map<String, Object> properties, String message) {
         AnnotationConfigApplicationContext context =
                 unrefreshedContext(properties, 1, "test");
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(message);
+        } finally {
+            context.close();
+        }
+    }
+
+    private static void assertRetentionStartupRootCause(
+            Map<String, Object> properties, String message) {
+        AnnotationConfigApplicationContext context =
+                unrefreshedContext(properties, 0, "test");
         try {
             assertThatThrownBy(context::refresh)
                     .rootCause()

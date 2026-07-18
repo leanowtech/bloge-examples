@@ -196,9 +196,16 @@ domain-separated keyed HMAC index and an integrity fingerprint, never the plaint
 job payload. Configure `RG_TEST_STABILITY_JOB_REQUEST_KEY_ACTIVE_ID` and
 `RG_TEST_STABILITY_JOB_REQUEST_KEY_RING` with deployment secrets; append the new generation fleet-
 wide before changing active, and keep every old verification key until its final tombstone expires.
-Startup fails when a live tombstone references a missing generation. The repository primitive is
-present, but its cross-replica retention scheduler and freshness SLO are not yet wired. See
-[job tombstone verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-job-tombstone-verification.md).
+Startup fails when a live tombstone references a missing generation. A profile-gated retention
+service now acquires one database-clock lease across replicas, processes independent bounded detail
+and tombstone pages atomically, advances integrity-protected cumulative counters, and publishes
+aggregate-only metrics plus freshness/backlog readiness. Defaults are a 120-second lease, 100 rows
+per page, a one-hour interval, and 365-day tombstones; terminal job detail still follows the queue's
+30-day default. A page that outlives its lease rolls back in full. Configure and operate it with the
+`RG_TEST_STABILITY_JOB_RETENTION_*` variables in the profile YAML; invalid page, lease, interval, or
+freshness combinations fail startup even while the worker is disabled. See
+[job tombstone verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-job-tombstone-verification.md)
+and the [retention service verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-retention-service-verification.md).
 
 ### Create a durable graph test
 
