@@ -1,4 +1,4 @@
-# Stage 5 Serving Inventory 运行密钥轮换内核验证
+# Stage 5 Serving Inventory 运行密钥轮换与生产接线验证
 
 ## 1. 本增量解决什么
 
@@ -65,7 +65,28 @@ outage 全部拒绝。相同代际和相同材料可幂等重放。
 公开 descriptor 只增加 `managedTrustRootRefresh` 和 `atomicDualTrustRootPublication` 两个布尔事实，不
 泄露 endpoint、ETag、authority id、key id、公钥或材料 fingerprint。
 
-## 5. 自动验证
+## 5. 生产接线与部署不变量
+
+第二阶段把内核接入 `TestRuntimeConfiguration`、`application-test.yml`、
+`application-staging.yml` 和演示启停脚本：
+
+1. staging 的 dynamic serving inventory 必须启用 managed trust roots；test profile 仍可显式使用
+   static fallback。
+2. managed mode 必须恰有一个动态 root authority 和一个数据库 floor，且必须同时启用 remote
+   inventory；缺失、多实例或 partial mode 均启动失败。
+3. legacy deployment/witness runtime trust domain、threshold 和 key JSON 不得与 managed mode 混用。
+   composition root 在网络 bootstrap 前检查该约束，避免错误配置先产生外部副作用。
+4. root publication 采用严格 Draft 2020-12 JSON Schema；重复、未知和 trailing 属性仍由应用层严格
+   parser 拒绝，跨字段 domain/key 独立性、阈值和时间顺序由语义验证器拒绝。
+5. cohort descriptor 升至 v3，并原子声明 `managedInventoryTrustRoots` 与
+   `atomicDualInventoryTrustRootPublication`；任何副本缺少原子能力都不能收敛。
+6. capability 分别公开 `restartFreeSuiteStabilityServingInventoryKeyRotation` 与
+   `atomicDualQuorumSuiteStabilityServingInventoryTrustRoots`。Actuator root health 只输出状态、时序、
+   计数、阈值和 key 数量，不输出 URI、ETag、root-set id、fingerprint、authority/key id 或密钥材料。
+7. staging preflight 在启动 JVM 前检查 HTTPS、标识符、policy fingerprints、独立根域、阈值、JSON
+   array 形状、刷新/timeout/hard-age 关系和 legacy mixed mode。
+
+## 6. 自动验证
 
 聚焦测试覆盖以下风险：
 
@@ -76,17 +97,24 @@ outage 全部拒绝。相同代际和相同材料可幂等重放。
 - 数据库 floor 幂等、作用域隔离、并发后继线性化、腐化与 store outage。
 - 真实 Ed25519 端到端链：A 运行密钥库存 -> 双根发布 B -> B 运行密钥库存，无进程重启完成；随后
   witness runtime threshold 撤销会立即关闭库存 admission。
+- Spring managed/static mode 隔离、required/disabled 矛盾、网络 bootstrap 前 mixed-mode 拒绝、
+  profile bean isolation、aggregate-only health、cohort v3 和 capability truth table。
+- Java wire properties 与 strict trust-root publication Schema 一致，整秒时间、sequence-1 predecessor
+  和 private/operational material 禁止项均有反例。
 
-本提交的相关门禁执行 31 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
+第一阶段内核提交的相关门禁执行 31 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2731 tests，0 failures、0 errors、2 个条件浏览器跳过，并成功重打包 Spring Boot
 可执行 JAR。
 
-## 6. 明确未完成
+第二阶段生产接线相关聚焦门禁执行 73 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
+`clean verify` 执行 2736 tests，0 failures、0 errors、2 个条件浏览器跳过，并成功重打包 Spring Boot
+可执行 JAR。`zsh -n scripts/visual-canvas-demo.sh` 与 `git diff --check` 同时通过。
 
-本增量只交付协议和内核，不把尚未完成的部署面包装成产品能力。后续仍需：
+## 7. 明确未完成
 
-- Spring composition root、配置属性、staging fail-fast preflight 与启停脚本接线。
-- 独立 trust-root health/capability、cohort descriptor 和 machine-readable JSON Schema。
+本增量已交付协议、内核和 Resource Gateway 内部的生产接线，但不把外部基础设施包装成已完成能力。
+后续仍需：
+
 - bootstrap root 轮换 ceremony、KMS/HSM/mTLS、根签名发布服务 HA。
 - 数据库整库备份回退的外部不可回退锚、transparency/WORM/gossip 与跨域 split-view 检测。
 - PostgreSQL 等非 H2 方言、backup/restore、灾备切换和大规模并发认证。

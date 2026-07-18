@@ -33,6 +33,8 @@ public interface TestSuiteStabilityAuthorityCohortGate {
      * @param dynamicallyRefreshedInventory whether signed freshness/revocation is remotely refreshed
      * @param witnessedInventoryPublications whether an independent signer witnesses publication order
      * @param durableInventoryPublicationFloor whether publication order survives fleet restart
+     * @param managedInventoryTrustRoots whether runtime inventory keys refresh without restart
+     * @param atomicDualInventoryTrustRootPublication whether both runtime key sets share one signed generation
      */
     record Descriptor(
             String schemaVersion,
@@ -50,10 +52,12 @@ public interface TestSuiteStabilityAuthorityCohortGate {
             boolean externallyAttestedInventory,
             boolean dynamicallyRefreshedInventory,
             boolean witnessedInventoryPublications,
-            boolean durableInventoryPublicationFloor) {
+            boolean durableInventoryPublicationFloor,
+            boolean managedInventoryTrustRoots,
+            boolean atomicDualInventoryTrustRootPublication) {
 
         public static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityAuthorityCohortDescriptor.v2";
+                "bloge.testSuiteStabilityAuthorityCohortDescriptor.v3";
 
         /** Validates the bounded payload-free descriptor. */
         public Descriptor {
@@ -82,6 +86,9 @@ public interface TestSuiteStabilityAuthorityCohortGate {
                     || witnessedInventoryPublications && !dynamicallyRefreshedInventory
                     || durableInventoryPublicationFloor && !witnessedInventoryPublications
                     || dynamicallyRefreshedInventory && !durableInventoryPublicationFloor
+                    || managedInventoryTrustRoots && !dynamicallyRefreshedInventory
+                    || atomicDualInventoryTrustRootPublication && !managedInventoryTrustRoots
+                    || managedInventoryTrustRoots && !atomicDualInventoryTrustRootPublication
                     || !configured && (!available || !"LOCAL_ONLY".equals(status))) {
                 throw new IllegalArgumentException(
                         "Invalid stability authority cohort descriptor");
@@ -91,7 +98,8 @@ public interface TestSuiteStabilityAuthorityCohortGate {
         /** @return disabled non-network local gate */
         public static Descriptor localOnly() {
             return new Descriptor(SCHEMA_VERSION, false, true, "LOCAL_ONLY",
-                    0, 0, 0, 0, 0, 0, false, false, false, false, false, false);
+                    0, 0, 0, 0, 0, 0, false, false, false, false, false, false,
+                    false, false);
         }
 
         /** @return configured fail-closed descriptor when the store cannot be read */
@@ -100,7 +108,7 @@ public interface TestSuiteStabilityAuthorityCohortGate {
                 long leaseSeconds,
                 boolean externallyAttestedInventory) {
             return unavailable(expectedReplicaCount, leaseSeconds,
-                    externallyAttestedInventory, false, false);
+                    externallyAttestedInventory, false, false, false, false);
         }
 
         /** @return configured fail-closed descriptor preserving source semantics */
@@ -113,7 +121,24 @@ public interface TestSuiteStabilityAuthorityCohortGate {
             return new Descriptor(SCHEMA_VERSION, true, false, "STORE_UNAVAILABLE",
                     expectedReplicaCount, 0, 0, 0, 0, leaseSeconds, true, true,
                     externallyAttestedInventory, dynamicallyRefreshedInventory,
-                    witnessedInventoryPublications, dynamicallyRefreshedInventory);
+                    witnessedInventoryPublications, dynamicallyRefreshedInventory,
+                    false, false);
+        }
+
+        /** @return configured fail-closed descriptor preserving managed-root semantics */
+        public static Descriptor unavailable(
+                int expectedReplicaCount,
+                long leaseSeconds,
+                boolean externallyAttestedInventory,
+                boolean dynamicallyRefreshedInventory,
+                boolean witnessedInventoryPublications,
+                boolean managedInventoryTrustRoots,
+                boolean atomicDualInventoryTrustRootPublication) {
+            return new Descriptor(SCHEMA_VERSION, true, false, "STORE_UNAVAILABLE",
+                    expectedReplicaCount, 0, 0, 0, 0, leaseSeconds, true, true,
+                    externallyAttestedInventory, dynamicallyRefreshedInventory,
+                    witnessedInventoryPublications, dynamicallyRefreshedInventory,
+                    managedInventoryTrustRoots, atomicDualInventoryTrustRootPublication);
         }
     }
 

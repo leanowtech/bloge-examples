@@ -30,6 +30,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepo
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityAuthorityCohortRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityServingInventoryPublicationFloor;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityServingInventoryTrustRootFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
@@ -1424,6 +1425,8 @@ public class TestRuntimeConfiguration {
             testSuiteStabilityServingInventoryAuthority(
             ObjectMapper objectMapper,
             ObjectProvider<TestSuiteStabilityServingInventoryPublicationFloor> publicationFloors,
+            ObjectProvider<DynamicTestSuiteStabilityServingInventoryTrustRootAuthority>
+                    managedTrustRoots,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.trust-domain:}")
             String trustDomain,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.accepted-policy-fingerprints:}")
@@ -1438,6 +1441,10 @@ public class TestRuntimeConfiguration {
             boolean remoteEnabled,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.required:false}")
             boolean remoteRequired,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.enabled:false}")
+            boolean managedTrustRootsEnabled,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.required:false}")
+            boolean managedTrustRootsRequired,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.uri:}")
             String remoteUri,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.refresh-interval-seconds:30}")
@@ -1466,6 +1473,14 @@ public class TestRuntimeConfiguration {
             throw new IllegalStateException(
                     "This profile requires dynamic witnessed serving inventory");
         }
+        if (managedTrustRootsRequired && !managedTrustRootsEnabled) {
+            throw new IllegalStateException(
+                    "This profile requires managed serving-inventory trust roots");
+        }
+        if (managedTrustRootsEnabled && !remoteEnabled) {
+            throw new IllegalStateException(
+                    "Managed serving-inventory trust roots require remote inventory refresh");
+        }
         if (remoteEnabled && inventoryJson != null && !inventoryJson.isBlank()) {
             throw new IllegalStateException(
                     "Dynamic serving inventory cannot also use a static inventory document");
@@ -1488,20 +1503,157 @@ public class TestRuntimeConfiguration {
                 throw new IllegalArgumentException(
                         "Serving-inventory publication URI is invalid", invalid);
             }
-            return DynamicTestSuiteStabilityServingInventoryAuthority.fromJson(
-                    objectMapper, trustDomain, acceptedPolicyFingerprints,
-                    signatureThreshold, authorityKeysJson, binding,
-                    floors.getFirst(),
-                    witnessDomain, witnessSignatureThreshold, witnessAuthorityKeysJson,
+            List<DynamicTestSuiteStabilityServingInventoryTrustRootAuthority> roots =
+                    managedTrustRoots.orderedStream().toList();
+            if ((managedTrustRootsEnabled && roots.size() != 1)
+                    || (!managedTrustRootsEnabled && !roots.isEmpty())) {
+                throw new IllegalStateException(
+                        "Managed serving-inventory trust roots require exactly one authority");
+            }
+            DynamicTestSuiteStabilityServingInventoryAuthority.Settings settings =
                     new DynamicTestSuiteStabilityServingInventoryAuthority.Settings(
                             uri, Duration.ofSeconds(remoteRefreshIntervalSeconds),
                             Duration.ofMillis(remoteRequestTimeoutMillis),
                             Duration.ofSeconds(remoteMaximumSnapshotAgeSeconds),
-                            remoteAllowInsecureLoopback));
+                            remoteAllowInsecureLoopback);
+            if (managedTrustRootsEnabled) {
+                if (signatureThreshold != 0 || witnessSignatureThreshold != 0
+                        || trustDomain != null && !trustDomain.isBlank()
+                        || witnessDomain != null && !witnessDomain.isBlank()
+                        || !emptyJsonArray(objectMapper, authorityKeysJson)
+                        || !emptyJsonArray(objectMapper, witnessAuthorityKeysJson)) {
+                    throw new IllegalStateException(
+                            "Managed serving-inventory trust roots forbid static runtime keys");
+                }
+                return new DynamicTestSuiteStabilityServingInventoryAuthority(
+                        objectMapper,
+                        ConfiguredTestSuiteStabilityServingInventoryAuthority.parsePolicies(
+                                acceptedPolicyFingerprints),
+                        binding, floors.getFirst(), roots.getFirst(), settings);
+            }
+            return DynamicTestSuiteStabilityServingInventoryAuthority.fromJson(
+                    objectMapper, trustDomain, acceptedPolicyFingerprints,
+                    signatureThreshold, authorityKeysJson, binding, floors.getFirst(),
+                    witnessDomain, witnessSignatureThreshold, witnessAuthorityKeysJson, settings);
         }
         return ConfiguredTestSuiteStabilityServingInventoryAuthority.fromJson(
                 objectMapper, trustDomain, acceptedPolicyFingerprints, signatureThreshold,
                 authorityKeysJson, inventoryJson, binding);
+    }
+
+    /** Persists the managed dual runtime-key publication before local key publication. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityServingInventoryTrustRootFloor
+            testSuiteStabilityServingInventoryTrustRootFloor(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
+            String scopeId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.trust-root-set-id:}")
+            String trustRootSetId) {
+        return new DatabaseTestSuiteStabilityServingInventoryTrustRootFloor(
+                database.jdbc(), objectMapper, scopeId, trustRootSetId,
+                database.transactionManager());
+    }
+
+    /** Bootstraps and refreshes one atomic dual-quorum serving-inventory runtime-key set. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots",
+            name = "enabled", havingValue = "true")
+    DynamicTestSuiteStabilityServingInventoryTrustRootAuthority
+            dynamicTestSuiteStabilityServingInventoryTrustRootAuthority(
+            ObjectMapper objectMapper,
+            TestSuiteStabilityServingInventoryTrustRootFloor floor,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
+            String scopeId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.trust-root-set-id:}")
+            String trustRootSetId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.accepted-policy-fingerprints:}")
+            String acceptedPolicyFingerprints,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.deployment-root-domain:}")
+            String deploymentRootDomain,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.deployment-root-signature-threshold:0}")
+            int deploymentRootSignatureThreshold,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.deployment-root-authority-keys-json:[]}")
+            String deploymentRootAuthorityKeysJson,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.witness-root-domain:}")
+            String witnessRootDomain,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.witness-root-signature-threshold:0}")
+            int witnessRootSignatureThreshold,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.witness-root-authority-keys-json:[]}")
+            String witnessRootAuthorityKeysJson,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.uri:}")
+            String remoteUri,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.refresh-interval-seconds:30}")
+            long refreshIntervalSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.request-timeout-ms:3000}")
+            long requestTimeoutMillis,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.unknown-key-refresh-interval-seconds:5}")
+            long unknownKeyRefreshIntervalSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.maximum-snapshot-age-seconds:60}")
+            long maximumSnapshotAgeSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.allow-insecure-loopback:false}")
+            boolean allowInsecureLoopback,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.trust-domain:}")
+            String legacyDeploymentDomain,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.signature-threshold:0}")
+            int legacyDeploymentThreshold,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.authority-keys-json:[]}")
+            String legacyDeploymentKeysJson,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.witness-domain:}")
+            String legacyWitnessDomain,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.witness-signature-threshold:0}")
+            int legacyWitnessThreshold,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.witness-authority-keys-json:[]}")
+            String legacyWitnessKeysJson) {
+        if (legacyDeploymentThreshold != 0 || legacyWitnessThreshold != 0
+                || legacyDeploymentDomain != null && !legacyDeploymentDomain.isBlank()
+                || legacyWitnessDomain != null && !legacyWitnessDomain.isBlank()
+                || !emptyJsonArray(objectMapper, legacyDeploymentKeysJson)
+                || !emptyJsonArray(objectMapper, legacyWitnessKeysJson)) {
+            throw new IllegalStateException(
+                    "Managed serving-inventory trust roots forbid static runtime keys");
+        }
+        URI uri;
+        try {
+            uri = URI.create(remoteUri == null ? "" : remoteUri.trim());
+        } catch (RuntimeException invalid) {
+            throw new IllegalArgumentException(
+                    "Serving-inventory trust-root URI is invalid", invalid);
+        }
+        var binding =
+                new ConfiguredTestSuiteStabilityServingInventoryTrustRootAuthority.ExpectedBinding(
+                        scopeId, trustRootSetId, ToolStudioResourceGatewayProtocol.VERSION,
+                        deploymentRootDomain, witnessRootDomain);
+        return DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.fromJson(
+                objectMapper, binding, acceptedPolicyFingerprints,
+                deploymentRootSignatureThreshold, deploymentRootAuthorityKeysJson,
+                witnessRootSignatureThreshold, witnessRootAuthorityKeysJson, floor,
+                new DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.Settings(
+                        uri, Duration.ofSeconds(refreshIntervalSeconds),
+                        Duration.ofMillis(requestTimeoutMillis),
+                        Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
+                        Duration.ofSeconds(maximumSnapshotAgeSeconds),
+                        allowInsecureLoopback));
+    }
+
+    /** Exposes key-free health for the managed dual runtime-key source. */
+    @Bean
+    @ConditionalOnBean(DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.class)
+    TestSuiteStabilityServingInventoryTrustRootHealth
+            testSuiteStabilityServingInventoryTrustRootHealth(
+            DynamicTestSuiteStabilityServingInventoryTrustRootAuthority authority) {
+        return new TestSuiteStabilityServingInventoryTrustRootHealth(authority);
     }
 
     /** Persists the dynamic publication/witness chain head before local state publication. */
@@ -1816,5 +1968,14 @@ public class TestRuntimeConfiguration {
             }
         }
         return Set.copyOf(exact);
+    }
+
+    private static boolean emptyJsonArray(ObjectMapper objectMapper, String value) {
+        try {
+            var parsed = objectMapper.readTree(value == null ? "" : value.trim());
+            return parsed != null && parsed.isArray() && parsed.isEmpty();
+        } catch (java.io.IOException invalid) {
+            return false;
+        }
     }
 }

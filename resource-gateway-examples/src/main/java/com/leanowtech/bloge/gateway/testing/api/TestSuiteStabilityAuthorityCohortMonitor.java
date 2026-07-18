@@ -33,6 +33,8 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
     private final TestSuiteStabilityAuthorityCohortPolicy policy;
     private final ObjectMapper objectMapper;
     private final String policyFingerprint;
+    private final boolean managedInventoryTrustRoots;
+    private final boolean atomicDualInventoryTrustRootPublication;
     private final ScheduledThreadPoolExecutor scheduler;
     private final AtomicBoolean failureLogged = new AtomicBoolean();
 
@@ -98,6 +100,17 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
         this.policy = Objects.requireNonNull(policy, "policy");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.policyFingerprint = policy.cohortFingerprint(this.objectMapper);
+        TestSuiteStabilityServingInventoryAuthority.Descriptor inventoryDescriptor =
+                Objects.requireNonNull(this.inventoryAuthority.descriptor(),
+                        "inventoryAuthority descriptor");
+        this.managedInventoryTrustRoots = Boolean.TRUE.equals(
+                inventoryDescriptor.properties().get("managedTrustRootRefresh"));
+        this.atomicDualInventoryTrustRootPublication = Boolean.TRUE.equals(
+                inventoryDescriptor.properties().get("atomicDualTrustRootPublication"));
+        if (managedInventoryTrustRoots != atomicDualInventoryTrustRootPublication) {
+            throw new IllegalArgumentException(
+                    "Managed serving-inventory trust-root semantics are incomplete");
+        }
         requireCurrentInventory();
         publishNow();
         this.scheduler = startScheduler ? scheduler() : null;
@@ -141,12 +154,14 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
                     true, true,
                     policy.servingInventory().externallyAttested(),
                     dynamicServingInventory(), dynamicServingInventory(),
-                    dynamicServingInventory());
+                    dynamicServingInventory(), managedInventoryTrustRoots,
+                    atomicDualInventoryTrustRootPublication);
         } catch (RuntimeException storeUnavailable) {
             return Descriptor.unavailable(policy.expectedInstanceIds().size(),
                     policy.leaseDuration().toSeconds(),
                     policy.servingInventory().externallyAttested(),
-                    dynamicServingInventory(), dynamicServingInventory());
+                    dynamicServingInventory(), dynamicServingInventory(),
+                    managedInventoryTrustRoots, atomicDualInventoryTrustRootPublication);
         }
     }
 
@@ -280,7 +295,8 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
                 policy.leaseDuration().toSeconds(), true, true,
                 policy.servingInventory().externallyAttested(),
                 dynamicServingInventory(), dynamicServingInventory(),
-                dynamicServingInventory());
+                dynamicServingInventory(), managedInventoryTrustRoots,
+                atomicDualInventoryTrustRootPublication);
     }
 
     private boolean dynamicServingInventory() {

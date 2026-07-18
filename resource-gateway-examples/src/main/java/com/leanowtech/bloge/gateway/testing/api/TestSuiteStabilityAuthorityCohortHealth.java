@@ -47,7 +47,11 @@ public final class TestSuiteStabilityAuthorityCohortHealth implements HealthIndi
                     Map.entry("witnessedInventoryPublications",
                             descriptor.witnessedInventoryPublications()),
                     Map.entry("durableInventoryPublicationFloor",
-                            descriptor.durableInventoryPublicationFloor()));
+                            descriptor.durableInventoryPublicationFloor()),
+                    Map.entry("managedInventoryTrustRoots",
+                            descriptor.managedInventoryTrustRoots()),
+                    Map.entry("atomicDualInventoryTrustRootPublication",
+                            descriptor.atomicDualInventoryTrustRootPublication()));
             return (descriptor.available() ? Health.up() : Health.down())
                     .withDetails(details).build();
         } catch (RuntimeException unavailable) {

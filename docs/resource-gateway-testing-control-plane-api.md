@@ -3035,6 +3035,18 @@ snapshot unavailable; there is no stale-acceptance mode. A hard local maximum ag
 silent refresh lane. Capability and Actuator health read only the local snapshot and never issue a
 remote request. A valid refresh can recover without restart.
 
+Staging serving-inventory deployments use a separate managed runtime-key source instead of static
+deployment/witness runtime keys. The versioned publication atomically carries both runtime key sets,
+their independent trust domains and thresholds, and a sequence/predecessor chain. It is accepted
+only after independent deployment bootstrap-root and witness bootstrap-root M-of-N verification,
+strict local binding, lifetime checks, and a durable database sequence-floor commit. Inventory
+unknown-key handling may trigger one cooldown-bounded synchronous root refresh; a changed root
+generation forces inventory revalidation even after `304`. Root source outage, hard-age expiry,
+rollback, fork, gap, partial quorum, threshold revocation, or root/inventory generation divergence
+closes admission. Managed and legacy static runtime-key modes cannot be mixed. Capability, cohort,
+and Actuator projections contain only aggregate counts, status, and protocol booleans; source URI,
+ETag, root-set id, authority/key ids, public keys, signatures, and fingerprints stay private.
+
 The built-in adapters rely on the JVM TLS context, so mTLS identity belongs in deployment TLS
 material, not in JSON properties. Both `allow-insecure-loopback` settings must remain disabled
 outside local tests. A deployment-owned KMS/certificate implementation may still replace
@@ -3052,6 +3064,9 @@ the distinction through `testability.suiteStabilityJobSubmissionEnabled` and the
 `externallyAttestedSuiteStabilityServingInventory`,
 `dynamicSuiteStabilityServingInventory`,
 `witnessedSuiteStabilityServingInventoryPublications`,
+`durableSuiteStabilityServingInventoryPublicationFloor`,
+`restartFreeSuiteStabilityServingInventoryKeyRotation`,
+`atomicDualQuorumSuiteStabilityServingInventoryTrustRoots`,
 `asyncSuiteStabilityJobQuery`, `asyncSuiteStabilityJobCancellation`, and
 `asyncSuiteStabilityJobCancellationSemanticAudit` feature flags. The strict
 request/response definitions live in
@@ -3061,12 +3076,17 @@ The private worker-to-PDP contract is separately versioned in
 it is not a caller-facing testing endpoint.
 The dynamic serving-inventory publication is separately versioned in
 [`suite-stability-serving-inventory-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-publication-v1.schema.json).
+The atomic dual-root runtime-key publication is defined by
+[`suite-stability-serving-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json).
 Implementation evidence and deliberately unclaimed guarantees are recorded in
 [Stage 5 current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
 Dynamic refresh invariants, health semantics and deliberately unclaimed fleet guarantees are in
 [Stage 5 dynamic authority trust verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-authority-trust-verification.md).
 Signed membership, revocation, witness, and cross-replica generation invariants are recorded in
 [Stage 5 dynamic serving-inventory verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-serving-inventory-verification.md).
+Managed runtime-key rotation, durable ordering, staging composition, and remaining external-anchor
+limits are recorded in
+[Stage 5 serving-inventory trust-root rotation verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-trust-root-rotation-verification.md).
 
 The standalone Java test-kit exposes the same protocol without depending on Resource Gateway
 server classes:

@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.actuate.health.Status;
 
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -90,6 +91,31 @@ class DynamicTestSuiteStabilityServingInventoryTrustRootAuthorityTest {
             assertThat(authority.generationFingerprint())
                     .isEqualTo(second.materialFingerprint());
         }
+    }
+
+    @Test
+    void healthPublishesOnlyAggregateManagedRootReadiness() throws Exception {
+        var first = publication(1, "", "deployment-a", deploymentLeafA,
+                "witness-a", witnessLeafA, false);
+        MutableFetcher fetcher = new MutableFetcher();
+        fetcher.publish(first, "root-generation-1", objectMapper);
+        var authority = authority(fetcher, new InMemoryFloor(), false);
+
+        var health = new TestSuiteStabilityServingInventoryTrustRootHealth(authority).health();
+
+        assertThat(health.getStatus()).isEqualTo(Status.UP);
+        assertThat(health.getDetails())
+                .containsEntry("status", "HEALTHY")
+                .containsEntry("sequence", 1L)
+                .containsEntry("deploymentSignatureThreshold", 1)
+                .containsEntry("witnessSignatureThreshold", 1)
+                .containsEntry("durableFloor", true)
+                .doesNotContainKeys("uri", "etag", "trustRootSetId", "policyFingerprint",
+                        "generationFingerprint", "authorityId", "keyId", "publicKey");
+
+        authority.close();
+        assertThat(new TestSuiteStabilityServingInventoryTrustRootHealth(authority)
+                .health().getStatus()).isEqualTo(Status.DOWN);
     }
 
     @Test
@@ -351,6 +377,15 @@ class DynamicTestSuiteStabilityServingInventoryTrustRootAuthorityTest {
         assertThatThrownBy(() -> authority(unavailable, new InMemoryFloor(), false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("bootstrap");
+        assertThatThrownBy(() ->
+                DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.fromJson(
+                        objectMapper, binding(), POLICY, 1,
+                        "[{\"authorityId\":\"duplicate\",\"authorityId\":\"duplicate\"}]",
+                        1, "[]", new InMemoryFloor(),
+                        settings(URI.create("https://roots.example/current"),
+                                Duration.ofSeconds(30), Duration.ofSeconds(60), false)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("configuration");
     }
 
     private DynamicTestSuiteStabilityServingInventoryTrustRootAuthority authority(

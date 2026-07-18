@@ -682,7 +682,11 @@ public record IntegrationCapabilities(
                         && (!Boolean.TRUE.equals(authority.properties().get(
                         "trustCohortDynamicallyRefreshedInventory"))
                         || Boolean.TRUE.equals(authority.properties().get(
-                        "trustCohortDurableInventoryPublicationFloor"))));
+                        "trustCohortDurableInventoryPublicationFloor")))
+                        && (!Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortManagedInventoryTrustRoots"))
+                        || Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortAtomicDualInventoryTrustRootPublication"))));
         features.put("externallyAttestedSuiteStabilityServingInventory",
                 testExecutionEndpointEnabled
                         && Boolean.TRUE.equals(authority.properties().get(
@@ -701,6 +705,18 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled
                         && Boolean.TRUE.equals(authority.properties().get(
                         "trustCohortDurableInventoryPublicationFloor")));
+        features.put("restartFreeSuiteStabilityServingInventoryKeyRotation",
+                testExecutionEndpointEnabled
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortManagedInventoryTrustRoots"))
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortAtomicDualInventoryTrustRootPublication")));
+        features.put("atomicDualQuorumSuiteStabilityServingInventoryTrustRoots",
+                testExecutionEndpointEnabled
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortManagedInventoryTrustRoots"))
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortAtomicDualInventoryTrustRootPublication")));
         features.put("asyncSuiteStabilityJobQuery", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellation", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellationSemanticAudit",

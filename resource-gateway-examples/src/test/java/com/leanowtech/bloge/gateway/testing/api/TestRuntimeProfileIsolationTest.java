@@ -170,6 +170,12 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityAuthorityTrustHealth.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityServingInventoryTrustRootFloor.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityServingInventoryTrustRootHealth.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     HttpTestSuiteStabilityJobAuthorizer.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
@@ -279,6 +285,12 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBean(TestabilityAvailability.class)
                     .workerQuarantineRequestIndexMode())
                     .isEqualTo(WorkerQuarantineRequestIndexMode.KEYED_ONLY);
+            assertThat(context.getBeansOfType(
+                    DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityServingInventoryTrustRootFloor.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityServingInventoryTrustRootHealth.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobParentAuthority.class)).hasSize(1);
             assertThat(context.getBeansOfType(

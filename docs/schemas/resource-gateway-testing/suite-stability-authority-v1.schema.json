@@ -229,7 +229,9 @@
         "trustCohortExternallyAttestedInventory": { "type": "boolean" },
         "trustCohortDynamicallyRefreshedInventory": { "type": "boolean" },
         "trustCohortWitnessedInventoryPublications": { "type": "boolean" },
-        "trustCohortDurableInventoryPublicationFloor": { "type": "boolean" }
+        "trustCohortDurableInventoryPublicationFloor": { "type": "boolean" },
+        "trustCohortManagedInventoryTrustRoots": { "type": "boolean" },
+        "trustCohortAtomicDualInventoryTrustRootPublication": { "type": "boolean" }
       }
     },
     "authorizerDescriptor": {

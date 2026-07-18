@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -102,6 +103,7 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
         var verified = inventoryObservation(true, "VERIFIED",
                 DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE);
         when(inventoryAuthority.observation()).thenReturn(verified);
+        when(inventoryAuthority.descriptor()).thenReturn(managedInventoryDescriptor());
         when(trustStore.cohortObservation()).thenReturn(
                 observation("sha256:" + "a".repeat(64)));
         when(repository.heartbeat(org.mockito.ArgumentMatchers.any()))
@@ -119,6 +121,8 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
             assertThat(descriptor.dynamicallyRefreshedInventory()).isTrue();
             assertThat(descriptor.witnessedInventoryPublications()).isTrue();
             assertThat(descriptor.durableInventoryPublicationFloor()).isTrue();
+            assertThat(descriptor.managedInventoryTrustRoots()).isTrue();
+            assertThat(descriptor.atomicDualInventoryTrustRootPublication()).isTrue();
         });
 
         when(inventoryAuthority.observation()).thenReturn(
@@ -134,6 +138,8 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
                 .containsEntry("dynamicallyRefreshedInventory", true)
                 .containsEntry("witnessedInventoryPublications", true)
                 .containsEntry("durableInventoryPublicationFloor", true)
+                .containsEntry("managedInventoryTrustRoots", true)
+                .containsEntry("atomicDualInventoryTrustRootPublication", true)
                 .doesNotContainKeys("inventoryId", "materialFingerprint",
                         "policyFingerprint", "instanceIds");
 
@@ -148,6 +154,32 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
         assertThat(monitor.descriptor().status())
                 .isEqualTo("SERVING_INVENTORY_DIVERGED");
         monitor.close();
+    }
+
+    @Test
+    void partialManagedRootSemanticsAreRejectedBeforeHeartbeat() {
+        TestSuiteStabilityServingInventoryAuthority inventoryAuthority =
+                mock(TestSuiteStabilityServingInventoryAuthority.class);
+        when(inventoryAuthority.descriptor()).thenReturn(
+                new TestSuiteStabilityServingInventoryAuthority.Descriptor(
+                        TestSuiteStabilityServingInventoryAuthority.Descriptor.SCHEMA_VERSION,
+                        true, true, true, "VERIFIED", 1, 17,
+                        java.util.Map.ofEntries(
+                                java.util.Map.entry("sourceType",
+                                        DynamicTestSuiteStabilityServingInventoryAuthority
+                                                .SOURCE_TYPE),
+                                java.util.Map.entry("privateMaterialPresent", false),
+                                java.util.Map.entry("managedTrustRootRefresh", true),
+                                java.util.Map.entry("atomicDualTrustRootPublication", false))));
+
+        assertThatThrownBy(() -> new TestSuiteStabilityAuthorityCohortMonitor(
+                mock(TestSuiteStabilityAuthorityCohortRepository.class),
+                mock(DynamicJwksTestSuiteStabilityAuthorityTrustStore.class),
+                inventoryAuthority, policy(inventoryObservation(true, "VERIFIED",
+                DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE)),
+                objectMapper, false))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("semantics are incomplete");
     }
 
     private TestSuiteStabilityAuthorityCohortPolicy policy() {
@@ -185,6 +217,19 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
                 "sha256:" + "c".repeat(64), "sha256:" + "d".repeat(64),
                 List.of("replica-a"), Instant.parse("2026-07-20T00:00:00Z"),
                 2, 2);
+    }
+
+    private static TestSuiteStabilityServingInventoryAuthority.Descriptor
+            managedInventoryDescriptor() {
+        return new TestSuiteStabilityServingInventoryAuthority.Descriptor(
+                TestSuiteStabilityServingInventoryAuthority.Descriptor.SCHEMA_VERSION,
+                true, true, true, "VERIFIED", 1, 17,
+                java.util.Map.ofEntries(
+                        java.util.Map.entry("sourceType",
+                                DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE),
+                        java.util.Map.entry("privateMaterialPresent", false),
+                        java.util.Map.entry("managedTrustRootRefresh", true),
+                        java.util.Map.entry("atomicDualTrustRootPublication", true)));
     }
 
     private static DynamicJwksTestSuiteStabilityAuthorityTrustStore.CohortObservation observation(

@@ -226,7 +226,11 @@ public final class HttpTestSuiteStabilityJobAuthorizer
                 Map.entry("trustCohortWitnessedInventoryPublications",
                         cohort.witnessedInventoryPublications()),
                 Map.entry("trustCohortDurableInventoryPublicationFloor",
-                        cohort.durableInventoryPublicationFloor())));
+                        cohort.durableInventoryPublicationFloor()),
+                Map.entry("trustCohortManagedInventoryTrustRoots",
+                        cohort.managedInventoryTrustRoots()),
+                Map.entry("trustCohortAtomicDualInventoryTrustRootPublication",
+                        cohort.atomicDualInventoryTrustRootPublication())));
     }
 
     private ExchangeResult exchange(

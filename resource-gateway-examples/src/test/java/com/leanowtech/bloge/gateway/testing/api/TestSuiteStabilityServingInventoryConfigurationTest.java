@@ -67,6 +67,43 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
                 .hasMessageContaining("durable publication floor");
     }
 
+    @Test
+    void managedTrustRootsAreRequiredExplicitlyAndForbidStaticRuntimeKeys() {
+        assertThatThrownBy(() -> configuredAuthority(
+                true, true, true, false, "", publicationFloorProvider(), rootProvider()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires managed serving-inventory trust roots");
+
+        ObjectProvider<TestSuiteStabilityServingInventoryPublicationFloor> floors =
+                publicationFloorProvider();
+        TestSuiteStabilityServingInventoryPublicationFloor floor =
+                mock(TestSuiteStabilityServingInventoryPublicationFloor.class);
+        when(floor.durable()).thenReturn(true);
+        when(floors.orderedStream()).thenAnswer(ignored -> Stream.of(floor));
+        ObjectProvider<DynamicTestSuiteStabilityServingInventoryTrustRootAuthority> roots =
+                rootProvider();
+        when(roots.orderedStream()).thenAnswer(ignored -> Stream.of(
+                mock(DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.class)));
+
+        assertThatThrownBy(() -> configuredAuthority(
+                true, true, true, true, "", floors, roots))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("forbid static runtime keys");
+
+        assertThatThrownBy(() -> configuration
+                .dynamicTestSuiteStabilityServingInventoryTrustRootAuthority(
+                        new com.fasterxml.jackson.databind.ObjectMapper()
+                                .findAndRegisterModules(),
+                        mock(TestSuiteStabilityServingInventoryTrustRootFloor.class),
+                        "scope-a", "inventory-roots", "sha256:" + "a".repeat(64),
+                        "deployment-root.example", 1, "[]",
+                        "witness-root.example", 1, "[]",
+                        "https://roots.example/current", 30, 3000, 5, 60, false,
+                        "legacy-runtime.example", 0, "[]", "", 0, "[]"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("forbid static runtime keys");
+    }
+
     private TestSuiteStabilityAuthorityCohortPolicy policy(
             ObjectProvider<TestSuiteStabilityServingInventoryAuthority> provider,
             String configuredInstances,
@@ -92,11 +129,24 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
             boolean remoteEnabled,
             boolean remoteRequired,
             String inventoryJson) {
+        return configuredAuthority(remoteEnabled, remoteRequired, false, false, inventoryJson,
+                publicationFloorProvider(), rootProvider());
+    }
+
+    private TestSuiteStabilityServingInventoryAuthority configuredAuthority(
+            boolean remoteEnabled,
+            boolean remoteRequired,
+            boolean managedRootsRequired,
+            boolean managedRootsEnabled,
+            String inventoryJson,
+            ObjectProvider<TestSuiteStabilityServingInventoryPublicationFloor> floors,
+            ObjectProvider<DynamicTestSuiteStabilityServingInventoryTrustRootAuthority> roots) {
         return configuration.testSuiteStabilityServingInventoryAuthority(
                 new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules(),
-                publicationFloorProvider(),
+                floors, roots,
                 "inventory.example", "sha256:" + "b".repeat(64), 1, "[]",
                 inventoryJson, remoteEnabled, remoteRequired,
+                managedRootsEnabled, managedRootsRequired,
                 "https://inventory.example/v1/current", 30, 3000, 60, false,
                 "inventory-witness.example", 1, "[]",
                 "scope-a", "cohort-a", "replica-a", "sha256:" + "f".repeat(64));
@@ -111,6 +161,15 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
     private static ObjectProvider<TestSuiteStabilityServingInventoryPublicationFloor>
             publicationFloorProvider() {
         ObjectProvider<TestSuiteStabilityServingInventoryPublicationFloor> provider =
+                mock(ObjectProvider.class);
+        when(provider.orderedStream()).thenReturn(Stream.empty());
+        return provider;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ObjectProvider<DynamicTestSuiteStabilityServingInventoryTrustRootAuthority>
+            rootProvider() {
+        ObjectProvider<DynamicTestSuiteStabilityServingInventoryTrustRootAuthority> provider =
                 mock(ObjectProvider.class);
         when(provider.orderedStream()).thenReturn(Stream.empty());
         return provider;

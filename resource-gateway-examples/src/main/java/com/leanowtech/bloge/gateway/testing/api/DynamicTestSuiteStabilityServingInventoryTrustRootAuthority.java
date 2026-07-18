@@ -148,6 +148,53 @@ public final class DynamicTestSuiteStabilityServingInventoryTrustRootAuthority
     }
 
     /**
+     * Parses strict bootstrap-root configuration and constructs one managed dual key-set source.
+     *
+     * @param objectMapper application protocol mapper
+     * @param binding exact fleet, root-set, protocol, and bootstrap-domain binding
+     * @param acceptedPolicies comma-separated accepted rotation-policy fingerprints
+     * @param deploymentRootSignatureThreshold deployment bootstrap-root M-of-N threshold
+     * @param deploymentRootKeysJson public deployment bootstrap-root key array
+     * @param witnessRootSignatureThreshold independent witness bootstrap-root threshold
+     * @param witnessRootKeysJson public witness bootstrap-root key array
+     * @param floor durable root-publication sequence floor
+     * @param settings bounded strict-HTTPS refresh settings
+     * @return bootstrapped managed runtime-key authority
+     */
+    public static DynamicTestSuiteStabilityServingInventoryTrustRootAuthority fromJson(
+            ObjectMapper objectMapper,
+            ConfiguredTestSuiteStabilityServingInventoryTrustRootAuthority.ExpectedBinding binding,
+            String acceptedPolicies,
+            int deploymentRootSignatureThreshold,
+            String deploymentRootKeysJson,
+            int witnessRootSignatureThreshold,
+            String witnessRootKeysJson,
+            TestSuiteStabilityServingInventoryTrustRootFloor floor,
+            Settings settings) {
+        try {
+            ObjectMapper strict = Objects.requireNonNull(objectMapper, "objectMapper").copy()
+                    .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                    .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+            return new DynamicTestSuiteStabilityServingInventoryTrustRootAuthority(
+                    objectMapper, binding,
+                    ConfiguredTestSuiteStabilityServingInventoryAuthority.parsePolicies(
+                            acceptedPolicies),
+                    deploymentRootSignatureThreshold,
+                    ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
+                            strict, deploymentRootKeysJson),
+                    witnessRootSignatureThreshold,
+                    ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
+                            strict, witnessRootKeysJson),
+                    floor, settings);
+        } catch (RuntimeException | java.security.GeneralSecurityException
+                 | java.io.IOException invalid) {
+            throw new IllegalArgumentException(
+                    "Dynamic serving-inventory trust-root configuration is invalid", invalid);
+        }
+    }
+
+    /**
      * Returns current keys, synchronously refreshing once when a candidate uses an unknown key.
      *
      * @param deploymentSignatures untrusted deployment publication signatures

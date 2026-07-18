@@ -211,7 +211,24 @@ inventory revision, material/policy fingerprints, expiry, exact set,
 artifact, scope, cohort, and protocol remain bound into policy; a durable stable-scope revision floor
 rejects rollback and same-revision forks. The optional local instance list is only an equality
 assertion. Static document injection remains a `test` fallback and is forbidden with staging remote
-mode. Scope, cohort, inventory/witness trust, remote freshness, and lease settings are checked by
+mode.
+
+Staging also requires managed serving-inventory runtime keys. One canonical publication atomically
+carries the deployment and witness key sets and is independently approved by an M-of-N deployment
+bootstrap-root quorum and an M-of-N witness bootstrap-root quorum. Configure
+`RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED=true`, the HTTPS source,
+stable root-set id, accepted policy fingerprints, independent root domains, thresholds, and public
+root-key arrays under the corresponding `...INVENTORY_*_ROOT_*` variables in
+`application-staging.yml`. Legacy static runtime trust domains, thresholds, and key arrays must be
+unset (`0`/`[]`) in managed mode. The source performs strict bootstrap, ETag refresh, bounded
+unknown-key refresh, hard-age expiry, dual-quorum verification, and a database-backed sequence
+floor before exposing a new immutable runtime key snapshot. Inventory verification binds the exact
+root generation; rotation A to B therefore needs no application restart, while root outage,
+rollback, fork, partial publication, threshold revocation, or generation disagreement closes
+admission. The root health contributor and cohort descriptor expose only aggregate state and
+boolean protocol facts.
+
+Scope, cohort, inventory/witness trust, managed-root freshness, and lease settings are checked by
 `scripts/visual-canvas-demo.sh` before staging startup. A deployment may
 instead contribute one custom
 `TestSuiteStabilityJobAuthorizer` with a ready key-free descriptor. There is no allow-all fallback:
@@ -238,7 +255,10 @@ set comes from a currently verified external attestation;
 `dynamicSuiteStabilityServingInventory` and
 `witnessedSuiteStabilityServingInventoryPublications` describe the stronger refresh protocol;
 `durableSuiteStabilityServingInventoryPublicationFloor` confirms that its ordering floor survives a
-complete fleet restart. None expose instance ids, cohort ids,
+complete fleet restart. Managed deployments additionally report
+`restartFreeSuiteStabilityServingInventoryKeyRotation` and
+`atomicDualQuorumSuiteStabilityServingInventoryTrustRoots`; convergence requires every member to
+declare the same atomic dual-root protocol. None expose instance ids, cohort ids,
 inventory ids, endpoints, key ids, signatures, or trust fingerprints. The private authority request
 excludes credentials, correlation id,
 execution metadata, fixture/context/payload and node output. HTTP denial, redirect, timeout,
@@ -250,9 +270,12 @@ is `UNAVAILABLE`; only a verified signed revocation is definitive. Capacity resp
 [dynamic authority trust verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-authority-trust-verification.md),
 [authority cohort verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-authority-cohort-verification.md),
 [signed serving-inventory verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-serving-inventory-verification.md),
+[managed trust-root rotation verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-trust-root-rotation-verification.md),
 [machine-readable serving-inventory Schema](../docs/schemas/resource-gateway-testing/suite-stability-serving-inventory-v1.schema.json),
+[machine-readable managed trust-root publication Schema](../docs/schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json),
 and [machine-readable authority Schema](../docs/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json).
-Actuator exposes separate stability-queue and dynamic-authority-trust health contributors. The
+Actuator exposes separate stability-queue, dynamic-authority-trust, and managed inventory-root
+health contributors. The
 `RG_TEST_STABILITY_JOB_SLO_*` settings bound per-environment queue depth, oldest wait, observation
 interval, and expired live leases; the depth SLO cannot exceed hard queue capacity. Micrometer
 publishes only closed environment/status/outcome dimensions. Business test failures remain visible

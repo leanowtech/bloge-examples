@@ -114,6 +114,42 @@ class SuiteStabilityServingInventoryProtocolSchemaTest {
         }
     }
 
+    @Test
+    void strictTrustRootSchemaMatchesAtomicDualKeySetPublication() throws Exception {
+        JsonNode schema = objectMapper.readTree(Files.readString(trustRootSchemaPath()));
+        TestSuiteStabilityServingInventoryTrustRootPublication publication =
+                trustRootPublication();
+        JsonNode serialized = objectMapper.valueToTree(publication);
+
+        assertProperties(serialized, schema.at("/$defs/publication/properties"));
+        assertProperties(serialized.path("material"),
+                schema.at("/$defs/material/properties"));
+        assertProperties(serialized.path("material").path("deploymentKeys").get(0),
+                schema.at("/$defs/authorityKeyMaterial/properties"));
+        assertThat(schema.at("/$defs/publication/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityServingInventoryTrustRootPublication
+                        .SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/material/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityServingInventoryTrustRootPublication.Material
+                        .SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/material/allOf/0/then/properties/"
+                + "previousMaterialFingerprint/const").asText()).isEmpty();
+        assertThat(List.of("publication", "material", "authorityKeyMaterial"))
+                .allSatisfy(definition -> assertThat(
+                        schema.at("/$defs/" + definition + "/additionalProperties")
+                                .asBoolean()).isFalse());
+    }
+
+    @Test
+    void trustRootSchemaExcludesPrivateAndOperationalSourceMaterial() throws Exception {
+        String schema = Files.readString(trustRootSchemaPath());
+
+        for (String forbidden : List.of("credential", "privateKey", "payload", "fixture",
+                "context", "nodeOutput", "endpoint", "secret", "etag")) {
+            assertThat(schema).doesNotContain("\"" + forbidden + "\"");
+        }
+    }
+
     private static TestSuiteStabilityServingInventory inventory() {
         Instant issuedAt = Instant.parse("2026-07-19T00:00:00Z");
         var material = new TestSuiteStabilityServingInventory.Material(
@@ -167,6 +203,45 @@ class SuiteStabilityServingInventoryProtocolSchemaTest {
                 List.of(publicationSignature), witness);
     }
 
+    private TestSuiteStabilityServingInventoryTrustRootPublication trustRootPublication() {
+        Instant issuedAt = Instant.parse("2026-07-19T00:00:00Z");
+        String encodedKey = Base64.getEncoder().encodeToString(new byte[44]);
+        var deploymentKey =
+                new TestSuiteStabilityServingInventoryTrustRootPublication.AuthorityKeyMaterial(
+                        "deployment-authority-a", "deployment-key-a", encodedKey,
+                        issuedAt, issuedAt.plusSeconds(3600), true, false);
+        var witnessKey =
+                new TestSuiteStabilityServingInventoryTrustRootPublication.AuthorityKeyMaterial(
+                        "witness-authority-a", "witness-key-a",
+                        Base64.getEncoder().encodeToString(bytes(44, (byte) 1)),
+                        issuedAt, issuedAt.plusSeconds(3600), true, false);
+        var material = new TestSuiteStabilityServingInventoryTrustRootPublication.Material(
+                TestSuiteStabilityServingInventoryTrustRootPublication.Material.SCHEMA_VERSION,
+                "inventory-roots", 1, "", "scope-a",
+                ToolStudioResourceGatewayProtocol.VERSION,
+                "deployment-root.example", "witness-root.example",
+                "deployment.example", "witness.example", 1, 1,
+                List.of(deploymentKey), List.of(witnessKey),
+                "sha256:" + "b".repeat(64), issuedAt, issuedAt,
+                issuedAt.plusSeconds(600));
+        String fingerprint = ProtocolFingerprint.of(objectMapper, material);
+        var deploymentSignature = new TestSuiteStabilityServingInventory.AuthoritySignature(
+                "deployment-root-a", "deployment-root-key-a", "Ed25519", issuedAt,
+                Base64.getEncoder().encodeToString(new byte[64]));
+        var witnessSignature = new TestSuiteStabilityServingInventory.AuthoritySignature(
+                "witness-root-a", "witness-root-key-a", "Ed25519", issuedAt,
+                Base64.getEncoder().encodeToString(bytes(64, (byte) 1)));
+        return new TestSuiteStabilityServingInventoryTrustRootPublication(
+                TestSuiteStabilityServingInventoryTrustRootPublication.SCHEMA_VERSION,
+                material, fingerprint, List.of(deploymentSignature), List.of(witnessSignature));
+    }
+
+    private static byte[] bytes(int length, byte value) {
+        byte[] result = new byte[length];
+        java.util.Arrays.fill(result, value);
+        return result;
+    }
+
     private static Path schemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "suite-stability-serving-inventory-v1.schema.json");
@@ -175,6 +250,11 @@ class SuiteStabilityServingInventoryProtocolSchemaTest {
     private static Path publicationSchemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "suite-stability-serving-inventory-publication-v1.schema.json");
+    }
+
+    private static Path trustRootSchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "suite-stability-serving-inventory-trust-root-publication-v1.schema.json");
     }
 
     private static void assertProperties(JsonNode value, JsonNode properties) {

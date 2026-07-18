@@ -145,6 +145,20 @@ class ConfiguredTestSuiteStabilityServingInventoryTrustRootAuthorityTest {
                 2, witnessRoots(), new InMemoryFloor(), valid))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("binding");
+
+        var material = valid.material();
+        assertThatThrownBy(() ->
+                new TestSuiteStabilityServingInventoryTrustRootPublication.Material(
+                        material.schemaVersion(), material.trustRootSetId(), material.sequence(),
+                        material.previousMaterialFingerprint(), material.scopeId(),
+                        material.protocolVersion(), material.deploymentTrustDomain(),
+                        material.witnessRootTrustDomain(), material.deploymentTrustDomain(),
+                        material.witnessTrustDomain(), material.deploymentSignatureThreshold(),
+                        material.witnessSignatureThreshold(), material.deploymentKeys(),
+                        material.witnessKeys(), material.policyFingerprint(), material.issuedAt(),
+                        material.notBefore(), material.expiresAt()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("material");
     }
 
     @Test

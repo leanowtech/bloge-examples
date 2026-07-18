@@ -133,7 +133,8 @@ public record TestSuiteStabilityServingInventoryTrustRootPublication(
                     || deploymentRootTrustDomain.equals(witnessRootTrustDomain)
                     || !IDENTIFIER.matcher(deploymentTrustDomain).matches()
                     || !IDENTIFIER.matcher(witnessTrustDomain).matches()
-                    || deploymentTrustDomain.equals(witnessTrustDomain)
+                    || !independentTrustDomains(deploymentRootTrustDomain,
+                    witnessRootTrustDomain, deploymentTrustDomain, witnessTrustDomain)
                     || deploymentSignatureThreshold < 1
                     || deploymentSignatureThreshold > distinctAuthorities(deploymentKeys)
                     || witnessSignatureThreshold < 1
@@ -243,6 +244,10 @@ public record TestSuiteStabilityServingInventoryTrustRootPublication(
         });
         return witness.stream().noneMatch(key -> authorityIds.contains(key.authorityId())
                 || publicKeys.contains(key.publicKeyBase64()));
+    }
+
+    private static boolean independentTrustDomains(String... values) {
+        return new HashSet<>(List.of(values)).size() == values.length;
     }
 
     private static boolean validPublicKeyShape(String encoded) {
