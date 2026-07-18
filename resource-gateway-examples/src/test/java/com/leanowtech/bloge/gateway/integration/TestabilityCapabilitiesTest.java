@@ -152,7 +152,9 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("externallyAttestedSuiteStabilityServingInventory", false)
                 .containsEntry("dynamicSuiteStabilityServingInventory", false)
                 .containsEntry(
-                        "witnessedSuiteStabilityServingInventoryPublications", false);
+                        "witnessedSuiteStabilityServingInventoryPublications", false)
+                .containsEntry(
+                        "durableSuiteStabilityServingInventoryPublicationFloor", false);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority())
                 .isEqualTo(signed);
         assertThat(capabilities.toString()).doesNotContain("http://");
@@ -189,7 +191,9 @@ class TestabilityCapabilitiesTest {
                                 java.util.Map.entry(
                                         "trustCohortDynamicallyRefreshedInventory", true),
                                 java.util.Map.entry(
-                                        "trustCohortWitnessedInventoryPublications", true)));
+                                        "trustCohortWitnessedInventoryPublications", true),
+                                java.util.Map.entry(
+                                        "trustCohortDurableInventoryPublicationFloor", true)));
 
         IntegrationCapabilities capabilities = IntegrationCapabilities.current(
                 VisualEvidenceSigner.unavailable().descriptor(),
@@ -208,9 +212,27 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("dynamicSuiteStabilityServingInventory", true)
                 .containsEntry(
                         "witnessedSuiteStabilityServingInventoryPublications", true)
+                .containsEntry(
+                        "durableSuiteStabilityServingInventoryPublicationFloor", true)
                 .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority().properties())
                 .doesNotContainKeys("jwksUri", "etag", "publicKey", "privateKey");
+
+        var propertiesWithoutFloor = new java.util.LinkedHashMap<>(dynamic.properties());
+        propertiesWithoutFloor.remove("trustCohortDurableInventoryPublicationFloor");
+        var missingFloor = new TestSuiteStabilityJobAuthorizer.Descriptor(
+                "", true, "HTTPS_SIGNED_PDP", "iam.example", propertiesWithoutFloor);
+        IntegrationCapabilities unsafe = IntegrationCapabilities.current(
+                VisualEvidenceSigner.unavailable().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true,
+                EvidenceKeySetTrustStore.unavailable().descriptor(),
+                WorkerQuarantineRequestIndexMode.KEYED_ONLY,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                true, missingFloor);
+        assertThat(unsafe.features())
+                .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", false)
+                .containsEntry(
+                        "durableSuiteStabilityServingInventoryPublicationFloor", false);
     }
 
     @Test

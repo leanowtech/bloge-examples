@@ -51,6 +51,8 @@ public final class TestSuiteStabilityServingInventoryHealth implements HealthInd
                     snapshot.maximumSnapshotAgeSeconds());
             details.put("witnessSignatureThreshold",
                     snapshot.witnessSignatureThreshold());
+            details.put("durablePublicationFloor",
+                    snapshot.durablePublicationFloor());
             return (snapshot.available() ? Health.up() : Health.down())
                     .withDetails(Map.copyOf(details)).build();
         } catch (RuntimeException unavailable) {

@@ -29,6 +29,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteReposit
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityAuthorityCohortRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityJobRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityServingInventoryPublicationFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
@@ -1422,6 +1423,7 @@ public class TestRuntimeConfiguration {
     TestSuiteStabilityServingInventoryAuthority
             testSuiteStabilityServingInventoryAuthority(
             ObjectMapper objectMapper,
+            ObjectProvider<TestSuiteStabilityServingInventoryPublicationFloor> publicationFloors,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.trust-domain:}")
             String trustDomain,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.accepted-policy-fingerprints:}")
@@ -1473,6 +1475,12 @@ public class TestRuntimeConfiguration {
                         scopeId, cohortId, artifactFingerprint,
                         ToolStudioResourceGatewayProtocol.VERSION, instanceId);
         if (remoteEnabled) {
+            List<TestSuiteStabilityServingInventoryPublicationFloor> floors =
+                    publicationFloors.orderedStream().toList();
+            if (floors.size() != 1 || !floors.getFirst().durable()) {
+                throw new IllegalStateException(
+                        "Dynamic serving inventory requires one durable publication floor");
+            }
             URI uri;
             try {
                 uri = URI.create(remoteUri == null ? "" : remoteUri.trim());
@@ -1483,6 +1491,7 @@ public class TestRuntimeConfiguration {
             return DynamicTestSuiteStabilityServingInventoryAuthority.fromJson(
                     objectMapper, trustDomain, acceptedPolicyFingerprints,
                     signatureThreshold, authorityKeysJson, binding,
+                    floors.getFirst(),
                     witnessDomain, witnessSignatureThreshold, witnessAuthorityKeysJson,
                     new DynamicTestSuiteStabilityServingInventoryAuthority.Settings(
                             uri, Duration.ofSeconds(remoteRefreshIntervalSeconds),
@@ -1493,6 +1502,21 @@ public class TestRuntimeConfiguration {
         return ConfiguredTestSuiteStabilityServingInventoryAuthority.fromJson(
                 objectMapper, trustDomain, acceptedPolicyFingerprints, signatureThreshold,
                 authorityKeysJson, inventoryJson, binding);
+    }
+
+    /** Persists the dynamic publication/witness chain head before local state publication. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityServingInventoryPublicationFloor
+            testSuiteStabilityServingInventoryPublicationFloor(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
+            String scopeId) {
+        return new DatabaseTestSuiteStabilityServingInventoryPublicationFloor(
+                database.jdbc(), objectMapper, scopeId, database.transactionManager());
     }
 
     /** Exposes key-free refresh health for the dynamic witnessed serving-inventory source. */

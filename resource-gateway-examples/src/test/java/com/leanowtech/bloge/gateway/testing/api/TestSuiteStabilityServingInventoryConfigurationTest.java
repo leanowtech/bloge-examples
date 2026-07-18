@@ -61,6 +61,10 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
         assertThatThrownBy(() -> configuredAuthority(true, true, "{}"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cannot also use a static inventory document");
+
+        assertThatThrownBy(() -> configuredAuthority(true, true, ""))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("durable publication floor");
     }
 
     private TestSuiteStabilityAuthorityCohortPolicy policy(
@@ -90,6 +94,7 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
             String inventoryJson) {
         return configuration.testSuiteStabilityServingInventoryAuthority(
                 new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules(),
+                publicationFloorProvider(),
                 "inventory.example", "sha256:" + "b".repeat(64), 1, "[]",
                 inventoryJson, remoteEnabled, remoteRequired,
                 "https://inventory.example/v1/current", 30, 3000, 60, false,
@@ -100,5 +105,14 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
     @SuppressWarnings("unchecked")
     private static ObjectProvider<TestSuiteStabilityServingInventoryAuthority> provider() {
         return mock(ObjectProvider.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ObjectProvider<TestSuiteStabilityServingInventoryPublicationFloor>
+            publicationFloorProvider() {
+        ObjectProvider<TestSuiteStabilityServingInventoryPublicationFloor> provider =
+                mock(ObjectProvider.class);
+        when(provider.orderedStream()).thenReturn(Stream.empty());
+        return provider;
     }
 }

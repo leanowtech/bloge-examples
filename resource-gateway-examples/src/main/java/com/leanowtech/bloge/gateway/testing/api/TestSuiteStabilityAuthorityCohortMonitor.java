@@ -140,7 +140,8 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
                     policy.leaseDuration().toSeconds(),
                     true, true,
                     policy.servingInventory().externallyAttested(),
-                    dynamicServingInventory(), dynamicServingInventory());
+                    dynamicServingInventory(), dynamicServingInventory(),
+                    dynamicServingInventory());
         } catch (RuntimeException storeUnavailable) {
             return Descriptor.unavailable(policy.expectedInstanceIds().size(),
                     policy.leaseDuration().toSeconds(),
@@ -278,7 +279,8 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
                 policy.expectedInstanceIds().size(), 0, 0, 0, 0,
                 policy.leaseDuration().toSeconds(), true, true,
                 policy.servingInventory().externallyAttested(),
-                dynamicServingInventory(), dynamicServingInventory());
+                dynamicServingInventory(), dynamicServingInventory(),
+                dynamicServingInventory());
     }
 
     private boolean dynamicServingInventory() {

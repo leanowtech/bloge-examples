@@ -80,6 +80,7 @@ class DynamicTestSuiteStabilityServingInventoryAuthorityTest {
                         .containsEntry("automaticRefresh", false)
                         .containsEntry("signedRevocation", true)
                         .containsEntry("witnessedPublications", true)
+                        .containsEntry("durablePublicationFloor", true)
                         .containsEntry("privateMaterialPresent", false)
                         .doesNotContainKeys("publicationId", "checkpointId", "etag",
                                 "materialFingerprint", "instanceIds", "publicKey",
@@ -91,6 +92,7 @@ class DynamicTestSuiteStabilityServingInventoryAuthorityTest {
                 assertThat(snapshot.publicationState()).isEqualTo("ACTIVE");
                 assertThat(snapshot.sequence()).isOne();
                 assertThat(snapshot.refreshSuccessCount()).isOne();
+                assertThat(snapshot.durablePublicationFloor()).isTrue();
             });
             assertThat(new TestSuiteStabilityServingInventoryHealth(authority).health())
                     .satisfies(health -> {
@@ -192,6 +194,31 @@ class DynamicTestSuiteStabilityServingInventoryAuthorityTest {
     }
 
     @Test
+    void durableFloorSurvivesAuthorityReconstructionAndRejectsRollback()
+            throws Exception {
+        TestSuiteStabilityServingInventory inventory = inventory(17);
+        var first = publication(1,
+                TestSuiteStabilityServingInventoryPublication.State.ACTIVE,
+                "", "", inventory);
+        var second = publication(2,
+                TestSuiteStabilityServingInventoryPublication.State.ACTIVE,
+                first.materialFingerprint(), first.witness().materialFingerprint(), inventory);
+        InMemoryPublicationFloor floor = new InMemoryPublicationFloor();
+
+        try (var ignored = authority(fetcher(document(first, "generation-1")), floor)) {
+            assertThat(floor.current.sequence()).isOne();
+        }
+        try (var restarted = authority(fetcher(document(second, "generation-2")), floor)) {
+            assertThat(restarted.observation().available()).isTrue();
+            assertThat(restarted.snapshot().sequence()).isEqualTo(2);
+        }
+        assertThatThrownBy(() -> authority(
+                fetcher(document(first, "rolled-back")), floor))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("bootstrap");
+    }
+
+    @Test
     void maximumSnapshotAgeClosesEvenWhenBackgroundLaneIsSilent() throws Exception {
         var first = publication(1,
                 TestSuiteStabilityServingInventoryPublication.State.ACTIVE,
@@ -273,7 +300,7 @@ class DynamicTestSuiteStabilityServingInventoryAuthorityTest {
 
         assertThatThrownBy(() -> new DynamicTestSuiteStabilityServingInventoryAuthority(
                 objectMapper, clock, TRUST_DOMAIN, Set.of(POLICY), 2,
-                deploymentKeys(), binding(), WITNESS_DOMAIN, 1,
+                deploymentKeys(), binding(), durableFloor(), WITNESS_DOMAIN, 1,
                 List.of(key("other-witness-id", "witness-key", deploymentA)),
                 settings(), fetcher(document(valid, "valid")), false))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -361,7 +388,8 @@ class DynamicTestSuiteStabilityServingInventoryAuthorityTest {
                             Duration.ofSeconds(30), true);
             try (var authority = new DynamicTestSuiteStabilityServingInventoryAuthority(
                     objectMapper, clock, TRUST_DOMAIN, Set.of(POLICY), 2,
-                    deploymentKeys(), binding(), WITNESS_DOMAIN, 2, witnessKeys(),
+                    deploymentKeys(), binding(), durableFloor(), WITNESS_DOMAIN, 2,
+                    witnessKeys(),
                     remoteSettings, null, false)) {
                 assertThat(accept.get()).isEqualTo(
                         DynamicTestSuiteStabilityServingInventoryAuthority.MEDIA_TYPE);
@@ -381,10 +409,20 @@ class DynamicTestSuiteStabilityServingInventoryAuthorityTest {
 
     private DynamicTestSuiteStabilityServingInventoryAuthority authority(
             QueueFetcher fetcher) {
+        return authority(fetcher, durableFloor());
+    }
+
+    private DynamicTestSuiteStabilityServingInventoryAuthority authority(
+            QueueFetcher fetcher,
+            TestSuiteStabilityServingInventoryPublicationFloor publicationFloor) {
         return new DynamicTestSuiteStabilityServingInventoryAuthority(
                 objectMapper, clock, TRUST_DOMAIN, Set.of(POLICY), 2,
-                deploymentKeys(), binding(), WITNESS_DOMAIN, 2, witnessKeys(),
+                deploymentKeys(), binding(), publicationFloor, WITNESS_DOMAIN, 2, witnessKeys(),
                 settings(), fetcher, false);
+    }
+
+    private static TestSuiteStabilityServingInventoryPublicationFloor durableFloor() {
+        return new InMemoryPublicationFloor();
     }
 
     private DynamicTestSuiteStabilityServingInventoryAuthority.Settings settings() {
@@ -536,6 +574,47 @@ class DynamicTestSuiteStabilityServingInventoryAuthorityTest {
 
         private List<String> seenEtags() {
             return List.copyOf(seenEtags);
+        }
+    }
+
+    private static final class InMemoryPublicationFloor
+            implements TestSuiteStabilityServingInventoryPublicationFloor {
+        private Generation current;
+
+        @Override
+        public synchronized void accept(Generation generation) {
+            if (current == null) {
+                if (generation.sequence() != 1) {
+                    throw new IllegalArgumentException("floor must begin at one");
+                }
+                current = generation;
+                return;
+            }
+            if (generation.sequence() < current.sequence()) {
+                throw new IllegalArgumentException("floor rollback");
+            }
+            if (generation.sequence() == current.sequence()) {
+                if (!generation.publicationMaterialFingerprint().equals(
+                        current.publicationMaterialFingerprint())
+                        || !generation.witnessMaterialFingerprint().equals(
+                        current.witnessMaterialFingerprint())) {
+                    throw new IllegalArgumentException("floor fork");
+                }
+                return;
+            }
+            if (generation.sequence() != current.sequence() + 1
+                    || !generation.previousPublicationFingerprint().equals(
+                    current.publicationMaterialFingerprint())
+                    || !generation.previousWitnessFingerprint().equals(
+                    current.witnessMaterialFingerprint())) {
+                throw new IllegalArgumentException("floor discontinuity");
+            }
+            current = generation;
+        }
+
+        @Override
+        public boolean durable() {
+            return true;
         }
     }
 

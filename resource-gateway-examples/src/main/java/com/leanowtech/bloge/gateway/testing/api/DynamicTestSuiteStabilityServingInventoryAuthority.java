@@ -38,9 +38,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * reads never perform remote I/O.</p>
  *
  * <p>A valid {@code REVOKED} publication is a successful refresh with an explicitly unavailable
- * inventory, not a transport failure. This adapter verifies an in-process monotonic predecessor
- * chain. Durable cross-restart and cross-replica floor enforcement remains the cohort repository's
- * responsibility.</p>
+ * inventory, not a transport failure. Every cryptographically verified chain head must also pass
+ * a durable monotonic floor before it becomes locally observable.</p>
  */
 public final class DynamicTestSuiteStabilityServingInventoryAuthority
         implements TestSuiteStabilityServingInventoryAuthority, AutoCloseable {
@@ -71,6 +70,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
     private final Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
             indexedAuthorityKeys;
     private final ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding binding;
+    private final TestSuiteStabilityServingInventoryPublicationFloor publicationFloor;
     private final String witnessDomain;
     private final int witnessSignatureThreshold;
     private final Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
@@ -93,6 +93,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
      * @param signatureThreshold required distinct deployment-authority signatures
      * @param authorityKeys public inventory/publication verification keys
      * @param binding exact local scope, cohort, artifact, protocol, and serving slot
+     * @param publicationFloor durable cross-restart publication/witness floor
      * @param witnessDomain exact independent witness trust domain
      * @param witnessSignatureThreshold required distinct witness signatures
      * @param witnessKeys independent public witness verification keys
@@ -106,12 +107,13 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
                     authorityKeys,
             ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding binding,
+            TestSuiteStabilityServingInventoryPublicationFloor publicationFloor,
             String witnessDomain,
             int witnessSignatureThreshold,
             List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> witnessKeys,
             Settings settings) {
         this(objectMapper, Clock.systemUTC(), trustDomain, acceptedPolicyFingerprints,
-                signatureThreshold, authorityKeys, binding, witnessDomain,
+                signatureThreshold, authorityKeys, binding, publicationFloor, witnessDomain,
                 witnessSignatureThreshold, witnessKeys, settings, null, true);
     }
 
@@ -124,6 +126,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
                     authorityKeys,
             ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding binding,
+            TestSuiteStabilityServingInventoryPublicationFloor publicationFloor,
             String witnessDomain,
             int witnessSignatureThreshold,
             List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> witnessKeys,
@@ -145,12 +148,18 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                 ConfiguredTestSuiteStabilityServingInventoryAuthority.indexedKeys(
                         this.authorityKeys, signatureThreshold);
         this.binding = Objects.requireNonNull(binding, "binding");
+        this.publicationFloor = Objects.requireNonNull(
+                publicationFloor, "publicationFloor");
         this.witnessDomain = normalized(witnessDomain);
         this.witnessSignatureThreshold = witnessSignatureThreshold;
         this.indexedWitnessKeys =
                 ConfiguredTestSuiteStabilityServingInventoryAuthority.indexedKeys(
                         witnessKeys, witnessSignatureThreshold);
         this.settings = Objects.requireNonNull(settings, "settings").validated();
+        if (!this.publicationFloor.durable()) {
+            throw new IllegalArgumentException(
+                    "Dynamic serving inventory requires a durable publication floor");
+        }
         if (this.trustDomain.isBlank() || this.witnessDomain.isBlank()
                 || this.trustDomain.equals(this.witnessDomain)
                 || !independentAuthorities(this.authorityKeys, witnessKeys)) {
@@ -174,6 +183,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
      * @param signatureThreshold deployment-authority M-of-N threshold
      * @param authorityKeysJson public deployment-authority key array
      * @param binding exact local deployment binding
+     * @param publicationFloor durable cross-restart publication/witness floor
      * @param witnessDomain independent witness trust domain
      * @param witnessSignatureThreshold witness M-of-N threshold
      * @param witnessKeysJson public witness key array
@@ -187,6 +197,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             int signatureThreshold,
             String authorityKeysJson,
             ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding binding,
+            TestSuiteStabilityServingInventoryPublicationFloor publicationFloor,
             String witnessDomain,
             int witnessSignatureThreshold,
             String witnessKeysJson,
@@ -203,7 +214,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                     signatureThreshold,
                     ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
                             strict, authorityKeysJson),
-                    binding, witnessDomain, witnessSignatureThreshold,
+                    binding, publicationFloor, witnessDomain, witnessSignatureThreshold,
                     ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
                             strict, witnessKeysJson), settings);
         } catch (RuntimeException | java.io.IOException
@@ -283,7 +294,8 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                         Map.entry("protocolVersion",
                                 TestSuiteStabilityServingInventoryPublication.SCHEMA_VERSION),
                         Map.entry("witnessSignatureThreshold",
-                                witnessSignatureThreshold)));
+                                witnessSignatureThreshold),
+                        Map.entry("durablePublicationFloor", true)));
     }
 
     /**
@@ -303,7 +315,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                 sequence, observed.lastSuccessfulRefreshAt(),
                 observed.refreshSuccessCount(), observed.refreshFailureCount(),
                 observed.lastFailureCode(), settings.refreshInterval().toSeconds(),
-                settings.maximumSnapshotAge().toSeconds(), witnessSignatureThreshold);
+                settings.maximumSnapshotAge().toSeconds(), witnessSignatureThreshold, true);
     }
 
     /** Stops background refresh and immediately makes the local authority unavailable. */
@@ -420,9 +432,23 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                 witness.expiresAt(), now, "Serving-inventory witness");
         requireSuccessor(publication, previous.publication());
 
-        return new ConfiguredTestSuiteStabilityServingInventoryAuthority(
+        ConfiguredTestSuiteStabilityServingInventoryAuthority inventoryAuthority =
+                new ConfiguredTestSuiteStabilityServingInventoryAuthority(
                 objectMapper, clock, trustDomain, acceptedPolicyFingerprints,
                 signatureThreshold, authorityKeys, publication.inventory(), binding);
+        publicationFloor.accept(publicationGeneration(publication));
+        return inventoryAuthority;
+    }
+
+    private TestSuiteStabilityServingInventoryPublicationFloor.Generation
+            publicationGeneration(TestSuiteStabilityServingInventoryPublication publication) {
+        return new TestSuiteStabilityServingInventoryPublicationFloor.Generation(
+                TestSuiteStabilityServingInventoryPublicationFloor.Generation.SCHEMA_VERSION,
+                binding.scopeId(), publication.material().sequence(),
+                publication.materialFingerprint(),
+                publication.witness().materialFingerprint(),
+                publication.material().previousPublicationFingerprint(),
+                publication.witness().material().previousWitnessFingerprint());
     }
 
     private static void requireCurrentWindow(
@@ -754,6 +780,7 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
      * @param refreshIntervalSeconds configured refresh interval
      * @param maximumSnapshotAgeSeconds hard local freshness fence
      * @param witnessSignatureThreshold configured independent witness threshold
+     * @param durablePublicationFloor whether the chain head survives complete fleet restart
      */
     public record Snapshot(
             String schemaVersion,
@@ -767,7 +794,8 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             String lastFailureCode,
             long refreshIntervalSeconds,
             long maximumSnapshotAgeSeconds,
-            int witnessSignatureThreshold) {
+            int witnessSignatureThreshold,
+            boolean durablePublicationFloor) {
 
         /** Enforces a bounded aggregate-only operational projection. */
         public Snapshot {
@@ -779,7 +807,8 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                     || refreshState.isBlank() || publicationState.isBlank()
                     || sequence < 0 || refreshSuccessCount < 0 || refreshFailureCount < 0
                     || refreshIntervalSeconds < 1 || maximumSnapshotAgeSeconds < 2
-                    || witnessSignatureThreshold < 1 || witnessSignatureThreshold > 32) {
+                    || witnessSignatureThreshold < 1 || witnessSignatureThreshold > 32
+                    || !durablePublicationFloor) {
                 throw new IllegalArgumentException(
                         "Invalid serving-inventory refresh snapshot");
             }

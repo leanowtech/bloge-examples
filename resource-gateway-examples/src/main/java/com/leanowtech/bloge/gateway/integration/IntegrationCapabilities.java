@@ -678,7 +678,11 @@ public record IntegrationCapabilities(
                         || authority.properties().get(
                         "trustCohortDistinctServingInventoryGenerationCount")
                         instanceof Number inventoryGenerations
-                        && inventoryGenerations.intValue() == 1));
+                        && inventoryGenerations.intValue() == 1)
+                        && (!Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortDynamicallyRefreshedInventory"))
+                        || Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortDurableInventoryPublicationFloor"))));
         features.put("externallyAttestedSuiteStabilityServingInventory",
                 testExecutionEndpointEnabled
                         && Boolean.TRUE.equals(authority.properties().get(
@@ -693,6 +697,10 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled
                         && Boolean.TRUE.equals(authority.properties().get(
                         "trustCohortWitnessedInventoryPublications")));
+        features.put("durableSuiteStabilityServingInventoryPublicationFloor",
+                testExecutionEndpointEnabled
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortDurableInventoryPublicationFloor")));
         features.put("asyncSuiteStabilityJobQuery", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellation", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellationSemanticAudit",

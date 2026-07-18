@@ -16,7 +16,7 @@ public interface TestSuiteStabilityServingInventoryAuthority {
             "sourceType", "privateMaterialPresent", "automaticRefresh", "refreshState",
             "refreshIntervalSeconds", "maximumSnapshotAgeSeconds", "conditionalRequests",
             "failClosedOnRefreshFailure", "signedRevocation", "witnessedPublications",
-            "protocolVersion", "witnessSignatureThreshold");
+            "protocolVersion", "witnessSignatureThreshold", "durablePublicationFloor");
 
     /** @return current verified inventory state without network or database I/O */
     Observation observation();

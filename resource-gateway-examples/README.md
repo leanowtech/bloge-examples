@@ -203,7 +203,11 @@ publication. Deployment authorities sign `ACTIVE`/`REVOKED` state and an indepen
 signs the same sequence and predecessor chain. Atomic ETag refresh, hard source age, signed expiry,
 revocation, protocol downgrade, chain ambiguity, and refresh failure all fail closed. Every live
 cohort member must also publish one identical private publication/witness generation before
-convergence. The nested inventory revision, material/policy fingerprints, expiry, exact set,
+convergence. Before any verified generation becomes observable, a database-clock stable-scope floor
+atomically persists its sequence and publication/witness fingerprints; complete process or fleet
+restart therefore cannot accept rollback, fork, gap, or a broken predecessor while the test-runtime
+database remains intact. Floor corruption or database outage fails startup/refresh closed. The nested
+inventory revision, material/policy fingerprints, expiry, exact set,
 artifact, scope, cohort, and protocol remain bound into policy; a durable stable-scope revision floor
 rejects rollback and same-revision forks. The optional local instance list is only an equality
 assertion. Static document injection remains a `test` fallback and is forbidden with staging remote
@@ -232,7 +236,9 @@ not infer executability merely because the routes or Schema exist. Cohort deploy
 status only. `externallyAttestedSuiteStabilityServingInventory` separately proves that the expected
 set comes from a currently verified external attestation;
 `dynamicSuiteStabilityServingInventory` and
-`witnessedSuiteStabilityServingInventoryPublications` describe the stronger refresh protocol. None expose instance ids, cohort ids,
+`witnessedSuiteStabilityServingInventoryPublications` describe the stronger refresh protocol;
+`durableSuiteStabilityServingInventoryPublicationFloor` confirms that its ordering floor survives a
+complete fleet restart. None expose instance ids, cohort ids,
 inventory ids, endpoints, key ids, signatures, or trust fingerprints. The private authority request
 excludes credentials, correlation id,
 execution metadata, fixture/context/payload and node output. HTTP denial, redirect, timeout,

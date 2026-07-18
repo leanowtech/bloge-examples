@@ -32,6 +32,7 @@ public interface TestSuiteStabilityAuthorityCohortGate {
      * @param externallyAttestedInventory whether independent signatures establish expected members
      * @param dynamicallyRefreshedInventory whether signed freshness/revocation is remotely refreshed
      * @param witnessedInventoryPublications whether an independent signer witnesses publication order
+     * @param durableInventoryPublicationFloor whether publication order survives fleet restart
      */
     record Descriptor(
             String schemaVersion,
@@ -48,10 +49,11 @@ public interface TestSuiteStabilityAuthorityCohortGate {
             boolean exactConfiguredInventory,
             boolean externallyAttestedInventory,
             boolean dynamicallyRefreshedInventory,
-            boolean witnessedInventoryPublications) {
+            boolean witnessedInventoryPublications,
+            boolean durableInventoryPublicationFloor) {
 
         public static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityAuthorityCohortDescriptor.v1";
+                "bloge.testSuiteStabilityAuthorityCohortDescriptor.v2";
 
         /** Validates the bounded payload-free descriptor. */
         public Descriptor {
@@ -78,6 +80,8 @@ public interface TestSuiteStabilityAuthorityCohortGate {
                     || !databaseAuthority || !exactConfiguredInventory)
                     || dynamicallyRefreshedInventory && !externallyAttestedInventory
                     || witnessedInventoryPublications && !dynamicallyRefreshedInventory
+                    || durableInventoryPublicationFloor && !witnessedInventoryPublications
+                    || dynamicallyRefreshedInventory && !durableInventoryPublicationFloor
                     || !configured && (!available || !"LOCAL_ONLY".equals(status))) {
                 throw new IllegalArgumentException(
                         "Invalid stability authority cohort descriptor");
@@ -87,7 +91,7 @@ public interface TestSuiteStabilityAuthorityCohortGate {
         /** @return disabled non-network local gate */
         public static Descriptor localOnly() {
             return new Descriptor(SCHEMA_VERSION, false, true, "LOCAL_ONLY",
-                    0, 0, 0, 0, 0, 0, false, false, false, false, false);
+                    0, 0, 0, 0, 0, 0, false, false, false, false, false, false);
         }
 
         /** @return configured fail-closed descriptor when the store cannot be read */
@@ -109,7 +113,7 @@ public interface TestSuiteStabilityAuthorityCohortGate {
             return new Descriptor(SCHEMA_VERSION, true, false, "STORE_UNAVAILABLE",
                     expectedReplicaCount, 0, 0, 0, 0, leaseSeconds, true, true,
                     externallyAttestedInventory, dynamicallyRefreshedInventory,
-                    witnessedInventoryPublications);
+                    witnessedInventoryPublications, dynamicallyRefreshedInventory);
         }
     }
 

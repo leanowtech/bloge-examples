@@ -118,6 +118,7 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
             assertThat(descriptor.externallyAttestedInventory()).isTrue();
             assertThat(descriptor.dynamicallyRefreshedInventory()).isTrue();
             assertThat(descriptor.witnessedInventoryPublications()).isTrue();
+            assertThat(descriptor.durableInventoryPublicationFloor()).isTrue();
         });
 
         when(inventoryAuthority.observation()).thenReturn(
@@ -132,6 +133,7 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
                 .containsEntry("externallyAttestedInventory", true)
                 .containsEntry("dynamicallyRefreshedInventory", true)
                 .containsEntry("witnessedInventoryPublications", true)
+                .containsEntry("durableInventoryPublicationFloor", true)
                 .doesNotContainKeys("inventoryId", "materialFingerprint",
                         "policyFingerprint", "instanceIds");
 

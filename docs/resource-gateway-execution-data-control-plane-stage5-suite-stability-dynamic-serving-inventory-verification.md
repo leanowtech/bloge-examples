@@ -27,6 +27,7 @@ One object cannot safely answer every fleet-admission question. The control is d
 | Which slots belong to this immutable cohort? | deployment governance | nested signed serving inventory |
 | Is that exact inventory active now? | deployment publication authority | signed publication state and validity window |
 | Was this publication order independently observed? | separate witness trust domain | signed checkpoint and predecessor chain |
+| Can a complete fleet restart accept an older valid chain head? | test-runtime database | stable-scope durable publication/witness floor |
 | Did every live Resource Gateway replica consume the same generation? | test-runtime database | exact cohort generation convergence |
 | Is the local source still reachable and fresh? | local refresh lane | last successful refresh plus hard maximum age |
 
@@ -103,18 +104,26 @@ Publication and witness lifetimes are bounded to one day. The local maximum snap
 to 2 seconds through 24 hours and must cover at least one refresh interval plus one request timeout.
 Capability and health reads never perform network I/O.
 
-## Chain And Restart Semantics
+## Durable Chain And Restart Semantics
 
-Within one process, sequence must stay equal or advance by exactly one. Equal sequence requires the
-same publication, witness, and nested inventory fingerprints. A successor must name both predecessor
-fingerprints. Nested inventory revision may advance but cannot roll back or fork.
+The process-local chain check remains the first ordering fence: sequence may stay equal or advance by
+exactly one, equal sequence requires the same publication, witness, and nested inventory identities,
+and a successor must name both predecessor fingerprints. Before that verified candidate becomes
+observable, `DatabaseTestSuiteStabilityServingInventoryPublicationFloor` serializes the stable scope
+through a dedicated lock row and atomically applies the same transition to a durable chain head.
 
-This is not yet a transparency log. The publication and witness predecessor floors are process-local.
-After a complete fleet restart, bootstrap accepts any currently valid witnessed chain head that is
-consistent with the deployment trust configuration. The database still retains the nested inventory
-revision floor, but it does not yet persist publication sequence or witness predecessor floors across
-all process loss. Closing that restart rollback window requires a durable publication checkpoint or
-an external append-only transparency service.
+The floor record contains sequence, current publication fingerprint, current witness fingerprint,
+database observation time, and a whole-record fingerprint. An absent floor accepts only sequence 1;
+an exact current generation is idempotent; a lower sequence, same-sequence fork, gap, or either wrong
+predecessor is rejected. Store outage, malformed columns, or fingerprint corruption fails bootstrap
+or refresh closed. Two replicas racing with different successors linearize at the database lock, so
+exactly one can advance the floor. A reconstructed authority reading the same database therefore
+cannot accept a pre-restart chain head.
+
+The floor is not an external transparency log. Restoring the entire database from an older backup can
+also restore the floor and is not detectable without an independently anchored checkpoint, WORM log,
+or cross-domain gossip. That boundary is reported explicitly rather than being hidden behind the
+`durable` capability.
 
 ## Cross-Replica Generation Convergence
 
@@ -167,14 +176,18 @@ unset RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON
 `scripts/visual-canvas-demo.sh` rejects missing dynamic mode, non-HTTPS endpoints, static/remote
 ambiguity, invalid bounds, malformed public-key arrays, equal trust domains, or missing thresholds
 before staging startup. Java remains the authority for strict parsing, public-key construction,
-signature verification, chain validation, and trust independence.
+signature verification, chain validation, and trust independence. Dynamic mode automatically uses
+the configured isolated test-runtime database for the durable floor; there is no in-memory fallback
+and no additional operator-supplied secret. Database initialization or floor bootstrap failure stops
+staging startup.
 
 ## Capability, Health, And Operations
 
 Capability discovery adds:
 
 - `dynamicSuiteStabilityServingInventory`;
-- `witnessedSuiteStabilityServingInventoryPublications`.
+- `witnessedSuiteStabilityServingInventoryPublications`;
+- `durableSuiteStabilityServingInventoryPublicationFloor`.
 
 `convergedSuiteStabilityAuthorityTrustCohort` also requires one serving-inventory generation when
 external inventory is enabled. The authorizer descriptor, inventory health, and cohort health expose
@@ -189,19 +202,21 @@ refresh and intentionally reports health down.
 
 ## Verification
 
-The focused gate executes 72 tests with zero failures, errors, or skips. Coverage includes real
+The original dynamic-source focused gate executes 72 tests, and the durable-floor focused gate adds
+database reconstruction, exact idempotency, scope isolation, rollback/fork/gap/predecessor rejection,
+record corruption, store outage, and real two-replica successor contention. Coverage also includes real
 loopback HTTP negotiation, ETag/304, generic and prefix-collision media downgrade, response bounds,
 strict JSON, Ed25519 thresholds, trust-domain/key independence, active bootstrap, signed runtime
 revocation, refresh recovery, hard source age, publication/witness expiry, sequence fork/gap/broken
 predecessor, nested inventory rollback, dynamic policy construction, health/capability privacy,
 additive database migration, and two-replica generation divergence/recovery.
 
-The complete Resource Gateway `clean verify` executes 2703 tests with zero failures, zero errors,
-and 33 conditional skips, then successfully repackages the executable Spring Boot JAR.
+The complete Resource Gateway `clean verify` executes 2711 tests with zero failures, zero errors,
+and 2 conditional browser skips, then successfully repackages the executable Spring Boot JAR.
 
 ## Deliberate Limits
 
-1. Publication and witness sequence floors are not durable across complete fleet restart.
+1. Restoring the durable-floor database itself to an older backup is not externally detectable.
 2. A compromised witness threshold can equivocate; there is no transparency log, gossip, or
    cross-region checkpoint comparison.
 3. Deployment and witness public-key sets are startup configuration. Restart-free trust-root
@@ -215,6 +230,6 @@ and 33 conditional skips, then successfully repackages the executable Spring Boo
 7. The dynamic serving-inventory witness does not witness the separate current-authority JWKS. A
    signed-JWKS transparency mechanism remains a distinct trust problem.
 
-The next root-cause step is durable publication/witness floor authority with trust-root rotation and
-external non-equivocation proof, followed by deployment certification for KMS/HSM, mTLS, HA, chaos,
-non-H2 storage, backup rollback, and regional DR.
+The next root-cause step is an externally anchored non-equivocation proof and restart-free trust-root
+rotation, followed by deployment certification for KMS/HSM, mTLS, HA, chaos, non-H2 storage, backup
+rollback, and regional DR.
