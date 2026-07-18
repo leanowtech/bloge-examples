@@ -212,6 +212,29 @@ class TestSuiteStabilityExecutionServiceTest {
     }
 
     @Test
+    void stoppedParentCannotBeResurrectedThroughTheSynchronousEntryPoint() {
+        TestSuiteStabilityExecutionRequest request = request(3);
+        repository.stop(new TestSuiteStabilityExecutionStopRequest(
+                "stopped-parent", identity.tenantId(), identity.environmentId(),
+                request.clientRequestId(), ProtocolFingerprint.of(mapper, request), "INTERNAL",
+                TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                "RG.TEST.STABILITY_CANCELLED", "queue-worker", Duration.ofDays(30)));
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+
+        assertThatThrownBy(() -> service.execute(suite.suiteId(), request, identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(409);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.STABILITY_EXECUTION_CANCELLED");
+                    assertThat(failure.problem().details()).isEmpty();
+                });
+        verify(suiteExecutions, times(0)).execute(any(), any(), eq(identity));
+        assertThat(repository.records).isEmpty();
+        assertThat(repository.progress).isEmpty();
+    }
+
+    @Test
     void leaseLossStopsBeforeTheNextAttemptAndNeverPublishesTerminalEvidence() {
         repository.failRenewalAt = 2;
         TestSuiteStabilityExecutionService service = service(
@@ -469,6 +492,8 @@ class TestSuiteStabilityExecutionServiceTest {
         private final Map<String, TestSuiteStabilityExecutionLease> leases = new LinkedHashMap<>();
         private final Map<String, TestSuiteStabilityExecutionProgress> progress =
                 new LinkedHashMap<>();
+        private final Map<String, TestSuiteStabilityExecutionStop> stops =
+                new LinkedHashMap<>();
         private boolean forceInProgress;
         private int failRenewalAt = Integer.MAX_VALUE;
         private int renewals;
@@ -481,6 +506,10 @@ class TestSuiteStabilityExecutionServiceTest {
                     request.tenantId(), request.environmentId(), request.clientRequestId());
             if (terminal.isPresent()) {
                 return TestSuiteStabilityLeaseClaim.completed(terminal.get());
+            }
+            TestSuiteStabilityExecutionStop stop = stops.get(request.clientRequestId());
+            if (stop != null) {
+                return TestSuiteStabilityLeaseClaim.stopped(stop);
             }
             if (forceInProgress) {
                 return TestSuiteStabilityLeaseClaim.inProgress(7);
@@ -565,6 +594,38 @@ class TestSuiteStabilityExecutionServiceTest {
         }
 
         @Override
+        public TestSuiteStabilityExecutionStop stop(
+                TestSuiteStabilityExecutionStopRequest request) {
+            if (findByClientRequestId(request.tenantId(), request.environmentId(),
+                    request.clientRequestId()).isPresent()) {
+                throw new TestSuiteStabilityRunConflictException(
+                        TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT,
+                        "terminal evidence exists");
+            }
+            TestSuiteStabilityExecutionStop retained = stops.get(request.clientRequestId());
+            if (retained != null) {
+                if (!retained.requestFingerprint().equals(request.requestFingerprint())
+                        || retained.reason() != request.reason()
+                        || !retained.failureCode().equals(request.failureCode())) {
+                    throw new TestSuiteStabilityRunConflictException(
+                            TestSuiteStabilityRunConflictException.Reason.IDEMPOTENCY_CONFLICT,
+                            "different stop intent");
+                }
+                return retained;
+            }
+            Instant now = Instant.now();
+            TestSuiteStabilityExecutionStop created = new TestSuiteStabilityExecutionStop(
+                    request.stabilityRunId(), request.tenantId(), request.environmentId(),
+                    request.clientRequestId(), request.requestFingerprint(),
+                    request.classification(), request.reason(), request.failureCode(),
+                    request.actorId(), now, now.plus(request.retention()), fingerprint('f'));
+            stops.put(request.clientRequestId(), created);
+            progress.remove(request.clientRequestId());
+            leases.remove(request.clientRequestId());
+            return created;
+        }
+
+        @Override
         public TestSuiteStabilityRunRecord complete(
                 TestSuiteStabilityRunRecord record,
                 TestSuiteStabilityExecutionLease lease) {
@@ -593,6 +654,17 @@ class TestSuiteStabilityExecutionServiceTest {
             int before = leases.size();
             leases.values().removeIf(value -> !value.expiresAt().isAfter(Instant.now()));
             return before - leases.size();
+        }
+
+        @Override
+        public int purgeExpiredStops(int limit) {
+            List<String> expired = stops.entrySet().stream()
+                    .filter(entry -> !entry.getValue().expiresAt().isAfter(Instant.now()))
+                    .limit(limit)
+                    .map(Map.Entry::getKey)
+                    .toList();
+            expired.forEach(stops::remove);
+            return expired.size();
         }
 
         @Override
@@ -629,6 +701,19 @@ class TestSuiteStabilityExecutionServiceTest {
                         boolean live = owner != null && owner.expiresAt().isAfter(now);
                         return new TestSuiteStabilityProgressSnapshot(value, live, now);
                     });
+        }
+
+        @Override
+        public Optional<TestSuiteStabilityExecutionStop> findStop(
+                String tenantId,
+                String environmentId,
+                String stabilityRunId) {
+            return stops.values().stream()
+                    .filter(value -> value.tenantId().equals(tenantId)
+                            && value.environmentId().equals(environmentId)
+                            && value.stabilityRunId().equals(stabilityRunId)
+                            && value.expiresAt().isAfter(Instant.now()))
+                    .findFirst();
         }
 
         private static boolean sameFence(

@@ -3,10 +3,11 @@ package com.leanowtech.bloge.gateway.testing.api;
 /**
  * Atomic claim outcome for one scoped suite-stability idempotency identity.
  *
- * @param state acquired, already-running, or already-completed state
+ * @param state acquired, already-running, already-completed, or terminally-stopped state
  * @param lease exact fence only when acquired
  * @param progress retained parent journal only when acquired
  * @param terminal retained signed result only when completed
+ * @param stop retained payload-free stop only when stopped
  * @param retryAfterSeconds bounded database-clock delay only when another owner is active
  */
 public record TestSuiteStabilityLeaseClaim(
@@ -14,6 +15,7 @@ public record TestSuiteStabilityLeaseClaim(
         TestSuiteStabilityExecutionLease lease,
         TestSuiteStabilityExecutionProgress progress,
         TestSuiteStabilityRunRecord terminal,
+        TestSuiteStabilityExecutionStop stop,
         long retryAfterSeconds
 ) {
     /** Mutually exclusive claim outcomes. */
@@ -23,18 +25,24 @@ public record TestSuiteStabilityLeaseClaim(
         /** Another invocation owns an unexpired fence for the same immutable intent. */
         IN_PROGRESS,
         /** The immutable terminal response already exists and should be replayed. */
-        COMPLETED
+        COMPLETED,
+        /** A retained cancellation, deadline, or worker-failure tombstone forbids resumption. */
+        STOPPED
     }
 
     /** Enforces one unambiguous payload-free shape per claim state. */
     public TestSuiteStabilityLeaseClaim {
         if (state == null
                 || state == State.ACQUIRED && (lease == null || progress == null || terminal != null
+                || stop != null
                 || retryAfterSeconds != 0)
                 || state == State.IN_PROGRESS && (lease != null || progress != null || terminal != null
+                || stop != null
                 || retryAfterSeconds < 1 || retryAfterSeconds > 3_600)
                 || state == State.COMPLETED && (lease != null || progress != null || terminal == null
-                || retryAfterSeconds != 0)) {
+                || stop != null || retryAfterSeconds != 0)
+                || state == State.STOPPED && (lease != null || progress != null || terminal != null
+                || stop == null || retryAfterSeconds != 0)) {
             throw new IllegalArgumentException("Suite-stability lease claim shape is invalid");
         }
     }
@@ -48,7 +56,7 @@ public record TestSuiteStabilityLeaseClaim(
             TestSuiteStabilityExecutionLease lease,
             TestSuiteStabilityExecutionProgress progress) {
         return new TestSuiteStabilityLeaseClaim(
-                State.ACQUIRED, lease, progress, null, 0);
+                State.ACQUIRED, lease, progress, null, null, 0);
     }
 
     /**
@@ -57,7 +65,7 @@ public record TestSuiteStabilityLeaseClaim(
      */
     public static TestSuiteStabilityLeaseClaim inProgress(long retryAfterSeconds) {
         return new TestSuiteStabilityLeaseClaim(
-                State.IN_PROGRESS, null, null, null, retryAfterSeconds);
+                State.IN_PROGRESS, null, null, null, null, retryAfterSeconds);
     }
 
     /**
@@ -67,6 +75,16 @@ public record TestSuiteStabilityLeaseClaim(
     public static TestSuiteStabilityLeaseClaim completed(
             TestSuiteStabilityRunRecord terminal) {
         return new TestSuiteStabilityLeaseClaim(
-                State.COMPLETED, null, null, terminal, 0);
+                State.COMPLETED, null, null, terminal, null, 0);
+    }
+
+    /**
+     * @param stop retained terminal stop tombstone
+     * @return stopped claim
+     */
+    public static TestSuiteStabilityLeaseClaim stopped(
+            TestSuiteStabilityExecutionStop stop) {
+        return new TestSuiteStabilityLeaseClaim(
+                State.STOPPED, null, null, null, stop, 0);
     }
 }

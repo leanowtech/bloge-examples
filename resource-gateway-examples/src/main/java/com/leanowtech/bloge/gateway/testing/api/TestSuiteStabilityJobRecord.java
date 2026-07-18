@@ -54,6 +54,7 @@ public record TestSuiteStabilityJobRecord(
         QUEUED,
         RUNNING,
         CANCEL_REQUESTED,
+        COMMITTING,
         SUCCEEDED,
         FAILED,
         CANCELLED,
@@ -64,7 +65,7 @@ public record TestSuiteStabilityJobRecord(
         public boolean terminal() {
             return switch (this) {
                 case SUCCEEDED, FAILED, CANCELLED, EXPIRED, QUARANTINED -> true;
-                case QUEUED, RUNNING, CANCEL_REQUESTED -> false;
+                case QUEUED, RUNNING, CANCEL_REQUESTED, COMMITTING -> false;
             };
         }
     }

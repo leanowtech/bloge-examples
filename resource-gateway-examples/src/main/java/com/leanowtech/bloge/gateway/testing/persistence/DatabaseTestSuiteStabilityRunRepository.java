@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionProgress;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStopRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressCheckpoint;
@@ -22,6 +24,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -35,9 +39,10 @@ import java.util.regex.Pattern;
  *
  * <p>Scope and idempotency columns are selected before JSON deserialization. The table contains no
  * child payload, fixture value, context, or output; source evidence remains in its governed stores.
- * A fixed-cardinality lock stripe serializes claim, renewal, terminal publication, and orphan
- * cleanup for one scoped parent identity. Terminal insert and lease consumption share one local
- * transaction, so an expired or superseded owner cannot publish evidence.</p>
+ * A fixed-cardinality lock stripe serializes claim, renewal, stop, terminal publication, and
+ * orphan cleanup for one scoped parent identity. Terminal insert and lease consumption share one
+ * local transaction, while a retained payload-free stop atomically consumes resumable progress;
+ * an expired, superseded, or stopped owner therefore cannot publish evidence.</p>
  */
 public final class DatabaseTestSuiteStabilityRunRepository
         implements TestSuiteStabilityRunRepository {
@@ -134,6 +139,26 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 )
                 """);
         jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_execution_stops (
+                    stability_run_id VARCHAR(255) PRIMARY KEY,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(255) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    request_fingerprint VARCHAR(71) NOT NULL,
+                    reason VARCHAR(32) NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL,
+                    stop_json CLOB NOT NULL,
+                    CONSTRAINT uq_rg_test_suite_stability_stop_request
+                        UNIQUE (tenant_id, environment_id, client_request_id)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_stop_retention
+                ON rg_test_suite_stability_execution_stops (expires_at, stability_run_id)
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_suite_stability_records (
                     stability_run_id VARCHAR(255) PRIMARY KEY,
                     tenant_id VARCHAR(255) NOT NULL,
@@ -191,6 +216,20 @@ public final class DatabaseTestSuiteStabilityRunRepository
                             "Stability idempotency identity is retained after evidence expiry");
                 }
                 return TestSuiteStabilityLeaseClaim.completed(existing);
+            }
+
+            Optional<TestSuiteStabilityExecutionStop> stop = stopByClientRequestId(
+                    request.tenantId(), request.environmentId(), request.clientRequestId())
+                    .or(() -> stopByRunId(request.tenantId(), request.environmentId(),
+                            request.stabilityRunId()));
+            if (stop.isPresent()) {
+                TestSuiteStabilityExecutionStop existing = stop.get();
+                requireSameStopIntent(existing, request);
+                if (!existing.expiresAt().isAfter(observedAt)) {
+                    throw conflict(TestSuiteStabilityRunConflictException.Reason.IDEMPOTENCY_RETIRED,
+                            "Stopped stability identity is retained after stop expiry");
+                }
+                return TestSuiteStabilityLeaseClaim.stopped(existing);
             }
 
             TestSuiteStabilityExecutionProgress progress = progressByClientRequestId(
@@ -408,6 +447,102 @@ public final class DatabaseTestSuiteStabilityRunRepository
     }
 
     @Override
+    public TestSuiteStabilityExecutionStop stop(
+            TestSuiteStabilityExecutionStopRequest request) {
+        Objects.requireNonNull(request, "request");
+        TestSuiteStabilityExecutionStop result = mutations.execute(status -> {
+            lock(request.tenantId(), request.environmentId(), request.clientRequestId());
+            Instant observedAt = currentTime();
+            Optional<TestSuiteStabilityRunRecord> terminal = terminalByClientRequestId(
+                    request.tenantId(), request.environmentId(), request.clientRequestId())
+                    .or(() -> terminalByRunId(request.tenantId(), request.environmentId(),
+                            request.stabilityRunId()));
+            if (terminal.isPresent()) {
+                requireCompleteCoordinates(terminal.get().stabilityRunId(),
+                        terminal.get().requestFingerprint(), request.stabilityRunId(),
+                        request.requestFingerprint());
+                throw conflict(TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT,
+                        "Signed terminal stability evidence already exists");
+            }
+            Optional<TestSuiteStabilityExecutionStop> retained = stopByClientRequestId(
+                    request.tenantId(), request.environmentId(), request.clientRequestId())
+                    .or(() -> stopByRunId(request.tenantId(), request.environmentId(),
+                            request.stabilityRunId()));
+            if (retained.isPresent()) {
+                requireSameStopIntent(retained.get(), request);
+                return retained.get();
+            }
+            Optional<TestSuiteStabilityExecutionProgress> progress =
+                    progressByClientRequestId(request.tenantId(), request.environmentId(),
+                            request.clientRequestId());
+            progress.ifPresent(value -> {
+                requireCompleteCoordinates(value.stabilityRunId(),
+                        value.requestFingerprint(), request.stabilityRunId(),
+                        request.requestFingerprint());
+                if (!value.classification().equals(request.classification())) {
+                    throw conflict(
+                            TestSuiteStabilityRunConflictException.Reason.IDEMPOTENCY_CONFLICT,
+                            "Stop classification contradicts durable stability progress");
+                }
+            });
+            Optional<TestSuiteStabilityExecutionLease> lease =
+                    leaseByClientRequestId(request.tenantId(), request.environmentId(),
+                            request.clientRequestId());
+            lease.ifPresent(value -> requireCompleteCoordinates(
+                    value.stabilityRunId(), value.requestFingerprint(),
+                    request.stabilityRunId(), request.requestFingerprint()));
+            TestSuiteStabilityExecutionStop created = executionStop(request, observedAt);
+            try {
+                int inserted = jdbc.update("""
+                        INSERT INTO rg_test_suite_stability_execution_stops (
+                            stability_run_id, tenant_id, environment_id, client_request_id,
+                            request_fingerprint, reason, created_at, expires_at,
+                            record_fingerprint, stop_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, created.stabilityRunId(), created.tenantId(),
+                        created.environmentId(), created.clientRequestId(),
+                        created.requestFingerprint(), created.reason().name(),
+                        Timestamp.from(created.createdAt()), Timestamp.from(created.expiresAt()),
+                        created.recordFingerprint(), writeStop(created));
+                if (inserted != 1) {
+                    throw new IllegalStateException(
+                            "Stability execution stop was not inserted exactly once");
+                }
+            } catch (DuplicateKeyException collision) {
+                throw conflict(TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT,
+                        "Stability execution stop identity already belongs to another row");
+            }
+            int leasesDeleted = jdbc.update("""
+                    DELETE FROM rg_test_suite_stability_execution_leases
+                    WHERE stability_run_id = ? AND tenant_id = ? AND environment_id = ?
+                      AND client_request_id = ? AND request_fingerprint = ?
+                    """, request.stabilityRunId(), request.tenantId(),
+                    request.environmentId(), request.clientRequestId(),
+                    request.requestFingerprint());
+            if (leasesDeleted != (lease.isPresent() ? 1 : 0)) {
+                throw new IllegalStateException(
+                        "Stability stop did not consume the exact expected lease");
+            }
+            int progressDeleted = jdbc.update("""
+                    DELETE FROM rg_test_suite_stability_progress
+                    WHERE stability_run_id = ? AND tenant_id = ? AND environment_id = ?
+                      AND client_request_id = ? AND request_fingerprint = ?
+                    """, request.stabilityRunId(), request.tenantId(),
+                    request.environmentId(), request.clientRequestId(),
+                    request.requestFingerprint());
+            if (progressDeleted != (progress.isPresent() ? 1 : 0)) {
+                throw new IllegalStateException(
+                        "Stability stop did not consume the exact expected progress");
+            }
+            return created;
+        });
+        if (result == null) {
+            throw new IllegalStateException("Stability execution stop returned no record");
+        }
+        return result;
+    }
+
+    @Override
     public TestSuiteStabilityRunRecord complete(
             TestSuiteStabilityRunRecord record,
             TestSuiteStabilityExecutionLease lease) {
@@ -416,6 +551,11 @@ public final class DatabaseTestSuiteStabilityRunRepository
         TestSuiteStabilityRunRecord completed = mutations.execute(status -> {
             lock(lease.tenantId(), lease.environmentId(), lease.clientRequestId());
             Instant observedAt = currentTime();
+            if (stopByClientRequestId(lease.tenantId(), lease.environmentId(),
+                    lease.clientRequestId()).isPresent()) {
+                throw conflict(TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT,
+                        "Stopped suite-stability execution cannot publish terminal evidence");
+            }
             Optional<TestSuiteStabilityExecutionLease> stored = leaseByRunId(
                     lease.tenantId(), lease.environmentId(), lease.stabilityRunId());
             if (stored.isEmpty() || !sameFence(stored.get(), lease)
@@ -500,6 +640,36 @@ public final class DatabaseTestSuiteStabilityRunRepository
     }
 
     @Override
+    public int purgeExpiredStops(int limit) {
+        if (limit < 1 || limit > MAXIMUM_PURGE_BATCH) {
+            throw new IllegalArgumentException("Stability stop purge limit is outside bounds");
+        }
+        Integer deleted = mutations.execute(status -> {
+            Instant observedAt = currentTime();
+            List<TestSuiteStabilityExecutionStop> candidates = jdbc.query("""
+                    SELECT * FROM rg_test_suite_stability_execution_stops
+                    WHERE expires_at <= ?
+                    ORDER BY expires_at, stability_run_id
+                    FETCH FIRST ? ROWS ONLY
+                    """, this::storedStop,
+                    Timestamp.from(observedAt), limit);
+            candidates.stream().map(value -> lockKey(value.tenantId(),
+                            value.environmentId(), value.clientRequestId()))
+                    .distinct().sorted().forEach(this::lockKey);
+            int removed = 0;
+            for (TestSuiteStabilityExecutionStop candidate : candidates) {
+                removed += jdbc.update("""
+                        DELETE FROM rg_test_suite_stability_execution_stops
+                        WHERE stability_run_id = ? AND record_fingerprint = ? AND expires_at <= ?
+                        """, candidate.stabilityRunId(), candidate.recordFingerprint(),
+                        Timestamp.from(observedAt));
+            }
+            return removed;
+        });
+        return deleted == null ? 0 : deleted;
+    }
+
+    @Override
     public Optional<TestSuiteStabilityProgressSnapshot> findProgress(
             String tenantId,
             String environmentId,
@@ -519,6 +689,20 @@ public final class DatabaseTestSuiteStabilityRunRepository
                     progress.get(), liveOwner, observedAt));
         });
         return snapshot == null ? Optional.empty() : snapshot;
+    }
+
+    @Override
+    public Optional<TestSuiteStabilityExecutionStop> findStop(
+            String tenantId,
+            String environmentId,
+            String stabilityRunId) {
+        List<TestSuiteStabilityExecutionStop> rows = jdbc.query("""
+                SELECT * FROM rg_test_suite_stability_execution_stops
+                WHERE tenant_id = ? AND environment_id = ? AND stability_run_id = ?
+                  AND expires_at > CURRENT_TIMESTAMP
+                """, this::storedStop,
+                tenantId, environmentId, stabilityRunId);
+        return rows.stream().findFirst();
     }
 
     @Override
@@ -559,6 +743,54 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 SELECT record_json FROM rg_test_suite_stability_records
                 WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
                 """, tenantId, environmentId, clientRequestId);
+    }
+
+    private Optional<TestSuiteStabilityRunRecord> terminalByRunId(
+            String tenantId,
+            String environmentId,
+            String stabilityRunId) {
+        return query("""
+                SELECT record_json FROM rg_test_suite_stability_records
+                WHERE tenant_id = ? AND environment_id = ? AND stability_run_id = ?
+                """, tenantId, environmentId, stabilityRunId);
+    }
+
+    private Optional<TestSuiteStabilityExecutionStop> stopByClientRequestId(
+            String tenantId,
+            String environmentId,
+            String clientRequestId) {
+        List<TestSuiteStabilityExecutionStop> stops = jdbc.query("""
+                SELECT * FROM rg_test_suite_stability_execution_stops
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, this::storedStop,
+                tenantId, environmentId, clientRequestId);
+        return stops.stream().findFirst();
+    }
+
+    private Optional<TestSuiteStabilityExecutionStop> stopByRunId(
+            String tenantId,
+            String environmentId,
+            String stabilityRunId) {
+        List<TestSuiteStabilityExecutionStop> stops = jdbc.query("""
+                SELECT * FROM rg_test_suite_stability_execution_stops
+                WHERE tenant_id = ? AND environment_id = ? AND stability_run_id = ?
+                """, this::storedStop, tenantId, environmentId, stabilityRunId);
+        return stops.stream().findFirst();
+    }
+
+    private TestSuiteStabilityExecutionStop executionStop(
+            TestSuiteStabilityExecutionStopRequest request,
+            Instant createdAt) {
+        Instant expiresAt = createdAt.plus(request.retention());
+        String fingerprint = stopFingerprint(request.stabilityRunId(), request.tenantId(),
+                request.environmentId(), request.clientRequestId(), request.requestFingerprint(),
+                request.classification(), request.reason(), request.failureCode(),
+                request.actorId(), createdAt, expiresAt);
+        return new TestSuiteStabilityExecutionStop(
+                request.stabilityRunId(), request.tenantId(), request.environmentId(),
+                request.clientRequestId(), request.requestFingerprint(), request.classification(),
+                request.reason(), request.failureCode(), request.actorId(), createdAt, expiresAt,
+                fingerprint);
     }
 
     private TestSuiteStabilityExecutionProgress createProgress(
@@ -808,6 +1040,39 @@ public final class DatabaseTestSuiteStabilityRunRepository
         }
     }
 
+    private static void requireSameStopIntent(
+            TestSuiteStabilityExecutionStop stop,
+            TestSuiteStabilityLeaseRequest request) {
+        requireCompleteCoordinates(stop.stabilityRunId(), stop.requestFingerprint(),
+                request.stabilityRunId(), request.requestFingerprint());
+        if (!stop.tenantId().equals(request.tenantId())
+                || !stop.environmentId().equals(request.environmentId())
+                || !stop.clientRequestId().equals(request.clientRequestId())
+                || !stop.classification().equals(request.classification())) {
+            throw conflict(TestSuiteStabilityRunConflictException.Reason.IDEMPOTENCY_CONFLICT,
+                    "Stopped suite-stability identity has a different classification");
+        }
+    }
+
+    private static void requireSameStopIntent(
+            TestSuiteStabilityExecutionStop stop,
+            TestSuiteStabilityExecutionStopRequest request) {
+        requireCompleteCoordinates(stop.stabilityRunId(), stop.requestFingerprint(),
+                request.stabilityRunId(), request.requestFingerprint());
+        if (!stop.tenantId().equals(request.tenantId())
+                || !stop.environmentId().equals(request.environmentId())
+                || !stop.clientRequestId().equals(request.clientRequestId())
+                || !stop.classification().equals(request.classification())
+                || stop.reason() != request.reason()
+                || !stop.failureCode().equals(request.failureCode())
+                || !stop.actorId().equals(request.actorId())
+                || !Duration.between(stop.createdAt(), stop.expiresAt())
+                .equals(request.retention())) {
+            throw conflict(TestSuiteStabilityRunConflictException.Reason.IDEMPOTENCY_CONFLICT,
+                    "Suite-stability stop identity represents a different terminal intent");
+        }
+    }
+
     private static void requireCompleteCoordinates(
             String storedRunId,
             String storedFingerprint,
@@ -915,6 +1180,15 @@ public final class DatabaseTestSuiteStabilityRunRepository
         }
     }
 
+    private String writeStop(TestSuiteStabilityExecutionStop stop) {
+        try {
+            return objectMapper.writeValueAsString(stop);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot serialize suite-stability execution stop", failure);
+        }
+    }
+
     private String writeAttempts(
             List<TestSuiteStabilityExecutionProgress.AttemptReference> attempts) {
         try {
@@ -942,6 +1216,61 @@ public final class DatabaseTestSuiteStabilityRunRepository
         }
     }
 
+    private TestSuiteStabilityExecutionStop readStop(String value) {
+        try {
+            TestSuiteStabilityExecutionStop stop = objectMapper.readValue(
+                    value, TestSuiteStabilityExecutionStop.class);
+            String expected = stopFingerprint(stop.stabilityRunId(), stop.tenantId(),
+                    stop.environmentId(), stop.clientRequestId(), stop.requestFingerprint(),
+                    stop.classification(), stop.reason(), stop.failureCode(), stop.actorId(),
+                    stop.createdAt(), stop.expiresAt());
+            if (!expected.equals(stop.recordFingerprint())) {
+                throw new IllegalStateException(
+                        "Stored suite-stability execution stop fingerprint is invalid");
+            }
+            return stop;
+        } catch (JsonProcessingException | IllegalArgumentException failure) {
+            throw new IllegalStateException(
+                    "Stored suite-stability execution stop is corrupt", failure);
+        }
+    }
+
+    private TestSuiteStabilityExecutionStop storedStop(ResultSet result, int row)
+            throws SQLException {
+        TestSuiteStabilityExecutionStop stop = readStop(result.getString("stop_json"));
+        if (!stop.stabilityRunId().equals(result.getString("stability_run_id"))
+                || !stop.tenantId().equals(result.getString("tenant_id"))
+                || !stop.environmentId().equals(result.getString("environment_id"))
+                || !stop.clientRequestId().equals(result.getString("client_request_id"))
+                || !stop.requestFingerprint().equals(result.getString("request_fingerprint"))
+                || !stop.reason().name().equals(result.getString("reason"))
+                || !stop.createdAt().equals(result.getTimestamp("created_at").toInstant())
+                || !stop.expiresAt().equals(result.getTimestamp("expires_at").toInstant())
+                || !stop.recordFingerprint().equals(result.getString("record_fingerprint"))) {
+            throw new IllegalStateException(
+                    "Stored suite-stability execution stop columns contradict its record");
+        }
+        return stop;
+    }
+
+    private String stopFingerprint(
+            String stabilityRunId,
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String classification,
+            TestSuiteStabilityExecutionStop.Reason reason,
+            String failureCode,
+            String actorId,
+            Instant createdAt,
+            Instant expiresAt) {
+        return ProtocolFingerprint.of(objectMapper, new ExecutionStopFingerprintMaterial(
+                "bloge.testSuiteStabilityExecutionStop.v1", stabilityRunId, tenantId,
+                environmentId, clientRequestId, requestFingerprint, classification, reason,
+                failureCode, actorId, createdAt, expiresAt));
+    }
+
     private static PlatformTransactionManager localTransactionManager(JdbcTemplate jdbc) {
         Objects.requireNonNull(jdbc, "jdbc");
         if (jdbc.getDataSource() == null) {
@@ -955,5 +1284,20 @@ public final class DatabaseTestSuiteStabilityRunRepository
             String tenantId,
             String environmentId,
             String clientRequestId) {
+    }
+
+    private record ExecutionStopFingerprintMaterial(
+            String schemaVersion,
+            String stabilityRunId,
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            String requestFingerprint,
+            String classification,
+            TestSuiteStabilityExecutionStop.Reason reason,
+            String failureCode,
+            String actorId,
+            Instant createdAt,
+            Instant expiresAt) {
     }
 }

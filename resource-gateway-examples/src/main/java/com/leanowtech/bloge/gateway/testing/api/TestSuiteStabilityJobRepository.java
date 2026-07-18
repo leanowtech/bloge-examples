@@ -49,6 +49,20 @@ public interface TestSuiteStabilityJobRepository {
             TestSuiteStabilityQueuePolicy policy);
 
     /**
+     * Linearizes the final cancellation/deadline check before signed parent publication.
+     *
+     * <p>After this transition a cancellation is explicitly too late. An expired committing lease
+     * is recoverable and may replay an already-published idempotent parent result.</p>
+     *
+     * @param lease latest exact worker fence
+     * @param policy active cross-replica queue policy
+     * @return renewed lease in {@code COMMITTING}
+     */
+    TestSuiteStabilityJobLease prepareCompletion(
+            TestSuiteStabilityJobLease lease,
+            TestSuiteStabilityQueuePolicy policy);
+
+    /**
      * Returns an exact owned job to the queue with bounded deterministic backoff.
      *
      * @param lease latest exact worker fence
@@ -57,6 +71,19 @@ public interface TestSuiteStabilityJobRepository {
      * @return queued successor or terminal failed job after retry exhaustion
      */
     TestSuiteStabilityJobRecord retry(
+            TestSuiteStabilityJobLease lease,
+            String failureCode,
+            TestSuiteStabilityQueuePolicy policy);
+
+    /**
+     * Fails one exact owned job without another retry.
+     *
+     * @param lease latest exact worker fence
+     * @param failureCode bounded deterministic diagnostic
+     * @param policy active cross-replica queue policy
+     * @return terminal failed job
+     */
+    TestSuiteStabilityJobRecord fail(
             TestSuiteStabilityJobLease lease,
             String failureCode,
             TestSuiteStabilityQueuePolicy policy);

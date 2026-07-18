@@ -17,9 +17,10 @@ The new core owns:
 5. immutable priority plus bounded wait-time aging inside the selected tenant;
 6. exact worker owner/epoch/expiry fencing;
 7. cooperative cancellation and deadline transitions;
-8. deterministic bounded retry backoff and retry exhaustion;
+8. deterministic bounded retry backoff, retry exhaustion, and irrevocable publication recovery;
 9. payload-free closed-status queue observations;
-10. whole-row integrity verification and bounded terminal retention deletion.
+10. whole-row integrity verification and bounded terminal retention deletion;
+11. payload-free parent stop tombstones that atomically consume resumable progress and leases.
 
 ## 2. Root-cause decision
 
@@ -47,23 +48,44 @@ priority.
 | `QUEUED` | cancellation | `CANCELLED` | exact cancellation command retained |
 | `RUNNING` | cancellation | `CANCEL_REQUESTED` | worker must stop at the next control checkpoint |
 | `CANCEL_REQUESTED` | heartbeat, retry, or stale-owner recovery | `CANCELLED` | no retry path can resurrect the job |
-| active | database deadline reached | `EXPIRED` | cleared lease and stable deadline code |
-| `RUNNING` | signed parent publication | `SUCCEEDED` | terminal run and evidence fingerprints retained |
+| `QUEUED/RUNNING` | database deadline reached | `EXPIRED` | cleared lease and stable deadline code |
+| `RUNNING` | final cancel/deadline check | `COMMITTING` | publication intent is irrevocably linearized |
+| `COMMITTING` | cancellation or later deadline | `COMMITTING` | command is explicitly too late |
+| `COMMITTING` | worker retry or lease expiry | `COMMITTING` | owner changes without reopening cancellation |
+| `COMMITTING` | signed parent publication | `SUCCEEDED` | terminal run and evidence fingerprints retained |
 | malformed retained row | integrity verification | fail closed | no claim or projection is returned |
 
-Terminal states are `SUCCEEDED`, `FAILED`, `CANCELLED`, `EXPIRED`, and `QUARANTINED`. The last state
-is reserved in the closed vocabulary; automatic poison-row quarantine is not implemented by this
-atomic step and therefore is not claimed.
+`COMMITTING` is deliberately non-terminal but irrevocable. A crashed owner never demotes it to
+ordinary `QUEUED`: an eligible successor claims the same state under a higher epoch and replays
+the idempotent parent publication. Retry exhaustion cannot turn it into `FAILED`, because the
+signed parent may already exist. Terminal states are `SUCCEEDED`, `FAILED`, `CANCELLED`,
+`EXPIRED`, and `QUARANTINED`. The last state is reserved in the closed vocabulary; automatic
+poison-row quarantine is not implemented by this atomic step and therefore is not claimed.
+
+The queue state alone cannot prevent an older synchronous entry point from reclaiming durable
+parent progress. The parent repository therefore has a second terminal authority:
+`TestSuiteStabilityExecutionStop`. In the same scoped transaction, a cancellation, deadline, or
+worker failure writes an integrity-fingerprinted, payload-free tombstone and consumes the exact
+parent progress plus lease. Future claims return `STOPPED`; stale owners cannot checkpoint or
+publish. Conversely, once signed terminal evidence exists, a late stop is rejected. A stop and
+signed evidence therefore have one serialized winner.
 
 ## 4. Cross-replica invariants
 
 - An environment lock serializes policy, admission, reconciliation, cursor, and claim mutations.
 - A changed policy can replace the active generation only after no non-terminal job remains.
-- Live global and tenant counts use database time and exclude expired ownership.
+- Running concurrency uses database time and live ownership; admission additionally counts every
+  irrevocable `COMMITTING` job, including an unowned recovery candidate.
 - A claim advances the fairness cursor and exact job lease in one local transaction.
 - Heartbeat, retry, complete, and cancellation update the whole-row fingerprint by exact predecessor
   compare-and-set.
 - A stale owner cannot renew, retry, complete, or undo a committed cancellation.
+- `COMMITTING` recovery preserves its state across explicit retry and expired-owner takeover; it
+  remains capacity-accounted and cannot be failed or cancelled.
+- Parent stop and signed terminal publication share the same scoped lock; stop creation, progress
+  deletion, and lease deletion are one transaction.
+- Stop replay must match run id, request fingerprint, classification, reason, failure code, actor,
+  and retention. Its canonical fingerprint is recomputed on every read.
 - Stored request and principal JSON are decoded only after scope lookup and are re-fingerprinted on
   every read.
 - The principal snapshot contains no bearer token or transport header. It is not yet a replacement
@@ -75,14 +97,18 @@ Focused command:
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=DatabaseTestSuiteStabilityJobRepositoryTest test
+  -Dtest=DatabaseTestSuiteStabilityJobRepositoryTest,DatabaseTestSuiteStabilityRunRepositoryTest test
 ```
 
-The focused suite covers scoped submission replay, priority/deadline/principal idempotency conflict,
+The 28 focused tests cover scoped submission replay, priority/deadline/principal idempotency conflict,
 tenant/global capacity, tenant rotation, tenant-local priority, cross-replica running limits,
 queued and running cancellation, cancellation-versus-retry ordering, retry exhaustion, policy
 drift and drain-time advancement, fixed-cardinality observation, retained-row integrity failure,
-and non-premature retention deletion.
+non-premature retention deletion, the `COMMITTING` cancellation linearization point and recovery
+lane, stop-before-claim, stop-after-checkpoint, stale-owner fencing, strict stop replay, late-stop
+rejection after signed evidence, and corrupted-stop fail-closed behavior.
+The 13 affected service tests additionally prove that a retained stop maps to a stable payload-free
+conflict and cannot be bypassed through the synchronous execution entry point.
 
 ## 6. Required next step
 
@@ -91,7 +117,8 @@ This core must not be advertised as a usable asynchronous runtime until the next
 1. authenticated submit/query/cancel protocol and strict JSON Schema;
 2. a worker that claims only when it owns a local execution slot and heartbeats while running;
 3. a control checkpoint in the parent runner before each attempt and before terminal publication;
-4. atomic or fenced convergence between queue terminal state and parent progress/evidence state;
+4. a worker guard that invokes parent stop while its parent lease is live and enters
+   `COMMITTING` before signed terminal publication;
 5. current authorization revalidation for delegated principals;
 6. bounded-cardinality Micrometer projection and SLO/readiness thresholds;
 7. retention scheduler, test-kit typed client, capability truth, and full build evidence;

@@ -57,6 +57,14 @@ public interface TestSuiteStabilityRunRepository {
     boolean release(TestSuiteStabilityExecutionLease lease);
 
     /**
+     * Atomically terminalizes a parent execution and consumes any progress and live lease.
+     *
+     * @param request exact cancellation, deadline, or worker-failure stop intent
+     * @return original immutable stop tombstone
+     */
+    TestSuiteStabilityExecutionStop stop(TestSuiteStabilityExecutionStopRequest request);
+
+    /**
      * Atomically verifies a full journal/live fence, inserts terminal evidence, and consumes both.
      *
      * @param record complete signed terminal analysis
@@ -75,6 +83,14 @@ public interface TestSuiteStabilityRunRepository {
     int purgeExpiredLeases(int limit);
 
     /**
+     * Deletes a bounded oldest-first page of expired terminal stop tombstones.
+     *
+     * @param limit positive bounded page size
+     * @return number of tombstones deleted
+     */
+    int purgeExpiredStops(int limit);
+
+    /**
      * Resolves one retained progress journal and owner liveness at database time.
      *
      * @param tenantId verified tenant scope
@@ -83,6 +99,17 @@ public interface TestSuiteStabilityRunRepository {
      * @return active or takeover-ready progress snapshot
      */
     Optional<TestSuiteStabilityProgressSnapshot> findProgress(
+            String tenantId, String environmentId, String stabilityRunId);
+
+    /**
+     * Resolves a retained stop tombstone in the verified scope.
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param stabilityRunId deterministic parent identity
+     * @return live retained stop, if present
+     */
+    Optional<TestSuiteStabilityExecutionStop> findStop(
             String tenantId, String environmentId, String stabilityRunId);
 
     /**

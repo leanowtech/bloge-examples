@@ -171,9 +171,11 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 requireSameSubmission(existing.get(), submission, submissionFingerprint);
                 return existing.get().record();
             }
-            if (!submission.deadlineAt().isAfter(observedAt)) {
+            if (!submission.deadlineAt().isAfter(observedAt)
+                    || submission.deadlineAt().isAfter(
+                    observedAt.plus(policy.maximumDeadlineHorizon()))) {
                 throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
-                        "Suite-stability job deadline has already elapsed");
+                        "Suite-stability job deadline is outside the accepted horizon");
             }
             long global = activeCount(environment, null, observedAt);
             if (global >= policy.maximumQueued()) {
@@ -242,8 +244,13 @@ public final class DatabaseTestSuiteStabilityJobRepository
                             "Eligible tenant had no integrity-verified queued job"));
             long epoch = Math.addExact(selected.leaseEpoch(), 1);
             Instant leaseExpiresAt = observedAt.plus(policy.leaseDuration());
+            TestSuiteStabilityJobRecord.Status claimedStatus =
+                    selected.record().status()
+                            == TestSuiteStabilityJobRecord.Status.COMMITTING
+                            ? TestSuiteStabilityJobRecord.Status.COMMITTING
+                            : TestSuiteStabilityJobRecord.Status.RUNNING;
             StoredJob claimed = transition(selected,
-                    TestSuiteStabilityJobRecord.Status.RUNNING,
+                    claimedStatus,
                     selected.record().retryCount(), selected.record().nextEligibleAt(),
                     observedAt, selected.record().expiresAt(), owner, epoch, leaseExpiresAt,
                     "", "", selected.record().failureCode(),
@@ -287,6 +294,16 @@ public final class DatabaseTestSuiteStabilityJobRepository
                         "RG.TEST.STABILITY_JOB_CANCELLED");
             }
             if (stored.record().status() != TestSuiteStabilityJobRecord.Status.RUNNING) {
+                if (stored.record().status()
+                        == TestSuiteStabilityJobRecord.Status.COMMITTING) {
+                    StoredJob renewed = transition(stored, stored.record().status(),
+                            stored.record().retryCount(), stored.record().nextEligibleAt(),
+                            observedAt, stored.record().expiresAt(), stored.ownerId(),
+                            stored.leaseEpoch(), observedAt.plus(policy.leaseDuration()),
+                            "", "", stored.record().failureCode(), "", "");
+                    updateExact(stored, renewed);
+                    return TestSuiteStabilityJobLeaseCheck.continuing(lease(renewed));
+                }
                 return TestSuiteStabilityJobLeaseCheck.stopped(
                         TestSuiteStabilityJobLeaseCheck.Decision.LEASE_LOST,
                         "RG.TEST.STABILITY_JOB_LEASE_LOST");
@@ -313,6 +330,57 @@ public final class DatabaseTestSuiteStabilityJobRepository
     }
 
     @Override
+    public TestSuiteStabilityJobLease prepareCompletion(
+            TestSuiteStabilityJobLease lease,
+            TestSuiteStabilityQueuePolicy policy) {
+        Objects.requireNonNull(lease, "lease");
+        Objects.requireNonNull(policy, "policy");
+        CompletionPreparation result = mutations.execute(status -> {
+            lockEnvironment(lease.environmentId());
+            Instant observedAt = currentTime();
+            ensurePolicy(lease.environmentId(), policy, observedAt);
+            StoredJob stored = requireLive(lease, observedAt);
+            if (stored.record().status()
+                    == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
+                StoredJob cancelled = terminal(stored,
+                        TestSuiteStabilityJobRecord.Status.CANCELLED, observedAt,
+                        "RG.TEST.STABILITY_JOB_CANCELLED", policy);
+                updateExact(stored, cancelled);
+                return CompletionPreparation.rejected(
+                        "Cancellation won before suite-stability terminal publication");
+            }
+            if (!stored.record().deadlineAt().isAfter(observedAt)) {
+                StoredJob expired = terminal(stored,
+                        TestSuiteStabilityJobRecord.Status.EXPIRED, observedAt,
+                        "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy);
+                updateExact(stored, expired);
+                return CompletionPreparation.rejected(
+                        "Deadline won before suite-stability terminal publication");
+            }
+            if (!Set.of(TestSuiteStabilityJobRecord.Status.RUNNING,
+                    TestSuiteStabilityJobRecord.Status.COMMITTING)
+                    .contains(stored.record().status())) {
+                throw conflict(TestSuiteStabilityJobConflictException.Reason.LEASE_LOST,
+                        "Suite-stability job cannot enter terminal publication");
+            }
+            StoredJob committing = transition(stored,
+                    TestSuiteStabilityJobRecord.Status.COMMITTING,
+                    stored.record().retryCount(), stored.record().nextEligibleAt(), observedAt,
+                    stored.record().expiresAt(), stored.ownerId(), stored.leaseEpoch(),
+                    observedAt.plus(policy.leaseDuration()), "", "", "", "", "");
+            updateExact(stored, committing);
+            return CompletionPreparation.prepared(lease(committing));
+        });
+        CompletionPreparation prepared = required(
+                result, "Suite-stability completion preparation returned no result");
+        if (prepared.lease() == null) {
+            throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
+                    prepared.failure());
+        }
+        return prepared.lease();
+    }
+
+    @Override
     public TestSuiteStabilityJobRecord retry(
             TestSuiteStabilityJobLease lease,
             String failureCode,
@@ -332,6 +400,17 @@ public final class DatabaseTestSuiteStabilityJobRepository
                         "RG.TEST.STABILITY_JOB_CANCELLED", policy);
                 updateExact(stored, cancelled);
                 return cancelled.record();
+            }
+            if (stored.record().status()
+                    == TestSuiteStabilityJobRecord.Status.COMMITTING) {
+                int retryCount = Math.addExact(stored.record().retryCount(), 1);
+                StoredJob recoverable = transition(stored,
+                        TestSuiteStabilityJobRecord.Status.COMMITTING, retryCount,
+                        observedAt.plus(policy.retryDelay(retryCount)), observedAt,
+                        stored.record().expiresAt(), "", stored.leaseEpoch(), null,
+                        "", "", code, "", "");
+                updateExact(stored, recoverable);
+                return recoverable.record();
             }
             if (!stored.record().deadlineAt().isAfter(observedAt)) {
                 StoredJob expired = terminal(stored,
@@ -358,6 +437,40 @@ public final class DatabaseTestSuiteStabilityJobRepository
     }
 
     @Override
+    public TestSuiteStabilityJobRecord fail(
+            TestSuiteStabilityJobLease lease,
+            String failureCode,
+            TestSuiteStabilityQueuePolicy policy) {
+        Objects.requireNonNull(lease, "lease");
+        String code = failureCode(failureCode);
+        Objects.requireNonNull(policy, "policy");
+        TestSuiteStabilityJobRecord result = mutations.execute(status -> {
+            lockEnvironment(lease.environmentId());
+            Instant observedAt = currentTime();
+            ensurePolicy(lease.environmentId(), policy, observedAt);
+            StoredJob stored = requireLive(lease, observedAt);
+            if (stored.record().status()
+                    == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
+                StoredJob cancelled = terminal(stored,
+                        TestSuiteStabilityJobRecord.Status.CANCELLED, observedAt,
+                        "RG.TEST.STABILITY_JOB_CANCELLED", policy);
+                updateExact(stored, cancelled);
+                return cancelled.record();
+            }
+            if (stored.record().status()
+                    == TestSuiteStabilityJobRecord.Status.COMMITTING) {
+                throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
+                        "Linearized suite-stability publication cannot be failed");
+            }
+            StoredJob failed = terminal(stored, TestSuiteStabilityJobRecord.Status.FAILED,
+                    observedAt, code, policy);
+            updateExact(stored, failed);
+            return failed.record();
+        });
+        return required(result, "Suite-stability queue failure returned no result");
+    }
+
+    @Override
     public TestSuiteStabilityJobRecord complete(
             TestSuiteStabilityJobLease lease,
             String stabilityRunId,
@@ -376,10 +489,10 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
                         "Cancelled suite-stability job cannot publish a terminal result");
             }
-            if (stored.record().status() != TestSuiteStabilityJobRecord.Status.RUNNING
-                    || !stored.record().deadlineAt().isAfter(observedAt)) {
+            if (stored.record().status()
+                    != TestSuiteStabilityJobRecord.Status.COMMITTING) {
                 throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
-                        "Suite-stability job is no longer eligible for terminal publication");
+                        "Suite-stability job did not linearize terminal publication");
             }
             StoredJob completed = transition(stored,
                     TestSuiteStabilityJobRecord.Status.SUCCEEDED,
@@ -425,6 +538,10 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 return stored.record();
             }
             if (stored.record().status().terminal()) {
+                return stored.record();
+            }
+            if (stored.record().status()
+                    == TestSuiteStabilityJobRecord.Status.COMMITTING) {
                 return stored.record();
             }
             TestSuiteStabilityJobRecord.Status next = stored.record().status()
@@ -473,7 +590,8 @@ public final class DatabaseTestSuiteStabilityJobRepository
         Long expiredLeases = jdbc.queryForObject("""
                 SELECT COUNT(*)
                 FROM rg_test_suite_stability_jobs
-                WHERE environment_id = ? AND status IN ('RUNNING', 'CANCEL_REQUESTED')
+                WHERE environment_id = ?
+                  AND status IN ('RUNNING', 'CANCEL_REQUESTED', 'COMMITTING')
                   AND lease_expires_at <= ?
                 """, Long.class, environment, Timestamp.from(observedAt));
         Long tenants = jdbc.queryForObject("""
@@ -520,7 +638,8 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 SELECT * FROM rg_test_suite_stability_jobs
                 WHERE environment_id = ? AND (
                     (status = 'QUEUED' AND deadline_at <= ?)
-                    OR (status IN ('RUNNING', 'CANCEL_REQUESTED') AND lease_expires_at <= ?)
+                    OR (status IN ('RUNNING', 'CANCEL_REQUESTED')
+                        AND lease_expires_at <= ?)
                 )
                 ORDER BY updated_at, job_id
                 FETCH FIRST ? ROWS ONLY
@@ -576,7 +695,7 @@ public final class DatabaseTestSuiteStabilityJobRepository
         Long active = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM rg_test_suite_stability_jobs
                 WHERE environment_id = ?
-                  AND status IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED')
+                  AND status IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED', 'COMMITTING')
                 """, Long.class, environment);
         if (active == null || active > 0 || policy.generation() <= current.generation()) {
             throw conflict(TestSuiteStabilityJobConflictException.Reason.POLICY_DRIFT,
@@ -642,10 +761,14 @@ public final class DatabaseTestSuiteStabilityJobRepository
         return jdbc.query("""
                 SELECT DISTINCT tenant_id
                 FROM rg_test_suite_stability_jobs
-                WHERE environment_id = ? AND status = 'QUEUED'
-                  AND next_eligible_at <= ? AND deadline_at > ?
+                WHERE environment_id = ? AND (
+                    (status = 'QUEUED' AND next_eligible_at <= ? AND deadline_at > ?)
+                    OR (status = 'COMMITTING' AND next_eligible_at <= ?
+                        AND (lease_expires_at IS NULL OR lease_expires_at <= ?))
+                )
                 ORDER BY tenant_id
                 """, (rs, rowNum) -> rs.getString("tenant_id"), environment,
+                Timestamp.from(observedAt), Timestamp.from(observedAt),
                 Timestamp.from(observedAt), Timestamp.from(observedAt));
     }
 
@@ -653,10 +776,14 @@ public final class DatabaseTestSuiteStabilityJobRepository
             String environment, String tenant, Instant observedAt) {
         return jdbc.query("""
                 SELECT * FROM rg_test_suite_stability_jobs
-                WHERE environment_id = ? AND tenant_id = ? AND status = 'QUEUED'
-                  AND next_eligible_at <= ? AND deadline_at > ?
+                WHERE environment_id = ? AND tenant_id = ? AND (
+                    (status = 'QUEUED' AND next_eligible_at <= ? AND deadline_at > ?)
+                    OR (status = 'COMMITTING' AND next_eligible_at <= ?
+                        AND (lease_expires_at IS NULL OR lease_expires_at <= ?))
+                )
                 ORDER BY created_at, job_id
                 """, this::storedJob, environment, tenant, Timestamp.from(observedAt),
+                Timestamp.from(observedAt), Timestamp.from(observedAt),
                 Timestamp.from(observedAt));
     }
 
@@ -666,7 +793,9 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 SELECT COUNT(*) FROM rg_test_suite_stability_jobs
                 WHERE environment_id = ? AND (
                     (status = 'QUEUED' AND deadline_at > ?)
-                    OR (status IN ('RUNNING', 'CANCEL_REQUESTED') AND lease_expires_at > ?)
+                    OR status = 'COMMITTING'
+                    OR (status IN ('RUNNING', 'CANCEL_REQUESTED')
+                        AND lease_expires_at > ?)
                 )
                 """ + tenantClause;
         Long count = tenant == null
@@ -681,7 +810,8 @@ public final class DatabaseTestSuiteStabilityJobRepository
         String tenantClause = tenant == null ? "" : " AND tenant_id = ?";
         String sql = """
                 SELECT COUNT(*) FROM rg_test_suite_stability_jobs
-                WHERE environment_id = ? AND status IN ('RUNNING', 'CANCEL_REQUESTED')
+                WHERE environment_id = ?
+                  AND status IN ('RUNNING', 'CANCEL_REQUESTED', 'COMMITTING')
                   AND lease_expires_at > ?
                 """ + tenantClause;
         Long count = tenant == null
@@ -698,7 +828,8 @@ public final class DatabaseTestSuiteStabilityJobRepository
                         "Suite-stability job lease no longer exists"));
         if (!sameFence(stored, lease) || !stored.leaseExpiresAt().isAfter(observedAt)
                 || !Set.of(TestSuiteStabilityJobRecord.Status.RUNNING,
-                TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED)
+                TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED,
+                TestSuiteStabilityJobRecord.Status.COMMITTING)
                 .contains(stored.record().status())) {
             throw conflict(TestSuiteStabilityJobConflictException.Reason.LEASE_LOST,
                     "Suite-stability job lease was lost");
@@ -1117,5 +1248,18 @@ public final class DatabaseTestSuiteStabilityJobRepository
             long leaseEpoch,
             Instant leaseExpiresAt,
             long policyGeneration) {
+    }
+
+    private record CompletionPreparation(
+            TestSuiteStabilityJobLease lease,
+            String failure) {
+
+        private static CompletionPreparation prepared(TestSuiteStabilityJobLease lease) {
+            return new CompletionPreparation(Objects.requireNonNull(lease, "lease"), "");
+        }
+
+        private static CompletionPreparation rejected(String failure) {
+            return new CompletionPreparation(null, normalized(failure));
+        }
     }
 }

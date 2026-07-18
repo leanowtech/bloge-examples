@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionProgress;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStopRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
@@ -285,6 +287,109 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     }
 
     @Test
+    void stopAtomicallyConsumesResumableStateAndPermanentlyFencesTheOldOwner() {
+        TestSuiteStabilityRunRecord record = record("tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+        TestSuiteStabilityExecutionLease owner = acquired(record, "owner-a");
+        owner = repository.checkpoint(owner, reference(record, 0),
+                Duration.ofSeconds(30), Duration.ofDays(30)).lease();
+        TestSuiteStabilityExecutionLease stoppedOwner = owner;
+
+        TestSuiteStabilityExecutionStop stop = repository.stop(stopRequest(
+                record, TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                "RG.TEST.STABILITY_CANCELLED"));
+
+        assertThat(repository.findStop("tenant-a", "test", record.stabilityRunId()))
+                .contains(stop);
+        assertThat(repository.findProgress("tenant-a", "test", record.stabilityRunId()))
+                .isEmpty();
+        assertThat(repository.renew(stoppedOwner, Duration.ofSeconds(30))).isEmpty();
+        assertThat(repository.claim(leaseRequest(record, "owner-b")))
+                .satisfies(claim -> {
+                    assertThat(claim.state())
+                            .isEqualTo(TestSuiteStabilityLeaseClaim.State.STOPPED);
+                    assertThat(claim.stop()).isEqualTo(stop);
+                });
+        assertThatThrownBy(() -> repository.checkpoint(stoppedOwner, reference(record, 1),
+                Duration.ofSeconds(30), Duration.ofDays(30)))
+                .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityRunConflictException.Reason.LEASE_LOST));
+        assertThatThrownBy(() -> repository.complete(record, stoppedOwner))
+                .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT));
+    }
+
+    @Test
+    void stopBeforeClaimIsStrictlyIdempotentAndCannotBeRebound() {
+        TestSuiteStabilityRunRecord record = record("tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+        TestSuiteStabilityExecutionStopRequest request = stopRequest(
+                record, TestSuiteStabilityExecutionStop.Reason.DEADLINE_EXCEEDED,
+                "RG.TEST.STABILITY_DEADLINE_EXCEEDED");
+
+        TestSuiteStabilityExecutionStop first = repository.stop(request);
+
+        assertThat(repository.stop(request)).isEqualTo(first);
+        assertThat(repository.claim(leaseRequest(record, "owner-a")).stop())
+                .isEqualTo(first);
+        TestSuiteStabilityExecutionStopRequest changed =
+                stopRequest(record, TestSuiteStabilityExecutionStop.Reason.WORKER_FAILED,
+                        "RG.TEST.STABILITY_WORKER_FAILED");
+        assertThatThrownBy(() -> repository.stop(changed))
+                .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityRunConflictException.Reason.IDEMPOTENCY_CONFLICT));
+    }
+
+    @Test
+    void signedTerminalEvidenceCannotBeReplacedByALateStop() {
+        TestSuiteStabilityRunRecord record = record("tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+        repository.complete(record, checkpointed(record, acquired(record, "owner-a")));
+
+        assertThatThrownBy(() -> repository.stop(stopRequest(
+                record, TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                "RG.TEST.STABILITY_CANCELLED")))
+                .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT));
+        assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
+                .contains(record);
+        assertThat(repository.findStop("tenant-a", "test", record.stabilityRunId()))
+                .isEmpty();
+    }
+
+    @Test
+    void corruptedStopMaterialFailsClosedBeforeItCanFenceAClaim() throws Exception {
+        TestSuiteStabilityRunRecord record = record("tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+        repository.stop(stopRequest(record,
+                TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                "RG.TEST.STABILITY_CANCELLED"));
+        String stored = jdbc.queryForObject("""
+                SELECT stop_json FROM rg_test_suite_stability_execution_stops
+                WHERE stability_run_id = ?
+                """, String.class, record.stabilityRunId());
+        var tampered = mapper.readTree(stored);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) tampered)
+                .put("failureCode", "RG.TEST.STABILITY_WORKER_FAILED");
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_execution_stops SET stop_json = ?
+                WHERE stability_run_id = ?
+                """, mapper.writeValueAsString(tampered), record.stabilityRunId());
+
+        assertThatThrownBy(() -> repository.findStop(
+                "tenant-a", "test", record.stabilityRunId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("fingerprint is invalid");
+        assertThatThrownBy(() -> repository.claim(leaseRequest(record, "owner-a")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("fingerprint is invalid");
+    }
+
+    @Test
     void twoRepositoryInstancesProduceOneCrossReplicaOwner() throws Exception {
         DatabaseTestSuiteStabilityRunRepository replica =
                 new DatabaseTestSuiteStabilityRunRepository(new JdbcTemplate(dataSource), mapper);
@@ -328,6 +433,16 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 record.evidence().suiteRef(), record.classification(),
                 record.evidence().requestedAttempts(), owner, Duration.ofSeconds(30),
                 Duration.ofDays(30));
+    }
+
+    private static TestSuiteStabilityExecutionStopRequest stopRequest(
+            TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityExecutionStop.Reason reason,
+            String failureCode) {
+        return new TestSuiteStabilityExecutionStopRequest(
+                record.stabilityRunId(), record.tenantId(), record.environmentId(),
+                record.clientRequestId(), record.requestFingerprint(), record.classification(),
+                reason, failureCode, "test-worker", Duration.ofDays(30));
     }
 
     private TestSuiteStabilityExecutionLease checkpointed(

@@ -108,12 +108,14 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
 
         TestSuiteStabilityJobClaim first = repository.claimNext("test", "worker-a", policy);
         assertThat(first.job().jobId()).isEqualTo(aHigh.jobId());
-        repository.complete(first.lease(), "stability-result-a",
+        var firstTerminalLease = repository.prepareCompletion(first.lease(), policy);
+        repository.complete(firstTerminalLease, "stability-result-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('6'), policy);
 
         TestSuiteStabilityJobClaim second = repository.claimNext("test", "worker-a", policy);
         assertThat(second.job().jobId()).isEqualTo(bLow.jobId());
-        repository.complete(second.lease(), "stability-result-b",
+        var secondTerminalLease = repository.prepareCompletion(second.lease(), policy);
+        repository.complete(secondTerminalLease, "stability-result-b",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
 
         assertThat(repository.claimNext("test", "worker-a", policy).job().jobId())
@@ -239,11 +241,51 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
     }
 
     @Test
+    void committingIsTheCancellationLinearizationPointAndCanBeRetriedAfterCrash()
+            throws InterruptedException {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
+
+        var committingLease = repository.prepareCompletion(claim.lease(), policy);
+
+        assertThat(repository.find("tenant-a", "test", submission.jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+        assertThat(repository.cancel("tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy).status())
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+        assertThat(repository.retry(committingLease,
+                "RG.TEST.STABILITY_JOB_PUBLICATION_UNAVAILABLE", policy).status())
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+        Thread.sleep(1_100);
+
+        TestSuiteStabilityJobClaim recovery =
+                repository.claimNext("test", "worker-b", policy);
+
+        assertThat(recovery.outcome()).isEqualTo(TestSuiteStabilityJobClaim.Outcome.ACQUIRED);
+        assertThat(recovery.job().status())
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+        assertThat(recovery.lease().epoch()).isEqualTo(committingLease.epoch() + 1);
+        assertThat(repository.cancel("tenant-a", "test", submission.jobId(), "cancel-b",
+                TestSuiteStabilityProtocolFixtures.fingerprint('8'), policy).status())
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+        assertThatThrownBy(() -> repository.fail(recovery.lease(),
+                "RG.TEST.STABILITY_JOB_PUBLICATION_FAILED", policy))
+                .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT));
+    }
+
+    @Test
     void policyCannotDriftWhileWorkIsRetainedButMayAdvanceAfterTheQueueDrains() {
         TestSuiteStabilityQueuePolicy firstPolicy = policy(10, 10, 2, 1, 3);
         TestSuiteStabilityQueuePolicy changed = new TestSuiteStabilityQueuePolicy(
                 2, 20, 10, 4, 2, Duration.ofSeconds(30), Duration.ofMinutes(5),
-                Duration.ofSeconds(1), Duration.ofMinutes(1), 3, Duration.ofDays(30));
+                Duration.ofSeconds(1), Duration.ofMinutes(1), 3, Duration.ofDays(7),
+                Duration.ofDays(30));
         TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, firstPolicy);
@@ -311,7 +353,8 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 1, maximumQueued, maximumQueuedPerTenant,
                 maximumRunning, maximumRunningPerTenant,
                 Duration.ofSeconds(30), Duration.ofMinutes(5), Duration.ofSeconds(1),
-                Duration.ofMinutes(1), maximumRetries, Duration.ofDays(30));
+                Duration.ofMinutes(1), maximumRetries, Duration.ofDays(7),
+                Duration.ofDays(30));
     }
 
     private static TestSuiteStabilityJobSubmission submission(

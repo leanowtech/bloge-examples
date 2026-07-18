@@ -23,6 +23,7 @@ import java.util.Objects;
  * @param initialRetryDelay first infrastructure retry delay
  * @param maximumRetryDelay maximum infrastructure retry delay
  * @param maximumRetries maximum retry transitions before a job fails terminally
+ * @param maximumDeadlineHorizon maximum accepted deadline distance from database submission time
  * @param terminalRetention terminal job retention
  */
 public record TestSuiteStabilityQueuePolicy(
@@ -36,6 +37,7 @@ public record TestSuiteStabilityQueuePolicy(
         Duration initialRetryDelay,
         Duration maximumRetryDelay,
         int maximumRetries,
+        Duration maximumDeadlineHorizon,
         Duration terminalRetention) {
 
     private static final int MAXIMUM_QUEUE = 100_000;
@@ -46,6 +48,8 @@ public record TestSuiteStabilityQueuePolicy(
         agingInterval = wholeSeconds(agingInterval, "agingInterval", 1, 86_400);
         initialRetryDelay = wholeSeconds(initialRetryDelay, "initialRetryDelay", 1, 3_600);
         maximumRetryDelay = wholeSeconds(maximumRetryDelay, "maximumRetryDelay", 1, 86_400);
+        maximumDeadlineHorizon = wholeSeconds(
+                maximumDeadlineHorizon, "maximumDeadlineHorizon", 5, 30L * 86_400L);
         terminalRetention = wholeSeconds(terminalRetention, "terminalRetention", 3_600,
                 3650L * 86_400L);
         if (generation <= 0
@@ -79,6 +83,7 @@ public record TestSuiteStabilityQueuePolicy(
                 Long.toString(initialRetryDelay.toSeconds()),
                 Long.toString(maximumRetryDelay.toSeconds()),
                 Integer.toString(maximumRetries),
+                Long.toString(maximumDeadlineHorizon.toSeconds()),
                 Long.toString(terminalRetention.toSeconds())));
     }
 

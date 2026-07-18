@@ -286,9 +286,16 @@ soak/chaos/DR 认证。
 环境级串行化把 policy convergence、容量 admission、stale-owner recovery、tenant cursor 与 claim 放入
 同一 authority；调度先 round-robin 选 tenant，再在 tenant 内按 immutable priority、bounded aging、
 created time 和 job id 排序，关闭跨租户 priority 饥饿。闭合状态机覆盖排队、运行、协作取消、截止、
-重试耗尽、成功和保留态 quarantine；所有 mutable transition 都回绑 whole-row fingerprint 与 exact
-owner/epoch/expiry，retry 不能清除已提交 cancel。该子步已完成 repository interface/adapter、JavaDoc 与
-11 项 H2 行为/跨副本测试，但 worker heartbeat、parent attempt control、delegated authority 复核、
+重试耗尽、成功和保留态 quarantine；`COMMITTING` 作为最终 cancel/deadline check 与 signed parent
+publication 的不可撤销线性化点，crash/retry 后保持原态并由更高 epoch worker 接管，不重新打开取消
+窗口，也不允许 retry exhaustion 把可能已发布的证据误标失败。所有 mutable transition 都回绑
+whole-row fingerprint 与 exact owner/epoch/expiry，retry 不能清除已提交 cancel。
+
+父执行 repository 另以 payload-free、完整指纹 stop tombstone 终结同步恢复权：写 tombstone、删除
+progress、消费 lease 同事务，后续 claim 返回 `STOPPED`，stale owner 不能 checkpoint/publish；若
+signed terminal 先赢，late stop 则 fail closed。由此修复 queue cancellation 可被旧同步入口绕过的跨入口
+竞态。该子步已完成 repository interface/adapter、JavaDoc、28 项 queue/parent H2 行为/跨副本测试以及
+13 项受影响 service 回归，但 worker heartbeat、parent attempt control、delegated authority 复核、
 HTTP/Schema/test-kit/capability、SLO 和 poison-row 自动 quarantine 仍未接入，因此产品能力继续关闭。
 设计与负空间见
 [Stage 5 suite-stability durable queue core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-queue-core-verification.md)。

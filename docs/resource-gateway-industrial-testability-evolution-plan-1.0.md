@@ -281,9 +281,17 @@ backlog SLO/telemetry、物理 retention purge、非 H2/soak/chaos/DR 认证仍�
 在环境级数据库锁内统一执行 policy fingerprint 收敛、全局/租户容量 admission、过期 owner 恢复、
 tenant round-robin cursor 与 exact claim；先选 tenant，再按 tenant 内 immutable priority + bounded aging、
 created time、job id 选 job，因此高优租户不能吞掉其他租户的轮次。`QUEUED/RUNNING/
-CANCEL_REQUESTED/SUCCEEDED/FAILED/CANCELLED/EXPIRED/QUARANTINED` 构成闭集，heartbeat、retry、
-complete、cancel 都以 whole-row fingerprint 和 owner/epoch/expiry CAS 推进；错误调用顺序也不能用 retry
-复活取消任务。当前只完成 repository seam、完整 JavaDoc 和 11 项 H2 行为/并发反例；HTTP、worker、
+CANCEL_REQUESTED/COMMITTING/SUCCEEDED/FAILED/CANCELLED/EXPIRED/QUARANTINED` 构成闭集，
+heartbeat、retry、complete、cancel 都以 whole-row fingerprint 和 owner/epoch/expiry CAS 推进；错误调用
+顺序也不能用 retry 复活取消任务。`COMMITTING` 是 cancel/deadline 与 signed evidence publication 的
+唯一线性化点：进入后 cancel 明确 too-late，worker 退让或 lease 过期也保持同态，由更高 epoch owner
+直接接管，不会降回可取消的 `QUEUED`，更不能因 retry exhaustion 误标 `FAILED`。
+
+父执行侧同时增加 integrity-fingerprinted、payload-free stop tombstone，在同一 scoped transaction 中
+写入 stop 并消费 progress/lease；未来同步或异步 claim 都返回 `STOPPED`，旧 owner 不能
+checkpoint/complete。反向地，signed terminal 已存在时 late stop 被拒绝，从而关闭“队列已取消、旧同步
+入口却恢复并发布”的跨入口复活窗口。当前完成 repository seam、完整 JavaDoc 和 28 项 queue/parent H2
+行为与并发反例；受影响的 stability service 13 项测试亦全绿；HTTP、worker、
 parent control checkpoint、delegated authority revalidation、Schema/capability/test-kit、SLO/telemetry 和
 poison-row quarantine 尚未接线，不能把该子步解读为异步执行已经开放。验证与剩余接线条件见
 [Stage 5 suite-stability durable queue core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-queue-core-verification.md)。

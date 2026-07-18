@@ -150,6 +150,9 @@ public final class TestSuiteStabilityExecutionService {
                     "The same immutable stability execution is active on another invocation.",
                     claim.retryAfterSeconds());
         }
+        if (claim.state() == TestSuiteStabilityLeaseClaim.State.STOPPED) {
+            throw stopped(identity, claim.stop());
+        }
 
         LeaseGuard owner;
         try {
@@ -716,6 +719,20 @@ public final class TestSuiteStabilityExecutionService {
             String detail) {
         return new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
                 code, detail, identity.correlationId(), Map.of()));
+    }
+
+    private static IntegrationProblemException stopped(
+            IntegrationRequestContext identity,
+            TestSuiteStabilityExecutionStop stop) {
+        return switch (stop.reason()) {
+            case CANCELLED -> conflict(identity, "RG.TEST.STABILITY_EXECUTION_CANCELLED",
+                    "The immutable suite-stability execution was cancelled.");
+            case DEADLINE_EXCEEDED -> conflict(
+                    identity, "RG.TEST.STABILITY_EXECUTION_DEADLINE_EXCEEDED",
+                    "The immutable suite-stability execution exceeded its deadline.");
+            case WORKER_FAILED -> conflict(identity, "RG.TEST.STABILITY_EXECUTION_WORKER_FAILED",
+                    "The immutable suite-stability execution was terminally stopped.");
+        };
     }
 
     private static IntegrationProblemException throttled(
