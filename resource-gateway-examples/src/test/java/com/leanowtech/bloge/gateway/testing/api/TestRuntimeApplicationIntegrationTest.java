@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
@@ -92,6 +93,7 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(TestPropertySuiteMaterializationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestMutationSuiteController.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestMutationSuiteMaterializationService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestMutationSuiteExecutionService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
         assertThat(context.getBeansOfType(
@@ -150,6 +152,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST") && endpoint.path().equals(
                         "/api/testing/targets/graphs/{graphName}/mutation-suites"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("POST") && endpoint.path().equals(
+                        "/api/testing/suites/{suiteId}/mutation-executions"));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("immutableTestSuiteRegistry", true)
                 .containsEntry("immutableTestSuiteExecution", true)
@@ -163,8 +168,8 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("propertySuiteExecution", true)
                 .containsEntry("pureDslMutationPlanning", true)
                 .containsEntry("mutationSuiteMaterialization", true)
-                .containsEntry("pureDslMutationExecution", false)
-                .containsEntry("mutationScoreEvidence", false);
+                .containsEntry("pureDslMutationExecution", true)
+                .containsEntry("mutationScoreEvidence", true);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testBoundaryCasePlan",
                         List.of(TestBoundaryCasePlan.SCHEMA_VERSION))
@@ -184,27 +189,33 @@ class TestRuntimeApplicationIntegrationTest {
                         List.of(TestMutationSuiteMaterializationRequest.SCHEMA_VERSION))
                 .containsEntry("testMutationSuiteMaterialization",
                         List.of(TestMutationSuiteMaterializationResponse.SCHEMA_VERSION))
+                .containsEntry("testMutationSuiteExecutionRequest",
+                        List.of(TestMutationSuiteExecutionRequest.SCHEMA_VERSION))
                 .containsEntry("testSuiteExecutionResponse", List.of(
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteExecutionResponse.SCHEMA_VERSION,
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V3,
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V4,
-                        TestSuiteExecutionResponse.SCHEMA_VERSION_V5))
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V5,
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V6))
                 .containsEntry("testSuiteRunEvidence", List.of(
                         TestSuiteRunEvidence.SCHEMA_VERSION,
                         com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2.SCHEMA_VERSION,
                         TestSuiteRunEvidenceV3.SCHEMA_VERSION,
-                        com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4.SCHEMA_VERSION))
+                        com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4.SCHEMA_VERSION,
+                        TestSuiteRunEvidenceV5.SCHEMA_VERSION))
                 .containsEntry("testSuiteRunAttestation", List.of(
                         TestSuiteRunAttestation.SCHEMA_VERSION,
                         TestSuiteRunAttestation.SCHEMA_VERSION_V2,
                         TestSuiteRunAttestation.SCHEMA_VERSION_V3,
-                        TestSuiteRunAttestation.SCHEMA_VERSION_V4))
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V4,
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V5))
                 .containsEntry("testSuiteEvidenceBundle", List.of(
                         TestSuiteEvidenceBundle.SCHEMA_VERSION,
                         TestSuiteEvidenceBundle.SCHEMA_VERSION_V2,
                         TestSuiteEvidenceBundle.SCHEMA_VERSION_V3,
-                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V4));
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V4,
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V5));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("suiteRunOwnerLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true)
@@ -439,13 +450,35 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(storedPropertySuite.cases()).extracting(TestSuite.TestCase::caseType)
                 .containsOnly(TestSuite.CaseType.PROPERTY);
 
+        var catalogMaterialized = restTemplate.exchange(
+                "/api/testing/catalogs/gateway-graph-contract-v1",
+                HttpMethod.PUT, new HttpEntity<>(suiteWriteHeaders),
+                TestSuiteCatalogMaterializationResponse.class);
+        assertThat(catalogMaterialized.getStatusCode())
+                .withFailMessage("built-in suite catalog materialization failed: %s",
+                        catalogMaterialized.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(catalogMaterialized.getBody()).isNotNull();
+        TestSuiteCatalogMaterializationResponse.SuiteAsset mutationOracleAsset =
+                catalogMaterialized.getBody().suites().stream()
+                        .filter(asset -> "loanDecisionPolicy".equals(asset.graphName()))
+                        .findFirst()
+                        .orElseThrow();
+        var mutationOracleStored = restTemplate.exchange(
+                "/api/testing/suites/" + mutationOracleAsset.suiteRef().suiteId()
+                        + "?revision=" + mutationOracleAsset.suiteRef().revision(),
+                HttpMethod.GET, new HttpEntity<>(suiteReadHeaders), StoredTestSuite.class);
+        assertThat(mutationOracleStored.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(mutationOracleStored.getBody()).isNotNull();
+        var mutationOracleSuite = mutationOracleStored.getBody().suite();
+
         TestMutationSuiteMaterializationRequest mutationMaterializationRequest =
                 new TestMutationSuiteMaterializationRequest("", "loan-decision-mutations",
                         "INTERNAL", mutationCases.getBody().target().fingerprint(),
                         mutationCases.getBody().sourceFingerprint(),
                         mutationCases.getBody().graphArtifactFingerprint(),
                         mutationCases.getBody().planFingerprint(), 8,
-                        propertyMaterialized.getBody().suiteRef(),
+                        mutationOracleAsset.suiteRef(),
                         mutationCases.getBody().status() == TestMutationCasePlan.Status.PARTIAL,
                         new TestSuiteV5.MutationScorePolicy(8_000, 0, false, false));
         var mutationMaterialized = restTemplate.exchange(
@@ -462,11 +495,11 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsExactlyElementsOf(mutationCases.getBody().mutants().stream()
                         .map(TestMutationCasePlan.PlannedMutant::mutantId).toList());
         assertThat(mutationMaterialized.getBody().oracleCaseIds())
-                .containsExactlyElementsOf(storedPropertySuite.cases().stream()
+                .containsExactlyElementsOf(mutationOracleSuite.cases().stream()
                         .map(TestSuite.TestCase::caseId).toList());
         assertThat(mutationMaterialized.getBody().mutantCaseExecutions())
                 .isEqualTo(mutationCases.getBody().mutants().size()
-                        * storedPropertySuite.cases().size());
+                        * mutationOracleSuite.cases().size());
 
         var mutationStored = restTemplate.exchange(
                 "/api/testing/suites/loan-decision-mutations?revision="
@@ -479,7 +512,7 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(storedMutationSuite.mutationPlanFingerprint())
                 .isEqualTo(mutationCases.getBody().planFingerprint());
         assertThat(storedMutationSuite.oracleSuiteRef().fingerprint())
-                .isEqualTo(propertyMaterialized.getBody().suiteRef().fingerprint());
+                .isEqualTo(mutationOracleAsset.suiteRef().fingerprint());
 
         TestSuiteExecutionRequest propertyExecution = new TestSuiteExecutionRequest("",
                 propertyMaterialized.getBody().suiteRef(), "integration-property-run-v4",
@@ -508,6 +541,64 @@ class TestRuntimeApplicationIntegrationTest {
                 });
         assertThat(propertyRun.attestation().schemaVersion())
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V4);
+
+        TestMutationSuiteExecutionRequest mutationExecution =
+                new TestMutationSuiteExecutionRequest("",
+                        mutationMaterialized.getBody().suiteRef(),
+                        "integration-mutation-run-v5",
+                        TestMutationSuiteExecutionRequest.Strategy.COLLECT_ALL,
+                        Map.of("source", "spring-http-mutation-test"));
+        var mutationRunWire = restTemplate.exchange(
+                "/api/testing/suites/loan-decision-mutations/mutation-executions",
+                HttpMethod.POST, new HttpEntity<>(mutationExecution, headers), JsonNode.class);
+        assertThat(mutationRunWire.getStatusCode())
+                .withFailMessage("mutation suite execution failed: %s", mutationRunWire.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(mutationRunWire.getBody()).isNotNull();
+        TestSuiteExecutionResponse mutationRun = objectMapper.treeToValue(
+                mutationRunWire.getBody(), TestSuiteExecutionResponse.class);
+        assertThat(mutationRun.schemaVersion())
+                .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION_V6);
+        assertThat(mutationRun.evidence()).isInstanceOfSatisfying(
+                TestSuiteRunEvidenceV5.class, evidence -> {
+                    assertThat(evidence.status()).isNotEqualTo(TestSuiteRunEvidence.Status.RUNNING);
+                    assertThat(evidence.baselineStatus())
+                            .isEqualTo(TestSuiteRunEvidenceV5.BaselineStatus.PASSED);
+                    assertThat(evidence.mutantResults())
+                            .hasSize(storedMutationSuite.mutants().size())
+                            .allSatisfy(mutant -> assertThat(mutant.caseResults())
+                                    .hasSize(storedMutationSuite.cases().size())
+                                    .noneMatch(result -> result.status()
+                                            == TestSuiteRunEvidenceV5.MutantCaseStatus.PENDING));
+                    assertThat(evidence.mutationScore().plannedMutants())
+                            .isEqualTo(storedMutationSuite.mutants().size());
+                    assertThat(evidence.mutationScore().status())
+                            .isNotIn(TestSuiteRunEvidenceV5.MutationScoreStatus.NOT_EVALUATED,
+                                    TestSuiteRunEvidenceV5.MutationScoreStatus.INCOMPLETE);
+                });
+        assertThat(mutationRun.attestation().schemaVersion())
+                .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V5);
+        assertThat(mutationRun.attestation().terminallyVerifiable()).isTrue();
+        assertThat(mutationRun.attestation().childEvidenceRefs()).hasSize(
+                storedMutationSuite.cases().size()
+                        * (storedMutationSuite.mutants().size() + 1));
+
+        var mutationRunRead = restTemplate.exchange("/api/testing/suite-executions/"
+                        + mutationRun.suiteRunId(), HttpMethod.GET,
+                new HttpEntity<>(headers), TestSuiteExecutionResponse.class);
+        assertThat(mutationRunRead.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(mutationRunRead.getBody()).isEqualTo(mutationRun);
+        var mutationPortable = restTemplate.exchange("/api/testing/suite-executions/"
+                        + mutationRun.suiteRunId() + "/evidence-bundle",
+                HttpMethod.GET, new HttpEntity<>(headers), TestSuiteEvidenceBundle.class);
+        assertThat(mutationPortable.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(mutationPortable.getBody()).isNotNull();
+        assertThat(mutationPortable.getBody().schemaVersion())
+                .isEqualTo(TestSuiteEvidenceBundle.SCHEMA_VERSION_V5);
+        assertThat(mutationPortable.getBody().attestation())
+                .isEqualTo(mutationRun.attestation());
+        assertThat(mutationPortable.getBody().evidence())
+                .isInstanceOf(TestSuiteRunEvidenceV5.class);
 
         List<String> selectedBoundaryCases = boundaryCases.getBody().cases().stream()
                 .limit(3).map(TestBoundaryCasePlan.BoundaryCase::caseId).toList();

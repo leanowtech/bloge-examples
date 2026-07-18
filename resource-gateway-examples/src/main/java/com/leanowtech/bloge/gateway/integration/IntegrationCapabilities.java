@@ -262,27 +262,34 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.StoredTestSuite.SCHEMA_VERSION));
             objects.put("testSuiteExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest.SCHEMA_VERSION));
+            objects.put("testMutationSuiteExecutionRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteExecutionRequest
+                            .SCHEMA_VERSION));
             objects.put("testSuiteExecutionResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V3,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V4,
-                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V5));
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V5,
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V6));
             objects.put("testSuiteRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3.SCHEMA_VERSION,
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5.SCHEMA_VERSION));
             objects.put("testSuiteRunAttestation", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V2,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V3,
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V4));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V4,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.SCHEMA_VERSION_V5));
             objects.put("testSuiteEvidenceBundle", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V2,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V3,
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V4));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V4,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle.SCHEMA_VERSION_V5));
             objects.put("semanticCorrectnessWorkbookBundle", List.of(
                     SemanticCorrectnessWorkbookBundle.SCHEMA_VERSION));
             objects.put("testSuiteRunReconciliation", List.of(
@@ -497,8 +504,8 @@ public record IntegrationCapabilities(
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);
         features.put("pureDslMutationPlanning", testExecutionEndpointEnabled);
-        features.put("pureDslMutationExecution", false);
-        features.put("mutationScoreEvidence", false);
+        features.put("pureDslMutationExecution", testExecutionEndpointEnabled);
+        features.put("mutationScoreEvidence", testExecutionEndpointEnabled);
         features.put("mutationSuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteExecution", testExecutionEndpointEnabled);
@@ -692,6 +699,8 @@ public record IntegrationCapabilities(
             endpoints.add(new Endpoint("GET", "/api/testing/suites/{suiteId}"));
             endpoints.add(new Endpoint("PUT", "/api/testing/catalogs/gateway-graph-contract-v1"));
             endpoints.add(new Endpoint("POST", "/api/testing/suites/{suiteId}/executions"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/suites/{suiteId}/mutation-executions"));
             endpoints.add(new Endpoint("GET", "/api/testing/suite-executions/{suiteRunId}"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/suite-executions/{suiteRunId}/evidence-bundle"));

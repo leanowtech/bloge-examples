@@ -2420,6 +2420,18 @@
         "metadata": {"type": "object", "maxProperties": 100}
       }
     },
+    "testMutationSuiteExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRef", "clientRequestId", "strategy", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testMutationSuiteExecutionRequest.v1"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "strategy": {"enum": ["COLLECT_ALL", "STOP_AFTER_KILL"]},
+        "metadata": {"type": "object", "maxProperties": 100}
+      }
+    },
     "testSuiteCaseResult": {
       "type": "object",
       "additionalProperties": false,
@@ -3223,7 +3235,7 @@
       "additionalProperties": false,
       "required": ["caseId", "runId", "evidenceFingerprint"],
       "properties": {
-        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 512},
         "runId": {"type": "string", "minLength": 1, "maxLength": 255},
         "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"}
       }

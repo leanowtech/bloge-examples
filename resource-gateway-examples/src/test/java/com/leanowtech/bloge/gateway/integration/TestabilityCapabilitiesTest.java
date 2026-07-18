@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterialization
 import com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterializationResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteMaterializationRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteMaterializationResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
@@ -53,6 +54,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import org.junit.jupiter.api.Test;
 
@@ -130,7 +132,8 @@ class TestabilityCapabilitiesTest {
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
                 "storedFixtureBundle", "testSuite", "testSuiteRegistrationRequest", "storedTestSuite",
                 "replayPayloadCaptureRequest", "replayPayloadDescriptor", "storedReplayPayload",
-                "testSuiteExecutionRequest", "testSuiteExecutionResponse", "testSuiteRunEvidence",
+                "testSuiteExecutionRequest", "testMutationSuiteExecutionRequest",
+                "testSuiteExecutionResponse", "testSuiteRunEvidence",
                 "testSuiteRunAttestation", "testSuiteEvidenceBundle", "testSuiteRunReconciliation",
                 "semanticCorrectnessWorkbookBundle",
                 "testSuiteCatalogMaterialization",
@@ -237,8 +240,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("databaseAuthoritativeTestRuntimeAdmission", true)
                 .containsEntry("boundedCardinalityTestRuntimeAdmissionMetrics", true)
                 .containsEntry("pureDslMutationPlanning", true)
-                .containsEntry("pureDslMutationExecution", false)
-                .containsEntry("mutationScoreEvidence", false)
+                .containsEntry("pureDslMutationExecution", true)
+                .containsEntry("mutationScoreEvidence", true)
                 .containsEntry("mutationSuiteMaterialization", true)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
@@ -255,6 +258,8 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(TestPropertyCasePlan.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testMutationCasePlan"))
                 .containsExactly(TestMutationCasePlan.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testMutationSuiteExecutionRequest"))
+                .containsExactly(TestMutationSuiteExecutionRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterializationRequest"))
                 .containsExactly(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterialization"))
@@ -276,22 +281,26 @@ class TestabilityCapabilitiesTest {
                         TestSuiteExecutionResponse.SCHEMA_VERSION,
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V3,
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V4,
-                        TestSuiteExecutionResponse.SCHEMA_VERSION_V5);
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V5,
+                        TestSuiteExecutionResponse.SCHEMA_VERSION_V6);
         assertThat(enabled.supportedObjects().get("testSuiteRunEvidence"))
                 .containsExactly(TestSuiteRunEvidence.SCHEMA_VERSION,
                         TestSuiteRunEvidenceV2.SCHEMA_VERSION,
                         TestSuiteRunEvidenceV3.SCHEMA_VERSION,
-                        TestSuiteRunEvidenceV4.SCHEMA_VERSION);
+                        TestSuiteRunEvidenceV4.SCHEMA_VERSION,
+                        TestSuiteRunEvidenceV5.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteRunAttestation"))
                 .containsExactly(TestSuiteRunAttestation.SCHEMA_VERSION,
                         TestSuiteRunAttestation.SCHEMA_VERSION_V2,
                         TestSuiteRunAttestation.SCHEMA_VERSION_V3,
-                        TestSuiteRunAttestation.SCHEMA_VERSION_V4);
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V4,
+                        TestSuiteRunAttestation.SCHEMA_VERSION_V5);
         assertThat(enabled.supportedObjects().get("testSuiteEvidenceBundle"))
                 .containsExactly(TestSuiteEvidenceBundle.SCHEMA_VERSION,
                         TestSuiteEvidenceBundle.SCHEMA_VERSION_V2,
                         TestSuiteEvidenceBundle.SCHEMA_VERSION_V3,
-                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V4);
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V4,
+                        TestSuiteEvidenceBundle.SCHEMA_VERSION_V5);
         assertThat(enabled.supportedObjects().get("effectiveExecutionPlan"))
                 .containsExactly(EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                         EffectiveExecutionPlan.SCHEMA_VERSION_V2,
@@ -386,6 +395,9 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/targets/graphs/{graphName}/mutation-suites"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/suites/{suiteId}/mutation-executions"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/targets/operators/{operatorRef}/boundary-suites"));

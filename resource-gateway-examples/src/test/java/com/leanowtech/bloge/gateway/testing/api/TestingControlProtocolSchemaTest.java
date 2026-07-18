@@ -401,6 +401,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteRegistrationRequest")).isTrue();
         assertThat(definitions.has("storedTestSuite")).isTrue();
         assertThat(definitions.has("testSuiteExecutionRequest")).isTrue();
+        assertThat(definitions.has("testMutationSuiteExecutionRequest")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponse")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV1")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV2")).isTrue();
@@ -882,6 +883,16 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo("#/$defs/governedFixtureBundleRef");
         assertThat(definitions.at("/testSuiteExecutionRequest/properties/clientRequestId/minLength").asInt())
                 .isEqualTo(1);
+        assertThat(definitions.at(
+                "/testMutationSuiteExecutionRequest/properties/schemaVersion/const").asText())
+                .isEqualTo(TestMutationSuiteExecutionRequest.SCHEMA_VERSION);
+        assertThat(definitions.at(
+                "/testMutationSuiteExecutionRequest/properties/strategy/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("COLLECT_ALL", "STOP_AFTER_KILL");
+        assertThat(definitions.at(
+                "/testSuiteRunAttestationChild/properties/caseId/maxLength").asInt())
+                .isEqualTo(512);
         assertThat(definitions.at("/testSuiteRunEvidence/properties/status/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly(Arrays.stream(TestSuiteRunEvidence.Status.values())

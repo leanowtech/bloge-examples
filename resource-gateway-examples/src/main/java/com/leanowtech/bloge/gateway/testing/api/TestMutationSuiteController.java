@@ -17,16 +17,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/testing")
 public final class TestMutationSuiteController {
     private final TestMutationSuiteMaterializationService materialization;
+    private final TestMutationSuiteExecutionService executions;
     private final IntegrationRequestAuthenticator authenticator;
 
     /**
      * @param materialization immutable V5 asset service
+     * @param executions isolated durable V5 execution service
      * @param authenticator workload identity verifier
      */
     public TestMutationSuiteController(
             TestMutationSuiteMaterializationService materialization,
+            TestMutationSuiteExecutionService executions,
             IntegrationRequestAuthenticator authenticator) {
         this.materialization = materialization;
+        this.executions = executions;
         this.authenticator = authenticator;
     }
 
@@ -38,5 +42,15 @@ public final class TestMutationSuiteController {
             @RequestHeader HttpHeaders headers) {
         return materialization.materializeGraph(graphName, request,
                 authenticator.authenticate(headers, IntegrationOperation.TEST_SUITE_WRITE));
+    }
+
+    /** Executes one exact immutable V5 suite under mutation-only runtime isolation. */
+    @PostMapping("/suites/{suiteId}/mutation-executions")
+    public TestSuiteExecutionResponse execute(
+            @PathVariable String suiteId,
+            @RequestBody TestMutationSuiteExecutionRequest request,
+            @RequestHeader HttpHeaders headers) {
+        return executions.execute(suiteId, request,
+                authenticator.authenticate(headers, IntegrationOperation.TEST_SUITE_EXECUTION));
     }
 }

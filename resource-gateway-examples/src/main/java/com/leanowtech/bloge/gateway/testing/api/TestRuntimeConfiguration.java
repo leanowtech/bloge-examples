@@ -1012,6 +1012,24 @@ public class TestRuntimeConfiguration {
                 attestations, admissions);
     }
 
+    /** Assembles the isolated immutable mutation-suite runner and score evaluator. */
+    @Bean
+    TestMutationSuiteExecutionService testMutationSuiteExecutionService(
+            TestSuiteRegistryService suiteRegistry,
+            TestExecutionApiService executionService,
+            TestSuiteRunRepository suiteRunRepository,
+            TestSuiteRunLeaseCoordinator leaseCoordinator,
+            TestSuiteRunAttestationService attestations,
+            TestRuntimeAdmissionGate admissions,
+            ObjectMapper objectMapper,
+            TestSecurityEventRepository securityEvents,
+            @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
+        return new TestMutationSuiteExecutionService(
+                suiteRegistry, executionService, suiteRunRepository, objectMapper, securityEvents,
+                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), leaseCoordinator,
+                attestations, admissions);
+    }
+
     /** Marker consumed by the unauthenticated capability probe. */
     @Bean
     TestabilityAvailability testabilityAvailability(
