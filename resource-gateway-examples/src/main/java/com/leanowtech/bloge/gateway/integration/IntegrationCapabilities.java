@@ -254,7 +254,8 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuite.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3.SCHEMA_VERSION,
-                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4.SCHEMA_VERSION));
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5.SCHEMA_VERSION));
             objects.put("testSuiteRegistrationRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistrationRequest.SCHEMA_VERSION));
             objects.put("storedTestSuite", List.of(
@@ -317,6 +318,12 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterializationRequest.SCHEMA_VERSION));
             objects.put("testPropertySuiteMaterialization", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterializationResponse.SCHEMA_VERSION));
+            objects.put("testMutationSuiteMaterializationRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api
+                            .TestMutationSuiteMaterializationRequest.SCHEMA_VERSION));
+            objects.put("testMutationSuiteMaterialization", List.of(
+                    com.leanowtech.bloge.gateway.testing.api
+                            .TestMutationSuiteMaterializationResponse.SCHEMA_VERSION));
             objects.put("testOperatorExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestOperatorExecutionApiRequest.SCHEMA_VERSION));
             objects.put("testOperatorTargetDescriptor", List.of(
@@ -492,6 +499,7 @@ public record IntegrationCapabilities(
         features.put("pureDslMutationPlanning", testExecutionEndpointEnabled);
         features.put("pureDslMutationExecution", false);
         features.put("mutationScoreEvidence", false);
+        features.put("mutationSuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);
@@ -618,6 +626,8 @@ public record IntegrationCapabilities(
                     "/api/testing/targets/graphs/{graphName}/property-cases"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/targets/graphs/{graphName}/mutation-cases"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/targets/graphs/{graphName}/mutation-suites"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/targets/graphs/{graphName}/boundary-suites"));
             endpoints.add(new Endpoint("POST",

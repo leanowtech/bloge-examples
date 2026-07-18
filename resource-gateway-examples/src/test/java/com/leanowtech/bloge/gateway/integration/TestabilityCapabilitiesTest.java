@@ -10,6 +10,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterialization
 import com.leanowtech.bloge.gateway.testing.api.TestBoundarySuiteMaterializationResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterializationRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestPropertySuiteMaterializationResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteMaterializationRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteMaterializationResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
@@ -44,6 +46,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
@@ -236,6 +239,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("pureDslMutationPlanning", true)
                 .containsEntry("pureDslMutationExecution", false)
                 .containsEntry("mutationScoreEvidence", false)
+                .containsEntry("mutationSuiteMaterialization", true)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)
@@ -259,9 +263,14 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(TestPropertySuiteMaterializationRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testPropertySuiteMaterialization"))
                 .containsExactly(TestPropertySuiteMaterializationResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testMutationSuiteMaterializationRequest"))
+                .containsExactly(TestMutationSuiteMaterializationRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testMutationSuiteMaterialization"))
+                .containsExactly(TestMutationSuiteMaterializationResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuite"))
                 .containsExactly(TestSuite.SCHEMA_VERSION, TestSuiteV2.SCHEMA_VERSION,
-                        TestSuiteV3.SCHEMA_VERSION, TestSuiteV4.SCHEMA_VERSION);
+                        TestSuiteV3.SCHEMA_VERSION, TestSuiteV4.SCHEMA_VERSION,
+                        TestSuiteV5.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteExecutionResponse"))
                 .containsExactly(TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteExecutionResponse.SCHEMA_VERSION,
@@ -374,6 +383,9 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/targets/graphs/{graphName}/property-suites"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/targets/graphs/{graphName}/mutation-suites"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/targets/operators/{operatorRef}/boundary-suites"));

@@ -21,6 +21,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -140,6 +141,26 @@ class TestSuiteExecutionServiceTest {
         verify(admissionGuard).checkpoint();
         verify(admissionGuard).close();
         assertThat(runRepository.records).hasSize(1);
+    }
+
+    @Test
+    void ordinaryRunnerFailsClosedForMaterializedMutationSuites() {
+        StoredTestSuite stored = storedMutationSuite();
+        when(registry.find("suite-a", 3, identity)).thenReturn(stored);
+
+        assertThatThrownBy(() -> service.execute("suite-a", request("mutation-request",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(failure -> {
+                    var problem = ((IntegrationProblemException) failure).problem();
+                    assertThat(problem.status()).isEqualTo(409);
+                    assertThat(problem.code())
+                            .isEqualTo("RG.TEST.MUTATION_SUITE_EXECUTION_UNAVAILABLE");
+                });
+
+        verify(executions, never()).executeAdmittedSuiteGraphCase(any(), any());
+        verify(admissions, never()).admit(any(), any());
+        assertThat(runRepository.records).isEmpty();
     }
 
     @Test
@@ -710,6 +731,29 @@ class TestSuiteExecutionServiceTest {
                 Map.of("source", "seeded-property-plan"));
         return new StoredTestSuite("", "tenant-a", "test", "suite-a", 3,
                 SUITE, suite, Instant.now(), "runner");
+    }
+
+    private StoredTestSuite storedMutationSuite() {
+        TestSuite base = (TestSuite) storedSuite().suite();
+        TestSuiteV5 suite = new TestSuiteV5("", base.suiteId(), base.revision(), base.target(),
+                base.classification(), base.cases(), base.coveragePolicy(),
+                SemanticCoveragePolicy.empty(), base.promotionPolicy(),
+                TestSuiteV5.EvaluationMode.PURE_DSL_MUTATION, TestSuiteV5.SOURCE_FORMAT,
+                "sha256:" + "1".repeat(64), "sha256:" + "2".repeat(64),
+                "sha256:" + "3".repeat(64),
+                new TestSuiteV5.MutationPolicy(TestSuiteV5.PLANNER_VERSION, 1,
+                        TestSuiteV5.SOURCE_FORMAT, TestSuiteV5.VERIFICATION_MODE, false, false),
+                TestSuiteV5.SourcePlanStatus.GENERATED, false, List.of(),
+                List.of(new TestSuiteV5.MutantRef("mutant-001",
+                        TestSuiteV5.MutationKind.FALLBACK_REMOVED, "/members/1/fallback", 3, 5,
+                        "sha256:" + "4".repeat(64), "sha256:" + "5".repeat(64),
+                        "sha256:" + "6".repeat(64),
+                        TestSuiteV5.EquivalenceClassification.UNKNOWN)),
+                new TestSuiteV5.OracleSuiteRef("oracle", 1,
+                        "sha256:" + "7".repeat(64), TestSuite.SCHEMA_VERSION),
+                new TestSuiteV5.MutationScorePolicy(8_000, 0, false, false), Map.of());
+        return new StoredTestSuite("", "tenant-a", "test", "suite-a", 3, SUITE,
+                suite, Instant.EPOCH, "author");
     }
 
     private StoredTestSuite storedTwoTrialPropertySuite() {

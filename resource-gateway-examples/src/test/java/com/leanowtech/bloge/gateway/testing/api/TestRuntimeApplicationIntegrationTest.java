@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
@@ -89,6 +90,8 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(TestBoundarySuiteMaterializationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestPropertySuiteController.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestPropertySuiteMaterializationService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestMutationSuiteController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(TestMutationSuiteMaterializationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 DurableStateProjectionReconciliationScheduler.class)).hasSize(1);
         assertThat(context.getBeansOfType(
@@ -144,6 +147,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST") && endpoint.path().equals(
                         "/api/testing/targets/graphs/{graphName}/property-suites"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("POST") && endpoint.path().equals(
+                        "/api/testing/targets/graphs/{graphName}/mutation-suites"));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("immutableTestSuiteRegistry", true)
                 .containsEntry("immutableTestSuiteExecution", true)
@@ -155,7 +161,10 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("seededPropertyCasePlanning", true)
                 .containsEntry("propertySuiteMaterialization", true)
                 .containsEntry("propertySuiteExecution", true)
-                .containsEntry("pureDslMutationPlanning", true);
+                .containsEntry("pureDslMutationPlanning", true)
+                .containsEntry("mutationSuiteMaterialization", true)
+                .containsEntry("pureDslMutationExecution", false)
+                .containsEntry("mutationScoreEvidence", false);
         assertThat(capabilities.getBody().payload().supportedObjects())
                 .containsEntry("testBoundaryCasePlan",
                         List.of(TestBoundaryCasePlan.SCHEMA_VERSION))
@@ -171,6 +180,10 @@ class TestRuntimeApplicationIntegrationTest {
                         List.of(TestPropertySuiteMaterializationRequest.SCHEMA_VERSION))
                 .containsEntry("testPropertySuiteMaterialization",
                         List.of(TestPropertySuiteMaterializationResponse.SCHEMA_VERSION))
+                .containsEntry("testMutationSuiteMaterializationRequest",
+                        List.of(TestMutationSuiteMaterializationRequest.SCHEMA_VERSION))
+                .containsEntry("testMutationSuiteMaterialization",
+                        List.of(TestMutationSuiteMaterializationResponse.SCHEMA_VERSION))
                 .containsEntry("testSuiteExecutionResponse", List.of(
                         TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteExecutionResponse.SCHEMA_VERSION,
@@ -354,7 +367,7 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(propertyCases.getBody().planFingerprint()).matches("sha256:[a-f0-9]{64}");
 
         String mutationPlanPath = "/api/testing/targets/graphs/loanDecisionPolicy/mutation-cases"
-                + "?maxMutants=64";
+                + "?maxMutants=8";
         var mutationCases = restTemplate.exchange(mutationPlanPath, HttpMethod.GET,
                 new HttpEntity<>(headers), TestMutationCasePlan.class);
         var mutationReplay = restTemplate.exchange(mutationPlanPath, HttpMethod.GET,
@@ -425,6 +438,48 @@ class TestRuntimeApplicationIntegrationTest {
                 .isEqualTo(propertyCases.getBody().planFingerprint());
         assertThat(storedPropertySuite.cases()).extracting(TestSuite.TestCase::caseType)
                 .containsOnly(TestSuite.CaseType.PROPERTY);
+
+        TestMutationSuiteMaterializationRequest mutationMaterializationRequest =
+                new TestMutationSuiteMaterializationRequest("", "loan-decision-mutations",
+                        "INTERNAL", mutationCases.getBody().target().fingerprint(),
+                        mutationCases.getBody().sourceFingerprint(),
+                        mutationCases.getBody().graphArtifactFingerprint(),
+                        mutationCases.getBody().planFingerprint(), 8,
+                        propertyMaterialized.getBody().suiteRef(),
+                        mutationCases.getBody().status() == TestMutationCasePlan.Status.PARTIAL,
+                        new TestSuiteV5.MutationScorePolicy(8_000, 0, false, false));
+        var mutationMaterialized = restTemplate.exchange(
+                "/api/testing/targets/graphs/loanDecisionPolicy/mutation-suites",
+                HttpMethod.POST,
+                new HttpEntity<>(mutationMaterializationRequest, suiteWriteHeaders),
+                TestMutationSuiteMaterializationResponse.class);
+        assertThat(mutationMaterialized.getStatusCode())
+                .withFailMessage("mutation suite materialization failed: %s",
+                        mutationMaterialized.getBody())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(mutationMaterialized.getBody()).isNotNull();
+        assertThat(mutationMaterialized.getBody().mutantIds())
+                .containsExactlyElementsOf(mutationCases.getBody().mutants().stream()
+                        .map(TestMutationCasePlan.PlannedMutant::mutantId).toList());
+        assertThat(mutationMaterialized.getBody().oracleCaseIds())
+                .containsExactlyElementsOf(storedPropertySuite.cases().stream()
+                        .map(TestSuite.TestCase::caseId).toList());
+        assertThat(mutationMaterialized.getBody().mutantCaseExecutions())
+                .isEqualTo(mutationCases.getBody().mutants().size()
+                        * storedPropertySuite.cases().size());
+
+        var mutationStored = restTemplate.exchange(
+                "/api/testing/suites/loan-decision-mutations?revision="
+                        + mutationMaterialized.getBody().suiteRef().revision(),
+                HttpMethod.GET, new HttpEntity<>(suiteReadHeaders), StoredTestSuite.class);
+        assertThat(mutationStored.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(mutationStored.getBody()).isNotNull();
+        assertThat(mutationStored.getBody().suite()).isInstanceOf(TestSuiteV5.class);
+        TestSuiteV5 storedMutationSuite = (TestSuiteV5) mutationStored.getBody().suite();
+        assertThat(storedMutationSuite.mutationPlanFingerprint())
+                .isEqualTo(mutationCases.getBody().planFingerprint());
+        assertThat(storedMutationSuite.oracleSuiteRef().fingerprint())
+                .isEqualTo(propertyMaterialized.getBody().suiteRef().fingerprint());
 
         TestSuiteExecutionRequest propertyExecution = new TestSuiteExecutionRequest("",
                 propertyMaterialized.getBody().suiteRef(), "integration-property-run-v4",

@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.domain.SemanticCoveragePolicy;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
@@ -107,7 +108,7 @@ public final class TestSuiteRegistryService {
     public StoredTestSuite register(String suiteId,
                                     TestSuiteRegistrationRequest request,
                                     IntegrationRequestContext identity) {
-        return register(suiteId, request, null, identity);
+        return register(suiteId, request, null, null, null, identity);
     }
 
     /**
@@ -127,12 +128,35 @@ public final class TestSuiteRegistryService {
                     "Property-suite registration requires an exact regenerated plan and V4 suite.",
                     Map.of());
         }
-        return register(suiteId, request, exactPlan, identity);
+        return register(suiteId, request, exactPlan, null, null, identity);
+    }
+
+    /**
+     * Registers V5 only with the exact regenerated mutation plan and oracle suite resolved by the
+     * trusted materializer in the same request.
+     *
+     * <p>Generic registration cannot mint a mutation plan fingerprint, substitute a weaker oracle,
+     * or trim the server-generated mutant closure.</p>
+     */
+    StoredTestSuite registerMutationSuite(String suiteId,
+                                          TestSuiteRegistrationRequest request,
+                                          TestMutationCasePlan exactPlan,
+                                          StoredTestSuite exactOracleSuite,
+                                          IntegrationRequestContext identity) {
+        if (exactPlan == null || exactOracleSuite == null || request == null
+                || !(request.testSuite() instanceof TestSuiteV5)) {
+            throw badRequest(identity, "RG.TEST.MUTATION_SUITE_PROOF_INVALID",
+                    "Mutation-suite registration requires an exact plan, oracle, and V5 suite.",
+                    Map.of());
+        }
+        return register(suiteId, request, null, exactPlan, exactOracleSuite, identity);
     }
 
     private StoredTestSuite register(String suiteId,
                                      TestSuiteRegistrationRequest request,
                                      TestPropertyCasePlan exactPropertyPlan,
+                                     TestMutationCasePlan exactMutationPlan,
+                                     StoredTestSuite exactOracleSuite,
                                      IntegrationRequestContext identity) {
         requireTestIdentity(identity);
         if (request == null || !TestSuiteRegistrationRequest.SCHEMA_VERSION.equals(request.schemaVersion())
@@ -145,6 +169,12 @@ public final class TestSuiteRegistryService {
         if (suite instanceof TestSuiteV4 && exactPropertyPlan == null) {
             throw badRequest(identity, "RG.TEST.PROPERTY_SUITE_MATERIALIZATION_REQUIRED",
                     "Property suites must be created through the exact-plan materialization endpoint.",
+                    Map.of("schemaVersion", suite.schemaVersion()));
+        }
+        if (suite instanceof TestSuiteV5
+                && (exactMutationPlan == null || exactOracleSuite == null)) {
+            throw badRequest(identity, "RG.TEST.MUTATION_SUITE_MATERIALIZATION_REQUIRED",
+                    "Mutation suites must be created through the exact-plan materialization endpoint.",
                     Map.of("schemaVersion", suite.schemaVersion()));
         }
         requireClearance(suite.classification(), identity);
@@ -164,7 +194,8 @@ public final class TestSuiteRegistryService {
                     "Promotion policy requires a target revision that is certification eligible.", Map.of());
         }
 
-        validatePoliciesAndCases(suite, exactPropertyPlan, identity);
+        validatePoliciesAndCases(suite, exactPropertyPlan, exactMutationPlan,
+                exactOracleSuite, identity);
         String fingerprint = suiteCodec.fingerprint(suite);
         StoredTestSuite stored = new StoredTestSuite("", identity.tenantId(), identity.environmentId(),
                 suite.suiteId(), suite.revision(), fingerprint, suite, Instant.now(), identity.actorId());
@@ -220,7 +251,9 @@ public final class TestSuiteRegistryService {
                 || (suite instanceof TestSuiteV3
                 && TestSuiteV3.SCHEMA_VERSION.equals(suite.schemaVersion()))
                 || (suite instanceof TestSuiteV4
-                && TestSuiteV4.SCHEMA_VERSION.equals(suite.schemaVersion()));
+                && TestSuiteV4.SCHEMA_VERSION.equals(suite.schemaVersion()))
+                || (suite instanceof TestSuiteV5
+                && TestSuiteV5.SCHEMA_VERSION.equals(suite.schemaVersion()));
         if (!supportedGeneration
                 || normalized(pathSuiteId).isBlank()
                 || !normalized(pathSuiteId).equals(suite.suiteId())
@@ -240,6 +273,8 @@ public final class TestSuiteRegistryService {
 
     private void validatePoliciesAndCases(TestSuiteProtocol suite,
                                           TestPropertyCasePlan exactPropertyPlan,
+                                          TestMutationCasePlan exactMutationPlan,
+                                          StoredTestSuite exactOracleSuite,
                                           IntegrationRequestContext identity) {
         if (suite.cases().isEmpty() || suite.cases().size() > MAX_CASES) {
             throw badRequest(identity, "RG.TEST.SUITE_CASE_COUNT_INVALID",
@@ -259,6 +294,7 @@ public final class TestSuiteRegistryService {
         }
         validateSchemaAdmissionPolicy(suite, caseIds, identity);
         validatePropertyPolicy(suite, exactPropertyPlan, identity);
+        validateMutationPolicy(suite, exactMutationPlan, exactOracleSuite, identity);
         if (!representedTypes.containsAll(suite.coveragePolicy().requiredCaseTypes())) {
             Set<TestSuite.CaseType> missing = new HashSet<>(suite.coveragePolicy().requiredCaseTypes());
             missing.removeAll(representedTypes);
@@ -287,6 +323,7 @@ public final class TestSuiteRegistryService {
             case TestSuiteV2 semanticSuite -> semanticSuite.semanticCoveragePolicy();
             case TestSuiteV3 admissionSuite -> admissionSuite.semanticCoveragePolicy();
             case TestSuiteV4 propertySuite -> propertySuite.semanticCoveragePolicy();
+            case TestSuiteV5 mutationSuite -> mutationSuite.semanticCoveragePolicy();
             default -> null;
         };
         if (semanticCoverage == null) {
@@ -294,7 +331,8 @@ public final class TestSuiteRegistryService {
         }
         List<SemanticCoveragePolicy.Requirement> requirements =
                 semanticCoverage.requirements();
-        if ((suite instanceof TestSuiteV3 || suite instanceof TestSuiteV4)
+        if ((suite instanceof TestSuiteV3 || suite instanceof TestSuiteV4
+                || suite instanceof TestSuiteV5)
                 && requirements.isEmpty()) {
             return;
         }
@@ -464,6 +502,86 @@ public final class TestSuiteRegistryService {
         }
     }
 
+    private void validateMutationPolicy(TestSuiteProtocol suite,
+                                        TestMutationCasePlan exactPlan,
+                                        StoredTestSuite exactOracle,
+                                        IntegrationRequestContext identity) {
+        if (!(suite instanceof TestSuiteV5 mutationSuite)) {
+            return;
+        }
+        if (exactPlan == null || exactOracle == null
+                || exactPlan.status() == TestMutationCasePlan.Status.UNAVAILABLE) {
+            throw badRequest(identity, "RG.TEST.MUTATION_SUITE_PROOF_INVALID",
+                    "A mutation suite requires a usable exact plan and immutable oracle suite.",
+                    Map.of());
+        }
+        TestSuiteProtocol oracle = exactOracle.suite();
+        if (oracle instanceof TestSuiteV3 || oracle instanceof TestSuiteV5) {
+            throw badRequest(identity, "RG.TEST.MUTATION_ORACLE_SUITE_UNSUPPORTED",
+                    "Mutation oracles must be executable v1, v2, or v4 business suites.",
+                    Map.of("schemaVersion", oracle.schemaVersion()));
+        }
+        TestSuiteV5.OracleSuiteRef expectedOracle = new TestSuiteV5.OracleSuiteRef(
+                exactOracle.suiteId(), exactOracle.revision(), exactOracle.fingerprint(),
+                oracle.schemaVersion());
+        TestExecutionApiRequest.Target planTarget = exactPlan.target();
+        boolean planClosed = mutationSuite.target().kind().equals(planTarget.kind())
+                && mutationSuite.target().id().equals(planTarget.id())
+                && mutationSuite.target().fingerprint().equals(planTarget.fingerprint())
+                && mutationSuite.sourceFormat().equals(exactPlan.sourceFormat())
+                && mutationSuite.baselineSourceFingerprint().equals(exactPlan.sourceFingerprint())
+                && mutationSuite.baselineGraphArtifactFingerprint()
+                .equals(exactPlan.graphArtifactFingerprint())
+                && mutationSuite.mutationPlanFingerprint().equals(exactPlan.planFingerprint())
+                && mutationSuite.mutationPolicy().equals(mutationPolicy(exactPlan.policy()))
+                && mutationSuite.sourcePlanStatus()
+                == TestSuiteV5.SourcePlanStatus.valueOf(exactPlan.status().name())
+                && mutationSuite.planningGaps().equals(exactPlan.gaps().stream()
+                .map(TestSuiteRegistryService::mutationGap).toList())
+                && mutationSuite.mutants().equals(exactPlan.mutants().stream()
+                .map(TestSuiteRegistryService::mutationRef).toList());
+        if (!planClosed) {
+            throw conflict(identity, "RG.TEST.MUTATION_SUITE_PLAN_MISMATCH",
+                    "The V5 suite does not exactly close over the regenerated mutation plan.",
+                    Map.of("currentPlanFingerprint", exactPlan.planFingerprint()));
+        }
+        SemanticCoveragePolicy oracleSemantic = oracle instanceof TestSuiteV2 v2
+                ? v2.semanticCoveragePolicy()
+                : oracle instanceof TestSuiteV4 v4
+                ? v4.semanticCoveragePolicy() : SemanticCoveragePolicy.empty();
+        boolean oracleClosed = mutationSuite.oracleSuiteRef().equals(expectedOracle)
+                && mutationSuite.cases().equals(oracle.cases())
+                && mutationSuite.coveragePolicy().equals(oracle.coveragePolicy())
+                && mutationSuite.semanticCoveragePolicy().equals(oracleSemantic)
+                && mutationSuite.promotionPolicy().equals(oracle.promotionPolicy())
+                && classificationRank(mutationSuite.classification())
+                >= classificationRank(oracle.classification());
+        if (!oracleClosed) {
+            throw conflict(identity, "RG.TEST.MUTATION_SUITE_ORACLE_MISMATCH",
+                    "The V5 suite does not exactly close over its immutable oracle suite.",
+                    Map.of("oracleSuiteId", exactOracle.suiteId(),
+                            "oracleRevision", exactOracle.revision()));
+        }
+        if (mutationSuite.cases().size() > TestSuiteV5.MAX_CASES
+                || mutationSuite.mutants().size() > TestSuiteV5.MAX_MUTANTS
+                || (long) mutationSuite.cases().size() * mutationSuite.mutants().size()
+                > TestSuiteV5.MAX_MUTANT_CASE_EXECUTIONS) {
+            throw badRequest(identity, "RG.TEST.MUTATION_SUITE_WORK_LIMIT_EXCEEDED",
+                    "The immutable mutation execution matrix exceeds generation-one bounds.",
+                    Map.of("caseCount", mutationSuite.cases().size(),
+                            "mutantCount", mutationSuite.mutants().size()));
+        }
+        for (TestSuite.TestCase testCase : mutationSuite.cases()) {
+            StoredFixtureBundle fixture = requireFixture(testCase.fixtureBundleRef(), identity);
+            if (fixture.bundle().assertions().isEmpty()) {
+                throw badRequest(identity, "RG.TEST.MUTATION_ORACLE_ASSERTIONS_REQUIRED",
+                        "Every mutation oracle case requires a governed business assertion.",
+                        Map.of("caseId", testCase.caseId(),
+                                "fixtureBundleId", fixture.fixtureBundleId()));
+            }
+        }
+    }
+
     private void validateCaseShape(TestSuiteProtocol suite, TestSuite.TestCase testCase,
                                    Set<String> caseIds,
                                    IntegrationRequestContext identity) {
@@ -473,7 +591,7 @@ public final class TestSuiteRegistryService {
             throw badRequest(identity, "RG.TEST.SUITE_CASE_IDENTITY_INVALID",
                     "Every case requires a unique bounded caseId and a supported caseType.", Map.of());
         }
-        if ((suite instanceof TestSuiteV4)
+        if (!(suite instanceof TestSuiteV5) && (suite instanceof TestSuiteV4)
                 != (testCase.caseType() == TestSuite.CaseType.PROPERTY)) {
             throw badRequest(identity, "RG.TEST.SUITE_CASE_TYPE_GENERATION_INVALID",
                     "PROPERTY cases are reserved for exact-plan V4 suites, and every V4 case must be PROPERTY.",
@@ -502,6 +620,30 @@ public final class TestSuiteRegistryService {
                     "Every case requires an exact fixture id, revision, and sha256 fingerprint.",
                     Map.of("caseId", testCase.caseId()));
         }
+    }
+
+    private static TestSuiteV5.MutationPolicy mutationPolicy(
+            TestMutationCasePlan.MutationPolicy source) {
+        return new TestSuiteV5.MutationPolicy(source.plannerVersion(), source.maxMutants(),
+                source.sourceFormat(), source.verificationMode(),
+                source.externalOperatorMutation(), source.equivalentMutantDetection());
+    }
+
+    private static TestSuiteV5.PlanningGap mutationGap(
+            TestMutationCasePlan.PlanningGap source) {
+        return new TestSuiteV5.PlanningGap(
+                TestSuiteV5.PlanningGapCode.valueOf(source.code().name()),
+                source.astPath(), source.mutationKind());
+    }
+
+    private static TestSuiteV5.MutantRef mutationRef(
+            TestMutationCasePlan.PlannedMutant source) {
+        return new TestSuiteV5.MutantRef(source.mutantId(),
+                TestSuiteV5.MutationKind.valueOf(source.kind().name()), source.astPath(),
+                source.sourceLine(), source.sourceColumn(), source.mutantSourceFingerprint(),
+                source.mutantGraphArtifactFingerprint(), source.mutantTargetFingerprint(),
+                TestSuiteV5.EquivalenceClassification.valueOf(
+                        source.equivalenceClassification().name()));
     }
 
     private StoredFixtureBundle requireFixture(TestSuite.FixtureBundleRef reference,

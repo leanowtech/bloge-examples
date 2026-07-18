@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
@@ -207,6 +208,11 @@ public final class TestSuiteExecutionService {
         if (!request.suiteRef().fingerprint().equals(stored.fingerprint())) {
             throw conflict(identity, "RG.TEST.SUITE_FINGERPRINT_CONFLICT",
                     "Stored suite fingerprint differs from the exact execution reference.", Map.of());
+        }
+        if (stored.suite() instanceof TestSuiteV5) {
+            throw conflict(identity, "RG.TEST.MUTATION_SUITE_EXECUTION_UNAVAILABLE",
+                    "Mutation suites require the isolated mutation runner; ordinary suite execution is forbidden.",
+                    Map.of("suiteId", stored.suiteId(), "revision", stored.revision()));
         }
         if (stored.suite() instanceof TestSuiteV3 admissionSuite) {
             return executeSchemaAdmission(

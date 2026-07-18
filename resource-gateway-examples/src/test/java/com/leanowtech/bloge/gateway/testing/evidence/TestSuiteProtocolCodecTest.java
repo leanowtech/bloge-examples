@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -119,6 +120,37 @@ class TestSuiteProtocolCodecTest {
         assertThat(codec.read(json)).isInstanceOf(TestSuiteV4.class).isEqualTo(suite);
         assertThat(json).contains("PROPERTY_EXECUTION", "BOUNDED_SAMPLED", "propertyTrials")
                 .contains("\"exhaustive\":false");
+        assertThat(codec.fingerprint(suite)).isEqualTo(ProtocolFingerprint.of(mapper, suite));
+        assertThat(codec.fingerprint(v1())).isEqualTo(ProtocolFingerprint.of(mapper, v1()));
+    }
+
+    @Test
+    void v5RoundTripRetainsMutationPlanOracleAndScorePolicyWithoutSource() {
+        TestSuite base = v1();
+        TestSuiteV5 suite = new TestSuiteV5("", "mutation-suite", 11,
+                base.target(), base.classification(), base.cases(), base.coveragePolicy(),
+                SemanticCoveragePolicy.empty(), base.promotionPolicy(),
+                TestSuiteV5.EvaluationMode.PURE_DSL_MUTATION, TestSuiteV5.SOURCE_FORMAT,
+                "sha256:" + "b".repeat(64), "sha256:" + "c".repeat(64),
+                "sha256:" + "d".repeat(64),
+                new TestSuiteV5.MutationPolicy(TestSuiteV5.PLANNER_VERSION, 1,
+                        TestSuiteV5.SOURCE_FORMAT, TestSuiteV5.VERIFICATION_MODE, false, false),
+                TestSuiteV5.SourcePlanStatus.GENERATED, false, List.of(),
+                List.of(new TestSuiteV5.MutantRef("mutant-001",
+                        TestSuiteV5.MutationKind.DECISION_CONDITION_NEGATED,
+                        "/members/1/predicate", 4, 9, "sha256:" + "e".repeat(64),
+                        "sha256:" + "f".repeat(64), "sha256:" + "1".repeat(64),
+                        TestSuiteV5.EquivalenceClassification.UNKNOWN)),
+                new TestSuiteV5.OracleSuiteRef("suite", 1,
+                        "sha256:" + "2".repeat(64), TestSuite.SCHEMA_VERSION),
+                new TestSuiteV5.MutationScorePolicy(8_000, 0, false, false),
+                Map.of("source", "mutation-plan"));
+
+        String json = codec.write(suite);
+
+        assertThat(codec.read(json)).isInstanceOf(TestSuiteV5.class).isEqualTo(suite);
+        assertThat(json).contains("PURE_DSL_MUTATION", "mutationPlanFingerprint", "scorePolicy")
+                .doesNotContain("payloadJson", "executableSource");
         assertThat(codec.fingerprint(suite)).isEqualTo(ProtocolFingerprint.of(mapper, suite));
         assertThat(codec.fingerprint(v1())).isEqualTo(ProtocolFingerprint.of(mapper, v1()));
     }

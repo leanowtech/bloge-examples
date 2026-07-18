@@ -955,6 +955,16 @@ public class TestRuntimeConfiguration {
                 executionService, suiteRegistry, objectMapper);
     }
 
+    /** Assembles exact pure-DSL mutation-plan materialization into immutable V5 suites. */
+    @Bean
+    TestMutationSuiteMaterializationService testMutationSuiteMaterializationService(
+            TestExecutionApiService executionService,
+            TestSuiteRegistryService suiteRegistry,
+            ObjectMapper objectMapper) {
+        return new TestMutationSuiteMaterializationService(
+                executionService, suiteRegistry, objectMapper);
+    }
+
     /** Assembles the idempotent immutable-suite runner and coverage evaluator. */
     @Bean(destroyMethod = "close")
     TestSuiteRunLeaseCoordinator testSuiteRunLeaseCoordinator(

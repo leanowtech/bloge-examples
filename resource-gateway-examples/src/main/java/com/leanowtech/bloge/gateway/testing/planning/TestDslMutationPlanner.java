@@ -84,6 +84,72 @@ public final class TestDslMutationPlanner {
             Graph graph,
             Map<String, String> dependencyFingerprints,
             int maxMutants) {
+        return prepare(target, graph, dependencyFingerprints, maxMutants).plan();
+    }
+
+    /**
+     * Regenerates one exact mutant exclusively from the current recoverable baseline source.
+     *
+     * <p>The caller cannot supply executable DSL or a mutated graph. This method reruns baseline
+     * verification and deterministic bounded planning, requires the complete authoring plan to be
+     * byte-semantically equal to the reviewed plan, and returns only the server-derived graph whose
+     * source, graph-artifact, and composite target fingerprints match the selected coordinate.</p>
+     *
+     * @param target exact current baseline graph target
+     * @param graph frozen current baseline graph
+     * @param dependencyFingerprints frozen resource dependency fingerprints
+     * @param expectedPlan exact previously reviewed authoring plan
+     * @param mutantId plan-local mutant coordinate
+     * @return verified in-memory mutant artifact for an isolated server-side runner
+     * @throws MutationRegenerationException when the plan or selected coordinate cannot be proven
+     */
+    public RegeneratedMutant regenerate(
+            TestExecutionApiRequest.Target target,
+            Graph graph,
+            Map<String, String> dependencyFingerprints,
+            TestMutationCasePlan expectedPlan,
+            String mutantId) {
+        if (expectedPlan == null) {
+            throw new MutationRegenerationException(
+                    RegenerationFailure.PLAN_REQUIRED, "An exact reviewed mutation plan is required");
+        }
+        PreparedPlan prepared = prepare(target, graph, dependencyFingerprints,
+                expectedPlan.policy().maxMutants());
+        if (!expectedPlan.equals(prepared.plan())) {
+            throw new MutationRegenerationException(RegenerationFailure.PLAN_MISMATCH,
+                    "Current deterministic mutation plan differs from the reviewed plan");
+        }
+        String selectedId = mutantId == null ? "" : mutantId.trim();
+        PlannedMutant coordinate = expectedPlan.mutants().stream()
+                .filter(mutant -> mutant.mutantId().equals(selectedId))
+                .findFirst()
+                .orElseThrow(() -> new MutationRegenerationException(
+                        RegenerationFailure.MUTANT_NOT_FOUND,
+                        "Selected mutant does not belong to the reviewed plan"));
+        Graph regenerated = prepared.artifacts().get(selectedId);
+        if (regenerated == null) {
+            throw new MutationRegenerationException(RegenerationFailure.ARTIFACT_MISSING,
+                    "Selected mutant was not regenerated with the reviewed plan");
+        }
+        String graphFingerprint = GraphArtifactFingerprint.of(objectMapper, regenerated);
+        String sourceFingerprint = regenerated.definitionSource() == null ? ""
+                : ProtocolFingerprint.ofText(regenerated.definitionSource().payloadJson());
+        String targetFingerprint = targetFingerprint(graphFingerprint,
+                dependencyFingerprints == null ? Map.of() : Map.copyOf(dependencyFingerprints));
+        if (!coordinate.mutantSourceFingerprint().equals(sourceFingerprint)
+                || !coordinate.mutantGraphArtifactFingerprint().equals(graphFingerprint)
+                || !coordinate.mutantTargetFingerprint().equals(targetFingerprint)) {
+            throw new MutationRegenerationException(RegenerationFailure.ARTIFACT_MISMATCH,
+                    "Regenerated mutant identity differs from the reviewed coordinate");
+        }
+        return new RegeneratedMutant(expectedPlan.planFingerprint(), coordinate, regenerated);
+    }
+
+    private PreparedPlan prepare(
+            TestExecutionApiRequest.Target target,
+            Graph graph,
+            Map<String, String> dependencyFingerprints,
+            int maxMutants) {
         if (maxMutants < 1 || maxMutants > MAX_MUTANTS) {
             throw new IllegalArgumentException("maxMutants must be between 1 and " + MAX_MUTANTS);
         }
@@ -98,30 +164,30 @@ public final class TestDslMutationPlanner {
         GraphDefinitionSource source = graph.definitionSource();
         if (source == null) {
             state.gap(GapCode.RECOVERABLE_DSL_SOURCE_UNAVAILABLE, "/", "");
-            return result(target, "UNAVAILABLE", ProtocolFingerprint.ofText(""),
+            return preparedResult(target, "UNAVAILABLE", ProtocolFingerprint.ofText(""),
                     baselineGraphFingerprint, policy, state);
         }
         String sourceFingerprint = ProtocolFingerprint.ofText(source.payloadJson());
         if (!SOURCE_FORMAT.equals(source.format())) {
             state.gap(GapCode.UNSUPPORTED_DSL_SOURCE_FORMAT, "/definitionSource/format", "");
-            return result(target, disclosedSourceFormat(source.format()), sourceFingerprint,
+            return preparedResult(target, disclosedSourceFormat(source.format()), sourceFingerprint,
                     baselineGraphFingerprint, policy, state);
         }
 
         GraphDef baseline = decode(source, state);
         if (baseline == null) {
-            return result(target, source.format(), sourceFingerprint,
+            return preparedResult(target, source.format(), sourceFingerprint,
                     baselineGraphFingerprint, policy, state);
         }
         if (baseline.members().stream().anyMatch(AstNode.ImportDef.class::isInstance)) {
             state.gap(GapCode.IMPORTED_GRAPH_MUTATION_UNSUPPORTED, "/members", "");
-            return result(target, source.format(), sourceFingerprint,
+            return preparedResult(target, source.format(), sourceFingerprint,
                     baselineGraphFingerprint, policy, state);
         }
         Graph recompiled = compile(baseline, source.graphVersion());
         if (recompiled == null) {
             state.gap(GapCode.BASELINE_RECOMPILATION_FAILED, "/", "");
-            return result(target, source.format(), sourceFingerprint,
+            return preparedResult(target, source.format(), sourceFingerprint,
                     baselineGraphFingerprint, policy, state);
         }
         String recompiledFingerprint = GraphArtifactFingerprint.of(objectMapper, recompiled);
@@ -129,7 +195,7 @@ public final class TestDslMutationPlanner {
         if (!baselineGraphFingerprint.equals(recompiledFingerprint)
                 || !target.fingerprint().equals(recompiledTarget)) {
             state.gap(GapCode.BASELINE_RECOMPILATION_MISMATCH, "/", "");
-            return result(target, source.format(), sourceFingerprint,
+            return preparedResult(target, source.format(), sourceFingerprint,
                     baselineGraphFingerprint, policy, state);
         }
 
@@ -167,18 +233,20 @@ public final class TestDslMutationPlanner {
                 continue;
             }
             String graphFingerprint = GraphArtifactFingerprint.of(objectMapper, mutant);
+            String mutantId = "mutant-%03d".formatted(state.mutants.size() + 1);
             state.mutants.add(new PlannedMutant(
-                    "mutant-%03d".formatted(state.mutants.size() + 1),
+                    mutantId,
                     candidate.kind(), candidate.astPath(), candidate.line(), candidate.column(),
                     mutantSourceFingerprint, graphFingerprint,
                     targetFingerprint(graphFingerprint, dependencies),
                     EquivalenceClassification.UNKNOWN));
+            state.artifacts.put(mutantId, mutant);
         }
         if (state.mutants.isEmpty() && state.gaps.stream()
                 .noneMatch(gap -> gap.code() == GapCode.NO_SUPPORTED_MUTATION_SITE)) {
             state.gap(GapCode.NO_SUPPORTED_MUTATION_SITE, "/members", "");
         }
-        return result(target, source.format(), sourceFingerprint,
+        return preparedResult(target, source.format(), sourceFingerprint,
                 baselineGraphFingerprint, policy, state);
     }
 
@@ -437,7 +505,7 @@ public final class TestDslMutationPlanner {
         return normalized.isEmpty() || normalized.length() > 128 ? "UNSUPPORTED" : normalized;
     }
 
-    private TestMutationCasePlan result(
+    private PreparedPlan preparedResult(
             TestExecutionApiRequest.Target target,
             String sourceFormat,
             String sourceFingerprint,
@@ -464,9 +532,76 @@ public final class TestDslMutationPlanner {
         material.put("policy", policy);
         material.put("mutants", mutants);
         material.put("gaps", gaps);
-        return new TestMutationCasePlan("", target, sourceFormat, sourceFingerprint,
+        TestMutationCasePlan plan = new TestMutationCasePlan("", target, sourceFormat, sourceFingerprint,
                 graphFingerprint, ProtocolFingerprint.of(objectMapper, material), status,
                 policy, mutants, gaps);
+        return new PreparedPlan(plan, Map.copyOf(state.artifacts));
+    }
+
+    /** Stable fail-closed reasons emitted by exact mutant regeneration. */
+    public enum RegenerationFailure {
+        /** No reviewed plan was supplied. */
+        PLAN_REQUIRED,
+        /** Current source, dependencies, policy, or generated coordinates drifted. */
+        PLAN_MISMATCH,
+        /** The requested mutant id is absent from the exact plan. */
+        MUTANT_NOT_FOUND,
+        /** Deterministic preparation did not produce the selected in-memory graph. */
+        ARTIFACT_MISSING,
+        /** A regenerated source, graph artifact, or composite target identity drifted. */
+        ARTIFACT_MISMATCH
+    }
+
+    /** Exception carrying a bounded machine-readable regeneration failure. */
+    public static final class MutationRegenerationException extends RuntimeException {
+        private final RegenerationFailure failure;
+
+        /**
+         * @param failure stable failure category
+         * @param message bounded diagnostic without DSL or business payload data
+         */
+        public MutationRegenerationException(RegenerationFailure failure, String message) {
+            super(message);
+            this.failure = Objects.requireNonNull(failure, "failure");
+        }
+
+        /** @return stable failure category suitable for inconclusive evidence */
+        public RegenerationFailure failure() {
+            return failure;
+        }
+    }
+
+    /**
+     * Server-internal exact mutant artifact.
+     *
+     * <p>The graph is intentionally absent from every public mutation-plan protocol. Consumers
+     * must keep this value inside the isolated test runtime and must not serialize it as evidence.</p>
+     *
+     * @param planFingerprint exact reviewed plan identity
+     * @param coordinate exact planned mutant coordinate
+     * @param graph independently recompiled in-memory mutant graph
+     */
+    public record RegeneratedMutant(
+            String planFingerprint,
+            PlannedMutant coordinate,
+            Graph graph
+    ) {
+        /** Validates the server-internal proof closure. */
+        public RegeneratedMutant {
+            planFingerprint = planFingerprint == null ? "" : planFingerprint.trim();
+            coordinate = Objects.requireNonNull(coordinate, "coordinate");
+            graph = Objects.requireNonNull(graph, "graph");
+            if (!planFingerprint.matches("sha256:[a-f0-9]{64}")) {
+                throw new IllegalArgumentException("Regenerated mutant requires a plan fingerprint");
+            }
+        }
+    }
+
+    private record PreparedPlan(TestMutationCasePlan plan, Map<String, Graph> artifacts) {
+        private PreparedPlan {
+            plan = Objects.requireNonNull(plan, "plan");
+            artifacts = artifacts == null ? Map.of() : Map.copyOf(artifacts);
+        }
     }
 
     @FunctionalInterface
@@ -486,6 +621,7 @@ public final class TestDslMutationPlanner {
     private static final class State {
         private final List<PlannedMutant> mutants = new ArrayList<>();
         private final Set<PlanningGap> gaps = new LinkedHashSet<>();
+        private final Map<String, Graph> artifacts = new LinkedHashMap<>();
 
         private void gap(GapCode code, String path, String kind) {
             gaps.add(new PlanningGap(code, path, kind));

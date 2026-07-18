@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
 import com.leanowtech.bloge.gateway.testing.planning.TestDslMutationPlanner;
 import com.leanowtech.bloge.gateway.testing.planning.TestPropertyCasePlanner;
@@ -67,6 +68,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteV3.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteV4/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteV4.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteV5/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteV5.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteRegistrationRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteRegistrationRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/storedTestSuite/properties/schemaVersion/const").asText())
@@ -132,6 +135,12 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at(
                 "/$defs/testPropertySuiteMaterialization/properties/schemaVersion/const")
                 .asText()).isEqualTo(TestPropertySuiteMaterializationResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testMutationSuiteMaterializationRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestMutationSuiteMaterializationRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testMutationSuiteMaterialization/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestMutationSuiteMaterializationResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testOperatorExecutionRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestOperatorExecutionApiRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testOperatorTargetDescriptor/properties/schemaVersion/const").asText())
@@ -402,6 +411,9 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testBoundaryCasePlan")).isTrue();
         assertThat(definitions.has("testPropertyCasePlan")).isTrue();
         assertThat(definitions.has("testMutationCasePlan")).isTrue();
+        assertThat(definitions.has("testSuiteV5")).isTrue();
+        assertThat(definitions.has("testMutationSuiteMaterializationRequest")).isTrue();
+        assertThat(definitions.has("testMutationSuiteMaterialization")).isTrue();
         assertThat(definitions.has("testBoundarySuiteMaterializationRequest")).isTrue();
         assertThat(definitions.has("testBoundarySuiteMaterialization")).isTrue();
         assertThat(definitions.has("durableTestOwnerClaimRequest")).isTrue();
@@ -661,6 +673,18 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at("/testMutationCasePlan/properties/mutants/maxItems").asInt())
                 .isEqualTo(TestDslMutationPlanner.MAX_MUTANTS);
         assertThat(definitions.at("/testMutationCasePlan/oneOf")).hasSize(3);
+        assertThat(definitions.at("/testSuiteV5/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at("/testSuiteV5/properties/cases/maxItems").asInt())
+                .isEqualTo(TestSuiteV5.MAX_CASES);
+        assertThat(definitions.at("/testSuiteV5/properties/mutants/maxItems").asInt())
+                .isEqualTo(TestSuiteV5.MAX_MUTANTS);
+        assertThat(definitions.at(
+                "/testSuiteMutationPolicy/properties/externalOperatorMutation/const")
+                .asBoolean()).isFalse();
+        assertThat(definitions.at(
+                "/testSuiteMutationScorePolicy/properties/excludeEquivalentMutants/const")
+                .asBoolean()).isFalse();
+        assertThat(definitions.at("/testSuiteV5/oneOf")).hasSize(2);
         assertThat(definitions.at(
                 "/testBoundarySuiteMaterializationRequest/additionalProperties").asBoolean())
                 .isFalse();
@@ -684,6 +708,16 @@ class TestingControlProtocolSchemaTest {
                 "/testPropertySuiteMaterialization/properties/caseIds/maxItems").asInt())
                 .isEqualTo(TestPropertyCasePlanner.MAX_CASES);
         assertThat(definitions.at("/testPropertySuiteMaterialization/oneOf")).hasSize(2);
+        assertThat(definitions.at(
+                "/testMutationSuiteMaterializationRequest/additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(definitions.at(
+                "/testMutationSuiteMaterializationRequest/properties/maxMutants/maximum").asInt())
+                .isEqualTo(TestSuiteV5.MAX_MUTANTS);
+        assertThat(definitions.at(
+                "/testMutationSuiteMaterialization/properties/mutantCaseExecutions/maximum").asInt())
+                .isEqualTo(TestSuiteV5.MAX_MUTANT_CASE_EXECUTIONS);
+        assertThat(definitions.at("/testMutationSuiteMaterialization/oneOf")).hasSize(2);
         assertThat(definitions.at("/testExecutionRequest/properties/target/$ref").asText())
                 .isEqualTo("#/$defs/graphTarget");
         assertThat(definitions.at("/testOperatorExecutionRequest/properties/target/$ref").asText())
@@ -774,7 +808,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at(
                 "/testSuiteEvidenceBundleV4/properties/evidence/$ref").asText())
                 .isEqualTo("#/$defs/testSuiteRunEvidenceV4");
-        assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(4);
+        assertThat(definitions.at("/testSuiteProtocol/oneOf")).hasSize(5);
         assertThat(definitions.at("/testSuiteV3/additionalProperties").asBoolean()).isFalse();
         assertThat(definitions.at("/testSuiteV3/properties/evaluationMode/const").asText())
                 .isEqualTo("SCHEMA_ADMISSION");

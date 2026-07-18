@@ -2177,12 +2177,165 @@
         }
       ]
     },
+    "testSuiteMutationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plannerVersion", "maxMutants", "sourceFormat", "verificationMode",
+        "externalOperatorMutation", "equivalentMutantDetection"],
+      "properties": {
+        "plannerVersion": {"const": "pure-dsl-mutations-v1"},
+        "maxMutants": {"type": "integer", "minimum": 1, "maximum": 16},
+        "sourceFormat": {"const": "bloge-dsl.ast.v1"},
+        "verificationMode": {"const": "BLOGE_DSL_AST_RECOMPILE_PROOF"},
+        "externalOperatorMutation": {"const": false},
+        "equivalentMutantDetection": {"const": false}
+      }
+    },
+    "testSuiteMutationGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "astPath", "mutationKind"],
+      "properties": {
+        "code": {
+          "enum": ["RECOVERABLE_DSL_SOURCE_UNAVAILABLE", "UNSUPPORTED_DSL_SOURCE_FORMAT",
+            "DSL_SOURCE_DECODE_FAILED", "BASELINE_RECOMPILATION_FAILED",
+            "BASELINE_RECOMPILATION_MISMATCH", "IMPORTED_GRAPH_MUTATION_UNSUPPORTED",
+            "EXTENSION_MUTATION_UNSUPPORTED", "NESTED_SCOPE_NOT_EXPANDED",
+            "MUTANT_COMPILATION_REJECTED", "MUTANT_DUPLICATE_REJECTED",
+            "MUTANT_LIMIT_REACHED", "NO_SUPPORTED_MUTATION_SITE"]
+        },
+        "astPath": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^/"},
+        "mutationKind": {"type": "string", "maxLength": 128}
+      }
+    },
+    "testSuiteMutantRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mutantId", "kind", "astPath", "sourceLine", "sourceColumn",
+        "mutantSourceFingerprint", "mutantGraphArtifactFingerprint",
+        "mutantTargetFingerprint", "equivalenceClassification"],
+      "properties": {
+        "mutantId": {"type": "string", "pattern": "^mutant-[0-9]{3}$"},
+        "kind": {
+          "enum": ["BRANCH_MODE_TOGGLED", "BRANCH_CASE_TARGET_REPLACED",
+            "BRANCH_OTHERWISE_TARGET_REPLACED", "DECISION_CONDITION_NEGATED",
+            "DECISION_FIRST_RULE_ORDER_SWAPPED", "DECISION_HIT_POLICY_RELAXED",
+            "TRANSFORM_BINDINGS_SWAPPED", "FALLBACK_REMOVED",
+            "RETRY_ATTEMPTS_DECREMENTED"]
+        },
+        "astPath": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^/"},
+        "sourceLine": {"type": "integer", "minimum": 1},
+        "sourceColumn": {"type": "integer", "minimum": 1},
+        "mutantSourceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "mutantGraphArtifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "mutantTargetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "equivalenceClassification": {"const": "UNKNOWN"}
+      }
+    },
+    "testSuiteMutationOracleRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suiteId", "revision", "fingerprint", "schemaVersion"],
+      "properties": {
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "schemaVersion": {"enum": ["bloge.testSuite.v1", "bloge.testSuite.v2",
+          "bloge.testSuite.v4"]}
+      }
+    },
+    "testSuiteMutationScorePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumScoreBasisPoints", "maximumInconclusiveMutants",
+        "requireNoSurvivors", "excludeEquivalentMutants"],
+      "properties": {
+        "minimumScoreBasisPoints": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "maximumInconclusiveMutants": {"type": "integer", "minimum": 0, "maximum": 16},
+        "requireNoSurvivors": {"type": "boolean"},
+        "excludeEquivalentMutants": {"const": false}
+      }
+    },
+    "testSuiteV5": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteId", "revision", "target", "classification",
+        "cases", "coveragePolicy", "semanticCoveragePolicy", "promotionPolicy",
+        "evaluationMode", "sourceFormat", "baselineSourceFingerprint",
+        "baselineGraphArtifactFingerprint", "mutationPlanFingerprint", "mutationPolicy",
+        "sourcePlanStatus", "planningGapsAccepted", "planningGaps", "mutants",
+        "oracleSuiteRef", "scorePolicy", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuite.v5"},
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "target": {
+          "allOf": [
+            {"$ref": "#/$defs/exactTarget"},
+            {"properties": {"kind": {"const": "GRAPH"}}}
+          ]
+        },
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "cases": {
+          "type": "array", "minItems": 1, "maxItems": 16,
+          "items": {"$ref": "#/$defs/testSuiteCase"}
+        },
+        "coveragePolicy": {"$ref": "#/$defs/testSuiteCoveragePolicy"},
+        "semanticCoveragePolicy": {
+          "oneOf": [
+            {"$ref": "#/$defs/semanticCoveragePolicy"},
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["requirements"],
+              "properties": {"requirements": {"type": "array", "maxItems": 0}}
+            }
+          ]
+        },
+        "promotionPolicy": {"$ref": "#/$defs/testSuitePromotionPolicy"},
+        "evaluationMode": {"const": "PURE_DSL_MUTATION"},
+        "sourceFormat": {"const": "bloge-dsl.ast.v1"},
+        "baselineSourceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "baselineGraphArtifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "mutationPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "mutationPolicy": {"$ref": "#/$defs/testSuiteMutationPolicy"},
+        "sourcePlanStatus": {"enum": ["GENERATED", "PARTIAL"]},
+        "planningGapsAccepted": {"type": "boolean"},
+        "planningGaps": {
+          "type": "array", "uniqueItems": true, "maxItems": 512,
+          "items": {"$ref": "#/$defs/testSuiteMutationGap"}
+        },
+        "mutants": {
+          "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/testSuiteMutantRef"}
+        },
+        "oracleSuiteRef": {"$ref": "#/$defs/testSuiteMutationOracleRef"},
+        "scorePolicy": {"$ref": "#/$defs/testSuiteMutationScorePolicy"},
+        "metadata": {"type": "object", "maxProperties": 100}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "GENERATED"},
+            "planningGapsAccepted": {"const": false},
+            "planningGaps": {"maxItems": 0}
+          }
+        },
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "PARTIAL"},
+            "planningGapsAccepted": {"const": true},
+            "planningGaps": {"minItems": 1}
+          }
+        }
+      ]
+    },
     "testSuiteProtocol": {
       "oneOf": [
         {"$ref": "#/$defs/testSuite"},
         {"$ref": "#/$defs/testSuiteV2"},
         {"$ref": "#/$defs/testSuiteV3"},
-        {"$ref": "#/$defs/testSuiteV4"}
+        {"$ref": "#/$defs/testSuiteV4"},
+        {"$ref": "#/$defs/testSuiteV5"}
       ]
     },
     "testSuiteRegistrationRequest": {
@@ -4113,6 +4266,77 @@
           "properties": {
             "sourcePlanStatus": {"const": "PARTIAL"},
             "generationGapsAccepted": {"const": true}
+          }
+        }
+      ]
+    },
+    "testMutationSuiteMaterializationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteId", "classification",
+        "expectedTargetFingerprint", "expectedSourceFingerprint",
+        "expectedGraphArtifactFingerprint", "expectedPlanFingerprint", "maxMutants",
+        "oracleSuiteRef", "acceptPlanningGaps", "scorePolicy"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testMutationSuiteMaterializationRequest.v1"},
+        "suiteId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$"},
+        "classification": {"enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]},
+        "expectedTargetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "expectedSourceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "expectedGraphArtifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "expectedPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "maxMutants": {"type": "integer", "minimum": 1, "maximum": 16},
+        "oracleSuiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "acceptPlanningGaps": {"type": "boolean"},
+        "scorePolicy": {"$ref": "#/$defs/testSuiteMutationScorePolicy"}
+      }
+    },
+    "testMutationSuiteMaterialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "materializationFingerprint", "target",
+        "baselineSourceFingerprint", "baselineGraphArtifactFingerprint",
+        "mutationPlanFingerprint", "sourcePlanStatus", "planningGapsAccepted",
+        "mutationPolicy", "mutantIds", "oracleCaseIds", "mutantCaseExecutions",
+        "oracleSuiteRef", "suiteRef"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testMutationSuiteMaterialization.v1"},
+        "materializationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "target": {
+          "allOf": [
+            {"$ref": "#/$defs/exactTarget"},
+            {"properties": {"kind": {"const": "GRAPH"}}}
+          ]
+        },
+        "baselineSourceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "baselineGraphArtifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "mutationPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sourcePlanStatus": {"enum": ["GENERATED", "PARTIAL"]},
+        "planningGapsAccepted": {"type": "boolean"},
+        "mutationPolicy": {"$ref": "#/$defs/testSuiteMutationPolicy"},
+        "mutantIds": {
+          "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^mutant-[0-9]{3}$"}
+        },
+        "oracleCaseIds": {
+          "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}
+        },
+        "mutantCaseExecutions": {"type": "integer", "minimum": 1, "maximum": 256},
+        "oracleSuiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "GENERATED"},
+            "planningGapsAccepted": {"const": false}
+          }
+        },
+        {
+          "properties": {
+            "sourcePlanStatus": {"const": "PARTIAL"},
+            "planningGapsAccepted": {"const": true}
           }
         }
       ]

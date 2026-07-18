@@ -9,12 +9,14 @@ import com.leanowtech.bloge.dsl.compiler.GraphLoader;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestMutationCasePlan;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestDslMutationPlannerTest {
     private ObjectMapper mapper;
@@ -69,6 +71,55 @@ class TestDslMutationPlannerTest {
                         TestMutationCasePlan.MutationKind.DECISION_CONDITION_NEGATED,
                         TestMutationCasePlan.MutationKind.DECISION_FIRST_RULE_ORDER_SWAPPED,
                         TestMutationCasePlan.MutationKind.TRANSFORM_BINDINGS_SWAPPED);
+    }
+
+    @Test
+    void regeneratesOnlyAnExactReviewedMutantCoordinate() {
+        Graph graph = graph(complexDsl());
+        GraphExecutionTargetSnapshot snapshot = GraphExecutionTargetSnapshot.capture(
+                mapper, graph, null);
+        TestExecutionApiRequest.Target target = target(graph, snapshot.fingerprint());
+        TestMutationCasePlan plan = planner.plan(
+                target, graph, snapshot.dependencyFingerprints(), 8);
+        TestMutationCasePlan.PlannedMutant selected = plan.mutants().get(2);
+
+        TestDslMutationPlanner.RegeneratedMutant regenerated = planner.regenerate(
+                target, graph, snapshot.dependencyFingerprints(), plan, selected.mutantId());
+
+        assertThat(regenerated.planFingerprint()).isEqualTo(plan.planFingerprint());
+        assertThat(regenerated.coordinate()).isEqualTo(selected);
+        assertThat(regenerated.graph().name()).isEqualTo(graph.name());
+        assertThat(GraphExecutionTargetSnapshot.capture(mapper, regenerated.graph(), null).fingerprint())
+                .isEqualTo(selected.mutantTargetFingerprint());
+    }
+
+    @Test
+    void regenerationRejectsPlanDriftAndUnknownCoordinates() {
+        Graph graph = graph(complexDsl());
+        GraphExecutionTargetSnapshot snapshot = GraphExecutionTargetSnapshot.capture(
+                mapper, graph, null);
+        TestExecutionApiRequest.Target target = target(graph, snapshot.fingerprint());
+        TestMutationCasePlan reviewed = planner.plan(
+                target, graph, snapshot.dependencyFingerprints(), 8);
+        TestMutationCasePlan drifted = new TestMutationCasePlan(
+                reviewed.schemaVersion(), reviewed.target(), reviewed.sourceFormat(),
+                reviewed.sourceFingerprint(), reviewed.graphArtifactFingerprint(),
+                ProtocolFingerprint.ofText("tampered-plan"), reviewed.status(), reviewed.policy(),
+                reviewed.mutants(), reviewed.gaps());
+
+        assertThatThrownBy(() -> planner.regenerate(target, graph,
+                snapshot.dependencyFingerprints(), drifted,
+                reviewed.mutants().getFirst().mutantId()))
+                .isInstanceOf(TestDslMutationPlanner.MutationRegenerationException.class)
+                .extracting(failure -> ((TestDslMutationPlanner.MutationRegenerationException) failure)
+                        .failure())
+                .isEqualTo(TestDslMutationPlanner.RegenerationFailure.PLAN_MISMATCH);
+        assertThatThrownBy(() -> planner.regenerate(target, graph,
+                snapshot.dependencyFingerprints(), reviewed, "mutant-999"))
+                .isInstanceOf(TestDslMutationPlanner.MutationRegenerationException.class)
+                .extracting(failure -> ((TestDslMutationPlanner.MutationRegenerationException) failure)
+                        .failure())
+                .isEqualTo(TestDslMutationPlanner.RegenerationFailure.MUTANT_NOT_FOUND);
     }
 
     @Test

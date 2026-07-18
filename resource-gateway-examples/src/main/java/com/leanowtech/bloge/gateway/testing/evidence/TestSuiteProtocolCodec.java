@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 
 import java.util.Objects;
 
@@ -67,6 +68,7 @@ public final class TestSuiteProtocolCodec {
                 case TestSuiteV2.SCHEMA_VERSION -> objectMapper.treeToValue(tree, TestSuiteV2.class);
                 case TestSuiteV3.SCHEMA_VERSION -> objectMapper.treeToValue(tree, TestSuiteV3.class);
                 case TestSuiteV4.SCHEMA_VERSION -> objectMapper.treeToValue(tree, TestSuiteV4.class);
+                case TestSuiteV5.SCHEMA_VERSION -> objectMapper.treeToValue(tree, TestSuiteV5.class);
                 default -> throw new IllegalStateException(
                         "Stored test suite uses unsupported schemaVersion: " + schemaVersion);
             };
@@ -88,6 +90,9 @@ public final class TestSuiteProtocolCodec {
             return;
         }
         if (suite instanceof TestSuiteV4 v4 && TestSuiteV4.SCHEMA_VERSION.equals(v4.schemaVersion())) {
+            return;
+        }
+        if (suite instanceof TestSuiteV5 v5 && TestSuiteV5.SCHEMA_VERSION.equals(v5.schemaVersion())) {
             return;
         }
         throw new IllegalArgumentException("Suite class and schemaVersion do not identify one generation");
