@@ -75,12 +75,13 @@ idempotency, lease-loss, durable-prefix recovery, evidence and statistical behav
 
 ## 5. Required next step
 
-The next atomic increment must provide a worker guard that:
+The worker guard is now implemented and verified separately. The next atomic increment must use it
+from a bounded worker that:
 
-1. heartbeats the exact queue owner/epoch fence during long source attempts;
-2. verifies the bound descriptor exactly matches the claimed job;
-3. delegates cancellation, deadline, and failure terminalization to the queue repository, whose
-   parent-first authority commits the exact parent tombstone before the queue transition;
-4. calls queue `prepareCompletion` from `prepareTerminal`;
-5. preserves `COMMITTING` across crash recovery and completes the queue from replayed evidence;
-6. fails closed on delegated authority ambiguity and classifies retryable versus terminal failures.
+1. acquires a local execution slot before claiming durable work;
+2. revalidates current delegated authority before engine execution;
+3. preserves `COMMITTING` across crash recovery and completes the queue from replayed evidence;
+4. fails closed on delegated authority ambiguity and classifies retryable versus terminal failures.
+
+Guard ordering and negative-space proof are documented in
+[Stage 5 suite-stability worker guard verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-guard-verification.md).

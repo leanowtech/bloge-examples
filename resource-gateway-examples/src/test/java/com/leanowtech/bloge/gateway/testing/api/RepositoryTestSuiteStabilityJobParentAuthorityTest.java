@@ -160,7 +160,8 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
                 source.classification(), source.principal(), source.priority(),
                 Instant.now().plus(Duration.ofHours(1))), policy);
         TestSuiteStabilityJobClaim claim = jobs.claimNext("test", "worker-a", policy);
-        TestSuiteStabilityJobLease committing = jobs.prepareCompletion(claim.lease(), policy);
+        TestSuiteStabilityJobLease committing =
+                jobs.prepareCompletion(claim.lease(), policy).lease();
         TestSuiteStabilityExecutionDescriptor execution =
                 TestSuiteStabilityExecutionIdentity.descriptor(mapper, source);
 

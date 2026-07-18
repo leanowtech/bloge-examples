@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobClaim;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCompletionPreparation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLeaseCheck;
@@ -357,16 +358,24 @@ public final class DatabaseTestSuiteStabilityJobRepository
     }
 
     @Override
-    public TestSuiteStabilityJobLease prepareCompletion(
+    public TestSuiteStabilityJobCompletionPreparation prepareCompletion(
             TestSuiteStabilityJobLease lease,
             TestSuiteStabilityQueuePolicy policy) {
         Objects.requireNonNull(lease, "lease");
         Objects.requireNonNull(policy, "policy");
-        CompletionPreparation result = mutations.execute(status -> {
+        TestSuiteStabilityJobCompletionPreparation result = mutations.execute(status -> {
             lockEnvironment(lease.environmentId());
             Instant observedAt = currentTime();
             ensurePolicy(lease.environmentId(), policy, observedAt);
-            StoredJob stored = requireLive(lease, observedAt);
+            Optional<StoredJob> candidate = byJobId(
+                    lease.tenantId(), lease.environmentId(), lease.jobId());
+            if (candidate.isEmpty() || !sameFence(candidate.get(), lease)
+                    || !candidate.get().leaseExpiresAt().isAfter(observedAt)) {
+                return TestSuiteStabilityJobCompletionPreparation.stopped(
+                        TestSuiteStabilityJobCompletionPreparation.Decision.LEASE_LOST,
+                        "RG.TEST.STABILITY_JOB_LEASE_LOST");
+            }
+            StoredJob stored = candidate.get();
             if (stored.record().status()
                     == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
                 StoredJob cancelled = parentTerminal(stored,
@@ -375,8 +384,16 @@ public final class DatabaseTestSuiteStabilityJobRepository
                         "RG.TEST.STABILITY_JOB_CANCELLED", policy,
                         stored.record().retryCount());
                 updateExact(stored, cancelled);
-                return CompletionPreparation.rejected(
-                        "Cancellation won before suite-stability terminal publication");
+                return TestSuiteStabilityJobCompletionPreparation.stopped(
+                        cancelled.record().status()
+                                == TestSuiteStabilityJobRecord.Status.SUCCEEDED
+                                ? TestSuiteStabilityJobCompletionPreparation.Decision
+                                .PARENT_COMPLETED
+                                : TestSuiteStabilityJobCompletionPreparation.Decision.CANCELLED,
+                        cancelled.record().status()
+                                == TestSuiteStabilityJobRecord.Status.SUCCEEDED
+                                ? "RG.TEST.STABILITY_JOB_PARENT_COMPLETED"
+                                : "RG.TEST.STABILITY_JOB_CANCELLED");
             }
             if (!stored.record().deadlineAt().isAfter(observedAt)) {
                 StoredJob expired = parentTerminal(stored,
@@ -385,14 +402,24 @@ public final class DatabaseTestSuiteStabilityJobRepository
                         "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", policy,
                         stored.record().retryCount());
                 updateExact(stored, expired);
-                return CompletionPreparation.rejected(
-                        "Deadline won before suite-stability terminal publication");
+                return TestSuiteStabilityJobCompletionPreparation.stopped(
+                        expired.record().status()
+                                == TestSuiteStabilityJobRecord.Status.SUCCEEDED
+                                ? TestSuiteStabilityJobCompletionPreparation.Decision
+                                .PARENT_COMPLETED
+                                : TestSuiteStabilityJobCompletionPreparation.Decision
+                                .DEADLINE_EXCEEDED,
+                        expired.record().status()
+                                == TestSuiteStabilityJobRecord.Status.SUCCEEDED
+                                ? "RG.TEST.STABILITY_JOB_PARENT_COMPLETED"
+                                : "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED");
             }
             if (!Set.of(TestSuiteStabilityJobRecord.Status.RUNNING,
                     TestSuiteStabilityJobRecord.Status.COMMITTING)
                     .contains(stored.record().status())) {
-                throw conflict(TestSuiteStabilityJobConflictException.Reason.LEASE_LOST,
-                        "Suite-stability job cannot enter terminal publication");
+                return TestSuiteStabilityJobCompletionPreparation.stopped(
+                        TestSuiteStabilityJobCompletionPreparation.Decision.LEASE_LOST,
+                        "RG.TEST.STABILITY_JOB_LEASE_LOST");
             }
             StoredJob committing = transition(stored,
                     TestSuiteStabilityJobRecord.Status.COMMITTING,
@@ -400,15 +427,10 @@ public final class DatabaseTestSuiteStabilityJobRepository
                     stored.record().expiresAt(), stored.ownerId(), stored.leaseEpoch(),
                     observedAt.plus(policy.leaseDuration()), "", "", "", "", "");
             updateExact(stored, committing);
-            return CompletionPreparation.prepared(lease(committing));
+            return TestSuiteStabilityJobCompletionPreparation.prepared(lease(committing));
         });
-        CompletionPreparation prepared = required(
+        return required(
                 result, "Suite-stability completion preparation returned no result");
-        if (prepared.lease() == null) {
-            throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
-                    prepared.failure());
-        }
-        return prepared.lease();
     }
 
     @Override
@@ -1378,16 +1400,4 @@ public final class DatabaseTestSuiteStabilityJobRepository
             long policyGeneration) {
     }
 
-    private record CompletionPreparation(
-            TestSuiteStabilityJobLease lease,
-            String failure) {
-
-        private static CompletionPreparation prepared(TestSuiteStabilityJobLease lease) {
-            return new CompletionPreparation(Objects.requireNonNull(lease, "lease"), "");
-        }
-
-        private static CompletionPreparation rejected(String failure) {
-            return new CompletionPreparation(null, normalized(failure));
-        }
-    }
 }

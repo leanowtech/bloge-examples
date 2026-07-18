@@ -329,6 +329,16 @@ fingerprint 并验证 detached signature；父记录缺失、引用矛盾、签�
 `TERMINAL_CONFLICT`，不穿透持久化实现类型。55 项聚焦测试包含真实 H2 queue + parent 联合路径，证明
 父证据提交前不能成功、提交并验签后才可收敛；worker 仍待下一子步接入。
 
+第五十三增量第五子步建立 worker guard，但仍不启动 worker。`prepareCompletion` 从“成功返回 lease、
+竞态靠异常”升级为 `PREPARED/CANCELLED/DEADLINE_EXCEEDED/PARENT_COMPLETED/LEASE_LOST` 封闭结果，
+known race 不再依赖异常文本或二次查询。process-wide daemon coordinator 为每个 exact
+job/owner/epoch/expiry guard 在长 child attempt 期间续租；算法每个 cooperative checkpoint、terminal
+prepare 与 queue success 前仍同步确认数据库 fence。guard 在 descriptor 漂移、取消、截止、父成功、
+lease loss、store ambiguity 或 shutdown 后 sticky fail closed，后续成功调用不能复活。64 项聚焦测试
+包含真实周期 heartbeat。该能力只保证陈旧结果不可提交，不声称能中断不可协作算子；hard deadline
+仍需可杀进程/容器。验证见
+[Stage 5 suite-stability worker guard verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-guard-verification.md)。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制

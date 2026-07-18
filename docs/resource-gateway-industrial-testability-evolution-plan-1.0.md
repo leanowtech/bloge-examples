@@ -327,6 +327,16 @@ authority 返回矛盾结果时，queue 事务 fail closed，`COMMITTING` 与 ex
 parent repository conflict 对外收敛成 queue 的稳定 `TERMINAL_CONFLICT`。55 项聚焦测试包含真实 H2
 queue/parent 联合提交，证明先有签名父终态、后有队列成功。该增量仍未启动 worker 或开放 capability。
 
+第五十三增量第五子步完成 worker guard，不等于异步 worker 已启动。最终 publication check 已改为
+`PREPARED/CANCELLED/DEADLINE_EXCEEDED/PARENT_COMPLETED/LEASE_LOST` typed decision，worker 不需解析
+异常文本。单一 daemon coordinator 在长 source attempt 期间续租 exact queue fence；每个算法
+checkpoint、terminal prepare 和 success 前又同步确认 successor lease。job 与 deterministic parent
+descriptor 必须精确一致；取消、截止、父成功、lease loss、数据库歧义、descriptor mismatch 或 shutdown
+任一发生后 guard 永久 fail closed。64 项聚焦测试含真实后台 heartbeat 与 sticky ambiguity 反例。
+它只能 fence stale publication，不能强杀不可协作 operator；物理 hard timeout 仍须进程/容器隔离。
+验证见
+[Stage 5 suite-stability worker guard verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-guard-verification.md)。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

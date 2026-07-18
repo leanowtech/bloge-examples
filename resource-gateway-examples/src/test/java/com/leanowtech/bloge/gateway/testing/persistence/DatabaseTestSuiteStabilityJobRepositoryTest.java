@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobClaim;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCompletionPreparation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLeaseCheck;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobParentAuthority;
@@ -112,13 +113,13 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
 
         TestSuiteStabilityJobClaim first = repository.claimNext("test", "worker-a", policy);
         assertThat(first.job().jobId()).isEqualTo(aHigh.jobId());
-        var firstTerminalLease = repository.prepareCompletion(first.lease(), policy);
+        var firstTerminalLease = repository.prepareCompletion(first.lease(), policy).lease();
         repository.complete(firstTerminalLease, "stability-result-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('6'), policy);
 
         TestSuiteStabilityJobClaim second = repository.claimNext("test", "worker-a", policy);
         assertThat(second.job().jobId()).isEqualTo(bLow.jobId());
-        var secondTerminalLease = repository.prepareCompletion(second.lease(), policy);
+        var secondTerminalLease = repository.prepareCompletion(second.lease(), policy).lease();
         repository.complete(secondTerminalLease, "stability-result-b",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
 
@@ -283,6 +284,61 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
     }
 
     @Test
+    void completionPreparationReturnsTypedCancellationAndParentWinnerDecisions() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission cancelled = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(cancelled, policy);
+        TestSuiteStabilityJobClaim cancelledClaim =
+                repository.claimNext("test", "worker-a", policy);
+        repository.cancel("tenant-a", "test", cancelled.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
+
+        var cancellation = repository.prepareCompletion(cancelledClaim.lease(), policy);
+
+        assertThat(cancellation.decision()).isEqualTo(
+                TestSuiteStabilityJobCompletionPreparation.Decision.CANCELLED);
+        assertThat(cancellation.lease()).isNull();
+        assertThat(cancellation.failureCode()).isEqualTo(
+                "RG.TEST.STABILITY_JOB_CANCELLED");
+
+        TestSuiteStabilityJobSubmission completed = submission('2', "tenant-b", "request-b",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(completed, policy);
+        TestSuiteStabilityJobClaim completedClaim =
+                repository.claimNext("test", "worker-a", policy);
+        repository.cancel("tenant-b", "test", completed.jobId(), "cancel-b",
+                TestSuiteStabilityProtocolFixtures.fingerprint('8'), policy);
+        parentAuthority.resolution = TestSuiteStabilityJobParentAuthority.Resolution.completed(
+                "stability-parent", TestSuiteStabilityProtocolFixtures.fingerprint('6'));
+
+        var parentWinner = repository.prepareCompletion(completedClaim.lease(), policy);
+
+        assertThat(parentWinner.decision()).isEqualTo(
+                TestSuiteStabilityJobCompletionPreparation.Decision.PARENT_COMPLETED);
+        assertThat(parentWinner.failureCode()).isEqualTo(
+                "RG.TEST.STABILITY_JOB_PARENT_COMPLETED");
+    }
+
+    @Test
+    void completionPreparationReturnsTypedLeaseLossForAStaleFence() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
+
+        var prepared = repository.prepareCompletion(claim.lease(), policy);
+        var stale = repository.prepareCompletion(claim.lease(), policy);
+
+        assertThat(prepared.decision()).isEqualTo(
+                TestSuiteStabilityJobCompletionPreparation.Decision.PREPARED);
+        assertThat(stale.decision()).isEqualTo(
+                TestSuiteStabilityJobCompletionPreparation.Decision.LEASE_LOST);
+        assertThat(stale.failureCode()).isEqualTo("RG.TEST.STABILITY_JOB_LEASE_LOST");
+    }
+
+    @Test
     void retryExhaustionIsTerminalAndDoesNotRetainWorkerOwnership() {
         TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 0);
         TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
@@ -333,7 +389,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         repository.submit(submission, policy);
         TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
 
-        var committingLease = repository.prepareCompletion(claim.lease(), policy);
+        var committingLease = repository.prepareCompletion(claim.lease(), policy).lease();
 
         assertThat(repository.find("tenant-a", "test", submission.jobId()))
                 .get().extracting(TestSuiteStabilityJobRecord::status)
@@ -370,7 +426,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
         TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
-        var committing = repository.prepareCompletion(claim.lease(), policy);
+        var committing = repository.prepareCompletion(claim.lease(), policy).lease();
         parentAuthority.completionFailure =
                 new IllegalStateException("parent completion unavailable");
 
@@ -394,7 +450,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
         TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
-        var committing = repository.prepareCompletion(claim.lease(), policy);
+        var committing = repository.prepareCompletion(claim.lease(), policy).lease();
         parentAuthority.completionResolution = TestSuiteStabilityJobParentAuthority.Resolution
                 .completed("stability-other", TestSuiteStabilityProtocolFixtures.fingerprint('7'));
 

@@ -56,9 +56,9 @@ public interface TestSuiteStabilityJobRepository {
      *
      * @param lease latest exact worker fence
      * @param policy active cross-replica queue policy
-     * @return renewed lease in {@code COMMITTING}
+     * @return prepared {@code COMMITTING} lease or exact terminal/fenced winner
      */
-    TestSuiteStabilityJobLease prepareCompletion(
+    TestSuiteStabilityJobCompletionPreparation prepareCompletion(
             TestSuiteStabilityJobLease lease,
             TestSuiteStabilityQueuePolicy policy);
 
