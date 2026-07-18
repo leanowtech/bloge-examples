@@ -148,7 +148,7 @@ public record TestSuiteRunEvidenceV5(
             throw new IllegalArgumentException(
                     "Mutation score must be derived from the complete typed mutant closure");
         }
-        validateLifecycle(status, baselineStatus, mutationScore.status());
+        validateLifecycle(status, baselineStatus, mutationScore.status(), promotion, diagnostics);
         if (promotion.status() == TestSuiteRunEvidence.PromotionStatus.ELIGIBLE
                 && (status != TestSuiteRunEvidence.Status.PASSED
                 || coverage.status() != TestSuiteRunEvidence.CoverageStatus.SATISFIED
@@ -584,12 +584,24 @@ public record TestSuiteRunEvidenceV5(
     private static void validateLifecycle(
             TestSuiteRunEvidence.Status aggregate,
             BaselineStatus baseline,
-            MutationScoreStatus score) {
+            MutationScoreStatus score,
+            TestSuiteRunEvidence.PromotionVerdict promotion,
+            List<String> diagnostics) {
         if (aggregate == TestSuiteRunEvidence.Status.RUNNING) {
             if (score == MutationScoreStatus.SATISFIED
                     || score == MutationScoreStatus.UNSATISFIED) {
                 throw new IllegalArgumentException(
                         "Running mutation evidence cannot carry a terminal score verdict");
+            }
+            return;
+        }
+        if (aggregate == TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE
+                && (score == MutationScoreStatus.SATISFIED
+                || score == MutationScoreStatus.UNSATISFIED)) {
+            if (promotion.status() != TestSuiteRunEvidence.PromotionStatus.BLOCKED
+                    || diagnostics.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Outer mutation evidence failure must block promotion and disclose a diagnostic");
             }
             return;
         }

@@ -198,6 +198,60 @@ class TestMutationSuiteEvidenceEvaluatorTest {
                 .hasMessageContaining("derived");
     }
 
+    @Test
+    void outerEvidenceFailurePreservesDerivedScoreButBlocksPromotion() {
+        TestSuiteV5 suite = suite(new TestSuiteV5.MutationScorePolicy(
+                5_000, 0, false, false));
+        TestMutationSuiteEvidenceEvaluator.Evaluation evaluated = evaluator.evaluate(suite,
+                TestSuiteRunEvidenceV5.BaselineStatus.PASSED, List.of(
+                        List.of(observation(suite, 0, 0,
+                                        TestRunEvidence.Status.ASSERTION_FAILED),
+                                notScheduled(suite, 0, 1, "MUTANT_KILL_SHORT_CIRCUIT")),
+                        List.of(observation(suite, 1, 0, TestRunEvidence.Status.PASSED),
+                                observation(suite, 1, 1, TestRunEvidence.Status.PASSED))));
+        List<TestSuiteRunEvidence.CaseResult> baseline = List.of(
+                baseline(suite.cases().get(0)), baseline(suite.cases().get(1)));
+        TestSuiteRunEvidence.PromotionVerdict blocked =
+                new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.BLOCKED,
+                        List.of("EVIDENCE_INCOMPLETE"), true, 2, 2,
+                        true, true, true);
+
+        TestSuiteRunEvidenceV5 degraded = new TestSuiteRunEvidenceV5(
+                "", "suite-run", "request-1",
+                TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                TestSuiteRunEvidenceV5.EXECUTION_PURPOSE,
+                new TestSuiteExecutionRequest.SuiteRef(
+                        suite.suiteId(), suite.revision(), fingerprint('9')),
+                suite.target(), Instant.EPOCH, Instant.EPOCH.plusSeconds(1), baseline,
+                satisfiedCoverage(), blocked, suite.evaluationMode(), suite.sourceFormat(),
+                suite.baselineSourceFingerprint(), suite.baselineGraphArtifactFingerprint(),
+                suite.mutationPlanFingerprint(), suite.mutationPolicy(), suite.sourcePlanStatus(),
+                suite.planningGapsAccepted(), suite.planningGaps(), suite.oracleSuiteRef(),
+                TestSuiteRunEvidenceV5.BaselineStatus.PASSED, evaluated.mutantResults(),
+                evaluated.score(), List.of("SUITE_RUN_TERMINAL_PERSISTENCE_FAILED"), Map.of());
+
+        assertThat(degraded.mutationScore()).isEqualTo(evaluated.score());
+        assertThat(degraded.promotion().status())
+                .isEqualTo(TestSuiteRunEvidence.PromotionStatus.BLOCKED);
+        assertThatThrownBy(() -> new TestSuiteRunEvidenceV5(
+                "", "suite-run", "request-1",
+                TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                TestSuiteRunEvidenceV5.EXECUTION_PURPOSE,
+                new TestSuiteExecutionRequest.SuiteRef(
+                        suite.suiteId(), suite.revision(), fingerprint('9')),
+                suite.target(), Instant.EPOCH, Instant.EPOCH.plusSeconds(1), baseline,
+                satisfiedCoverage(), TestSuiteRunEvidence.PromotionVerdict.notEvaluated(),
+                suite.evaluationMode(), suite.sourceFormat(),
+                suite.baselineSourceFingerprint(), suite.baselineGraphArtifactFingerprint(),
+                suite.mutationPlanFingerprint(), suite.mutationPolicy(), suite.sourcePlanStatus(),
+                suite.planningGapsAccepted(), suite.planningGaps(), suite.oracleSuiteRef(),
+                TestSuiteRunEvidenceV5.BaselineStatus.PASSED, evaluated.mutantResults(),
+                evaluated.score(), List.of(), Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Outer mutation evidence failure");
+    }
+
     private static TestSuiteRunEvidenceV5 evidence(
             TestSuiteV5 suite,
             List<TestSuiteRunEvidence.CaseResult> baseline,
@@ -228,6 +282,13 @@ class TestMutationSuiteEvidenceEvaluatorTest {
                 testCase.fixtureBundleRef(), TestSuiteRunEvidence.CaseStatus.PASSED,
                 "baseline-" + testCase.caseId(), TestRunEvidence.Status.PASSED,
                 TestRunEvidence.EvidenceClass.CERTIFIABLE, 1, 1, "", "");
+    }
+
+    private static TestSuiteRunEvidence.CoverageVerdict satisfiedCoverage() {
+        return new TestSuiteRunEvidence.CoverageVerdict(
+                TestSuiteRunEvidence.CoverageStatus.SATISFIED, 2, 2,
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of(), 1, List.of(), List.of(), true);
     }
 
     private static TestSuiteEvidenceAggregator.CaseObservation observation(

@@ -3207,7 +3207,13 @@
             "completedAt": {"type": "string"}}, "anyOf": [
               {"properties": {"baselineStatus": {"const": "EVIDENCE_INCOMPLETE"}}},
               {"properties": {"mutationScore": {"properties": {
-                "status": {"enum": ["NOT_EVALUATED", "INCOMPLETE"]}}}}}
+                "status": {"enum": ["NOT_EVALUATED", "INCOMPLETE"]}}}}},
+              {"properties": {
+                "mutationScore": {"properties": {
+                  "status": {"enum": ["SATISFIED", "UNSATISFIED"]}}},
+                "promotion": {"properties": {"status": {"const": "BLOCKED"}}},
+                "diagnostics": {"minItems": 1}
+              }}
             ]}
         ]}
       ]

@@ -1061,6 +1061,20 @@ public final class TestSuiteExecutionService {
                 previous.promotion().minimumCertifiableCases(),
                 previous.promotion().targetCertificationEligible(),
                 previous.promotion().coverageSatisfied(), previous.promotion().allCasesCompleted());
+        if (previous instanceof TestSuiteRunEvidenceV5 v5) {
+            Instant completedAt = previous.completedAt() == null
+                    ? Instant.now() : previous.completedAt();
+            return new TestSuiteRunEvidenceV5("", previous.suiteRunId(),
+                    previous.clientRequestId(), TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
+                    previous.executionPurpose(), previous.suiteRef(), previous.target(),
+                    previous.startedAt(), completedAt, previous.caseResults(), previous.coverage(),
+                    blocked, v5.evaluationMode(), v5.sourceFormat(),
+                    v5.baselineSourceFingerprint(), v5.baselineGraphArtifactFingerprint(),
+                    v5.mutationPlanFingerprint(), v5.mutationPolicy(), v5.sourcePlanStatus(),
+                    v5.planningGapsAccepted(), v5.planningGaps(), v5.oracleSuiteRef(),
+                    v5.baselineStatus(), v5.mutantResults(), v5.mutationScore(), diagnostics,
+                    previous.metadata());
+        }
         if (previous instanceof TestSuiteRunEvidenceV4 v4) {
             Instant completedAt = previous.completedAt() == null
                     ? Instant.now() : previous.completedAt();
