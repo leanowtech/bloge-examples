@@ -111,6 +111,14 @@ class TestingProtocolTest {
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3);
             assertConstant(definitions, "testSuiteStabilityProgress",
                     TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V1);
+            assertConstant(definitions, "testSuiteStabilityJobSubmitRequest",
+                    TestingProtocol.TEST_SUITE_STABILITY_JOB_SUBMIT_REQUEST_V1);
+            assertConstant(definitions, "testSuiteStabilityJobCancelRequest",
+                    TestingProtocol.TEST_SUITE_STABILITY_JOB_CANCEL_REQUEST_V1);
+            assertConstant(definitions, "testSuiteStabilityJobView",
+                    TestingProtocol.TEST_SUITE_STABILITY_JOB_VIEW_V1);
+            assertConstant(definitions, "testSuiteStabilityJobSubmitResponse",
+                    TestingProtocol.TEST_SUITE_STABILITY_JOB_SUBMIT_RESPONSE_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV1",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV2",

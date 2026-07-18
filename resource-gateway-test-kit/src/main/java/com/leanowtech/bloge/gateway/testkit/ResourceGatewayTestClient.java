@@ -10,10 +10,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +37,7 @@ public final class ResourceGatewayTestClient {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024;
+    private static final Duration MAX_RETRY_AFTER = Duration.ofHours(24);
 
     /** Public evidence projection verbosity. */
     public enum Verbosity {
@@ -508,6 +514,225 @@ public final class ResourceGatewayTestClient {
                     "The server returned a mismatched stability execution identity.");
         }
         return run;
+    }
+
+    /**
+     * Submits one asynchronous suite-stability job without implicit retry.
+     *
+     * <p>The client requires {@code 202}, validates the response against the packaged Schema,
+     * binds every immutable response field to the request, and requires the canonical relative
+     * query location. The method returns after durable admission and never waits for execution.</p>
+     *
+     * @param request exact schema-validated queue intent
+     * @return typed payload-free durable admission result
+     */
+    public TestSuiteStabilityJobSubmission submitSuiteStabilityJob(
+            TestSuiteStabilityJobRequest request) {
+        return submitSuiteStabilityJobOnce(
+                Objects.requireNonNull(request, "stability job request is required"));
+    }
+
+    /**
+     * Submits one idempotent asynchronous job with dual-bounded retry.
+     *
+     * <p>Only server-declared retryable {@code 429} and {@code 503} failures are retried. The same
+     * immutable request and idempotency key are reused for every attempt. A server delay that
+     * exceeds a policy bound stops retry instead of violating {@code Retry-After}.</p>
+     *
+     * @param request exact schema-validated queue intent
+     * @param retryPolicy request-count, delay, and elapsed-time bounds
+     * @return typed payload-free durable admission result
+     */
+    public TestSuiteStabilityJobSubmission submitSuiteStabilityJob(
+            TestSuiteStabilityJobRequest request,
+            TestSuiteStabilityJobRetryPolicy retryPolicy) {
+        TestSuiteStabilityJobRequest exactRequest = Objects.requireNonNull(
+                request, "stability job request is required");
+        return retryStabilityOperation(
+                () -> submitSuiteStabilityJobOnce(exactRequest), retryPolicy);
+    }
+
+    /**
+     * Retrieves one retained payload-free asynchronous job lifecycle.
+     *
+     * @param jobId deterministic durable job identity
+     * @return strict typed lifecycle projection
+     */
+    public TestSuiteStabilityJob findSuiteStabilityJob(String jobId) {
+        String exactJobId = requiredStabilityJobId(jobId);
+        JsonNode response = exchange("GET", "/api/testing/stability-jobs/"
+                + segment(exactJobId), "", "TEST_EXECUTION", null);
+        TestSuiteStabilityJob job = projectStabilityJob(response);
+        requireStabilityJobIdentity(job, exactJobId);
+        return job;
+    }
+
+    /**
+     * Requests idempotent queued or cooperative running cancellation.
+     *
+     * <p>A returned {@code COMMITTING} or terminal state means cancellation did not retroactively
+     * win. Callers must inspect the typed lifecycle instead of assuming cancellation succeeded.</p>
+     *
+     * @param jobId deterministic durable job identity
+     * @param clientRequestId caller-stable cancellation command identity
+     * @return resulting strict typed lifecycle projection
+     */
+    public TestSuiteStabilityJob cancelSuiteStabilityJob(
+            String jobId,
+            String clientRequestId) {
+        String exactJobId = requiredStabilityJobId(jobId);
+        String cancellationId = requiredProtocolIdentifier(
+                clientRequestId, "clientRequestId");
+        return cancelSuiteStabilityJobOnce(exactJobId, cancellationId);
+    }
+
+    /**
+     * Retries one idempotent cancellation command inside explicit dual bounds.
+     *
+     * <p>Every attempt carries the same job and cancellation identities. Only server-declared
+     * retryable {@code 429}/{@code 503} responses are retried, with the same fail-closed
+     * {@code Retry-After} behavior as asynchronous submission.</p>
+     *
+     * @param jobId deterministic durable job identity
+     * @param clientRequestId caller-stable cancellation command identity
+     * @param retryPolicy request-count, delay, and elapsed-time bounds
+     * @return resulting strict typed lifecycle projection
+     */
+    public TestSuiteStabilityJob cancelSuiteStabilityJob(
+            String jobId,
+            String clientRequestId,
+            TestSuiteStabilityJobRetryPolicy retryPolicy) {
+        String exactJobId = requiredStabilityJobId(jobId);
+        String cancellationId = requiredProtocolIdentifier(
+                clientRequestId, "clientRequestId");
+        return retryStabilityOperation(
+                () -> cancelSuiteStabilityJobOnce(exactJobId, cancellationId), retryPolicy);
+    }
+
+    private TestSuiteStabilityJob cancelSuiteStabilityJobOnce(
+            String exactJobId,
+            String cancellationId) {
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_JOB_CANCEL_REQUEST_V1);
+        request.put("clientRequestId", cancellationId);
+        TestingProtocolSchemaValidator.require(
+                request, "testSuiteStabilityJobCancelRequest");
+        JsonNode response = exchange("POST", "/api/testing/stability-jobs/"
+                        + segment(exactJobId) + "/cancellations", "",
+                "TEST_EXECUTION", request);
+        TestSuiteStabilityJob job = projectStabilityJob(response);
+        requireStabilityJobIdentity(job, exactJobId);
+        return job;
+    }
+
+    /**
+     * Polls one asynchronous job until any closed terminal state is retained.
+     *
+     * <p>The method does not translate {@code FAILED}, {@code CANCELLED}, {@code EXPIRED}, or
+     * {@code QUARANTINED} into success. It returns the exact terminal lifecycle for caller policy.
+     * Query retry is limited to server-declared retryable {@code 429}/{@code 503} responses and
+     * honors only bounded {@code Retry-After} values.</p>
+     *
+     * @param jobId deterministic durable job identity
+     * @param pollingPolicy request-count, interval, server-delay, and elapsed-time bounds
+     * @return first observed terminal lifecycle
+     */
+    public TestSuiteStabilityJob awaitSuiteStabilityJob(
+            String jobId,
+            TestSuiteStabilityJobPollingPolicy pollingPolicy) {
+        String exactJobId = requiredStabilityJobId(jobId);
+        TestSuiteStabilityJobPollingPolicy policy = Objects.requireNonNull(
+                pollingPolicy, "stability job polling policy is required");
+        long startedAt = System.nanoTime();
+        for (int poll = 1; poll <= policy.maximumPolls(); poll++) {
+            if (!fitsElapsedBound(startedAt, Duration.ZERO, policy.maximumElapsed())) {
+                throw pollExhausted();
+            }
+            Duration delay;
+            try {
+                TestSuiteStabilityJob job = findSuiteStabilityJob(exactJobId);
+                if (!fitsElapsedBound(startedAt, Duration.ZERO, policy.maximumElapsed())) {
+                    throw pollExhausted();
+                }
+                if (job.terminal()) {
+                    return job;
+                }
+                if (poll == policy.maximumPolls()) {
+                    throw pollExhausted();
+                }
+                delay = policy.interval();
+            } catch (ResourceGatewayTestException failure) {
+                if (!retryableStabilityOperation(failure)
+                        || poll == policy.maximumPolls()) {
+                    throw failure;
+                }
+                requireUsableRetryDirective(failure);
+                delay = failure.retryAfter().orElse(policy.interval());
+                if (delay.compareTo(policy.maximumServerDelay()) > 0) {
+                    throw failure;
+                }
+            }
+            if (!fitsElapsedBound(startedAt, delay, policy.maximumElapsed())) {
+                throw pollExhausted();
+            }
+            pause(delay);
+        }
+        throw pollExhausted();
+    }
+
+    private TestSuiteStabilityJobSubmission submitSuiteStabilityJobOnce(
+            TestSuiteStabilityJobRequest request) {
+        ExchangeResponse response = exchangeResponse(
+                "POST", "/api/testing/suites/" + segment(request.suiteId())
+                        + "/stability-jobs", "", "TEST_EXECUTION", request.rawRequest());
+        if (response.status() != 202) {
+            throw responseContractInvalid(
+                    "The stability-job endpoint did not return durable admission status.");
+        }
+        requireVersion(response.body(),
+                TestingProtocol.TEST_SUITE_STABILITY_JOB_SUBMIT_RESPONSE_V1);
+        TestSuiteStabilityJobSubmission submission = projectStabilityJobSubmission(
+                response.body());
+        try {
+            submission.requireSubmission(request);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned a stability job for a different submission intent.");
+        }
+        String expectedLocation = "/api/testing/stability-jobs/" + submission.job().jobId();
+        if (!expectedLocation.equals(response.headers().firstValue("Location").orElse(""))) {
+            throw responseContractInvalid(
+                    "The server returned a non-canonical stability-job query location.");
+        }
+        return submission;
+    }
+
+    private <T> T retryStabilityOperation(
+            Supplier<T> operation,
+            TestSuiteStabilityJobRetryPolicy retryPolicy) {
+        TestSuiteStabilityJobRetryPolicy policy = Objects.requireNonNull(
+                retryPolicy, "stability job retry policy is required");
+        long startedAt = System.nanoTime();
+        Duration localDelay = policy.initialDelay();
+        for (int attempt = 1; attempt <= policy.maximumAttempts(); attempt++) {
+            try {
+                return operation.get();
+            } catch (ResourceGatewayTestException failure) {
+                if (!retryableStabilityOperation(failure)
+                        || attempt == policy.maximumAttempts()) {
+                    throw failure;
+                }
+                requireUsableRetryDirective(failure);
+                Duration delay = failure.retryAfter().orElse(localDelay);
+                if (delay.compareTo(policy.maximumDelay()) > 0
+                        || !fitsElapsedBound(startedAt, delay, policy.maximumElapsed())) {
+                    throw failure;
+                }
+                pause(delay);
+                localDelay = doubled(localDelay, policy.maximumDelay());
+            }
+        }
+        throw new IllegalStateException("Unreachable stability-job retry state");
     }
 
     /**
@@ -1085,6 +1310,15 @@ public final class ResourceGatewayTestClient {
     }
 
     private JsonNode exchange(String method, String path, String query, String purpose, JsonNode body) {
+        return exchangeResponse(method, path, query, purpose, body).body();
+    }
+
+    private ExchangeResponse exchangeResponse(
+            String method,
+            String path,
+            String query,
+            String purpose,
+            JsonNode body) {
         byte[] requestBody = serialize(body);
         URI uri = endpoint(path, query);
         String token = normalized(tokenProvider.bearerToken());
@@ -1115,13 +1349,13 @@ public final class ResourceGatewayTestClient {
                     .firstValueAsLong("Content-Length").orElse(-1));
             JsonNode decoded = decode(bytes);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw problem(response.statusCode(), decoded);
+                throw problem(response.statusCode(), decoded, response.headers());
             }
             if (!decoded.isObject()) {
                 throw ResourceGatewayTestException.local("RG.TESTKIT.RESPONSE_MALFORMED",
                         "The server returned a non-object JSON response.", null);
             }
-            return decoded;
+            return new ExchangeResponse(response.statusCode(), response.headers(), decoded);
         } catch (ResourceGatewayTestException failure) {
             throw failure;
         } catch (InterruptedException failure) {
@@ -1182,16 +1416,22 @@ public final class ResourceGatewayTestClient {
         }
     }
 
-    private static ResourceGatewayTestException problem(int status, JsonNode body) {
+    private static ResourceGatewayTestException problem(
+            int status,
+            JsonNode body,
+            HttpHeaders headers) {
+        RetryAfterDirective retryDirective = retryAfter(headers);
         if (body != null && body.isObject()) {
             return new ResourceGatewayTestException(status,
                     bounded(body.path("code").asText("RG.TESTKIT.HTTP_ERROR"), 160),
                     bounded(body.path("title").asText("The Resource Gateway rejected the test request."), 512),
                     body.path("retryable").asBoolean(false),
-                    bounded(body.path("correlationId").asText(), 128), null);
+                    bounded(body.path("correlationId").asText(), 128),
+                    retryDirective.specified(), retryDirective.delay(), null);
         }
         return new ResourceGatewayTestException(status, "RG.TESTKIT.HTTP_ERROR",
-                "The Resource Gateway rejected the test request.", status >= 500, "", null);
+                "The Resource Gateway rejected the test request.", status >= 500, "",
+                retryDirective.specified(), retryDirective.delay(), null);
     }
 
     private static TestRun projectRun(JsonNode response) {
@@ -1236,6 +1476,25 @@ public final class ResourceGatewayTestClient {
         }
     }
 
+    private static TestSuiteStabilityJob projectStabilityJob(JsonNode response) {
+        try {
+            return TestSuiteStabilityJob.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid suite-stability job projection.");
+        }
+    }
+
+    private static TestSuiteStabilityJobSubmission projectStabilityJobSubmission(
+            JsonNode response) {
+        try {
+            return TestSuiteStabilityJobSubmission.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid suite-stability job admission response.");
+        }
+    }
+
     private static void requireSuiteRevisionIdentity(TestSuiteRevision stored, String suiteId, long revision) {
         try {
             stored.requireIdentity(suiteId, revision);
@@ -1250,6 +1509,17 @@ public final class ResourceGatewayTestClient {
             run.requireExecutionIdentity(suiteId, revision, fingerprint, clientRequestId);
         } catch (IllegalArgumentException failure) {
             throw responseContractInvalid("The server returned a mismatched suite-run response identity.");
+        }
+    }
+
+    private static void requireStabilityJobIdentity(
+            TestSuiteStabilityJob job,
+            String jobId) {
+        try {
+            job.requireJobIdentity(jobId);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned a mismatched suite-stability job identity.");
         }
     }
 
@@ -1353,6 +1623,23 @@ public final class ResourceGatewayTestClient {
         return normalized;
     }
 
+    private static String requiredProtocolIdentifier(String value, String field) {
+        String exact = requiredIdentifier(value, field, 255);
+        if (!exact.matches("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}")) {
+            throw new IllegalArgumentException(field + " is outside protocol bounds");
+        }
+        return exact;
+    }
+
+    private static String requiredStabilityJobId(String value) {
+        String exact = normalized(value);
+        if (!exact.matches("stability-job-[0-9a-f]{64}")) {
+            throw new IllegalArgumentException(
+                    "jobId must be a deterministic suite-stability job identity");
+        }
+        return exact;
+    }
+
     private static String requiredFingerprint(String value) {
         String normalized = normalized(value);
         if (!normalized.matches("sha256:[0-9a-f]{64}")) {
@@ -1378,6 +1665,89 @@ public final class ResourceGatewayTestClient {
 
     private static String normalized(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static boolean retryableStabilityOperation(
+            ResourceGatewayTestException failure) {
+        return failure.retryable() && (failure.status() == 429 || failure.status() == 503);
+    }
+
+    private static void requireUsableRetryDirective(ResourceGatewayTestException failure) {
+        if (failure.retryAfterSpecified() && failure.retryAfter().isEmpty()) {
+            throw failure;
+        }
+    }
+
+    private static boolean fitsElapsedBound(
+            long startedAt,
+            Duration delay,
+            Duration maximumElapsed) {
+        long elapsedNanos = Math.max(0L, System.nanoTime() - startedAt);
+        return Duration.ofNanos(elapsedNanos).plus(delay).compareTo(maximumElapsed) <= 0;
+    }
+
+    private static Duration doubled(Duration value, Duration maximum) {
+        Duration candidate = value.multipliedBy(2);
+        return candidate.compareTo(maximum) > 0 ? maximum : candidate;
+    }
+
+    private static void pause(Duration delay) {
+        if (delay.isZero()) {
+            return;
+        }
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw ResourceGatewayTestException.local("RG.TESTKIT.REQUEST_INTERRUPTED",
+                    "Suite-stability job waiting was interrupted.", failure);
+        }
+    }
+
+    private static ResourceGatewayTestException pollExhausted() {
+        return ResourceGatewayTestException.local(
+                "RG.TESTKIT.STABILITY_JOB_POLL_EXHAUSTED",
+                "Suite-stability job polling exhausted its configured bounds.", null);
+    }
+
+    private static RetryAfterDirective retryAfter(HttpHeaders headers) {
+        String value = headers == null ? ""
+                : headers.firstValue("Retry-After").orElse("").trim();
+        if (value.isEmpty()) {
+            return new RetryAfterDirective(false, null);
+        }
+        if (value.matches("[0-9]{1,6}")) {
+            try {
+                Duration parsed = Duration.ofSeconds(Long.parseLong(value));
+                return new RetryAfterDirective(true,
+                        parsed.compareTo(MAX_RETRY_AFTER) <= 0 ? parsed : null);
+            } catch (NumberFormatException ignored) {
+                return new RetryAfterDirective(true, null);
+            }
+        }
+        try {
+            Instant retryAt = ZonedDateTime.parse(
+                    value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+            Duration parsed = Duration.between(Instant.now(), retryAt);
+            if (parsed.isNegative()) {
+                parsed = Duration.ZERO;
+            }
+            return new RetryAfterDirective(true,
+                    parsed.compareTo(MAX_RETRY_AFTER) <= 0 ? parsed : null);
+        } catch (DateTimeParseException ignored) {
+            return new RetryAfterDirective(true, null);
+        }
+    }
+
+    private record ExchangeResponse(
+            int status,
+            HttpHeaders headers,
+            JsonNode body) {
+    }
+
+    private record RetryAfterDirective(
+            boolean specified,
+            Duration delay) {
     }
 
     /** Mutable construction options for one immutable test client. */

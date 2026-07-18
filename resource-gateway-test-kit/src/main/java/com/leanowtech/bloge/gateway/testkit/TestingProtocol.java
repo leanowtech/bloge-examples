@@ -140,6 +140,18 @@ public final class TestingProtocol {
     /** Payload-free active, recoverable, or completed stability parent progress. */
     public static final String TEST_SUITE_STABILITY_PROGRESS_V1 =
             "bloge.testSuiteStabilityProgress.v1";
+    /** Asynchronous suite-stability job submission request wire version. */
+    public static final String TEST_SUITE_STABILITY_JOB_SUBMIT_REQUEST_V1 =
+            "bloge.testSuiteStabilityJobSubmitRequest.v1";
+    /** Idempotent asynchronous suite-stability job cancellation request wire version. */
+    public static final String TEST_SUITE_STABILITY_JOB_CANCEL_REQUEST_V1 =
+            "bloge.testSuiteStabilityJobCancelRequest.v1";
+    /** Payload-free asynchronous suite-stability job lifecycle wire version. */
+    public static final String TEST_SUITE_STABILITY_JOB_VIEW_V1 =
+            "bloge.testSuiteStabilityJobView.v1";
+    /** Asynchronous suite-stability queue admission response wire version. */
+    public static final String TEST_SUITE_STABILITY_JOB_SUBMIT_RESPONSE_V1 =
+            "bloge.testSuiteStabilityJobSubmitResponse.v1";
     /** Immutable suite execution response wire version. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteExecutionResponse.v1";

@@ -10,8 +10,9 @@ transport/application/database tests.
 It does **not** provide a permissive local current-authority implementation. Fresh submission is
 available only when the opt-in worker starts with exactly one externally supplied
 `TestSuiteStabilityJobAuthorizer`. Query and cancellation remain available while execution is
-disabled or draining. The independent test-kit client is the next atomic increment and is not
-claimed by this document.
+disabled or draining. The independent test-kit client was outside this increment and is delivered
+separately in
+[Stage 5 asynchronous suite-stability test-kit verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-test-kit-verification.md).
 
 ## 2. Public operations
 
@@ -132,15 +133,13 @@ conditions, capability on/off truth, production isolation, and invalid retry con
 
 This protocol does not close the following risks:
 
-1. the independent test-kit does not yet expose typed async submit/query/cancel operations;
-2. no product-supplied real IAM/delegation current-authority adapter exists;
-3. cancellation actor is cryptographically bound in the command fingerprint but is not yet a
+1. no product-supplied real IAM/delegation current-authority adapter exists;
+2. cancellation actor is cryptographically bound in the command fingerprint but is not yet a
    separately queryable immutable semantic audit event;
-4. durable fleet membership, poison-row quarantine/repair, non-H2 certification, soak/chaos/DR,
+3. durable fleet membership, poison-row quarantine/repair, non-H2 certification, soak/chaos/DR,
    legal hold, and backup erasure remain open;
-5. cooperative cancellation cannot interrupt a non-cooperative operator; hard process isolation is
+4. cooperative cancellation cannot interrupt a non-cooperative operator; hard process isolation is
    still required for that guarantee.
 
-The next atomic step is the independent test-kit protocol/client with packaged Schema validation,
-typed polling and cancellation, response-binding checks, bounded retry handling, and no server/Spring
-dependency.
+The independent test-kit follow-up is complete. The next server-side step should close real current
+authority and cancellation audit semantics before expanding background execution claims.

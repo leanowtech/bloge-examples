@@ -21,8 +21,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   key lookup, and dependency-light offline Ed25519 verification, including schema-admission v3
   evidence with a signed empty business-child closure, bounded-property v4 evidence, and mutation
   v5 score/child-closure re-derivation;
-- bounded suite-stability execution/query, typed payload-free durable-parent progress polling,
-  typed stability-evidence re-derivation, exact source-run closure verification, and offline Ed25519
+- bounded synchronous suite-stability execution/query, typed payload-free durable-parent progress,
+  asynchronous stability-job submit/query/cancel with dual-bounded retry and polling, typed
+  stability-evidence re-derivation, exact source-run closure verification, and offline Ed25519
   verification against a caller-owned key-set pin;
 - challenge-bound request-index replica proof collection plus an offline exact-inventory rollout
   gate that rejects missing, duplicate, unexpected, stale, mixed-scope/artifact/protocol/mode, or
@@ -295,6 +296,64 @@ proof, non-zero-event confidence interval, adaptive stopping policy, or historic
 `findSuiteStabilityProgress` is an operational poll, not a release gate. Its strict
 `bloge.testSuiteStabilityProgress.v1` projection returns only lifecycle, exact suite identity,
 planned/completed counts, and timestamps; owner, epoch, source ids, fixtures, and payloads are absent.
+
+For a non-blocking parent job, create one exact request and submit it with explicit retry bounds:
+
+```java
+TestSuiteStabilityJobRequest request = TestSuiteStabilityJobRequest.fixedHorizon(
+        storedSuite.suiteId(),
+        storedSuite.revision(),
+        storedSuite.fingerprint(),
+        "stability-job-ci-1842",
+        10,
+        Map.of("pipeline", "nightly", "buildId", "1842"),
+        TestSuiteStabilityJobRequest.Priority.NORMAL,
+        Instant.now().plus(Duration.ofMinutes(30)).truncatedTo(ChronoUnit.SECONDS));
+
+TestSuiteStabilityJobSubmission admitted = client.submitSuiteStabilityJob(
+        request, TestSuiteStabilityJobRetryPolicy.conservative());
+
+TestSuiteStabilityJob terminal = client.awaitSuiteStabilityJob(
+        admitted.job().jobId(), TestSuiteStabilityJobPollingPolicy.conservative());
+
+if (terminal.status() != TestSuiteStabilityJob.Status.SUCCEEDED) {
+    throw new AssertionError("stability job ended as " + terminal.status()
+            + " (" + terminal.failureCode() + ")");
+}
+
+TestSuiteStabilityEvidenceVerifier.VerificationResult verified =
+        client.verifySuiteStability(terminal.stabilityRunId(), trustedPin);
+TestSuiteStabilityAssertions.assertReleaseEligible(
+        client.findSuiteStability(terminal.stabilityRunId()), verified);
+```
+
+`TestSuiteStabilityJobRequest.statistical(...)` creates the request-v2 form and rejects a horizon
+that cannot support its exact-binomial policy before network I/O. Submission requires `202` and the
+canonical relative `Location`; the test-kit recalculates the nested execution fingerprint and binds
+suite revision, client request id, priority, and deadline to the response. Query and cancellation
+validate the strict payload-free job view and requested job id.
+
+Both submit and cancellation have a `TestSuiteStabilityJobRetryPolicy` overload. Only
+server-declared retryable `429`/`503` failures are retried, while attempt count, single delay, and
+monotonic elapsed time remain bounded. A valid `Retry-After` takes precedence; an invalid or
+over-bound directive stops retry rather than allowing an early request. Polling separately bounds
+request count, elapsed time, ordinary interval, and server delay. It returns every terminal state,
+including `FAILED`, `CANCELLED`, `EXPIRED`, and `QUARANTINED`, for caller policy; it never relabels
+those states as success.
+
+Cancel queued or running work with a distinct idempotency identity:
+
+```java
+TestSuiteStabilityJob cancelling = client.cancelSuiteStabilityJob(
+        admitted.job().jobId(),
+        "cancel-stability-job-ci-1842",
+        TestSuiteStabilityJobRetryPolicy.conservative());
+```
+
+`CANCEL_REQUESTED` is cooperative and `COMMITTING` is already past the final cancellation point.
+The payload-free job view is operational state, not signed correctness evidence. Only a successful
+`stabilityRunId` fetched and independently verified against an external key-set pin can enter a
+release gate.
 
 Execute a reviewed `bloge.testSuite.v3` reference returned by the server's boundary-suite
 materialization API without confusing schema admission with business execution:

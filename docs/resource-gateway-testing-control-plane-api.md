@@ -2922,6 +2922,50 @@ request/response definitions live in
 Implementation evidence and deliberately unclaimed guarantees are recorded in
 [Stage 5 suite-stability public protocol verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-public-protocol-verification.md).
 
+The standalone Java test-kit exposes the same protocol without depending on Resource Gateway
+server classes:
+
+```java
+TestSuiteStabilityJobRequest asyncRequest = TestSuiteStabilityJobRequest.fixedHorizon(
+        "loan-decision-regression",
+        1,
+        suiteFingerprint,
+        "risk-ci-1842-stability-job",
+        10,
+        Map.of("pipeline", "nightly", "buildId", "1842"),
+        TestSuiteStabilityJobRequest.Priority.NORMAL,
+        Instant.now().plus(Duration.ofMinutes(30)).truncatedTo(ChronoUnit.SECONDS));
+
+TestSuiteStabilityJobSubmission admitted = client.submitSuiteStabilityJob(
+        asyncRequest, TestSuiteStabilityJobRetryPolicy.conservative());
+TestSuiteStabilityJob terminal = client.awaitSuiteStabilityJob(
+        admitted.job().jobId(), TestSuiteStabilityJobPollingPolicy.conservative());
+
+if (terminal.status() == TestSuiteStabilityJob.Status.SUCCEEDED) {
+    TestSuiteStabilityEvidenceVerifier.VerificationResult verification =
+            client.verifySuiteStability(terminal.stabilityRunId(), trustedKeySetPin);
+    TestSuiteStabilityAssertions.assertReleaseEligible(
+            client.findSuiteStability(terminal.stabilityRunId()), verification);
+}
+```
+
+`TestSuiteStabilityJobRequest.statistical(...)` emits execution request v2 and verifies the
+precommitted exact-binomial horizon locally. Submit requires exact `202 + Location`, validates the
+packaged Schema, recalculates the nested execution fingerprint, and binds suite/request/priority/
+deadline to the response. `findSuiteStabilityJob` and `cancelSuiteStabilityJob` enforce the exact job
+identity and payload-free view. Cancellation also has an idempotent bounded-retry overload.
+
+`TestSuiteStabilityJobRetryPolicy` bounds HTTP attempts, each delay, and total monotonic time. It
+retries only server-declared retryable `429`/`503`; a present but invalid or over-bound
+`Retry-After` stops retry, so the client never sends earlier than the server directive.
+`TestSuiteStabilityJobPollingPolicy` separately bounds query count, elapsed time, normal interval,
+and accepted server delay. Await returns all terminal outcomes without translating a failed,
+cancelled, expired, or quarantined job into success. The operational job view remains unsigned;
+release decisions must fetch and verify the successful terminal stability evidence.
+
+See the [test-kit guide](../resource-gateway-test-kit/README.md) and
+[Stage 5 asynchronous test-kit verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-test-kit-verification.md).
+
 ### 4.2.5 Materialize the built-in graph catalog
 
 The seven legacy resource-graph suites already execute through the common kernel, but their source
