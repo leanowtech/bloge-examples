@@ -6,6 +6,7 @@ import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.runtime.registry.GraphDefinitionSource;
+import com.leanowtech.bloge.dsl.compiler.GraphLoader;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
@@ -19,6 +20,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.planning.TestDslMutationPlanner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -359,6 +361,96 @@ class TestExecutionApiServiceTest {
         });
     }
 
+    @Test
+    void serverRegeneratedMutationExecutesWithBaselineFixtureAndMutantEvidenceIdentity() {
+        MutationHarness harness = mutationHarness();
+        IntegrationRequestContext identity = identity("test");
+        TestMutationCasePlan plan = harness.service().planGraphMutationCases(
+                harness.graph().name(), 4, identity);
+        List<TestDslMutationPlanner.RegeneratedMutant> closure =
+                harness.service().regenerateGraphMutations(
+                        harness.graph().name(), plan, identity);
+        StoredFixtureBundle fixture = storeMutationFixture(harness, identity);
+        TestDslMutationPlanner.RegeneratedMutant selected = closure.getFirst();
+        TestExecutionApiRequest request = mutationRequest(harness, selected.coordinate(), fixture,
+                null);
+
+        TestExecutionApiResponse response = harness.service()
+                .executeAdmittedMutationGraphCase(selected, harness.targetFingerprint(),
+                        request, identity);
+
+        assertThat(response.target().fingerprint())
+                .isEqualTo(selected.coordinate().mutantTargetFingerprint());
+        assertThat(response.fixtureBundleRef().source()).isEqualTo("STORED");
+        assertThat(response.plan().targetFingerprint())
+                .isEqualTo(selected.coordinate().mutantTargetFingerprint());
+        assertThat(response.plan().authorizedPurpose()).isEqualTo("MUTATION_SUITE_EXECUTION");
+        assertThat(response.evidence().executionPurpose()).isEqualTo("MUTATION_SUITE_EXECUTION");
+        assertThat(response.evidence().targetFingerprint())
+                .isEqualTo(selected.coordinate().mutantTargetFingerprint());
+        assertThat(response.evidence().metadata())
+                .containsEntry("baselineTargetFingerprint", harness.targetFingerprint())
+                .containsEntry("mutationPlanFingerprint", plan.planFingerprint())
+                .containsEntry("mutantId", selected.coordinate().mutantId())
+                .containsEntry("mutantGraphArtifactFingerprint",
+                        selected.coordinate().mutantGraphArtifactFingerprint());
+        assertThat(response.integrity().independentlyVerifiable()).isTrue();
+        assertThat(runs.values.get(response.runId()).target()).isEqualTo(response.target());
+    }
+
+    @Test
+    void mutationExecutionRejectsCrossWiredCoordinatesBeforeCreatingAChildRun() {
+        MutationHarness harness = mutationHarness();
+        IntegrationRequestContext identity = identity("test");
+        TestMutationCasePlan plan = harness.service().planGraphMutationCases(
+                harness.graph().name(), 4, identity);
+        List<TestDslMutationPlanner.RegeneratedMutant> closure =
+                harness.service().regenerateGraphMutations(
+                        harness.graph().name(), plan, identity);
+        assertThat(closure).hasSizeGreaterThan(1);
+        StoredFixtureBundle fixture = storeMutationFixture(harness, identity);
+        TestDslMutationPlanner.RegeneratedMutant first = closure.getFirst();
+        TestDslMutationPlanner.RegeneratedMutant forged =
+                new TestDslMutationPlanner.RegeneratedMutant(
+                        plan.planFingerprint(), first.coordinate(), closure.get(1).graph());
+
+        assertThatThrownBy(() -> harness.service().executeAdmittedMutationGraphCase(
+                forged, harness.targetFingerprint(),
+                mutationRequest(harness, first.coordinate(), fixture, null), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.MUTATION_ARTIFACT_MISMATCH"));
+        assertThat(runs.values).isEmpty();
+    }
+
+    @Test
+    void mutationOnlyBoundaryCannotBeReachedThroughOrdinaryOrInlineExecution() {
+        MutationHarness harness = mutationHarness();
+        IntegrationRequestContext identity = identity("test");
+        TestMutationCasePlan plan = harness.service().planGraphMutationCases(
+                harness.graph().name(), 4, identity);
+        TestDslMutationPlanner.RegeneratedMutant selected = harness.service()
+                .regenerateGraphMutations(harness.graph().name(), plan, identity).getFirst();
+        StoredFixtureBundle fixture = storeMutationFixture(harness, identity);
+        TestExecutionApiRequest stored = mutationRequest(
+                harness, selected.coordinate(), fixture, null);
+        FixtureBundle inline = new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
+                "inline-mutation", 1, harness.targetFingerprint(), "INTERNAL", null, null,
+                List.of(), List.of(), Map.of());
+
+        assertThatThrownBy(() -> harness.service().execute(stored, identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.TARGET_FINGERPRINT_CONFLICT"));
+        assertThatThrownBy(() -> harness.service().executeAdmittedMutationGraphCase(
+                selected, harness.targetFingerprint(),
+                mutationRequest(harness, selected.coordinate(), null, inline), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.MUTATION_FIXTURE_SOURCE_INVALID"));
+        assertThat(runs.values).isEmpty();
+    }
+
     private TestExecutionApiRequest request(FixtureBundle inline,
                                             TestExecutionApiRequest.FixtureBundleRef reference,
                                             TestExecutionApiRequest.Verbosity verbosity) {
@@ -375,6 +467,65 @@ class TestExecutionApiServiceTest {
                 "INTERNAL", null, null, List.of(rules), List.of(), Map.of());
     }
 
+    private MutationHarness mutationHarness() {
+        DefaultOperatorRegistry operators = new DefaultOperatorRegistry();
+        Graph mutationGraph = new GraphLoader(operators).load("""
+                graph mutationFlow {
+                  transform output {
+                    first = ctx.first
+                    second = ctx.second
+                    third = ctx.third
+                  }
+                }
+                """);
+        GatewayGraphService mutationGraphs = mock(GatewayGraphService.class);
+        when(mutationGraphs.requireGraph(mutationGraph.name())).thenReturn(mutationGraph);
+        when(mutationGraphs.requireContract(mutationGraph.name())).thenReturn(
+                new com.leanowtech.bloge.gateway.gateway.GatewayGraphContract(
+                        mutationGraph.name(), SchemaEnvelope.object(Map.of(
+                                "first", Map.of("type", "string"),
+                                "second", Map.of("type", "string"),
+                                "third", Map.of("type", "string")),
+                                List.of("first", "second", "third")),
+                        null, List.of("output")));
+        doNothing().when(mutationGraphs).validateInput(
+                org.mockito.ArgumentMatchers.eq(mutationGraph.name()), any());
+        TestExecutionApiService mutationService = new TestExecutionApiService(
+                mutationGraphs, operators, resources, new BlgeExpressionEvaluator(), mapper,
+                fixtures, runs, securityEvents, Duration.ofDays(7), replayPayloadService,
+                new TestEvidenceIntegrityService(mapper, new InMemoryVisualEvidenceSigner()));
+        return new MutationHarness(mutationService, mutationGraph,
+                GraphExecutionTargetSnapshot.capture(mapper, mutationGraph, resources).fingerprint());
+    }
+
+    private StoredFixtureBundle storeMutationFixture(
+            MutationHarness harness,
+            IntegrationRequestContext identity) {
+        TestExecutionApiRequest.Target target = new TestExecutionApiRequest.Target(
+                "GRAPH", harness.graph().name(), harness.targetFingerprint());
+        FixtureBundle fixture = new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
+                "mutation-fixture", 1, harness.targetFingerprint(), "INTERNAL", null, null,
+                List.of(), List.of(), Map.of());
+        return harness.service().registerFixture("mutation-fixture",
+                new FixtureBundleRegistrationRequest("", target, fixture), identity);
+    }
+
+    private TestExecutionApiRequest mutationRequest(
+            MutationHarness harness,
+            TestMutationCasePlan.PlannedMutant coordinate,
+            StoredFixtureBundle stored,
+            FixtureBundle inline) {
+        TestExecutionApiRequest.FixtureBundleRef ref = stored == null ? null
+                : new TestExecutionApiRequest.FixtureBundleRef(stored.fixtureBundleId(),
+                stored.revision(), stored.fingerprint());
+        return new TestExecutionApiRequest("",
+                new TestExecutionApiRequest.Target("GRAPH", harness.graph().name(),
+                        coordinate.mutantTargetFingerprint()),
+                "GRAPH_CONTRACT_TEST", Map.of(
+                "first", "A", "second", "B", "third", "C"), inline, ref,
+                TestExecutionApiRequest.Verbosity.FULL, Map.of("caseId", "oracle-1"));
+    }
+
     private static IntegrationRequestContext identity(String environment) {
         return identity(environment, "tenant-a");
     }
@@ -389,6 +540,13 @@ class TestExecutionApiServiceTest {
         @Override public ResourceDescriptor resolve(String resourceId) { throw new IllegalArgumentException(); }
         @Override public boolean contains(String resourceId) { return false; }
         @Override public java.util.Collection<ResourceDescriptor> all() { return List.of(); }
+    }
+
+    private record MutationHarness(
+            TestExecutionApiService service,
+            Graph graph,
+            String targetFingerprint
+    ) {
     }
 
     private static final class InMemoryFixtures implements FixtureBundleRepository {

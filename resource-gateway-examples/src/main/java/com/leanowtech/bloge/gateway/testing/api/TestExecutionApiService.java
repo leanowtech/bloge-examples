@@ -18,6 +18,8 @@ import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.K
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
+import com.leanowtech.bloge.gateway.testing.evidence.GraphArtifactFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -231,6 +233,129 @@ public final class TestExecutionApiService {
         return execute(request, identity, TestRuntimeAdmissionGate.unbounded());
     }
 
+    /**
+     * Regenerates the complete reviewed mutant closure from the current registered baseline.
+     *
+     * <p>This package-private boundary returns executable graphs only to the mutation runner. No
+     * HTTP adapter accepts source text, graph objects, or mutant artifacts from a caller.</p>
+     *
+     * @param graphName exact registered baseline graph name
+     * @param expectedPlan immutable reviewed mutation plan reconstructed from the V5 suite
+     * @param identity verified test or staging identity
+     * @return ordered, immutable, fully verified mutant closure
+     */
+    List<TestDslMutationPlanner.RegeneratedMutant> regenerateGraphMutations(
+            String graphName,
+            TestMutationCasePlan expectedPlan,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        String selectedGraph = normalized(graphName);
+        if (expectedPlan == null || !"GRAPH".equals(expectedPlan.target().kind())
+                || !selectedGraph.equals(expectedPlan.target().id())) {
+            throw badRequest(identity, "RG.TEST.MUTATION_PLAN_TARGET_INVALID",
+                    "Mutation regeneration requires a reviewed plan for the selected graph.", Map.of());
+        }
+        Graph baseline = requireGraph(expectedPlan.target(), identity);
+        GraphExecutionTargetSnapshot current = GraphExecutionTargetSnapshot.capture(
+                objectMapper, baseline, resourceRegistry);
+        requireTargetFingerprint(expectedPlan.target(), current.fingerprint(), identity);
+        try {
+            return mutationCases.regenerateAll(expectedPlan.target(), baseline,
+                    current.dependencyFingerprints(), expectedPlan);
+        } catch (TestDslMutationPlanner.MutationRegenerationException drift) {
+            throw conflict(identity, "RG.TEST.MUTATION_REGENERATION_FAILED",
+                    "The reviewed mutation closure cannot be regenerated from the current baseline.",
+                    Map.of("failure", drift.failure().name()));
+        }
+    }
+
+    /**
+     * Executes one exact server-regenerated mutant under a mutation suite's parent permit.
+     *
+     * <p>The method is intentionally package-private and accepts no caller-supplied executable
+     * source. It re-proves the registered baseline and every mutant identity immediately before
+     * using a stored baseline-bound fixture in the isolated test engine.</p>
+     *
+     * @param regenerated server-regenerated mutant and reviewed coordinate
+     * @param baselineTargetFingerprint exact immutable baseline target bound by the fixture
+     * @param request child case request whose target is the mutant coordinate
+     * @param identity verified test or staging identity
+     * @return persisted, sanitized, signed child response bound to the mutant target
+     */
+    TestExecutionApiResponse executeAdmittedMutationGraphCase(
+            TestDslMutationPlanner.RegeneratedMutant regenerated,
+            String baselineTargetFingerprint,
+            TestExecutionApiRequest request,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        validateRequest(request, identity);
+        Objects.requireNonNull(regenerated, "regenerated");
+        TestMutationCasePlan.PlannedMutant coordinate = regenerated.coordinate();
+        if (request.fixtureBundleRef() == null || request.fixtureBundle() != null) {
+            throw badRequest(identity, "RG.TEST.MUTATION_FIXTURE_SOURCE_INVALID",
+                    "Mutation execution requires an immutable stored fixture reference.", Map.of());
+        }
+        if (!coordinate.mutantTargetFingerprint().equals(request.target().fingerprint())) {
+            throw conflict(identity, "RG.TEST.MUTATION_TARGET_MISMATCH",
+                    "Mutation child target differs from its reviewed coordinate.", Map.of());
+        }
+
+        Graph baseline = requireGraph(request.target(), identity);
+        GraphExecutionTargetSnapshot baselineTarget = GraphExecutionTargetSnapshot.capture(
+                objectMapper, baseline, resourceRegistry);
+        if (!baselineTarget.fingerprint().equals(normalized(baselineTargetFingerprint))) {
+            throw conflict(identity, "RG.TEST.MUTATION_BASELINE_STALE",
+                    "The registered baseline changed before mutation execution.",
+                    Map.of("currentTargetFingerprint", baselineTarget.fingerprint()));
+        }
+        Graph mutantGraph = regenerated.graph();
+        GraphExecutionTargetSnapshot mutantTarget = GraphExecutionTargetSnapshot.capture(
+                objectMapper, mutantGraph, baselineTarget.resourceRegistry());
+        String sourceFingerprint = mutantGraph.definitionSource() == null ? ""
+                : ProtocolFingerprint.ofText(mutantGraph.definitionSource().payloadJson());
+        if (!baseline.name().equals(mutantGraph.name())
+                || !request.target().id().equals(mutantGraph.name())
+                || !coordinate.mutantSourceFingerprint().equals(sourceFingerprint)
+                || !coordinate.mutantGraphArtifactFingerprint().equals(
+                GraphArtifactFingerprint.of(objectMapper, mutantGraph))
+                || !coordinate.mutantTargetFingerprint().equals(mutantTarget.fingerprint())) {
+            throw conflict(identity, "RG.TEST.MUTATION_ARTIFACT_MISMATCH",
+                    "The regenerated mutant no longer matches its reviewed identity.", Map.of());
+        }
+        try {
+            graphService.validateInput(baseline.name(), new GraphContext(request.context()));
+        } catch (IllegalArgumentException invalidInput) {
+            throw badRequest(identity, "RG.TEST.GRAPH_INPUT_INVALID",
+                    invalidInput.getMessage(), Map.of());
+        }
+
+        ResolvedFixture fixture = resolveFixture(request, baselineTarget.fingerprint(), identity);
+        if (fixture.source() != TestExecutionRequest.FixtureSource.STORED) {
+            throw badRequest(identity, "RG.TEST.MUTATION_FIXTURE_SOURCE_INVALID",
+                    "Mutation execution requires immutable stored fixture provenance.", Map.of());
+        }
+        ResolvedReplayPayloads resolvedReplays = resolveReplayPayloads(fixture.bundle(), identity);
+        ResourceFixtureRuntime resourceRuntime = new ResourceFixtureRuntime(
+                mutantTarget.resourceRegistry(), expressionEvaluator, objectMapper);
+        TestRunService kernel = new TestRunService(operatorRegistry, objectMapper, resourceRuntime);
+        Map<String, Object> metadata = new LinkedHashMap<>(
+                executionMetadata(request, identity, mutantTarget));
+        metadata.put("baselineTargetFingerprint", baselineTarget.fingerprint());
+        metadata.put("mutationPlanFingerprint", regenerated.planFingerprint());
+        metadata.put("mutantId", coordinate.mutantId());
+        metadata.put("mutationKind", coordinate.kind().name());
+        metadata.put("mutantSourceFingerprint", coordinate.mutantSourceFingerprint());
+        metadata.put("mutantGraphArtifactFingerprint",
+                coordinate.mutantGraphArtifactFingerprint());
+        TestExecutionResult result = kernel.executeMutation(new TestExecutionRequest(
+                mutantGraph, new GraphContext(request.context()), fixture.bundle(),
+                TestSuiteRunEvidenceV5.EXECUTION_PURPOSE, coordinate.mutantTargetFingerprint(),
+                fixture.source(), Map.copyOf(metadata), mutantTarget.certificationEligible(),
+                resolvedReplays), baselineTarget.fingerprint());
+        return persistGraphExecution(request, identity, mutantGraph.name(),
+                coordinate.mutantTargetFingerprint(), fixture, result);
+    }
+
     private TestExecutionApiResponse execute(
             TestExecutionApiRequest request,
             IntegrationRequestContext identity,
@@ -259,10 +384,21 @@ public final class TestExecutionApiService {
                 resolvedReplays), compiled -> admissionGate.admit(identity,
                 admissionIntent(Kind.GRAPH, request, target.fingerprint(),
                         compiled, target.dependencyFingerprints().keySet())));
+        return persistGraphExecution(request, identity, graph.name(), target.fingerprint(),
+                fixture, result);
+    }
+
+    private TestExecutionApiResponse persistGraphExecution(
+            TestExecutionApiRequest request,
+            IntegrationRequestContext identity,
+            String graphName,
+            String targetFingerprint,
+            ResolvedFixture fixture,
+            TestExecutionResult result) {
         SecuredEvidence secured = secureEvidence(sanitizer.sanitize(result.evidence()));
         TestRunRecord record = new TestRunRecord(secured.evidence().runId(), identity.tenantId(),
                 identity.organizationId(), identity.projectId(), identity.environmentId(), identity.actorId(),
-                new TestExecutionApiRequest.Target("GRAPH", graph.name(), target.fingerprint()),
+                new TestExecutionApiRequest.Target("GRAPH", graphName, targetFingerprint),
                 fixture.reference(), request.verbosity(), result.plan(), secured.evidence(), secured.integrity(),
                 secured.evidence().completedAt(), secured.evidence().completedAt().plus(retention));
         try {
