@@ -194,12 +194,15 @@ stale revocation state. HTTPS is mandatory; the insecure-loopback escape hatches
 local tests. Multi-replica dynamic-JWKS deployments can additionally enable
 `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ENABLED=true`. Each process then publishes a database-clock
 lease keyed by fleet scope, deployment cohort, serving instance, and process start. Fresh submission, worker
-claim, and post-claim reauthorization remain closed until the exact configured instance set is
+claim, and post-claim reauthorization remain closed until the exact expected instance set is
 live, healthy, on one artifact/protocol/policy, and observing one complete JWKS generation. A stable
 scope elects only one live deployment cohort, so overlapping rollouts cannot each self-admit. This
-is an exact configuration-convergence control, not external proof that the configured set equals
-the platform's real serving inventory. Scope, cohort, expected-instance and lease settings are
-listed below and checked by `scripts/visual-canvas-demo.sh` for staging startup. A deployment may
+can retain local configured inventory in the `test` profile. Staging additionally requires an
+M-of-N Ed25519-signed deployment serving inventory; its revision, material/policy fingerprints,
+expiry, exact set, artifact, scope, cohort, and protocol are bound into the policy. A durable
+stable-scope revision floor rejects rollback and same-revision forks. The optional local instance
+list is only an equality assertion in signed mode. Scope, cohort, signed-inventory trust, and lease
+settings are checked by `scripts/visual-canvas-demo.sh` before staging startup. A deployment may
 instead contribute one custom
 `TestSuiteStabilityJobAuthorizer` with a ready key-free descriptor. There is no allow-all fallback:
 zero providers, multiple providers, an undeclared provider, missing trust, unsafe URI, or invalid
@@ -220,7 +223,9 @@ appear absent or cause it to execute twice. The capability probe separates
 not infer executability merely because the routes or Schema exist. Cohort deployments also expose
 `exactSuiteStabilityAuthorityTrustCohort` and the current-state
 `convergedSuiteStabilityAuthorityTrustCohort`; descriptors and health contain aggregate counts and
-status only, never instance ids, cohort ids, endpoints, key ids, or trust fingerprints. The private authority request
+status only. `externallyAttestedSuiteStabilityServingInventory` separately proves that the expected
+set comes from a currently verified external attestation. None expose instance ids, cohort ids,
+inventory ids, endpoints, key ids, signatures, or trust fingerprints. The private authority request
 excludes credentials, correlation id,
 execution metadata, fixture/context/payload and node output. HTTP denial, redirect, timeout,
 malformed/oversized JSON, stale decision, echo mismatch, unknown/revoked key, or invalid signature
@@ -230,6 +235,8 @@ is `UNAVAILABLE`; only a verified signed revocation is definitive. Capacity resp
 [current-authority verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md),
 [dynamic authority trust verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-authority-trust-verification.md),
 [authority cohort verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-authority-cohort-verification.md),
+[signed serving-inventory verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-serving-inventory-verification.md),
+[machine-readable serving-inventory Schema](../docs/schemas/resource-gateway-testing/suite-stability-serving-inventory-v1.schema.json),
 and [machine-readable authority Schema](../docs/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json).
 Actuator exposes separate stability-queue and dynamic-authority-trust health contributors. The
 `RG_TEST_STABILITY_JOB_SLO_*` settings bound per-environment queue depth, oldest wait, observation

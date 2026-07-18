@@ -154,7 +154,7 @@ class HttpTestSuiteStabilityJobAuthorizerTest {
     @Test
     void unavailableCohortPreventsAnyPdpRequestAndClosesDescriptor() throws Exception {
         TestSuiteStabilityAuthorityCohortGate gate = () ->
-                TestSuiteStabilityAuthorityCohortGate.Descriptor.unavailable(2, 30);
+                TestSuiteStabilityAuthorityCohortGate.Descriptor.unavailable(2, 30, true);
         try (AuthorityServer server = AuthorityServer.start(objectMapper, request -> signed(
                 request.request(), keyPair,
                 TestSuiteStabilityAuthorityResponse.Decision.AUTHORIZED, ""))) {

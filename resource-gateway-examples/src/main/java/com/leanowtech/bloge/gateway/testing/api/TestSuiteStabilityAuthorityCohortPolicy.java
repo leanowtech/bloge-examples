@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -28,6 +29,7 @@ import java.util.regex.Pattern;
  * @param heartbeatInterval local publication interval
  * @param leaseDuration database-clock liveness window, at least three heartbeat intervals
  * @param recordRetention expired membership retention before bounded deletion
+ * @param servingInventory externally attested inventory identity or explicit local mode
  */
 public record TestSuiteStabilityAuthorityCohortPolicy(
         String scopeId,
@@ -40,7 +42,8 @@ public record TestSuiteStabilityAuthorityCohortPolicy(
         String protocolVersion,
         Duration heartbeatInterval,
         Duration leaseDuration,
-        Duration recordRetention) {
+        Duration recordRetention,
+        ServingInventoryAttestation servingInventory) {
 
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
@@ -56,6 +59,8 @@ public record TestSuiteStabilityAuthorityCohortPolicy(
         artifactFingerprint = normalized(artifactFingerprint);
         authorityId = normalized(authorityId);
         protocolVersion = normalized(protocolVersion);
+        servingInventory = servingInventory == null
+                ? ServingInventoryAttestation.localConfigured() : servingInventory;
         TreeSet<String> expected = new TreeSet<>();
         if (expectedInstanceIds != null) {
             expectedInstanceIds.stream().map(
@@ -111,7 +116,74 @@ public record TestSuiteStabilityAuthorityCohortPolicy(
                 Map.entry("protocolVersion", protocolVersion),
                 Map.entry("heartbeatIntervalSeconds", heartbeatInterval.toSeconds()),
                 Map.entry("leaseDurationSeconds", leaseDuration.toSeconds()),
-                Map.entry("recordRetentionSeconds", recordRetention.toSeconds())));
+                Map.entry("recordRetentionSeconds", recordRetention.toSeconds()),
+                Map.entry("servingInventory", servingInventory)));
+    }
+
+    /**
+     * Immutable external-inventory identity bound into every cohort member policy fingerprint.
+     *
+     * @param schemaVersion binding protocol generation
+     * @param externallyAttested whether deployment authorities signed the exact set
+     * @param sourceType inventory authority type
+     * @param revision monotonic external revision, or zero in local configured mode
+     * @param materialFingerprint signed material identity, blank in local mode
+     * @param policyFingerprint external inventory policy identity, blank in local mode
+     * @param expiresAt hard external validity deadline, null in local mode
+     */
+    public record ServingInventoryAttestation(
+            String schemaVersion,
+            boolean externallyAttested,
+            String sourceType,
+            long revision,
+            String materialFingerprint,
+            String policyFingerprint,
+            Instant expiresAt) {
+
+        /** Current immutable cohort inventory-binding generation. */
+        public static final String SCHEMA_VERSION =
+                "bloge.testSuiteStabilityServingInventoryAttestation.v1";
+
+        /** Rejects ambiguous partial external-attestation identity. */
+        public ServingInventoryAttestation {
+            schemaVersion = normalized(schemaVersion);
+            sourceType = normalized(sourceType);
+            materialFingerprint = normalized(materialFingerprint);
+            policyFingerprint = normalized(policyFingerprint);
+            boolean external = externallyAttested
+                    && "STATIC_SIGNED_ED25519_M_OF_N".equals(sourceType)
+                    && revision > 0
+                    && FINGERPRINT.matcher(materialFingerprint).matches()
+                    && FINGERPRINT.matcher(policyFingerprint).matches()
+                    && expiresAt != null;
+            boolean local = !externallyAttested && "LOCAL_CONFIGURED".equals(sourceType)
+                    && revision == 0 && materialFingerprint.isEmpty()
+                    && policyFingerprint.isEmpty() && expiresAt == null;
+            if (!SCHEMA_VERSION.equals(schemaVersion) || !(external || local)) {
+                throw new IllegalArgumentException(
+                        "Invalid stability authority serving-inventory attestation");
+            }
+        }
+
+        /** @return explicit backward-compatible local configuration identity */
+        public static ServingInventoryAttestation localConfigured() {
+            return new ServingInventoryAttestation(SCHEMA_VERSION, false,
+                    "LOCAL_CONFIGURED", 0, "", "", null);
+        }
+
+        /** @return immutable binding derived from one currently verified external observation */
+        public static ServingInventoryAttestation external(
+                TestSuiteStabilityServingInventoryAuthority.Observation observation) {
+            if (observation == null || !observation.available()
+                    || !observation.externallyAttested()) {
+                throw new IllegalArgumentException(
+                        "A current external serving inventory is required");
+            }
+            return new ServingInventoryAttestation(SCHEMA_VERSION, true,
+                    observation.sourceType(), observation.revision(),
+                    observation.materialFingerprint(), observation.policyFingerprint(),
+                    observation.expiresAt());
+        }
     }
 
     private static Duration bounded(

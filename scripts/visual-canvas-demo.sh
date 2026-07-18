@@ -63,7 +63,13 @@ Environment:
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ENABLED   optional; exact dynamic-JWKS replica gate
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID  required when cohort is enabled; stable fleet scope
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ID        required when cohort is enabled; deployment generation
-  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS  required; exact comma-separated ids
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS  optional signed-inventory equality assertion
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_ENABLED  required true for staging cohort
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_DOMAIN  required independent trust domain
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_POLICY_FINGERPRINTS  required accepted sha256 policies
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD  required; 1..32 authorities
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_AUTHORITY_KEYS_JSON  required public Ed25519 keys
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON  required signed exact inventory envelope
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS  default: 10; 1..300
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS      default: 30; 3..900 and >= 3x heartbeat
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS  default: 86400; 3600..2592000
@@ -174,9 +180,21 @@ validate_profile_secrets() {
             return 1
         fi
         if [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID:-}" ] ||
-            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ID:-}" ] ||
-            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS:-}" ]; then
-            echo "Authority trust cohort requires scope, cohort, and exact expected instance ids." >&2
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ID:-}" ]; then
+            echo "Authority trust cohort requires scope and cohort ids." >&2
+            return 1
+        fi
+        if ! truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_ENABLED:-false}";
+            then
+            echo "Staging authority cohort requires deployment-signed serving inventory." >&2
+            return 1
+        fi
+        if [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_DOMAIN:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_POLICY_FINGERPRINTS:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_AUTHORITY_KEYS_JSON:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON:-}" ]; then
+            echo "Signed serving inventory requires trust, policy, threshold, public keys, and envelope." >&2
             return 1
         fi
         if ! printf '%s' "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID}" |
@@ -190,43 +208,82 @@ validate_profile_secrets() {
             return 1
         fi
 
-        local -a cohort_instances
-        local cohort_instance
-        local cohort_seen="|"
-        local local_instance_present=0
-        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS}" in
-            ,*|*,|*,,*)
-                echo "Invalid authority trust cohort expected instance list." >&2
-                return 1
-                ;;
-        esac
-        IFS=',' read -r -a cohort_instances <<< \
-            "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS}"
-        if [ "${#cohort_instances[@]}" -lt 1 ] || [ "${#cohort_instances[@]}" -gt 256 ]; then
-            echo "Authority trust cohort expected instance count must be 1..256." >&2
-            return 1
-        fi
-        for cohort_instance in "${cohort_instances[@]}"; do
-            if ! printf '%s' "${cohort_instance}" |
-                grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
-                echo "Invalid authority trust cohort expected instance id." >&2
-                return 1
-            fi
-            case "${cohort_seen}" in
-                *"|${cohort_instance}|"*)
-                    echo "Duplicate authority trust cohort expected instance id." >&2
+        if [ -n "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS:-}" ]; then
+            local -a cohort_instances
+            local cohort_instance
+            local cohort_seen="|"
+            local local_instance_present=0
+            case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS}" in
+                ,*|*,|*,,*)
+                    echo "Invalid authority trust cohort expected instance list." >&2
                     return 1
                     ;;
             esac
-            cohort_seen="${cohort_seen}${cohort_instance}|"
-            if [ "${cohort_instance}" = "${RG_RESOURCE_GATEWAY_INSTANCE_ID}" ]; then
-                local_instance_present=1
+            IFS=',' read -r -a cohort_instances <<< \
+                "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS}"
+            if [ "${#cohort_instances[@]}" -lt 1 ] || [ "${#cohort_instances[@]}" -gt 256 ]; then
+                echo "Authority trust cohort expected instance count must be 1..256." >&2
+                return 1
             fi
-        done
-        if [ "${local_instance_present}" -ne 1 ]; then
-            echo "Authority trust cohort must include the local Resource Gateway instance id." >&2
+            for cohort_instance in "${cohort_instances[@]}"; do
+                if ! printf '%s' "${cohort_instance}" |
+                    grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+                    echo "Invalid authority trust cohort expected instance id." >&2
+                    return 1
+                fi
+                case "${cohort_seen}" in
+                    *"|${cohort_instance}|"*)
+                        echo "Duplicate authority trust cohort expected instance id." >&2
+                        return 1
+                        ;;
+                esac
+                cohort_seen="${cohort_seen}${cohort_instance}|"
+                if [ "${cohort_instance}" = "${RG_RESOURCE_GATEWAY_INSTANCE_ID}" ]; then
+                    local_instance_present=1
+                fi
+            done
+            if [ "${local_instance_present}" -ne 1 ]; then
+                echo "Configured inventory assertion must include the local instance id." >&2
+                return 1
+            fi
+        fi
+
+        if ! printf '%s' "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_DOMAIN}" |
+            grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+            echo "Invalid signed serving-inventory trust domain." >&2
             return 1
         fi
+        if ! printf '%s' \
+            "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_POLICY_FINGERPRINTS}" |
+            grep -Eq '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31}$'; then
+            echo "Invalid signed serving-inventory policy fingerprints." >&2
+            return 1
+        fi
+        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD}" in
+            ''|*[!0-9]*)
+                echo "Invalid signed serving-inventory signature threshold." >&2
+                return 1
+                ;;
+        esac
+        if [ "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD}" -lt 1 ] ||
+            [ "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD}" -gt 32 ]; then
+            echo "Signed serving-inventory signature threshold must be 1..32." >&2
+            return 1
+        fi
+        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_AUTHORITY_KEYS_JSON}" in
+            \[*\]) ;;
+            *)
+                echo "Signed serving-inventory authority keys must be a JSON array." >&2
+                return 1
+                ;;
+        esac
+        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON}" in
+            \{*\}) ;;
+            *)
+                echo "Signed serving inventory must be a JSON object." >&2
+                return 1
+                ;;
+        esac
 
         local heartbeat_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS:-10}"
         local lease_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS:-30}"

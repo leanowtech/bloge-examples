@@ -37,7 +37,9 @@ public final class TestSuiteStabilityAuthorityCohortHealth implements HealthIndi
                     Map.entry("leaseDurationSeconds", descriptor.leaseDurationSeconds()),
                     Map.entry("databaseAuthority", descriptor.databaseAuthority()),
                     Map.entry("exactConfiguredInventory",
-                            descriptor.exactConfiguredInventory()));
+                            descriptor.exactConfiguredInventory()),
+                    Map.entry("externallyAttestedInventory",
+                            descriptor.externallyAttestedInventory()));
             return (descriptor.available() ? Health.up() : Health.down())
                     .withDetails(details).build();
         } catch (RuntimeException unavailable) {

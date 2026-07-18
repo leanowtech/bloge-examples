@@ -28,6 +28,7 @@ public interface TestSuiteStabilityAuthorityCohortGate {
      * @param leaseDurationSeconds database liveness lease
      * @param databaseAuthority whether liveness uses database time
      * @param exactConfiguredInventory whether unexpected or missing members block readiness
+     * @param externallyAttestedInventory whether independent signatures establish expected members
      */
     record Descriptor(
             String schemaVersion,
@@ -40,7 +41,8 @@ public interface TestSuiteStabilityAuthorityCohortGate {
             int distinctSnapshotCount,
             long leaseDurationSeconds,
             boolean databaseAuthority,
-            boolean exactConfiguredInventory) {
+            boolean exactConfiguredInventory,
+            boolean externallyAttestedInventory) {
 
         public static final String SCHEMA_VERSION =
                 "bloge.testSuiteStabilityAuthorityCohortDescriptor.v1";
@@ -73,13 +75,17 @@ public interface TestSuiteStabilityAuthorityCohortGate {
         /** @return disabled non-network local gate */
         public static Descriptor localOnly() {
             return new Descriptor(SCHEMA_VERSION, false, true, "LOCAL_ONLY",
-                    0, 0, 0, 0, 0, false, false);
+                    0, 0, 0, 0, 0, false, false, false);
         }
 
         /** @return configured fail-closed descriptor when the store cannot be read */
-        public static Descriptor unavailable(int expectedReplicaCount, long leaseSeconds) {
+        public static Descriptor unavailable(
+                int expectedReplicaCount,
+                long leaseSeconds,
+                boolean externallyAttestedInventory) {
             return new Descriptor(SCHEMA_VERSION, true, false, "STORE_UNAVAILABLE",
-                    expectedReplicaCount, 0, 0, 0, leaseSeconds, true, true);
+                    expectedReplicaCount, 0, 0, 0, leaseSeconds, true, true,
+                    externallyAttestedInventory);
         }
     }
 

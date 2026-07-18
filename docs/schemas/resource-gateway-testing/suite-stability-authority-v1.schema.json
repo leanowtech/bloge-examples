@@ -224,7 +224,8 @@
         "trustCohortDistinctSnapshotCount": { "type": "integer", "minimum": 0, "maximum": 512 },
         "trustCohortLeaseDurationSeconds": { "type": "integer", "minimum": 0, "maximum": 900 },
         "trustCohortDatabaseAuthority": { "type": "boolean" },
-        "trustCohortExactConfiguredInventory": { "type": "boolean" }
+        "trustCohortExactConfiguredInventory": { "type": "boolean" },
+        "trustCohortExternallyAttestedInventory": { "type": "boolean" }
       }
     },
     "authorizerDescriptor": {

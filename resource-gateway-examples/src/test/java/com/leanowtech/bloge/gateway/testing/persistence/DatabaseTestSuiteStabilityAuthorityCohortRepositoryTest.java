@@ -184,19 +184,25 @@ class DatabaseTestSuiteStabilityAuthorityCohortRepositoryTest {
                 "scope-a", "cohort-a", "replica-a", "not-a-uuid", ARTIFACT,
                 Set.of("replica-a"), "iam.example",
                 ToolStudioResourceGatewayProtocol.VERSION,
-                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1)))
+                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1),
+                TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
+                        .localConfigured()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TestSuiteStabilityAuthorityCohortPolicy(
                 "scope-a", "cohort-a", "replica-a", UUID.randomUUID().toString(), ARTIFACT,
                 Set.of("replica-b"), "iam.example",
                 ToolStudioResourceGatewayProtocol.VERSION,
-                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1)))
+                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1),
+                TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
+                        .localConfigured()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TestSuiteStabilityAuthorityCohortPolicy(
                 "scope-a", "cohort-a", "replica-a", UUID.randomUUID().toString(), ARTIFACT,
                 Set.of("replica-a"), "iam.example",
                 ToolStudioResourceGatewayProtocol.VERSION,
-                Duration.ofSeconds(2), Duration.ofSeconds(5), Duration.ofHours(1)))
+                Duration.ofSeconds(2), Duration.ofSeconds(5), Duration.ofHours(1),
+                TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
+                        .localConfigured()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("three heartbeats");
     }
@@ -340,6 +346,58 @@ class DatabaseTestSuiteStabilityAuthorityCohortRepositoryTest {
                 .hasMessageContaining("corrupt");
     }
 
+    @Test
+    void signedInventoryRevisionFloorAllowsAdvanceButRejectsRollback() {
+        TestSuiteStabilityAuthorityCohortPolicy revisionOne = attestedPolicy(
+                "inventory-scope", "deployment-one", 1, "d");
+        TestSuiteStabilityAuthorityCohortPolicy revisionTwo = attestedPolicy(
+                "inventory-scope", "deployment-two", 2, "e");
+        var firstRepository = repository(revisionOne);
+        var secondRepository = repository(revisionTwo);
+        assertThat(firstRepository.heartbeat(member(revisionOne, GENERATION_A, true)).converged())
+                .isTrue();
+        expireActiveCohort(revisionOne);
+        assertThat(secondRepository.heartbeat(member(revisionTwo, GENERATION_A, true)).converged())
+                .isTrue();
+        expireActiveCohort(revisionTwo);
+
+        assertThatThrownBy(() ->
+                firstRepository.heartbeat(member(revisionOne, GENERATION_A, true)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("rolled back");
+        assertThat(secondRepository.heartbeat(member(revisionTwo, GENERATION_A, true)).converged())
+                .isTrue();
+    }
+
+    @Test
+    void signedInventoryFloorRejectsSameRevisionForkAndCorruption() {
+        TestSuiteStabilityAuthorityCohortPolicy accepted = attestedPolicy(
+                "inventory-scope", "deployment-a", 7, "d");
+        TestSuiteStabilityAuthorityCohortPolicy forked = attestedPolicy(
+                "inventory-scope", "deployment-b", 7, "e");
+        var acceptedRepository = repository(accepted);
+        var forkedRepository = repository(forked);
+        acceptedRepository.heartbeat(member(accepted, GENERATION_A, true));
+        expireActiveCohort(accepted);
+
+        assertThatThrownBy(() ->
+                forkedRepository.heartbeat(member(forked, GENERATION_A, true)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("forked");
+
+        acceptedRepository.heartbeat(member(accepted, GENERATION_A, true));
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_authority_inventory_floors
+                SET record_fingerprint = ? WHERE scope_id = ?
+                """, GENERATION_B, accepted.scopeId());
+        assertThat(acceptedRepository.snapshot().blockers())
+                .contains("SERVING_INVENTORY_FLOOR_CORRUPT");
+        assertThatThrownBy(() ->
+                acceptedRepository.heartbeat(member(accepted, GENERATION_A, true)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("corrupt");
+    }
+
     private DatabaseTestSuiteStabilityAuthorityCohortRepository repository(
             TestSuiteStabilityAuthorityCohortPolicy policy) {
         var repository = new DatabaseTestSuiteStabilityAuthorityCohortRepository(
@@ -368,7 +426,39 @@ class DatabaseTestSuiteStabilityAuthorityCohortRepositoryTest {
         return new TestSuiteStabilityAuthorityCohortPolicy(
                 scopeId, cohortId, instanceId, startupId, ARTIFACT,
                 expected, "iam.example", ToolStudioResourceGatewayProtocol.VERSION,
-                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1));
+                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1),
+                TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
+                        .localConfigured());
+    }
+
+    private TestSuiteStabilityAuthorityCohortPolicy attestedPolicy(
+            String scopeId, String cohortId, long revision, String fingerprintCharacter) {
+        TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation attestation =
+                new TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation(
+                        TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
+                                .SCHEMA_VERSION,
+                        true, "STATIC_SIGNED_ED25519_M_OF_N", revision,
+                        "sha256:" + fingerprintCharacter.repeat(64),
+                        "sha256:" + "f".repeat(64),
+                        Instant.parse("2026-08-01T00:00:00Z"));
+        return new TestSuiteStabilityAuthorityCohortPolicy(
+                scopeId, cohortId, "replica-a", UUID.randomUUID().toString(), ARTIFACT,
+                Set.of("replica-a"), "iam.example",
+                ToolStudioResourceGatewayProtocol.VERSION,
+                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1),
+                attestation);
+    }
+
+    private void expireActiveCohort(TestSuiteStabilityAuthorityCohortPolicy policy) {
+        Instant observedAt = Instant.parse("2026-07-18T00:00:00Z");
+        Instant leaseExpiresAt = observedAt.plusSeconds(3);
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_authority_active_cohorts
+                SET observed_at = ?, lease_expires_at = ?, record_fingerprint = ?
+                WHERE scope_id = ?
+                """, Timestamp.from(observedAt), Timestamp.from(leaseExpiresAt),
+                activeCohortFingerprint(policy, observedAt, leaseExpiresAt),
+                policy.scopeId());
     }
 
     private TestSuiteStabilityAuthorityCohortRepository.Member member(

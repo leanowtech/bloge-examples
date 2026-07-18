@@ -148,7 +148,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("dynamicSuiteStabilityAuthorityTrust", false)
                 .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", false)
                 .containsEntry("exactSuiteStabilityAuthorityTrustCohort", false)
-                .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", false);
+                .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", false)
+                .containsEntry("externallyAttestedSuiteStabilityServingInventory", false);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority())
                 .isEqualTo(signed);
         assertThat(capabilities.toString()).doesNotContain("http://");
@@ -177,7 +178,9 @@ class TestabilityCapabilitiesTest {
                                 java.util.Map.entry("trustCohortHealthyReplicaCount", 3),
                                 java.util.Map.entry("trustCohortDistinctSnapshotCount", 1),
                                 java.util.Map.entry("trustCohortDatabaseAuthority", true),
-                                java.util.Map.entry("trustCohortExactConfiguredInventory", true)));
+                                java.util.Map.entry("trustCohortExactConfiguredInventory", true),
+                                java.util.Map.entry(
+                                        "trustCohortExternallyAttestedInventory", true)));
 
         IntegrationCapabilities capabilities = IntegrationCapabilities.current(
                 VisualEvidenceSigner.unavailable().descriptor(),
@@ -192,6 +195,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", true)
                 .containsEntry("exactSuiteStabilityAuthorityTrustCohort", true)
                 .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", true)
+                .containsEntry("externallyAttestedSuiteStabilityServingInventory", true)
                 .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority().properties())
                 .doesNotContainKeys("jwksUri", "etag", "publicKey", "privateKey");

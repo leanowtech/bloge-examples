@@ -1414,12 +1414,47 @@ public class TestRuntimeConfiguration {
         return new TestSuiteStabilityAuthorityTrustHealth(trustStore);
     }
 
-    /** Freezes one exact configured serving cohort for database trust-generation convergence. */
+    /** Verifies one immutable deployment-signed serving inventory using public keys only. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory",
+            name = "enabled", havingValue = "true")
+    ConfiguredTestSuiteStabilityServingInventoryAuthority
+            testSuiteStabilityServingInventoryAuthority(
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.trust-domain:}")
+            String trustDomain,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.accepted-policy-fingerprints:}")
+            String acceptedPolicyFingerprints,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.signature-threshold:0}")
+            int signatureThreshold,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.authority-keys-json:[]}")
+            String authorityKeysJson,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.inventory-json:}")
+            String inventoryJson,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
+            String scopeId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.cohort-id:}")
+            String cohortId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.instance-id:}")
+            String instanceId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.artifact-fingerprint:}")
+            String artifactFingerprint) {
+        return ConfiguredTestSuiteStabilityServingInventoryAuthority.fromJson(
+                objectMapper, trustDomain, acceptedPolicyFingerprints, signatureThreshold,
+                authorityKeysJson, inventoryJson,
+                new ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding(
+                        scopeId, cohortId, artifactFingerprint,
+                        ToolStudioResourceGatewayProtocol.VERSION, instanceId));
+    }
+
+    /** Freezes one exact configured or externally attested serving cohort. */
     @Bean
     @ConditionalOnProperty(
             prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort",
             name = "enabled", havingValue = "true")
     TestSuiteStabilityAuthorityCohortPolicy testSuiteStabilityAuthorityCohortPolicy(
+            ObjectProvider<TestSuiteStabilityServingInventoryAuthority> inventoryAuthorities,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
             String scopeId,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.cohort-id:}")
@@ -1437,14 +1472,51 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.lease-duration-seconds:30}")
             long leaseDurationSeconds,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.record-retention-seconds:86400}")
-            long recordRetentionSeconds) {
+            long recordRetentionSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.enabled:false}")
+            boolean signedInventoryEnabled,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.required:false}")
+            boolean signedInventoryRequired) {
+        List<TestSuiteStabilityServingInventoryAuthority> authorities =
+                inventoryAuthorities.orderedStream().toList();
+        if (signedInventoryRequired && !signedInventoryEnabled) {
+            throw new IllegalStateException(
+                    "This profile requires deployment-signed serving inventory");
+        }
+        if (signedInventoryEnabled != (authorities.size() == 1)) {
+            throw new IllegalStateException(
+                    "Signed serving inventory requires exactly one configured authority");
+        }
+        Set<String> expected;
+        TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation attestation;
+        if (signedInventoryEnabled) {
+            TestSuiteStabilityServingInventoryAuthority.Observation observed =
+                    authorities.getFirst().observation();
+            if (!observed.available() || !observed.externallyAttested()) {
+                throw new IllegalStateException(
+                        "Signed serving inventory must be current and verified");
+            }
+            expected = Set.copyOf(observed.expectedInstanceIds());
+            if (expectedInstanceIds != null && !expectedInstanceIds.isBlank()
+                    && !expected.equals(
+                    stabilityAuthorityExpectedInstances(expectedInstanceIds))) {
+                throw new IllegalStateException(
+                        "Configured and signed serving inventories disagree");
+            }
+            attestation = TestSuiteStabilityAuthorityCohortPolicy
+                    .ServingInventoryAttestation.external(observed);
+        } else {
+            expected = stabilityAuthorityExpectedInstances(expectedInstanceIds);
+            attestation = TestSuiteStabilityAuthorityCohortPolicy
+                    .ServingInventoryAttestation.localConfigured();
+        }
         return new TestSuiteStabilityAuthorityCohortPolicy(
                 scopeId, cohortId, instanceId, UUID.randomUUID().toString(), artifactFingerprint,
-                stabilityAuthorityExpectedInstances(expectedInstanceIds), authorityId,
+                expected, authorityId,
                 ToolStudioResourceGatewayProtocol.VERSION,
                 Duration.ofSeconds(heartbeatIntervalSeconds),
                 Duration.ofSeconds(leaseDurationSeconds),
-                Duration.ofSeconds(recordRetentionSeconds));
+                Duration.ofSeconds(recordRetentionSeconds), attestation);
     }
 
     /** Creates the database-clock process-start lease and exact cohort inventory authority. */
@@ -1471,10 +1543,21 @@ public class TestRuntimeConfiguration {
     TestSuiteStabilityAuthorityCohortMonitor testSuiteStabilityAuthorityCohortMonitor(
             DatabaseTestSuiteStabilityAuthorityCohortRepository repository,
             DynamicJwksTestSuiteStabilityAuthorityTrustStore trustStore,
+            ObjectProvider<TestSuiteStabilityServingInventoryAuthority> inventoryAuthorities,
             TestSuiteStabilityAuthorityCohortPolicy policy,
             ObjectMapper objectMapper) {
+        List<TestSuiteStabilityServingInventoryAuthority> authorities =
+                inventoryAuthorities.orderedStream().toList();
+        boolean external = policy.servingInventory().externallyAttested();
+        if (external != (authorities.size() == 1)) {
+            throw new IllegalStateException(
+                    "Cohort policy and serving-inventory authority disagree");
+        }
+        TestSuiteStabilityServingInventoryAuthority inventoryAuthority = external
+                ? authorities.getFirst()
+                : TestSuiteStabilityServingInventoryAuthority.localOnly();
         return new TestSuiteStabilityAuthorityCohortMonitor(
-                repository, trustStore, policy, objectMapper);
+                repository, trustStore, inventoryAuthority, policy, objectMapper);
     }
 
     /** Exposes aggregate-only configured cohort convergence through Actuator. */

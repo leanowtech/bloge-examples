@@ -91,12 +91,85 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
         monitor.close();
     }
 
+    @Test
+    void externalInventoryExpiryClosesGateAndRemainsAggregateOnly() {
+        TestSuiteStabilityAuthorityCohortRepository repository =
+                mock(TestSuiteStabilityAuthorityCohortRepository.class);
+        DynamicJwksTestSuiteStabilityAuthorityTrustStore trustStore =
+                mock(DynamicJwksTestSuiteStabilityAuthorityTrustStore.class);
+        TestSuiteStabilityServingInventoryAuthority inventoryAuthority =
+                mock(TestSuiteStabilityServingInventoryAuthority.class);
+        var verified = inventoryObservation(true, "VERIFIED");
+        when(inventoryAuthority.observation()).thenReturn(verified);
+        when(trustStore.cohortObservation()).thenReturn(
+                observation("sha256:" + "a".repeat(64)));
+        when(repository.heartbeat(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(converged());
+        when(repository.snapshot()).thenReturn(converged());
+        TestSuiteStabilityAuthorityCohortPolicy policy = policy(verified);
+        TestSuiteStabilityAuthorityCohortMonitor monitor =
+                new TestSuiteStabilityAuthorityCohortMonitor(
+                        repository, trustStore, inventoryAuthority,
+                        policy, objectMapper, false);
+
+        assertThat(monitor.descriptor()).satisfies(descriptor -> {
+            assertThat(descriptor.available()).isTrue();
+            assertThat(descriptor.externallyAttestedInventory()).isTrue();
+        });
+
+        when(inventoryAuthority.observation()).thenReturn(
+                inventoryObservation(false, "EXPIRED"));
+        assertThat(monitor.descriptor()).satisfies(descriptor -> {
+            assertThat(descriptor.available()).isFalse();
+            assertThat(descriptor.status()).isEqualTo("SERVING_INVENTORY_EXPIRED");
+            assertThat(descriptor.externallyAttestedInventory()).isTrue();
+        });
+        assertThat(new TestSuiteStabilityAuthorityCohortHealth(monitor).health().getDetails())
+                .containsEntry("externallyAttestedInventory", true)
+                .doesNotContainKeys("inventoryId", "materialFingerprint",
+                        "policyFingerprint", "instanceIds");
+
+        when(inventoryAuthority.observation()).thenReturn(
+                new TestSuiteStabilityServingInventoryAuthority.Observation(
+                        TestSuiteStabilityServingInventoryAuthority.Observation.SCHEMA_VERSION,
+                        true, true, true, "VERIFIED", "STATIC_SIGNED_ED25519_M_OF_N", 17,
+                        "sha256:" + "e".repeat(64), "sha256:" + "d".repeat(64),
+                        List.of("replica-a"), Instant.parse("2026-07-20T00:00:00Z"),
+                        2, 2));
+        assertThat(monitor.descriptor().status())
+                .isEqualTo("SERVING_INVENTORY_DIVERGED");
+        monitor.close();
+    }
+
     private TestSuiteStabilityAuthorityCohortPolicy policy() {
         return new TestSuiteStabilityAuthorityCohortPolicy(
                 "scope-a", "cohort-a", "replica-a", UUID.randomUUID().toString(),
                 "sha256:" + "f".repeat(64), Set.of("replica-a"), "iam.example",
                 ToolStudioResourceGatewayProtocol.VERSION,
-                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1));
+                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1),
+                TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
+                        .localConfigured());
+    }
+
+    private TestSuiteStabilityAuthorityCohortPolicy policy(
+            TestSuiteStabilityServingInventoryAuthority.Observation inventory) {
+        return new TestSuiteStabilityAuthorityCohortPolicy(
+                "scope-a", "cohort-a", "replica-a", UUID.randomUUID().toString(),
+                "sha256:" + "f".repeat(64), Set.of("replica-a"), "iam.example",
+                ToolStudioResourceGatewayProtocol.VERSION,
+                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1),
+                TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
+                        .external(inventory));
+    }
+
+    private static TestSuiteStabilityServingInventoryAuthority.Observation inventoryObservation(
+            boolean available, String status) {
+        return new TestSuiteStabilityServingInventoryAuthority.Observation(
+                TestSuiteStabilityServingInventoryAuthority.Observation.SCHEMA_VERSION,
+                true, true, available, status, "STATIC_SIGNED_ED25519_M_OF_N", 17,
+                "sha256:" + "c".repeat(64), "sha256:" + "d".repeat(64),
+                List.of("replica-a"), Instant.parse("2026-07-20T00:00:00Z"),
+                2, 2);
     }
 
     private static DynamicJwksTestSuiteStabilityAuthorityTrustStore.CohortObservation observation(

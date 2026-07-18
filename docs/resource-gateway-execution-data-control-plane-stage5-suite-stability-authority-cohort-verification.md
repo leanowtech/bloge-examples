@@ -16,6 +16,11 @@ same gate again before business execution.
 This control is fail-closed and test/staging-only. It does not turn Resource Gateway into a service
 discovery or deployment-governance system.
 
+> Follow-up: staging now binds this cohort to an externally signed exact inventory and durable
+> revision floor. This document remains the authority for cohort convergence and local configured
+> test mode; fleet-completeness controls are verified in
+> [Stage 5 signed serving-inventory verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-serving-inventory-verification.md).
+
 ## Root Cause
 
 Single-process readiness has four blind spots:
@@ -142,7 +147,8 @@ window.
 
 ## Configuration
 
-Enable the HTTP authority and dynamic JWKS source first, then opt into the cohort:
+Enable the HTTP authority and dynamic JWKS source first, then opt into the cohort. The following
+local expected-set form is retained for the `test` profile:
 
 ```bash
 export RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED=true
@@ -159,9 +165,9 @@ export RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS=86400
 ```
 
 Each replica receives the same scope, cohort, artifact, expected set, authority, protocol, and timing
-values; only `RG_RESOURCE_GATEWAY_INSTANCE_ID` differs. The demo staging script rejects missing,
-duplicate, malformed, locally incomplete, or unsafe timing configuration before packaging and
-startup.
+values; only `RG_RESOURCE_GATEWAY_INSTANCE_ID` differs. Staging additionally requires the signed
+inventory variables documented in the follow-up verification; the local list then becomes only an
+optional equality assertion.
 
 ## Capability And Health Truth
 
@@ -196,12 +202,10 @@ and two conditional skips, then successfully repackages the executable Spring Bo
 
 ## Deliberate Limits
 
-This increment must not be described as full fleet attestation:
+This increment by itself must not be described as full fleet attestation:
 
-1. The expected set is deployment configuration supplied to Resource Gateway. A malicious or
-   misconfigured sole replica can provide a narrower set and self-admit when intended peers are
-   absent. Root-cause closure requires a signed external serving-inventory authority or direct
-   deployment-platform attestation.
+1. Local configured mode still trusts a Resource Gateway setting. Staging closes that specific
+   self-shrink path with the follow-up deployment-signed serving-inventory protocol.
 2. The JWKS fingerprint proves local byte-equivalent accepted state, not issuer non-equivocation.
    Signed JWKS metadata, an independent witness, and cross-region gossip remain future controls.
 3. JWKS endpoint HA, KMS/HSM custody, mTLS or certificate pinning, external alerts, chaos/DR
@@ -211,7 +215,6 @@ This increment must not be described as full fleet attestation:
 5. Scope-lock rows are durable stable-scope authorities; operators must govern scope cardinality.
    Member history alone is retention-bounded.
 
-The next root-cause increment should consume deployment-signed serving inventory and bind its
-revision/fingerprint into the cohort policy. That changes exact configured convergence into
-externally attestable fleet completeness without asking Resource Gateway to become the deployment
-registry.
+The follow-up increment now consumes deployment-signed serving inventory and binds its revision,
+material, policy, and expiry into the cohort. Its remaining gaps are restart-free refresh/revocation,
+platform non-equivocation witnesses, signer custody certification, and non-H2/DR conformance.

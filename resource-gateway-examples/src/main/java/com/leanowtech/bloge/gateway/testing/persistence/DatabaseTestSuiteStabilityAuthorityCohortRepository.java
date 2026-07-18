@@ -93,6 +93,16 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
                 )
                 """);
         jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_authority_inventory_floors (
+                    scope_id VARCHAR(255) PRIMARY KEY,
+                    revision BIGINT NOT NULL,
+                    material_fingerprint VARCHAR(71) NOT NULL,
+                    policy_fingerprint VARCHAR(71) NOT NULL,
+                    observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_suite_stability_authority_cohort_members (
                     scope_id VARCHAR(255) NOT NULL,
                     cohort_id VARCHAR(255) NOT NULL,
@@ -130,7 +140,10 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
             Instant now = databaseNow();
             Instant leaseExpiresAt = now.plus(policy.leaseDuration());
             Instant purgeAfter = leaseExpiresAt.plus(policy.recordRetention());
-            claimOrRenewActiveCohort(now, leaseExpiresAt);
+            boolean ownsActiveCohort = claimOrRenewActiveCohort(now, leaseExpiresAt);
+            if (ownsActiveCohort) {
+                enforceServingInventoryFloor(now);
+            }
             String recordFingerprint = recordFingerprint(
                     member, now, leaseExpiresAt, purgeAfter);
             jdbc.update("""
@@ -194,6 +207,7 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
 
         LinkedHashSet<String> blockers = new LinkedHashSet<>();
         ActiveCohort activeCohort = activeCohort();
+        boolean ownsActiveCohort = false;
         if (activeCohort == null) {
             blockers.add("COHORT_NOT_ACTIVE");
         } else if (!activeCohort.valid(objectMapper)) {
@@ -203,6 +217,11 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
         } else if (!policy.cohortId().equals(activeCohort.cohortId())
                 || !policyFingerprint.equals(activeCohort.policyFingerprint())) {
             blockers.add("COHORT_NOT_ACTIVE");
+        } else {
+            ownsActiveCohort = true;
+        }
+        if (ownsActiveCohort && policy.servingInventory().externallyAttested()) {
+            validateServingInventoryFloor(blockers);
         }
         if (selected.size() > MAXIMUM_LIVE_ROWS) {
             blockers.add("INVENTORY_OVERFLOW");
@@ -317,7 +336,7 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
         }
     }
 
-    private void claimOrRenewActiveCohort(Instant now, Instant leaseExpiresAt) {
+    private boolean claimOrRenewActiveCohort(Instant now, Instant leaseExpiresAt) {
         jdbc.update("""
                 MERGE INTO rg_test_suite_stability_authority_cohort_scope_locks (scope_id)
                 KEY (scope_id) VALUES (?)
@@ -334,7 +353,7 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
         if (current != null && current.leaseExpiresAt().isAfter(now)
                 && (!policy.cohortId().equals(current.cohortId())
                 || !policyFingerprint.equals(current.policyFingerprint()))) {
-            return;
+            return false;
         }
         String fingerprint = activeCohortFingerprint(now, leaseExpiresAt);
         jdbc.update("""
@@ -344,6 +363,86 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
                 ) KEY (scope_id) VALUES (?, ?, ?, ?, ?, ?)
                 """, policy.scopeId(), policy.cohortId(), policyFingerprint,
                 Timestamp.from(now), Timestamp.from(leaseExpiresAt), fingerprint);
+        return true;
+    }
+
+    private void enforceServingInventoryFloor(Instant observedAt) {
+        TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation inventory =
+                policy.servingInventory();
+        if (!inventory.externallyAttested()) {
+            return;
+        }
+        InventoryFloor current = inventoryFloor();
+        if (current != null && !current.valid(objectMapper)) {
+            throw new IllegalStateException("Serving inventory revision floor is corrupt");
+        }
+        if (current != null && (current.revision() > inventory.revision()
+                || current.revision() == inventory.revision()
+                && (!current.materialFingerprint().equals(inventory.materialFingerprint())
+                || !current.policyFingerprint().equals(inventory.policyFingerprint())))) {
+            throw new IllegalStateException(
+                    "Serving inventory revision is rolled back or forked");
+        }
+        if (current != null && current.revision() == inventory.revision()) {
+            return;
+        }
+        String fingerprint = inventoryFloorFingerprint(inventory, observedAt);
+        jdbc.update("""
+                MERGE INTO rg_test_suite_stability_authority_inventory_floors (
+                    scope_id, revision, material_fingerprint, policy_fingerprint,
+                    observed_at, record_fingerprint
+                ) KEY (scope_id) VALUES (?, ?, ?, ?, ?, ?)
+                """, policy.scopeId(), inventory.revision(),
+                inventory.materialFingerprint(), inventory.policyFingerprint(),
+                Timestamp.from(observedAt), fingerprint);
+    }
+
+    private void validateServingInventoryFloor(LinkedHashSet<String> blockers) {
+        TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation inventory =
+                policy.servingInventory();
+        InventoryFloor floor = inventoryFloor();
+        if (floor == null) {
+            blockers.add("SERVING_INVENTORY_FLOOR_MISSING");
+        } else if (!floor.valid(objectMapper)) {
+            blockers.add("SERVING_INVENTORY_FLOOR_CORRUPT");
+        } else if (floor.revision() > inventory.revision()) {
+            blockers.add("SERVING_INVENTORY_ROLLBACK");
+        } else if (floor.revision() < inventory.revision()) {
+            blockers.add("SERVING_INVENTORY_FLOOR_STALE");
+        } else if (!floor.materialFingerprint().equals(inventory.materialFingerprint())
+                || !floor.policyFingerprint().equals(inventory.policyFingerprint())) {
+            blockers.add("SERVING_INVENTORY_FORKED");
+        }
+    }
+
+    private InventoryFloor inventoryFloor() {
+        List<InventoryFloor> rows = jdbc.query("""
+                SELECT scope_id, revision, material_fingerprint, policy_fingerprint,
+                       observed_at, record_fingerprint
+                FROM rg_test_suite_stability_authority_inventory_floors
+                WHERE scope_id = ?
+                """, (result, rowNumber) -> new InventoryFloor(
+                result.getString("scope_id"), result.getLong("revision"),
+                result.getString("material_fingerprint"),
+                result.getString("policy_fingerprint"), instant(result, "observed_at"),
+                result.getString("record_fingerprint")), policy.scopeId());
+        if (rows.size() > 1) {
+            throw new IllegalStateException("Duplicate serving inventory revision floor");
+        }
+        return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    private String inventoryFloorFingerprint(
+            TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation inventory,
+            Instant observedAt) {
+        return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                Map.entry("schemaVersion",
+                        "bloge.testSuiteStabilityServingInventoryFloor.v1"),
+                Map.entry("scopeId", policy.scopeId()),
+                Map.entry("revision", inventory.revision()),
+                Map.entry("materialFingerprint", inventory.materialFingerprint()),
+                Map.entry("policyFingerprint", inventory.policyFingerprint()),
+                Map.entry("observedAt", observedAt.toString())));
     }
 
     private ActiveCohort activeCohort() {
@@ -525,6 +624,40 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
                         Map.entry("policyFingerprint", policyFingerprint),
                         Map.entry("observedAt", observedAt.toString()),
                         Map.entry("leaseExpiresAt", leaseExpiresAt.toString())));
+                return expected.equals(recordFingerprint);
+            } catch (RuntimeException invalid) {
+                return false;
+            }
+        }
+    }
+
+    private record InventoryFloor(
+            String scopeId,
+            long revision,
+            String materialFingerprint,
+            String policyFingerprint,
+            Instant observedAt,
+            String recordFingerprint) {
+
+        private boolean valid(ObjectMapper objectMapper) {
+            try {
+                if (scopeId == null || revision < 1 || materialFingerprint == null
+                        || policyFingerprint == null || observedAt == null
+                        || recordFingerprint == null
+                        || !scopeId.matches("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}")
+                        || !materialFingerprint.matches("sha256:[a-f0-9]{64}")
+                        || !policyFingerprint.matches("sha256:[a-f0-9]{64}")
+                        || !recordFingerprint.matches("sha256:[a-f0-9]{64}")) {
+                    return false;
+                }
+                String expected = ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                        Map.entry("schemaVersion",
+                                "bloge.testSuiteStabilityServingInventoryFloor.v1"),
+                        Map.entry("scopeId", scopeId),
+                        Map.entry("revision", revision),
+                        Map.entry("materialFingerprint", materialFingerprint),
+                        Map.entry("policyFingerprint", policyFingerprint),
+                        Map.entry("observedAt", observedAt.toString())));
                 return expected.equals(recordFingerprint);
             } catch (RuntimeException invalid) {
                 return false;

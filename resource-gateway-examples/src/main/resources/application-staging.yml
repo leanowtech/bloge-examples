@@ -133,6 +133,14 @@ gateway:
               heartbeat-interval-seconds: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS:10}
               lease-duration-seconds: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS:30}
               record-retention-seconds: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS:86400}
+              signed-inventory:
+                enabled: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_ENABLED:false}
+                required: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_REQUIRED:true}
+                trust-domain: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_DOMAIN:}
+                accepted-policy-fingerprints: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_POLICY_FINGERPRINTS:}
+                signature-threshold: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD:0}
+                authority-keys-json: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_AUTHORITY_KEYS_JSON:[]}
+                inventory-json: ${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON:}
       retention:
         instance-id: ${RG_TEST_STABILITY_JOB_RETENTION_INSTANCE_ID:}
         lease-duration-seconds: ${RG_TEST_STABILITY_JOB_RETENTION_LEASE_SECONDS:120}

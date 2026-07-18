@@ -673,6 +673,12 @@ public record IntegrationCapabilities(
                         instanceof Number healthy && healthy.intValue() == expected.intValue()
                         && authority.properties().get("trustCohortDistinctSnapshotCount")
                         instanceof Number generations && generations.intValue() == 1);
+        features.put("externallyAttestedSuiteStabilityServingInventory",
+                testExecutionEndpointEnabled
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortConfigured"))
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortExternallyAttestedInventory")));
         features.put("asyncSuiteStabilityJobQuery", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellation", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellationSemanticAudit",

@@ -178,7 +178,8 @@ public final class HttpTestSuiteStabilityJobAuthorizer
         try {
             cohort = cohortGate.descriptor();
         } catch (RuntimeException unavailable) {
-            cohort = TestSuiteStabilityAuthorityCohortGate.Descriptor.unavailable(0, 0);
+            cohort = TestSuiteStabilityAuthorityCohortGate.Descriptor.unavailable(
+                    0, 0, false);
         }
         return new Descriptor("", trust.available() && cohort.available(), "HTTPS_SIGNED_PDP",
                 trust.expectedAuthorityId(), Map.ofEntries(
@@ -215,7 +216,9 @@ public final class HttpTestSuiteStabilityJobAuthorizer
                         cohort.leaseDurationSeconds()),
                 Map.entry("trustCohortDatabaseAuthority", cohort.databaseAuthority()),
                 Map.entry("trustCohortExactConfiguredInventory",
-                        cohort.exactConfiguredInventory())));
+                        cohort.exactConfiguredInventory()),
+                Map.entry("trustCohortExternallyAttestedInventory",
+                        cohort.externallyAttestedInventory())));
     }
 
     private ExchangeResult exchange(
