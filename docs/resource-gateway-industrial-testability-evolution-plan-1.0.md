@@ -347,6 +347,14 @@ deadline/parent winner 不做二次 mutation，`COMMITTING` 后失败只能 retr
 HTTP/Schema/test-kit/capability 尚未接线；验证见
 [Stage 5 suite-stability worker core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-core-verification.md)。
 
+第五十三增量第七子步提供 scheduler lifecycle，但暂不由 Spring 启动。固定 1..1024 lane 每条只同步
+处理一个 worker poll，完成后再等待 fixed delay，因此没有无界 executor queue；单次未预期异常不会终止
+lane。shutdown 禁止新 poll，按 bounded timeout drain，最后才 best-effort interrupt，陈旧发布仍由持久化
+fence 阻断。配置必须为每个 enabled environment 至少分配一个 lane，避免 `test,staging` 只消费 test 的
+确定性饥饿。77 项聚焦测试覆盖轮询、异常恢复、graceful drain、close 后静默和非法环境/容量拒绝。
+composition root 与 current-authority provider 仍待接入；验证见
+[Stage 5 suite-stability worker scheduler verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-scheduler-verification.md)。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

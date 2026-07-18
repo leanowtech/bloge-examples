@@ -78,11 +78,12 @@ failure classification, irrevocable `COMMITTING` recovery, and payload-free clai
 
 ## 6. Remaining boundary
 
-The worker is not yet runnable as a product feature. The next increment must provide a real
-current-authority adapter, configuration with startup validation, bounded scheduler lifecycle,
-environment enablement, graceful shutdown/drain semantics, fixed-cardinality metrics, readiness
-and backlog SLOs, retention scheduling, and end-to-end persistence tests. HTTP submit/query/cancel,
-Schema, test-kit, and capability truth remain false until those pieces are integrated.
+The bounded scheduler lifecycle is now implemented and verified in
+[Stage 5 suite-stability worker scheduler verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-scheduler-verification.md).
+The worker is still not runnable as a product feature until a real current-authority adapter and
+startup-validated composition-root wiring exist. Fixed-cardinality metrics, readiness/backlog SLOs,
+retention scheduling, HTTP submit/query/cancel, Schema, test-kit, and capability truth also remain
+required.
 
 Heartbeat can terminalize the durable job while an authorizer or operator call is stuck, but the
 local thread and slot remain occupied until that call returns. Physical hard timeout still requires

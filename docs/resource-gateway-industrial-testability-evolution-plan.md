@@ -350,6 +350,15 @@ authorizer adapter、配置、scheduler/shutdown、telemetry/readiness 和公开
 验证见
 [Stage 5 suite-stability worker core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-core-verification.md)。
 
+第五十三增量第七子步增加 bounded fixed-delay scheduler lifecycle，仍未在 Spring composition root
+启动。1..1024 lane 各自同步执行 single-poll worker，任务完成后才计 fixed delay，不产生无界 handoff
+queue；异常只影响当次 poll，不杀死 lane。`close` 先停止新 poll，再按配置等待 in-flight drain，超时后
+best-effort interrupt，最终安全仍由 queue/parent fence 而非 Java interruption 保证。启用多个 environment
+时强制 `lanes >= environments`，根治配置 `test,staging + 1 lane` 导致 staging 永久饥饿。77 项聚焦测试
+覆盖真实线程 poll、异常恢复、drain、post-close quiescence 与环境活性 fail-fast。下一步才是 authorizer
+存在性检查和配置接线；验证见
+[Stage 5 suite-stability worker scheduler verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-scheduler-verification.md)。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制
