@@ -277,6 +277,17 @@ backlog SLO/telemetry、物理 retention purge、非 H2/soak/chaos/DR 认证仍�
 `clean verify` 执行 152 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR
 与严格 public JavaDoc 门禁。
 
+第五十三增量第一子步已先落下 SQL 权威 stability parent queue 内核，但尚未对外宣称产品可用。新控制面
+在环境级数据库锁内统一执行 policy fingerprint 收敛、全局/租户容量 admission、过期 owner 恢复、
+tenant round-robin cursor 与 exact claim；先选 tenant，再按 tenant 内 immutable priority + bounded aging、
+created time、job id 选 job，因此高优租户不能吞掉其他租户的轮次。`QUEUED/RUNNING/
+CANCEL_REQUESTED/SUCCEEDED/FAILED/CANCELLED/EXPIRED/QUARANTINED` 构成闭集，heartbeat、retry、
+complete、cancel 都以 whole-row fingerprint 和 owner/epoch/expiry CAS 推进；错误调用顺序也不能用 retry
+复活取消任务。当前只完成 repository seam、完整 JavaDoc 和 11 项 H2 行为/并发反例；HTTP、worker、
+parent control checkpoint、delegated authority revalidation、Schema/capability/test-kit、SLO/telemetry 和
+poison-row quarantine 尚未接线，不能把该子步解读为异步执行已经开放。验证与剩余接线条件见
+[Stage 5 suite-stability durable queue core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-queue-core-verification.md)。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、
