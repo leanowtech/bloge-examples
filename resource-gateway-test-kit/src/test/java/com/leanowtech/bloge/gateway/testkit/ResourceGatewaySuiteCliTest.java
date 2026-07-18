@@ -30,12 +30,14 @@ class ResourceGatewaySuiteCliTest {
     private volatile String authorization = "";
     private volatile String requestPath = "";
     private volatile String requestBody = "";
+    private TestSuiteStabilityTestFixtures.Fixture stabilityFixture;
 
     @TempDir
     Path temporaryDirectory;
 
     @BeforeEach
     void startServer() throws IOException {
+        stabilityFixture = TestSuiteStabilityTestFixtures.fixture();
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/testing/suites/loan-policy/executions", this::executeSuite);
         server.createContext("/api/testing/suites/blocked-policy/executions", this::executeBlockedSuite);
@@ -43,6 +45,9 @@ class ResourceGatewaySuiteCliTest {
         server.createContext("/api/testing/suites/suite-boundary/executions", this::executeAdmissionSuite);
         server.createContext("/api/testing/suites/suite-mutation/mutation-executions",
                 this::executeMutationSuite);
+        server.createContext("/api/testing/suites/orders-suite/stability-executions",
+                this::executeStability);
+        server.createContext("/api/integration/evidence-keys", this::findEvidenceKeys);
         server.start();
     }
 
@@ -65,7 +70,8 @@ class ResourceGatewaySuiteCliTest {
                         "--fingerprint", "sha256:" + "a".repeat(64),
                         "--client-request-id", "pipeline-982-job-4",
                         "--report", report.toString(),
-                }, Map.of("RESOURCE_GATEWAY_TOKEN", token),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", token,
+                        "RESOURCE_GATEWAY_STABILITY_ATTEMPTS", "not-used-in-standard-mode"),
                 new PrintStream(output), new PrintStream(error));
 
         assertThat(exit).isZero();
@@ -294,6 +300,136 @@ class ResourceGatewaySuiteCliTest {
                 .doesNotContain(accidentalSecret);
     }
 
+    @Test
+    void runsPinnedStabilityGateAndWritesPayloadFreeJUnit() throws Exception {
+        Path report = temporaryDirectory.resolve("ci/stability.xml");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                        "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                        "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                        "--client-request-id", TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                        "--mode", "STABILITY",
+                        "--attempts", "3",
+                        "--trusted-key-set-fingerprint",
+                        stabilityFixture.keySet().snapshotFingerprint(),
+                        "--report", report.toString(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(output), new PrintStream(error));
+
+        assertThat(exit).isZero();
+        assertThat(requestPath)
+                .isEqualTo("/api/testing/suites/orders-suite/stability-executions");
+        assertThat(requestBody).contains("\"attempts\":3").doesNotContain("ci-secret-token");
+        assertThat(output.toString(StandardCharsets.UTF_8))
+                .contains("status=STABLE")
+                .contains("promotion=ELIGIBLE")
+                .contains("verification=VERIFIED")
+                .doesNotContain("ci-secret-token");
+        assertThat(error.toString(StandardCharsets.UTF_8)).isEmpty();
+        assertThat(Files.readString(report))
+                .contains("tests=\"3\"")
+                .contains("failures=\"0\"")
+                .contains("stability-attestation")
+                .contains("stability-gate")
+                .doesNotContain("nightly");
+    }
+
+    @Test
+    void returnsOneForCryptographicallyVerifiedFlakyEvidence() throws Exception {
+        Path report = temporaryDirectory.resolve("ci/stability-flaky.xml");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                        "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                        "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                        "--client-request-id", "stability-flaky",
+                        "--mode", "STABILITY",
+                        "--trusted-key-set-fingerprint",
+                        stabilityFixture.keySet().snapshotFingerprint(),
+                        "--report", report.toString(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(output), new PrintStream(new ByteArrayOutputStream()));
+
+        assertThat(exit).isEqualTo(1);
+        assertThat(output.toString(StandardCharsets.UTF_8))
+                .contains("status=FLAKY")
+                .contains("quarantine=REQUIRED")
+                .contains("verification=VERIFIED");
+        assertThat(Files.readString(report))
+                .contains("failures=\"2\"")
+                .contains("ResourceGateway.FLAKY")
+                .contains("STABILITY_GATE_BLOCKED")
+                .doesNotContain("nightly");
+    }
+
+    @Test
+    void stabilityModeRequiresPinnedTrustAndBoundedAttemptsBeforeNetwork() {
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+        String[] base = {
+                "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                "--client-request-id", TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                "--mode", "STABILITY"
+        };
+
+        int missingPin = ResourceGatewaySuiteCli.run(base,
+                Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(new ByteArrayOutputStream()), new PrintStream(error));
+
+        assertThat(missingPin).isEqualTo(2);
+        assertThat(error.toString(StandardCharsets.UTF_8))
+                .contains("trusted-key-set-fingerprint")
+                .doesNotContain("ci-secret-token");
+        assertThat(requestPath).isEmpty();
+
+        int unbounded = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                        "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                        "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                        "--client-request-id", TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                        "--mode", "STABILITY", "--attempts", "21",
+                        "--trusted-key-set-fingerprint",
+                        stabilityFixture.keySet().snapshotFingerprint(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(new ByteArrayOutputStream()), new PrintStream(error));
+        assertThat(unbounded).isEqualTo(2);
+        assertThat(requestPath).isEmpty();
+    }
+
+    @Test
+    void wrongStabilityTrustPinProducesTerminalGateFailureNotInfrastructureSuccess()
+            throws Exception {
+        Path report = temporaryDirectory.resolve("ci/stability-wrong-pin.xml");
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                        "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                        "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                        "--client-request-id", TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                        "--mode", "STABILITY",
+                        "--trusted-key-set-fingerprint", "sha256:" + "8".repeat(64),
+                        "--report", report.toString(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(new ByteArrayOutputStream()));
+
+        assertThat(exit).isEqualTo(1);
+        assertThat(Files.readString(report))
+                .contains("KEY_SET_PIN_MISMATCH")
+                .contains("STABILITY_ATTESTATION_UNVERIFIED")
+                .contains("failures=\"2\"");
+    }
+
     private void executeSuite(HttpExchange exchange) throws IOException {
         purpose = exchange.getRequestHeaders().getFirst("X-Purpose");
         authorization = exchange.getRequestHeaders().getFirst("Authorization");
@@ -343,6 +479,40 @@ class ResourceGatewaySuiteCliTest {
         String responseBody = requestBody.contains("mutation-ci-failed")
                 ? failedMutationSuiteResponse()
                 : TestSuiteRunAssertionsTest.mutationSuiteResponse();
+        byte[] response = responseBody.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, response.length);
+        exchange.getResponseBody().write(response);
+        exchange.close();
+    }
+
+    private void executeStability(HttpExchange exchange) throws IOException {
+        purpose = exchange.getRequestHeaders().getFirst("X-Purpose");
+        authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        requestPath = exchange.getRequestURI().getPath();
+        requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        ObjectNode request = (ObjectNode) JSON.readTree(requestBody);
+        ObjectNode response = TestSuiteStabilityTestFixtures.response(
+                EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair());
+        ((ObjectNode) response.path("evidence"))
+                .put("clientRequestId", request.path("clientRequestId").asText());
+        if (request.path("clientRequestId").asText().contains("flaky")) {
+            TestSuiteStabilityTestFixtures.makeFlaky(response, stabilityFixture.keyPair());
+        } else {
+            TestSuiteStabilityTestFixtures.seal(response, stabilityFixture.keyPair(), false);
+        }
+        respond(exchange, response.toString());
+    }
+
+    private void findEvidenceKeys(HttpExchange exchange) throws IOException {
+        ObjectNode envelope = JSON.createObjectNode();
+        envelope.put("payloadKind", "EVIDENCE_VERIFICATION_KEY_SET");
+        envelope.put("payloadSchemaVersion", TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
+        envelope.set("payload", stabilityFixture.keySet().rawSnapshot());
+        respond(exchange, envelope.toString());
+    }
+
+    private static void respond(HttpExchange exchange, String responseBody) throws IOException {
         byte[] response = responseBody.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, response.length);

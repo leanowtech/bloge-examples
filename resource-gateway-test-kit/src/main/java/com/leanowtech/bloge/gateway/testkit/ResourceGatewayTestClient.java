@@ -425,7 +425,7 @@ public final class ResourceGatewayTestClient {
         TestSuiteStabilityRun run = projectStabilityRun(response);
         try {
             run.requireExecutionIdentity(
-                    exactSuiteId, revision, exactFingerprint, id);
+                    exactSuiteId, revision, exactFingerprint, id, attempts);
             if (!EvidenceVerificationSupport.sha256(request)
                     .equals(run.attestation().requestFingerprint())) {
                 throw new IllegalArgumentException(

@@ -303,6 +303,16 @@ class ResourceGatewayTestClientTest {
                         assertThat(failure.code())
                                 .isEqualTo("RG.TESTKIT.RESPONSE_CONTRACT_INVALID"));
         assertThat(requests).hasSize(1);
+
+        assertThatThrownBy(() -> client.executeSuiteStability(
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID, 4, Map.of()))
+                .isInstanceOfSatisfying(ResourceGatewayTestException.class, failure ->
+                        assertThat(failure.code())
+                                .isEqualTo("RG.TESTKIT.RESPONSE_CONTRACT_INVALID"));
+        assertThat(requests).hasSize(2);
     }
 
     @Test

@@ -9,6 +9,8 @@ import org.w3c.dom.Document;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -184,6 +186,61 @@ class JUnitXmlReportWriterTest {
         assertThat(Files.readString(report))
                 .contains("MUTATION_SCORE_UNSATISFIED")
                 .contains("MUTATION_SCORE_BELOW_THRESHOLD");
+    }
+
+    @Test
+    void writesVerifiedStableCasesTrustAndAggregateGateWithoutPayloads() throws Exception {
+        TestSuiteStabilityTestFixtures.Fixture fixture = TestSuiteStabilityTestFixtures.fixture();
+        TestSuiteStabilityRun run = fixture.run();
+        TestSuiteStabilityEvidenceVerifier.VerificationResult verification =
+                stabilityVerifier().verify(
+                        run, fixture.keySet(), fixture.keySet().snapshotFingerprint());
+        Path report = temporaryDirectory.resolve("reports/stability.xml");
+
+        JUnitXmlReportWriter.Report result = JUnitXmlReportWriter.writeStability(
+                report, run, verification);
+
+        assertThat(result.tests()).isEqualTo(3);
+        assertThat(result.failures()).isZero();
+        assertThat(result.exitCode()).isZero();
+        assertThat(Files.readString(report))
+                .contains("name=\"case-golden\"")
+                .contains("name=\"stability-attestation\"")
+                .contains("name=\"stability-gate\"")
+                .contains("verification=VERIFIED")
+                .contains("trustVerified=true")
+                .doesNotContain("nightly");
+    }
+
+    @Test
+    void failsFlakyAndUntrustedStabilityEvidenceDeterministically() throws Exception {
+        TestSuiteStabilityTestFixtures.Fixture fixture = TestSuiteStabilityTestFixtures.fixture();
+        ObjectNode response = fixture.copyResponse();
+        TestSuiteStabilityTestFixtures.makeFlaky(response, fixture.keyPair());
+        TestSuiteStabilityRun run = TestSuiteStabilityRun.from(response);
+        TestSuiteStabilityEvidenceVerifier.VerificationResult invalid =
+                stabilityVerifier().verify(run, fixture.keySet(), "sha256:" + "8".repeat(64));
+        Path report = temporaryDirectory.resolve("reports/flaky-untrusted.xml");
+
+        JUnitXmlReportWriter.Report result = JUnitXmlReportWriter.writeStability(
+                report, run, invalid);
+
+        assertThat(result.tests()).isEqualTo(3);
+        assertThat(result.failures()).isEqualTo(3);
+        assertThat(result.exitCode()).isEqualTo(1);
+        assertThat(Files.readString(report))
+                .contains("ResourceGateway.FLAKY")
+                .contains("STABILITY_ATTESTATION_UNVERIFIED")
+                .contains("STABILITY_GATE_BLOCKED")
+                .contains("KEY_SET_PIN_MISMATCH")
+                .contains("STABILITY_FLAKY")
+                .contains("FLAKY_CASE_OBSERVED")
+                .doesNotContain("nightly");
+    }
+
+    private static TestSuiteStabilityEvidenceVerifier stabilityVerifier() {
+        return new TestSuiteStabilityEvidenceVerifier(Clock.fixed(
+                TestSuiteStabilityTestFixtures.SIGNED_AT, ZoneOffset.UTC));
     }
 
     private static String run(String runId, String status, String evidenceClass, String diagnostic) {

@@ -551,16 +551,19 @@ public record TestSuiteStabilityRun(
      * @param expectedRevision requested suite revision
      * @param expectedFingerprint requested suite fingerprint
      * @param expectedClientRequestId caller parent idempotency key
+     * @param expectedAttempts requested independent rerun count
      */
     void requireExecutionIdentity(
             String expectedSuiteId,
             long expectedRevision,
             String expectedFingerprint,
-            String expectedClientRequestId) {
+            String expectedClientRequestId,
+            int expectedAttempts) {
         if (!suiteRef.suiteId().equals(normalized(expectedSuiteId))
                 || suiteRef.revision() != expectedRevision
                 || !suiteRef.fingerprint().equals(normalized(expectedFingerprint))
-                || !clientRequestId.equals(normalized(expectedClientRequestId))) {
+                || !clientRequestId.equals(normalized(expectedClientRequestId))
+                || requestedAttempts != expectedAttempts) {
             throw new IllegalArgumentException(
                     "Stability response identity does not match the request");
         }

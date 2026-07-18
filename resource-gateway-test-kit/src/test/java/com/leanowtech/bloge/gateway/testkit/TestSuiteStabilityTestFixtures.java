@@ -30,7 +30,8 @@ final class TestSuiteStabilityTestFixtures {
                 Base64.getEncoder().encodeToString(trust.evidence().getPublic().getEncoded()),
                 SIGNED_AT.minusSeconds(600), "ACTIVE", "test-evidence-authority");
         return new Fixture(response, key,
-                EvidenceVerificationKeySet.fromPayload(trust.keySet()), trust.evidence());
+                EvidenceVerificationKeySet.fromPayload(longLivedKeySet(trust.evidence())),
+                trust.evidence());
     }
 
     static ObjectNode response(String requestFingerprint, KeyPair signingKey) {
@@ -138,6 +139,26 @@ final class TestSuiteStabilityTestFixtures {
                 EvidenceVerificationSupport.sha256(signatureMaterial(attestation))));
     }
 
+    static void makeFlaky(ObjectNode response, KeyPair keyPair) {
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        ObjectNode result = (ObjectNode) evidence.path("caseResults").get(0);
+        ((ObjectNode) result.path("observations").get(1))
+                .put("semanticResultFingerprint", fingerprint('9'));
+        result.put("status", "FLAKY");
+        result.put("distinctVerifiedOutcomes", 2);
+        evidence.put("status", "FLAKY");
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons").add("FLAKY_CASE_OBSERVED");
+        promotion.put("stableCases", 0);
+        promotion.put("flakyCases", 1);
+        ObjectNode quarantine = (ObjectNode) evidence.path("quarantine");
+        quarantine.put("status", "REQUIRED");
+        quarantine.putArray("caseIds").add("golden");
+        quarantine.put("reason", "FLAKY_CASE_OBSERVED");
+        seal(response, keyPair, false);
+    }
+
     private static ObjectNode signatureMaterial(ObjectNode attestation) {
         ObjectNode material = EvidenceTrustTestFixtures.JSON.createObjectNode();
         material.put("schemaVersion", attestation.path("schemaVersion").asText());
@@ -149,6 +170,57 @@ final class TestSuiteStabilityTestFixtures {
                 attestation.path("sourceSuiteEvidenceRefs").deepCopy());
         material.put("signedAt", attestation.path("signedAt").asText());
         return material;
+    }
+
+    private static ObjectNode longLivedKeySet(KeyPair keyPair) {
+        Instant createdAt = SIGNED_AT.minusSeconds(600);
+        ObjectNode material = EvidenceTrustTestFixtures.JSON.createObjectNode();
+        material.put("schemaVersion", TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
+        material.put("provider", "test-evidence-authority");
+        material.put("generatedAt", SIGNED_AT.minusSeconds(300).toString());
+        material.put("expiresAt", "2099-01-01T00:00:00Z");
+        material.put("activeKeyId", "evidence-key-a");
+        material.put("policyCompleteness", "COMPLETE");
+        ObjectNode key = material.putArray("keys").addObject();
+        key.put("keyId", "evidence-key-a");
+        key.put("algorithm", "Ed25519");
+        key.put("encodedPublicKey",
+                Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()));
+        key.put("createdAt", createdAt.toString());
+        key.put("notBefore", createdAt.toString());
+        key.putNull("notAfter");
+        key.put("state", "ACTIVE");
+        key.put("providerKeyVersion", "version-a");
+        ArrayNode events = material.putArray("events");
+        addLifecycleEvent(events.addObject(), 1, "CREATED", createdAt);
+        addLifecycleEvent(events.addObject(), 2, "ACTIVATED", createdAt);
+        String fingerprint = EvidenceVerificationSupport.sha256(material);
+        ObjectNode snapshot = material.deepCopy();
+        snapshot.put("snapshotFingerprint", fingerprint);
+        ObjectNode attestation = snapshot.putObject("attestation");
+        attestation.put("schemaVersion", "bloge.visualRunEvidenceSeal.v1");
+        attestation.put("materialFingerprint", fingerprint);
+        attestation.put("algorithm", "Ed25519");
+        attestation.put("keyId", "evidence-key-a");
+        attestation.put("signedAt", SIGNED_AT.minusSeconds(299).toString());
+        attestation.put("signature", sign(keyPair, fingerprint));
+        return snapshot;
+    }
+
+    private static void addLifecycleEvent(
+            ObjectNode event,
+            long sequence,
+            String type,
+            Instant occurredAt) {
+        event.put("sequence", sequence);
+        event.put("eventId", type.toLowerCase(java.util.Locale.ROOT) + ":evidence-key-a");
+        event.put("keyId", "evidence-key-a");
+        event.put("type", type);
+        event.put("occurredAt", occurredAt.toString());
+        event.put("effectiveAt", occurredAt.toString());
+        event.putNull("revocationMode");
+        event.putNull("invalidFrom");
+        event.put("reasonCode", "KEY_" + type);
     }
 
     private static String sign(KeyPair keyPair, String fingerprint) {

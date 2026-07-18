@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -91,6 +92,45 @@ public final class JUnitXmlReportWriter {
             writeSuiteGate(xml, run, requirePromotionEligible, gatePassed);
         });
         return new Report(run.caseResults().size() + mutantTests + 1, failures);
+    }
+
+    /**
+     * Writes one payload-free testcase per stability case, one pinned-trust verification row, and
+     * one fail-closed aggregate gate. The aggregate passes only when the analysis is stable,
+     * promotion eligible, and independently verified against the caller's trust policy.
+     *
+     * @param output destination XML file
+     * @param run immutable stability analysis projection
+     * @param verification offline signature and key-policy verification result
+     * @return emitted report counters
+     * @throws IOException when directories or XML cannot be written
+     */
+    public static Report writeStability(
+            Path output,
+            TestSuiteStabilityRun run,
+            TestSuiteStabilityEvidenceVerifier.VerificationResult verification)
+            throws IOException {
+        Objects.requireNonNull(output, "output");
+        Objects.requireNonNull(run, "run");
+        Objects.requireNonNull(verification, "verification");
+        boolean identityMatches = run.stabilityRunId().equals(verification.stabilityRunId());
+        boolean trustVerified = identityMatches && verification.verified();
+        boolean gatePassed = trustVerified && run.stable() && run.promotionEligible();
+        int caseFailures = (int) run.caseResults().stream()
+                .filter(result -> result.status()
+                        != TestSuiteStabilityRun.CaseStatus.STABLE_PASS)
+                .count();
+        int failures = caseFailures + (trustVerified ? 0 : 1) + (gatePassed ? 0 : 1);
+        int tests = run.caseResults().size() + 2;
+        writeDocument(output, "resource-gateway stability " + run.suiteRef().suiteId(),
+                tests, failures, xml -> {
+            for (TestSuiteStabilityRun.CaseStabilityResult result : run.caseResults()) {
+                writeStabilityCase(xml, result);
+            }
+            writeStabilityVerification(xml, run, verification, trustVerified);
+            writeStabilityGate(xml, run, verification, trustVerified, gatePassed);
+        });
+        return new Report(tests, failures);
     }
 
     /**
@@ -269,6 +309,112 @@ public final class JUnitXmlReportWriter {
                     + "; inconclusive=" + score.inconclusiveMutants()
                     + "; unclassified=" + score.unclassifiedMutants());
         }
+        xml.writeEndElement();
+        xml.writeEndElement();
+    }
+
+    private static void writeStabilityCase(
+            XMLStreamWriter xml,
+            TestSuiteStabilityRun.CaseStabilityResult result) throws XMLStreamException {
+        xml.writeStartElement("testcase");
+        xml.writeAttribute("classname", "resource-gateway.stability");
+        xml.writeAttribute("name", bounded("case-" + result.caseId(), 512));
+        if (result.status() != TestSuiteStabilityRun.CaseStatus.STABLE_PASS) {
+            String message = result.diagnosticCodes().isEmpty()
+                    ? result.status().name() : String.join(",", result.diagnosticCodes());
+            xml.writeStartElement("failure");
+            xml.writeAttribute("type", "ResourceGateway." + result.status());
+            xml.writeAttribute("message", bounded(message, 512));
+            xml.writeCharacters("Inspect the authorized stability evidence using caseId="
+                    + bounded(result.caseId(), 256) + ".");
+            xml.writeEndElement();
+        }
+        long verified = result.observations().stream().filter(value ->
+                value.status() == TestSuiteStabilityRun.ObservationStatus.VERIFIED).count();
+        xml.writeStartElement("system-out");
+        xml.writeCharacters("caseType=" + bounded(result.caseType(), 64)
+                + "; status=" + result.status()
+                + "; fixture=" + bounded(result.fixtureRef().fixtureBundleId(), 256)
+                + "@" + result.fixtureRef().revision()
+                + "; fixtureFingerprint=" + bounded(result.fixtureRef().fingerprint(), 80)
+                + "; observations=" + result.observations().size()
+                + "; verifiedObservations=" + verified
+                + "; distinctVerifiedOutcomes=" + result.distinctVerifiedOutcomes());
+        xml.writeEndElement();
+        xml.writeEndElement();
+    }
+
+    private static void writeStabilityVerification(
+            XMLStreamWriter xml,
+            TestSuiteStabilityRun run,
+            TestSuiteStabilityEvidenceVerifier.VerificationResult verification,
+            boolean trustVerified) throws XMLStreamException {
+        xml.writeStartElement("testcase");
+        xml.writeAttribute("classname", "resource-gateway.stability");
+        xml.writeAttribute("name", "stability-attestation");
+        if (!trustVerified) {
+            String reason = run.stabilityRunId().equals(verification.stabilityRunId())
+                    ? verification.reasonCode() : "STABILITY_VERIFICATION_IDENTITY_MISMATCH";
+            xml.writeStartElement("failure");
+            xml.writeAttribute("type", "ResourceGateway.STABILITY_ATTESTATION_UNVERIFIED");
+            xml.writeAttribute("message", bounded(reason, 512));
+            xml.writeCharacters("The stability signature or pinned key policy did not verify.");
+            xml.writeEndElement();
+        }
+        xml.writeStartElement("system-out");
+        xml.writeCharacters("stabilityRunId=" + bounded(run.stabilityRunId(), 256)
+                + "; verification=" + verification.outcome()
+                + "; reason=" + bounded(verification.reasonCode(), 255)
+                + "; keyId=" + bounded(verification.keyId(), 512)
+                + "; evidenceFingerprint=" + bounded(run.evidenceFingerprint(), 80));
+        xml.writeEndElement();
+        xml.writeEndElement();
+    }
+
+    private static void writeStabilityGate(
+            XMLStreamWriter xml,
+            TestSuiteStabilityRun run,
+            TestSuiteStabilityEvidenceVerifier.VerificationResult verification,
+            boolean trustVerified,
+            boolean gatePassed) throws XMLStreamException {
+        xml.writeStartElement("testcase");
+        xml.writeAttribute("classname", "resource-gateway.stability");
+        xml.writeAttribute("name", "stability-gate");
+        if (!gatePassed) {
+            List<String> reasons = new ArrayList<>();
+            if (!trustVerified) {
+                reasons.add(run.stabilityRunId().equals(verification.stabilityRunId())
+                        ? verification.reasonCode() : "STABILITY_VERIFICATION_IDENTITY_MISMATCH");
+            }
+            if (!run.stable()) {
+                reasons.add("STABILITY_" + run.status());
+            }
+            if (!run.promotionEligible()) {
+                reasons.addAll(run.promotion().reasons());
+            }
+            xml.writeStartElement("failure");
+            xml.writeAttribute("type", "ResourceGateway.STABILITY_GATE_BLOCKED");
+            xml.writeAttribute("message", bounded(String.join(",", reasons), 512));
+            xml.writeCharacters("Inspect the authorized stability evidence using stabilityRunId="
+                    + bounded(run.stabilityRunId(), 256) + ".");
+            xml.writeEndElement();
+        }
+        long verifiedAttempts = run.attempts().stream().filter(value ->
+                value.status() == TestSuiteStabilityRun.AttemptStatus.VERIFIED).count();
+        xml.writeStartElement("system-out");
+        xml.writeCharacters("stabilityRunId=" + bounded(run.stabilityRunId(), 256)
+                + "; status=" + run.status()
+                + "; suite=" + bounded(run.suiteRef().suiteId(), 256)
+                + "@" + run.suiteRef().revision()
+                + "; suiteFingerprint=" + bounded(run.suiteRef().fingerprint(), 80)
+                + "; target=" + bounded(run.target().kind(), 32)
+                + ":" + bounded(run.target().id(), 256)
+                + "; targetFingerprint=" + bounded(run.target().fingerprint(), 80)
+                + "; attempts=" + run.requestedAttempts()
+                + "; verifiedAttempts=" + verifiedAttempts
+                + "; promotion=" + run.promotion().status()
+                + "; quarantine=" + run.quarantine().status()
+                + "; trustVerified=" + trustVerified);
         xml.writeEndElement();
         xml.writeEndElement();
     }

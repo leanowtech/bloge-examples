@@ -16,8 +16,9 @@ import java.util.Map;
  * <p>The bearer credential is accepted only from {@code RESOURCE_GATEWAY_TOKEN}; command-line
  * token arguments are intentionally unsupported to keep secrets out of process listings. A stable
  * client request id is mandatory so infrastructure retries cannot silently execute side effects
- * twice. Standard and pure-DSL mutation suites use distinct endpoints and scheduling strategies;
- * callers must select mutation mode explicitly.</p>
+ * twice. Standard, pure-DSL mutation, and stability analyses use distinct endpoints and gate
+ * semantics; callers must select non-standard modes explicitly. Stability mode additionally
+ * requires a key-set fingerprint pinned outside the Gateway response.</p>
  */
 public final class ResourceGatewaySuiteCli {
 
@@ -66,7 +67,10 @@ public final class ResourceGatewaySuiteCli {
                     .bearerToken(() -> options.token())
                     .requestTimeout(options.timeout())
                     .build();
-            TestSuiteRun run = options.execute(client);
+            if (options.mode() == RunMode.STABILITY) {
+                return runStability(options, client, safeOutput);
+            }
+            TestSuiteRun run = options.executeSuite(client);
             if (run.status() == TestSuiteRun.Status.RUNNING) {
                 writeInfrastructureFailure(options, "RG.TESTKIT.SUITE_NON_TERMINAL",
                         "The suite returned a non-terminal checkpoint; no gate verdict is available.",
@@ -100,6 +104,29 @@ public final class ResourceGatewaySuiteCli {
         }
     }
 
+    private static int runStability(
+            CliOptions options,
+            ResourceGatewayTestClient client,
+            PrintStream output) throws IOException {
+        TestSuiteStabilityRun run = options.executeStability(client);
+        EvidenceVerificationKeySet keySet = client.findEvidenceVerificationKeySet();
+        TestSuiteStabilityEvidenceVerifier.VerificationResult verification =
+                new TestSuiteStabilityEvidenceVerifier().verify(
+                        run, keySet, options.trustedKeySetFingerprint());
+        JUnitXmlReportWriter.Report report = JUnitXmlReportWriter.writeStability(
+                options.report(), run, verification);
+        output.println("stabilityRunId=" + safe(run.stabilityRunId(), 256)
+                + "; status=" + run.status()
+                + "; promotion=" + run.promotion().status()
+                + "; quarantine=" + run.quarantine().status()
+                + "; attempts=" + run.requestedAttempts()
+                + "; cases=" + run.caseResults().size()
+                + "; verification=" + verification.outcome()
+                + "; verificationReason=" + safe(verification.reasonCode(), 255)
+                + "; report=" + options.report().toAbsolutePath());
+        return report.exitCode();
+    }
+
     private static void writeInfrastructureFailure(CliOptions options, String code, String summary,
                                                    PrintStream error) {
         String safeCode = safe(code, 255);
@@ -128,7 +155,8 @@ public final class ResourceGatewaySuiteCli {
 
     private enum RunMode {
         STANDARD,
-        MUTATION
+        MUTATION,
+        STABILITY
     }
 
     private record CliOptions(
@@ -142,9 +170,11 @@ public final class ResourceGatewaySuiteCli {
             String strategy,
             Path report,
             Duration timeout,
-            boolean requirePromotionEligible
+            boolean requirePromotionEligible,
+            int stabilityAttempts,
+            String trustedKeySetFingerprint
     ) {
-        private TestSuiteRun execute(ResourceGatewayTestClient client) {
+        private TestSuiteRun executeSuite(ResourceGatewayTestClient client) {
             Map<String, String> metadata = Map.of("source", "resource-gateway-suite-cli");
             if (mode == RunMode.MUTATION) {
                 ResourceGatewayTestClient.MutationStrategy mutationStrategy = enumValue(
@@ -156,6 +186,11 @@ public final class ResourceGatewaySuiteCli {
                     ResourceGatewayTestClient.SuiteStrategy.class, strategy, "strategy");
             return client.executeSuite(suiteId, revision, fingerprint, clientRequestId,
                     suiteStrategy, metadata);
+        }
+
+        private TestSuiteStabilityRun executeStability(ResourceGatewayTestClient client) {
+            return client.executeSuiteStability(suiteId, revision, fingerprint, clientRequestId,
+                    stabilityAttempts, Map.of("source", "resource-gateway-suite-cli"));
         }
 
         private static CliOptions parse(String[] args, Map<String, String> environment) {
@@ -184,12 +219,15 @@ public final class ResourceGatewaySuiteCli {
             RunMode mode = enumValue(RunMode.class,
                     value(options, "mode", environment, "RESOURCE_GATEWAY_SUITE_MODE", "STANDARD"),
                     "mode");
-            String strategy = value(options, "strategy", environment,
-                    "RESOURCE_GATEWAY_SUITE_STRATEGY", "COLLECT_ALL");
+            String strategy = "";
             if (mode == RunMode.MUTATION) {
+                strategy = value(options, "strategy", environment,
+                        "RESOURCE_GATEWAY_SUITE_STRATEGY", "COLLECT_ALL");
                 strategy = enumValue(ResourceGatewayTestClient.MutationStrategy.class,
                         strategy, "strategy").name();
-            } else {
+            } else if (mode == RunMode.STANDARD) {
+                strategy = value(options, "strategy", environment,
+                        "RESOURCE_GATEWAY_SUITE_STRATEGY", "COLLECT_ALL");
                 strategy = enumValue(ResourceGatewayTestClient.SuiteStrategy.class,
                         strategy, "strategy").name();
             }
@@ -198,9 +236,32 @@ public final class ResourceGatewaySuiteCli {
             boolean requirePromotion = !options.containsKey("allow-non-eligible")
                     && !"true".equalsIgnoreCase(normalized(environment.get(
                             "RESOURCE_GATEWAY_ALLOW_NON_ELIGIBLE")));
+            int stabilityAttempts = 3;
+            String trustedKeySetFingerprint = value(options, "trusted-key-set-fingerprint",
+                    environment, "RESOURCE_GATEWAY_TRUSTED_KEY_SET_FINGERPRINT");
+            if (mode == RunMode.STABILITY) {
+                stabilityAttempts = boundedAttempts(value(options, "attempts", environment,
+                        "RESOURCE_GATEWAY_STABILITY_ATTEMPTS", "3"));
+                if (options.containsKey("strategy")
+                        || !normalized(environment.get("RESOURCE_GATEWAY_SUITE_STRATEGY")).isBlank()) {
+                    throw new IllegalArgumentException(
+                            "strategy is not supported in STABILITY mode");
+                }
+                if (!requirePromotion) {
+                    throw new IllegalArgumentException(
+                            "allow-non-eligible is not supported in STABILITY mode");
+                }
+                trustedKeySetFingerprint = requiredFingerprint(
+                        trustedKeySetFingerprint, "trusted-key-set-fingerprint");
+            } else if (options.containsKey("attempts")
+                    || options.containsKey("trusted-key-set-fingerprint")) {
+                throw new IllegalArgumentException(
+                        "stability-only options require STABILITY mode");
+            }
             return new CliOptions(URI.create(baseUri), token, suiteId, parsedRevision,
                     fingerprint, clientRequestId, mode, strategy, Path.of(report),
-                    Duration.ofSeconds(timeoutSeconds), requirePromotion);
+                    Duration.ofSeconds(timeoutSeconds), requirePromotion, stabilityAttempts,
+                    trustedKeySetFingerprint);
         }
 
         private static Map<String, String> parseArguments(String[] args) {
@@ -219,7 +280,8 @@ public final class ResourceGatewaySuiteCli {
                     continue;
                 }
                 if (!List.of("base-uri", "suite-id", "revision", "fingerprint", "client-request-id",
-                        "mode", "strategy", "report", "timeout-seconds").contains(name)) {
+                        "mode", "strategy", "report", "timeout-seconds", "attempts",
+                        "trusted-key-set-fingerprint").contains(name)) {
                     throw new IllegalArgumentException("Unknown option: --" + name);
                 }
                 if (++index >= values.length || normalized(values[index]).startsWith("--")) {
@@ -264,6 +326,22 @@ public final class ResourceGatewaySuiteCli {
             } catch (NumberFormatException failure) {
                 throw new IllegalArgumentException(field + " must be a positive integer", failure);
             }
+        }
+
+        private static int boundedAttempts(String value) {
+            long attempts = positiveLong(value, "attempts");
+            if (attempts < 3 || attempts > 20) {
+                throw new IllegalArgumentException("attempts must be between 3 and 20");
+            }
+            return (int) attempts;
+        }
+
+        private static String requiredFingerprint(String value, String field) {
+            String normalized = normalized(value);
+            if (!normalized.matches("sha256:[0-9a-f]{64}")) {
+                throw new IllegalArgumentException(field + " must be a full SHA-256 fingerprint");
+            }
+            return normalized;
         }
 
         private static <E extends Enum<E>> E enumValue(Class<E> type, String value, String field) {
