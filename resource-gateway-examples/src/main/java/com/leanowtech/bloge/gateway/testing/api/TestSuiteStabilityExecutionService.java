@@ -35,7 +35,9 @@ import java.util.regex.Pattern;
  * idempotency key and {@code COLLECT_ALL}. After every verified source attempt, a payload-free
  * parent journal is checkpointed under the live owner/epoch fence before another attempt may be
  * scheduled. A successor refetches and verifies that exact prefix. Only a fully signed terminal
- * analysis consumes the journal and lease; concurrent creators converge on one stored winner.</p>
+ * analysis consumes the journal and lease; concurrent creators converge on one stored winner.
+ * An optional payload-free cooperative controller can stop work at source boundaries and
+ * linearize an external queue before parent terminal publication.</p>
  */
 public final class TestSuiteStabilityExecutionService {
     private static final int MAX_CLIENT_REQUEST_ID_LENGTH = 255;
@@ -103,13 +105,42 @@ public final class TestSuiteStabilityExecutionService {
             String suiteId,
             TestSuiteStabilityExecutionRequest request,
             IntegrationRequestContext identity) {
+        return executeControlled(suiteId, request, identity,
+                TestSuiteStabilityExecutionControl.uncontrolled());
+    }
+
+    /**
+     * Executes through an external payload-free cooperative control boundary.
+     *
+     * <p>The controller is bound before any new source attempt and must linearize its terminal
+     * authority before the signed parent record is published. This method is intended for the
+     * durable server-owned worker; callers still supply the same verified identity and immutable
+     * request used by the synchronous API.</p>
+     *
+     * @param suiteId path-bound suite id
+     * @param request exact suite, idempotency, attempt, and provenance intent
+     * @param identity verified test-runtime identity
+     * @param control fail-closed cooperative execution controller
+     * @return signed terminal stability evidence
+     */
+    public TestSuiteStabilityExecutionResponse executeControlled(
+            String suiteId,
+            TestSuiteStabilityExecutionRequest request,
+            IntegrationRequestContext identity,
+            TestSuiteStabilityExecutionControl control) {
+        TestSuiteStabilityExecutionControl executionControl =
+                Objects.requireNonNull(control, "control");
         requireExecutionIdentity(identity);
         validateRequest(suiteId, request, identity);
         String requestFingerprint = ProtocolFingerprint.of(objectMapper, request);
         Optional<TestSuiteStabilityRunRecord> existing = findByClientRequestId(
                 request.clientRequestId(), identity);
         if (existing.isPresent()) {
-            return idempotentResponse(existing.get(), requestFingerprint, identity);
+            TestSuiteStabilityExecutionResponse response =
+                    idempotentResponse(existing.get(), requestFingerprint, identity);
+            executionControl.executionStarted(descriptor(existing.get()));
+            executionControl.prepareTerminal();
+            return response;
         }
 
         StoredTestSuite stored = suiteRegistry.find(request.suiteRef().suiteId(),
@@ -123,6 +154,10 @@ public final class TestSuiteStabilityExecutionService {
         requireStatisticalWorkBudget(stored.suite(), request, identity);
 
         String stabilityRunId = stabilityRunId(identity, requestFingerprint);
+        executionControl.executionStarted(new TestSuiteStabilityExecutionDescriptor(
+                stabilityRunId, identity.tenantId(), identity.environmentId(),
+                request.clientRequestId(), requestFingerprint,
+                stored.suite().classification()));
         TestSuiteStabilityLeaseRequest leaseRequest;
         try {
             leaseRequest = leaseCoordinator.request(
@@ -143,7 +178,10 @@ public final class TestSuiteStabilityExecutionService {
                     "The suite-stability execution lease authority is unavailable.");
         }
         if (claim.state() == TestSuiteStabilityLeaseClaim.State.COMPLETED) {
-            return idempotentResponse(claim.terminal(), requestFingerprint, identity);
+            TestSuiteStabilityExecutionResponse response =
+                    idempotentResponse(claim.terminal(), requestFingerprint, identity);
+            executionControl.prepareTerminal();
+            return response;
         }
         if (claim.state() == TestSuiteStabilityLeaseClaim.State.IN_PROGRESS) {
             throw throttled(identity, "RG.TEST.STABILITY_EXECUTION_IN_PROGRESS",
@@ -164,7 +202,7 @@ public final class TestSuiteStabilityExecutionService {
         }
         try (LeaseGuard lease = owner) {
             return executeOwned(stored, request, identity, requestFingerprint,
-                    stabilityRunId, claim.progress(), lease);
+                    stabilityRunId, claim.progress(), lease, executionControl);
         }
     }
 
@@ -183,12 +221,16 @@ public final class TestSuiteStabilityExecutionService {
             String requestFingerprint,
             String stabilityRunId,
             TestSuiteStabilityExecutionProgress progress,
-            LeaseGuard lease) {
+            LeaseGuard lease,
+            TestSuiteStabilityExecutionControl control) {
+        control.checkpoint(
+                TestSuiteStabilityExecutionControl.Phase.BEFORE_PROGRESS_RESTORE, 0);
         List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> observations =
                 restoreProgress(progress, request, stored, identity);
         TestSuiteStabilityExecutionProgress currentProgress = progress;
         for (int attempt = progress.completedAttempts() + 1;
              attempt <= request.attempts(); attempt++) {
+            control.checkpoint(TestSuiteStabilityExecutionControl.Phase.BEFORE_ATTEMPT, attempt);
             requireLiveLease(lease, identity);
             TestSuiteExecutionRequest attemptRequest = new TestSuiteExecutionRequest("",
                     request.suiteRef(), attemptClientRequestId(
@@ -207,10 +249,13 @@ public final class TestSuiteStabilityExecutionService {
                     executed.suiteRunId(), identity);
             TestSuiteStabilityEvidenceEvaluator.AttemptObservation observation =
                     observeSource(attempt, source, identity);
+            control.checkpoint(
+                    TestSuiteStabilityExecutionControl.Phase.AFTER_SOURCE_VERIFICATION, attempt);
             currentProgress = checkpointProgress(lease, currentProgress, source, attempt, identity);
             observations.add(observation);
         }
 
+        control.checkpoint(TestSuiteStabilityExecutionControl.Phase.BEFORE_EVIDENCE_SEAL, 0);
         TestSuiteStabilityEvidence evidence = request.statisticalPolicy() == null
                 ? evaluator.evaluate(stored.suite(), request.suiteRef(), stabilityRunId,
                 request.clientRequestId(), request.attempts(), observations, request.metadata())
@@ -235,6 +280,7 @@ public final class TestSuiteStabilityExecutionService {
                 identity.tenantId(), identity.organizationId(), identity.projectId(),
                 identity.environmentId(), identity.actorId(), stored.suite().classification(),
                 evidenceFingerprint, evidence, seal.attestation(), createdAt, expiresAt);
+        control.prepareTerminal();
         try {
             TestSuiteStabilityExecutionLease terminalLease = requireLiveLease(lease, identity);
             TestSuiteStabilityRunRecord completed = repository.complete(record, terminalLease);
@@ -478,6 +524,13 @@ public final class TestSuiteStabilityExecutionService {
         }
         verifyRecord(existing, identity);
         return response(existing);
+    }
+
+    private static TestSuiteStabilityExecutionDescriptor descriptor(
+            TestSuiteStabilityRunRecord record) {
+        return new TestSuiteStabilityExecutionDescriptor(
+                record.stabilityRunId(), record.tenantId(), record.environmentId(),
+                record.clientRequestId(), record.requestFingerprint(), record.classification());
     }
 
     private void verifyRecord(

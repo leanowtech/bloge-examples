@@ -296,6 +296,17 @@ parent control checkpoint、delegated authority revalidation、Schema/capability
 poison-row quarantine 尚未接线，不能把该子步解读为异步执行已经开放。验证与剩余接线条件见
 [Stage 5 suite-stability durable queue core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-queue-core-verification.md)。
 
+第五十三增量第二子步进一步把现有 stability 算法开放为受控执行，而没有复制一套 worker 专用实现。
+`TestSuiteStabilityExecutionDescriptor` 只携带 parent/scope/idempotency/fingerprint/classification；
+`TestSuiteStabilityExecutionControl` 在 durable prefix restore、新 attempt 前、source verification 后但
+parent checkpoint 前、evidence seal 前和 terminal publication 前提供 fail-closed cooperative boundary。
+最终 `prepareTerminal` 位于 parent store 异常映射之外，cancel/deadline 决策不会被误包装成可重试 503；
+parent terminal 已存在的 replay 仍必须执行 `executionStarted -> prepareTerminal`，供 crash successor
+收敛 queue 而不重跑 horizon。17 项 service 测试覆盖完整顺序、source 后取消、最后一刻取消、stop 后同步
+入口不可复活和 terminal replay。当前仍没有 worker/heartbeat/authority revalidation 或异步 HTTP，能力
+继续关闭；验证与下一步 guard 条件见
+[Stage 5 suite-stability controlled execution verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-controlled-execution-verification.md)。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

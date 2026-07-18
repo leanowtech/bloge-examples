@@ -300,6 +300,16 @@ HTTP/Schema/test-kit/capability、SLO 和 poison-row 自动 quarantine 仍未接
 设计与负空间见
 [Stage 5 suite-stability durable queue core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-queue-core-verification.md)。
 
+第五十三增量第二子步增加 policy-free controlled execution seam，直接复用既有同步 stability 算法。
+payload-free descriptor 先绑定 exact parent identity，control 随后在 progress restore、每次 attempt、
+source verified/pre-checkpoint、evidence seal 与 terminal publication 边界 fail closed。终态 callback
+刻意位于 parent store 503 映射之外；即使 signed parent 已存在，replay 也必须先调用
+`prepareTerminal`，使未来 `COMMITTING` successor 能只做幂等收尾。17 项服务测试证明 callback 顺序、
+两个取消窗口、stop 后同步入口不可绕过与 terminal replay；worker lease heartbeat、descriptor/job
+回绑、delegated authority revalidation、HTTP/Schema/capability 仍待后续子步，因此不提升产品能力声明。
+验证见
+[Stage 5 suite-stability controlled execution verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-controlled-execution-verification.md)。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制

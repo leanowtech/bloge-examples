@@ -235,6 +235,171 @@ class TestSuiteStabilityExecutionServiceTest {
     }
 
     @Test
+    void controlledExecutionPublishesEveryPayloadFreeBoundaryInOrder() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+        List<String> events = new java.util.ArrayList<>();
+        TestSuiteStabilityExecutionControl control = new TestSuiteStabilityExecutionControl() {
+            @Override
+            public void executionStarted(TestSuiteStabilityExecutionDescriptor execution) {
+                assertThat(execution.tenantId()).isEqualTo(identity.tenantId());
+                assertThat(execution.environmentId()).isEqualTo(identity.environmentId());
+                assertThat(execution.clientRequestId()).isEqualTo(request(3).clientRequestId());
+                events.add("STARTED");
+            }
+
+            @Override
+            public void checkpoint(Phase phase, int attempt) {
+                events.add(phase.name() + ':' + attempt);
+            }
+
+            @Override
+            public void prepareTerminal() {
+                assertThat(repository.completions).isZero();
+                events.add("PREPARE_TERMINAL");
+            }
+        };
+
+        service.executeControlled(suite.suiteId(), request(3), identity, control);
+
+        assertThat(events).containsExactly(
+                "STARTED",
+                "BEFORE_PROGRESS_RESTORE:0",
+                "BEFORE_ATTEMPT:1",
+                "AFTER_SOURCE_VERIFICATION:1",
+                "BEFORE_ATTEMPT:2",
+                "AFTER_SOURCE_VERIFICATION:2",
+                "BEFORE_ATTEMPT:3",
+                "AFTER_SOURCE_VERIFICATION:3",
+                "BEFORE_EVIDENCE_SEAL:0",
+                "PREPARE_TERMINAL");
+        assertThat(repository.completions).isEqualTo(1);
+    }
+
+    @Test
+    void cancellationAfterSourceVerificationStopsBeforeParentCheckpointAndCannotResume() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+        TestSuiteStabilityExecutionControl control = new TestSuiteStabilityExecutionControl() {
+            private TestSuiteStabilityExecutionDescriptor execution;
+
+            @Override
+            public void executionStarted(TestSuiteStabilityExecutionDescriptor descriptor) {
+                execution = descriptor;
+            }
+
+            @Override
+            public void checkpoint(Phase phase, int attempt) {
+                if (phase == Phase.AFTER_SOURCE_VERIFICATION && attempt == 1) {
+                    repository.stop(new TestSuiteStabilityExecutionStopRequest(
+                            execution.stabilityRunId(), execution.tenantId(),
+                            execution.environmentId(), execution.clientRequestId(),
+                            execution.requestFingerprint(), execution.classification(),
+                            TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                            "RG.TEST.STABILITY_CANCELLED", "queue-worker",
+                            Duration.ofDays(30)));
+                    throw new ControlledStop();
+                }
+            }
+
+            @Override
+            public void prepareTerminal() {
+                throw new AssertionError("Stopped execution cannot prepare terminal publication");
+            }
+        };
+
+        assertThatThrownBy(() -> service.executeControlled(
+                suite.suiteId(), request(3), identity, control))
+                .isInstanceOf(ControlledStop.class);
+
+        verify(suiteExecutions, times(1)).execute(eq(suite.suiteId()), any(), eq(identity));
+        assertThat(repository.progress).isEmpty();
+        assertThat(repository.records).isEmpty();
+        assertThat(repository.stops).hasSize(1);
+
+        assertThatThrownBy(() -> service.execute(suite.suiteId(), request(3), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.STABILITY_EXECUTION_CANCELLED"));
+        verify(suiteExecutions, times(1)).execute(eq(suite.suiteId()), any(), eq(identity));
+    }
+
+    @Test
+    void terminalCancellationWinsWithoutBeingMisclassifiedAsAStoreFailure() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+        TestSuiteStabilityExecutionControl control = new TestSuiteStabilityExecutionControl() {
+            private TestSuiteStabilityExecutionDescriptor execution;
+
+            @Override
+            public void executionStarted(TestSuiteStabilityExecutionDescriptor descriptor) {
+                execution = descriptor;
+            }
+
+            @Override
+            public void checkpoint(Phase phase, int attempt) {
+                // The cancellation deliberately arrives only at the final linearization boundary.
+            }
+
+            @Override
+            public void prepareTerminal() {
+                repository.stop(new TestSuiteStabilityExecutionStopRequest(
+                        execution.stabilityRunId(), execution.tenantId(),
+                        execution.environmentId(), execution.clientRequestId(),
+                        execution.requestFingerprint(), execution.classification(),
+                        TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                        "RG.TEST.STABILITY_CANCELLED", "queue-worker",
+                        Duration.ofDays(30)));
+                throw new ControlledStop();
+            }
+        };
+
+        assertThatThrownBy(() -> service.executeControlled(
+                suite.suiteId(), request(3), identity, control))
+                .isInstanceOf(ControlledStop.class);
+
+        verify(suiteExecutions, times(3)).execute(eq(suite.suiteId()), any(), eq(identity));
+        assertThat(repository.progress).isEmpty();
+        assertThat(repository.records).isEmpty();
+        assertThat(repository.completions).isZero();
+        assertThat(repository.stops).hasSize(1);
+    }
+
+    @Test
+    void idempotentParentReplayStillLinearizesExternalTerminalAuthority() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+        service.execute(suite.suiteId(), request(3), identity);
+        List<String> events = new java.util.ArrayList<>();
+        TestSuiteStabilityExecutionControl control = new TestSuiteStabilityExecutionControl() {
+            @Override
+            public void executionStarted(TestSuiteStabilityExecutionDescriptor execution) {
+                events.add("STARTED:" + execution.stabilityRunId());
+            }
+
+            @Override
+            public void checkpoint(Phase phase, int attempt) {
+                throw new AssertionError("Parent replay must not enter execution checkpoints");
+            }
+
+            @Override
+            public void prepareTerminal() {
+                events.add("PREPARE_TERMINAL");
+            }
+        };
+
+        TestSuiteStabilityExecutionResponse replay = service.executeControlled(
+                suite.suiteId(), request(3), identity, control);
+
+        assertThat(events).hasSize(2);
+        assertThat(events.getFirst()).startsWith("STARTED:stability-");
+        assertThat(events.getLast()).isEqualTo("PREPARE_TERMINAL");
+        assertThat(replay.stabilityRunId()).isEqualTo(repository.records.values()
+                .iterator().next().stabilityRunId());
+        verify(suiteExecutions, times(3)).execute(eq(suite.suiteId()), any(), eq(identity));
+    }
+
+    @Test
     void leaseLossStopsBeforeTheNextAttemptAndNeverPublishesTerminalEvidence() {
         repository.failRenewalAt = 2;
         TestSuiteStabilityExecutionService service = service(
@@ -485,6 +650,9 @@ class TestSuiteStabilityExecutionServiceTest {
 
     private static String fingerprint(char value) {
         return "sha256:" + String.valueOf(value).repeat(64);
+    }
+
+    private static final class ControlledStop extends RuntimeException {
     }
 
     private static final class InMemoryRepository implements TestSuiteStabilityRunRepository {
