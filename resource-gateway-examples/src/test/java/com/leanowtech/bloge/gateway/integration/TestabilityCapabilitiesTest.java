@@ -133,7 +133,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("mutationScoreEvidence", false)
                 .containsEntry("signedSuiteStabilityAnalysis", false)
                 .containsEntry("idempotentSuiteStabilityRerun", false)
-                .containsEntry("exactBinomialSuiteStabilityConfidence", false);
+                .containsEntry("exactBinomialSuiteStabilityConfidence", false)
+                .containsEntry("crossReplicaSuiteStabilityExecutionLease", false);
         assertThat(enabled.testability().executionEndpointEnabled()).isTrue();
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
@@ -255,6 +256,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("signedSuiteStabilityAnalysis", false)
                 .containsEntry("idempotentSuiteStabilityRerun", false)
                 .containsEntry("exactBinomialSuiteStabilityConfidence", false)
+                .containsEntry("crossReplicaSuiteStabilityExecutionLease", false)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)

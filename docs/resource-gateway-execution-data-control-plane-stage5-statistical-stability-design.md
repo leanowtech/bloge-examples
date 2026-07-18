@@ -208,6 +208,12 @@ Implementation is incomplete until tests prove at least:
 
 ## 10. Deliberately unclaimed
 
+The synchronous parent execution is now protected by a database-authoritative, cross-replica
+lease. One live owner may coordinate a stability run for an exact scope and request fingerprint;
+expired ownership may be taken over with a higher fence epoch, and terminal persistence consumes
+the exact lease atomically. The implementation and verification boundary is documented in
+[Stage 5 suite-stability execution lease verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md).
+
 This generation does not claim:
 
 - historical drift detection across code, fixture, dependency, or environment epochs;
@@ -215,7 +221,8 @@ This generation does not claim:
 - sequential/adaptive stopping or alpha spending;
 - proof of independence, stationarity, or absence of common causes;
 - automatic quarantine mutation, owner workflow, or expiry;
-- cross-process attempt scheduling or physically separate runtime isolation;
+- asynchronous parent queues, tenant fairness, distributed attempt-worker scheduling, or physically
+  separate runtime isolation;
 - long-duration soak, capacity, chaos, or non-H2 database certification.
 
 Those are separate lifecycle and infrastructure problems. Keeping them visible is part of the

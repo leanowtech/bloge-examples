@@ -218,6 +218,7 @@ class TestRuntimeApplicationIntegrationTest {
                         TestSuiteEvidenceBundle.SCHEMA_VERSION_V5));
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("suiteRunOwnerLease", true)
+                .containsEntry("crossReplicaSuiteStabilityExecutionLease", true)
                 .containsEntry("abandonedSuiteRunReconciliation", true)
                 .containsEntry("databaseAuthoritativeTestRuntimeAdmission", true)
                 .containsEntry("boundedCardinalityTestRuntimeAdmissionMetrics", true)

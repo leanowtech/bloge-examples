@@ -43,6 +43,13 @@ request identity is tenant/environment scoped and content
 addressed. Same key plus same intent returns the retained result; same key plus different intent is a
 conflict.
 
+Before attempt one, the service now acquires a database-clock parent execution lease bound to that
+same scope and request fingerprint. A concurrent immutable duplicate receives retryable `429`
+without scheduling a child. An expired owner may be replaced only by an epoch-incrementing takeover;
+the service renews before every attempt and immediately before terminal publication. Terminal insert
+and exact lease consumption share one transaction. Detailed persistence and failure evidence is in
+[Stage 5 suite-stability execution-lease verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md).
+
 Each attempt receives a server-derived idempotency key under the parent namespace and executes the
 ordinary immutable suite through `COLLECT_ALL`. A parent retry can therefore reuse already committed
 source suite runs without silently changing the requested sample count.
@@ -119,13 +126,16 @@ confidence, status, fixed stop reason, and four explicit assumptions.
 again before returning the result.
 
 The JDBC repository is independent from ordinary suite-run tables and enforces one immutable parent
-request identity per tenant/environment. Stability retention uses
+request identity per tenant/environment. A payload-free execution-lease table, fixed-cardinality
+lock stripes, database time, owner/epoch fencing, and bounded expired-orphan cleanup prevent two
+replicas from executing or publishing the same live parent intent. Stability terminal retention uses
 `gateway.testing.store.retention-days` and is capped from the earliest source start. The service
 refuses to persist an analysis when the source retention window can no longer support it. Historical
 v1 decode/encode preserves its canonical JSON and fingerprint; v1 may be queried and verified for
 audit, but cannot enter a release gate because it lacks source-promotion closure. Generation one has
-no stability-retention sweeper or legal-hold workflow; database expiry is a protocol bound,
-not yet a complete physical-deletion proof.
+no terminal-evidence retention sweeper or legal-hold workflow; database expiry is a protocol bound,
+not yet a complete physical-deletion proof. Lease cleanup does not change that terminal-retention
+limitation.
 
 ## 6. Public Schema and capability discovery
 
@@ -137,6 +147,7 @@ request v1/v2 and response-side v1/v2/v3, both HTTP endpoints, and three indepen
 - `signedSuiteStabilityAnalysis`
 - `idempotentSuiteStabilityRerun`
 - `exactBinomialSuiteStabilityConfidence`
+- `crossReplicaSuiteStabilityExecutionLease`
 
 The supported objects and endpoints appear only when the isolated test execution surface is
 assembled. These feature flags become `true` only when that surface and a signer are available.
@@ -181,14 +192,17 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=TestSuiteStabilityEvidenceEvaluatorTest,TestSuiteStabilityAttestationServiceTest,\
 TestSuiteStabilityExecutionServiceTest,TestSuiteStabilityControllerTest,\
 TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,\
-DatabaseTestSuiteStabilityRunRepositoryTest test
+DatabaseTestSuiteStabilityRunRepositoryTest,TestSuiteStabilityLeaseCoordinatorTest,\
+TestSuiteStabilityLeaseRetentionSchedulerTest,TestSuiteStabilityStatisticalPolicyTest,\
+TestRuntimeApplicationIntegrationTest test
 ```
 
-Result on 2026-07-18: **50 tests, 0 failures, 0 errors, 0 skips**. The set covers stable, flaky,
+Result on 2026-07-18: **65 tests, 0 failures, 0 errors, 0 skips**. The set covers stable, flaky,
 consistent-failure and inconclusive outcomes; plan/source/child drift; signature failure; exact
 idempotency; source-promotion blocking; exact-binomial horizons and boundaries; fixed-horizon
-censoring; v1 canonical compatibility; persistence conflicts; strict Schema; and
-capability/endpoint gating.
+censoring; v1 canonical compatibility; active-owner exclusion; database-clock takeover; stale-fence
+rejection; bounded orphan cleanup; coordinator shutdown; persistence conflicts; strict Schema; and
+capability/endpoint/Spring-wiring gating.
 
 Full Resource Gateway command:
 
@@ -196,7 +210,7 @@ Full Resource Gateway command:
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-Result on 2026-07-18: **2480 tests, 0 failures, 0 errors, 2 conditional skips**, including 34
+Result on 2026-07-18: **2494 tests, 0 failures, 0 errors, 2 conditional skips**, including 34
 configured browser tests, followed by successful Spring Boot executable-JAR packaging.
 
 Full independent test-kit command:
@@ -217,7 +231,8 @@ work bounds, assertions, payload-free JUnit cardinality, and `0/1/2` CLI behavio
 1. Non-zero-event confidence intervals, adaptive/alpha-spending stopping, or historical trend
    analysis.
 2. Automatic quarantine state mutation, expiry, owner approval, remediation, or ANEKE gate feedback.
-3. Cross-process/distributed attempt scheduling, fairness, backpressure, cancellation, or autoscaling.
+3. Cross-replica parent ownership is closed, but distributed attempt scheduling, durable queueing,
+   fairness, backpressure, cancellation, or autoscaling remain absent.
 4. Physical test-runtime, network, identity, secret, and data-store isolation proof.
 5. Independent client refetch and verification of every source aggregate and child evidence bundle.
 6. Non-H2 dialect certification, long-duration soak, capacity, chaos, or disaster-recovery proof.

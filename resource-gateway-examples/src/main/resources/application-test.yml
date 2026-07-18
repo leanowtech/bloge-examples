@@ -95,6 +95,12 @@ gateway:
       heartbeat-interval-seconds: ${RG_TEST_SUITE_HEARTBEAT_SECONDS:5}
       reconciliation-interval-ms: ${RG_TEST_SUITE_RECONCILIATION_INTERVAL_MS:15000}
       reconciliation-batch-size: ${RG_TEST_SUITE_RECONCILIATION_BATCH_SIZE:100}
+    stability-runs:
+      instance-id: ${RG_TEST_STABILITY_INSTANCE_ID:}
+      lease-duration-seconds: ${RG_TEST_STABILITY_LEASE_SECONDS:30}
+      heartbeat-interval-seconds: ${RG_TEST_STABILITY_HEARTBEAT_SECONDS:5}
+      lease-cleanup-interval-ms: ${RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS:15000}
+      lease-cleanup-batch-size: ${RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE:1000}
     replay-payloads:
       maximum-retention-days: ${RG_TEST_REPLAY_MAX_RETENTION_DAYS:30}
       sweep-interval-ms: ${RG_TEST_REPLAY_SWEEP_INTERVAL_MS:60000}

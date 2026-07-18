@@ -543,7 +543,8 @@ public class TestRuntimeConfiguration {
     @Bean
     TestSuiteStabilityRunRepository testSuiteStabilityRunRepository(
             TestRuntimeDatabase database, ObjectMapper objectMapper) {
-        return new DatabaseTestSuiteStabilityRunRepository(database.jdbc(), objectMapper);
+        return new DatabaseTestSuiteStabilityRunRepository(
+                database.jdbc(), objectMapper, database.transactionManager());
     }
 
     @Bean
@@ -1011,6 +1012,27 @@ public class TestRuntimeConfiguration {
         return new TestSuiteRunReconciliationScheduler(reconciliationService, batchSize);
     }
 
+    /** Maintains one exact cross-replica owner for each synchronous stability horizon. */
+    @Bean(destroyMethod = "close")
+    TestSuiteStabilityLeaseCoordinator testSuiteStabilityLeaseCoordinator(
+            TestSuiteStabilityRunRepository repository,
+            @Value("${gateway.testing.stability-runs.instance-id:}") String instanceId,
+            @Value("${gateway.testing.stability-runs.lease-duration-seconds:30}") long leaseSeconds,
+            @Value("${gateway.testing.stability-runs.heartbeat-interval-seconds:5}")
+            long heartbeatSeconds) {
+        return new TestSuiteStabilityLeaseCoordinator(repository, instanceId,
+                Duration.ofSeconds(leaseSeconds), Duration.ofSeconds(heartbeatSeconds));
+    }
+
+    /** Reclaims only a bounded oldest-first page of expired orphan stability leases. */
+    @Bean
+    TestSuiteStabilityLeaseRetentionScheduler testSuiteStabilityLeaseRetentionScheduler(
+            TestSuiteStabilityRunRepository repository,
+            @Value("${gateway.testing.stability-runs.lease-cleanup-batch-size:1000}")
+            int batchSize) {
+        return new TestSuiteStabilityLeaseRetentionScheduler(repository, batchSize);
+    }
+
     /** Assembles the idempotent immutable-suite runner and coverage evaluator. */
     @Bean
     TestSuiteExecutionService testSuiteExecutionService(
@@ -1056,10 +1078,12 @@ public class TestRuntimeConfiguration {
             TestSuiteStabilityRunRepository repository,
             ObjectMapper objectMapper,
             TestSuiteStabilityAttestationService attestations,
+            TestSuiteStabilityLeaseCoordinator leaseCoordinator,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
         return new TestSuiteStabilityExecutionService(
                 suiteRegistry, suiteExecutions, childExecutions, repository, objectMapper,
-                attestations, Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
+                attestations, leaseCoordinator,
+                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
     }
 
     /** Marker consumed by the unauthenticated capability probe. */

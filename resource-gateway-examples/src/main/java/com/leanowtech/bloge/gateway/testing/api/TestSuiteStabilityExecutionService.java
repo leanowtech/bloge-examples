@@ -13,6 +13,8 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityEvidenceEvaluator;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseCoordinator.LeaseGuard;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseCoordinator.LeaseLostException;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -54,6 +56,7 @@ public final class TestSuiteStabilityExecutionService {
     private final ObjectMapper objectMapper;
     private final TestSuiteStabilityEvidenceEvaluator evaluator;
     private final TestSuiteStabilityAttestationService attestations;
+    private final TestSuiteStabilityLeaseCoordinator leaseCoordinator;
     private final Duration retention;
 
     /**
@@ -63,6 +66,7 @@ public final class TestSuiteStabilityExecutionService {
      * @param repository immutable terminal stability store
      * @param objectMapper canonical protocol mapper
      * @param attestations stability-specific signing boundary
+     * @param leaseCoordinator cross-replica parent execution ownership
      * @param retention maximum analysis retention, bounded by earliest source retention
      */
     public TestSuiteStabilityExecutionService(
@@ -72,6 +76,7 @@ public final class TestSuiteStabilityExecutionService {
             TestSuiteStabilityRunRepository repository,
             ObjectMapper objectMapper,
             TestSuiteStabilityAttestationService attestations,
+            TestSuiteStabilityLeaseCoordinator leaseCoordinator,
             Duration retention) {
         this.suiteRegistry = Objects.requireNonNull(suiteRegistry, "suiteRegistry");
         this.suiteExecutions = Objects.requireNonNull(suiteExecutions, "suiteExecutions");
@@ -80,6 +85,7 @@ public final class TestSuiteStabilityExecutionService {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.evaluator = new TestSuiteStabilityEvidenceEvaluator(objectMapper);
         this.attestations = Objects.requireNonNull(attestations, "attestations");
+        this.leaseCoordinator = Objects.requireNonNull(leaseCoordinator, "leaseCoordinator");
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
     }
@@ -116,9 +122,66 @@ public final class TestSuiteStabilityExecutionService {
         requireStatisticalWorkBudget(stored.suite(), request, identity);
 
         String stabilityRunId = stabilityRunId(identity, requestFingerprint);
+        TestSuiteStabilityLeaseRequest leaseRequest;
+        try {
+            leaseRequest = leaseCoordinator.request(
+                    stabilityRunId, identity.tenantId(), identity.environmentId(),
+                    request.clientRequestId(), requestFingerprint);
+        } catch (LeaseLostException closed) {
+            throw unavailable(identity, "RG.TEST.STABILITY_LEASE_COORDINATOR_UNAVAILABLE",
+                    "The local suite-stability lease coordinator is shutting down.");
+        }
+        TestSuiteStabilityLeaseClaim claim;
+        try {
+            claim = repository.claim(leaseRequest);
+        } catch (TestSuiteStabilityRunConflictException conflict) {
+            throw mapLeaseConflict(conflict, identity);
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.TEST.STABILITY_LEASE_STORE_UNAVAILABLE",
+                    "The suite-stability execution lease authority is unavailable.");
+        }
+        if (claim.state() == TestSuiteStabilityLeaseClaim.State.COMPLETED) {
+            return idempotentResponse(claim.terminal(), requestFingerprint, identity);
+        }
+        if (claim.state() == TestSuiteStabilityLeaseClaim.State.IN_PROGRESS) {
+            throw throttled(identity, "RG.TEST.STABILITY_EXECUTION_IN_PROGRESS",
+                    "The same immutable stability execution is active on another invocation.",
+                    claim.retryAfterSeconds());
+        }
+
+        LeaseGuard owner;
+        try {
+            owner = leaseCoordinator.monitor(claim.lease());
+        } catch (LeaseLostException closed) {
+            releaseUnmonitored(claim.lease());
+            throw unavailable(identity, "RG.TEST.STABILITY_LEASE_COORDINATOR_UNAVAILABLE",
+                    "The local suite-stability lease coordinator is shutting down.");
+        }
+        try (LeaseGuard lease = owner) {
+            return executeOwned(stored, request, identity, requestFingerprint,
+                    stabilityRunId, lease);
+        }
+    }
+
+    private void releaseUnmonitored(TestSuiteStabilityExecutionLease lease) {
+        try {
+            repository.release(lease);
+        } catch (RuntimeException ignored) {
+            // Database expiry and the bounded cleanup sweep remain authoritative.
+        }
+    }
+
+    private TestSuiteStabilityExecutionResponse executeOwned(
+            StoredTestSuite stored,
+            TestSuiteStabilityExecutionRequest request,
+            IntegrationRequestContext identity,
+            String requestFingerprint,
+            String stabilityRunId,
+            LeaseGuard lease) {
         List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> observations =
                 new ArrayList<>();
         for (int attempt = 1; attempt <= request.attempts(); attempt++) {
+            requireLiveLease(lease, identity);
             TestSuiteExecutionRequest attemptRequest = new TestSuiteExecutionRequest("",
                     request.suiteRef(), attemptClientRequestId(
                     identity, request.clientRequestId(), attempt),
@@ -127,7 +190,7 @@ public final class TestSuiteStabilityExecutionService {
                             "stabilityAttempt", attempt,
                             "stabilityRequestFingerprint", requestFingerprint));
             TestSuiteExecutionResponse executed = suiteExecutions.execute(
-                    suiteId, attemptRequest, identity);
+                    stored.suiteId(), attemptRequest, identity);
             TestSuiteExecutionResponse source = suiteExecutions.find(
                     executed.suiteRunId(), identity);
             Map<String, TestSuiteStabilityEvidenceEvaluator.ChildObservation> children =
@@ -167,19 +230,48 @@ public final class TestSuiteStabilityExecutionService {
                 identity.environmentId(), identity.actorId(), stored.suite().classification(),
                 evidenceFingerprint, evidence, seal.attestation(), createdAt, expiresAt);
         try {
-            return response(repository.create(record));
-        } catch (TestSuiteStabilityRunConflictException race) {
-            TestSuiteStabilityRunRecord winner = findByClientRequestId(
-                    request.clientRequestId(), identity).orElseThrow(() -> conflict(identity,
-                    "RG.TEST.STABILITY_IDEMPOTENCY_RETIRED",
-                    "The stability idempotency key is already reserved by expired evidence."));
-            return idempotentResponse(winner, requestFingerprint, identity);
+            TestSuiteStabilityExecutionLease terminalLease = requireLiveLease(lease, identity);
+            TestSuiteStabilityRunRecord completed = repository.complete(record, terminalLease);
+            lease.consumed();
+            return response(completed);
+        } catch (TestSuiteStabilityRunConflictException conflict) {
+            throw mapLeaseConflict(conflict, identity);
         } catch (IntegrationProblemException failure) {
             throw failure;
         } catch (RuntimeException failure) {
             throw unavailable(identity, "RG.TEST.STABILITY_STORE_UNAVAILABLE",
                     "The independent stability evidence store is unavailable.");
         }
+    }
+
+    private static TestSuiteStabilityExecutionLease requireLiveLease(
+            LeaseGuard lease,
+            IntegrationRequestContext identity) {
+        try {
+            return lease.checkpoint();
+        } catch (LeaseLostException lost) {
+            throw unavailable(identity, "RG.TEST.STABILITY_EXECUTION_LEASE_LOST",
+                    "Suite-stability ownership was lost before terminal evidence publication.");
+        }
+    }
+
+    private static IntegrationProblemException mapLeaseConflict(
+            TestSuiteStabilityRunConflictException failure,
+            IntegrationRequestContext identity) {
+        return switch (failure.reason()) {
+            case IDEMPOTENCY_CONFLICT -> conflict(identity,
+                    "RG.TEST.STABILITY_IDEMPOTENCY_CONFLICT",
+                    "clientRequestId already identifies a different stability execution intent.");
+            case IDEMPOTENCY_RETIRED -> conflict(identity,
+                    "RG.TEST.STABILITY_IDEMPOTENCY_RETIRED",
+                    "The stability idempotency identity is retained after evidence expiry.");
+            case LEASE_LOST -> unavailable(identity,
+                    "RG.TEST.STABILITY_EXECUTION_LEASE_LOST",
+                    "Suite-stability ownership was lost before terminal evidence publication.");
+            case TERMINAL_CONFLICT -> conflict(identity,
+                    "RG.TEST.STABILITY_TERMINAL_CONFLICT",
+                    "The deterministic stability identity already has a different terminal record.");
+        };
     }
 
     /**
@@ -464,5 +556,15 @@ public final class TestSuiteStabilityExecutionService {
             String detail) {
         return new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
                 code, detail, identity.correlationId(), Map.of()));
+    }
+
+    private static IntegrationProblemException throttled(
+            IntegrationRequestContext identity,
+            String code,
+            String detail,
+            long retryAfterSeconds) {
+        return new IntegrationProblemException(IntegrationProblem.tooManyRequests(
+                code, detail, identity.correlationId(),
+                Map.of("retryAfterSeconds", Math.max(1, Math.min(3_600, retryAfterSeconds)))));
     }
 }

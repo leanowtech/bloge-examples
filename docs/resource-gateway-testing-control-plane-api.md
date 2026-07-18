@@ -116,6 +116,11 @@ Independent-store settings:
 | `gateway.testing.admission.instance-id` | `RG_TEST_ADMISSION_INSTANCE_ID` | generated process identity |
 | `gateway.testing.admission.cleanup-interval-ms` | `RG_TEST_ADMISSION_CLEANUP_INTERVAL_MS` | `60000` |
 | `gateway.testing.admission.cleanup-batch-size` | `RG_TEST_ADMISSION_CLEANUP_BATCH_SIZE` | `1000` |
+| `gateway.testing.stability-runs.instance-id` | `RG_TEST_STABILITY_INSTANCE_ID` | generated process identity |
+| `gateway.testing.stability-runs.lease-duration-seconds` | `RG_TEST_STABILITY_LEASE_SECONDS` | `30` |
+| `gateway.testing.stability-runs.heartbeat-interval-seconds` | `RG_TEST_STABILITY_HEARTBEAT_SECONDS` | `5` |
+| `gateway.testing.stability-runs.lease-cleanup-interval-ms` | `RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS` | `15000` |
+| `gateway.testing.stability-runs.lease-cleanup-batch-size` | `RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE` | `1000` |
 | `gateway.testing.replay-payloads.maximum-retention-days` | `RG_TEST_REPLAY_MAX_RETENTION_DAYS` | `30` |
 | `gateway.testing.replay-payloads.sweep-interval-ms` | `RG_TEST_REPLAY_SWEEP_INTERVAL_MS` | `60000` |
 | `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |
@@ -2673,6 +2678,11 @@ execution is appropriate.
 | `RG_TEST_SUITE_HEARTBEAT_SECONDS` | `5` | Renewal interval; normalized below the lease duration |
 | `RG_TEST_SUITE_RECONCILIATION_INTERVAL_MS` | `15000` | Fixed delay between anti-entropy sweeps |
 | `RG_TEST_SUITE_RECONCILIATION_BATCH_SIZE` | `100` | Oldest-first sweep bound; maximum 1000 |
+| `RG_TEST_STABILITY_INSTANCE_ID` | generated per process | Prefix for fresh per-invocation parent owners |
+| `RG_TEST_STABILITY_LEASE_SECONDS` | `30` | Parent owner lease; whole 5-3600 seconds |
+| `RG_TEST_STABILITY_HEARTBEAT_SECONDS` | `5` | Whole-second renewal interval; at most one-third of lease |
+| `RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS` | `15000` | Fixed delay between expired-orphan sweeps |
+| `RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE` | `1000` | Oldest-first deletion bound; maximum 10000 |
 
 ### 4.2.4 Execute and verify bounded suite stability
 
@@ -2735,6 +2745,18 @@ Repeating the parent request therefore reuses the same retained terminal analysi
 `clientRequestId` with different suite, attempt count, or metadata returns
 `RG.TEST.STABILITY_IDEMPOTENCY_CONFLICT`. Use `TEST_REPLAY` when the exact suite contains a governed
 replay fixture.
+
+Before attempt one, a separate database-authoritative parent lease serializes the scoped request
+across replicas without consuming another child suite quota permit. A concurrent same-intent call
+returns `429 RG.TEST.STABILITY_EXECUTION_IN_PROGRESS` and `retryAfterSeconds` before any child is
+scheduled. Database-clock expiry permits only an epoch-incrementing takeover. The owner renews
+before every attempt and immediately before publication; terminal insert and exact lease deletion
+commit atomically. A stale owner returns `503 RG.TEST.STABILITY_EXECUTION_LEASE_LOST` and cannot
+persist an `INCONCLUSIVE` substitute. Bounded cleanup removes expired orphan leases, while derived
+child idempotency keys let a successor reuse completed attempts. See
+[Stage 5 suite-stability execution-lease verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md)
+for the state, shutdown, and failure matrices. This is single-owner coordination, not asynchronous
+queueing or distributed attempt scheduling.
 
 Request v1 returns complete terminal response/evidence/attestation v2. Request v2 returns matching
 v3 objects containing the signed statistical assessment. Retained v1 responses remain queryable for

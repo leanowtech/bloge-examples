@@ -108,6 +108,8 @@ class TestSuiteStabilityExecutionServiceTest {
                         == TestSuiteRunEvidence.PromotionStatus.ELIGIBLE);
         assertThat(first.attestation().terminallyVerifiable()).isTrue();
         assertThat(repository.records).hasSize(1);
+        assertThat(repository.renewals).isEqualTo(4);
+        assertThat(repository.completions).isEqualTo(1);
 
         ArgumentCaptor<TestSuiteExecutionRequest> requests =
                 ArgumentCaptor.forClass(TestSuiteExecutionRequest.class);
@@ -190,6 +192,61 @@ class TestSuiteStabilityExecutionServiceTest {
     }
 
     @Test
+    void activeCrossReplicaParentReturnsRetryable429BeforeAnyAttemptExecutes() {
+        repository.forceInProgress = true;
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+
+        assertThatThrownBy(() -> service.execute(suite.suiteId(), request(3), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(429);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.STABILITY_EXECUTION_IN_PROGRESS");
+                    assertThat(failure.problem().details())
+                            .containsEntry("retryAfterSeconds", 7L);
+                });
+        verify(suiteExecutions, times(0)).execute(any(), any(), eq(identity));
+        assertThat(repository.records).isEmpty();
+    }
+
+    @Test
+    void leaseLossStopsBeforeTheNextAttemptAndNeverPublishesTerminalEvidence() {
+        repository.failRenewalAt = 2;
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+
+        assertThatThrownBy(() -> service.execute(suite.suiteId(), request(3), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.STABILITY_EXECUTION_LEASE_LOST");
+                });
+        verify(suiteExecutions, times(1))
+                .execute(eq(suite.suiteId()), any(), eq(identity));
+        assertThat(repository.records).isEmpty();
+        assertThat(repository.completions).isZero();
+    }
+
+    @Test
+    void shuttingDownCoordinatorRejectsBeforeClaimOrChildExecution() {
+        TestSuiteStabilityLeaseCoordinator coordinator =
+                TestSuiteStabilityLeaseCoordinator.passive(
+                        repository, Duration.ofSeconds(30));
+        coordinator.close();
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner(), coordinator);
+
+        assertThatThrownBy(() -> service.execute(suite.suiteId(), request(3), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.STABILITY_LEASE_COORDINATOR_UNAVAILABLE");
+                });
+        verify(suiteExecutions, times(0)).execute(any(), any(), eq(identity));
+        assertThat(repository.leases).isEmpty();
+    }
+
+    @Test
     void nestedMetadataIsRejectedBeforeSuiteResolutionOrExecution() {
         TestSuiteStabilityExecutionService service = service(
                 new InMemoryVisualEvidenceSigner());
@@ -228,9 +285,16 @@ class TestSuiteStabilityExecutionServiceTest {
     }
 
     private TestSuiteStabilityExecutionService service(VisualEvidenceSigner signer) {
+        return service(signer, TestSuiteStabilityLeaseCoordinator.passive(
+                repository, Duration.ofSeconds(30)));
+    }
+
+    private TestSuiteStabilityExecutionService service(
+            VisualEvidenceSigner signer,
+            TestSuiteStabilityLeaseCoordinator coordinator) {
         return new TestSuiteStabilityExecutionService(suites, suiteExecutions, childExecutions,
                 repository, mapper, new TestSuiteStabilityAttestationService(mapper, signer),
-                Duration.ofDays(30));
+                coordinator, Duration.ofDays(30));
     }
 
     private TestSuiteStabilityExecutionRequest request(int attempts) {
@@ -329,17 +393,82 @@ class TestSuiteStabilityExecutionServiceTest {
 
     private static final class InMemoryRepository implements TestSuiteStabilityRunRepository {
         private final Map<String, TestSuiteStabilityRunRecord> records = new LinkedHashMap<>();
+        private final Map<String, TestSuiteStabilityExecutionLease> leases = new LinkedHashMap<>();
+        private boolean forceInProgress;
+        private int failRenewalAt = Integer.MAX_VALUE;
+        private int renewals;
+        private int completions;
 
         @Override
-        public TestSuiteStabilityRunRecord create(TestSuiteStabilityRunRecord record) {
-            if (records.values().stream().anyMatch(value ->
-                    value.tenantId().equals(record.tenantId())
-                            && value.environmentId().equals(record.environmentId())
-                            && value.clientRequestId().equals(record.clientRequestId()))) {
-                throw new TestSuiteStabilityRunConflictException("duplicate");
+        public TestSuiteStabilityLeaseClaim claim(TestSuiteStabilityLeaseRequest request) {
+            Optional<TestSuiteStabilityRunRecord> terminal = findByClientRequestId(
+                    request.tenantId(), request.environmentId(), request.clientRequestId());
+            if (terminal.isPresent()) {
+                return TestSuiteStabilityLeaseClaim.completed(terminal.get());
             }
+            if (forceInProgress) {
+                return TestSuiteStabilityLeaseClaim.inProgress(7);
+            }
+            TestSuiteStabilityExecutionLease existing = leases.get(request.clientRequestId());
+            if (existing != null && existing.expiresAt().isAfter(Instant.now())) {
+                return TestSuiteStabilityLeaseClaim.inProgress(7);
+            }
+            long epoch = existing == null ? 0 : existing.epoch() + 1;
+            TestSuiteStabilityExecutionLease acquired = new TestSuiteStabilityExecutionLease(
+                    request.stabilityRunId(), request.tenantId(), request.environmentId(),
+                    request.clientRequestId(), request.requestFingerprint(), request.ownerId(),
+                    epoch, Instant.now().plus(request.leaseDuration()));
+            leases.put(request.clientRequestId(), acquired);
+            return TestSuiteStabilityLeaseClaim.acquired(acquired);
+        }
+
+        @Override
+        public Optional<TestSuiteStabilityExecutionLease> renew(
+                TestSuiteStabilityExecutionLease lease,
+                Duration leaseDuration) {
+            renewals++;
+            if (renewals >= failRenewalAt) {
+                return Optional.empty();
+            }
+            TestSuiteStabilityExecutionLease stored = leases.get(lease.clientRequestId());
+            if (!sameFence(stored, lease) || !stored.expiresAt().isAfter(Instant.now())) {
+                return Optional.empty();
+            }
+            TestSuiteStabilityExecutionLease renewed = new TestSuiteStabilityExecutionLease(
+                    lease.stabilityRunId(), lease.tenantId(), lease.environmentId(),
+                    lease.clientRequestId(), lease.requestFingerprint(), lease.ownerId(),
+                    lease.epoch(), Instant.now().plus(leaseDuration));
+            leases.put(lease.clientRequestId(), renewed);
+            return Optional.of(renewed);
+        }
+
+        @Override
+        public boolean release(TestSuiteStabilityExecutionLease lease) {
+            TestSuiteStabilityExecutionLease stored = leases.get(lease.clientRequestId());
+            return sameFence(stored, lease) && leases.remove(lease.clientRequestId(), stored);
+        }
+
+        @Override
+        public TestSuiteStabilityRunRecord complete(
+                TestSuiteStabilityRunRecord record,
+                TestSuiteStabilityExecutionLease lease) {
+            TestSuiteStabilityExecutionLease stored = leases.get(lease.clientRequestId());
+            if (!sameFence(stored, lease) || !stored.expiresAt().isAfter(Instant.now())) {
+                throw new TestSuiteStabilityRunConflictException(
+                        TestSuiteStabilityRunConflictException.Reason.LEASE_LOST,
+                        "lease lost");
+            }
+            completions++;
             records.put(record.stabilityRunId(), record);
+            leases.remove(lease.clientRequestId());
             return record;
+        }
+
+        @Override
+        public int purgeExpiredLeases(int limit) {
+            int before = leases.size();
+            leases.values().removeIf(value -> !value.expiresAt().isAfter(Instant.now()));
+            return before - leases.size();
         }
 
         @Override
@@ -356,6 +485,16 @@ class TestSuiteStabilityExecutionServiceTest {
             return records.values().stream().filter(value -> value.tenantId().equals(tenantId)
                     && value.environmentId().equals(environmentId)
                     && value.clientRequestId().equals(clientRequestId)).findFirst();
+        }
+
+        private static boolean sameFence(
+                TestSuiteStabilityExecutionLease left,
+                TestSuiteStabilityExecutionLease right) {
+            return left != null && right != null
+                    && left.stabilityRunId().equals(right.stabilityRunId())
+                    && left.ownerId().equals(right.ownerId())
+                    && left.epoch() == right.epoch()
+                    && left.requestFingerprint().equals(right.requestFingerprint());
         }
     }
 }

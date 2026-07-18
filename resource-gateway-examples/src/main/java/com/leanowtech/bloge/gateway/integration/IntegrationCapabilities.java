@@ -539,6 +539,8 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled && signer.available());
         features.put("exactBinomialSuiteStabilityConfidence",
                 testExecutionEndpointEnabled && signer.available());
+        features.put("crossReplicaSuiteStabilityExecutionLease",
+                testExecutionEndpointEnabled && signer.available());
         features.put("propertySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);
