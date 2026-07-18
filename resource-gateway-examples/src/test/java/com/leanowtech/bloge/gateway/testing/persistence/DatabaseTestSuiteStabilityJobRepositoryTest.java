@@ -364,6 +364,50 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
     }
 
     @Test
+    void queueSuccessCannotCommitWithoutAnExactParentCompletionProof() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
+        var committing = repository.prepareCompletion(claim.lease(), policy);
+        parentAuthority.completionFailure =
+                new IllegalStateException("parent completion unavailable");
+
+        assertThatThrownBy(() -> repository.complete(committing, "stability-result-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('6'), policy))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("parent completion unavailable");
+
+        assertThat(repository.find("tenant-a", "test", submission.jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+        parentAuthority.completionFailure = null;
+        assertThat(repository.checkAndRenew(committing, policy).decision())
+                .isEqualTo(TestSuiteStabilityJobLeaseCheck.Decision.CONTINUE);
+    }
+
+    @Test
+    void contradictoryParentCompletionProofFailsClosed() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
+        var committing = repository.prepareCompletion(claim.lease(), policy);
+        parentAuthority.completionResolution = TestSuiteStabilityJobParentAuthority.Resolution
+                .completed("stability-other", TestSuiteStabilityProtocolFixtures.fingerprint('7'));
+
+        assertThatThrownBy(() -> repository.complete(committing, "stability-result-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('6'), policy))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("contradictory completion proof");
+        assertThat(repository.find("tenant-a", "test", submission.jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+    }
+
+    @Test
     void policyCannotDriftWhileWorkIsRetainedButMayAdvanceAfterTheQueueDrains() {
         TestSuiteStabilityQueuePolicy firstPolicy = policy(10, 10, 2, 1, 3);
         TestSuiteStabilityQueuePolicy changed = new TestSuiteStabilityQueuePolicy(
@@ -465,6 +509,8 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private Resolution resolution = Resolution.stopped();
         private RuntimeException failure;
+        private Resolution completionResolution;
+        private RuntimeException completionFailure;
 
         @Override
         public Resolution stop(
@@ -477,6 +523,19 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 throw failure;
             }
             return resolution;
+        }
+
+        @Override
+        public Resolution requireCompleted(
+                TestSuiteStabilityJobRecord job,
+                String stabilityRunId,
+                String evidenceFingerprint) {
+            if (completionFailure != null) {
+                throw completionFailure;
+            }
+            return completionResolution == null
+                    ? Resolution.completed(stabilityRunId, evidenceFingerprint)
+                    : completionResolution;
         }
 
         private record Invocation(

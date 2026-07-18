@@ -72,7 +72,9 @@ the exact parent progress plus lease. Only then may the outer queue transaction 
 `CANCELLED`, `EXPIRED`, or `FAILED`. Future claims return `STOPPED`; stale owners cannot checkpoint
 or publish. Conversely, once cryptographically verified signed terminal evidence exists, it wins
 and the queue converges to `SUCCEEDED`. Stop and signed evidence therefore have one serialized,
-fail-closed winner.
+fail-closed winner. The ordinary completion path uses the same authority: caller-provided terminal
+references are not accepted until the deterministic parent record, canonical evidence fingerprint,
+source closure, and detached signature have been independently verified.
 
 ## 4. Cross-replica invariants
 
@@ -93,6 +95,8 @@ fail-closed winner.
 - A completed-parent winner is accepted only after exact scope/request/classification binding,
   canonical evidence fingerprint recomputation, source-closure validation, and detached-signature
   verification. Hash-consistent database tampering does not become queue success.
+- Every `COMMITTING -> SUCCEEDED` transition requires that same completed-parent proof. Missing or
+  unavailable proof rolls back the queue transition and retains its recoverable committing lease.
 - Stop replay must match run id, request fingerprint, classification, reason, failure code, actor,
   and retention. Its canonical fingerprint is recomputed on every read.
 - Stored request and principal JSON are decoded only after scope lookup and are re-fingerprinted on
@@ -111,7 +115,7 @@ RepositoryTestSuiteStabilityJobParentAuthorityTest,\
 DatabaseTestSuiteStabilityRunRepositoryTest,TestSuiteStabilityExecutionServiceTest test
 ```
 
-The 51 focused tests cover scoped submission replay, priority/deadline/principal idempotency conflict,
+The 55 focused tests cover scoped submission replay, priority/deadline/principal idempotency conflict,
 tenant/global capacity, tenant rotation, tenant-local priority, cross-replica running limits,
 queued and running cancellation, cancellation-versus-retry ordering, retry exhaustion, policy
 drift and drain-time advancement, fixed-cardinality observation, retained-row integrity failure,
@@ -119,6 +123,8 @@ non-premature retention deletion, the `COMMITTING` cancellation linearization po
 lane, stop-before-claim, stop-after-checkpoint, stale-owner fencing, strict stop replay, late-stop
 rejection after signed evidence, corrupted-stop fail-closed behavior, parent-first rollback,
 cryptographically verified parent completion, and corrupted-signature rejection.
+They also cover missing completion proof, contradictory authority output, completion-proof rollback,
+and a real queue-plus-parent persistence path that succeeds only after exact signed parent commit.
 The 17 affected service tests additionally prove that a retained stop maps to a stable payload-free
 conflict and cannot be bypassed through the synchronous execution entry point.
 

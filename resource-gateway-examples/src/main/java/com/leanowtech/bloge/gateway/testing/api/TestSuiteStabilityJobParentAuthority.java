@@ -4,10 +4,11 @@ import java.time.Duration;
 import java.util.regex.Pattern;
 
 /**
- * Parent-first terminal authority used before a durable queue job becomes terminal.
+ * Parent terminal authority used before a durable queue job becomes terminal.
  *
  * <p>Implementations must durably stop the exact parent or prove that signed parent evidence
- * already won. They must never report stopped before the parent tombstone is committed.</p>
+ * already won. They must never report stopped before the parent tombstone is committed, and must
+ * never authorize queue success from caller-provided references alone.</p>
  */
 public interface TestSuiteStabilityJobParentAuthority {
 
@@ -83,4 +84,20 @@ public interface TestSuiteStabilityJobParentAuthority {
             TestSuiteStabilityExecutionStop.Reason reason,
             String failureCode,
             Duration retention);
+
+    /**
+     * Proves that an exact signed parent terminal exists before queue success is committed.
+     *
+     * <p>Implementations must recompute canonical evidence identity and verify the detached
+     * signature. A caller-provided run id or fingerprint is never sufficient proof.</p>
+     *
+     * @param job integrity-verified queue job
+     * @param stabilityRunId expected deterministic parent run id
+     * @param evidenceFingerprint expected canonical signed evidence fingerprint
+     * @return the exact cryptographically verified completed-parent resolution
+     */
+    Resolution requireCompleted(
+            TestSuiteStabilityJobRecord job,
+            String stabilityRunId,
+            String evidenceFingerprint);
 }

@@ -321,6 +321,14 @@ source verified/pre-checkpoint、evidence seal 与 terminal publication 边界 f
 worker/heartbeat/authorization revalidation 与公开协议仍未接线，能力声明保持关闭。验证见
 [Stage 5 suite-stability parent-first terminal verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-parent-first-terminal-verification.md)。
 
+第五十三增量第四子步补齐前一子步的反向信任边界：`COMMITTING -> SUCCEEDED` 不再相信 worker 传入的
+run id 与 evidence fingerprint。queue repository 必须先让同一 parent authority 读取 deterministic
+parent terminal，逐项回绑 scope/request/classification/source closure，重算 canonical evidence
+fingerprint 并验证 detached signature；父记录缺失、引用矛盾、签名损坏或 verifier 不可用时，外层 queue
+事务回滚并保留可恢复的 `COMMITTING` lease。底层 parent conflict 统一映射成 queue 自有稳定
+`TERMINAL_CONFLICT`，不穿透持久化实现类型。55 项聚焦测试包含真实 H2 queue + parent 联合路径，证明
+父证据提交前不能成功、提交并验签后才可收敛；worker 仍待下一子步接入。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制

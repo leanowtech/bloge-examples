@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueueSnapshot;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
@@ -48,7 +49,8 @@ import java.util.regex.Pattern;
  * Execution itself occurs outside the transaction under an exact per-job lease. Every queue
  * terminal stop invokes the parent-first authority before its queue transition; a failed outer
  * transaction can therefore leave only a conservative replayable parent stop, never a terminal
- * queue row with resumable parent progress.</p>
+ * queue row with resumable parent progress. The inverse success path requires a verified parent
+ * terminal proof before the queue may enter {@code SUCCEEDED}.</p>
  */
 public final class DatabaseTestSuiteStabilityJobRepository
         implements TestSuiteStabilityJobRepository {
@@ -533,11 +535,20 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
                         "Suite-stability job did not linearize terminal publication");
             }
+            TestSuiteStabilityJobParentAuthority.Resolution parent =
+                    requireCompletedParent(stored.record(), runId, evidence);
+            if (parent.outcome()
+                    != TestSuiteStabilityJobParentAuthority.Outcome.COMPLETED
+                    || !parent.stabilityRunId().equals(runId)
+                    || !parent.evidenceFingerprint().equals(evidence)) {
+                throw new IllegalStateException(
+                        "Parent authority returned a contradictory completion proof");
+            }
             StoredJob completed = transition(stored,
                     TestSuiteStabilityJobRecord.Status.SUCCEEDED,
                     stored.record().retryCount(), stored.record().nextEligibleAt(), observedAt,
                     observedAt.plus(policy.terminalRetention()), "", stored.leaseEpoch(), null,
-                    runId, evidence, "", "", "");
+                    parent.stabilityRunId(), parent.evidenceFingerprint(), "", "", "");
             updateExact(stored, completed);
             return completed.record();
         });
@@ -587,7 +598,7 @@ public final class DatabaseTestSuiteStabilityJobRepository
                     == TestSuiteStabilityJobRecord.Status.QUEUED
                     ? TestSuiteStabilityJobRecord.Status.CANCELLED
                     : TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED;
-            TestSuiteStabilityJobParentAuthority.Resolution parent = parentAuthority.stop(
+            TestSuiteStabilityJobParentAuthority.Resolution parent = stopParent(
                     stored.record(), TestSuiteStabilityExecutionStop.Reason.CANCELLED,
                     "RG.TEST.STABILITY_JOB_CANCELLED", policy.terminalRetention());
             StoredJob cancelled;
@@ -1049,7 +1060,7 @@ public final class DatabaseTestSuiteStabilityJobRepository
             throw new IllegalArgumentException(
                     "Parent-first transition requires a queue stop state");
         }
-        TestSuiteStabilityJobParentAuthority.Resolution parent = parentAuthority.stop(
+        TestSuiteStabilityJobParentAuthority.Resolution parent = stopParent(
                 source.record(), reason, failureCode, policy.terminalRetention());
         if (parent.outcome() == TestSuiteStabilityJobParentAuthority.Outcome.COMPLETED) {
             return parentCompleted(source, parent, observedAt, policy, retryCount);
@@ -1067,6 +1078,32 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 retryCount, source.record().nextEligibleAt(), observedAt,
                 observedAt.plus(policy.terminalRetention()), "", source.leaseEpoch(), null,
                 parent.stabilityRunId(), parent.evidenceFingerprint(), "", "", "");
+    }
+
+    private TestSuiteStabilityJobParentAuthority.Resolution stopParent(
+            TestSuiteStabilityJobRecord job,
+            TestSuiteStabilityExecutionStop.Reason reason,
+            String failureCode,
+            Duration retention) {
+        try {
+            return parentAuthority.stop(job, reason, failureCode, retention);
+        } catch (TestSuiteStabilityRunConflictException rejected) {
+            throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
+                    "Parent execution rejected the queue stop transition");
+        }
+    }
+
+    private TestSuiteStabilityJobParentAuthority.Resolution requireCompletedParent(
+            TestSuiteStabilityJobRecord job,
+            String stabilityRunId,
+            String evidenceFingerprint) {
+        try {
+            return parentAuthority.requireCompleted(
+                    job, stabilityRunId, evidenceFingerprint);
+        } catch (TestSuiteStabilityRunConflictException rejected) {
+            throw conflict(TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT,
+                    "Parent execution cannot authorize queue success");
+        }
     }
 
     private void insert(StoredJob job) {

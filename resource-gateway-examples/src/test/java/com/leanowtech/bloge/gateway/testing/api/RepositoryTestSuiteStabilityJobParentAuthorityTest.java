@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -23,15 +25,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RepositoryTestSuiteStabilityJobParentAuthorityTest {
 
     private ObjectMapper mapper;
+    private DriverManagerDataSource dataSource;
     private JdbcTemplate jdbc;
     private DatabaseTestSuiteStabilityRunRepository runs;
+    private DatabaseTestSuiteStabilityJobRepository jobs;
     private TestSuiteStabilityAttestationService attestations;
     private RepositoryTestSuiteStabilityJobParentAuthority authority;
 
     @BeforeEach
     void setUp() {
         mapper = new ObjectMapper().findAndRegisterModules();
-        DriverManagerDataSource dataSource = new DriverManagerDataSource(
+        dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:test-stability-parent-authority-" + System.nanoTime()
                         + ";DB_CLOSE_DELAY=-1", "sa", "");
         jdbc = new JdbcTemplate(dataSource);
@@ -41,6 +45,9 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
                 mapper, new InMemoryVisualEvidenceSigner());
         authority = new RepositoryTestSuiteStabilityJobParentAuthority(
                 runs, mapper, attestations);
+        jobs = new DatabaseTestSuiteStabilityJobRepository(
+                jdbc, mapper, authority, new DataSourceTransactionManager(dataSource));
+        jobs.init();
     }
 
     @Test
@@ -84,10 +91,14 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
         TestSuiteStabilityJobRecord job = job();
         TestSuiteStabilityRunRecord terminal = persistTerminal(job);
 
+        TestSuiteStabilityJobParentAuthority.Resolution proof = authority.requireCompleted(
+                job, terminal.stabilityRunId(), terminal.evidenceFingerprint());
         TestSuiteStabilityJobParentAuthority.Resolution resolution = authority.stop(
                 job, TestSuiteStabilityExecutionStop.Reason.CANCELLED,
                 "RG.TEST.STABILITY_JOB_CANCELLED", Duration.ofDays(30));
 
+        assertThat(proof).isEqualTo(TestSuiteStabilityJobParentAuthority.Resolution.completed(
+                terminal.stabilityRunId(), terminal.evidenceFingerprint()));
         assertThat(resolution).isEqualTo(TestSuiteStabilityJobParentAuthority.Resolution.completed(
                 terminal.stabilityRunId(), terminal.evidenceFingerprint()));
         assertThat(runs.findStop(job.tenantId(), job.environmentId(),
@@ -111,12 +122,66 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
                 WHERE stability_run_id = ?
                 """, mapper.writeValueAsString(stored), terminal.stabilityRunId());
 
-        assertThatThrownBy(() -> authority.stop(
-                job, TestSuiteStabilityExecutionStop.Reason.CANCELLED,
-                "RG.TEST.STABILITY_JOB_CANCELLED", Duration.ofDays(30)))
+        assertThatThrownBy(() -> authority.requireCompleted(
+                job, terminal.stabilityRunId(), terminal.evidenceFingerprint()))
                 .isInstanceOf(TestSuiteStabilityRunConflictException.class)
                 .hasMessageContaining(
                         "Signed parent winner contradicts the durable stability job");
+    }
+
+    @Test
+    void missingOrMismatchedParentCannotAuthorizeQueueSuccess() {
+        TestSuiteStabilityJobRecord job = job();
+        TestSuiteStabilityExecutionDescriptor execution =
+                TestSuiteStabilityExecutionIdentity.descriptor(mapper, job);
+
+        assertThatThrownBy(() -> authority.requireCompleted(
+                job, execution.stabilityRunId(),
+                TestSuiteStabilityProtocolFixtures.fingerprint('7')))
+                .isInstanceOf(TestSuiteStabilityRunConflictException.class)
+                .hasMessageContaining("not durably available");
+        assertThatThrownBy(() -> authority.requireCompleted(
+                job, "stability-" + "2".repeat(64),
+                TestSuiteStabilityProtocolFixtures.fingerprint('7')))
+                .isInstanceOf(TestSuiteStabilityRunConflictException.class)
+                .hasMessageContaining("deterministic parent run");
+        assertThatThrownBy(() -> authority.requireCompleted(
+                job, execution.stabilityRunId(), ""))
+                .isInstanceOf(TestSuiteStabilityRunConflictException.class)
+                .hasMessageContaining("canonical parent evidence");
+    }
+
+    @Test
+    void queueCompletionRequiresAndThenConsumesARealSignedParentProof() throws Exception {
+        TestSuiteStabilityJobRecord source = job();
+        TestSuiteStabilityQueuePolicy policy = policy();
+        jobs.submit(new TestSuiteStabilityJobSubmission(
+                source.jobId(), source.request(), source.requestFingerprint(),
+                source.classification(), source.principal(), source.priority(),
+                Instant.now().plus(Duration.ofHours(1))), policy);
+        TestSuiteStabilityJobClaim claim = jobs.claimNext("test", "worker-a", policy);
+        TestSuiteStabilityJobLease committing = jobs.prepareCompletion(claim.lease(), policy);
+        TestSuiteStabilityExecutionDescriptor execution =
+                TestSuiteStabilityExecutionIdentity.descriptor(mapper, source);
+
+        assertThatThrownBy(() -> jobs.complete(
+                committing, execution.stabilityRunId(),
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy))
+                .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT));
+        assertThat(jobs.find(source.tenantId(), source.environmentId(), source.jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+
+        TestSuiteStabilityRunRecord terminal = persistTerminal(source);
+        TestSuiteStabilityJobRecord completed = jobs.complete(
+                committing, terminal.stabilityRunId(), terminal.evidenceFingerprint(), policy);
+
+        assertThat(completed.status()).isEqualTo(TestSuiteStabilityJobRecord.Status.SUCCEEDED);
+        assertThat(completed.terminalStabilityRunId()).isEqualTo(terminal.stabilityRunId());
+        assertThat(completed.terminalEvidenceFingerprint())
+                .isEqualTo(terminal.evidenceFingerprint());
     }
 
     private TestSuiteStabilityRunRecord persistTerminal(
@@ -172,5 +237,12 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
                 now.plus(Duration.ofHours(1)), now, now, now.plus(Duration.ofDays(31)),
                 "", "", "", "", "",
                 TestSuiteStabilityProtocolFixtures.fingerprint('8'));
+    }
+
+    private static TestSuiteStabilityQueuePolicy policy() {
+        return new TestSuiteStabilityQueuePolicy(
+                1, 10, 10, 2, 1, Duration.ofSeconds(30), Duration.ofMinutes(5),
+                Duration.ofSeconds(1), Duration.ofMinutes(1), 3,
+                Duration.ofDays(7), Duration.ofDays(30));
     }
 }

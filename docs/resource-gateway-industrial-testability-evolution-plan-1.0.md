@@ -319,6 +319,14 @@ corrupted-signature fail-closed。该子步仍不等于 worker 已可用，heart
 revalidation、HTTP/Schema/capability/test-kit 与 SLO 仍待接线。验证见
 [Stage 5 suite-stability parent-first terminal verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-parent-first-terminal-verification.md)。
 
+第五十三增量第四子步封住成功方向的伪证据入口。queue 的 `COMMITTING -> SUCCEEDED` 现在不能仅凭
+worker 提交的 run id/evidence fingerprint；同一 parent authority 必须读取 deterministic parent
+terminal，验证 scope、request、classification、有序 source closure、canonical evidence fingerprint 与
+detached signature 后才返回 completed proof。缺失父记录、引用不一致、签名损坏、验证服务不可用或
+authority 返回矛盾结果时，queue 事务 fail closed，`COMMITTING` 与 exact lease 保留供 successor 恢复；
+parent repository conflict 对外收敛成 queue 的稳定 `TERMINAL_CONFLICT`。55 项聚焦测试包含真实 H2
+queue/parent 联合提交，证明先有签名父终态、后有队列成功。该增量仍未启动 worker 或开放 capability。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

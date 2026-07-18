@@ -6,18 +6,22 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestati
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
- * Repository-backed parent-first authority for durable suite-stability jobs.
+ * Repository-backed parent terminal authority for durable suite-stability jobs.
  *
  * <p>The stop uses a stable server actor so a successor can replay it after the outer queue
  * transaction fails. If signed evidence already exists, that immutable result wins and the queue
- * may converge to success instead of lying about cancellation or failure.</p>
+ * may converge to success instead of lying about cancellation or failure. Queue success is also
+ * admitted only after the retained parent evidence and detached signature are independently
+ * verified.</p>
  */
 public final class RepositoryTestSuiteStabilityJobParentAuthority
         implements TestSuiteStabilityJobParentAuthority {
 
     private static final String CONTROL_ACTOR = "stability-job-control";
+    private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     private final TestSuiteStabilityRunRepository repository;
     private final ObjectMapper objectMapper;
@@ -60,10 +64,45 @@ public final class RepositoryTestSuiteStabilityJobParentAuthority
                     != TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT) {
                 throw conflict;
             }
-            TestSuiteStabilityRunRecord terminal = repository.find(
-                    execution.tenantId(), execution.environmentId(), execution.stabilityRunId())
-                    .orElseThrow(() -> conflict);
-            if (!terminal.clientRequestId().equals(execution.clientRequestId())
+            return verifiedCompleted(execution, "", "", conflict);
+        }
+    }
+
+    @Override
+    public Resolution requireCompleted(
+            TestSuiteStabilityJobRecord job,
+            String stabilityRunId,
+            String evidenceFingerprint) {
+        Objects.requireNonNull(job, "job");
+        String expectedRunId = normalized(stabilityRunId);
+        String expectedEvidence = normalized(evidenceFingerprint);
+        TestSuiteStabilityExecutionDescriptor execution =
+                TestSuiteStabilityExecutionIdentity.descriptor(objectMapper, job);
+        if (!execution.stabilityRunId().equals(expectedRunId)) {
+            throw terminalConflict(
+                    "Queue completion does not reference its deterministic parent run");
+        }
+        if (!FINGERPRINT.matcher(expectedEvidence).matches()) {
+            throw terminalConflict(
+                    "Queue completion does not reference canonical parent evidence");
+        }
+        return verifiedCompleted(execution, expectedRunId, expectedEvidence,
+                terminalConflict("Signed parent completion is not durably available"));
+    }
+
+    private Resolution verifiedCompleted(
+            TestSuiteStabilityExecutionDescriptor execution,
+            String expectedRunId,
+            String expectedEvidenceFingerprint,
+            RuntimeException absentFailure) {
+        TestSuiteStabilityRunRecord terminal = repository.find(
+                execution.tenantId(), execution.environmentId(), execution.stabilityRunId())
+                .orElseThrow(() -> absentFailure);
+        if ((!expectedRunId.isBlank()
+                && !terminal.stabilityRunId().equals(expectedRunId))
+                || (!expectedEvidenceFingerprint.isBlank()
+                && !terminal.evidenceFingerprint().equals(expectedEvidenceFingerprint))
+                || !terminal.clientRequestId().equals(execution.clientRequestId())
                     || !terminal.requestFingerprint().equals(execution.requestFingerprint())
                     || !terminal.classification().equals(execution.classification())
                     || !terminal.stabilityRunId().equals(
@@ -79,12 +118,19 @@ public final class RepositoryTestSuiteStabilityJobParentAuthority
                     terminal.attestation().evidenceFingerprint())
                     || attestations.verify(terminal.evidence(), terminal.attestation())
                     != TestSuiteStabilityAttestationService.Verification.VERIFIED) {
-                throw new TestSuiteStabilityRunConflictException(
-                        TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT,
-                        "Signed parent winner contradicts the durable stability job");
-            }
-            return Resolution.completed(
-                    terminal.stabilityRunId(), terminal.evidenceFingerprint());
+            throw terminalConflict(
+                    "Signed parent winner contradicts the durable stability job");
         }
+        return Resolution.completed(
+                terminal.stabilityRunId(), terminal.evidenceFingerprint());
+    }
+
+    private static TestSuiteStabilityRunConflictException terminalConflict(String message) {
+        return new TestSuiteStabilityRunConflictException(
+                TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT, message);
+    }
+
+    private static String normalized(String value) {
+        return value == null ? "" : value.trim();
     }
 }
