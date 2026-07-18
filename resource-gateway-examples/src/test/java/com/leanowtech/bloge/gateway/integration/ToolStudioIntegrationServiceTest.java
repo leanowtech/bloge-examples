@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.integration;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
+import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -25,6 +28,7 @@ import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
@@ -38,7 +42,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -202,6 +208,79 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"
                 );
+    }
+
+    @Test
+    void capabilitiesReevaluateCurrentAuthorityReadinessWithoutNetworkProbe() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        AtomicBoolean ready = new AtomicBoolean(true);
+        TestSuiteStabilityJobAuthorizer authorizer =
+                mock(TestSuiteStabilityJobAuthorizer.class);
+        when(authorizer.descriptor()).thenAnswer(ignored -> authorityDescriptor(ready.get()));
+        @SuppressWarnings("unchecked")
+        ObjectProvider<TestSuiteStabilityJobAuthorizer> providers =
+                mock(ObjectProvider.class);
+        when(providers.orderedStream()).thenAnswer(ignored -> Stream.of(authorizer));
+        service.configureTestability(new TestabilityAvailability(
+                true, true, WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                authorityDescriptor(true)));
+        service.configureSuiteStabilityAuthorizers(providers);
+
+        IntegrationCapabilities available = service.capabilities().payload();
+
+        assertThat(available.features())
+                .containsEntry("asyncSuiteStabilityJobSubmission", true)
+                .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true)
+                .containsEntry("signedChallengeBoundSuiteStabilityAuthority", true);
+        assertThat(available.testability().suiteStabilityJobSubmissionEnabled()).isTrue();
+        assertThat(available.testability().suiteStabilityCurrentAuthority().available())
+                .isTrue();
+
+        ready.set(false);
+        IntegrationCapabilities unavailable = service.capabilities().payload();
+
+        assertThat(unavailable.features())
+                .containsEntry("asyncSuiteStabilityJobSubmission", false)
+                .containsEntry("suiteStabilityCurrentAuthorityRevalidation", false)
+                .containsEntry("signedChallengeBoundSuiteStabilityAuthority", false);
+        assertThat(unavailable.testability().suiteStabilityJobSubmissionEnabled()).isFalse();
+        assertThat(unavailable.testability().suiteStabilityCurrentAuthority().available())
+                .isFalse();
+    }
+
+    @Test
+    void capabilitiesFailClosedForAuthorityAmbiguityAndDescriptorFailure() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        TestSuiteStabilityJobAuthorizer broken =
+                mock(TestSuiteStabilityJobAuthorizer.class);
+        TestSuiteStabilityJobAuthorizer duplicate =
+                mock(TestSuiteStabilityJobAuthorizer.class);
+        when(broken.descriptor()).thenThrow(new IllegalStateException("trust refresh failed"));
+        AtomicBoolean ambiguous = new AtomicBoolean(true);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<TestSuiteStabilityJobAuthorizer> providers =
+                mock(ObjectProvider.class);
+        when(providers.orderedStream()).thenAnswer(ignored -> ambiguous.get()
+                ? Stream.of(broken, duplicate) : Stream.of(broken));
+        service.configureTestability(new TestabilityAvailability(
+                true, true, WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                authorityDescriptor(true)));
+        service.configureSuiteStabilityAuthorizers(providers);
+
+        assertThat(service.capabilities().payload().testability())
+                .satisfies(testability -> {
+                    assertThat(testability.suiteStabilityJobSubmissionEnabled()).isFalse();
+                    assertThat(testability.suiteStabilityCurrentAuthority().available()).isFalse();
+                });
+
+        ambiguous.set(false);
+        assertThat(service.capabilities().payload().testability())
+                .satisfies(testability -> {
+                    assertThat(testability.suiteStabilityJobSubmissionEnabled()).isFalse();
+                    assertThat(testability.suiteStabilityCurrentAuthority().available()).isFalse();
+                });
     }
 
     @Test
@@ -881,6 +960,20 @@ class ToolStudioIntegrationServiceTest {
                                                         VisualOperatorCatalog catalog,
                                                         VisualGraphRunRepository runs) {
         return new ToolStudioIntegrationService(repository, validator, catalog, runs);
+    }
+
+    private static TestSuiteStabilityJobAuthorizer.Descriptor authorityDescriptor(
+            boolean available) {
+        return new TestSuiteStabilityJobAuthorizer.Descriptor(
+                "", available, "HTTPS_PDP", "corporate-iam", Map.of(
+                "protocolVersion", "bloge.testSuiteStabilityAuthorityRequest.v1",
+                "responseProtocolVersion", "bloge.testSuiteStabilityAuthorityResponse.v1",
+                "signedDecisions", true,
+                "challengeBound", true,
+                "redirectsFollowed", false,
+                "automaticRetries", false,
+                "privateMaterialPresent", false,
+                "requestTimeoutMillis", 3_000));
     }
 
     private static SemanticCorrectnessWorkbookBundle semanticWorkbook() {

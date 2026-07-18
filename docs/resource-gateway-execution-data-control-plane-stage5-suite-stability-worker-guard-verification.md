@@ -1,5 +1,9 @@
 # Stage 5 suite-stability worker guard verification
 
+> Current-state note: the product HTTPS current-authority adapter listed as a later gap in this
+> historical increment is now implemented and verified in
+> [suite-stability current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
+
 ## 1. Increment boundary
 
 This atomic increment connects the durable queue lease to the existing policy-free stability

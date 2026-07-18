@@ -179,17 +179,37 @@ The durable stability queue and authenticated asynchronous submit/query/cancel p
 in the isolated `test`/`staging` datastore. Query and cancellation remain available while the worker
 is disabled or draining; fresh submission then returns
 `503 RG.TEST.STABILITY_JOB_SUBMISSION_UNAVAILABLE`. Set
-`RG_TEST_STABILITY_JOB_WORKER_ENABLED=true` only in a deployment that contributes exactly one
-`TestSuiteStabilityJobAuthorizer` Spring bean backed by current IAM/delegation state; there is no
-allow-all default, so the application intentionally fails startup when the provider is absent or
-ambiguous. Queue capacity, fairness, retry, lease, deadline, and retention settings use the
+`RG_TEST_STABILITY_JOB_WORKER_ENABLED=true` only when one current-authority provider is ready. The
+built-in provider is enabled with `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED=true`; it sends a
+credential-free, challenge-bound request to
+`<RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI>/v1/stability-job-authorizations` and accepts only a
+short-lived Ed25519-signed `AUTHORIZED` or `REVOKED` response from
+`RG_TEST_STABILITY_JOB_AUTHORITY_ID`. Configure one or more X.509-encoded public keys through
+`RG_TEST_STABILITY_JOB_AUTHORITY_KEYS_JSON`. HTTPS is mandatory; the insecure-loopback escape hatch
+exists only for local tests. A deployment may instead contribute one custom
+`TestSuiteStabilityJobAuthorizer` with a ready key-free descriptor. There is no allow-all fallback:
+zero providers, multiple providers, an undeclared provider, missing trust, unsafe URI, or invalid
+time policy fails startup. Queue capacity, fairness, retry, lease, deadline, and retention use the
 `RG_TEST_STABILITY_JOB_*` variables documented in `application-test.yml` and
 `application-staging.yml`. Worker environment/lane and heartbeat/lease contradictions also fail
-startup. The capability probe separates `asyncSuiteStabilityJobProtocol` from
-`asyncSuiteStabilityJobSubmission`, so clients do not infer executability merely because the routes
-or Schema exist. Capacity responses use `Retry-After`, configured with
+startup. Startup readiness is not cached as perpetual authority: every fresh submission and every
+capability probe reevaluates the single provider's local, key-free descriptor. An expired/revoked
+local trust key, provider ambiguity, or descriptor failure immediately closes fresh admission and
+reports submission unavailable without probing the remote PDP. Retained exact idempotent replay is
+resolved before this mutable readiness check, so key rotation cannot make an accepted request
+appear absent or cause it to execute twice. The capability probe separates
+`asyncSuiteStabilityJobProtocol` from
+`asyncSuiteStabilityJobSubmission`, and additionally reports
+`suiteStabilityCurrentAuthorityRevalidation` plus
+`signedChallengeBoundSuiteStabilityAuthority`, so clients do not infer executability merely because
+the routes or Schema exist. The private authority request excludes credentials, correlation id,
+execution metadata, fixture/context/payload and node output. HTTP denial, redirect, timeout,
+malformed/oversized JSON, stale decision, echo mismatch, unknown/revoked key, or invalid signature
+is `UNAVAILABLE`; only a verified signed revocation is definitive. Capacity responses use
+`Retry-After`, configured with
 `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` (default `5`). See the focused
-[worker wiring verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-wiring-verification.md).
+[current-authority verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md)
+and [machine-readable authority Schema](../docs/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json).
 Actuator now exposes a separate stability-queue health contributor. The
 `RG_TEST_STABILITY_JOB_SLO_*` settings bound per-environment queue depth, oldest wait, observation
 interval, and expired live leases; the depth SLO cannot exceed hard queue capacity. Micrometer

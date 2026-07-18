@@ -1,5 +1,9 @@
 # Stage 5 suite-stability worker wiring verification
 
+> Current-state note: the product HTTPS current-authority adapter that was intentionally absent in
+> this historical increment is now implemented and verified in
+> [suite-stability current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
+
 ## 1. Increment boundary
 
 This increment wires the verified durable queue and bounded worker lifecycle into the

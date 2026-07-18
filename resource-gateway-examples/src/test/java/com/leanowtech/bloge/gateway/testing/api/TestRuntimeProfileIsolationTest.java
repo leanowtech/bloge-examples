@@ -39,6 +39,8 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.core.env.MapPropertySource;
 
 import java.time.Instant;
+import java.security.KeyPairGenerator;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -157,6 +159,10 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityJobExecutionCoordinator.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityAuthorityTrustStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    HttpTestSuiteStabilityJobAuthorizer.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
     }
@@ -284,6 +290,12 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityJobExecutionCoordinator.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityAuthorityTrustStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    HttpTestSuiteStabilityJobAuthorizer.class)).isEmpty();
+            assertThat(context.getBean(TestabilityAvailability.class)
+                    .suiteStabilityCurrentAuthority().available()).isFalse();
             TestSuiteStabilityJobSloMonitor stabilityQueueSlo =
                     context.getBean(TestSuiteStabilityJobSloMonitor.class);
             stabilityQueueSlo.refresh();
@@ -331,6 +343,61 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBean(TestSuiteStabilityJobScheduler.class).closed()).isFalse();
             assertThat(context.getBean(TestabilityAvailability.class)
                     .suiteStabilityJobSubmissionEnabled()).isTrue();
+        }
+    }
+
+    @Test
+    void builtInSignedHttpAuthorityAssemblesWithoutADeploymentAuthorizer() throws Exception {
+        Map<String, Object> properties = builtInAuthorityProperties();
+        try (AnnotationConfigApplicationContext context = context(properties, 0, "test")) {
+            assertThat(context.getBeansOfType(TestSuiteStabilityJobAuthorizer.class))
+                    .hasSize(1).allSatisfy((name, authorizer) -> {
+                        assertThat(authorizer).isInstanceOf(
+                                HttpTestSuiteStabilityJobAuthorizer.class);
+                        assertThat(authorizer.descriptor().available()).isTrue();
+                        assertThat(authorizer.descriptor().properties())
+                                .containsEntry("signedDecisions", true)
+                                .containsEntry("challengeBound", true)
+                                .doesNotContainKeys("baseUri", "publicKey", "privateKey");
+                    });
+            assertThat(context.getBean(TestabilityAvailability.class)
+                    .suiteStabilityCurrentAuthority().providerType())
+                    .isEqualTo("HTTPS_SIGNED_PDP");
+            assertThat(context.getBean(TestabilityAvailability.class)
+                    .suiteStabilityJobSubmissionEnabled()).isTrue();
+        }
+    }
+
+    @Test
+    void incompleteOrAmbiguousBuiltInAuthorityConfigurationFailsStartup() throws Exception {
+        Map<String, Object> incomplete = new LinkedHashMap<>(
+                enabledStabilityWorkerProperties());
+        incomplete.put("gateway.testing.stability-jobs.authority.http.enabled", "true");
+        incomplete.put("gateway.testing.stability-jobs.authority.http.base-uri",
+                "http://127.0.0.1:18080");
+        incomplete.put("gateway.testing.stability-jobs.authority.http.allow-insecure-loopback",
+                "true");
+        incomplete.put("gateway.testing.stability-jobs.authority.http.expected-authority-id",
+                "iam.example");
+        AnnotationConfigApplicationContext missingKeys =
+                unrefreshedContext(incomplete, 0, "test");
+        try {
+            assertThatThrownBy(missingKeys::refresh).rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Authority keys");
+        } finally {
+            missingKeys.close();
+        }
+
+        AnnotationConfigApplicationContext ambiguous =
+                unrefreshedContext(builtInAuthorityProperties(), 1, "test");
+        try {
+            assertThatThrownBy(ambiguous::refresh).rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("requires exactly one")
+                    .hasMessageContaining("TestSuiteStabilityJobAuthorizer");
+        } finally {
+            ambiguous.close();
         }
     }
 
@@ -609,7 +676,7 @@ class TestRuntimeProfileIsolationTest {
         for (int index = 0; index < authorizerCount; index++) {
             context.registerBean("testSuiteStabilityJobAuthorizer" + index,
                     TestSuiteStabilityJobAuthorizer.class,
-                    () -> job -> TestSuiteStabilityJobAuthorizer.Authorization.authorized());
+                    TestRuntimeProfileIsolationTest::readyTestAuthorizer);
         }
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
                 TestSuiteStabilityController.class,
@@ -634,6 +701,42 @@ class TestRuntimeProfileIsolationTest {
                 "gateway.testing.stability-jobs.worker.maximum-pollers", "1",
                 "gateway.testing.stability-jobs.worker.initial-delay-ms", "300000",
                 "gateway.testing.stability-jobs.worker.poll-interval-ms", "60000");
+    }
+
+    private static Map<String, Object> builtInAuthorityProperties() throws Exception {
+        Map<String, Object> properties = new LinkedHashMap<>(
+                enabledStabilityWorkerProperties());
+        String publicKey = Base64.getEncoder().encodeToString(
+                KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+                        .getPublic().getEncoded());
+        properties.put("gateway.testing.stability-jobs.authority.http.enabled", "true");
+        properties.put("gateway.testing.stability-jobs.authority.http.base-uri",
+                "http://127.0.0.1:18080");
+        properties.put("gateway.testing.stability-jobs.authority.http.allow-insecure-loopback",
+                "true");
+        properties.put("gateway.testing.stability-jobs.authority.http.expected-authority-id",
+                "iam.example");
+        properties.put("gateway.testing.stability-jobs.authority.http.authority-keys-json",
+                "[{\"keyId\":\"iam-key-1\",\"algorithm\":\"Ed25519\","
+                        + "\"publicKeyBase64\":\"" + publicKey + "\"}]");
+        return properties;
+    }
+
+    private static TestSuiteStabilityJobAuthorizer readyTestAuthorizer() {
+        return new TestSuiteStabilityJobAuthorizer() {
+            @Override
+            public Authorization reauthorize(TestSuiteStabilityJobRecord job) {
+                return Authorization.authorized();
+            }
+
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor("", true, "TEST", "test-authority", Map.of(
+                        "signedDecisions", false,
+                        "challengeBound", false,
+                        "privateMaterialPresent", false));
+            }
+        };
     }
 
     private static void assertWorkerStartupRootCause(

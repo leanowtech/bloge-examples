@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -22,6 +23,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
@@ -59,6 +61,10 @@ public class ToolStudioIntegrationService {
     private WorkerQuarantineChangeAuthorizationTrustStore.Descriptor
             workerQuarantineChangeAuthorizationTrust =
             WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor();
+    private TestSuiteStabilityJobAuthorizer.Descriptor suiteStabilityCurrentAuthority =
+            new TestSuiteStabilityJobAuthorizer.Descriptor(
+                    "", false, "UNAVAILABLE", "", Map.of());
+    private ObjectProvider<TestSuiteStabilityJobAuthorizer> suiteStabilityAuthorizers;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -100,6 +106,17 @@ public class ToolStudioIntegrationService {
         this.workerQuarantineChangeAuthorizationTrust = availability == null
                 ? WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor()
                 : availability.workerQuarantineChangeAuthorizationTrust();
+        this.suiteStabilityCurrentAuthority = availability == null
+                ? new TestSuiteStabilityJobAuthorizer.Descriptor(
+                "", false, "UNAVAILABLE", "", Map.of())
+                : availability.suiteStabilityCurrentAuthority();
+    }
+
+    /** Resolves time-sensitive current-authority readiness on every capability request. */
+    @Autowired
+    void configureSuiteStabilityAuthorizers(
+            ObjectProvider<TestSuiteStabilityJobAuthorizer> authorizers) {
+        this.suiteStabilityAuthorizers = authorizers;
     }
 
     /** Receives the profile-owned semantic workbook projector with the isolated test runtime. */
@@ -192,13 +209,39 @@ public class ToolStudioIntegrationService {
         VisualEvidenceSigner signer = runRepository == null
                 ? VisualEvidenceSigner.unavailable() : runRepository.evidenceSigner();
         VisualRunPayloadRepository payloads = runRepository == null ? null : runRepository.payloadRepository();
+        TestSuiteStabilityJobAuthorizer.Descriptor currentAuthority =
+                currentSuiteStabilityAuthority();
+        boolean stabilitySubmissionReady = suiteStabilityJobSubmissionEnabled
+                && currentAuthority.available();
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 IntegrationCapabilities.current(signer.descriptor(), identityResolver.descriptor(),
                         sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor(),
                         testExecutionEndpointEnabled, evidenceTrustStore.descriptor(),
                         workerQuarantineRequestIndexMode,
                         workerQuarantineChangeAuthorizationTrust,
-                        suiteStabilityJobSubmissionEnabled));
+                        stabilitySubmissionReady,
+                        currentAuthority));
+    }
+
+    private TestSuiteStabilityJobAuthorizer.Descriptor currentSuiteStabilityAuthority() {
+        if (suiteStabilityAuthorizers == null) {
+            return suiteStabilityCurrentAuthority;
+        }
+        try {
+            List<TestSuiteStabilityJobAuthorizer> providers =
+                    suiteStabilityAuthorizers.orderedStream().toList();
+            if (providers.size() != 1) {
+                return unavailableCurrentAuthority();
+            }
+            return providers.getFirst().descriptor();
+        } catch (RuntimeException unavailable) {
+            return unavailableCurrentAuthority();
+        }
+    }
+
+    private static TestSuiteStabilityJobAuthorizer.Descriptor unavailableCurrentAuthority() {
+        return new TestSuiteStabilityJobAuthorizer.Descriptor(
+                "", false, "UNAVAILABLE", "", Map.of());
     }
 
     public IntegrationEnvelope<GraphDraftIntegrationBundle> exportDraft(String draftId,

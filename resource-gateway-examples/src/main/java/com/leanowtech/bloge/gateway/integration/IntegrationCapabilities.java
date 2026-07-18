@@ -1,6 +1,10 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityTrustStore;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -176,6 +180,29 @@ public record IntegrationCapabilities(
                                                   WorkerQuarantineChangeAuthorizationTrustStore
                                                           .Descriptor changeAuthorizationTrust,
                                                   boolean suiteStabilityJobSubmissionEnabled) {
+        return current(evidenceSigner, identityProvider, sideEffectReconcilerAdapters,
+                payloadGovernance, testExecutionEndpointEnabled, evidenceTrust,
+                requestIndexMode, changeAuthorizationTrust,
+                suiteStabilityJobSubmissionEnabled,
+                suiteStabilityJobSubmissionEnabled
+                        ? customCurrentAuthority() : unavailableCurrentAuthority());
+    }
+
+    /**
+     * Builds the capability probe with exact asynchronous current-authority readiness.
+     */
+    public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters,
+                                                  VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
+                                                  boolean testExecutionEndpointEnabled,
+                                                  EvidenceKeySetTrustStore.Descriptor evidenceTrust,
+                                                  WorkerQuarantineRequestIndexMode requestIndexMode,
+                                                  WorkerQuarantineChangeAuthorizationTrustStore
+                                                          .Descriptor changeAuthorizationTrust,
+                                                  boolean suiteStabilityJobSubmissionEnabled,
+                                                  TestSuiteStabilityJobAuthorizer.Descriptor
+                                                          currentAuthority) {
         if (suiteStabilityJobSubmissionEnabled && !testExecutionEndpointEnabled) {
             throw new IllegalArgumentException(
                     "Stability-job submission requires the testing control plane");
@@ -188,6 +215,12 @@ public record IntegrationCapabilities(
                 changeAuthorizationTrust == null
                         ? WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor()
                         : changeAuthorizationTrust;
+        TestSuiteStabilityJobAuthorizer.Descriptor authority = currentAuthority == null
+                ? unavailableCurrentAuthority() : currentAuthority;
+        if (suiteStabilityJobSubmissionEnabled && !authority.available()) {
+            throw new IllegalArgumentException(
+                    "Stability-job submission requires current-authority readiness");
+        }
         WorkerQuarantineRequestIndexMode effectiveRequestIndexMode =
                 testExecutionEndpointEnabled
                         ? Objects.requireNonNull(requestIndexMode, "requestIndexMode") : null;
@@ -325,6 +358,14 @@ public record IntegrationCapabilities(
             objects.put("testSuiteStabilityJobView", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobView
                             .SCHEMA_VERSION));
+            objects.put("testSuiteStabilityAuthorityRequest", List.of(
+                    TestSuiteStabilityAuthorityRequest.SCHEMA_VERSION));
+            objects.put("testSuiteStabilityAuthorityResponse", List.of(
+                    TestSuiteStabilityAuthorityResponse.SCHEMA_VERSION));
+            objects.put("testSuiteStabilityAuthorityTrustDescriptor", List.of(
+                    TestSuiteStabilityAuthorityTrustStore.Descriptor.SCHEMA_VERSION));
+            objects.put("testSuiteStabilityJobAuthorizerDescriptor", List.of(
+                    TestSuiteStabilityJobAuthorizer.Descriptor.SCHEMA_VERSION));
             objects.put("testSuiteStabilityJobSubmitResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmitResponse
                             .SCHEMA_VERSION));
@@ -583,6 +624,14 @@ public record IntegrationCapabilities(
         features.put("asyncSuiteStabilityJobProtocol", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobSubmission",
                 testExecutionEndpointEnabled && suiteStabilityJobSubmissionEnabled);
+        features.put("suiteStabilityCurrentAuthorityRevalidation",
+                testExecutionEndpointEnabled && suiteStabilityJobSubmissionEnabled
+                        && authority.available());
+        features.put("signedChallengeBoundSuiteStabilityAuthority",
+                testExecutionEndpointEnabled && suiteStabilityJobSubmissionEnabled
+                        && authority.available()
+                        && Boolean.TRUE.equals(authority.properties().get("signedDecisions"))
+                        && Boolean.TRUE.equals(authority.properties().get("challengeBound")));
         features.put("asyncSuiteStabilityJobQuery", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellation", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellationSemanticAudit",
@@ -803,7 +852,7 @@ public record IntegrationCapabilities(
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
                 payloadGovernance, testExecutionEndpointEnabled
                         ? Testability.executionControlPlane(
-                        changeTrust, suiteStabilityJobSubmissionEnabled)
+                        changeTrust, suiteStabilityJobSubmissionEnabled, authority)
                         : Testability.schemaContractOnly(),
                 endpoints);
     }
@@ -811,6 +860,19 @@ public record IntegrationCapabilities(
     private static VisualPayloadGovernancePolicy.Descriptor unavailablePayloadGovernance() {
         return new VisualPayloadGovernancePolicy.Descriptor("", "", "", "RESTRICTED",
                 false, false, false, true);
+    }
+
+    private static TestSuiteStabilityJobAuthorizer.Descriptor unavailableCurrentAuthority() {
+        return new TestSuiteStabilityJobAuthorizer.Descriptor(
+                "", false, "UNAVAILABLE", "", Map.of());
+    }
+
+    private static TestSuiteStabilityJobAuthorizer.Descriptor customCurrentAuthority() {
+        return new TestSuiteStabilityJobAuthorizer.Descriptor(
+                "", true, "CUSTOM_UNDECLARED", "", Map.of(
+                "signedDecisions", false,
+                "challengeBound", false,
+                "privateMaterialPresent", false));
     }
 
     private static Map<String, List<String>> immutableLists(Map<String, List<String>> values) {
@@ -835,6 +897,7 @@ public record IntegrationCapabilities(
      * @param executionEndpointEnabled whether caller-driven execution is currently implemented
      * @param suiteStabilityJobSubmissionEnabled whether fresh asynchronous stability jobs can run
      * @param workerQuarantineChangeAuthorizationTrust key-free external approval readiness
+     * @param suiteStabilityCurrentAuthority key-free current-authority revalidation readiness
      */
     public record Testability(
             String protocolVersion,
@@ -843,7 +906,8 @@ public record IntegrationCapabilities(
             boolean executionEndpointEnabled,
             boolean suiteStabilityJobSubmissionEnabled,
             WorkerQuarantineChangeAuthorizationTrustStore.Descriptor
-                    workerQuarantineChangeAuthorizationTrust
+                    workerQuarantineChangeAuthorizationTrust,
+            TestSuiteStabilityJobAuthorizer.Descriptor suiteStabilityCurrentAuthority
     ) {
         /** Normalizes capability values. */
         public Testability {
@@ -859,6 +923,13 @@ public record IntegrationCapabilities(
                     workerQuarantineChangeAuthorizationTrust == null
                             ? WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor()
                             : workerQuarantineChangeAuthorizationTrust;
+            suiteStabilityCurrentAuthority = suiteStabilityCurrentAuthority == null
+                    ? unavailableCurrentAuthority() : suiteStabilityCurrentAuthority;
+            if (suiteStabilityJobSubmissionEnabled
+                    && !suiteStabilityCurrentAuthority.available()) {
+                throw new IllegalArgumentException(
+                        "Stability-job submission requires current-authority readiness");
+            }
         }
 
         /** Preserves the v1 constructor while treating asynchronous submission as unavailable. */
@@ -869,14 +940,15 @@ public record IntegrationCapabilities(
                 boolean executionEndpointEnabled,
                 WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust) {
             this(protocolVersion, enabledEnvironments, schemaContractMode,
-                    executionEndpointEnabled, false, trust);
+                    executionEndpointEnabled, false, trust, unavailableCurrentAuthority());
         }
 
         /** @return Stage 0 capability before the execution endpoint is activated */
         public static Testability schemaContractOnly() {
             return new Testability("bloge.testing.v1", List.of("test", "staging"),
                     true, false, false,
-                    WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor());
+                    WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                    unavailableCurrentAuthority());
         }
 
         /** @return Stage 2 capability with the caller-driven execution endpoint assembled */
@@ -895,8 +967,19 @@ public record IntegrationCapabilities(
         public static Testability executionControlPlane(
                 WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust,
                 boolean suiteStabilityJobSubmissionEnabled) {
+            return executionControlPlane(trust, suiteStabilityJobSubmissionEnabled,
+                    suiteStabilityJobSubmissionEnabled
+                            ? customCurrentAuthority()
+                            : unavailableCurrentAuthority());
+        }
+
+        /** @return execution capability with exact current-authority readiness */
+        public static Testability executionControlPlane(
+                WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust,
+                boolean suiteStabilityJobSubmissionEnabled,
+                TestSuiteStabilityJobAuthorizer.Descriptor currentAuthority) {
             return new Testability("bloge.testing.v1", List.of("test", "staging"),
-                    true, true, suiteStabilityJobSubmissionEnabled, trust);
+                    true, true, suiteStabilityJobSubmissionEnabled, trust, currentAuthority);
         }
     }
 }

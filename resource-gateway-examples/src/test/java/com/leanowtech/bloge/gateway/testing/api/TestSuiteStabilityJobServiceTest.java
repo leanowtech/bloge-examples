@@ -15,6 +15,8 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -185,6 +187,57 @@ class TestSuiteStabilityJobServiceTest {
         assertProblem(() -> disabled.submit("suite-a", fresh, identity()), 503,
                 "RG.TEST.STABILITY_JOB_SUBMISSION_UNAVAILABLE");
         verifyNoInteractions(executions);
+    }
+
+    @Test
+    void dynamicAuthorityReadinessFailsClosedOnlyForFreshSubmission() {
+        TestSuiteStabilityJobSubmitRequest request = request();
+        String requestFingerprint = ProtocolFingerprint.of(mapper, request.execution());
+        TestSuiteStabilityJobRecord existing = queued(submission(
+                jobId(request.execution(), identity()), request, requestFingerprint,
+                identity()));
+        when(jobs.find(eq("tenant-a"), eq("test"), anyString()))
+                .thenReturn(Optional.of(existing));
+        AtomicBoolean ready = new AtomicBoolean(false);
+        AtomicInteger readinessReads = new AtomicInteger();
+        TestSuiteStabilityJobService dynamic = new TestSuiteStabilityJobService(
+                jobs, executions, policy, mapper, securityEvents, true,
+                () -> {
+                    readinessReads.incrementAndGet();
+                    return ready.get();
+                },
+                Duration.ofSeconds(7));
+
+        assertThat(dynamic.submit("suite-a", request, identity()).idempotentReplay())
+                .isTrue();
+        assertThat(readinessReads).hasValue(0);
+
+        TestSuiteStabilityExecutionRequest freshExecution =
+                new TestSuiteStabilityExecutionRequest("", SUITE_REF, "stability-request-2",
+                        3, Map.of());
+        TestSuiteStabilityJobSubmitRequest fresh = new TestSuiteStabilityJobSubmitRequest(
+                TestSuiteStabilityJobSubmitRequest.SCHEMA_VERSION, freshExecution,
+                TestSuiteStabilityJobSubmission.Priority.NORMAL, DEADLINE);
+        when(jobs.find(eq("tenant-a"), eq("test"), anyString()))
+                .thenReturn(Optional.empty());
+
+        assertProblem(() -> dynamic.submit("suite-a", fresh, identity()), 503,
+                "RG.TEST.STABILITY_JOB_SUBMISSION_UNAVAILABLE");
+        assertThat(readinessReads).hasValue(1);
+        verifyNoInteractions(executions);
+
+        String freshFingerprint = ProtocolFingerprint.of(mapper, freshExecution);
+        ready.set(true);
+        when(executions.authorizeSubmission("suite-a", freshExecution, identity()))
+                .thenReturn(descriptor(freshFingerprint));
+        when(jobs.submitDetailed(any(), eq(policy))).thenAnswer(invocation ->
+                new TestSuiteStabilityJobRepository.SubmissionResult(
+                        queued(invocation.getArgument(0)), false));
+
+        assertThat(dynamic.submit("suite-a", fresh, identity()).idempotentReplay())
+                .isFalse();
+        assertThat(readinessReads).hasValue(2);
+        verify(executions).authorizeSubmission("suite-a", freshExecution, identity());
     }
 
     @Test

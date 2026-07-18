@@ -1,5 +1,9 @@
 # Stage 5 asynchronous suite-stability test-kit verification
 
+> Current-state note: the product HTTPS current-authority adapter listed as a later server-side gap
+> in this historical increment is now implemented and verified in
+> [suite-stability current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
+
 ## 1. Increment boundary
 
 This increment adds an independent Java consumer for the durable suite-stability job protocol. The

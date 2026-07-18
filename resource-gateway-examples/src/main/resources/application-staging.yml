@@ -104,6 +104,17 @@ gateway:
     stability-jobs:
       api:
         retry-after-seconds: ${RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS:5}
+      authority:
+        http:
+          enabled: ${RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED:false}
+          base-uri: ${RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI:}
+          expected-authority-id: ${RG_TEST_STABILITY_JOB_AUTHORITY_ID:}
+          request-timeout-ms: ${RG_TEST_STABILITY_JOB_AUTHORITY_TIMEOUT_MS:3000}
+          maximum-decision-lifetime-seconds: ${RG_TEST_STABILITY_JOB_AUTHORITY_MAX_LIFETIME_SECONDS:60}
+          clock-skew-seconds: ${RG_TEST_STABILITY_JOB_AUTHORITY_CLOCK_SKEW_SECONDS:5}
+          minimum-remaining-validity-ms: ${RG_TEST_STABILITY_JOB_AUTHORITY_MIN_REMAINING_MS:100}
+          allow-insecure-loopback: ${RG_TEST_STABILITY_JOB_AUTHORITY_ALLOW_INSECURE_LOOPBACK:false}
+          authority-keys-json: ${RG_TEST_STABILITY_JOB_AUTHORITY_KEYS_JSON:[]}
       retention:
         instance-id: ${RG_TEST_STABILITY_JOB_RETENTION_INSTANCE_ID:}
         lease-duration-seconds: ${RG_TEST_STABILITY_JOB_RETENTION_LEASE_SECONDS:120}

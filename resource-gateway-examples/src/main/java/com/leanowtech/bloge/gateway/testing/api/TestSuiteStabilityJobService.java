@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.regex.Pattern;
 
 /**
@@ -38,6 +39,7 @@ public final class TestSuiteStabilityJobService {
     private final ObjectMapper objectMapper;
     private final TestSecurityEventRepository securityEvents;
     private final boolean submissionEnabled;
+    private final BooleanSupplier submissionReady;
     private final long retryAfterSeconds;
 
     /**
@@ -59,12 +61,41 @@ public final class TestSuiteStabilityJobService {
             TestSecurityEventRepository securityEvents,
             boolean submissionEnabled,
             Duration retryAfter) {
+        this(jobs, executions, policy, objectMapper, securityEvents, submissionEnabled,
+                () -> submissionEnabled, retryAfter);
+    }
+
+    /**
+     * Creates the public boundary with a dynamic local current-authority readiness guard.
+     *
+     * <p>The supplier is evaluated only for a fresh request after retained replay lookup. It must
+     * not call the external PDP; it reports local provider/trust readiness such as key expiry.</p>
+     *
+     * @param jobs database-authoritative queue and lifecycle store
+     * @param executions shared suite/current-authority validator
+     * @param policy exact cross-replica queue policy
+     * @param objectMapper canonical protocol fingerprint mapper
+     * @param securityEvents transaction-bindable semantic security-event store
+     * @param submissionEnabled whether a worker runtime is assembled for fresh work
+     * @param submissionReady local non-network readiness of the exact current-authority provider
+     * @param retryAfter bounded caller retry hint for capacity or disabled submission
+     */
+    public TestSuiteStabilityJobService(
+            TestSuiteStabilityJobRepository jobs,
+            TestSuiteStabilityExecutionService executions,
+            TestSuiteStabilityQueuePolicy policy,
+            ObjectMapper objectMapper,
+            TestSecurityEventRepository securityEvents,
+            boolean submissionEnabled,
+            BooleanSupplier submissionReady,
+            Duration retryAfter) {
         this.jobs = Objects.requireNonNull(jobs, "jobs");
         this.executions = Objects.requireNonNull(executions, "executions");
         this.policy = Objects.requireNonNull(policy, "policy");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.submissionEnabled = submissionEnabled;
+        this.submissionReady = Objects.requireNonNull(submissionReady, "submissionReady");
         Duration boundedRetry = Objects.requireNonNull(retryAfter, "retryAfter");
         if (boundedRetry.toMillis() % 1_000 != 0 || boundedRetry.isZero()
                 || boundedRetry.isNegative()
@@ -99,7 +130,7 @@ public final class TestSuiteStabilityJobService {
             requireSameIntent(existing, jobId, request, requestFingerprint, identity);
             return response(existing, true, identity);
         }
-        if (!submissionEnabled) {
+        if (!submissionEnabled || !currentAuthorityReady()) {
             throw unavailable(identity, "RG.TEST.STABILITY_JOB_SUBMISSION_UNAVAILABLE",
                     "Asynchronous stability-job submission is disabled on this deployment.",
                     Map.of("retryAfterSeconds", retryAfterSeconds));
@@ -129,6 +160,14 @@ public final class TestSuiteStabilityJobService {
         } catch (RuntimeException failure) {
             throw unavailable(identity, "RG.TEST.STABILITY_JOB_STORE_UNAVAILABLE",
                     "The durable suite-stability job store is unavailable.", Map.of());
+        }
+    }
+
+    private boolean currentAuthorityReady() {
+        try {
+            return submissionReady.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
         }
     }
 

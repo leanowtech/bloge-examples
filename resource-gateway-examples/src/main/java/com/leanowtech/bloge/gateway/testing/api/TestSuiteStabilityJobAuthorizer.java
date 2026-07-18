@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import java.util.Objects;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -11,6 +13,49 @@ import java.util.regex.Pattern;
  * without returning credentials or business payloads.</p>
  */
 public interface TestSuiteStabilityJobAuthorizer {
+
+    Set<String> DESCRIPTOR_PROPERTIES = Set.of(
+            "protocolVersion", "responseProtocolVersion", "signedDecisions",
+            "challengeBound", "redirectsFollowed", "automaticRetries",
+            "privateMaterialPresent", "requestTimeoutMillis");
+
+    /**
+     * Key-free deployment readiness descriptor for capability and startup diagnostics.
+     *
+     * @param schemaVersion descriptor generation
+     * @param available whether this adapter is fully configured for current-authority decisions
+     * @param providerType deployment-owned provider type
+     * @param expectedAuthorityId expected external authority, possibly blank for custom providers
+     * @param properties bounded non-secret protocol semantics
+     */
+    record Descriptor(
+            String schemaVersion,
+            boolean available,
+            String providerType,
+            String expectedAuthorityId,
+            Map<String, Object> properties) {
+        /** Descriptor protocol generation. */
+        public static final String SCHEMA_VERSION =
+                "bloge.testSuiteStabilityJobAuthorizerDescriptor.v1";
+
+        /** Defensively freezes non-secret descriptor fields. */
+        public Descriptor {
+            schemaVersion = schemaVersion == null || schemaVersion.isBlank()
+                    ? SCHEMA_VERSION : schemaVersion.trim();
+            providerType = providerType == null ? "UNAVAILABLE" : providerType.trim();
+            expectedAuthorityId = expectedAuthorityId == null
+                    ? "" : expectedAuthorityId.trim();
+            properties = properties == null ? Map.of() : Map.copyOf(properties);
+            if (!SCHEMA_VERSION.equals(schemaVersion) || providerType.isBlank()
+                    || !DESCRIPTOR_PROPERTIES.containsAll(properties.keySet())
+                    || properties.size() > DESCRIPTOR_PROPERTIES.size()
+                    || properties.entrySet().stream().anyMatch(
+                    entry -> !safeDescriptorValue(entry.getValue()))) {
+                throw new IllegalArgumentException(
+                        "Invalid suite-stability authorizer descriptor");
+            }
+        }
+    }
 
     /** Current authorization decisions consumed before engine execution. */
     enum Decision {
@@ -66,4 +111,24 @@ public interface TestSuiteStabilityJobAuthorizer {
      * @return current payload-free decision
      */
     Authorization reauthorize(TestSuiteStabilityJobRecord job);
+
+    /**
+     * Reports deployment readiness without exposing endpoint, credential or key material.
+     *
+     * <p>Custom authorizers remain source-compatible through this fail-closed default. Providers
+     * should override it when they can make stronger machine-readable guarantees.</p>
+     *
+     * @return key-free current-authority readiness
+     */
+    default Descriptor descriptor() {
+        return new Descriptor("", false, "CUSTOM_UNDECLARED", "", Map.of(
+                "signedDecisions", false,
+                "challengeBound", false,
+                "privateMaterialPresent", false));
+    }
+
+    private static boolean safeDescriptorValue(Object value) {
+        return value instanceof Boolean || value instanceof String text && text.length() <= 255
+                || value instanceof Number number && number.longValue() >= 0;
+    }
 }

@@ -50,11 +50,13 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
+import java.net.URI;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -710,12 +712,14 @@ public class TestRuntimeConfiguration {
             TestSuiteStabilityQueuePolicy policy,
             ObjectMapper objectMapper,
             TestSecurityEventRepository securityEvents,
+            ObjectProvider<TestSuiteStabilityJobAuthorizer> authorizers,
             @Value("${gateway.testing.stability-jobs.worker.enabled:false}")
             boolean submissionEnabled,
             @Value("${gateway.testing.stability-jobs.api.retry-after-seconds:5}")
             long retryAfterSeconds) {
         return new TestSuiteStabilityJobService(
                 repository, executions, policy, objectMapper, securityEvents, submissionEnabled,
+                () -> currentAuthorityReady(authorizers),
                 Duration.ofSeconds(retryAfterSeconds));
     }
 
@@ -1316,6 +1320,61 @@ public class TestRuntimeConfiguration {
     }
 
     /**
+     * Builds static public-key trust for signed current-authority decisions when no deployment
+     * supplied dynamic trust store exists.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "gateway.testing.stability-jobs.authority.http",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(TestSuiteStabilityAuthorityTrustStore.class)
+    TestSuiteStabilityAuthorityTrustStore testSuiteStabilityAuthorityTrustStore(
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.stability-jobs.authority.http.expected-authority-id:}")
+            String expectedAuthorityId,
+            @Value("${gateway.testing.stability-jobs.authority.http.maximum-decision-lifetime-seconds:60}")
+            long maximumDecisionLifetimeSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.clock-skew-seconds:5}")
+            long clockSkewSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.minimum-remaining-validity-ms:100}")
+            long minimumRemainingValidityMillis,
+            @Value("${gateway.testing.stability-jobs.authority.http.authority-keys-json:[]}")
+            String authorityKeysJson) {
+        return ConfiguredTestSuiteStabilityAuthorityTrustStore.fromJson(
+                objectMapper, expectedAuthorityId,
+                Duration.ofSeconds(maximumDecisionLifetimeSeconds),
+                Duration.ofSeconds(clockSkewSeconds),
+                Duration.ofMillis(minimumRemainingValidityMillis), authorityKeysJson);
+    }
+
+    /**
+     * Creates the product HTTPS PDP adapter; the worker still enforces exactly one authorizer.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "gateway.testing.stability-jobs.authority.http",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityJobAuthorizer httpTestSuiteStabilityJobAuthorizer(
+            ObjectMapper objectMapper,
+            TestSuiteStabilityAuthorityTrustStore trustStore,
+            @Value("${gateway.testing.stability-jobs.authority.http.base-uri:}")
+            String baseUri,
+            @Value("${gateway.testing.stability-jobs.authority.http.request-timeout-ms:3000}")
+            long requestTimeoutMillis,
+            @Value("${gateway.testing.stability-jobs.authority.http.allow-insecure-loopback:false}")
+            boolean allowInsecureLoopback) {
+        URI uri;
+        try {
+            uri = URI.create(baseUri == null ? "" : baseUri.trim());
+        } catch (RuntimeException invalid) {
+            throw new IllegalArgumentException(
+                    "Stability authority base URI is invalid", invalid);
+        }
+        return new HttpTestSuiteStabilityJobAuthorizer(
+                objectMapper, trustStore,
+                new HttpTestSuiteStabilityJobAuthorizer.Settings(
+                        uri, Duration.ofMillis(requestTimeoutMillis), allowInsecureLoopback));
+    }
+
+    /**
      * Creates the worker only when one unambiguous external current-authority provider exists.
      *
      * <p>No permissive local authorizer exists: enabling the worker without exactly one provider
@@ -1340,6 +1399,11 @@ public class TestRuntimeConfiguration {
             throw new IllegalStateException(
                     "Enabled stability worker requires exactly one "
                             + "TestSuiteStabilityJobAuthorizer bean");
+        }
+        if (!currentAuthorities.getFirst().descriptor().available()) {
+            throw new IllegalStateException(
+                    "Enabled stability worker requires a ready "
+                            + "TestSuiteStabilityJobAuthorizer descriptor");
         }
         String ownerId = instanceId == null || instanceId.isBlank()
                 ? "stability-worker-" + UUID.randomUUID()
@@ -1378,15 +1442,37 @@ public class TestRuntimeConfiguration {
     TestabilityAvailability testabilityAvailability(
             DatabaseDurableWorkerQuarantineControlPlane controlPlane,
             WorkerQuarantineChangeAuthorizationTrustStore changeAuthorizationTrust,
+            ObjectProvider<TestSuiteStabilityJobAuthorizer> authorizers,
             @Value("${gateway.testing.stability-jobs.worker.enabled:false}")
             boolean suiteStabilityJobSubmissionEnabled) {
+        List<TestSuiteStabilityJobAuthorizer> currentAuthorities =
+                authorizers.orderedStream().toList();
+        TestSuiteStabilityJobAuthorizer.Descriptor currentAuthority =
+                currentAuthorities.size() == 1
+                        ? currentAuthorities.getFirst().descriptor()
+                        : new TestSuiteStabilityJobAuthorizer.Descriptor(
+                        "", false, "UNAVAILABLE", "", java.util.Map.of());
         return new TestabilityAvailability(true, suiteStabilityJobSubmissionEnabled,
                 controlPlane.requestIndexMode(),
-                changeAuthorizationTrust.descriptor());
+                changeAuthorizationTrust.descriptor(), currentAuthority);
     }
 
     private static Set<String> stabilityJobEnvironments(String environments) {
         return new LinkedHashSet<>(Arrays.asList(
                 environments == null ? new String[0] : environments.split(",", -1)));
+    }
+
+    private static boolean currentAuthorityReady(
+            ObjectProvider<TestSuiteStabilityJobAuthorizer> authorizers) {
+        try {
+            List<TestSuiteStabilityJobAuthorizer> providers =
+                    authorizers.orderedStream().toList();
+            if (providers.size() != 1) {
+                return false;
+            }
+            return providers.getFirst().descriptor().available();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
     }
 }

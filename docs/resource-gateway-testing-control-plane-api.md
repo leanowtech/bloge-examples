@@ -122,6 +122,15 @@ Independent-store settings:
 | `gateway.testing.stability-runs.lease-cleanup-interval-ms` | `RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS` | `15000` |
 | `gateway.testing.stability-runs.lease-cleanup-batch-size` | `RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE` | `1000` |
 | `gateway.testing.stability-jobs.api.retry-after-seconds` | `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` | `5` |
+| `gateway.testing.stability-jobs.authority.http.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED` | `false` |
+| `gateway.testing.stability-jobs.authority.http.base-uri` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI` | empty; required when enabled |
+| `gateway.testing.stability-jobs.authority.http.expected-authority-id` | `RG_TEST_STABILITY_JOB_AUTHORITY_ID` | empty; required when enabled |
+| `gateway.testing.stability-jobs.authority.http.request-timeout-ms` | `RG_TEST_STABILITY_JOB_AUTHORITY_TIMEOUT_MS` | `3000` |
+| `gateway.testing.stability-jobs.authority.http.maximum-decision-lifetime-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_MAX_LIFETIME_SECONDS` | `60` |
+| `gateway.testing.stability-jobs.authority.http.clock-skew-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_CLOCK_SKEW_SECONDS` | `5` |
+| `gateway.testing.stability-jobs.authority.http.minimum-remaining-validity-ms` | `RG_TEST_STABILITY_JOB_AUTHORITY_MIN_REMAINING_MS` | `100` |
+| `gateway.testing.stability-jobs.authority.http.allow-insecure-loopback` | `RG_TEST_STABILITY_JOB_AUTHORITY_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
+| `gateway.testing.stability-jobs.authority.http.authority-keys-json` | `RG_TEST_STABILITY_JOB_AUTHORITY_KEYS_JSON` | `[]`; required public Ed25519 keys when enabled |
 | `gateway.testing.replay-payloads.maximum-retention-days` | `RG_TEST_REPLAY_MAX_RETENTION_DAYS` | `30` |
 | `gateway.testing.replay-payloads.sweep-interval-ms` | `RG_TEST_REPLAY_SWEEP_INTERVAL_MS` | `60000` |
 | `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |
@@ -2922,18 +2931,67 @@ different command id/fingerprint conflicts. See the
 [cancellation audit verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-cancellation-audit-verification.md).
 
 Fresh submit is available only when
-`gateway.testing.stability-jobs.worker.enabled=true` and startup has found exactly one current-IAM
-`TestSuiteStabilityJobAuthorizer`. When disabled, query/cancel remain operational and submit returns
+`gateway.testing.stability-jobs.worker.enabled=true` and startup has found exactly one ready
+current-IAM `TestSuiteStabilityJobAuthorizer`. The product HTTP adapter is opt-in through
+`gateway.testing.stability-jobs.authority.http.enabled=true`. It calls the versioned private endpoint
+`<base-uri>/v1/stability-job-authorizations` over HTTPS and verifies short-lived Ed25519 decisions
+against the configured authority id and public-key ring. The request carries only action, exact job/
+suite/request fingerprints, deadline, classification and a credential-free principal projection;
+it omits correlation id, bearer credential, execution metadata, fixture/context/payload and node
+results. A fresh 256-bit challenge, request id, principal fingerprint and request fingerprint are
+echoed by and signed into every response. Network/protocol/time/key/signature ambiguity is
+`UNAVAILABLE`; an HTTP `403` is not treated as revocation. Only a valid signed `REVOKED` decision can
+permanently fail the job for current policy.
+
+The startup check proves that exactly one provider and at least one currently active trust key are
+present; it is not a perpetual readiness lease. Resource Gateway reevaluates the provider's local,
+key-free descriptor for every fresh submission and every capability response. Key expiry/revocation,
+provider ambiguity, descriptor failure, or trust refresh outage therefore closes fresh admission
+and changes `asyncSuiteStabilityJobSubmission` to `false` without making a remote PDP call. An exact
+retained submit replay is resolved first and remains available, preserving idempotency during IAM
+rotation or outage. Claimed workers still perform the signed remote decision immediately before
+execution; local readiness never substitutes for that decision.
+
+Static trust is configured with a bounded JSON array such as:
+
+```json
+[
+  {
+    "keyId": "iam-key-2026-07",
+    "algorithm": "Ed25519",
+    "publicKeyBase64": "<X.509-encoded Ed25519 public key>",
+    "notBefore": "2026-07-01T00:00:00Z",
+    "expiresAt": "2026-10-01T00:00:00Z",
+    "enabled": true,
+    "revoked": false
+  }
+]
+```
+
+Add and deploy a new public key before the authority starts signing with it. Keep the previous key
+enabled until no live decision can remain, then remove it in a later fleet rollout. Mark a
+compromised key `revoked=true` immediately; decisions signed by it fail closed. The configured key
+must remain active at issue time, verification time and through the decision expiry. Deployments
+needing dynamic JWKS/KMS/certificate refresh can replace
+`TestSuiteStabilityAuthorityTrustStore` while preserving the same verification contract. The
+built-in adapter relies on the JVM TLS context, so mTLS identity belongs in deployment TLS material,
+not in these JSON properties. `allow-insecure-loopback` must never be enabled outside local tests.
+
+When the worker or authority is disabled, query/cancel remain operational and submit returns
 `503 RG.TEST.STABILITY_JOB_SUBMISSION_UNAVAILABLE` with `Retry-After`. Queue and tenant capacity
 return `429`; policy drift returns retryable `503`; expired retained detail returns `410`. Discover
 the distinction through `testability.suiteStabilityJobSubmissionEnabled` and the
 `asyncSuiteStabilityJobProtocol`, `asyncSuiteStabilityJobSubmission`,
+`suiteStabilityCurrentAuthorityRevalidation`, `signedChallengeBoundSuiteStabilityAuthority`,
 `asyncSuiteStabilityJobQuery`, `asyncSuiteStabilityJobCancellation`, and
 `asyncSuiteStabilityJobCancellationSemanticAudit` feature flags. The strict
 request/response definitions live in
 [`testing-control-plane-v1.schema.json`](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
+The private worker-to-PDP contract is separately versioned in
+[`suite-stability-authority-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json);
+it is not a caller-facing testing endpoint.
 Implementation evidence and deliberately unclaimed guarantees are recorded in
-[Stage 5 suite-stability public protocol verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-public-protocol-verification.md).
+[Stage 5 current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
 
 The standalone Java test-kit exposes the same protocol without depending on Resource Gateway
 server classes:

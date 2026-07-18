@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json",
+  "title": "Resource Gateway Suite Stability Current Authority Protocol v1",
+  "description": "Private credential-free, challenge-bound, signed worker-to-PDP protocol.",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" },
+    { "$ref": "#/$defs/trustDescriptor" },
+    { "$ref": "#/$defs/authorizerDescriptor" }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "optionalIdentifier": {
+      "type": "string",
+      "pattern": "^(|[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254})$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "challenge": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43,128}$"
+    },
+    "suiteRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suiteId", "revision", "fingerprint"],
+      "properties": {
+        "suiteId": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenantId", "organizationId", "projectId", "environmentId", "region",
+        "actorType", "actorId", "delegatedBy", "purpose", "groups", "clearance",
+        "delegationGrantId"
+      ],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/optionalIdentifier" },
+        "environmentId": { "enum": ["test", "staging"] },
+        "region": { "$ref": "#/$defs/optionalIdentifier" },
+        "actorType": { "$ref": "#/$defs/identifier" },
+        "actorId": { "$ref": "#/$defs/identifier" },
+        "delegatedBy": { "$ref": "#/$defs/optionalIdentifier" },
+        "purpose": { "enum": ["TEST_EXECUTION", "TEST_REPLAY"] },
+        "groups": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "clearance": {
+          "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+        },
+        "delegationGrantId": { "$ref": "#/$defs/optionalIdentifier" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "requestId", "challenge", "requestedAt", "action", "jobId",
+        "jobRequestFingerprint", "suiteRef", "classification", "deadlineAt", "principal",
+        "principalFingerprint", "authorizationRequestFingerprint"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityAuthorityRequest.v1"
+        },
+        "requestId": { "$ref": "#/$defs/identifier" },
+        "challenge": { "$ref": "#/$defs/challenge" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "action": { "const": "EXECUTE_SUITE_STABILITY_JOB" },
+        "jobId": { "$ref": "#/$defs/identifier" },
+        "jobRequestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "suiteRef": { "$ref": "#/$defs/suiteRef" },
+        "classification": {
+          "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+        },
+        "deadlineAt": { "type": "string", "format": "date-time" },
+        "principal": { "$ref": "#/$defs/principal" },
+        "principalFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "authorizationRequestFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyId", "algorithm", "signature"],
+      "properties": {
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "algorithm": { "const": "Ed25519" },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "requestId", "challenge", "jobId",
+        "authorizationRequestFingerprint", "principalFingerprint", "decision", "failureCode",
+        "authorityId", "policyRevision", "decisionId", "issuedAt", "expiresAt",
+        "materialFingerprint", "signature"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityAuthorityResponse.v1"
+        },
+        "requestId": { "$ref": "#/$defs/identifier" },
+        "challenge": { "$ref": "#/$defs/challenge" },
+        "jobId": { "$ref": "#/$defs/identifier" },
+        "authorizationRequestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "principalFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "decision": { "enum": ["AUTHORIZED", "REVOKED"] },
+        "failureCode": {
+          "type": "string",
+          "pattern": "^(|[A-Z][A-Z0-9_.-]{0,127})$"
+        },
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "policyRevision": { "$ref": "#/$defs/identifier" },
+        "decisionId": { "$ref": "#/$defs/identifier" },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "signature": { "$ref": "#/$defs/signature" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "decision": { "const": "AUTHORIZED" } } },
+          "then": { "properties": { "failureCode": { "const": "" } } }
+        },
+        {
+          "if": { "properties": { "decision": { "const": "REVOKED" } } },
+          "then": {
+            "properties": {
+              "failureCode": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "trustProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": { "const": "Ed25519" },
+        "signedDecisions": { "type": "boolean" },
+        "challengeBound": { "type": "boolean" },
+        "privateMaterialPresent": { "const": false },
+        "activeKeyCount": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "maximumDecisionLifetimeSeconds": { "type": "integer", "minimum": 1, "maximum": 300 },
+        "clockSkewSeconds": { "type": "integer", "minimum": 0, "maximum": 300 },
+        "minimumRemainingValidityMillis": { "type": "integer", "minimum": 0, "maximum": 30000 }
+      }
+    },
+    "trustDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "available", "providerType", "expectedAuthorityId", "keyCount",
+        "properties"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityAuthorityTrustDescriptor.v1"
+        },
+        "available": { "type": "boolean" },
+        "providerType": { "$ref": "#/$defs/identifier" },
+        "expectedAuthorityId": { "$ref": "#/$defs/optionalIdentifier" },
+        "keyCount": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "properties": { "$ref": "#/$defs/trustProperties" }
+      }
+    },
+    "authorizerProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": { "const": "bloge.testSuiteStabilityAuthorityRequest.v1" },
+        "responseProtocolVersion": { "const": "bloge.testSuiteStabilityAuthorityResponse.v1" },
+        "signedDecisions": { "type": "boolean" },
+        "challengeBound": { "type": "boolean" },
+        "redirectsFollowed": { "const": false },
+        "automaticRetries": { "const": false },
+        "privateMaterialPresent": { "const": false },
+        "requestTimeoutMillis": { "type": "integer", "minimum": 100, "maximum": 30000 }
+      }
+    },
+    "authorizerDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "available", "providerType", "expectedAuthorityId", "properties"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityJobAuthorizerDescriptor.v1"
+        },
+        "available": { "type": "boolean" },
+        "providerType": { "$ref": "#/$defs/identifier" },
+        "expectedAuthorityId": { "$ref": "#/$defs/optionalIdentifier" },
+        "properties": { "$ref": "#/$defs/authorizerProperties" }
+      }
+    }
+  }
+}

@@ -16,6 +16,9 @@ import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteExecutionReques
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCancelRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmitRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmitResponse;
@@ -97,7 +100,9 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("asyncSuiteStabilityJobCancellationSemanticAudit", true);
         assertThat(executable.testability().suiteStabilityJobSubmissionEnabled()).isTrue();
         assertThat(executable.features())
-                .containsEntry("asyncSuiteStabilityJobSubmission", true);
+                .containsEntry("asyncSuiteStabilityJobSubmission", true)
+                .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true)
+                .containsEntry("signedChallengeBoundSuiteStabilityAuthority", false);
         assertThat(executable.supportedObjects())
                 .containsEntry("testSuiteStabilityJobSubmitRequest",
                         java.util.List.of(TestSuiteStabilityJobSubmitRequest.SCHEMA_VERSION))
@@ -105,12 +110,40 @@ class TestabilityCapabilitiesTest {
                         java.util.List.of(TestSuiteStabilityJobCancelRequest.SCHEMA_VERSION))
                 .containsEntry("testSuiteStabilityJobView",
                         java.util.List.of(TestSuiteStabilityJobView.SCHEMA_VERSION))
+                .containsEntry("testSuiteStabilityAuthorityRequest",
+                        java.util.List.of(TestSuiteStabilityAuthorityRequest.SCHEMA_VERSION))
+                .containsEntry("testSuiteStabilityAuthorityResponse",
+                        java.util.List.of(TestSuiteStabilityAuthorityResponse.SCHEMA_VERSION))
                 .containsEntry("testSuiteStabilityJobSubmitResponse",
                         java.util.List.of(TestSuiteStabilityJobSubmitResponse.SCHEMA_VERSION));
         assertThat(executable.endpoints()).extracting(IntegrationCapabilities.Endpoint::path)
                 .contains("/api/testing/suites/{suiteId}/stability-jobs",
                         "/api/testing/stability-jobs/{jobId}",
                         "/api/testing/stability-jobs/{jobId}/cancellations");
+    }
+
+    @Test
+    void signedCurrentAuthorityCapabilityRequiresExactReadyDescriptor() {
+        TestSuiteStabilityJobAuthorizer.Descriptor signed =
+                new TestSuiteStabilityJobAuthorizer.Descriptor(
+                        "", true, "HTTPS_SIGNED_PDP", "iam.example", java.util.Map.of(
+                        "signedDecisions", true,
+                        "challengeBound", true,
+                        "privateMaterialPresent", false));
+        IntegrationCapabilities capabilities = IntegrationCapabilities.current(
+                VisualEvidenceSigner.unavailable().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true,
+                EvidenceKeySetTrustStore.unavailable().descriptor(),
+                WorkerQuarantineRequestIndexMode.KEYED_ONLY,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                true, signed);
+
+        assertThat(capabilities.features())
+                .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true)
+                .containsEntry("signedChallengeBoundSuiteStabilityAuthority", true);
+        assertThat(capabilities.testability().suiteStabilityCurrentAuthority())
+                .isEqualTo(signed);
+        assertThat(capabilities.toString()).doesNotContain("http://");
     }
 
     @Test
