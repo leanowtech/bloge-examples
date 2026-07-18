@@ -156,6 +156,15 @@ Result on 2026-07-18: **34 tests, 0 failures, 0 errors, 0 skips**. The set cover
 consistent-failure and inconclusive outcomes; plan/source/child drift; signature failure; exact
 idempotency; persistence conflicts; strict Schema; and capability/endpoint gating.
 
+Full Resource Gateway command:
+
+```bash
+mvn -f resource-gateway-examples/pom.xml clean verify
+```
+
+Result on 2026-07-18: **2464 tests, 0 failures, 0 errors, 2 conditional skips**, including 34
+configured browser tests, followed by successful Spring Boot executable-JAR packaging.
+
 Full independent test-kit command:
 
 ```bash

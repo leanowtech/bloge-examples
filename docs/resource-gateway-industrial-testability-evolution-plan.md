@@ -198,9 +198,10 @@ atomic-key-set pin、payload-free JUnit 与 `0/1/2` 退出语义形成 release g
 [Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)。
 该增量只证明固定 attempt 数下的确定性观测，不提供概率 flake rate、置信区间、adaptive stopping、自动
 quarantine workflow、跨进程调度或物理 test-runtime 隔离。
-本增量 Resource Gateway 聚焦验证执行 34 tests，0 failures、0 errors、0 skips；独立 test-kit
-`clean verify` 执行 130 tests，0 failures、0 errors、0 skips，并通过权威 Schema、普通/shaded JAR、
-pinned stability CLI/JUnit 与严格 public JavaDoc 门禁。完整 Resource Gateway 全量验证留待最终审计记录。
+本增量 Resource Gateway 聚焦验证执行 34 tests，0 failures、0 errors、0 skips；完整 `clean verify`
+执行 2464 tests，0 failures、0 errors、2 个条件跳过，其中配置浏览器回归 34 tests，并完成 Spring Boot
+可执行 JAR。独立 test-kit `clean verify` 执行 130 tests，0 failures、0 errors、0 skips，并通过权威
+Schema、普通/shaded JAR、pinned stability CLI/JUnit 与严格 public JavaDoc 门禁。
 
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新

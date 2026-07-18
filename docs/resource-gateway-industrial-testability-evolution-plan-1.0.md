@@ -201,9 +201,10 @@ suite runner。服务端逐 attempt 验证 source aggregate attestation 和完�
 [Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)。
 该增量不提供概率 flake rate、置信区间、adaptive stopping、自动 quarantine workflow、跨进程调度或
 物理 test-runtime 隔离。
-本增量 Resource Gateway 聚焦验证执行 34 tests，0 failures、0 errors、0 skips；独立 test-kit
-`clean verify` 执行 130 tests，0 failures、0 errors、0 skips，并通过权威 Schema、普通/shaded JAR、
-pinned stability CLI/JUnit 与严格 public JavaDoc 门禁。完整 Resource Gateway 全量验证留待最终审计记录。
+本增量 Resource Gateway 聚焦验证执行 34 tests，0 failures、0 errors、0 skips；完整 `clean verify`
+执行 2464 tests，0 failures、0 errors、2 个条件跳过，其中配置浏览器回归 34 tests，并完成 Spring Boot
+可执行 JAR。独立 test-kit `clean verify` 执行 130 tests，0 failures、0 errors、0 skips，并通过权威
+Schema、普通/shaded JAR、pinned stability CLI/JUnit 与严格 public JavaDoc 门禁。
 
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
