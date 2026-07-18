@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/suite-stability-serving-inventory-publication-v1.schema.json",
+  "title": "Resource Gateway Suite Stability Serving Inventory Publication Protocol v1",
+  "description": "Signed active-or-revoked inventory publication with an independent witness checkpoint.",
+  "$ref": "#/$defs/publication",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    },
+    "publicationMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "$comment": "materialFingerprint hashes UTF-8 minified JSON with object keys sorted lexicographically, arrays preserved, and UTC RFC 3339 instant strings.",
+      "required": [
+        "schemaVersion", "trustDomain", "publicationId", "sequence",
+        "inventoryMaterialFingerprint", "state", "policyFingerprint",
+        "previousPublicationFingerprint", "issuedAt", "notBefore", "expiresAt",
+        "reasonCode"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityServingInventoryPublicationMaterial.v1"
+        },
+        "trustDomain": { "$ref": "#/$defs/identifier" },
+        "publicationId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "inventoryMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "state": { "enum": ["ACTIVE", "REVOKED"] },
+        "policyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "previousPublicationFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "notBefore": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^(|[A-Z][A-Z0-9_.-]{0,127})$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "sequence": { "const": 1 } },
+            "required": ["sequence"]
+          },
+          "then": {
+            "properties": { "previousPublicationFingerprint": { "const": "" } }
+          },
+          "else": {
+            "properties": {
+              "previousPublicationFingerprint": { "$ref": "#/$defs/fingerprint" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "ACTIVE" } } },
+          "then": { "properties": { "reasonCode": { "const": "" } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "REVOKED" } } },
+          "then": {
+            "properties": {
+              "reasonCode": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "witnessMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "$comment": "materialFingerprint uses the same canonical JSON algorithm as publicationMaterial.",
+      "required": [
+        "schemaVersion", "witnessDomain", "checkpointId", "sequence",
+        "publicationMaterialFingerprint", "previousWitnessFingerprint",
+        "issuedAt", "notBefore", "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityServingInventoryWitnessMaterial.v1"
+        },
+        "witnessDomain": { "$ref": "#/$defs/identifier" },
+        "checkpointId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "publicationMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "previousWitnessFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "notBefore": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "sequence": { "const": 1 } },
+            "required": ["sequence"]
+          },
+          "then": {
+            "properties": { "previousWitnessFingerprint": { "const": "" } }
+          },
+          "else": {
+            "properties": {
+              "previousWitnessFingerprint": { "$ref": "#/$defs/fingerprint" }
+            }
+          }
+        }
+      ]
+    },
+    "witness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "material", "materialFingerprint", "signatures"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityServingInventoryWitness.v1"
+        },
+        "material": { "$ref": "#/$defs/witnessMaterial" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "suite-stability-serving-inventory-v1.schema.json#/$defs/authoritySignature"
+          }
+        }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "inventory", "material", "materialFingerprint",
+        "signatures", "witness"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityServingInventoryPublication.v1"
+        },
+        "inventory": {
+          "$ref": "suite-stability-serving-inventory-v1.schema.json#/$defs/inventory"
+        },
+        "material": { "$ref": "#/$defs/publicationMaterial" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "suite-stability-serving-inventory-v1.schema.json#/$defs/authoritySignature"
+          }
+        },
+        "witness": { "$ref": "#/$defs/witness" }
+      }
+    }
+  }
+}

@@ -32,8 +32,8 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
         var second = observation("sha256:" + "b".repeat(64));
         when(trustStore.cohortObservation()).thenReturn(first);
         when(repository.heartbeat(org.mockito.ArgumentMatchers.any()))
-                .thenReturn(converged());
-        when(repository.snapshot()).thenReturn(converged());
+                .thenReturn(converged(0));
+        when(repository.snapshot()).thenReturn(converged(0));
         TestSuiteStabilityAuthorityCohortMonitor monitor =
                 new TestSuiteStabilityAuthorityCohortMonitor(
                         repository, trustStore, policy, objectMapper, false);
@@ -74,7 +74,7 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
         when(trustStore.cohortObservation()).thenReturn(
                 observation("sha256:" + "a".repeat(64)));
         when(repository.heartbeat(org.mockito.ArgumentMatchers.any()))
-                .thenReturn(converged());
+                .thenReturn(converged(0));
         when(repository.snapshot()).thenThrow(new IllegalStateException("db unavailable"));
         TestSuiteStabilityAuthorityCohortMonitor monitor =
                 new TestSuiteStabilityAuthorityCohortMonitor(
@@ -99,13 +99,14 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
                 mock(DynamicJwksTestSuiteStabilityAuthorityTrustStore.class);
         TestSuiteStabilityServingInventoryAuthority inventoryAuthority =
                 mock(TestSuiteStabilityServingInventoryAuthority.class);
-        var verified = inventoryObservation(true, "VERIFIED");
+        var verified = inventoryObservation(true, "VERIFIED",
+                DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE);
         when(inventoryAuthority.observation()).thenReturn(verified);
         when(trustStore.cohortObservation()).thenReturn(
                 observation("sha256:" + "a".repeat(64)));
         when(repository.heartbeat(org.mockito.ArgumentMatchers.any()))
-                .thenReturn(converged());
-        when(repository.snapshot()).thenReturn(converged());
+                .thenReturn(converged(1));
+        when(repository.snapshot()).thenReturn(converged(1));
         TestSuiteStabilityAuthorityCohortPolicy policy = policy(verified);
         TestSuiteStabilityAuthorityCohortMonitor monitor =
                 new TestSuiteStabilityAuthorityCohortMonitor(
@@ -115,10 +116,13 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
         assertThat(monitor.descriptor()).satisfies(descriptor -> {
             assertThat(descriptor.available()).isTrue();
             assertThat(descriptor.externallyAttestedInventory()).isTrue();
+            assertThat(descriptor.dynamicallyRefreshedInventory()).isTrue();
+            assertThat(descriptor.witnessedInventoryPublications()).isTrue();
         });
 
         when(inventoryAuthority.observation()).thenReturn(
-                inventoryObservation(false, "EXPIRED"));
+                inventoryObservation(false, "EXPIRED",
+                        DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE));
         assertThat(monitor.descriptor()).satisfies(descriptor -> {
             assertThat(descriptor.available()).isFalse();
             assertThat(descriptor.status()).isEqualTo("SERVING_INVENTORY_EXPIRED");
@@ -126,13 +130,16 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
         });
         assertThat(new TestSuiteStabilityAuthorityCohortHealth(monitor).health().getDetails())
                 .containsEntry("externallyAttestedInventory", true)
+                .containsEntry("dynamicallyRefreshedInventory", true)
+                .containsEntry("witnessedInventoryPublications", true)
                 .doesNotContainKeys("inventoryId", "materialFingerprint",
                         "policyFingerprint", "instanceIds");
 
         when(inventoryAuthority.observation()).thenReturn(
                 new TestSuiteStabilityServingInventoryAuthority.Observation(
                         TestSuiteStabilityServingInventoryAuthority.Observation.SCHEMA_VERSION,
-                        true, true, true, "VERIFIED", "STATIC_SIGNED_ED25519_M_OF_N", 17,
+                        true, true, true, "VERIFIED", "STATIC_SIGNED_ED25519_M_OF_N",
+                        17, "sha256:" + "c".repeat(64), 17,
                         "sha256:" + "e".repeat(64), "sha256:" + "d".repeat(64),
                         List.of("replica-a"), Instant.parse("2026-07-20T00:00:00Z"),
                         2, 2));
@@ -164,9 +171,15 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
 
     private static TestSuiteStabilityServingInventoryAuthority.Observation inventoryObservation(
             boolean available, String status) {
+        return inventoryObservation(available, status, "STATIC_SIGNED_ED25519_M_OF_N");
+    }
+
+    private static TestSuiteStabilityServingInventoryAuthority.Observation inventoryObservation(
+            boolean available, String status, String sourceType) {
         return new TestSuiteStabilityServingInventoryAuthority.Observation(
                 TestSuiteStabilityServingInventoryAuthority.Observation.SCHEMA_VERSION,
-                true, true, available, status, "STATIC_SIGNED_ED25519_M_OF_N", 17,
+                true, true, available, status, sourceType,
+                17, "sha256:" + "c".repeat(64), 17,
                 "sha256:" + "c".repeat(64), "sha256:" + "d".repeat(64),
                 List.of("replica-a"), Instant.parse("2026-07-20T00:00:00Z"),
                 2, 2);
@@ -186,11 +199,12 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
                 refreshedAt);
     }
 
-    private static TestSuiteStabilityAuthorityCohortRepository.Snapshot converged() {
+    private static TestSuiteStabilityAuthorityCohortRepository.Snapshot converged(
+            int servingInventoryGenerations) {
         Instant now = Instant.parse("2026-07-19T00:00:00Z");
         return new TestSuiteStabilityAuthorityCohortRepository.Snapshot(
                 "bloge.testSuiteStabilityAuthorityCohortSnapshot.v1",
-                true, "CONVERGED", 1, 1, 1, 1,
+                true, "CONVERGED", 1, 1, 1, 1, servingInventoryGenerations,
                 0, 0, 0, 0, 0, 0, 0,
                 now, now.plusSeconds(3), List.of());
     }

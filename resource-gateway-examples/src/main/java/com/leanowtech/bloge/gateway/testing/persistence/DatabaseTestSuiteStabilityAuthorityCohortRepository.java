@@ -30,7 +30,8 @@ import java.util.Set;
  * visible as a collision instead of overwriting each other. Reads use one repeatable-read database
  * time boundary and never infer membership from application clocks. Complete configured set
  * equality, shared policy identity, artifact/protocol/authority identity, local trust health and
- * one trust-generation fingerprint are all required before convergence.</p>
+ * one trust-generation fingerprint and, for external inventories, one witnessed publication
+ * generation are all required before convergence.</p>
  */
 public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
         implements TestSuiteStabilityAuthorityCohortRepository {
@@ -74,7 +75,7 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
         reads.setReadOnly(true);
     }
 
-    /** Creates the bounded process-start membership registry and expiry lookup index. */
+    /** Creates or additively upgrades the bounded membership registry and expiry index. */
     @PostConstruct
     public void init() {
         jdbc.execute("""
@@ -116,6 +117,8 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
                     trust_available BOOLEAN NOT NULL,
                     refresh_state VARCHAR(64) NOT NULL,
                     snapshot_fingerprint VARCHAR(71) NOT NULL,
+                    serving_inventory_source_sequence BIGINT NOT NULL,
+                    serving_inventory_generation_fingerprint VARCHAR(71) NOT NULL,
                     active_key_count BIGINT NOT NULL,
                     last_successful_refresh_at TIMESTAMP WITH TIME ZONE,
                     observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -124,6 +127,16 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
                     record_fingerprint VARCHAR(71) NOT NULL,
                     PRIMARY KEY (scope_id, cohort_id, instance_id, startup_id)
                 )
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_authority_cohort_members
+                ADD COLUMN IF NOT EXISTS serving_inventory_source_sequence
+                    BIGINT NOT NULL DEFAULT 0
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_authority_cohort_members
+                ADD COLUMN IF NOT EXISTS serving_inventory_generation_fingerprint
+                    VARCHAR(71) NOT NULL DEFAULT ''
                 """);
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS rg_test_suite_stability_authority_cohort_expiry_idx
@@ -150,17 +163,20 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
                     MERGE INTO rg_test_suite_stability_authority_cohort_members (
                         scope_id, cohort_id, instance_id, startup_id, artifact_fingerprint,
                         policy_fingerprint, protocol_version, authority_id, provider_type,
-                        trust_available, refresh_state, snapshot_fingerprint, active_key_count,
+                        trust_available, refresh_state, snapshot_fingerprint,
+                        serving_inventory_source_sequence,
+                        serving_inventory_generation_fingerprint, active_key_count,
                         last_successful_refresh_at, observed_at, lease_expires_at,
                         purge_after, record_fingerprint
                     ) KEY (scope_id, cohort_id, instance_id, startup_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     member.scopeId(), member.cohortId(), member.instanceId(), member.startupId(),
                     member.artifactFingerprint(), member.policyFingerprint(),
                     member.protocolVersion(), member.authorityId(), member.providerType(),
                     member.trustAvailable(), member.refreshState(),
-                    member.snapshotFingerprint(), member.activeKeyCount(),
+                    member.snapshotFingerprint(), member.servingInventorySourceSequence(),
+                    member.servingInventoryGenerationFingerprint(), member.activeKeyCount(),
                     timestamp(member.lastSuccessfulRefreshAt()), Timestamp.from(now),
                     Timestamp.from(leaseExpiresAt), Timestamp.from(purgeAfter),
                     recordFingerprint);
@@ -196,7 +212,9 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
         List<MemberRow> selected = jdbc.query("""
                 SELECT scope_id, cohort_id, instance_id, startup_id, artifact_fingerprint,
                        policy_fingerprint, protocol_version, authority_id, provider_type,
-                       trust_available, refresh_state, snapshot_fingerprint, active_key_count,
+                       trust_available, refresh_state, snapshot_fingerprint,
+                       serving_inventory_source_sequence,
+                       serving_inventory_generation_fingerprint, active_key_count,
                        last_successful_refresh_at, observed_at, lease_expires_at,
                        purge_after, record_fingerprint
                 FROM rg_test_suite_stability_authority_cohort_members
@@ -243,6 +261,10 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
                 blockers.add("INVENTORY_CORRUPT");
                 continue;
             }
+            if (!servingInventoryGenerationMatchesPolicy(row.member())) {
+                blockers.add("INVENTORY_CORRUPT");
+                continue;
+            }
             live.add(row);
         }
 
@@ -275,6 +297,13 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
         live.stream().map(row -> row.member().snapshotFingerprint())
                 .filter(value -> value.matches("sha256:[a-f0-9]{64}"))
                 .forEach(generations::add);
+        Set<String> servingInventoryGenerations = new HashSet<>();
+        if (policy.servingInventory().externallyAttested()) {
+            live.stream().map(MemberRow::member)
+                    .map(member -> member.servingInventorySourceSequence() + ":"
+                            + member.servingInventoryGenerationFingerprint())
+                    .forEach(servingInventoryGenerations::add);
+        }
 
         if (missing > 0) {
             blockers.add("MEMBER_MISSING");
@@ -306,6 +335,10 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
         if (!live.isEmpty() && generations.size() != 1) {
             blockers.add("SNAPSHOT_DIVERGED");
         }
+        if (!live.isEmpty() && policy.servingInventory().externallyAttested()
+                && servingInventoryGenerations.size() != 1) {
+            blockers.add("SERVING_INVENTORY_GENERATION_DIVERGED");
+        }
         List<String> exactBlockers = List.copyOf(blockers);
         boolean converged = exactBlockers.isEmpty()
                 && live.size() == expected.size() && healthy == expected.size();
@@ -315,7 +348,8 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
         return new Snapshot(
                 "bloge.testSuiteStabilityAuthorityCohortSnapshot.v1",
                 converged, status, expected.size(), live.size(), healthy,
-                generations.size(), missing, unexpected, duplicates,
+                generations.size(), servingInventoryGenerations.size(),
+                missing, unexpected, duplicates,
                 divergentArtifact, divergentPolicy, divergentProtocol,
                 divergentAuthority, now, nextExpiry, exactBlockers);
     }
@@ -330,10 +364,20 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
                 || !policyFingerprint.equals(member.policyFingerprint())
                 || !policy.protocolVersion().equals(member.protocolVersion())
                 || !policy.authorityId().equals(member.authorityId())
-                || !"DYNAMIC_JWKS_ED25519".equals(member.providerType())) {
+                || !"DYNAMIC_JWKS_ED25519".equals(member.providerType())
+                || !servingInventoryGenerationMatchesPolicy(member)) {
             throw new IllegalArgumentException(
                     "Cohort heartbeat does not match the local deployment policy");
         }
+    }
+
+    private boolean servingInventoryGenerationMatchesPolicy(Member member) {
+        if (policy.servingInventory().externallyAttested()) {
+            return member.servingInventorySourceSequence() > 0
+                    && !member.servingInventoryGenerationFingerprint().isBlank();
+        }
+        return member.servingInventorySourceSequence() == 0
+                && member.servingInventoryGenerationFingerprint().isBlank();
     }
 
     private boolean claimOrRenewActiveCohort(Instant now, Instant leaseExpiresAt) {
@@ -509,7 +553,10 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
                 result.getString("policy_fingerprint"), result.getString("protocol_version"),
                 result.getString("authority_id"), result.getString("provider_type"),
                 result.getBoolean("trust_available"), result.getString("refresh_state"),
-                result.getString("snapshot_fingerprint"), result.getLong("active_key_count"),
+                result.getString("snapshot_fingerprint"),
+                result.getLong("serving_inventory_source_sequence"),
+                result.getString("serving_inventory_generation_fingerprint"),
+                result.getLong("active_key_count"),
                 instant(result, "last_successful_refresh_at"),
                 instant(result, "observed_at"), instant(result, "lease_expires_at"),
                 instant(result, "purge_after"),
@@ -553,6 +600,8 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
             boolean trustAvailable,
             String refreshState,
             String snapshotFingerprint,
+            long servingInventorySourceSequence,
+            String servingInventoryGenerationFingerprint,
             long activeKeyCount,
             Instant lastSuccessfulRefreshAt,
             Instant observedAt,
@@ -561,11 +610,13 @@ public final class DatabaseTestSuiteStabilityAuthorityCohortRepository
             String recordFingerprint) {
 
         private Member member() {
-            return new Member("bloge.testSuiteStabilityAuthorityCohortMember.v1",
+            return new Member(Member.SCHEMA_VERSION,
                     scopeId, cohortId, instanceId, startupId,
                     artifactFingerprint, policyFingerprint,
                     protocolVersion, authorityId, providerType, trustAvailable, refreshState,
-                    snapshotFingerprint, activeKeyCount, lastSuccessfulRefreshAt);
+                    snapshotFingerprint, servingInventorySourceSequence,
+                    servingInventoryGenerationFingerprint, activeKeyCount,
+                    lastSuccessfulRefreshAt);
         }
 
         private boolean valid(

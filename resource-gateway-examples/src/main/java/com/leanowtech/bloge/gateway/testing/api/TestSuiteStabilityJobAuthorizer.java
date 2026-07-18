@@ -24,8 +24,11 @@ public interface TestSuiteStabilityJobAuthorizer {
             "trustCohortStatus", "trustCohortExpectedReplicaCount",
             "trustCohortLiveReplicaCount", "trustCohortHealthyReplicaCount",
             "trustCohortDistinctSnapshotCount", "trustCohortLeaseDurationSeconds",
+            "trustCohortDistinctServingInventoryGenerationCount",
             "trustCohortDatabaseAuthority", "trustCohortExactConfiguredInventory",
-            "trustCohortExternallyAttestedInventory");
+            "trustCohortExternallyAttestedInventory",
+            "trustCohortDynamicallyRefreshedInventory",
+            "trustCohortWitnessedInventoryPublications");
 
     /**
      * Key-free deployment readiness descriptor for capability and startup diagnostics.

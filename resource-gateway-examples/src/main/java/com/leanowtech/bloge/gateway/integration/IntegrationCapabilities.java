@@ -672,13 +672,27 @@ public record IntegrationCapabilities(
                         && authority.properties().get("trustCohortHealthyReplicaCount")
                         instanceof Number healthy && healthy.intValue() == expected.intValue()
                         && authority.properties().get("trustCohortDistinctSnapshotCount")
-                        instanceof Number generations && generations.intValue() == 1);
+                        instanceof Number generations && generations.intValue() == 1
+                        && (!Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortExternallyAttestedInventory"))
+                        || authority.properties().get(
+                        "trustCohortDistinctServingInventoryGenerationCount")
+                        instanceof Number inventoryGenerations
+                        && inventoryGenerations.intValue() == 1));
         features.put("externallyAttestedSuiteStabilityServingInventory",
                 testExecutionEndpointEnabled
                         && Boolean.TRUE.equals(authority.properties().get(
                         "trustCohortConfigured"))
                         && Boolean.TRUE.equals(authority.properties().get(
                         "trustCohortExternallyAttestedInventory")));
+        features.put("dynamicSuiteStabilityServingInventory",
+                testExecutionEndpointEnabled
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortDynamicallyRefreshedInventory")));
+        features.put("witnessedSuiteStabilityServingInventoryPublications",
+                testExecutionEndpointEnabled
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortWitnessedInventoryPublications")));
         features.put("asyncSuiteStabilityJobQuery", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellation", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellationSemanticAudit",

@@ -153,7 +153,17 @@ Independent-store settings:
 | `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.accepted-policy-fingerprints` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_POLICY_FINGERPRINTS` | comma-separated 1..32 canonical SHA-256 values |
 | `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.signature-threshold` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD` | distinct authority M-of-N threshold, 1..32 |
 | `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.authority-keys-json` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_AUTHORITY_KEYS_JSON` | public Ed25519 keys only; strict JSON array |
-| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.inventory-json` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON` | strict signed inventory envelope v1 |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.inventory-json` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON` | strict static envelope v1; test fallback only and forbidden with remote mode |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_ENABLED` | `false`; required for a staging cohort |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.required` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_REQUIRED` | `false` in test, `true` in staging |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.uri` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_URI` | strict publication v1 endpoint; HTTPS required |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.refresh-interval-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_REFRESH_SECONDS` | `30`; 1..3600 |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.request-timeout-ms` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_TIMEOUT_MS` | `3000`; 100..30000 |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.maximum-snapshot-age-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_MAXIMUM_AGE_SECONDS` | `60`; 2..86400 and at least refresh plus timeout |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.allow-insecure-loopback` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.witness-domain` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_DOMAIN` | exact trust domain independent from deployment inventory trust |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.witness-signature-threshold` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD` | distinct witness M-of-N threshold, 1..32 |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.witness-authority-keys-json` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON` | strict public Ed25519 witness keys; must not overlap deployment authorities |
 | `gateway.testing.replay-payloads.maximum-retention-days` | `RG_TEST_REPLAY_MAX_RETENTION_DAYS` | `30` |
 | `gateway.testing.replay-payloads.sweep-interval-ms` | `RG_TEST_REPLAY_SWEEP_INTERVAL_MS` | `60000` |
 | `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |
@@ -3037,6 +3047,11 @@ the distinction through `testability.suiteStabilityJobSubmissionEnabled` and the
 `asyncSuiteStabilityJobProtocol`, `asyncSuiteStabilityJobSubmission`,
 `suiteStabilityCurrentAuthorityRevalidation`, `signedChallengeBoundSuiteStabilityAuthority`,
 `dynamicSuiteStabilityAuthorityTrust`, `suiteStabilityAuthorityTrustRefreshSlo`,
+`exactSuiteStabilityAuthorityTrustCohort`,
+`convergedSuiteStabilityAuthorityTrustCohort`,
+`externallyAttestedSuiteStabilityServingInventory`,
+`dynamicSuiteStabilityServingInventory`,
+`witnessedSuiteStabilityServingInventoryPublications`,
 `asyncSuiteStabilityJobQuery`, `asyncSuiteStabilityJobCancellation`, and
 `asyncSuiteStabilityJobCancellationSemanticAudit` feature flags. The strict
 request/response definitions live in
@@ -3044,10 +3059,14 @@ request/response definitions live in
 The private worker-to-PDP contract is separately versioned in
 [`suite-stability-authority-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json);
 it is not a caller-facing testing endpoint.
+The dynamic serving-inventory publication is separately versioned in
+[`suite-stability-serving-inventory-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-publication-v1.schema.json).
 Implementation evidence and deliberately unclaimed guarantees are recorded in
 [Stage 5 current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
 Dynamic refresh invariants, health semantics and deliberately unclaimed fleet guarantees are in
 [Stage 5 dynamic authority trust verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-authority-trust-verification.md).
+Signed membership, revocation, witness, and cross-replica generation invariants are recorded in
+[Stage 5 dynamic serving-inventory verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-serving-inventory-verification.md).
 
 The standalone Java test-kit exposes the same protocol without depending on Resource Gateway
 server classes:

@@ -198,11 +198,17 @@ claim, and post-claim reauthorization remain closed until the exact expected ins
 live, healthy, on one artifact/protocol/policy, and observing one complete JWKS generation. A stable
 scope elects only one live deployment cohort, so overlapping rollouts cannot each self-admit. This
 can retain local configured inventory in the `test` profile. Staging additionally requires an
-M-of-N Ed25519-signed deployment serving inventory; its revision, material/policy fingerprints,
-expiry, exact set, artifact, scope, cohort, and protocol are bound into the policy. A durable
-stable-scope revision floor rejects rollback and same-revision forks. The optional local instance
-list is only an equality assertion in signed mode. Scope, cohort, signed-inventory trust, and lease
-settings are checked by `scripts/visual-canvas-demo.sh` before staging startup. A deployment may
+M-of-N Ed25519-signed deployment serving inventory delivered through a strictly versioned HTTPS
+publication. Deployment authorities sign `ACTIVE`/`REVOKED` state and an independent witness domain
+signs the same sequence and predecessor chain. Atomic ETag refresh, hard source age, signed expiry,
+revocation, protocol downgrade, chain ambiguity, and refresh failure all fail closed. Every live
+cohort member must also publish one identical private publication/witness generation before
+convergence. The nested inventory revision, material/policy fingerprints, expiry, exact set,
+artifact, scope, cohort, and protocol remain bound into policy; a durable stable-scope revision floor
+rejects rollback and same-revision forks. The optional local instance list is only an equality
+assertion. Static document injection remains a `test` fallback and is forbidden with staging remote
+mode. Scope, cohort, inventory/witness trust, remote freshness, and lease settings are checked by
+`scripts/visual-canvas-demo.sh` before staging startup. A deployment may
 instead contribute one custom
 `TestSuiteStabilityJobAuthorizer` with a ready key-free descriptor. There is no allow-all fallback:
 zero providers, multiple providers, an undeclared provider, missing trust, unsafe URI, or invalid
@@ -224,7 +230,9 @@ not infer executability merely because the routes or Schema exist. Cohort deploy
 `exactSuiteStabilityAuthorityTrustCohort` and the current-state
 `convergedSuiteStabilityAuthorityTrustCohort`; descriptors and health contain aggregate counts and
 status only. `externallyAttestedSuiteStabilityServingInventory` separately proves that the expected
-set comes from a currently verified external attestation. None expose instance ids, cohort ids,
+set comes from a currently verified external attestation;
+`dynamicSuiteStabilityServingInventory` and
+`witnessedSuiteStabilityServingInventoryPublications` describe the stronger refresh protocol. None expose instance ids, cohort ids,
 inventory ids, endpoints, key ids, signatures, or trust fingerprints. The private authority request
 excludes credentials, correlation id,
 execution metadata, fixture/context/payload and node output. HTTP denial, redirect, timeout,

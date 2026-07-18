@@ -135,13 +135,17 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
             return new Descriptor(Descriptor.SCHEMA_VERSION, true, snapshot.converged(),
                     snapshot.status(), snapshot.expectedReplicaCount(),
                     snapshot.liveReplicaCount(), snapshot.healthyReplicaCount(),
-                    snapshot.distinctSnapshotCount(), policy.leaseDuration().toSeconds(),
+                    snapshot.distinctSnapshotCount(),
+                    snapshot.distinctServingInventoryGenerationCount(),
+                    policy.leaseDuration().toSeconds(),
                     true, true,
-                    policy.servingInventory().externallyAttested());
+                    policy.servingInventory().externallyAttested(),
+                    dynamicServingInventory(), dynamicServingInventory());
         } catch (RuntimeException storeUnavailable) {
             return Descriptor.unavailable(policy.expectedInstanceIds().size(),
                     policy.leaseDuration().toSeconds(),
-                    policy.servingInventory().externallyAttested());
+                    policy.servingInventory().externallyAttested(),
+                    dynamicServingInventory(), dynamicServingInventory());
         }
     }
 
@@ -155,7 +159,8 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
                     trustStore.cohortObservation();
             TestSuiteStabilityServingInventoryAuthority.Observation inventory =
                     requireCurrentInventory();
-            TestSuiteStabilityAuthorityCohortRepository.Member member = member(observation);
+            TestSuiteStabilityAuthorityCohortRepository.Member member =
+                    member(observation, inventory);
             repository.heartbeat(member);
             publishedObservationFingerprint = observationFingerprint(observation, inventory);
             failureLogged.set(false);
@@ -194,14 +199,16 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
     }
 
     private TestSuiteStabilityAuthorityCohortRepository.Member member(
-            DynamicJwksTestSuiteStabilityAuthorityTrustStore.CohortObservation observation) {
+            DynamicJwksTestSuiteStabilityAuthorityTrustStore.CohortObservation observation,
+            TestSuiteStabilityServingInventoryAuthority.Observation inventory) {
         return new TestSuiteStabilityAuthorityCohortRepository.Member(
-                "bloge.testSuiteStabilityAuthorityCohortMember.v1",
+                TestSuiteStabilityAuthorityCohortRepository.Member.SCHEMA_VERSION,
                 policy.scopeId(), policy.cohortId(), policy.instanceId(), policy.startupId(),
                 policy.artifactFingerprint(), policyFingerprint,
                 policy.protocolVersion(), policy.authorityId(),
                 "DYNAMIC_JWKS_ED25519", observation.available(),
                 observation.refreshState(), observation.snapshotFingerprint(),
+                inventory.sourceSequence(), inventory.sourceGenerationFingerprint(),
                 observation.activeKeyCount(), observation.lastSuccessfulRefreshAt());
     }
 
@@ -218,6 +225,9 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
                 Map.entry("servingInventoryConfigured", inventory.configured()),
                 Map.entry("servingInventoryAvailable", inventory.available()),
                 Map.entry("servingInventoryRevision", inventory.revision()),
+                Map.entry("servingInventorySourceSequence", inventory.sourceSequence()),
+                Map.entry("servingInventorySourceGenerationFingerprint",
+                        inventory.sourceGenerationFingerprint()),
                 Map.entry("servingInventoryMaterialFingerprint",
                         inventory.materialFingerprint()),
                 Map.entry("policyFingerprint", policyFingerprint)));
@@ -265,9 +275,15 @@ public final class TestSuiteStabilityAuthorityCohortMonitor
 
     private Descriptor unavailable(String status) {
         return new Descriptor(Descriptor.SCHEMA_VERSION, true, false, status,
-                policy.expectedInstanceIds().size(), 0, 0, 0,
+                policy.expectedInstanceIds().size(), 0, 0, 0, 0,
                 policy.leaseDuration().toSeconds(), true, true,
-                policy.servingInventory().externallyAttested());
+                policy.servingInventory().externallyAttested(),
+                dynamicServingInventory(), dynamicServingInventory());
+    }
+
+    private boolean dynamicServingInventory() {
+        return DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE.equals(
+                policy.servingInventory().sourceType());
     }
 
     private ScheduledThreadPoolExecutor scheduler() {

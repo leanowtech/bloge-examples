@@ -33,6 +33,8 @@ public interface TestSuiteStabilityAuthorityCohortRepository {
      * @param trustAvailable local hard-fence readiness
      * @param refreshState local refresh state
      * @param snapshotFingerprint complete public trust-generation identity
+     * @param servingInventorySourceSequence signed inventory publication generation
+     * @param servingInventoryGenerationFingerprint private publication/witness identity
      * @param activeKeyCount active local verification-key count
      * @param lastSuccessfulRefreshAt last complete local refresh publication
      */
@@ -50,8 +52,14 @@ public interface TestSuiteStabilityAuthorityCohortRepository {
             boolean trustAvailable,
             String refreshState,
             String snapshotFingerprint,
+            long servingInventorySourceSequence,
+            String servingInventoryGenerationFingerprint,
             long activeKeyCount,
             Instant lastSuccessfulRefreshAt) {
+
+        /** Current persisted heartbeat generation. */
+        public static final String SCHEMA_VERSION =
+                "bloge.testSuiteStabilityAuthorityCohortMember.v2";
 
         private static final Pattern IDENTIFIER =
                 Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
@@ -71,7 +79,14 @@ public interface TestSuiteStabilityAuthorityCohortRepository {
             providerType = normalized(providerType);
             refreshState = normalized(refreshState);
             snapshotFingerprint = normalized(snapshotFingerprint);
-            if (!"bloge.testSuiteStabilityAuthorityCohortMember.v1".equals(schemaVersion)
+            servingInventoryGenerationFingerprint = normalized(
+                    servingInventoryGenerationFingerprint);
+            boolean inventoryGenerationValid = servingInventorySourceSequence == 0
+                    && servingInventoryGenerationFingerprint.isEmpty()
+                    || servingInventorySourceSequence > 0
+                    && FINGERPRINT.matcher(
+                    servingInventoryGenerationFingerprint).matches();
+            if (!SCHEMA_VERSION.equals(schemaVersion)
                     || !IDENTIFIER.matcher(scopeId).matches()
                     || !IDENTIFIER.matcher(cohortId).matches()
                     || !IDENTIFIER.matcher(instanceId).matches()
@@ -82,6 +97,7 @@ public interface TestSuiteStabilityAuthorityCohortRepository {
                     || !IDENTIFIER.matcher(authorityId).matches()
                     || !"DYNAMIC_JWKS_ED25519".equals(providerType)
                     || refreshState.isBlank()
+                    || !inventoryGenerationValid
                     || activeKeyCount < 0 || activeKeyCount > 64
                     || trustAvailable && (!"HEALTHY".equals(refreshState)
                     || !FINGERPRINT.matcher(snapshotFingerprint).matches()
@@ -102,6 +118,7 @@ public interface TestSuiteStabilityAuthorityCohortRepository {
      * @param liveReplicaCount unexpired process-start rows
      * @param healthyReplicaCount live rows satisfying local trust readiness
      * @param distinctSnapshotCount distinct live trust-generation fingerprints
+     * @param distinctServingInventoryGenerationCount distinct signed publication generations
      * @param missingReplicaCount configured slots with no live process
      * @param unexpectedReplicaCount live slots absent from configured inventory
      * @param duplicateReplicaCount configured slots with multiple live process starts
@@ -121,6 +138,7 @@ public interface TestSuiteStabilityAuthorityCohortRepository {
             int liveReplicaCount,
             int healthyReplicaCount,
             int distinctSnapshotCount,
+            int distinctServingInventoryGenerationCount,
             int missingReplicaCount,
             int unexpectedReplicaCount,
             int duplicateReplicaCount,
@@ -144,6 +162,8 @@ public interface TestSuiteStabilityAuthorityCohortRepository {
                     && liveReplicaCount >= 0 && liveReplicaCount <= maximumRows
                     && healthyReplicaCount >= 0 && healthyReplicaCount <= liveReplicaCount
                     && distinctSnapshotCount >= 0 && distinctSnapshotCount <= liveReplicaCount
+                    && distinctServingInventoryGenerationCount >= 0
+                    && distinctServingInventoryGenerationCount <= liveReplicaCount
                     && missingReplicaCount >= 0 && missingReplicaCount <= expectedReplicaCount
                     && unexpectedReplicaCount >= 0 && unexpectedReplicaCount <= liveReplicaCount
                     && duplicateReplicaCount >= 0

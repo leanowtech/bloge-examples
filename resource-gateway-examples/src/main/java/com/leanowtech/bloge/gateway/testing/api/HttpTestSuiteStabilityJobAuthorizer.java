@@ -212,13 +212,19 @@ public final class HttpTestSuiteStabilityJobAuthorizer
                 Map.entry("trustCohortHealthyReplicaCount", cohort.healthyReplicaCount()),
                 Map.entry("trustCohortDistinctSnapshotCount",
                         cohort.distinctSnapshotCount()),
+                Map.entry("trustCohortDistinctServingInventoryGenerationCount",
+                        cohort.distinctServingInventoryGenerationCount()),
                 Map.entry("trustCohortLeaseDurationSeconds",
                         cohort.leaseDurationSeconds()),
                 Map.entry("trustCohortDatabaseAuthority", cohort.databaseAuthority()),
                 Map.entry("trustCohortExactConfiguredInventory",
                         cohort.exactConfiguredInventory()),
                 Map.entry("trustCohortExternallyAttestedInventory",
-                        cohort.externallyAttestedInventory())));
+                        cohort.externallyAttestedInventory()),
+                Map.entry("trustCohortDynamicallyRefreshedInventory",
+                        cohort.dynamicallyRefreshedInventory()),
+                Map.entry("trustCohortWitnessedInventoryPublications",
+                        cohort.witnessedInventoryPublications())));
     }
 
     private ExchangeResult exchange(

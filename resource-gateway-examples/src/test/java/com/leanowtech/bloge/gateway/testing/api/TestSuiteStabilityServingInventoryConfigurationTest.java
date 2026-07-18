@@ -52,6 +52,17 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
                 .hasMessageContaining("inventories disagree");
     }
 
+    @Test
+    void dynamicWitnessedSourceCanBeRequiredAndCannotMixWithStaticDocument() {
+        assertThatThrownBy(() -> configuredAuthority(false, true, ""))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires dynamic witnessed serving inventory");
+
+        assertThatThrownBy(() -> configuredAuthority(true, true, "{}"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cannot also use a static inventory document");
+    }
+
     private TestSuiteStabilityAuthorityCohortPolicy policy(
             ObjectProvider<TestSuiteStabilityServingInventoryAuthority> provider,
             String configuredInstances,
@@ -66,10 +77,24 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
     private static TestSuiteStabilityServingInventoryAuthority.Observation observation() {
         return new TestSuiteStabilityServingInventoryAuthority.Observation(
                 TestSuiteStabilityServingInventoryAuthority.Observation.SCHEMA_VERSION,
-                true, true, true, "VERIFIED", "STATIC_SIGNED_ED25519_M_OF_N", 17,
+                true, true, true, "VERIFIED", "STATIC_SIGNED_ED25519_M_OF_N",
+                17, "sha256:" + "c".repeat(64), 17,
                 "sha256:" + "c".repeat(64), "sha256:" + "d".repeat(64),
                 List.of("replica-a", "replica-b"),
                 Instant.parse("2026-07-20T00:00:00Z"), 2, 2);
+    }
+
+    private TestSuiteStabilityServingInventoryAuthority configuredAuthority(
+            boolean remoteEnabled,
+            boolean remoteRequired,
+            String inventoryJson) {
+        return configuration.testSuiteStabilityServingInventoryAuthority(
+                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules(),
+                "inventory.example", "sha256:" + "b".repeat(64), 1, "[]",
+                inventoryJson, remoteEnabled, remoteRequired,
+                "https://inventory.example/v1/current", 30, 3000, 60, false,
+                "inventory-witness.example", 1, "[]",
+                "scope-a", "cohort-a", "replica-a", "sha256:" + "f".repeat(64));
     }
 
     @SuppressWarnings("unchecked")

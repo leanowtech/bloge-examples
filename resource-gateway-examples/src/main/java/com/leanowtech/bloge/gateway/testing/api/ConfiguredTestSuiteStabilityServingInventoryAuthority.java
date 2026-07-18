@@ -190,6 +190,7 @@ public final class ConfiguredTestSuiteStabilityServingInventoryAuthority
         }
         return new Observation(Observation.SCHEMA_VERSION, true, true, available,
                 status, "STATIC_SIGNED_ED25519_M_OF_N", material.revision(),
+                materialFingerprint, material.revision(),
                 materialFingerprint, material.policyFingerprint(),
                 material.expectedInstanceIds(), material.expiresAt(),
                 validSignatureCount, signatureThreshold);
@@ -276,39 +277,56 @@ public final class ConfiguredTestSuiteStabilityServingInventoryAuthority
             throw new IllegalArgumentException(
                     "Serving inventory freshness or material identity is invalid");
         }
+        return verifyDetachedSignatures(keys, signatureThreshold,
+                inventory.signatures(), inventory.materialFingerprint(),
+                material.issuedAt(), material.expiresAt(), observedAt,
+                "Serving inventory");
+    }
+
+    static int verifyDetachedSignatures(
+            Map<String, AuthorityKey> keys,
+            int signatureThreshold,
+            List<TestSuiteStabilityServingInventory.AuthoritySignature> signatures,
+            String materialFingerprint,
+            Instant issuedAt,
+            Instant expiresAt,
+            Instant observedAt,
+            String label) {
         int valid = 0;
+        Set<String> authorities = new HashSet<>();
         for (TestSuiteStabilityServingInventory.AuthoritySignature signed
-                : inventory.signatures()) {
-            if (signed.signedAt().isBefore(material.issuedAt().minus(CLOCK_SKEW))
-                    || !signed.signedAt().isBefore(material.expiresAt())
+                : signatures == null
+                ? List.<TestSuiteStabilityServingInventory.AuthoritySignature>of()
+                : signatures) {
+            if (!authorities.add(signed.authorityId())
+                    || signed.signedAt().isBefore(issuedAt.minus(CLOCK_SKEW))
+                    || !signed.signedAt().isBefore(expiresAt)
                     || signed.signedAt().isAfter(observedAt.plus(CLOCK_SKEW))) {
-                throw new IllegalArgumentException(
-                        "Serving inventory signature time is invalid");
+                throw new IllegalArgumentException(label + " signature time is invalid");
             }
             AuthorityKey key = keys.get(signed.authorityId() + '\u0000' + signed.keyId());
             if (key == null || !key.activeAt(signed.signedAt())) {
                 continue;
             }
             try {
-                if (!verifySignature(key.publicKey(), inventory.materialFingerprint(),
+                if (!verifySignature(key.publicKey(), materialFingerprint,
                         signed.signature())) {
                     throw new IllegalArgumentException(
-                            "Serving inventory signature verification failed");
+                            label + " signature verification failed");
                 }
                 valid++;
             } catch (GeneralSecurityException invalid) {
                 throw new IllegalArgumentException(
-                        "Serving inventory signature verification failed", invalid);
+                        label + " signature verification failed", invalid);
             }
         }
         if (valid < signatureThreshold) {
-            throw new IllegalArgumentException(
-                    "Serving inventory authority threshold is not met");
+            throw new IllegalArgumentException(label + " authority threshold is not met");
         }
         return valid;
     }
 
-    private static Map<String, AuthorityKey> indexedKeys(
+    static Map<String, AuthorityKey> indexedKeys(
             List<AuthorityKey> authorityKeys, int threshold) {
         Map<String, AuthorityKey> indexed = new HashMap<>();
         Set<String> authorities = new HashSet<>();
@@ -327,7 +345,7 @@ public final class ConfiguredTestSuiteStabilityServingInventoryAuthority
         return Map.copyOf(indexed);
     }
 
-    private static Set<String> acceptedPolicies(Set<String> values) {
+    static Set<String> acceptedPolicies(Set<String> values) {
         Set<String> result = new HashSet<>();
         for (String value : values == null ? Set.<String>of() : values) {
             String normalized = normalized(value);
@@ -343,7 +361,7 @@ public final class ConfiguredTestSuiteStabilityServingInventoryAuthority
         return Set.copyOf(result);
     }
 
-    private static Set<String> parsePolicies(String values) {
+    static Set<String> parsePolicies(String values) {
         Set<String> result = new HashSet<>();
         for (String value : normalized(values).split(",", -1)) {
             String normalized = normalized(value);
@@ -355,7 +373,7 @@ public final class ConfiguredTestSuiteStabilityServingInventoryAuthority
         return result;
     }
 
-    private static List<AuthorityKey> parseKeys(
+    static List<AuthorityKey> parseKeys(
             ObjectMapper objectMapper, String authorityKeysJson)
             throws GeneralSecurityException, java.io.IOException {
         JsonNode root = objectMapper.readTree(normalized(authorityKeysJson));

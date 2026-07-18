@@ -76,6 +76,41 @@ class DatabaseTestSuiteStabilityAuthorityCohortRepositoryTest {
     }
 
     @Test
+    void initAdditivelyUpgradesPrePublicationGenerationMemberTable() {
+        database.jdbc().execute("""
+                CREATE TABLE rg_test_suite_stability_authority_cohort_members (
+                    scope_id VARCHAR(255) NOT NULL,
+                    cohort_id VARCHAR(255) NOT NULL,
+                    instance_id VARCHAR(255) NOT NULL,
+                    startup_id VARCHAR(36) NOT NULL,
+                    artifact_fingerprint VARCHAR(71) NOT NULL,
+                    policy_fingerprint VARCHAR(71) NOT NULL,
+                    protocol_version VARCHAR(255) NOT NULL,
+                    authority_id VARCHAR(255) NOT NULL,
+                    provider_type VARCHAR(64) NOT NULL,
+                    trust_available BOOLEAN NOT NULL,
+                    refresh_state VARCHAR(64) NOT NULL,
+                    snapshot_fingerprint VARCHAR(71) NOT NULL,
+                    active_key_count BIGINT NOT NULL,
+                    last_successful_refresh_at TIMESTAMP WITH TIME ZONE,
+                    observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    purge_after TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL,
+                    PRIMARY KEY (scope_id, cohort_id, instance_id, startup_id)
+                )
+                """);
+        TestSuiteStabilityAuthorityCohortPolicy policy = policy(
+                "replica-a", UUID.randomUUID().toString(), Set.of("replica-a"));
+
+        assertThat(repository(policy).heartbeat(member(policy, GENERATION_A, true)))
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.converged()).isTrue();
+                    assertThat(snapshot.distinctServingInventoryGenerationCount()).isZero();
+                });
+    }
+
+    @Test
     void duplicateProcessAndGenerationDriftFailClosedThenRecover() {
         TestSuiteStabilityAuthorityCohortPolicy policyA = policy(
                 "replica-a", UUID.randomUUID().toString(), Set.of("replica-a", "replica-b"));
@@ -109,6 +144,40 @@ class DatabaseTestSuiteStabilityAuthorityCohortRepositoryTest {
                 .contains("SNAPSHOT_DIVERGED");
         assertThat(repositoryB.heartbeat(member(policyB, GENERATION_A, true)).converged())
                 .isTrue();
+    }
+
+    @Test
+    void externallyAttestedPublicationGenerationMustConvergeAcrossReplicas() {
+        Set<String> expected = Set.of("replica-a", "replica-b");
+        TestSuiteStabilityAuthorityCohortPolicy policyA = attestedPolicy(
+                "publication-scope", "deployment-a", "replica-a",
+                UUID.randomUUID().toString(), expected, 17, "d");
+        TestSuiteStabilityAuthorityCohortPolicy policyB = attestedPolicy(
+                "publication-scope", "deployment-a", "replica-b",
+                UUID.randomUUID().toString(), expected, 17, "d");
+        var repositoryA = repository(policyA);
+        var repositoryB = repository(policyB);
+        String publicationA = "sha256:" + "e".repeat(64);
+        String publicationB = "sha256:" + "f".repeat(64);
+
+        repositoryA.heartbeat(member(
+                policyA, GENERATION_A, 41, publicationA, true));
+        assertThat(repositoryB.heartbeat(member(
+                policyB, GENERATION_A, 42, publicationB, true)))
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.converged()).isFalse();
+                    assertThat(snapshot.status())
+                            .isEqualTo("SERVING_INVENTORY_GENERATION_DIVERGED");
+                    assertThat(snapshot.distinctServingInventoryGenerationCount())
+                            .isEqualTo(2);
+                });
+
+        assertThat(repositoryB.heartbeat(member(
+                policyB, GENERATION_A, 41, publicationA, true)))
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.converged()).isTrue();
+                    assertThat(snapshot.distinctServingInventoryGenerationCount()).isOne();
+                });
     }
 
     @Test
@@ -433,6 +502,19 @@ class DatabaseTestSuiteStabilityAuthorityCohortRepositoryTest {
 
     private TestSuiteStabilityAuthorityCohortPolicy attestedPolicy(
             String scopeId, String cohortId, long revision, String fingerprintCharacter) {
+        return attestedPolicy(scopeId, cohortId, "replica-a",
+                UUID.randomUUID().toString(), Set.of("replica-a"),
+                revision, fingerprintCharacter);
+    }
+
+    private TestSuiteStabilityAuthorityCohortPolicy attestedPolicy(
+            String scopeId,
+            String cohortId,
+            String instanceId,
+            String startupId,
+            Set<String> expected,
+            long revision,
+            String fingerprintCharacter) {
         TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation attestation =
                 new TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation(
                         TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
@@ -442,8 +524,8 @@ class DatabaseTestSuiteStabilityAuthorityCohortRepositoryTest {
                         "sha256:" + "f".repeat(64),
                         Instant.parse("2026-08-01T00:00:00Z"));
         return new TestSuiteStabilityAuthorityCohortPolicy(
-                scopeId, cohortId, "replica-a", UUID.randomUUID().toString(), ARTIFACT,
-                Set.of("replica-a"), "iam.example",
+                scopeId, cohortId, instanceId, startupId, ARTIFACT,
+                expected, "iam.example",
                 ToolStudioResourceGatewayProtocol.VERSION,
                 Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1),
                 attestation);
@@ -465,13 +547,29 @@ class DatabaseTestSuiteStabilityAuthorityCohortRepositoryTest {
             TestSuiteStabilityAuthorityCohortPolicy policy,
             String generation,
             boolean available) {
+        TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation inventory =
+                policy.servingInventory();
+        return member(policy, generation,
+                inventory.externallyAttested() ? inventory.revision() : 0,
+                inventory.externallyAttested() ? inventory.materialFingerprint() : "",
+                available);
+    }
+
+    private TestSuiteStabilityAuthorityCohortRepository.Member member(
+            TestSuiteStabilityAuthorityCohortPolicy policy,
+            String generation,
+            long servingInventorySourceSequence,
+            String servingInventoryGenerationFingerprint,
+            boolean available) {
         return new TestSuiteStabilityAuthorityCohortRepository.Member(
-                "bloge.testSuiteStabilityAuthorityCohortMember.v1",
+                TestSuiteStabilityAuthorityCohortRepository.Member.SCHEMA_VERSION,
                 policy.scopeId(), policy.cohortId(), policy.instanceId(), policy.startupId(),
                 policy.artifactFingerprint(), policy.cohortFingerprint(objectMapper),
                 policy.protocolVersion(), policy.authorityId(), "DYNAMIC_JWKS_ED25519",
                 available, available ? "HEALTHY" : "UNAVAILABLE",
-                generation, available ? 1 : 0, available ? REFRESHED_AT : null);
+                generation, servingInventorySourceSequence,
+                servingInventoryGenerationFingerprint,
+                available ? 1 : 0, available ? REFRESHED_AT : null);
     }
 
     private String activeCohortFingerprint(

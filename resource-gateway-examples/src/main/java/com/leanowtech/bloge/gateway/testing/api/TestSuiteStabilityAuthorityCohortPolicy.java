@@ -151,7 +151,9 @@ public record TestSuiteStabilityAuthorityCohortPolicy(
             materialFingerprint = normalized(materialFingerprint);
             policyFingerprint = normalized(policyFingerprint);
             boolean external = externallyAttested
-                    && "STATIC_SIGNED_ED25519_M_OF_N".equals(sourceType)
+                    && ("STATIC_SIGNED_ED25519_M_OF_N".equals(sourceType)
+                    || DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE.equals(
+                    sourceType))
                     && revision > 0
                     && FINGERPRINT.matcher(materialFingerprint).matches()
                     && FINGERPRINT.matcher(policyFingerprint).matches()

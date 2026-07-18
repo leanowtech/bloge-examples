@@ -69,7 +69,14 @@ Environment:
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_POLICY_FINGERPRINTS  required accepted sha256 policies
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD  required; 1..32 authorities
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_AUTHORITY_KEYS_JSON  required public Ed25519 keys
-  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON  required signed exact inventory envelope
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_ENABLED  required true for staging cohort
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_URI  required HTTPS publication endpoint
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_REFRESH_SECONDS  default: 30; 1..3600
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_TIMEOUT_MS  default: 3000; 100..30000
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_MAXIMUM_AGE_SECONDS  default: 60; 2..86400
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_DOMAIN  required independent trust domain
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD  required; 1..32
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON  required independent public keys
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS  default: 10; 1..300
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS      default: 30; 3..900 and >= 3x heartbeat
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS  default: 86400; 3600..2592000
@@ -189,12 +196,24 @@ validate_profile_secrets() {
             echo "Staging authority cohort requires deployment-signed serving inventory." >&2
             return 1
         fi
+        if ! truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_ENABLED:-false}";
+            then
+            echo "Staging authority cohort requires dynamic witnessed inventory refresh." >&2
+            return 1
+        fi
         if [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_DOMAIN:-}" ] ||
             [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_POLICY_FINGERPRINTS:-}" ] ||
             [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD:-}" ] ||
             [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_AUTHORITY_KEYS_JSON:-}" ] ||
-            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON:-}" ]; then
-            echo "Signed serving inventory requires trust, policy, threshold, public keys, and envelope." >&2
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_URI:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_DOMAIN:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON:-}" ]; then
+            echo "Dynamic serving inventory requires deployment trust, HTTPS source, and independent witness trust." >&2
+            return 1
+        fi
+        if [ -n "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON:-}" ]; then
+            echo "Staging dynamic serving inventory must not also inject a static inventory document." >&2
             return 1
         fi
         if ! printf '%s' "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID}" |
@@ -277,13 +296,59 @@ validate_profile_secrets() {
                 return 1
                 ;;
         esac
-        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON}" in
-            \{*\}) ;;
+        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_URI}" in
+            https://*) ;;
             *)
-                echo "Signed serving inventory must be a JSON object." >&2
+                echo "Serving-inventory publication endpoint must use HTTPS." >&2
                 return 1
                 ;;
         esac
+        if ! printf '%s' "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_DOMAIN}" |
+            grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+            [ "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_DOMAIN}" =
+            "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_DOMAIN}" ]; then
+            echo "Witness trust domain must be valid and independent from inventory trust." >&2
+            return 1
+        fi
+        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD}" in
+            ''|*[!0-9]*)
+                echo "Invalid serving-inventory witness signature threshold." >&2
+                return 1
+                ;;
+        esac
+        if [ "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD}" -lt 1 ] ||
+            [ "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD}" -gt 32 ]; then
+            echo "Serving-inventory witness signature threshold must be 1..32." >&2
+            return 1
+        fi
+        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON}" in
+            \[*\]) ;;
+            *)
+                echo "Serving-inventory witness keys must be a JSON array." >&2
+                return 1
+                ;;
+        esac
+
+        local inventory_refresh_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_REFRESH_SECONDS:-30}"
+        local inventory_timeout_ms="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_TIMEOUT_MS:-3000}"
+        local inventory_maximum_age_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_MAXIMUM_AGE_SECONDS:-60}"
+        if printf '%s\n%s\n%s\n' "${inventory_refresh_seconds}" \
+            "${inventory_timeout_ms}" "${inventory_maximum_age_seconds}" |
+            grep -Eqv '^[1-9][0-9]*$'; then
+            echo "Serving-inventory refresh settings must be canonical positive integers." >&2
+            return 1
+        fi
+        if [ "${inventory_refresh_seconds}" -lt 1 ] ||
+            [ "${inventory_refresh_seconds}" -gt 3600 ] ||
+            [ "${inventory_timeout_ms}" -lt 100 ] ||
+            [ "${inventory_timeout_ms}" -gt 30000 ] ||
+            [ "${inventory_maximum_age_seconds}" -lt 2 ] ||
+            [ "${inventory_maximum_age_seconds}" -gt 86400 ] ||
+            [ $((inventory_maximum_age_seconds * 1000)) -lt \
+            $((inventory_refresh_seconds * 1000 + inventory_timeout_ms)) ]; then
+            echo "Serving-inventory maximum age must cover valid refresh and timeout bounds." >&2
+            return 1
+        fi
 
         local heartbeat_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS:-10}"
         local lease_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS:-30}"

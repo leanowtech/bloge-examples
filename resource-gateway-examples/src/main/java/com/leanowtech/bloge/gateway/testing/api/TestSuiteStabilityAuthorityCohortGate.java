@@ -25,10 +25,13 @@ public interface TestSuiteStabilityAuthorityCohortGate {
      * @param liveReplicaCount current database-live process count
      * @param healthyReplicaCount live locally healthy process count
      * @param distinctSnapshotCount distinct trust-generation count
+     * @param distinctServingInventoryGenerationCount distinct inventory publication generations
      * @param leaseDurationSeconds database liveness lease
      * @param databaseAuthority whether liveness uses database time
      * @param exactConfiguredInventory whether unexpected or missing members block readiness
      * @param externallyAttestedInventory whether independent signatures establish expected members
+     * @param dynamicallyRefreshedInventory whether signed freshness/revocation is remotely refreshed
+     * @param witnessedInventoryPublications whether an independent signer witnesses publication order
      */
     record Descriptor(
             String schemaVersion,
@@ -39,10 +42,13 @@ public interface TestSuiteStabilityAuthorityCohortGate {
             int liveReplicaCount,
             int healthyReplicaCount,
             int distinctSnapshotCount,
+            int distinctServingInventoryGenerationCount,
             long leaseDurationSeconds,
             boolean databaseAuthority,
             boolean exactConfiguredInventory,
-            boolean externallyAttestedInventory) {
+            boolean externallyAttestedInventory,
+            boolean dynamicallyRefreshedInventory,
+            boolean witnessedInventoryPublications) {
 
         public static final String SCHEMA_VERSION =
                 "bloge.testSuiteStabilityAuthorityCohortDescriptor.v1";
@@ -59,13 +65,19 @@ public interface TestSuiteStabilityAuthorityCohortGate {
                     || liveReplicaCount < 0 || liveReplicaCount > maximum
                     || healthyReplicaCount < 0 || healthyReplicaCount > liveReplicaCount
                     || distinctSnapshotCount < 0 || distinctSnapshotCount > liveReplicaCount
+                    || distinctServingInventoryGenerationCount < 0
+                    || distinctServingInventoryGenerationCount > liveReplicaCount
                     || leaseDurationSeconds < 0 || leaseDurationSeconds > 900
                     || available && configured && (!"CONVERGED".equals(status)
                     || expectedReplicaCount == 0
                     || liveReplicaCount != expectedReplicaCount
                     || healthyReplicaCount != expectedReplicaCount
                     || distinctSnapshotCount != 1
+                    || externallyAttestedInventory
+                    && distinctServingInventoryGenerationCount != 1
                     || !databaseAuthority || !exactConfiguredInventory)
+                    || dynamicallyRefreshedInventory && !externallyAttestedInventory
+                    || witnessedInventoryPublications && !dynamicallyRefreshedInventory
                     || !configured && (!available || !"LOCAL_ONLY".equals(status))) {
                 throw new IllegalArgumentException(
                         "Invalid stability authority cohort descriptor");
@@ -75,7 +87,7 @@ public interface TestSuiteStabilityAuthorityCohortGate {
         /** @return disabled non-network local gate */
         public static Descriptor localOnly() {
             return new Descriptor(SCHEMA_VERSION, false, true, "LOCAL_ONLY",
-                    0, 0, 0, 0, 0, false, false, false);
+                    0, 0, 0, 0, 0, 0, false, false, false, false, false);
         }
 
         /** @return configured fail-closed descriptor when the store cannot be read */
@@ -83,9 +95,21 @@ public interface TestSuiteStabilityAuthorityCohortGate {
                 int expectedReplicaCount,
                 long leaseSeconds,
                 boolean externallyAttestedInventory) {
+            return unavailable(expectedReplicaCount, leaseSeconds,
+                    externallyAttestedInventory, false, false);
+        }
+
+        /** @return configured fail-closed descriptor preserving source semantics */
+        public static Descriptor unavailable(
+                int expectedReplicaCount,
+                long leaseSeconds,
+                boolean externallyAttestedInventory,
+                boolean dynamicallyRefreshedInventory,
+                boolean witnessedInventoryPublications) {
             return new Descriptor(SCHEMA_VERSION, true, false, "STORE_UNAVAILABLE",
-                    expectedReplicaCount, 0, 0, 0, leaseSeconds, true, true,
-                    externallyAttestedInventory);
+                    expectedReplicaCount, 0, 0, 0, 0, leaseSeconds, true, true,
+                    externallyAttestedInventory, dynamicallyRefreshedInventory,
+                    witnessedInventoryPublications);
         }
     }
 

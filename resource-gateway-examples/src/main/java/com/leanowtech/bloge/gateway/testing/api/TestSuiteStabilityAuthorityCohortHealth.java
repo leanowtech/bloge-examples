@@ -34,12 +34,18 @@ public final class TestSuiteStabilityAuthorityCohortHealth implements HealthIndi
                     Map.entry("liveReplicaCount", descriptor.liveReplicaCount()),
                     Map.entry("healthyReplicaCount", descriptor.healthyReplicaCount()),
                     Map.entry("distinctSnapshotCount", descriptor.distinctSnapshotCount()),
+                    Map.entry("distinctServingInventoryGenerationCount",
+                            descriptor.distinctServingInventoryGenerationCount()),
                     Map.entry("leaseDurationSeconds", descriptor.leaseDurationSeconds()),
                     Map.entry("databaseAuthority", descriptor.databaseAuthority()),
                     Map.entry("exactConfiguredInventory",
                             descriptor.exactConfiguredInventory()),
                     Map.entry("externallyAttestedInventory",
-                            descriptor.externallyAttestedInventory()));
+                            descriptor.externallyAttestedInventory()),
+                    Map.entry("dynamicallyRefreshedInventory",
+                            descriptor.dynamicallyRefreshedInventory()),
+                    Map.entry("witnessedInventoryPublications",
+                            descriptor.witnessedInventoryPublications()));
             return (descriptor.available() ? Health.up() : Health.down())
                     .withDetails(details).build();
         } catch (RuntimeException unavailable) {

@@ -4,11 +4,19 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /** Independent deployment authority for an exact suite-stability serving inventory. */
 @FunctionalInterface
 public interface TestSuiteStabilityServingInventoryAuthority {
+
+    /** Closed key-free descriptor vocabulary shared by static and dynamic adapters. */
+    Set<String> DESCRIPTOR_PROPERTIES = Set.of(
+            "sourceType", "privateMaterialPresent", "automaticRefresh", "refreshState",
+            "refreshIntervalSeconds", "maximumSnapshotAgeSeconds", "conditionalRequests",
+            "failClosedOnRefreshFailure", "signedRevocation", "witnessedPublications",
+            "protocolVersion", "witnessSignatureThreshold");
 
     /** @return current verified inventory state without network or database I/O */
     Observation observation();
@@ -37,6 +45,8 @@ public interface TestSuiteStabilityServingInventoryAuthority {
      * @param available whether the attestation is currently valid
      * @param status stable bounded state
      * @param sourceType authority implementation type
+     * @param sourceSequence monotonic source publication generation, or zero in local mode
+     * @param sourceGenerationFingerprint private publication/witness generation identity
      * @param revision externally monotonic revision, or zero in local mode
      * @param materialFingerprint signed material identity, blank in local mode
      * @param policyFingerprint external policy identity, blank in local mode
@@ -52,6 +62,8 @@ public interface TestSuiteStabilityServingInventoryAuthority {
             boolean available,
             String status,
             String sourceType,
+            long sourceSequence,
+            String sourceGenerationFingerprint,
             long revision,
             String materialFingerprint,
             String policyFingerprint,
@@ -70,11 +82,14 @@ public interface TestSuiteStabilityServingInventoryAuthority {
             schemaVersion = normalized(schemaVersion);
             status = normalized(status);
             sourceType = normalized(sourceType);
+            sourceGenerationFingerprint = normalized(sourceGenerationFingerprint);
             materialFingerprint = normalized(materialFingerprint);
             policyFingerprint = normalized(policyFingerprint);
             expectedInstanceIds = expectedInstanceIds == null
                     ? List.of() : List.copyOf(expectedInstanceIds);
             boolean signedShape = configured && externallyAttested
+                    && sourceSequence > 0
+                    && FINGERPRINT.matcher(sourceGenerationFingerprint).matches()
                     && revision > 0
                     && FINGERPRINT.matcher(materialFingerprint).matches()
                     && FINGERPRINT.matcher(policyFingerprint).matches()
@@ -83,12 +98,14 @@ public interface TestSuiteStabilityServingInventoryAuthority {
                     && requiredSignatureCount > 0
                     && validSignatureCount >= requiredSignatureCount;
             boolean localShape = !configured && !externallyAttested && available
-                    && "LOCAL_CONFIGURED".equals(status) && revision == 0
+                    && "LOCAL_CONFIGURED".equals(status) && sourceSequence == 0
+                    && sourceGenerationFingerprint.isEmpty() && revision == 0
                     && materialFingerprint.isEmpty() && policyFingerprint.isEmpty()
                     && expectedInstanceIds.isEmpty() && expiresAt == null
                     && validSignatureCount == 0 && requiredSignatureCount == 0;
             if (!SCHEMA_VERSION.equals(schemaVersion) || status.isBlank()
                     || sourceType.isBlank() || validSignatureCount < 0
+                    || sourceSequence < 0
                     || requiredSignatureCount < 0 || validSignatureCount > 32
                     || requiredSignatureCount > 32
                     || !(signedShape || localShape)) {
@@ -100,7 +117,7 @@ public interface TestSuiteStabilityServingInventoryAuthority {
         /** @return backward-compatible local configured mode */
         public static Observation localOnly() {
             return new Observation(SCHEMA_VERSION, false, false, true,
-                    "LOCAL_CONFIGURED", "LOCAL_CONFIGURED", 0,
+                    "LOCAL_CONFIGURED", "LOCAL_CONFIGURED", 0, "", 0,
                     "", "", List.of(), null, 0, 0);
         }
     }
@@ -142,10 +159,26 @@ public interface TestSuiteStabilityServingInventoryAuthority {
                     || configured != externallyAttested
                     || configured && (expectedReplicaCount < 1 || revision < 1)
                     || !configured && (!available || expectedReplicaCount != 0
-                    || revision != 0)) {
+                    || revision != 0)
+                    || !DESCRIPTOR_PROPERTIES.containsAll(properties.keySet())
+                    || properties.size() > DESCRIPTOR_PROPERTIES.size()
+                    || properties.entrySet().stream().anyMatch(entry ->
+                    !safeDescriptorValue(entry.getValue()))) {
                 throw new IllegalArgumentException(
                         "Suite-stability serving inventory descriptor is invalid");
             }
+        }
+
+        private static boolean safeDescriptorValue(Object value) {
+            if (value instanceof Boolean) {
+                return true;
+            }
+            if (value instanceof Number number) {
+                long numeric = number.longValue();
+                return numeric >= 0 && numeric <= 86_400;
+            }
+            return value instanceof String text && !text.isBlank() && text.length() <= 128
+                    && text.chars().noneMatch(Character::isISOControl);
         }
     }
 

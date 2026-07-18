@@ -222,10 +222,13 @@
         "trustCohortLiveReplicaCount": { "type": "integer", "minimum": 0, "maximum": 512 },
         "trustCohortHealthyReplicaCount": { "type": "integer", "minimum": 0, "maximum": 512 },
         "trustCohortDistinctSnapshotCount": { "type": "integer", "minimum": 0, "maximum": 512 },
+        "trustCohortDistinctServingInventoryGenerationCount": { "type": "integer", "minimum": 0, "maximum": 512 },
         "trustCohortLeaseDurationSeconds": { "type": "integer", "minimum": 0, "maximum": 900 },
         "trustCohortDatabaseAuthority": { "type": "boolean" },
         "trustCohortExactConfiguredInventory": { "type": "boolean" },
-        "trustCohortExternallyAttestedInventory": { "type": "boolean" }
+        "trustCohortExternallyAttestedInventory": { "type": "boolean" },
+        "trustCohortDynamicallyRefreshedInventory": { "type": "boolean" },
+        "trustCohortWitnessedInventoryPublications": { "type": "boolean" }
       }
     },
     "authorizerDescriptor": {

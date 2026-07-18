@@ -1,5 +1,10 @@
 # Stage 5 Suite-Stability Signed Serving-Inventory Verification
 
+> Successor note: restart-free refresh, signed revocation, strict HTTPS version negotiation,
+> independent witness checkpoints, and cross-replica publication-generation convergence are now
+> implemented in
+> [Stage 5 dynamic serving-inventory verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-serving-inventory-verification.md).
+
 ## Decision
 
 The exact authority cohort previously trusted a replica-local list of expected instance ids. That
@@ -166,5 +171,7 @@ Spring Boot JAR.
 5. Database floor behavior is implemented and tested on the example datastore; non-H2 dialect,
    backup/restore rollback, cross-region failover, and disaster-recovery certification remain open.
 
-The next root-cause increment is a refreshable, fail-closed inventory source with explicit
-revocation, version negotiation, anti-equivocation witness evidence, and bounded availability SLO.
+The next root-cause increment described here has been delivered by the linked dynamic
+serving-inventory verification. Its remaining limits are durable cross-restart publication/witness
+floors, external non-equivocation proof, trust-root rotation, KMS/HSM, mTLS/HA, and deployment/DR
+certification.

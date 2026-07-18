@@ -149,7 +149,10 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", false)
                 .containsEntry("exactSuiteStabilityAuthorityTrustCohort", false)
                 .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", false)
-                .containsEntry("externallyAttestedSuiteStabilityServingInventory", false);
+                .containsEntry("externallyAttestedSuiteStabilityServingInventory", false)
+                .containsEntry("dynamicSuiteStabilityServingInventory", false)
+                .containsEntry(
+                        "witnessedSuiteStabilityServingInventoryPublications", false);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority())
                 .isEqualTo(signed);
         assertThat(capabilities.toString()).doesNotContain("http://");
@@ -177,10 +180,16 @@ class TestabilityCapabilitiesTest {
                                 java.util.Map.entry("trustCohortLiveReplicaCount", 3),
                                 java.util.Map.entry("trustCohortHealthyReplicaCount", 3),
                                 java.util.Map.entry("trustCohortDistinctSnapshotCount", 1),
+                                java.util.Map.entry(
+                                        "trustCohortDistinctServingInventoryGenerationCount", 1),
                                 java.util.Map.entry("trustCohortDatabaseAuthority", true),
                                 java.util.Map.entry("trustCohortExactConfiguredInventory", true),
                                 java.util.Map.entry(
-                                        "trustCohortExternallyAttestedInventory", true)));
+                                        "trustCohortExternallyAttestedInventory", true),
+                                java.util.Map.entry(
+                                        "trustCohortDynamicallyRefreshedInventory", true),
+                                java.util.Map.entry(
+                                        "trustCohortWitnessedInventoryPublications", true)));
 
         IntegrationCapabilities capabilities = IntegrationCapabilities.current(
                 VisualEvidenceSigner.unavailable().descriptor(),
@@ -196,6 +205,9 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("exactSuiteStabilityAuthorityTrustCohort", true)
                 .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", true)
                 .containsEntry("externallyAttestedSuiteStabilityServingInventory", true)
+                .containsEntry("dynamicSuiteStabilityServingInventory", true)
+                .containsEntry(
+                        "witnessedSuiteStabilityServingInventoryPublications", true)
                 .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority().properties())
                 .doesNotContainKeys("jwksUri", "etag", "publicKey", "privateKey");

@@ -1414,12 +1414,12 @@ public class TestRuntimeConfiguration {
         return new TestSuiteStabilityAuthorityTrustHealth(trustStore);
     }
 
-    /** Verifies one immutable deployment-signed serving inventory using public keys only. */
+    /** Verifies one static or dynamically witnessed deployment-signed serving inventory. */
     @Bean
     @ConditionalOnProperty(
             prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory",
             name = "enabled", havingValue = "true")
-    ConfiguredTestSuiteStabilityServingInventoryAuthority
+    TestSuiteStabilityServingInventoryAuthority
             testSuiteStabilityServingInventoryAuthority(
             ObjectMapper objectMapper,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.trust-domain:}")
@@ -1432,6 +1432,26 @@ public class TestRuntimeConfiguration {
             String authorityKeysJson,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.inventory-json:}")
             String inventoryJson,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.enabled:false}")
+            boolean remoteEnabled,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.required:false}")
+            boolean remoteRequired,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.uri:}")
+            String remoteUri,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.refresh-interval-seconds:30}")
+            long remoteRefreshIntervalSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.request-timeout-ms:3000}")
+            long remoteRequestTimeoutMillis,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.maximum-snapshot-age-seconds:60}")
+            long remoteMaximumSnapshotAgeSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.allow-insecure-loopback:false}")
+            boolean remoteAllowInsecureLoopback,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.witness-domain:}")
+            String witnessDomain,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.witness-signature-threshold:0}")
+            int witnessSignatureThreshold,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.witness-authority-keys-json:[]}")
+            String witnessAuthorityKeysJson,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
             String scopeId,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.cohort-id:}")
@@ -1440,12 +1460,53 @@ public class TestRuntimeConfiguration {
             String instanceId,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.artifact-fingerprint:}")
             String artifactFingerprint) {
-        return ConfiguredTestSuiteStabilityServingInventoryAuthority.fromJson(
-                objectMapper, trustDomain, acceptedPolicyFingerprints, signatureThreshold,
-                authorityKeysJson, inventoryJson,
+        if (remoteRequired && !remoteEnabled) {
+            throw new IllegalStateException(
+                    "This profile requires dynamic witnessed serving inventory");
+        }
+        if (remoteEnabled && inventoryJson != null && !inventoryJson.isBlank()) {
+            throw new IllegalStateException(
+                    "Dynamic serving inventory cannot also use a static inventory document");
+        }
+        ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding binding =
                 new ConfiguredTestSuiteStabilityServingInventoryAuthority.ExpectedBinding(
                         scopeId, cohortId, artifactFingerprint,
-                        ToolStudioResourceGatewayProtocol.VERSION, instanceId));
+                        ToolStudioResourceGatewayProtocol.VERSION, instanceId);
+        if (remoteEnabled) {
+            URI uri;
+            try {
+                uri = URI.create(remoteUri == null ? "" : remoteUri.trim());
+            } catch (RuntimeException invalid) {
+                throw new IllegalArgumentException(
+                        "Serving-inventory publication URI is invalid", invalid);
+            }
+            return DynamicTestSuiteStabilityServingInventoryAuthority.fromJson(
+                    objectMapper, trustDomain, acceptedPolicyFingerprints,
+                    signatureThreshold, authorityKeysJson, binding,
+                    witnessDomain, witnessSignatureThreshold, witnessAuthorityKeysJson,
+                    new DynamicTestSuiteStabilityServingInventoryAuthority.Settings(
+                            uri, Duration.ofSeconds(remoteRefreshIntervalSeconds),
+                            Duration.ofMillis(remoteRequestTimeoutMillis),
+                            Duration.ofSeconds(remoteMaximumSnapshotAgeSeconds),
+                            remoteAllowInsecureLoopback));
+        }
+        return ConfiguredTestSuiteStabilityServingInventoryAuthority.fromJson(
+                objectMapper, trustDomain, acceptedPolicyFingerprints, signatureThreshold,
+                authorityKeysJson, inventoryJson, binding);
+    }
+
+    /** Exposes key-free refresh health for the dynamic witnessed serving-inventory source. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityServingInventoryHealth testSuiteStabilityServingInventoryHealth(
+            TestSuiteStabilityServingInventoryAuthority authority) {
+        if (!(authority instanceof DynamicTestSuiteStabilityServingInventoryAuthority dynamic)) {
+            throw new IllegalStateException(
+                    "Dynamic serving-inventory health requires the dynamic authority");
+        }
+        return new TestSuiteStabilityServingInventoryHealth(dynamic);
     }
 
     /** Freezes one exact configured or externally attested serving cohort. */
