@@ -109,40 +109,74 @@ public final class TestDslMutationPlanner {
             Map<String, String> dependencyFingerprints,
             TestMutationCasePlan expectedPlan,
             String mutantId) {
+        List<RegeneratedMutant> regenerated = regenerateAll(
+                target, graph, dependencyFingerprints, expectedPlan);
+        String selectedId = mutantId == null ? "" : mutantId.trim();
+        return regenerated.stream()
+                .filter(mutant -> mutant.coordinate().mutantId().equals(selectedId))
+                .findFirst()
+                .orElseThrow(() -> new MutationRegenerationException(
+                        RegenerationFailure.MUTANT_NOT_FOUND,
+                        "Selected mutant does not belong to the reviewed plan"));
+    }
+
+    /**
+     * Atomically regenerates every mutant in one exact reviewed plan.
+     *
+     * <p>No executable artifact is returned until the current baseline has reproduced the entire
+     * reviewed plan and every generated graph has independently matched its source, graph-artifact,
+     * and composite target fingerprints. The immutable result preserves plan order so a caller can
+     * establish the complete execution closure before it creates a run or acquires runtime work.</p>
+     *
+     * @param target exact current baseline graph target
+     * @param graph frozen current baseline graph
+     * @param dependencyFingerprints frozen resource dependency fingerprints
+     * @param expectedPlan exact previously reviewed authoring plan
+     * @return ordered immutable complete mutant closure
+     * @throws MutationRegenerationException when any part of the reviewed closure cannot be proven
+     */
+    public List<RegeneratedMutant> regenerateAll(
+            TestExecutionApiRequest.Target target,
+            Graph graph,
+            Map<String, String> dependencyFingerprints,
+            TestMutationCasePlan expectedPlan) {
         if (expectedPlan == null) {
             throw new MutationRegenerationException(
                     RegenerationFailure.PLAN_REQUIRED, "An exact reviewed mutation plan is required");
         }
+        Map<String, String> dependencies = dependencyFingerprints == null
+                ? Map.of() : Map.copyOf(dependencyFingerprints);
         PreparedPlan prepared = prepare(target, graph, dependencyFingerprints,
                 expectedPlan.policy().maxMutants());
         if (!expectedPlan.equals(prepared.plan())) {
             throw new MutationRegenerationException(RegenerationFailure.PLAN_MISMATCH,
                     "Current deterministic mutation plan differs from the reviewed plan");
         }
-        String selectedId = mutantId == null ? "" : mutantId.trim();
-        PlannedMutant coordinate = expectedPlan.mutants().stream()
-                .filter(mutant -> mutant.mutantId().equals(selectedId))
-                .findFirst()
-                .orElseThrow(() -> new MutationRegenerationException(
-                        RegenerationFailure.MUTANT_NOT_FOUND,
-                        "Selected mutant does not belong to the reviewed plan"));
-        Graph regenerated = prepared.artifacts().get(selectedId);
-        if (regenerated == null) {
-            throw new MutationRegenerationException(RegenerationFailure.ARTIFACT_MISSING,
-                    "Selected mutant was not regenerated with the reviewed plan");
+        List<RegeneratedMutant> verified = new ArrayList<>(expectedPlan.mutants().size());
+        for (PlannedMutant coordinate : expectedPlan.mutants()) {
+            Graph regenerated = prepared.artifacts().get(coordinate.mutantId());
+            if (regenerated == null) {
+                throw new MutationRegenerationException(RegenerationFailure.ARTIFACT_MISSING,
+                        "A reviewed mutant was not regenerated with the complete plan");
+            }
+            String graphFingerprint = GraphArtifactFingerprint.of(objectMapper, regenerated);
+            String sourceFingerprint = regenerated.definitionSource() == null ? ""
+                    : ProtocolFingerprint.ofText(regenerated.definitionSource().payloadJson());
+            String targetFingerprint = targetFingerprint(graphFingerprint, dependencies);
+            if (!coordinate.mutantSourceFingerprint().equals(sourceFingerprint)
+                    || !coordinate.mutantGraphArtifactFingerprint().equals(graphFingerprint)
+                    || !coordinate.mutantTargetFingerprint().equals(targetFingerprint)) {
+                throw new MutationRegenerationException(RegenerationFailure.ARTIFACT_MISMATCH,
+                        "A regenerated mutant identity differs from the reviewed coordinate");
+            }
+            verified.add(new RegeneratedMutant(
+                    expectedPlan.planFingerprint(), coordinate, regenerated));
         }
-        String graphFingerprint = GraphArtifactFingerprint.of(objectMapper, regenerated);
-        String sourceFingerprint = regenerated.definitionSource() == null ? ""
-                : ProtocolFingerprint.ofText(regenerated.definitionSource().payloadJson());
-        String targetFingerprint = targetFingerprint(graphFingerprint,
-                dependencyFingerprints == null ? Map.of() : Map.copyOf(dependencyFingerprints));
-        if (!coordinate.mutantSourceFingerprint().equals(sourceFingerprint)
-                || !coordinate.mutantGraphArtifactFingerprint().equals(graphFingerprint)
-                || !coordinate.mutantTargetFingerprint().equals(targetFingerprint)) {
+        if (prepared.artifacts().size() != verified.size()) {
             throw new MutationRegenerationException(RegenerationFailure.ARTIFACT_MISMATCH,
-                    "Regenerated mutant identity differs from the reviewed coordinate");
+                    "Regenerated mutant closure differs from the reviewed plan");
         }
-        return new RegeneratedMutant(expectedPlan.planFingerprint(), coordinate, regenerated);
+        return List.copyOf(verified);
     }
 
     private PreparedPlan prepare(

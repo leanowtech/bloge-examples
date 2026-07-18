@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -91,6 +92,58 @@ class TestDslMutationPlannerTest {
         assertThat(regenerated.graph().name()).isEqualTo(graph.name());
         assertThat(GraphExecutionTargetSnapshot.capture(mapper, regenerated.graph(), null).fingerprint())
                 .isEqualTo(selected.mutantTargetFingerprint());
+    }
+
+    @Test
+    void atomicallyRegeneratesTheCompleteReviewedClosureInPlanOrder() {
+        Graph graph = graph(complexDsl());
+        GraphExecutionTargetSnapshot snapshot = GraphExecutionTargetSnapshot.capture(
+                mapper, graph, null);
+        TestExecutionApiRequest.Target target = target(graph, snapshot.fingerprint());
+        TestMutationCasePlan plan = planner.plan(
+                target, graph, snapshot.dependencyFingerprints(), 8);
+
+        List<TestDslMutationPlanner.RegeneratedMutant> regenerated = planner.regenerateAll(
+                target, graph, snapshot.dependencyFingerprints(), plan);
+
+        assertThat(regenerated).hasSameSizeAs(plan.mutants());
+        assertThat(regenerated)
+                .extracting(mutant -> mutant.coordinate().mutantId())
+                .containsExactlyElementsOf(plan.mutants().stream()
+                        .map(TestMutationCasePlan.PlannedMutant::mutantId).toList());
+        assertThat(regenerated).allSatisfy(mutant -> {
+            assertThat(mutant.planFingerprint()).isEqualTo(plan.planFingerprint());
+            assertThat(GraphExecutionTargetSnapshot.capture(mapper, mutant.graph(), null)
+                    .fingerprint()).isEqualTo(mutant.coordinate().mutantTargetFingerprint());
+            assertThat(mutant.graph().definitionSource()).isNotNull();
+            assertThat(ProtocolFingerprint.ofText(
+                    mutant.graph().definitionSource().payloadJson()))
+                    .isEqualTo(mutant.coordinate().mutantSourceFingerprint());
+        });
+        assertThatThrownBy(() -> regenerated.add(regenerated.getFirst()))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void completeRegenerationRejectsDriftWithoutPublishingAPartialClosure() {
+        Graph graph = graph(complexDsl());
+        GraphExecutionTargetSnapshot snapshot = GraphExecutionTargetSnapshot.capture(
+                mapper, graph, null);
+        TestExecutionApiRequest.Target target = target(graph, snapshot.fingerprint());
+        TestMutationCasePlan reviewed = planner.plan(
+                target, graph, snapshot.dependencyFingerprints(), 8);
+        TestMutationCasePlan drifted = new TestMutationCasePlan(
+                reviewed.schemaVersion(), reviewed.target(), reviewed.sourceFormat(),
+                reviewed.sourceFingerprint(), reviewed.graphArtifactFingerprint(),
+                ProtocolFingerprint.ofText("drifted-complete-plan"), reviewed.status(),
+                reviewed.policy(), reviewed.mutants(), reviewed.gaps());
+
+        assertThatThrownBy(() -> planner.regenerateAll(
+                target, graph, snapshot.dependencyFingerprints(), drifted))
+                .isInstanceOf(TestDslMutationPlanner.MutationRegenerationException.class)
+                .extracting(failure -> ((TestDslMutationPlanner.MutationRegenerationException) failure)
+                        .failure())
+                .isEqualTo(TestDslMutationPlanner.RegenerationFailure.PLAN_MISMATCH);
     }
 
     @Test
