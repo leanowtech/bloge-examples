@@ -78,8 +78,7 @@ winner convergence, and stale-fence rejection.
 
 ## 6. Required next step
 
-The next increment must add a bounded worker that acquires a local execution slot before claiming,
-revalidates current authority, executes only through this guard, completes only from verified
-signed parent evidence, preserves `COMMITTING` on publication ambiguity, and classifies retryable
-versus terminal failures without mutating a lost fence. Background scheduling, configuration,
-telemetry, public API, Schema, test-kit, and capability truth remain deliberately closed.
+The bounded worker core now uses this guard and is verified in
+[Stage 5 suite-stability worker core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-core-verification.md).
+The remaining work is a real current-authority adapter, background scheduling, configuration,
+telemetry, public API, Schema, test-kit, and capability truth.

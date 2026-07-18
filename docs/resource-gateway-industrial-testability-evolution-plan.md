@@ -339,6 +339,17 @@ lease loss、store ambiguity 或 shutdown 后 sticky fail closed，后续成功�
 仍需可杀进程/容器。验证见
 [Stage 5 suite-stability worker guard verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-guard-verification.md)。
 
+第五十三增量第六子步增加 bounded single-poll worker core，但尚未调度或注册为产品能力。fair local
+semaphore 在数据库 claim 前获取，避免进程无执行槽却占用 fleet running capacity；claim 后 guard 立即
+heartbeat，真实 `TestSuiteStabilityJobAuthorizer` seam 必须在 engine 前返回
+`AUTHORIZED/REVOKED/UNAVAILABLE`。撤权 parent-first fail，授权歧义 exact retry，二者都不启动 engine。
+执行只复用 controlled service；取消/截止/parent winner 后不二次写，普通 retryable 与 deterministic
+failure 分别 retry/fail，进入 `COMMITTING` 后任何失败只能保留 publication retry lane，lease loss/store
+ambiguity 不再写。73 项聚焦测试含真实线程竞争，证明第二个 poll 在无 local slot 时不会 claim。当前缺
+authorizer adapter、配置、scheduler/shutdown、telemetry/readiness 和公开协议，因此 capability 仍关闭。
+验证见
+[Stage 5 suite-stability worker core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-core-verification.md)。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制

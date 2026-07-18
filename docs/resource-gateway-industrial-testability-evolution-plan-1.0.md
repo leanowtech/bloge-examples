@@ -337,6 +337,16 @@ descriptor 必须精确一致；取消、截止、父成功、lease loss、数�
 验证见
 [Stage 5 suite-stability worker guard verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-guard-verification.md)。
 
+第五十三增量第六子步实现 bounded single-poll worker core，仍不等于后台产品能力已开放。进程内 fair
+semaphore 必须先于 durable claim 获取，防止无执行槽 owner 占用 fleet capacity；claim 后 heartbeat
+guard 立即生效，`TestSuiteStabilityJobAuthorizer` 强制在 engine 前复核当前授权。撤权 fail、授权服务
+歧义 retry，均使用 fresh exact lease 且不启动 engine。业务执行只走 controlled service；typed cancel/
+deadline/parent winner 不做二次 mutation，`COMMITTING` 后失败只能 retry publication，lease/control
+歧义禁止猜测性写入。73 项聚焦测试覆盖成功、授权、取消、failure classification、claim ambiguity 与
+真实线程 local-capacity 竞争。真实 authorizer adapter、配置、scheduler/drain、telemetry/readiness、
+HTTP/Schema/test-kit/capability 尚未接线；验证见
+[Stage 5 suite-stability worker core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-core-verification.md)。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

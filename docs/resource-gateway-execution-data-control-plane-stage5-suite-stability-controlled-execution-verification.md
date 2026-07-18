@@ -75,13 +75,14 @@ idempotency, lease-loss, durable-prefix recovery, evidence and statistical behav
 
 ## 5. Required next step
 
-The worker guard is now implemented and verified separately. The next atomic increment must use it
-from a bounded worker that:
+The worker guard and bounded single-poll worker core are now implemented and verified separately.
+The next atomic increment must integrate them with:
 
-1. acquires a local execution slot before claiming durable work;
-2. revalidates current delegated authority before engine execution;
-3. preserves `COMMITTING` across crash recovery and completes the queue from replayed evidence;
-4. fails closed on delegated authority ambiguity and classifies retryable versus terminal failures.
+1. a real current delegated-authority adapter;
+2. startup-validated policy and environment configuration;
+3. bounded scheduler, graceful shutdown, telemetry, and readiness lifecycle.
 
 Guard ordering and negative-space proof are documented in
 [Stage 5 suite-stability worker guard verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-guard-verification.md).
+Worker ordering and failure classification are documented in
+[Stage 5 suite-stability worker core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-core-verification.md).

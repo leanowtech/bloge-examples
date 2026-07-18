@@ -225,6 +225,26 @@ public final class TestSuiteStabilityJobExecutionCoordinator implements AutoClos
         }
 
         /**
+         * Renews the claim before engine start so an authorization rejection can be durably
+         * failed or retried without pretending that the execution descriptor was bound.
+         *
+         * <p>This method grants no execution permission. The stability algorithm must still call
+         * {@link #executionStarted(TestSuiteStabilityExecutionDescriptor)} before its first
+         * checkpoint.</p>
+         *
+         * @return current database-confirmed queue lease
+         */
+        public synchronized TestSuiteStabilityJobLease leaseForAdministrativeMutation() {
+            requireUsable();
+            if (bound || prepared) {
+                throw new IllegalStateException(
+                        "Administrative mutation is only valid before stability execution");
+            }
+            renewNow();
+            return lease;
+        }
+
+        /**
          * Synchronously renews the irrevocable fence immediately before queue success.
          *
          * @return current database-confirmed {@code COMMITTING} lease
@@ -242,6 +262,11 @@ public final class TestSuiteStabilityJobExecutionCoordinator implements AutoClos
         /** @return whether cancellation/deadline publication was irrevocably linearized */
         public synchronized boolean publicationPrepared() {
             return prepared;
+        }
+
+        /** @return whether the algorithm has bound the exact deterministic parent descriptor */
+        public synchronized boolean executionBound() {
+            return bound;
         }
 
         /** Marks successful queue consumption so no later local call can mutate this guard. */

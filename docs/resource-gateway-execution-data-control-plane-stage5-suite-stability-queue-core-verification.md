@@ -133,13 +133,13 @@ conflict and cannot be bypassed through the synchronous execution entry point.
 This core must not be advertised as a usable asynchronous runtime until the next atomic steps add:
 
 1. authenticated submit/query/cancel protocol and strict JSON Schema;
-2. a worker that claims only when it owns a local execution slot and executes through the now
-   implemented heartbeat/control guard;
-3. current authority revalidation for the durable principal before engine execution;
-4. bounded-cardinality Micrometer projection and SLO/readiness thresholds;
-5. retention scheduler, test-kit typed client, capability truth, and full build evidence;
-6. poison-row quarantine, non-H2 certification, contention/soak/chaos proof, and hard process
+2. a real current-authority adapter and startup-validated wiring for the now implemented worker;
+3. bounded-cardinality Micrometer projection and SLO/readiness thresholds;
+4. retention scheduler, test-kit typed client, capability truth, and full build evidence;
+5. poison-row quarantine, non-H2 certification, contention/soak/chaos proof, and hard process
    cancellation as explicit later work.
 
 The completed guard step is verified in
 [Stage 5 suite-stability worker guard verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-guard-verification.md).
+The bounded worker core is verified in
+[Stage 5 suite-stability worker core verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-worker-core-verification.md).
