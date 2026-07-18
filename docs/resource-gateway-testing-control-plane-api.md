@@ -2674,7 +2674,83 @@ execution is appropriate.
 | `RG_TEST_SUITE_RECONCILIATION_INTERVAL_MS` | `15000` | Fixed delay between anti-entropy sweeps |
 | `RG_TEST_SUITE_RECONCILIATION_BATCH_SIZE` | `100` | Oldest-first sweep bound; maximum 1000 |
 
-### 4.2.4 Materialize the built-in graph catalog
+### 4.2.4 Execute and verify bounded suite stability
+
+Stability analysis is a separate signed protocol over repeated exact suite executions. It accepts
+executable V1, V2, and V4 suites; schema-admission V3 has no business child closure and mutation V5
+has its own matrix semantics, so both are rejected. The request fixes the immutable suite identity,
+caller-owned parent idempotency key, and exact attempt count:
+
+```http
+POST /api/testing/suites/loan-decision-regression/stability-executions
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+```
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteStabilityExecutionRequest.v1",
+  "suiteRef": {
+    "suiteId": "loan-decision-regression",
+    "revision": 1,
+    "fingerprint": "sha256:<returned-by-suite-registration>"
+  },
+  "clientRequestId": "risk-ci-1842-stability",
+  "attempts": 5,
+  "metadata": {"pipeline": "nightly", "buildId": "1842"}
+}
+```
+
+`attempts` is an integer from 3 through 20. Every attempt uses `COLLECT_ALL`; the service derives a
+stable child idempotency key for each attempt and delegates to the ordinary durable suite runner.
+Repeating the parent request therefore reuses the same retained terminal analysis, while reusing its
+`clientRequestId` with different suite, attempt count, or metadata returns
+`RG.TEST.STABILITY_IDEMPOTENCY_CONFLICT`. Use `TEST_REPLAY` when the exact suite contains a governed
+replay fixture.
+
+The response is always a complete terminal `bloge.testSuiteStabilityExecutionResponse.v1` containing
+`bloge.testSuiteStabilityEvidence.v1` and `bloge.testSuiteStabilityAttestation.v1`. For each exact
+case and attempt, the evidence binds the child run/evidence, fixture, effective-plan, evidence-class,
+and semantic-result fingerprints without copying payload values. Classification uses the complete
+outcome identity `evidenceStatus + semanticResultFingerprint`:
+
+| Case result | Required proof |
+| --- | --- |
+| `STABLE_PASS` | All requested observations are verified, pass, and have one outcome identity |
+| `CONSISTENT_FAILURE` | All observations are verified, fail, and have one outcome identity |
+| `FLAKY` | At least two verified observations have different outcome identities |
+| `INCONCLUSIVE` | Missing/invalid evidence, source reuse, child reuse, or effective-plan drift prevents a conclusion |
+
+The aggregate status is `STABLE`, `FLAKY`, `CONSISTENT_FAILURE`, or `INCONCLUSIVE`. Only `STABLE`
+can be promotion eligible. `FLAKY` produces a quarantine recommendation; it does not change suite
+state, suppress a failure, or authorize publication. `INCONCLUSIVE` remains fail closed. The protocol
+is bounded deterministic rerun evidence, not a confidence interval, probability estimate, adaptive
+stopping policy, or proof that future runs cannot vary.
+
+The attestation signs the canonical parent request fingerprint, evidence fingerprint, and exact
+ordered source-suite closure. A source suite run or child run reused across attempts, an omitted
+source, an invalid source/child signature, or plan drift can never produce `STABLE`. Retention uses
+`gateway.testing.store.retention-days` (default 30, bounded to 1..3650) and is capped from the earliest
+source start; analysis creation fails when the source retention window is already exhausted.
+
+Query the retained result in the same tenant/environment scope:
+
+```bash
+curl -sS http://localhost:8080/api/testing/stability-executions/<stabilityRunId> \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+The independent test-kit re-derives case/aggregate classification, promotion and quarantine
+verdicts, request/evidence/source-closure fingerprints, source suite evidence, child evidence, and
+the detached Ed25519 signature. Its CI `STABILITY` mode additionally requires an externally supplied
+atomic-key-set fingerprint pin; accepting a key set only because the producer returned it is not a
+trust decision. See
+[Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)
+for the implementation boundary and negative proofs.
+
+### 4.2.5 Materialize the built-in graph catalog
 
 The seven legacy resource-graph suites already execute through the common kernel, but their source
 table assets predate `bloge.testSuite.v1`. Materialize all 14 cases into the caller's tenant and
@@ -3101,7 +3177,9 @@ mvn -f resource-gateway-test-kit/pom.xml clean install
 
 The client exposes immutable suite register/find/execute/query operations, terminal evidence-bundle
 export, exact-key and atomic key-set lookup, pinned lifecycle-aware Ed25519 verification, and a typed
-`materializeBuiltInGraphContractCatalog()` operation. It also exposes challenge-bound request-index
+`materializeBuiltInGraphContractCatalog()` operation. It also executes and queries bounded suite
+stability, re-derives the complete stability/source closure, and verifies its detached signature
+against a caller-owned atomic-key-set fingerprint pin. It also exposes challenge-bound request-index
 replica-proof collection and `WorkerQuarantineRequestIndexFleetGateVerifier`: callers provide the
 exact deployment instance set, expected scope/artifact/protocol/target, cohort window, complete key
 set, and independently distributed key-set pin; the offline gate rejects partial or mixed fleets.
@@ -3127,8 +3205,10 @@ execution, case, coverage, and eligibility assertions.
 
 `clean package` also emits an executable `*-cli.jar`. It reads the bearer token only from
 `RESOURCE_GATEWAY_TOKEN`, requires the exact suite reference and caller-owned idempotency key, writes
-payload-free JUnit XML, and returns `0` only for `PASSED + SATISFIED + ELIGIBLE`, `1` for a governed
-gate failure, and `2` for configuration/transport/protocol/report failure. An explicit
+payload-free JUnit XML, and returns `0` only when the selected `STANDARD`, `MUTATION`, or `STABILITY`
+typed gate passes, `1` for a governed terminal quality/trust failure, and `2` when no trustworthy
+verdict can be produced. `STABILITY` additionally requires 3..20 attempts and an externally supplied
+key-set fingerprint pin. An explicit
 `--allow-non-eligible` relaxes only eligibility; it never relaxes case or coverage correctness. A
 valid but non-terminal `RUNNING` checkpoint also exits `2`, because no governed gate verdict exists.
 
@@ -3159,7 +3239,7 @@ nested shipping and invoice calls are independently controlled and occurrence-ad
 detailed matrix and unreachable-endpoint proof are in
 [Stage 2 dogfooding verification](resource-gateway-execution-data-control-plane-stage2-dogfooding-verification.md).
 
-For governed API/CLI/CI use, call the materialization endpoint from section 4.2.4 and execute the
+For governed API/CLI/CI use, call the materialization endpoint from section 4.2.5 and execute the
 returned exact suite references through `/api/testing/suites/{suiteId}/executions`. The end-to-end
 proof that all seven materialized suites return `PASSED + SATISFIED + ELIGIBLE` against unreachable
 real endpoints is recorded in

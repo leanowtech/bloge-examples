@@ -60,6 +60,8 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/targets/graphs/{graphName}/property-suites` | Freeze one exact property plan's complete root/shrink closure against an existing assertion-bearing fixture (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/executions` | Execute an exact immutable V1-V4 suite revision, including bounded property root/shrink closures, and emit signed aggregate evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/mutation-executions` | Execute an exact V5 suite baseline-first, classify every regenerated mutant, and emit signed mutation-score evidence (test/staging only) |
+| `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-executions` | Execute one exact V1/V2/V4 suite 3..20 times and retain signed payload-free stability evidence (test/staging only) |
+| `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}` | Read one retained stability analysis with its exact ordered source-run closure and detached signature (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/operators/{operatorRef}` | Idempotently freeze an exact operator test at its server-owned start gate (test/staging only) |
@@ -148,8 +150,11 @@ See
 for the complete target-discovery, fixture-registration, execution, evidence,
 and production-isolation workflow. Java/JUnit/CI consumers can use the independent
 [Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) for fixture and immutable-suite
-builders, typed catalog materialization, exact suite execution, payload-free assertions/XML, and the fail-closed CLI instead of
-hand-assembling HTTP requests or interpreting aggregate evidence ad hoc.
+builders, typed catalog materialization, exact suite execution, signed bounded stability analysis,
+pinned-key-set offline verification, payload-free assertions/XML, and the fail-closed CLI instead of
+hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The stability protocol's
+invariants and deliberately unclaimed statistical guarantees are recorded in
+[Stage 5 suite-stability verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md).
 
 ### Create a durable graph test
 

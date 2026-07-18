@@ -12,7 +12,7 @@ isolated, with their own Maven build and dependency lifecycle.
 | `mono-examples/` | Broad BLOGE scenario catalog (beginner flows, integration recipes, durable/session/state-machine patterns, BPMN conversion samples) | Single-module Maven project |
 | `graph-engine-examples/` | Graph-engine control-plane stack (model, mybatis persistence, AI authoring, service facade, server, CLI) | Multi-module Maven reactor |
 | `resource-gateway-examples/` | Spring Boot API resource gateway using DSL orchestration + generic `httpResource` operator | Single-module Maven Spring Boot app |
-| `resource-gateway-test-kit/` | Standalone HTTP client, typed graph-catalog materialization, fixture/suite builders, JUnit 5 assertions/XML, governed-suite CI CLI, and offline exact-inventory rollout verification | Maven library + executable CLI JAR |
+| `resource-gateway-test-kit/` | Standalone HTTP client, typed graph-catalog materialization, fixture/suite builders, signed bounded stability verification, JUnit 5 assertions/XML, governed-suite CI CLI, and offline exact-inventory rollout verification | Maven library + executable CLI JAR |
 | `docs/ai/` | AI prompt assets and DSL references used by graph-engine AI module | Markdown docs packaged as resources |
 
 ## Requirements
@@ -184,7 +184,8 @@ bloge-examples/
 - `resource-gateway-examples/README.md` for the focused Resource Gateway overview
   and `resource-gateway-examples/REFERENCE.md` for the full API/test reference
 - `resource-gateway-test-kit/README.md` for Java/JUnit controlled execution,
-  immutable suite integration, offline fleet rollout verification, and the fail-closed CI command
+  immutable suite integration, pinned suite-stability verification, offline fleet rollout verification,
+  and the fail-closed CI command
 - `docs/bloge-visual-canvas-product-and-system-guide.md` for the visual canvas
   product guide, demo scripts, and system usage notes
 - `docs/bloge-vscode-extension-lightweight-authoring-plan.md` for the lighter

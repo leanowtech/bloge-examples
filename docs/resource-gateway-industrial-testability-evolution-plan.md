@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 主路径持续收口，Stage 3 证据链已闭环，Stage 4 持续加固，Stage 5 已闭合 bounded pure-DSL mutation planning/materialization/execution/evidence 主链 |
+| 状态 | Accepted / In implementation；Stage 0/1 已落地，Stage 2 主路径持续收口，Stage 3 证据链已闭环，Stage 4 持续加固，Stage 5 已闭合 bounded pure-DSL mutation 与 suite-stability 主链 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、operator 开发团队、QA、平台安全、SRE、ANEKE Tool Studio |
 | 设计目标 | 让调用方在测试运行中确定性控制 DAG 的外部数据、故障和非确定性来源，并产出可验证的测试证据 |
 | 非目标 | 不把 Resource Gateway 变成通用代码覆盖率平台；不允许普通生产请求携带测试替换指令；不替代 operator 代码仓库中的白盒单元测试 |
@@ -22,7 +22,7 @@
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、v1/v2/v3 保代的 abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
 | Stage 4 | In progress | BLOGE run-scoped services、checkpoint/resume primitives 与 RG deterministic provider、组合 checkpoint、同库事务、数据库时钟 fence、幂等命令和 staged 四 store aggregate 已落地；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal suspended-or-terminal recovery step、有界同步 multi-suspension recovery sequence、兼容 terminal-only recovery 和进程内 lease coordinator 已闭合；recovery sequence 外层及派生 step/claim/automatic-heartbeat 已具备数据库租约化有界 retention、独立 HMAC tombstone、密钥轮换启动自检、固定基数 telemetry 和数据库时钟 backlog SLO/readiness；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；隔离 list/claim/release、数据库权威 maker/checker approved discard、token-free receipt/history、审批 SLO observation、claim-command replay token AES-GCM envelope/旧行迁移/轮换重包、active-control HMAC fence/旧行迁移/轮换重键、命令/审批/历史的数据库租约化有界保留、独立 keyed-HMAC request-index tombstone/在线轮换/旧行惰性迁移、N/N-1 三阶段 write/readiness/capability、challenge-bound 逐副本签名 proof、独立 test-kit exact-inventory fleet gate、外部 Ed25519 M-of-N quarantine change authorization 的 HTTP v2/Schema/config/readiness/capability/数据库唯一消费与四维即时 admission 已落地。其他 durable command family 的统一有界 lifecycle、跨平台 serving-inventory 完整性证明、外部工单全生命周期与动态撤销刷新、法律保留/备份擦除、外部 WORM、runtime-state dispatch、排队/公平/优先级调度、异步/无界多 suspension 调度、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
-| Stage 5 | In progress（isolated pure-DSL mutation execution/evidence 已闭环） | 已落地 graph/operator schema boundary planning/admission、seeded bounded property plan/materialization/execution/evidence、recoverable AST mutation planning/exact regeneration、immutable V5 mutation suite、baseline-first 隔离执行、V5 signed evidence/abandoned reconciliation、HTTP/capability、独立 test-kit/CLI 与真实 Spring 闭环；equivalent-mutant detection、flaky analysis、统计置信策略、跨进程调度和物理隔离尚未落地 |
+| Stage 5 | In progress（bounded mutation 与 deterministic suite-stability evidence 已闭环） | 已落地 graph/operator schema boundary planning/admission、seeded bounded property plan/materialization/execution/evidence、recoverable AST mutation planning/exact regeneration、immutable V5 mutation suite、baseline-first 隔离执行、V5 signed evidence/abandoned reconciliation，以及 exact suite 3..20 次重跑、逐 case 语义稳定性分类、签名 source closure、独立 test-kit/pinned CI gate；semantic equivalent-mutant proof、统计置信/停止策略、跨进程调度和物理隔离尚未落地 |
 
 第三十九增量从 Stage 5 先切出一个可诚实交付的 schema-boundary tracer bullet。新的
 `bloge.testBoundaryCasePlan.v1` 对当前 exact GRAPH/OPERATOR target 生成完整输入候选；baseline 由样例
@@ -173,12 +173,34 @@ test-kit 已闭合。test-kit 独立重算 baseline、mutant classification、ki
 并核对 `baseline/<caseId>`、`<mutantId>/<caseId>` 的签名 child closure；CLI 通过显式
 `--mode MUTATION` 提供 payload-free CI/JUnit gate。验证见
 [Stage 5 mutation execution verification](resource-gateway-execution-data-control-plane-stage5-mutation-execution-verification.md)。
-generation one 仍不提供 semantic equivalent-mutant proof、flaky/quarantine 重跑分析、统计置信、跨进程
-并行调度或部署级硬隔离，这些不能从一个数值 score 反推。
+第四十七增量交付时仍不提供 semantic equivalent-mutant proof、flaky/quarantine 重跑分析、统计置信、
+跨进程并行调度或部署级硬隔离，这些不能从一个数值 score 反推；其中 bounded deterministic rerun
+随后由第四十八增量闭合，统计推断仍未闭合。
 本增量完整 Resource Gateway `clean verify` 执行 2436 tests，0 failures、0 errors、2 个既有条件跳过，
 其中浏览器回归共 35 tests，并完成 Spring Boot 可执行 JAR；独立 test-kit `clean verify` 执行
 111 tests，0 failures、0 errors、0 skips，并通过权威 Schema、普通/shaded JAR、V5 语义重算、
 payload-free mutation JUnit/CLI 与严格 public JavaDoc 门禁。
+
+第四十八增量关闭 bounded suite-stability 的确定性证据主链。新的
+`bloge.testSuiteStabilityExecutionRequest.v1` 只接受 exact V1/V2/V4 executable suite、调用方父级
+幂等键和 3..20 次固定 attempt；每次 attempt 使用服务端派生幂等键与 `COLLECT_ALL` 进入既有 immutable
+suite runner。服务端逐 attempt 验证 source aggregate attestation 与完整 child evidence，再以
+`evidenceStatus + semanticResultFingerprint` 比较业务结果；source/child run 重用、签名或指纹错误、缺失
+闭包和 effective-plan drift 均 fail closed 为 `INCONCLUSIVE`，不能伪装成稳定。
+
+`bloge.testSuiteStabilityEvidence.v1` 将逐 case `STABLE_PASS`、`CONSISTENT_FAILURE`、`FLAKY`、
+`INCONCLUSIVE` 与 aggregate promotion/quarantine recommendation 固化为可重算协议；quarantine 只是一条
+阻断建议，不修改 suite 状态。独立 stability attestation 将 canonical parent request、evidence fingerprint
+和有序 source suite closure 纳入 Ed25519 签名；JDBC terminal store、精确幂等、retention、POST/GET HTTP、
+strict Schema、capability object/feature/endpoint 已闭合。独立 test-kit 重算分类、计数、promotion/
+quarantine、evidence/source-closure fingerprint 和签名 material；CLI 以显式 `--mode STABILITY`、强制外部
+atomic-key-set pin、payload-free JUnit 与 `0/1/2` 退出语义形成 release gate。验证见
+[Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)。
+该增量只证明固定 attempt 数下的确定性观测，不提供概率 flake rate、置信区间、adaptive stopping、自动
+quarantine workflow、跨进程调度或物理 test-runtime 隔离。
+本增量 Resource Gateway 聚焦验证执行 34 tests，0 failures、0 errors、0 skips；独立 test-kit
+`clean verify` 执行 130 tests，0 failures、0 errors、0 skips，并通过权威 Schema、普通/shaded JAR、
+pinned stability CLI/JUnit 与严格 public JavaDoc 门禁。完整 Resource Gateway 全量验证留待最终审计记录。
 
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
@@ -1328,7 +1350,8 @@ assertion density
 - mutation 只对纯 DSL 语义运行，不能自动修改外部写 operator。
 
 mutation score 比“有 20 个 case”更能证明 suite 是否真的有防回归能力。generation-one bounded score
-现已按 P2 落地；semantic equivalence、flaky 与统计置信继续留在后续质量阶段。
+和 3..20 次 deterministic stability evidence 已按 P2 落地；semantic equivalence、统计置信、adaptive
+stopping 与长期趋势分析继续留在后续质量阶段。
 
 ## 12. 生产隔离与安全模型
 
@@ -1433,7 +1456,7 @@ evidence class and signature
 | 测试通过但生产写错数据 | 加更多 golden case | hidden side effect 未声明 | Composability Contract + side-effect conformance |
 | 测试数据泄密 | 日志打码 | fixture 生命周期无治理 | 分类、ABAC、脱敏、retention、legal hold |
 | 测试 endpoint 被生产误用 | 加 header 开关 | purpose 由请求自报 | 独立 endpoint/deployment + server-minted purpose |
-| suite 数量很多但防不住回归 | 统计 case count | coverage 只看数量 | semantic coverage + generation-one mutation score + 后续 flaky/equivalence 分析 |
+| suite 数量很多但防不住回归 | 统计 case count | coverage 只看数量 | semantic coverage + generation-one mutation/stability evidence + 后续 statistical/equivalence 分析 |
 | 失败难定位 | 返回最终 output diff | 无 invocation/fixture lineage | node/attempt/rule/assertion 统一 trace |
 | 大批量回归拖垮网关 | 调高线程池 | 测试与生产共享资源池 | 独立 test runtime、配额、队列和优先级 |
 | fixture 随业务变化腐化 | 人工定期清理 | 没有 schema/dependency drift index | fixture impact analysis + stale state + rebase workflow |
@@ -1952,7 +1975,7 @@ identity/feature-flag/test-secret authority 与断点前历史 evidence 恢复�
 - tenant quota、batch scheduler、regional fixture store；
 - sandbox binding registry；
 - property/boundary/mutation test；
-- flaky analysis、生产路径对比和反熵任务。
+- bounded deterministic stability evidence（已落地）及后续统计 flaky 趋势、生产路径对比和反熵任务。
 
 验收：完成渗透测试、故障注入、DR、容量、跨租户隔离和“test control 不可能进入 production data plane”的架构证明。
 
@@ -1971,7 +1994,7 @@ identity/feature-flag/test-secret authority 与断点前历史 evidence 恢复�
 | P1 | function/time/random execution services | 提升重复性并覆盖 built-in function |
 | P2 | durable test resume | 长运行和事件驱动图需要 |
 | P2 | separate test deployment | 企业生产隔离目标态 |
-| P2 | equivalent-mutant/flaky/statistical analysis | 在 generation-one property/mutation 主链之上继续提高可信度 |
+| P2 | equivalent-mutant/statistical confidence and distributed stability analysis | 在 generation-one property/mutation/stability 主链之上继续提高可信度 |
 
 ## 21. 不建议采用的替代方案
 

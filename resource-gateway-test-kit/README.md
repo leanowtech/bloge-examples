@@ -21,13 +21,15 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   key lookup, and dependency-light offline Ed25519 verification, including schema-admission v3
   evidence with a signed empty business-child closure, bounded-property v4 evidence, and mutation
   v5 score/child-closure re-derivation;
+- bounded suite-stability execution/query, typed stability-evidence re-derivation, exact source-run
+  closure verification, and offline Ed25519 verification against a caller-owned key-set pin;
 - challenge-bound request-index replica proof collection plus an offline exact-inventory rollout
   gate that rejects missing, duplicate, unexpected, stale, mixed-scope/artifact/protocol/mode, or
   cryptographically invalid cohorts against an externally pinned key set;
 - occurrence-addressable node, retry-attempt, and edge summaries without payload fields;
-- payload-free JUnit XML with deterministic CI exit codes and per-mutant classification rows;
-- an executable `-cli.jar` that fails closed on suite, coverage, promotion, or immutable mutation
-  score-policy failure.
+- payload-free JUnit XML with deterministic CI exit codes and per-mutant or per-stability-case rows;
+- an executable `-cli.jar` that fails closed on suite, coverage, promotion, immutable mutation
+  score-policy, stability, or pinned-trust failure.
 
 ## Build
 
@@ -230,6 +232,37 @@ JUnitXmlReportWriter.writeSuite(
         suiteRun,
         true);
 ```
+
+Run the exact immutable suite repeatedly and require independently verified stability before a
+release gate consumes the result:
+
+```java
+TestSuiteStabilityRun stability = client.executeSuiteStability(
+        storedSuite.suiteId(),
+        storedSuite.revision(),
+        storedSuite.fingerprint(),
+        "stability-ci-982",
+        5,
+        Map.of("source", "nightly"));
+
+String trustedPin = System.getenv("RESOURCE_GATEWAY_TRUSTED_KEY_SET_FINGERPRINT");
+TestSuiteStabilityEvidenceVerifier.VerificationResult stabilityVerification =
+        client.verifySuiteStability(stability.stabilityRunId(), trustedPin);
+
+TestSuiteStabilityAssertions.assertReleaseEligible(stability, stabilityVerification);
+JUnitXmlReportWriter.writeStability(
+        Path.of("target/surefire-reports/resource-gateway-stability.xml"),
+        stability,
+        stabilityVerification);
+```
+
+Stability execution always runs `COLLECT_ALL` exactly 3..20 times. A case is compared by
+`evidenceStatus + semanticResultFingerprint`, not only by pass/fail status. The aggregate is
+`STABLE`, `FLAKY`, `CONSISTENT_FAILURE`, or `INCONCLUSIVE`; plan drift, reused source/child run ids,
+missing evidence, an invalid signature, or an incomplete source closure can never be promoted to
+stable. A `FLAKY` result carries a quarantine recommendation, but the API does not mutate suite
+state or bypass a business failure. This is bounded deterministic rerun evidence, not a statistical
+confidence interval or adaptive stopping policy.
 
 Execute a reviewed `bloge.testSuite.v3` reference returned by the server's boundary-suite
 materialization API without confusing schema admission with business execution:
@@ -516,24 +549,45 @@ java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0
   --report target/test-results/resource-gateway-mutation.xml
 ```
 
+Suite stability is a third, strategy-free mode. It requires an externally managed key-set
+fingerprint rather than trusting a key set merely because the same server returned it:
+
+```bash
+export RESOURCE_GATEWAY_TRUSTED_KEY_SET_FINGERPRINT='sha256:<externally-pinned-key-set-fingerprint>'
+
+java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  --base-uri http://localhost:8080 \
+  --suite-id normalization-regression \
+  --revision 1 \
+  --fingerprint 'sha256:<64 lowercase hex characters>' \
+  --client-request-id "${CI_PIPELINE_ID}-${CI_JOB_ID}-stability" \
+  --mode STABILITY \
+  --attempts 5 \
+  --report target/test-results/resource-gateway-stability.xml
+```
+
 `STANDARD` is the default mode and accepts `COLLECT_ALL` or `FAIL_FAST`. `MUTATION` accepts
 `COLLECT_ALL` or `STOP_AFTER_KILL`; the latter stops only the current mutant after a signed assertion
-kill and still visits every later mutant. A strategy from the other mode is rejected before any
+kill and still visits every later mutant. `STABILITY` accepts 3..20 attempts, rejects `--strategy`
+and `--allow-non-eligible`, and requires `--trusted-key-set-fingerprint` or
+`RESOURCE_GATEWAY_TRUSTED_KEY_SET_FINGERPRINT`. A mode-incompatible option is rejected before any
 network request.
 
 The command returns:
 
 - `0` only when the selected evaluation mode's typed verdict passes and, by default, promotion status
   is `ELIGIBLE`; mutation mode additionally requires a passing baseline and independently re-derived
-  `SATISFIED` score policy;
-- `1` when governed evidence was obtained but the suite gate failed;
+  `SATISFIED` score policy, while stability mode requires `STABLE`, promotion eligibility, exact
+  source closure, and a signature rooted in the externally pinned key set;
+- `1` when governed terminal evidence was obtained but its quality, promotion, or trust gate failed;
 - `2` when configuration, transport, protocol validation, report generation, or a non-terminal
   `RUNNING` checkpoint prevents a trustworthy gate verdict.
 
 `--allow-non-eligible` disables only the promotion-eligibility requirement; the mode-specific typed
 verdict must still pass. Mutation JUnit XML includes one payload-free row per baseline case and mutant,
 but individual survivors are informational because the immutable aggregate score policy owns the gate
-verdict. The CLI never accepts a token argument, never generates an idempotency key implicitly, and
+verdict. Stability JUnit XML includes one payload-free row per stability case, one pinned-trust
+attestation row, and one aggregate gate row. The CLI never accepts a token argument, never generates an idempotency key implicitly, and
 writes a one-test infrastructure failure report when execution fails before governed terminal suite
 evidence is available. Unknown options and positional arguments are reported without echoing values.
 
