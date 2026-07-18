@@ -131,6 +131,13 @@ Independent-store settings:
 | `gateway.testing.stability-jobs.authority.http.minimum-remaining-validity-ms` | `RG_TEST_STABILITY_JOB_AUTHORITY_MIN_REMAINING_MS` | `100` |
 | `gateway.testing.stability-jobs.authority.http.allow-insecure-loopback` | `RG_TEST_STABILITY_JOB_AUTHORITY_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
 | `gateway.testing.stability-jobs.authority.http.authority-keys-json` | `RG_TEST_STABILITY_JOB_AUTHORITY_KEYS_JSON` | `[]`; required public Ed25519 keys when enabled |
+| `gateway.testing.stability-jobs.authority.http.jwks.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_ENABLED` | `false`; selects built-in dynamic trust |
+| `gateway.testing.stability-jobs.authority.http.jwks.uri` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_URI` | empty; HTTPS required in dynamic mode |
+| `gateway.testing.stability-jobs.authority.http.jwks.refresh-interval-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_REFRESH_SECONDS` | `30` |
+| `gateway.testing.stability-jobs.authority.http.jwks.unknown-key-refresh-interval-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_UNKNOWN_KEY_REFRESH_SECONDS` | `5` |
+| `gateway.testing.stability-jobs.authority.http.jwks.request-timeout-ms` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_TIMEOUT_MS` | `3000` |
+| `gateway.testing.stability-jobs.authority.http.jwks.maximum-snapshot-age-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_MAXIMUM_AGE_SECONDS` | `60`; at least refresh + timeout |
+| `gateway.testing.stability-jobs.authority.http.jwks.allow-insecure-loopback` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
 | `gateway.testing.replay-payloads.maximum-retention-days` | `RG_TEST_REPLAY_MAX_RETENTION_DAYS` | `30` |
 | `gateway.testing.replay-payloads.sweep-interval-ms` | `RG_TEST_REPLAY_SWEEP_INTERVAL_MS` | `60000` |
 | `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |
@@ -2971,11 +2978,41 @@ Static trust is configured with a bounded JSON array such as:
 Add and deploy a new public key before the authority starts signing with it. Keep the previous key
 enabled until no live decision can remain, then remove it in a later fleet rollout. Mark a
 compromised key `revoked=true` immediately; decisions signed by it fail closed. The configured key
-must remain active at issue time, verification time and through the decision expiry. Deployments
-needing dynamic JWKS/KMS/certificate refresh can replace
-`TestSuiteStabilityAuthorityTrustStore` while preserving the same verification contract. The
-built-in adapter relies on the JVM TLS context, so mTLS identity belongs in deployment TLS material,
-not in these JSON properties. `allow-insecure-loopback` must never be enabled outside local tests.
+must remain active at issue time, verification time and through the decision expiry.
+
+For restart-free rotation, enable the built-in dynamic source with
+`gateway.testing.stability-jobs.authority.http.jwks.enabled=true` and configure its HTTPS URI. It
+accepts only a bounded public Ed25519 JWKS such as:
+
+```json
+{
+  "keys": [
+    {
+      "kid": "iam-key-2026-08",
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "alg": "EdDSA",
+      "use": "sig",
+      "key_ops": ["verify"],
+      "x": "<base64url 32-byte public coordinate>",
+      "enabled": true,
+      "revoked": false
+    }
+  ]
+}
+```
+
+Bootstrap requires one active key. Thereafter one jittered background lane uses ETag conditional
+GET, publishes only fully parsed snapshots and performs a cooldown-bound refresh when a signed
+response presents an unknown `kid`. Any fetch, protocol or parsing failure makes the complete trust
+snapshot unavailable; there is no stale-acceptance mode. A hard local maximum age also closes a
+silent refresh lane. Capability and Actuator health read only the local snapshot and never issue a
+remote request. A valid refresh can recover without restart.
+
+The built-in adapters rely on the JVM TLS context, so mTLS identity belongs in deployment TLS
+material, not in JSON properties. Both `allow-insecure-loopback` settings must remain disabled
+outside local tests. A deployment-owned KMS/certificate implementation may still replace
+`TestSuiteStabilityAuthorityTrustStore` while preserving the verification contract.
 
 When the worker or authority is disabled, query/cancel remain operational and submit returns
 `503 RG.TEST.STABILITY_JOB_SUBMISSION_UNAVAILABLE` with `Retry-After`. Queue and tenant capacity
@@ -2983,6 +3020,7 @@ return `429`; policy drift returns retryable `503`; expired retained detail retu
 the distinction through `testability.suiteStabilityJobSubmissionEnabled` and the
 `asyncSuiteStabilityJobProtocol`, `asyncSuiteStabilityJobSubmission`,
 `suiteStabilityCurrentAuthorityRevalidation`, `signedChallengeBoundSuiteStabilityAuthority`,
+`dynamicSuiteStabilityAuthorityTrust`, `suiteStabilityAuthorityTrustRefreshSlo`,
 `asyncSuiteStabilityJobQuery`, `asyncSuiteStabilityJobCancellation`, and
 `asyncSuiteStabilityJobCancellationSemanticAudit` feature flags. The strict
 request/response definitions live in
@@ -2992,6 +3030,8 @@ The private worker-to-PDP contract is separately versioned in
 it is not a caller-facing testing endpoint.
 Implementation evidence and deliberately unclaimed guarantees are recorded in
 [Stage 5 current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
+Dynamic refresh invariants, health semantics and deliberately unclaimed fleet guarantees are in
+[Stage 5 dynamic authority trust verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-authority-trust-verification.md).
 
 The standalone Java test-kit exposes the same protocol without depending on Resource Gateway
 server classes:

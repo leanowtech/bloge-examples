@@ -95,6 +95,8 @@ class TestabilityCapabilitiesTest {
         assertThat(queryOnly.features())
                 .containsEntry("asyncSuiteStabilityJobProtocol", true)
                 .containsEntry("asyncSuiteStabilityJobSubmission", false)
+                .containsEntry("dynamicSuiteStabilityAuthorityTrust", false)
+                .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", false)
                 .containsEntry("asyncSuiteStabilityJobQuery", true)
                 .containsEntry("asyncSuiteStabilityJobCancellation", true)
                 .containsEntry("asyncSuiteStabilityJobCancellationSemanticAudit", true);
@@ -140,10 +142,45 @@ class TestabilityCapabilitiesTest {
 
         assertThat(capabilities.features())
                 .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true)
-                .containsEntry("signedChallengeBoundSuiteStabilityAuthority", true);
+                .containsEntry("signedChallengeBoundSuiteStabilityAuthority", true)
+                .containsEntry("dynamicSuiteStabilityAuthorityTrust", false)
+                .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", false);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority())
                 .isEqualTo(signed);
         assertThat(capabilities.toString()).doesNotContain("http://");
+    }
+
+    @Test
+    void dynamicAuthorityTrustCapabilityRequiresRefreshAndFailClosedSemantics() {
+        TestSuiteStabilityJobAuthorizer.Descriptor dynamic =
+                new TestSuiteStabilityJobAuthorizer.Descriptor(
+                        "", true, "HTTPS_SIGNED_PDP", "iam.example",
+                        java.util.Map.ofEntries(
+                                java.util.Map.entry("signedDecisions", true),
+                                java.util.Map.entry("challengeBound", true),
+                                java.util.Map.entry("privateMaterialPresent", false),
+                                java.util.Map.entry("trustProviderType",
+                                        "DYNAMIC_JWKS_ED25519"),
+                                java.util.Map.entry("trustRefreshState", "HEALTHY"),
+                                java.util.Map.entry("trustRefreshIntervalSeconds", 30),
+                                java.util.Map.entry("trustMaximumSnapshotAgeSeconds", 60),
+                                java.util.Map.entry("trustFailClosedOnRefreshFailure", true),
+                                java.util.Map.entry("trustAutomaticRefresh", true)));
+
+        IntegrationCapabilities capabilities = IntegrationCapabilities.current(
+                VisualEvidenceSigner.unavailable().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true,
+                EvidenceKeySetTrustStore.unavailable().descriptor(),
+                WorkerQuarantineRequestIndexMode.KEYED_ONLY,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                true, dynamic);
+
+        assertThat(capabilities.features())
+                .containsEntry("dynamicSuiteStabilityAuthorityTrust", true)
+                .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", true)
+                .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true);
+        assertThat(capabilities.testability().suiteStabilityCurrentAuthority().properties())
+                .doesNotContainKeys("jwksUri", "etag", "publicKey", "privateKey");
     }
 
     @Test

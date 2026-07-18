@@ -1,5 +1,9 @@
 # Stage 5 suite-stability current-authority verification
 
+> Current-state note (2026-07-19): the static-trust increment documented below is now complemented
+> by the built-in atomic background JWKS refresh path in
+> [suite-stability dynamic authority trust verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-authority-trust-verification.md).
+
 ## Scope
 
 This increment closes the product implementation gap between the durable stability worker and

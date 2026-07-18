@@ -61,6 +61,12 @@ class SuiteStabilityAuthorityProtocolSchemaTest {
                 .isEqualTo(TestSuiteStabilityAuthorityResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/response/properties/decision/enum"))
                 .extracting(JsonNode::asText).containsExactly("AUTHORIZED", "REVOKED");
+        assertThat(fieldNames(schema.at("/$defs/trustProperties/properties")))
+                .containsExactlyInAnyOrderElementsOf(
+                        TestSuiteStabilityAuthorityTrustStore.DESCRIPTOR_PROPERTIES);
+        assertThat(fieldNames(schema.at("/$defs/authorizerProperties/properties")))
+                .containsExactlyInAnyOrderElementsOf(
+                        TestSuiteStabilityJobAuthorizer.DESCRIPTOR_PROPERTIES);
         assertThat(List.of("request", "response", "principal", "suiteRef", "signature",
                 "trustDescriptor", "authorizerDescriptor"))
                 .allSatisfy(definition -> assertThat(
@@ -87,10 +93,14 @@ class SuiteStabilityAuthorityProtocolSchemaTest {
     }
 
     private static void assertProperties(JsonNode value, JsonNode properties) {
-        LinkedHashSet<String> actual = new LinkedHashSet<>();
-        value.fieldNames().forEachRemaining(actual::add);
-        LinkedHashSet<String> expected = new LinkedHashSet<>();
-        properties.fieldNames().forEachRemaining(expected::add);
+        LinkedHashSet<String> actual = fieldNames(value);
+        LinkedHashSet<String> expected = fieldNames(properties);
         assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    private static LinkedHashSet<String> fieldNames(JsonNode value) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        value.fieldNames().forEachRemaining(names::add);
+        return names;
     }
 }

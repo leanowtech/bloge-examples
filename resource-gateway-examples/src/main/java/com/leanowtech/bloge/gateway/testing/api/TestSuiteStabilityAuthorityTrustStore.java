@@ -15,7 +15,10 @@ public interface TestSuiteStabilityAuthorityTrustStore {
     Set<String> DESCRIPTOR_PROPERTIES = Set.of(
             "algorithm", "signedDecisions", "challengeBound", "privateMaterialPresent",
             "activeKeyCount", "maximumDecisionLifetimeSeconds", "clockSkewSeconds",
-            "minimumRemainingValidityMillis");
+            "minimumRemainingValidityMillis", "refreshMode", "refreshState",
+            "refreshIntervalSeconds", "maximumSnapshotAgeSeconds",
+            "unknownKeyRefreshIntervalSeconds", "failClosedOnRefreshFailure",
+            "conditionalRequests", "automaticRefresh");
 
     /** Closed trust outcomes; only {@link #VERIFIED} permits use of the signed decision. */
     enum VerificationStatus {

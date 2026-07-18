@@ -185,8 +185,13 @@ credential-free, challenge-bound request to
 `<RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI>/v1/stability-job-authorizations` and accepts only a
 short-lived Ed25519-signed `AUTHORIZED` or `REVOKED` response from
 `RG_TEST_STABILITY_JOB_AUTHORITY_ID`. Configure one or more X.509-encoded public keys through
-`RG_TEST_STABILITY_JOB_AUTHORITY_KEYS_JSON`. HTTPS is mandatory; the insecure-loopback escape hatch
-exists only for local tests. A deployment may instead contribute one custom
+`RG_TEST_STABILITY_JOB_AUTHORITY_KEYS_JSON`, or set
+`RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_ENABLED=true` and provide
+`RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_URI` for restart-free Ed25519 rotation. Dynamic mode performs
+an atomic bootstrap, ETag-based background refresh, cooldown-bound unknown-key refresh and hard
+snapshot-age expiry. Any refresh ambiguity closes fresh admission; it never silently continues with
+stale revocation state. HTTPS is mandatory; the insecure-loopback escape hatches exist only for
+local tests. A deployment may instead contribute one custom
 `TestSuiteStabilityJobAuthorizer` with a ready key-free descriptor. There is no allow-all fallback:
 zero providers, multiple providers, an undeclared provider, missing trust, unsafe URI, or invalid
 time policy fails startup. Queue capacity, fairness, retry, lease, deadline, and retention use the
@@ -201,16 +206,19 @@ appear absent or cause it to execute twice. The capability probe separates
 `asyncSuiteStabilityJobProtocol` from
 `asyncSuiteStabilityJobSubmission`, and additionally reports
 `suiteStabilityCurrentAuthorityRevalidation` plus
-`signedChallengeBoundSuiteStabilityAuthority`, so clients do not infer executability merely because
-the routes or Schema exist. The private authority request excludes credentials, correlation id,
+`signedChallengeBoundSuiteStabilityAuthority`. Dynamic deployments additionally expose
+`dynamicSuiteStabilityAuthorityTrust` and `suiteStabilityAuthorityTrustRefreshSlo`, so clients do
+not infer executability merely because the routes or Schema exist. The private authority request
+excludes credentials, correlation id,
 execution metadata, fixture/context/payload and node output. HTTP denial, redirect, timeout,
 malformed/oversized JSON, stale decision, echo mismatch, unknown/revoked key, or invalid signature
 is `UNAVAILABLE`; only a verified signed revocation is definitive. Capacity responses use
 `Retry-After`, configured with
 `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` (default `5`). See the focused
-[current-authority verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md)
+[current-authority verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md),
+[dynamic authority trust verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-authority-trust-verification.md),
 and [machine-readable authority Schema](../docs/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json).
-Actuator now exposes a separate stability-queue health contributor. The
+Actuator exposes separate stability-queue and dynamic-authority-trust health contributors. The
 `RG_TEST_STABILITY_JOB_SLO_*` settings bound per-environment queue depth, oldest wait, observation
 interval, and expired live leases; the depth SLO cannot exceed hard queue capacity. Micrometer
 publishes only closed environment/status/outcome dimensions. Business test failures remain visible

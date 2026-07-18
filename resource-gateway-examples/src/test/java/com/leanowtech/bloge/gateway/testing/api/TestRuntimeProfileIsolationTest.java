@@ -38,8 +38,14 @@ import org.springframework.boot.actuate.health.Status;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 
-import java.time.Instant;
+import com.sun.net.httpserver.HttpServer;
+
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -161,6 +167,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityAuthorityTrustStore.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityAuthorityTrustHealth.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     HttpTestSuiteStabilityJobAuthorizer.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
@@ -293,6 +301,8 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityAuthorityTrustStore.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    TestSuiteStabilityAuthorityTrustHealth.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     HttpTestSuiteStabilityJobAuthorizer.class)).isEmpty();
             assertThat(context.getBean(TestabilityAvailability.class)
                     .suiteStabilityCurrentAuthority().available()).isFalse();
@@ -365,6 +375,77 @@ class TestRuntimeProfileIsolationTest {
                     .isEqualTo("HTTPS_SIGNED_PDP");
             assertThat(context.getBean(TestabilityAvailability.class)
                     .suiteStabilityJobSubmissionEnabled()).isTrue();
+        }
+    }
+
+    @Test
+    void dynamicJwksAuthorityBootstrapsAtomicallyAndPublishesRefreshTruth()
+            throws Exception {
+        KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        byte[] document = authorityJwks(keyPair, "iam-key-dynamic")
+                .getBytes(StandardCharsets.UTF_8);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/jwks", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/jwk-set+json");
+            exchange.getResponseHeaders().add("ETag", "generation-1");
+            exchange.sendResponseHeaders(200, document.length);
+            try (var body = exchange.getResponseBody()) {
+                body.write(document);
+            }
+        });
+        server.start();
+        Map<String, Object> properties = new LinkedHashMap<>(
+                enabledStabilityWorkerProperties());
+        properties.put("gateway.testing.stability-jobs.authority.http.enabled", "true");
+        properties.put("gateway.testing.stability-jobs.authority.http.base-uri",
+                "http://127.0.0.1:18080");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.allow-insecure-loopback", "true");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.expected-authority-id",
+                "iam.example");
+        properties.put("gateway.testing.stability-jobs.authority.http.jwks.enabled", "true");
+        properties.put("gateway.testing.stability-jobs.authority.http.jwks.uri",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/jwks");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.allow-insecure-loopback",
+                "true");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.refresh-interval-seconds",
+                "3600");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.maximum-snapshot-age-seconds",
+                "3610");
+        try {
+            try (AnnotationConfigApplicationContext context = context(properties, 0, "test")) {
+                assertThat(context.getBeansOfType(
+                        TestSuiteStabilityAuthorityTrustStore.class))
+                        .hasSize(1).allSatisfy((name, trust) -> {
+                            assertThat(trust).isInstanceOf(
+                                    DynamicJwksTestSuiteStabilityAuthorityTrustStore.class);
+                            assertThat(trust.descriptor()).satisfies(descriptor -> {
+                                assertThat(descriptor.available()).isTrue();
+                                assertThat(descriptor.providerType())
+                                        .isEqualTo("DYNAMIC_JWKS_ED25519");
+                                assertThat(descriptor.properties())
+                                        .containsEntry("refreshState", "HEALTHY")
+                                        .containsEntry("automaticRefresh", true)
+                                        .containsEntry("failClosedOnRefreshFailure", true);
+                            });
+                        });
+                assertThat(context.getBean(TestSuiteStabilityJobAuthorizer.class)
+                        .descriptor().properties())
+                        .containsEntry("trustProviderType", "DYNAMIC_JWKS_ED25519")
+                        .containsEntry("trustRefreshState", "HEALTHY")
+                        .containsEntry("trustAutomaticRefresh", true)
+                        .doesNotContainKeys("jwksUri", "baseUri", "publicKey", "privateKey");
+                assertThat(context.getBean(TestSuiteStabilityAuthorityTrustHealth.class)
+                        .health().getStatus()).isEqualTo(Status.UP);
+                assertThat(context.getBean(TestabilityAvailability.class)
+                        .suiteStabilityJobSubmissionEnabled()).isTrue();
+            }
+        } finally {
+            server.stop(0);
         }
     }
 
@@ -720,6 +801,15 @@ class TestRuntimeProfileIsolationTest {
                 "[{\"keyId\":\"iam-key-1\",\"algorithm\":\"Ed25519\","
                         + "\"publicKeyBase64\":\"" + publicKey + "\"}]");
         return properties;
+    }
+
+    private static String authorityJwks(KeyPair keyPair, String keyId) {
+        byte[] encoded = keyPair.getPublic().getEncoded();
+        String coordinate = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                Arrays.copyOfRange(encoded, encoded.length - 32, encoded.length));
+        return "{\"keys\":[{\"kid\":\"" + keyId + "\",\"kty\":\"OKP\","
+                + "\"crv\":\"Ed25519\",\"alg\":\"EdDSA\",\"use\":\"sig\","
+                + "\"key_ops\":[\"verify\"],\"x\":\"" + coordinate + "\"}]}";
     }
 
     private static TestSuiteStabilityJobAuthorizer readyTestAuthorizer() {

@@ -632,6 +632,24 @@ public record IntegrationCapabilities(
                         && authority.available()
                         && Boolean.TRUE.equals(authority.properties().get("signedDecisions"))
                         && Boolean.TRUE.equals(authority.properties().get("challengeBound")));
+        features.put("dynamicSuiteStabilityAuthorityTrust",
+                testExecutionEndpointEnabled
+                        && "DYNAMIC_JWKS_ED25519".equals(
+                        authority.properties().get("trustProviderType"))
+                        && Boolean.TRUE.equals(
+                        authority.properties().get("trustAutomaticRefresh")));
+        features.put("suiteStabilityAuthorityTrustRefreshSlo",
+                testExecutionEndpointEnabled
+                        && "DYNAMIC_JWKS_ED25519".equals(
+                        authority.properties().get("trustProviderType"))
+                        && Boolean.TRUE.equals(
+                        authority.properties().get("trustAutomaticRefresh"))
+                        && authority.properties().get("trustRefreshIntervalSeconds")
+                        instanceof Number
+                        && authority.properties().get("trustMaximumSnapshotAgeSeconds")
+                        instanceof Number
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustFailClosedOnRefreshFailure")));
         features.put("asyncSuiteStabilityJobQuery", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellation", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellationSemanticAudit",

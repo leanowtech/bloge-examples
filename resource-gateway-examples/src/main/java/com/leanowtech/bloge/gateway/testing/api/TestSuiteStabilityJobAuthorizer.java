@@ -17,7 +17,10 @@ public interface TestSuiteStabilityJobAuthorizer {
     Set<String> DESCRIPTOR_PROPERTIES = Set.of(
             "protocolVersion", "responseProtocolVersion", "signedDecisions",
             "challengeBound", "redirectsFollowed", "automaticRetries",
-            "privateMaterialPresent", "requestTimeoutMillis");
+            "privateMaterialPresent", "requestTimeoutMillis", "trustProviderType",
+            "trustRefreshState", "trustRefreshIntervalSeconds",
+            "trustMaximumSnapshotAgeSeconds", "trustFailClosedOnRefreshFailure",
+            "trustAutomaticRefresh");
 
     /**
      * Key-free deployment readiness descriptor for capability and startup diagnostics.

@@ -134,15 +134,27 @@ public final class HttpTestSuiteStabilityJobAuthorizer
     public Descriptor descriptor() {
         TestSuiteStabilityAuthorityTrustStore.Descriptor trust = trustStore.descriptor();
         return new Descriptor("", trust.available(), "HTTPS_SIGNED_PDP",
-                trust.expectedAuthorityId(), Map.of(
-                "protocolVersion", TestSuiteStabilityAuthorityRequest.SCHEMA_VERSION,
-                "responseProtocolVersion", TestSuiteStabilityAuthorityResponse.SCHEMA_VERSION,
-                "signedDecisions", true,
-                "challengeBound", true,
-                "redirectsFollowed", false,
-                "automaticRetries", false,
-                "privateMaterialPresent", false,
-                "requestTimeoutMillis", settings.requestTimeout().toMillis()));
+                trust.expectedAuthorityId(), Map.ofEntries(
+                Map.entry("protocolVersion", TestSuiteStabilityAuthorityRequest.SCHEMA_VERSION),
+                Map.entry("responseProtocolVersion",
+                        TestSuiteStabilityAuthorityResponse.SCHEMA_VERSION),
+                Map.entry("signedDecisions", true),
+                Map.entry("challengeBound", true),
+                Map.entry("redirectsFollowed", false),
+                Map.entry("automaticRetries", false),
+                Map.entry("privateMaterialPresent", false),
+                Map.entry("requestTimeoutMillis", settings.requestTimeout().toMillis()),
+                Map.entry("trustProviderType", trust.providerType()),
+                Map.entry("trustRefreshState",
+                        trust.properties().getOrDefault("refreshState", "STATIC")),
+                Map.entry("trustRefreshIntervalSeconds",
+                        trust.properties().getOrDefault("refreshIntervalSeconds", 0)),
+                Map.entry("trustMaximumSnapshotAgeSeconds",
+                        trust.properties().getOrDefault("maximumSnapshotAgeSeconds", 0)),
+                Map.entry("trustFailClosedOnRefreshFailure",
+                        trust.properties().getOrDefault("failClosedOnRefreshFailure", true)),
+                Map.entry("trustAutomaticRefresh",
+                        trust.properties().getOrDefault("automaticRefresh", false))));
     }
 
     private ExchangeResult exchange(

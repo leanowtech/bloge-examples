@@ -50,6 +50,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -1326,6 +1327,8 @@ public class TestRuntimeConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "gateway.testing.stability-jobs.authority.http",
             name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(prefix = "gateway.testing.stability-jobs.authority.http.jwks",
+            name = "enabled", havingValue = "false", matchIfMissing = true)
     @ConditionalOnMissingBean(TestSuiteStabilityAuthorityTrustStore.class)
     TestSuiteStabilityAuthorityTrustStore testSuiteStabilityAuthorityTrustStore(
             ObjectMapper objectMapper,
@@ -1344,6 +1347,69 @@ public class TestRuntimeConfiguration {
                 Duration.ofSeconds(maximumDecisionLifetimeSeconds),
                 Duration.ofSeconds(clockSkewSeconds),
                 Duration.ofMillis(minimumRemainingValidityMillis), authorityKeysJson);
+    }
+
+    /**
+     * Bootstraps and continuously refreshes the product Ed25519 authority JWKS.
+     *
+     * <p>The bean starts only when explicitly selected and is mutually exclusive with the static
+     * key-ring fallback. A deployment-supplied trust store still takes precedence.</p>
+     */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = "gateway.testing.stability-jobs.authority.http",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(prefix = "gateway.testing.stability-jobs.authority.http.jwks",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(TestSuiteStabilityAuthorityTrustStore.class)
+    DynamicJwksTestSuiteStabilityAuthorityTrustStore
+            dynamicJwksTestSuiteStabilityAuthorityTrustStore(
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.stability-jobs.authority.http.expected-authority-id:}")
+            String expectedAuthorityId,
+            @Value("${gateway.testing.stability-jobs.authority.http.maximum-decision-lifetime-seconds:60}")
+            long maximumDecisionLifetimeSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.clock-skew-seconds:5}")
+            long clockSkewSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.minimum-remaining-validity-ms:100}")
+            long minimumRemainingValidityMillis,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.uri:}")
+            String jwksUri,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.refresh-interval-seconds:30}")
+            long refreshIntervalSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.unknown-key-refresh-interval-seconds:5}")
+            long unknownKeyRefreshIntervalSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.request-timeout-ms:3000}")
+            long requestTimeoutMillis,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.maximum-snapshot-age-seconds:60}")
+            long maximumSnapshotAgeSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.allow-insecure-loopback:false}")
+            boolean allowInsecureLoopback) {
+        URI uri;
+        try {
+            uri = URI.create(jwksUri == null ? "" : jwksUri.trim());
+        } catch (RuntimeException invalid) {
+            throw new IllegalArgumentException(
+                    "Stability authority JWKS URI is invalid", invalid);
+        }
+        return new DynamicJwksTestSuiteStabilityAuthorityTrustStore(
+                objectMapper, expectedAuthorityId,
+                Duration.ofSeconds(maximumDecisionLifetimeSeconds),
+                Duration.ofSeconds(clockSkewSeconds),
+                Duration.ofMillis(minimumRemainingValidityMillis),
+                new DynamicJwksTestSuiteStabilityAuthorityTrustStore.Settings(
+                        uri, Duration.ofSeconds(refreshIntervalSeconds),
+                        Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
+                        Duration.ofMillis(requestTimeoutMillis),
+                        Duration.ofSeconds(maximumSnapshotAgeSeconds),
+                        allowInsecureLoopback));
+    }
+
+    /** Publishes payload-free Actuator health for the configured dynamic authority snapshot. */
+    @Bean
+    @ConditionalOnBean(DynamicJwksTestSuiteStabilityAuthorityTrustStore.class)
+    TestSuiteStabilityAuthorityTrustHealth testSuiteStabilityAuthorityTrustHealth(
+            DynamicJwksTestSuiteStabilityAuthorityTrustStore trustStore) {
+        return new TestSuiteStabilityAuthorityTrustHealth(trustStore);
     }
 
     /**

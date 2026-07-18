@@ -167,7 +167,15 @@
         "activeKeyCount": { "type": "integer", "minimum": 0, "maximum": 64 },
         "maximumDecisionLifetimeSeconds": { "type": "integer", "minimum": 1, "maximum": 300 },
         "clockSkewSeconds": { "type": "integer", "minimum": 0, "maximum": 300 },
-        "minimumRemainingValidityMillis": { "type": "integer", "minimum": 0, "maximum": 30000 }
+        "minimumRemainingValidityMillis": { "type": "integer", "minimum": 0, "maximum": 30000 },
+        "refreshMode": { "$ref": "#/$defs/identifier" },
+        "refreshState": { "$ref": "#/$defs/identifier" },
+        "refreshIntervalSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "maximumSnapshotAgeSeconds": { "type": "integer", "minimum": 2, "maximum": 86400 },
+        "unknownKeyRefreshIntervalSeconds": { "type": "integer", "minimum": 1, "maximum": 300 },
+        "failClosedOnRefreshFailure": { "const": true },
+        "conditionalRequests": { "const": true },
+        "automaticRefresh": { "type": "boolean" }
       }
     },
     "trustDescriptor": {
@@ -199,7 +207,13 @@
         "redirectsFollowed": { "const": false },
         "automaticRetries": { "const": false },
         "privateMaterialPresent": { "const": false },
-        "requestTimeoutMillis": { "type": "integer", "minimum": 100, "maximum": 30000 }
+        "requestTimeoutMillis": { "type": "integer", "minimum": 100, "maximum": 30000 },
+        "trustProviderType": { "$ref": "#/$defs/identifier" },
+        "trustRefreshState": { "$ref": "#/$defs/identifier" },
+        "trustRefreshIntervalSeconds": { "type": "integer", "minimum": 0, "maximum": 3600 },
+        "trustMaximumSnapshotAgeSeconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
+        "trustFailClosedOnRefreshFailure": { "type": "boolean" },
+        "trustAutomaticRefresh": { "type": "boolean" }
       }
     },
     "authorizerDescriptor": {
