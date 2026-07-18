@@ -48,7 +48,9 @@ public final class TestSuiteStabilityProtocolFixtures {
             attempts.add(new TestSuiteStabilityEvidence.AttemptResult(attempt,
                     TestSuiteStabilityEvidence.AttemptStatus.VERIFIED,
                     "suite-run-" + attempt, indexedFingerprint(attempt),
-                    TestSuiteRunEvidence.Status.PASSED, START.plusSeconds(attempt),
+                    TestSuiteRunEvidence.Status.PASSED,
+                    TestSuiteRunEvidence.PromotionStatus.ELIGIBLE, List.of(),
+                    START.plusSeconds(attempt),
                     START.plusSeconds(attempt + 1L), ""));
             observations.add(new TestSuiteStabilityEvidence.CaseObservation(attempt,
                     TestSuiteStabilityEvidence.ObservationStatus.VERIFIED,

@@ -376,7 +376,11 @@ public final class TestSuiteStabilityExecutionService {
 
     private static TestSuiteStabilityExecutionResponse response(
             TestSuiteStabilityRunRecord record) {
-        return new TestSuiteStabilityExecutionResponse("", record.stabilityRunId(),
+        String version = TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(
+                record.evidence().schemaVersion())
+                ? TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1
+                : TestSuiteStabilityExecutionResponse.SCHEMA_VERSION;
+        return new TestSuiteStabilityExecutionResponse(version, record.stabilityRunId(),
                 record.evidenceFingerprint(), record.evidence(), record.attestation());
     }
 

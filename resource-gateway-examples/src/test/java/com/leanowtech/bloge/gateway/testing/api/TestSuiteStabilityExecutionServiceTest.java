@@ -102,6 +102,9 @@ class TestSuiteStabilityExecutionServiceTest {
                 .isEqualTo(TestSuiteStabilityEvidence.Status.STABLE);
         assertThat(first.evidence().promotion().status())
                 .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.ELIGIBLE);
+        assertThat(first.evidence().attempts())
+                .allMatch(attempt -> attempt.sourcePromotionStatus()
+                        == TestSuiteRunEvidence.PromotionStatus.ELIGIBLE);
         assertThat(first.attestation().terminallyVerifiable()).isTrue();
         assertThat(repository.records).hasSize(1);
 
@@ -228,7 +231,9 @@ class TestSuiteStabilityExecutionServiceTest {
                         suite.suiteId(), suite.revision(), SUITE_FINGERPRINT),
                 suite.target(), startedAt, startedAt.plusSeconds(1), List.of(result),
                 TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
-                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), Map.of());
+                new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.ELIGIBLE, List.of(), true,
+                        1, 1, true, true, true), List.of(), Map.of());
         String aggregateFingerprint = new TestSuiteRunEvidenceProtocolCodec(mapper)
                 .fingerprint(evidence);
         TestSuiteRunAttestation attestation = new TestSuiteRunAttestation("",

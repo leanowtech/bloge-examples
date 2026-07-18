@@ -118,6 +118,8 @@ public final class ResourceGatewaySuiteCli {
         output.println("stabilityRunId=" + safe(run.stabilityRunId(), 256)
                 + "; status=" + run.status()
                 + "; promotion=" + run.promotion().status()
+                + "; sourcePromotionClosure="
+                + (run.sourcePromotionClosureAvailable() ? "AVAILABLE" : "UNAVAILABLE")
                 + "; quarantine=" + run.quarantine().status()
                 + "; attempts=" + run.requestedAttempts()
                 + "; cases=" + run.caseResults().size()

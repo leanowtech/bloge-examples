@@ -2709,10 +2709,11 @@ Repeating the parent request therefore reuses the same retained terminal analysi
 `RG.TEST.STABILITY_IDEMPOTENCY_CONFLICT`. Use `TEST_REPLAY` when the exact suite contains a governed
 replay fixture.
 
-The response is always a complete terminal `bloge.testSuiteStabilityExecutionResponse.v1` containing
-`bloge.testSuiteStabilityEvidence.v1` and `bloge.testSuiteStabilityAttestation.v1`. For each exact
-case and attempt, the evidence binds the child run/evidence, fixture, effective-plan, evidence-class,
-and semantic-result fingerprints without copying payload values. Classification uses the complete
+New executions return complete terminal `bloge.testSuiteStabilityExecutionResponse.v2` containing
+`bloge.testSuiteStabilityEvidence.v2` and `bloge.testSuiteStabilityAttestation.v2`. Retained v1
+responses remain queryable for audit. For each exact case and attempt, v2 evidence binds the source
+suite promotion status/reasons plus child run/evidence, fixture, effective-plan, evidence-class, and
+semantic-result fingerprints without copying payload values. Classification uses the complete
 outcome identity `evidenceStatus + semanticResultFingerprint`:
 
 | Case result | Required proof |
@@ -2722,14 +2723,16 @@ outcome identity `evidenceStatus + semanticResultFingerprint`:
 | `FLAKY` | At least two verified observations have different outcome identities |
 | `INCONCLUSIVE` | Missing/invalid evidence, source reuse, child reuse, or effective-plan drift prevents a conclusion |
 
-The aggregate status is `STABLE`, `FLAKY`, `CONSISTENT_FAILURE`, or `INCONCLUSIVE`. Only `STABLE`
-can be promotion eligible. `FLAKY` produces a quarantine recommendation; it does not change suite
+The aggregate status is `STABLE`, `FLAKY`, `CONSISTENT_FAILURE`, or `INCONCLUSIVE`. `STABLE` is
+necessary but not sufficient for promotion: every verified source suite must also be promotion
+`ELIGIBLE`. If one source is `BLOCKED`, the aggregate remains `STABLE` but promotion becomes
+`BLOCKED` with `SOURCE_SUITE_PROMOTION_BLOCKED`. `FLAKY` produces a quarantine recommendation; it does not change suite
 state, suppress a failure, or authorize publication. `INCONCLUSIVE` remains fail closed. The protocol
 is bounded deterministic rerun evidence, not a confidence interval, probability estimate, adaptive
 stopping policy, or proof that future runs cannot vary.
 
-The attestation signs the canonical parent request fingerprint, evidence fingerprint, and exact
-ordered source-suite closure. A source suite run or child run reused across attempts, an omitted
+The v2 attestation signs the canonical parent request fingerprint, evidence fingerprint, and exact
+ordered source-suite closure including source promotion status and reasons. A source suite run or child run reused across attempts, an omitted
 source, an invalid source/child signature, or plan drift can never produce `STABLE`. Retention uses
 `gateway.testing.store.retention-days` (default 30, bounded to 1..3650) and is capped from the earliest
 source start; analysis creation fails when the source retention window is already exhausted.
@@ -2742,9 +2745,11 @@ curl -sS http://localhost:8080/api/testing/stability-executions/<stabilityRunId>
   -H 'X-Purpose: TEST_EXECUTION'
 ```
 
-The independent test-kit re-derives case/aggregate classification, promotion and quarantine
-verdicts, request/evidence/source-closure fingerprints, source suite evidence, child evidence, and
-the detached Ed25519 signature. Its CI `STABILITY` mode additionally requires an externally supplied
+The independent test-kit re-derives case/aggregate classification, source promotion closure,
+promotion and quarantine verdicts, request/evidence/source-closure fingerprints, source suite
+evidence, child evidence, and the detached Ed25519 signature. A valid v1 signature can be verified
+for audit, but v1 fails every release gate because source promotion closure is unavailable. Its CI
+`STABILITY` mode additionally requires an externally supplied
 atomic-key-set fingerprint pin; accepting a key set only because the producer returned it is not a
 trust decision. See
 [Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)

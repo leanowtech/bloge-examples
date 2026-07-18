@@ -60,6 +60,34 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
         assertThat(evidence.promotion().status())
                 .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.ELIGIBLE);
         assertThat(evidence.promotion().allAttemptsVerified()).isTrue();
+        assertThat(evidence.promotion().allSourceSuitesPromotionEligible()).isTrue();
+        assertThat(evidence.quarantine().status())
+                .isEqualTo(TestSuiteStabilityEvidence.QuarantineStatus.NOT_REQUIRED);
+    }
+
+    @Test
+    void keepsStableBehaviorButBlocksPromotionWhenAnySourceSuiteIsNotEligible() {
+        TestSuiteStabilityEvidenceEvaluator.AttemptObservation blocked = withSourcePromotion(
+                attempt(2, outcomes("same")), new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.BLOCKED,
+                        List.of("NO_CERTIFIABLE_CASES"), true, 0, 2, true, true, true));
+
+        TestSuiteStabilityEvidence evidence = evaluator.evaluate(suite, suiteRef,
+                STABILITY_RUN, "stability-request", 3, List.of(
+                        attempt(1, outcomes("same")), blocked,
+                        attempt(3, outcomes("same"))), Map.of());
+
+        assertThat(evidence.status()).isEqualTo(TestSuiteStabilityEvidence.Status.STABLE);
+        assertThat(evidence.attempts().get(1).sourcePromotionStatus())
+                .isEqualTo(TestSuiteRunEvidence.PromotionStatus.BLOCKED);
+        assertThat(evidence.attempts().get(1).sourcePromotionReasons())
+                .containsExactly("NO_CERTIFIABLE_CASES");
+        assertThat(evidence.promotion().status())
+                .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.BLOCKED);
+        assertThat(evidence.promotion().reasons())
+                .containsExactly("SOURCE_SUITE_PROMOTION_BLOCKED");
+        assertThat(evidence.promotion().allAttemptsVerified()).isTrue();
+        assertThat(evidence.promotion().allSourceSuitesPromotionEligible()).isFalse();
         assertThat(evidence.quarantine().status())
                 .isEqualTo(TestSuiteStabilityEvidence.QuarantineStatus.NOT_REQUIRED);
     }
@@ -276,7 +304,7 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
         TestSuiteStabilityEvidence.PromotionVerdict forged =
                 new TestSuiteStabilityEvidence.PromotionVerdict(
                         TestSuiteStabilityEvidence.PromotionStatus.ELIGIBLE, List.of(),
-                        2, 0, 0, 0, false);
+                        2, 0, 0, 0, false, false);
         assertThatThrownBy(() -> new TestSuiteStabilityEvidence(
                 valid.schemaVersion(), valid.stabilityRunId(), valid.clientRequestId(),
                 valid.suiteRef(), valid.target(), valid.requestedAttempts(), valid.status(),
@@ -374,7 +402,7 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
                 TestSuiteExecutionServicePurpose.VALUE, suiteRef, suite.target(),
                 START.plusSeconds(attempt * 10L), START.plusSeconds(attempt * 10L + 1),
                 caseResults, TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
-                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), Map.of());
+                eligibleSourcePromotion(), List.of(), Map.of());
         String aggregateFingerprint = new TestSuiteRunEvidenceProtocolCodec(mapper)
                 .fingerprint(suiteEvidence);
         TestSuiteRunAttestation attestation = new TestSuiteRunAttestation("",
@@ -472,6 +500,20 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
                 source.childrenByRunId());
     }
 
+    private TestSuiteStabilityEvidenceEvaluator.AttemptObservation withSourcePromotion(
+            TestSuiteStabilityEvidenceEvaluator.AttemptObservation source,
+            TestSuiteRunEvidence.PromotionVerdict promotion) {
+        TestSuiteRunEvidence evidence = (TestSuiteRunEvidence) source.suiteExecution().evidence();
+        TestSuiteRunEvidence replacement = new TestSuiteRunEvidence("",
+                evidence.suiteRunId(), evidence.clientRequestId(), evidence.status(),
+                evidence.executionPurpose(), evidence.suiteRef(), evidence.target(),
+                evidence.startedAt(), evidence.completedAt(), evidence.caseResults(),
+                evidence.coverage(), promotion, evidence.diagnostics(), evidence.metadata());
+        return attemptObservation(source.attempt(), replacement,
+                source.suiteExecution().attestation().childEvidenceRefs(),
+                source.childrenByRunId());
+    }
+
     private TestSuiteStabilityEvidenceEvaluator.AttemptObservation attemptObservation(
             int attempt,
             TestSuiteRunEvidence evidence,
@@ -502,6 +544,12 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
                                 Map.of(), fixture, List.of(), Map.of())),
                 new TestSuite.CoveragePolicy(2, List.of(), List.of(), List.of(), 1, true),
                 new TestSuite.PromotionPolicy(true, 2, true), Map.of());
+    }
+
+    private static TestSuiteRunEvidence.PromotionVerdict eligibleSourcePromotion() {
+        return new TestSuiteRunEvidence.PromotionVerdict(
+                TestSuiteRunEvidence.PromotionStatus.ELIGIBLE, List.of(), true,
+                2, 2, true, true, true);
     }
 
     private static Outcome outcome(TestRunEvidence.Status status, String variant) {

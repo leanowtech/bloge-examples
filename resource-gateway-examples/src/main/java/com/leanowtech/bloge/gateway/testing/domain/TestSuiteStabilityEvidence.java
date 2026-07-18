@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.domain;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 
 import java.time.Instant;
@@ -54,14 +55,17 @@ public record TestSuiteStabilityEvidence(
         List<String> diagnostics,
         Map<String, Object> metadata
 ) {
-    /** Current stability evidence protocol version. */
-    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityEvidence.v1";
+    /** Historical stability evidence version without source-promotion closure. */
+    public static final String SCHEMA_VERSION_V1 = "bloge.testSuiteStabilityEvidence.v1";
+    /** Current stability evidence protocol version with source-promotion closure. */
+    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityEvidence.v2";
     /** Minimum reruns required before stability may be claimed. */
     public static final int MIN_ATTEMPTS = 3;
     /** Generation-one upper bound preventing accidental CI amplification. */
     public static final int MAX_ATTEMPTS = 20;
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final Pattern STABILITY_RUN_ID = Pattern.compile("stability-[a-f0-9]{64}");
+    private static final Pattern REASON_CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,127}");
     private static final Pattern METADATA_KEY = Pattern.compile(
             "[A-Za-z][A-Za-z0-9_.-]{0,127}");
     private static final int MAX_METADATA_PROPERTIES = 32;
@@ -126,6 +130,8 @@ public record TestSuiteStabilityEvidence(
      * @param suiteRunId source suite-run id
      * @param aggregateEvidenceFingerprint signed aggregate evidence fingerprint
      * @param suiteStatus source suite aggregate status
+     * @param sourcePromotionStatus source suite release-promotion status
+     * @param sourcePromotionReasons exact bounded source promotion reasons
      * @param startedAt source start time
      * @param completedAt source terminal time
      * @param diagnosticCode bounded reason when the source is inconclusive
@@ -136,6 +142,10 @@ public record TestSuiteStabilityEvidence(
             String suiteRunId,
             String aggregateEvidenceFingerprint,
             TestSuiteRunEvidence.Status suiteStatus,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            TestSuiteRunEvidence.PromotionStatus sourcePromotionStatus,
+            @JsonInclude(JsonInclude.Include.NON_EMPTY)
+            List<String> sourcePromotionReasons,
             Instant startedAt,
             Instant completedAt,
             String diagnosticCode
@@ -145,17 +155,35 @@ public record TestSuiteStabilityEvidence(
             status = status == null ? AttemptStatus.INCONCLUSIVE : status;
             suiteRunId = normalized(suiteRunId);
             aggregateEvidenceFingerprint = normalized(aggregateEvidenceFingerprint);
+            sourcePromotionReasons = sortedStrings(sourcePromotionReasons);
             diagnosticCode = normalized(diagnosticCode);
             if (attempt < 1) {
                 throw new IllegalArgumentException("Stability attempt must be one-based");
             }
+            if (sourcePromotionReasons.size() > 20 || sourcePromotionReasons.stream()
+                    .anyMatch(value -> !REASON_CODE.matcher(value).matches())) {
+                throw new IllegalArgumentException(
+                        "Source promotion reasons must be bounded machine codes");
+            }
+            if (sourcePromotionStatus == TestSuiteRunEvidence.PromotionStatus.NOT_EVALUATED) {
+                throw new IllegalArgumentException(
+                        "Terminal source promotion cannot remain unevaluated");
+            }
             if (status == AttemptStatus.VERIFIED
                     && (suiteRunId.isBlank() || !fingerprint(aggregateEvidenceFingerprint)
                     || suiteStatus == null || suiteStatus == TestSuiteRunEvidence.Status.RUNNING
+                    || (sourcePromotionStatus == TestSuiteRunEvidence.PromotionStatus.ELIGIBLE
+                    && !sourcePromotionReasons.isEmpty())
+                    || (sourcePromotionStatus == TestSuiteRunEvidence.PromotionStatus.BLOCKED
+                    && sourcePromotionReasons.isEmpty())
                     || startedAt == null || completedAt == null
                     || completedAt.isBefore(startedAt) || !diagnosticCode.isBlank())) {
                 throw new IllegalArgumentException(
                         "Verified stability attempt requires complete terminal source evidence");
+            }
+            if (sourcePromotionStatus == null && !sourcePromotionReasons.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Source promotion reasons require a source promotion status");
             }
         }
     }
@@ -269,6 +297,8 @@ public record TestSuiteStabilityEvidence(
      * @param consistentFailureCases consistently failing cases
      * @param inconclusiveCases cases without complete proof
      * @param allAttemptsVerified whether every source attempt and child closure was verified
+     * @param allSourceSuitesPromotionEligible whether every verified source suite was releasable;
+     *                                         null only for historical v1 evidence
      */
     public record PromotionVerdict(
             PromotionStatus status,
@@ -277,7 +307,9 @@ public record TestSuiteStabilityEvidence(
             int flakyCases,
             int consistentFailureCases,
             int inconclusiveCases,
-            boolean allAttemptsVerified
+            boolean allAttemptsVerified,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            Boolean allSourceSuitesPromotionEligible
     ) {
         /** Freezes ordered reasons and rejects negative counters. */
         public PromotionVerdict {
@@ -334,7 +366,7 @@ public record TestSuiteStabilityEvidence(
             throw new IllegalArgumentException(
                     "Stability metadata must contain only bounded scalar provenance facts");
         }
-        if (!SCHEMA_VERSION.equals(schemaVersion)
+        if (!List.of(SCHEMA_VERSION_V1, SCHEMA_VERSION).contains(schemaVersion)
                 || !STABILITY_RUN_ID.matcher(stabilityRunId).matches()
                 || clientRequestId.isBlank() || suiteRef == null || target == null
                 || requestedAttempts < MIN_ATTEMPTS || requestedAttempts > MAX_ATTEMPTS
@@ -344,8 +376,16 @@ public record TestSuiteStabilityEvidence(
         }
         requireAttemptClosure(attempts, requestedAttempts);
         requireCaseClosure(caseResults, requestedAttempts);
+        if (SCHEMA_VERSION.equals(schemaVersion) && attempts.stream().anyMatch(value ->
+                value.status() == AttemptStatus.VERIFIED
+                        && value.sourcePromotionStatus() == null)) {
+            throw new IllegalArgumentException(
+                    "Stability evidence v2 requires verified source-promotion closure");
+        }
         Status derivedStatus = deriveStatus(caseResults);
-        PromotionVerdict derivedPromotion = derivePromotion(attempts, caseResults, derivedStatus);
+        PromotionVerdict derivedPromotion = SCHEMA_VERSION_V1.equals(schemaVersion)
+                ? deriveLegacyPromotion(attempts, caseResults, derivedStatus)
+                : derivePromotion(attempts, caseResults, derivedStatus);
         QuarantineVerdict derivedQuarantine = deriveQuarantine(caseResults, derivedStatus);
         if (status != derivedStatus || !derivedPromotion.equals(promotion)
                 || !derivedQuarantine.equals(quarantine)) {
@@ -372,7 +412,11 @@ public record TestSuiteStabilityEvidence(
         int incomplete = count(cases, CaseStatus.INCONCLUSIVE);
         boolean allAttemptsVerified = attempts != null && !attempts.isEmpty()
                 && attempts.stream().allMatch(value -> value.status() == AttemptStatus.VERIFIED);
-        boolean eligible = status == Status.STABLE && allAttemptsVerified;
+        boolean allSourceSuitesPromotionEligible = allAttemptsVerified
+                && attempts.stream().allMatch(value -> value.sourcePromotionStatus()
+                == TestSuiteRunEvidence.PromotionStatus.ELIGIBLE);
+        boolean eligible = status == Status.STABLE && allAttemptsVerified
+                && allSourceSuitesPromotionEligible;
         List<String> reasons = new ArrayList<>();
         if (flaky > 0) {
             reasons.add("FLAKY_CASE_OBSERVED");
@@ -383,8 +427,37 @@ public record TestSuiteStabilityEvidence(
         if (incomplete > 0 || !allAttemptsVerified) {
             reasons.add("STABILITY_EVIDENCE_INCOMPLETE");
         }
+        if (allAttemptsVerified && !allSourceSuitesPromotionEligible) {
+            reasons.add("SOURCE_SUITE_PROMOTION_BLOCKED");
+        }
         return new PromotionVerdict(eligible ? PromotionStatus.ELIGIBLE : PromotionStatus.BLOCKED,
-                reasons, stable, flaky, failed, incomplete, allAttemptsVerified);
+                reasons, stable, flaky, failed, incomplete, allAttemptsVerified,
+                allSourceSuitesPromotionEligible);
+    }
+
+    private static PromotionVerdict deriveLegacyPromotion(
+            List<AttemptResult> attempts,
+            List<CaseStabilityResult> cases,
+            Status status) {
+        int stable = count(cases, CaseStatus.STABLE_PASS);
+        int flaky = count(cases, CaseStatus.FLAKY);
+        int failed = count(cases, CaseStatus.CONSISTENT_FAILURE);
+        int incomplete = count(cases, CaseStatus.INCONCLUSIVE);
+        boolean allAttemptsVerified = attempts != null && !attempts.isEmpty()
+                && attempts.stream().allMatch(value -> value.status() == AttemptStatus.VERIFIED);
+        List<String> reasons = new ArrayList<>();
+        if (flaky > 0) {
+            reasons.add("FLAKY_CASE_OBSERVED");
+        }
+        if (failed > 0) {
+            reasons.add("CONSISTENT_TEST_FAILURE");
+        }
+        if (incomplete > 0 || !allAttemptsVerified) {
+            reasons.add("STABILITY_EVIDENCE_INCOMPLETE");
+        }
+        return new PromotionVerdict(status == Status.STABLE && allAttemptsVerified
+                ? PromotionStatus.ELIGIBLE : PromotionStatus.BLOCKED,
+                reasons, stable, flaky, failed, incomplete, allAttemptsVerified, null);
     }
 
     /**

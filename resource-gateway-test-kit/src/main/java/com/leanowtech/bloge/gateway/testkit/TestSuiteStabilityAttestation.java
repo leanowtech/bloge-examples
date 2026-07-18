@@ -72,18 +72,33 @@ public record TestSuiteStabilityAttestation(
      * @param attempt one-based rerun coordinate
      * @param suiteRunId durable source suite-run id
      * @param aggregateEvidenceFingerprint source aggregate evidence fingerprint
+     * @param sourcePromotionStatus exact source suite promotion status
+     * @param sourcePromotionReasons bounded source suite promotion reasons
      */
     public record SourceSuiteEvidenceRef(
             int attempt,
             String suiteRunId,
-            String aggregateEvidenceFingerprint
+            String aggregateEvidenceFingerprint,
+            TestSuiteStabilityRun.SourcePromotionStatus sourcePromotionStatus,
+            List<String> sourcePromotionReasons
     ) {
         /** Normalizes and validates one complete source reference. */
         public SourceSuiteEvidenceRef {
             suiteRunId = normalized(suiteRunId);
             aggregateEvidenceFingerprint = normalized(aggregateEvidenceFingerprint);
+            sourcePromotionReasons = sourcePromotionReasons == null
+                    ? List.of() : sourcePromotionReasons.stream().map(
+                    TestSuiteStabilityAttestation::machineCode).distinct().sorted().toList();
             if (attempt < 1 || attempt > 20 || suiteRunId.isBlank()
-                    || !fingerprint(aggregateEvidenceFingerprint)) {
+                    || !fingerprint(aggregateEvidenceFingerprint)
+                    || sourcePromotionReasons.size() > 20
+                    || (sourcePromotionStatus == null && !sourcePromotionReasons.isEmpty())
+                    || (sourcePromotionStatus
+                    == TestSuiteStabilityRun.SourcePromotionStatus.ELIGIBLE
+                    && !sourcePromotionReasons.isEmpty())
+                    || (sourcePromotionStatus
+                    == TestSuiteStabilityRun.SourcePromotionStatus.BLOCKED
+                    && sourcePromotionReasons.isEmpty())) {
                 throw new IllegalArgumentException(
                         "Stability source evidence reference is incomplete");
             }
@@ -106,7 +121,8 @@ public record TestSuiteStabilityAttestation(
             throw new IllegalArgumentException("Stability signature status is required");
         }
         if (signatureStatus == SignatureStatus.VERIFIED
-                && (!TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1.equals(schemaVersion)
+                && (!List.of(TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1,
+                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2).contains(schemaVersion)
                 || !stabilityRunId(stabilityRunId) || suiteRef == null
                 || !fingerprint(requestFingerprint) || !fingerprint(evidenceFingerprint)
                 || Instant.EPOCH.equals(signedAt) || keyId.isBlank() || algorithm.isBlank()
@@ -132,7 +148,10 @@ public record TestSuiteStabilityAttestation(
         value.path("sourceSuiteEvidenceRefs").forEach(source ->
                 sources.add(new SourceSuiteEvidenceRef(source.path("attempt").asInt(),
                         source.path("suiteRunId").asText(),
-                        source.path("aggregateEvidenceFingerprint").asText())));
+                        source.path("aggregateEvidenceFingerprint").asText(),
+                        nullableEnum(TestSuiteStabilityRun.SourcePromotionStatus.class,
+                                source.path("sourcePromotionStatus")),
+                        strings(source.path("sourcePromotionReasons")))));
         return new TestSuiteStabilityAttestation(value.path("schemaVersion").asText(),
                 enumValue(SignatureStatus.class, value.path("signatureStatus").asText()),
                 value.path("stabilityRunId").asText(), suiteRef,
@@ -166,6 +185,27 @@ public record TestSuiteStabilityAttestation(
         } catch (RuntimeException failure) {
             throw new IllegalArgumentException("Unknown stability attestation state");
         }
+    }
+
+    private static <E extends Enum<E>> E nullableEnum(Class<E> type, JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        return enumValue(type, value.asText());
+    }
+
+    private static List<String> strings(JsonNode values) {
+        List<String> result = new ArrayList<>();
+        values.forEach(value -> result.add(value.asText()));
+        return result;
+    }
+
+    private static String machineCode(String value) {
+        String safe = normalized(value);
+        if (!safe.matches("[A-Z][A-Z0-9_]{0,127}")) {
+            throw new IllegalArgumentException("Source promotion reason is invalid");
+        }
+        return safe;
     }
 
     private static boolean stabilityRunId(String value) {

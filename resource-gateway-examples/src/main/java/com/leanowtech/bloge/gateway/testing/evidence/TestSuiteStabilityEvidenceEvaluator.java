@@ -155,7 +155,9 @@ public final class TestSuiteStabilityEvidenceEvaluator {
                     ? TestSuiteStabilityEvidence.AttemptStatus.VERIFIED
                     : TestSuiteStabilityEvidence.AttemptStatus.INCONCLUSIVE,
                     source.suiteRunId(), source.aggregateEvidenceFingerprint(),
-                    source.suiteStatus(), source.startedAt(), source.completedAt(), diagnostic));
+                    source.suiteStatus(), source.sourcePromotionStatus(),
+                    source.sourcePromotionReasons(), source.startedAt(), source.completedAt(),
+                    diagnostic));
         }
 
         TestSuiteStabilityEvidence.Status aggregateStatus = aggregateStatus(caseResults);
@@ -202,8 +204,9 @@ public final class TestSuiteStabilityEvidenceEvaluator {
                     childRefs.get(suite.cases().get(caseIndex).caseId()), source.childrenByRunId()));
         }
         return new SourceEvaluation(source.attempt(), true, response.suiteRunId(),
-                response.evidenceFingerprint(), evidence.status(), evidence.startedAt(),
-                evidence.completedAt(), "", List.copyOf(cases));
+                response.evidenceFingerprint(), evidence.status(), evidence.promotion().status(),
+                evidence.promotion().reasons(), evidence.startedAt(), evidence.completedAt(), "",
+                List.copyOf(cases));
     }
 
     private TestSuiteStabilityEvidence.CaseObservation evaluateCase(
@@ -246,6 +249,9 @@ public final class TestSuiteStabilityEvidenceEvaluator {
                 || !Objects.equals(suiteRef, response.evidence().suiteRef())
                 || !Objects.equals(suite.target(), response.evidence().target())
                 || response.evidence().status() == TestSuiteRunEvidence.Status.RUNNING
+                || response.evidence().promotion() == null
+                || response.evidence().promotion().status()
+                == TestSuiteRunEvidence.PromotionStatus.NOT_EVALUATED
                 || response.evidence().completedAt() == null
                 || !response.attestation().terminallyVerifiable()
                 || !response.suiteRunId().equals(response.attestation().suiteRunId())
@@ -394,6 +400,7 @@ public final class TestSuiteStabilityEvidenceEvaluator {
                 response == null ? "" : response.suiteRunId(),
                 response == null ? "" : response.evidenceFingerprint(),
                 evidence == null ? null : evidence.status(),
+                null, List.of(),
                 evidence == null || evidence.startedAt() == null ? time : evidence.startedAt(),
                 evidence == null || evidence.completedAt() == null ? time : evidence.completedAt(),
                 diagnostic, cases);
@@ -438,7 +445,7 @@ public final class TestSuiteStabilityEvidenceEvaluator {
         }
         if (suite instanceof TestSuiteV3 || suite instanceof TestSuiteV5) {
             throw new IllegalArgumentException(
-                    "Stability v1 requires executable child evidence for every suite case");
+                    "Stability analysis requires executable child evidence for every suite case");
         }
     }
 
@@ -544,6 +551,8 @@ public final class TestSuiteStabilityEvidenceEvaluator {
             String suiteRunId,
             String aggregateEvidenceFingerprint,
             TestSuiteRunEvidence.Status suiteStatus,
+            TestSuiteRunEvidence.PromotionStatus sourcePromotionStatus,
+            List<String> sourcePromotionReasons,
             Instant startedAt,
             Instant completedAt,
             String diagnosticCode,

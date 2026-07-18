@@ -82,14 +82,20 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityExecutionRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
-        assertThat(schema.at("/$defs/testSuiteStabilityEvidence/properties/schemaVersion/const")
-                .asText()).isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/testSuiteStabilityEvidence/properties/schemaVersion/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly(TestSuiteStabilityEvidence.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityEvidence.SCHEMA_VERSION);
         assertThat(schema.at(
-                "/$defs/testSuiteStabilityAttestation/properties/schemaVersion/const")
-                .asText()).isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+                "/$defs/testSuiteStabilityAttestation/properties/schemaVersion/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly(TestSuiteStabilityAttestation.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityAttestation.SCHEMA_VERSION);
         assertThat(schema.at(
-                "/$defs/testSuiteStabilityExecutionResponse/properties/schemaVersion/const")
-                .asText()).isEqualTo(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
+                "/$defs/testSuiteStabilityExecutionResponse/properties/schemaVersion/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV1/properties/schemaVersion/const").asText())
@@ -998,8 +1004,17 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at(
                 "/testSuiteStabilityEvidence/properties/attempts/maxItems").asInt())
                 .isEqualTo(TestSuiteStabilityEvidence.MAX_ATTEMPTS);
-        assertThat(definitions.at("/testSuiteStabilityEvidence/oneOf")).hasSize(4);
-        assertThat(definitions.at("/testSuiteStabilityAttestation/oneOf")).hasSize(3);
+        assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/0/oneOf")).hasSize(4);
+        assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/1/oneOf")).hasSize(2);
+        assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/0/oneOf")).hasSize(3);
+        assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/1/oneOf")).hasSize(2);
+        assertThat(definitions.at(
+                "/testSuiteStabilityPromotionVerdict/properties"
+                        + "/allSourceSuitesPromotionEligible/type").asText())
+                .isEqualTo("boolean");
+        assertThat(definitions.at(
+                "/testSuiteStabilityAttemptResult/properties/sourcePromotionReasons/items/pattern")
+                .asText()).isEqualTo("^[A-Z][A-Z0-9_]{0,127}$");
         assertThat(definitions.at(
                 "/testSuiteStabilityExecutionResponse/properties/attestation/allOf/1/properties"
                         + "/signatureStatus/const").asText()).isEqualTo("VERIFIED");

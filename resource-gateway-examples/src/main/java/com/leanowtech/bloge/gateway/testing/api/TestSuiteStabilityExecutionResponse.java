@@ -21,8 +21,11 @@ public record TestSuiteStabilityExecutionResponse(
         TestSuiteStabilityEvidence evidence,
         TestSuiteStabilityAttestation attestation
 ) {
+    /** Historical response version without source-promotion closure. */
+    public static final String SCHEMA_VERSION_V1 =
+            "bloge.testSuiteStabilityExecutionResponse.v1";
     /** Current stability-execution response protocol version. */
-    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityExecutionResponse.v1";
+    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityExecutionResponse.v2";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Validates one complete generation-consistent terminal response. */
@@ -31,12 +34,18 @@ public record TestSuiteStabilityExecutionResponse(
                 ? SCHEMA_VERSION : schemaVersion.trim();
         stabilityRunId = stabilityRunId == null ? "" : stabilityRunId.trim();
         evidenceFingerprint = evidenceFingerprint == null ? "" : evidenceFingerprint.trim();
-        if (!SCHEMA_VERSION.equals(schemaVersion) || evidence == null || attestation == null
+        boolean legacy = SCHEMA_VERSION_V1.equals(schemaVersion);
+        if (!java.util.List.of(SCHEMA_VERSION_V1, SCHEMA_VERSION).contains(schemaVersion)
+                || evidence == null || attestation == null
                 || !stabilityRunId.equals(evidence.stabilityRunId())
                 || !stabilityRunId.equals(attestation.stabilityRunId())
                 || !evidenceFingerprint.equals(attestation.evidenceFingerprint())
                 || !FINGERPRINT.matcher(evidenceFingerprint).matches()
-                || !attestation.terminallyVerifiable()) {
+                || !attestation.terminallyVerifiable()
+                || legacy != TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(
+                evidence.schemaVersion())
+                || legacy != TestSuiteStabilityAttestation.SCHEMA_VERSION_V1.equals(
+                attestation.schemaVersion())) {
             throw new IllegalArgumentException(
                     "Complete generation-consistent signed stability response is required");
         }

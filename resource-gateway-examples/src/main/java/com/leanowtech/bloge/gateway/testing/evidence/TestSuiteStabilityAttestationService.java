@@ -70,11 +70,16 @@ public final class TestSuiteStabilityAttestationService {
         }
         try {
             Instant signedAt = clock.instant();
+            String attestationVersion = TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(
+                    evidence.schemaVersion())
+                    ? TestSuiteStabilityAttestation.SCHEMA_VERSION_V1
+                    : TestSuiteStabilityAttestation.SCHEMA_VERSION;
             String materialFingerprint = materialFingerprint(evidence.stabilityRunId(),
                     evidence.suiteRef(), requestFingerprint, evidenceFingerprint,
-                    sources, signedAt);
+                    sources, signedAt, attestationVersion);
             VisualRunEvidenceSeal seal = signer.seal(materialFingerprint);
-            TestSuiteStabilityAttestation attestation = new TestSuiteStabilityAttestation("",
+            TestSuiteStabilityAttestation attestation = new TestSuiteStabilityAttestation(
+                    attestationVersion,
                     TestSuiteStabilityAttestation.SignatureStatus.VERIFIED,
                     evidence.stabilityRunId(), evidence.suiteRef(), requestFingerprint,
                     evidenceFingerprint, sources, signedAt, seal.keyId(), seal.algorithm(),
@@ -141,7 +146,7 @@ public final class TestSuiteStabilityAttestationService {
             String materialFingerprint = materialFingerprint(attestation.stabilityRunId(),
                     attestation.suiteRef(), attestation.requestFingerprint(),
                     attestation.evidenceFingerprint(), attestation.sourceSuiteEvidenceRefs(),
-                    attestation.signedAt());
+                    attestation.signedAt(), attestation.schemaVersion());
             VisualEvidenceSigner.Verification result = signer.verify(
                     new VisualRunEvidenceSeal("", materialFingerprint,
                             attestation.algorithm(), attestation.keyId(), attestation.signedAt(),
@@ -163,9 +168,10 @@ public final class TestSuiteStabilityAttestationService {
             String requestFingerprint,
             String evidenceFingerprint,
             List<TestSuiteStabilityAttestation.SourceSuiteEvidenceRef> sources,
-            Instant signedAt) {
+            Instant signedAt,
+            String schemaVersion) {
         return ProtocolFingerprint.of(objectMapper, new SignatureMaterial(
-                TestSuiteStabilityAttestation.SCHEMA_VERSION, stabilityRunId, suiteRef,
+                schemaVersion, stabilityRunId, suiteRef,
                 requestFingerprint, evidenceFingerprint, List.copyOf(sources), signedAt));
     }
 
@@ -176,7 +182,8 @@ public final class TestSuiteStabilityAttestationService {
                         && !value.aggregateEvidenceFingerprint().isBlank())
                 .map(value -> new TestSuiteStabilityAttestation.SourceSuiteEvidenceRef(
                         value.attempt(), value.suiteRunId(),
-                        value.aggregateEvidenceFingerprint()))
+                        value.aggregateEvidenceFingerprint(), value.sourcePromotionStatus(),
+                        value.sourcePromotionReasons()))
                 .toList();
     }
 

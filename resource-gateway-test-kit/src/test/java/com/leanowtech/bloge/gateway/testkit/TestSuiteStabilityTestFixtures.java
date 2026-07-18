@@ -36,10 +36,10 @@ final class TestSuiteStabilityTestFixtures {
 
     static ObjectNode response(String requestFingerprint, KeyPair signingKey) {
         ObjectNode response = EvidenceTrustTestFixtures.JSON.createObjectNode();
-        response.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1);
+        response.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2);
         response.put("stabilityRunId", STABILITY_RUN_ID);
         ObjectNode evidence = response.putObject("evidence");
-        evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V1);
+        evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V2);
         evidence.put("stabilityRunId", STABILITY_RUN_ID);
         evidence.put("clientRequestId", CLIENT_REQUEST_ID);
         ObjectNode suite = evidence.putObject("suiteRef");
@@ -60,6 +60,7 @@ final class TestSuiteStabilityTestFixtures {
             value.put("suiteRunId", "suite-run-" + attempt);
             value.put("aggregateEvidenceFingerprint", fingerprint((char) ('3' + attempt)));
             value.put("suiteStatus", "PASSED");
+            value.put("sourcePromotionStatus", "ELIGIBLE");
             value.put("startedAt", SIGNED_AT.minusSeconds(180L - attempt * 40L).toString());
             value.put("completedAt", SIGNED_AT.minusSeconds(179L - attempt * 40L).toString());
             value.put("diagnosticCode", "");
@@ -96,6 +97,7 @@ final class TestSuiteStabilityTestFixtures {
         promotion.put("consistentFailureCases", 0);
         promotion.put("inconclusiveCases", 0);
         promotion.put("allAttemptsVerified", true);
+        promotion.put("allSourceSuitesPromotionEligible", true);
         ObjectNode quarantine = evidence.putObject("quarantine");
         quarantine.put("status", "NOT_REQUIRED");
         quarantine.putArray("caseIds");
@@ -106,7 +108,7 @@ final class TestSuiteStabilityTestFixtures {
         evidence.putObject("metadata").put("pipeline", "nightly");
 
         ObjectNode attestation = response.putObject("attestation");
-        attestation.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1);
+        attestation.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2);
         attestation.put("signatureStatus", "VERIFIED");
         attestation.put("stabilityRunId", STABILITY_RUN_ID);
         attestation.set("suiteRef", suite.deepCopy());
@@ -133,6 +135,14 @@ final class TestSuiteStabilityTestFixtures {
                 source.put("suiteRunId", attempt.path("suiteRunId").asText());
                 source.put("aggregateEvidenceFingerprint",
                         attempt.path("aggregateEvidenceFingerprint").asText());
+                if (attempt.has("sourcePromotionStatus")) {
+                    source.put("sourcePromotionStatus",
+                            attempt.path("sourcePromotionStatus").asText());
+                    if (attempt.has("sourcePromotionReasons")) {
+                        source.set("sourcePromotionReasons",
+                                attempt.path("sourcePromotionReasons").deepCopy());
+                    }
+                }
             });
         }
         attestation.put("signature", sign(keyPair,
@@ -157,6 +167,34 @@ final class TestSuiteStabilityTestFixtures {
         quarantine.putArray("caseIds").add("golden");
         quarantine.put("reason", "FLAKY_CASE_OBSERVED");
         seal(response, keyPair, false);
+    }
+
+    static void blockSourcePromotion(ObjectNode response, KeyPair keyPair) {
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        ObjectNode attempt = (ObjectNode) evidence.path("attempts").get(1);
+        attempt.put("sourcePromotionStatus", "BLOCKED");
+        attempt.putArray("sourcePromotionReasons").add("NO_CERTIFIABLE_CASES");
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons").add("SOURCE_SUITE_PROMOTION_BLOCKED");
+        promotion.put("allSourceSuitesPromotionEligible", false);
+        seal(response, keyPair, true);
+    }
+
+    static void downgradeToLegacyV1(ObjectNode response, KeyPair keyPair) {
+        response.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1);
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V1);
+        evidence.path("attempts").forEach(value -> {
+            ObjectNode attempt = (ObjectNode) value;
+            attempt.remove("sourcePromotionStatus");
+            attempt.remove("sourcePromotionReasons");
+        });
+        ((ObjectNode) evidence.path("promotion"))
+                .remove("allSourceSuitesPromotionEligible");
+        ((ObjectNode) response.path("attestation")).put("schemaVersion",
+                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1);
+        seal(response, keyPair, true);
     }
 
     private static ObjectNode signatureMaterial(ObjectNode attestation) {

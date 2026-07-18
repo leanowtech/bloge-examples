@@ -2477,6 +2477,16 @@
           "enum": ["RUNNING", "PASSED", "COMPLETED_WITH_FAILURES", "PARTIAL",
             "EVIDENCE_INCOMPLETE", null]
         },
+        "sourcePromotionStatus": {
+          "type": ["string", "null"], "enum": ["ELIGIBLE", "BLOCKED", null]
+        },
+        "sourcePromotionReasons": {
+          "type": "array", "uniqueItems": true, "maxItems": 20,
+          "items": {
+            "type": "string", "minLength": 1, "maxLength": 128,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+          }
+        },
         "startedAt": {"type": ["string", "null"], "format": "date-time"},
         "completedAt": {"type": ["string", "null"], "format": "date-time"},
         "diagnosticCode": {
@@ -2592,18 +2602,20 @@
         "reasons": {
           "type": "array", "uniqueItems": true, "maxItems": 3,
           "items": {"enum": ["FLAKY_CASE_OBSERVED", "CONSISTENT_TEST_FAILURE",
-            "STABILITY_EVIDENCE_INCOMPLETE"]}
+            "STABILITY_EVIDENCE_INCOMPLETE", "SOURCE_SUITE_PROMOTION_BLOCKED"]}
         },
         "stableCases": {"type": "integer", "minimum": 0, "maximum": 100},
         "flakyCases": {"type": "integer", "minimum": 0, "maximum": 100},
         "consistentFailureCases": {"type": "integer", "minimum": 0, "maximum": 100},
         "inconclusiveCases": {"type": "integer", "minimum": 0, "maximum": 100},
-        "allAttemptsVerified": {"type": "boolean"}
+        "allAttemptsVerified": {"type": "boolean"},
+        "allSourceSuitesPromotionEligible": {"type": "boolean"}
       },
       "oneOf": [
         {"properties": {"status": {"const": "ELIGIBLE"}, "reasons": {"maxItems": 0},
           "flakyCases": {"const": 0}, "consistentFailureCases": {"const": 0},
-          "inconclusiveCases": {"const": 0}, "allAttemptsVerified": {"const": true}}},
+          "inconclusiveCases": {"const": 0}, "allAttemptsVerified": {"const": true},
+          "allSourceSuitesPromotionEligible": {"const": true}}},
         {"properties": {"status": {"const": "BLOCKED"}}}
       ]
     },
@@ -2635,7 +2647,8 @@
         "requestedAttempts", "status", "attempts", "caseResults", "promotion", "quarantine",
         "startedAt", "completedAt", "diagnostics", "metadata"],
       "properties": {
-        "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v1"},
+        "schemaVersion": {"enum": ["bloge.testSuiteStabilityEvidence.v1",
+          "bloge.testSuiteStabilityEvidence.v2"]},
         "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
         "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
         "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
@@ -2663,9 +2676,8 @@
         },
         "metadata": {"$ref": "#/$defs/stabilityProvenanceMetadata"}
       },
-      "oneOf": [
+      "allOf": [{"oneOf": [
         {"properties": {"status": {"const": "STABLE"},
-          "promotion": {"properties": {"status": {"const": "ELIGIBLE"}}},
           "quarantine": {"properties": {"status": {"const": "NOT_REQUIRED"}}}}},
         {"properties": {"status": {"const": "FLAKY"},
           "promotion": {"properties": {"status": {"const": "BLOCKED"}}},
@@ -2676,7 +2688,33 @@
         {"properties": {"status": {"const": "INCONCLUSIVE"},
           "promotion": {"properties": {"status": {"const": "BLOCKED"}}},
           "quarantine": {"properties": {"status": {"const": "UNDETERMINED"}}}}}
-      ]
+      ]}, {"oneOf": [
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v1"},
+          "attempts": {"items": {"allOf": [
+            {"$ref": "#/$defs/testSuiteStabilityAttemptResult"},
+            {"not": {"anyOf": [
+              {"required": ["sourcePromotionStatus"]},
+              {"required": ["sourcePromotionReasons"]}
+            ]}}
+          ]}},
+          "promotion": {"not": {"required": ["allSourceSuitesPromotionEligible"]}}
+        }},
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v2"},
+          "attempts": {"items": {"allOf": [
+            {"$ref": "#/$defs/testSuiteStabilityAttemptResult"},
+            {
+              "oneOf": [
+                {"required": ["sourcePromotionStatus"],
+                  "properties": {"status": {"const": "VERIFIED"},
+                  "sourcePromotionStatus": {"enum": ["ELIGIBLE", "BLOCKED"]}}},
+                {"properties": {"status": {"const": "INCONCLUSIVE"}}}
+              ]}
+          ]}},
+          "promotion": {"required": ["allSourceSuitesPromotionEligible"]}
+        }}
+      ]}]
     },
     "testSuiteStabilitySourceEvidenceRef": {
       "type": "object",
@@ -2685,7 +2723,17 @@
       "properties": {
         "attempt": {"type": "integer", "minimum": 1, "maximum": 20},
         "suiteRunId": {"type": "string", "minLength": 1, "maxLength": 255},
-        "aggregateEvidenceFingerprint": {"$ref": "#/$defs/fingerprint"}
+        "aggregateEvidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sourcePromotionStatus": {
+          "type": ["string", "null"], "enum": ["ELIGIBLE", "BLOCKED", null]
+        },
+        "sourcePromotionReasons": {
+          "type": "array", "uniqueItems": true, "maxItems": 20,
+          "items": {
+            "type": "string", "minLength": 1, "maxLength": 128,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+          }
+        }
       }
     },
     "testSuiteStabilityAttestation": {
@@ -2695,7 +2743,8 @@
         "requestFingerprint", "evidenceFingerprint", "sourceSuiteEvidenceRefs", "signedAt",
         "keyId", "algorithm", "signature", "independentlyVerifiable"],
       "properties": {
-        "schemaVersion": {"const": "bloge.testSuiteStabilityAttestation.v1"},
+        "schemaVersion": {"enum": ["bloge.testSuiteStabilityAttestation.v1",
+          "bloge.testSuiteStabilityAttestation.v2"]},
         "signatureStatus": {"enum": ["VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE"]},
         "stabilityRunId": {"type": "string", "maxLength": 74},
         "suiteRef": {"oneOf": [{"$ref": "#/$defs/testSuiteRef"}, {"type": "null"}]},
@@ -2715,7 +2764,7 @@
         "signature": {"type": "string", "maxLength": 4096},
         "independentlyVerifiable": {"type": "boolean"}
       },
-      "oneOf": [
+      "allOf": [{"oneOf": [
         {"properties": {"signatureStatus": {"const": "VERIFIED"},
           "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
           "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
@@ -2735,7 +2784,24 @@
         {"properties": {"signatureStatus": {"const": "UNSIGNED"},
           "keyId": {"const": ""}, "algorithm": {"const": ""}, "signature": {"const": ""},
           "independentlyVerifiable": {"const": false}}}
-      ]
+      ]}, {"oneOf": [
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityAttestation.v1"},
+          "sourceSuiteEvidenceRefs": {"items": {"allOf": [
+            {"$ref": "#/$defs/testSuiteStabilitySourceEvidenceRef"},
+            {"not": {"anyOf": [
+              {"required": ["sourcePromotionStatus"]},
+              {"required": ["sourcePromotionReasons"]}
+            ]}}
+          ]}}
+        }},
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityAttestation.v2"},
+          "sourceSuiteEvidenceRefs": {"items": {"allOf": [
+            {"$ref": "#/$defs/testSuiteStabilitySourceEvidenceRef"}
+          ]}}
+        }}
+      ]}]
     },
     "testSuiteStabilityExecutionResponse": {
       "type": "object",
@@ -2743,7 +2809,8 @@
       "required": ["schemaVersion", "stabilityRunId", "evidenceFingerprint", "evidence",
         "attestation"],
       "properties": {
-        "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionResponse.v1"},
+        "schemaVersion": {"enum": ["bloge.testSuiteStabilityExecutionResponse.v1",
+          "bloge.testSuiteStabilityExecutionResponse.v2"]},
         "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
         "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
         "evidence": {"$ref": "#/$defs/testSuiteStabilityEvidence"},
@@ -2754,7 +2821,23 @@
               "independentlyVerifiable": {"const": true}}}
           ]
         }
-      }
+      },
+      "oneOf": [
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionResponse.v1"},
+          "evidence": {"properties": {"schemaVersion": {
+            "const": "bloge.testSuiteStabilityEvidence.v1"}}},
+          "attestation": {"properties": {"schemaVersion": {
+            "const": "bloge.testSuiteStabilityAttestation.v1"}}}
+        }},
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionResponse.v2"},
+          "evidence": {"properties": {"schemaVersion": {
+            "const": "bloge.testSuiteStabilityEvidence.v2"}}},
+          "attestation": {"properties": {"schemaVersion": {
+            "const": "bloge.testSuiteStabilityAttestation.v2"}}}
+        }}
+      ]
     },
     "testSuiteCaseResult": {
       "type": "object",

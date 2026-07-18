@@ -41,6 +41,20 @@ class TestSuiteStabilityEvidenceVerifierTest {
     }
 
     @Test
+    void rejectsResignedEligibilityThatIgnoresABlockedSourceSuite() {
+        TestSuiteStabilityTestFixtures.Fixture fixture = TestSuiteStabilityTestFixtures.fixture();
+        ObjectNode response = fixture.copyResponse();
+        ObjectNode attempt = (ObjectNode) response.at("/evidence/attempts/1");
+        attempt.put("sourcePromotionStatus", "BLOCKED");
+        attempt.putArray("sourcePromotionReasons").add("NO_CERTIFIABLE_CASES");
+        TestSuiteStabilityTestFixtures.seal(response, fixture.keyPair(), true);
+
+        assertThatThrownBy(() -> TestSuiteStabilityRun.from(response))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("aggregate");
+    }
+
+    @Test
     void rejectsResignedIdentityTimeWindowAndDiagnosticContradictions() {
         TestSuiteStabilityTestFixtures.Fixture fixture = TestSuiteStabilityTestFixtures.fixture();
         ObjectNode wrongIdentity = fixture.copyResponse();

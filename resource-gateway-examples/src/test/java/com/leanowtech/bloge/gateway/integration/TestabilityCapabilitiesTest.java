@@ -273,11 +273,14 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects().get("testSuiteStabilityExecutionRequest"))
                 .containsExactly(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityEvidence"))
-                .containsExactly(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+                .containsExactly(TestSuiteStabilityEvidence.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityEvidence.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityAttestation"))
-                .containsExactly(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+                .containsExactly(TestSuiteStabilityAttestation.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityAttestation.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityExecutionResponse"))
-                .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
+                .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterializationRequest"))
                 .containsExactly(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterialization"))

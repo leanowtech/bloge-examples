@@ -390,6 +390,9 @@ public final class JUnitXmlReportWriter {
                 reasons.add("STABILITY_" + run.status());
             }
             if (!run.promotionEligible()) {
+                if (!run.sourcePromotionClosureAvailable()) {
+                    reasons.add("SOURCE_PROMOTION_CLOSURE_UNAVAILABLE");
+                }
                 reasons.addAll(run.promotion().reasons());
             }
             xml.writeStartElement("failure");

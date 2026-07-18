@@ -1,8 +1,12 @@
 package com.leanowtech.bloge.gateway.testing.domain;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -40,10 +44,13 @@ public record TestSuiteStabilityAttestation(
         String signature,
         boolean independentlyVerifiable
 ) {
-    /** Current stability-attestation protocol version. */
-    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityAttestation.v1";
+    /** Historical attestation version without source-promotion closure. */
+    public static final String SCHEMA_VERSION_V1 = "bloge.testSuiteStabilityAttestation.v1";
+    /** Current stability-attestation protocol version with source-promotion closure. */
+    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityAttestation.v2";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final Pattern STABILITY_RUN_ID = Pattern.compile("stability-[a-f0-9]{64}");
+    private static final Pattern REASON_CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,127}");
 
     /** Signature state persisted without provider-specific diagnostics. */
     public enum SignatureStatus {
@@ -58,18 +65,35 @@ public record TestSuiteStabilityAttestation(
      * @param attempt one-based stability attempt
      * @param suiteRunId durable source suite-run id
      * @param aggregateEvidenceFingerprint signed source aggregate fingerprint
+     * @param sourcePromotionStatus source suite release-promotion status
+     * @param sourcePromotionReasons exact bounded source promotion reasons
      */
     public record SourceSuiteEvidenceRef(
             int attempt,
             String suiteRunId,
-            String aggregateEvidenceFingerprint
+            String aggregateEvidenceFingerprint,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            TestSuiteRunEvidence.PromotionStatus sourcePromotionStatus,
+            @JsonInclude(JsonInclude.Include.NON_EMPTY)
+            List<String> sourcePromotionReasons
     ) {
         /** Normalizes and validates one complete source reference. */
         public SourceSuiteEvidenceRef {
             suiteRunId = normalized(suiteRunId);
             aggregateEvidenceFingerprint = normalized(aggregateEvidenceFingerprint);
+            sourcePromotionReasons = sortedStrings(sourcePromotionReasons);
             if (attempt < 1 || suiteRunId.isBlank()
-                    || !fingerprint(aggregateEvidenceFingerprint)) {
+                    || !fingerprint(aggregateEvidenceFingerprint)
+                    || sourcePromotionReasons.size() > 20
+                    || sourcePromotionReasons.stream().anyMatch(
+                    value -> !REASON_CODE.matcher(value).matches())
+                    || sourcePromotionStatus
+                    == TestSuiteRunEvidence.PromotionStatus.NOT_EVALUATED
+                    || (sourcePromotionStatus == null && !sourcePromotionReasons.isEmpty())
+                    || (sourcePromotionStatus == TestSuiteRunEvidence.PromotionStatus.ELIGIBLE
+                    && !sourcePromotionReasons.isEmpty())
+                    || (sourcePromotionStatus == TestSuiteRunEvidence.PromotionStatus.BLOCKED
+                    && sourcePromotionReasons.isEmpty())) {
                 throw new IllegalArgumentException(
                         "Complete stability source evidence identity is required");
             }
@@ -93,7 +117,7 @@ public record TestSuiteStabilityAttestation(
                 && completeIdentity(stabilityRunId, suiteRef, requestFingerprint,
                 evidenceFingerprint) && !keyId.isBlank() && !algorithm.isBlank()
                 && !signature.isBlank() && !Instant.EPOCH.equals(signedAt);
-        if (!SCHEMA_VERSION.equals(schemaVersion)) {
+        if (!List.of(SCHEMA_VERSION_V1, SCHEMA_VERSION).contains(schemaVersion)) {
             throw new IllegalArgumentException("Unsupported stability attestation schemaVersion");
         }
         if (signatureStatus == SignatureStatus.VERIFIED && !independentlyVerifiable) {
@@ -122,7 +146,10 @@ public record TestSuiteStabilityAttestation(
             String requestFingerprint,
             String evidenceFingerprint,
             List<SourceSuiteEvidenceRef> sources) {
-        return new TestSuiteStabilityAttestation("", SignatureStatus.VERIFICATION_UNAVAILABLE,
+        String version = TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(
+                evidence.schemaVersion()) ? SCHEMA_VERSION_V1 : SCHEMA_VERSION;
+        return new TestSuiteStabilityAttestation(version,
+                SignatureStatus.VERIFICATION_UNAVAILABLE,
                 evidence.stabilityRunId(), evidence.suiteRef(), requestFingerprint,
                 evidenceFingerprint, sources, Instant.EPOCH, "", "", "", false);
     }
@@ -145,6 +172,17 @@ public record TestSuiteStabilityAttestation(
 
     private static boolean fingerprint(String value) {
         return FINGERPRINT.matcher(normalized(value)).matches();
+    }
+
+    private static List<String> sortedStrings(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        List<String> sorted = new ArrayList<>(new LinkedHashSet<>(values));
+        sorted.removeIf(value -> normalized(value).isBlank());
+        sorted.replaceAll(TestSuiteStabilityAttestation::normalized);
+        sorted.sort(Comparator.naturalOrder());
+        return List.copyOf(sorted);
     }
 
     private static String defaulted(String value, String fallback) {

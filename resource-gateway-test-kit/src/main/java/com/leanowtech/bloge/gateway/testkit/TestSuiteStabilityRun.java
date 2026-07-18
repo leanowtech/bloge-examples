@@ -17,6 +17,7 @@ import java.util.Set;
  * promotion gate, quarantine recommendation, ordered attempt closure, source attestation closure,
  * and canonical evidence fingerprint. Parsing a producer status is never treated as proof.</p>
  *
+ * @param schemaVersion exact terminal response wire version
  * @param stabilityRunId deterministic analysis id
  * @param clientRequestId caller-owned parent idempotency key
  * @param status independently rechecked aggregate status
@@ -35,6 +36,7 @@ import java.util.Set;
  * @param rawResponse defensive complete protocol response
  */
 public record TestSuiteStabilityRun(
+        String schemaVersion,
         String stabilityRunId,
         String clientRequestId,
         Status status,
@@ -146,6 +148,14 @@ public record TestSuiteStabilityRun(
         BLOCKED
     }
 
+    /** Release-promotion state copied from one verified source suite. */
+    public enum SourcePromotionStatus {
+        /** The source suite independently satisfied its release preconditions. */
+        ELIGIBLE,
+        /** The source suite was behaviorally terminal but not releasable. */
+        BLOCKED
+    }
+
     /** Non-destructive quarantine recommendation. */
     public enum QuarantineStatus {
         /** Complete evidence proves that no flaky case requires quarantine. */
@@ -203,6 +213,8 @@ public record TestSuiteStabilityRun(
      * @param suiteRunId durable source id when observed
      * @param aggregateEvidenceFingerprint source aggregate fingerprint when observed
      * @param suiteStatus source suite terminal status when observed
+     * @param sourcePromotionStatus exact source suite promotion status when verified
+     * @param sourcePromotionReasons bounded source suite promotion reasons
      * @param startedAt source start when observed
      * @param completedAt source completion when observed
      * @param diagnosticCode stable reason when inconclusive
@@ -213,6 +225,8 @@ public record TestSuiteStabilityRun(
             String suiteRunId,
             String aggregateEvidenceFingerprint,
             SuiteStatus suiteStatus,
+            SourcePromotionStatus sourcePromotionStatus,
+            List<String> sourcePromotionReasons,
             Instant startedAt,
             Instant completedAt,
             String diagnosticCode
@@ -221,16 +235,26 @@ public record TestSuiteStabilityRun(
         public AttemptResult {
             suiteRunId = normalized(suiteRunId);
             aggregateEvidenceFingerprint = normalized(aggregateEvidenceFingerprint);
+            sourcePromotionReasons = immutableCodes(sourcePromotionReasons);
             diagnosticCode = machineCode(diagnosticCode);
-            if (attempt < 1 || attempt > 20 || status == null) {
+            if (attempt < 1 || attempt > 20 || status == null
+                    || sourcePromotionReasons.size() > 20) {
                 throw new IllegalArgumentException("Stability attempt coordinate is invalid");
             }
             boolean complete = !suiteRunId.isBlank()
                     && fingerprint(aggregateEvidenceFingerprint) && suiteStatus != null
                     && suiteStatus != SuiteStatus.RUNNING && startedAt != null
                     && completedAt != null && !completedAt.isBefore(startedAt);
-            if (status == AttemptStatus.VERIFIED && (!complete || !diagnosticCode.isBlank())
-                    || status == AttemptStatus.INCONCLUSIVE && diagnosticCode.isBlank()) {
+            boolean promotionConsistent = (sourcePromotionStatus == null
+                    && sourcePromotionReasons.isEmpty())
+                    || (sourcePromotionStatus == SourcePromotionStatus.ELIGIBLE
+                    && sourcePromotionReasons.isEmpty())
+                    || (sourcePromotionStatus == SourcePromotionStatus.BLOCKED
+                    && !sourcePromotionReasons.isEmpty());
+            if ((status == AttemptStatus.VERIFIED
+                    && (!complete || !diagnosticCode.isBlank() || !promotionConsistent))
+                    || (status == AttemptStatus.INCONCLUSIVE
+                    && (diagnosticCode.isBlank() || !promotionConsistent))) {
                 throw new IllegalArgumentException("Stability attempt trust claim is contradictory");
             }
         }
@@ -348,6 +372,8 @@ public record TestSuiteStabilityRun(
      * @param consistentFailureCases invariant failure case count
      * @param inconclusiveCases incomplete case count
      * @param allAttemptsVerified complete source-closure flag
+     * @param allSourceSuitesPromotionEligible complete source-promotion eligibility flag;
+     *                                         null only for historical v1 evidence
      */
     public record PromotionVerdict(
             PromotionStatus status,
@@ -356,7 +382,8 @@ public record TestSuiteStabilityRun(
             int flakyCases,
             int consistentFailureCases,
             int inconclusiveCases,
-            boolean allAttemptsVerified
+            boolean allAttemptsVerified,
+            Boolean allSourceSuitesPromotionEligible
     ) {
         /** Normalizes one producer verdict before aggregate equality is checked. */
         public PromotionVerdict {
@@ -392,13 +419,17 @@ public record TestSuiteStabilityRun(
 
     /** Re-derives complete aggregate semantics and immutable source closure. */
     public TestSuiteStabilityRun {
+        schemaVersion = normalized(schemaVersion);
         stabilityRunId = normalized(stabilityRunId);
         clientRequestId = normalized(clientRequestId);
         evidenceFingerprint = normalized(evidenceFingerprint);
         attempts = attempts == null ? List.of() : List.copyOf(attempts);
         caseResults = caseResults == null ? List.of() : List.copyOf(caseResults);
         diagnostics = immutableCodes(diagnostics);
-        if (!stabilityRunId(stabilityRunId) || clientRequestId.isBlank() || status == null
+        if (!Set.of(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2)
+                .contains(schemaVersion)
+                || !stabilityRunId(stabilityRunId) || clientRequestId.isBlank() || status == null
                 || suiteRef == null || target == null || requestedAttempts < 3
                 || requestedAttempts > 20 || attempts.size() != requestedAttempts
                 || caseResults.isEmpty() || !fingerprint(evidenceFingerprint)
@@ -412,7 +443,11 @@ public record TestSuiteStabilityRun(
         requireCaseClosure(caseResults, requestedAttempts);
         requireAttemptObservationConsistency(attempts, caseResults);
         Status derivedStatus = deriveStatus(caseResults);
-        PromotionVerdict derivedPromotion = derivePromotion(attempts, caseResults, derivedStatus);
+        boolean legacy = TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1
+                .equals(schemaVersion);
+        PromotionVerdict derivedPromotion = legacy
+                ? deriveLegacyPromotion(attempts, caseResults, derivedStatus)
+                : derivePromotion(attempts, caseResults, derivedStatus);
         QuarantineVerdict derivedQuarantine = deriveQuarantine(caseResults, derivedStatus);
         Instant derivedStartedAt = attempts.stream().map(AttemptResult::startedAt)
                 .filter(value -> value != null).min(Comparator.naturalOrder()).orElse(null);
@@ -427,7 +462,8 @@ public record TestSuiteStabilityRun(
         List<TestSuiteStabilityAttestation.SourceSuiteEvidenceRef> expectedSources = attempts.stream()
                 .filter(AttemptResult::completeSourceIdentity)
                 .map(value -> new TestSuiteStabilityAttestation.SourceSuiteEvidenceRef(
-                        value.attempt(), value.suiteRunId(), value.aggregateEvidenceFingerprint()))
+                        value.attempt(), value.suiteRunId(), value.aggregateEvidenceFingerprint(),
+                        value.sourcePromotionStatus(), value.sourcePromotionReasons()))
                 .toList();
         JsonNode evidence = rawResponse.path("evidence");
         if (status != derivedStatus || !promotion.equals(derivedPromotion)
@@ -437,6 +473,16 @@ public record TestSuiteStabilityRun(
                 || !diagnostics.equals(derivedDiagnostics)
                 || !stabilityRunId.equals(attestation.stabilityRunId())
                 || !suiteRef.equals(attestation.suiteRef())
+                || legacy != TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1.equals(
+                attestation.schemaVersion())
+                || legacy != TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V1.equals(
+                evidence.path("schemaVersion").asText())
+                || !schemaVersion.equals(rawResponse.path("schemaVersion").asText())
+                || (legacy && attempts.stream().anyMatch(
+                value -> value.sourcePromotionStatus() != null))
+                || (!legacy && attempts.stream().anyMatch(
+                value -> value.status() == AttemptStatus.VERIFIED
+                        && value.sourcePromotionStatus() == null))
                 || !evidenceFingerprint.equals(attestation.evidenceFingerprint())
                 || !expectedSources.equals(attestation.sourceSuiteEvidenceRefs())
                 || !evidenceFingerprint.equals(EvidenceVerificationSupport.sha256(evidence))) {
@@ -463,6 +509,9 @@ public record TestSuiteStabilityRun(
                 value.path("suiteRunId").asText(),
                 value.path("aggregateEvidenceFingerprint").asText(),
                 nullableEnum(SuiteStatus.class, value.path("suiteStatus"), "suite status"),
+                nullableEnum(SourcePromotionStatus.class, value.path("sourcePromotionStatus"),
+                        "source promotion status"),
+                strings(value.path("sourcePromotionReasons")),
                 nullableInstant(value.path("startedAt")), nullableInstant(value.path("completedAt")),
                 value.path("diagnosticCode").asText())));
         List<CaseStabilityResult> cases = new ArrayList<>();
@@ -493,7 +542,8 @@ public record TestSuiteStabilityRun(
         });
         JsonNode promotion = evidence.path("promotion");
         JsonNode quarantine = evidence.path("quarantine");
-        return new TestSuiteStabilityRun(response.path("stabilityRunId").asText(),
+        return new TestSuiteStabilityRun(response.path("schemaVersion").asText(),
+                response.path("stabilityRunId").asText(),
                 evidence.path("clientRequestId").asText(), enumValue(Status.class,
                 evidence.path("status").asText(), "aggregate status"),
                 new TestSuiteStabilityAttestation.SuiteRef(suite.path("suiteId").asText(),
@@ -508,7 +558,10 @@ public record TestSuiteStabilityRun(
                         promotion.path("flakyCases").asInt(),
                         promotion.path("consistentFailureCases").asInt(),
                         promotion.path("inconclusiveCases").asInt(),
-                        promotion.path("allAttemptsVerified").asBoolean()),
+                        promotion.path("allAttemptsVerified").asBoolean(),
+                        promotion.has("allSourceSuitesPromotionEligible")
+                                ? promotion.path("allSourceSuitesPromotionEligible").asBoolean()
+                                : null),
                 new QuarantineVerdict(enumValue(QuarantineStatus.class,
                         quarantine.path("status").asText(), "quarantine status"),
                         strings(quarantine.path("caseIds")), quarantine.path("reason").asText()),
@@ -532,7 +585,17 @@ public record TestSuiteStabilityRun(
      * @return true only when stability permits an external release gate to continue
      */
     public boolean promotionEligible() {
-        return promotion.status() == PromotionStatus.ELIGIBLE;
+        return sourcePromotionClosureAvailable()
+                && promotion.status() == PromotionStatus.ELIGIBLE;
+    }
+
+    /**
+     * Reports whether the evidence generation proves every source suite promotion verdict.
+     *
+     * @return true only for source-promotion-closed v2 evidence
+     */
+    public boolean sourcePromotionClosureAvailable() {
+        return TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2.equals(schemaVersion);
     }
 
     /**
@@ -676,6 +739,36 @@ public record TestSuiteStabilityRun(
         int incomplete = count(cases, CaseStatus.INCONCLUSIVE);
         boolean allVerified = attempts.stream().allMatch(
                 value -> value.status() == AttemptStatus.VERIFIED);
+        boolean allSourcesEligible = allVerified && attempts.stream().allMatch(
+                value -> value.sourcePromotionStatus() == SourcePromotionStatus.ELIGIBLE);
+        List<String> reasons = new ArrayList<>();
+        if (flaky > 0) {
+            reasons.add("FLAKY_CASE_OBSERVED");
+        }
+        if (failures > 0) {
+            reasons.add("CONSISTENT_TEST_FAILURE");
+        }
+        if (incomplete > 0 || !allVerified) {
+            reasons.add("STABILITY_EVIDENCE_INCOMPLETE");
+        }
+        if (allVerified && !allSourcesEligible) {
+            reasons.add("SOURCE_SUITE_PROMOTION_BLOCKED");
+        }
+        return new PromotionVerdict(status == Status.STABLE && allVerified && allSourcesEligible
+                ? PromotionStatus.ELIGIBLE : PromotionStatus.BLOCKED,
+                reasons, stable, flaky, failures, incomplete, allVerified, allSourcesEligible);
+    }
+
+    private static PromotionVerdict deriveLegacyPromotion(
+            List<AttemptResult> attempts,
+            List<CaseStabilityResult> cases,
+            Status status) {
+        int stable = count(cases, CaseStatus.STABLE_PASS);
+        int flaky = count(cases, CaseStatus.FLAKY);
+        int failures = count(cases, CaseStatus.CONSISTENT_FAILURE);
+        int incomplete = count(cases, CaseStatus.INCONCLUSIVE);
+        boolean allVerified = attempts.stream().allMatch(
+                value -> value.status() == AttemptStatus.VERIFIED);
         List<String> reasons = new ArrayList<>();
         if (flaky > 0) {
             reasons.add("FLAKY_CASE_OBSERVED");
@@ -688,7 +781,7 @@ public record TestSuiteStabilityRun(
         }
         return new PromotionVerdict(status == Status.STABLE && allVerified
                 ? PromotionStatus.ELIGIBLE : PromotionStatus.BLOCKED,
-                reasons, stable, flaky, failures, incomplete, allVerified);
+                reasons, stable, flaky, failures, incomplete, allVerified, null);
     }
 
     private static QuarantineVerdict deriveQuarantine(
@@ -752,7 +845,7 @@ public record TestSuiteStabilityRun(
     }
 
     private static Instant nullableInstant(JsonNode value) {
-        if (value == null || value.isNull()) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
             return null;
         }
         try {
@@ -777,7 +870,7 @@ public record TestSuiteStabilityRun(
             Class<E> type,
             JsonNode value,
             String field) {
-        if (value == null || value.isNull()) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
             return null;
         }
         try {

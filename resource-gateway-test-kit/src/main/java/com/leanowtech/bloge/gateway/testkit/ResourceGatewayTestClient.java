@@ -421,7 +421,7 @@ public final class ResourceGatewayTestClient {
                         + segment(exactSuiteId) + "/stability-executions", "",
                 "TEST_EXECUTION", request);
         requireVersion(response,
-                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1);
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2);
         TestSuiteStabilityRun run = projectStabilityRun(response);
         try {
             run.requireExecutionIdentity(
@@ -517,8 +517,7 @@ public final class ResourceGatewayTestClient {
         String exactId = requiredIdentifier(stabilityRunId, "stabilityRunId", 255);
         JsonNode response = exchange("GET", "/api/testing/stability-executions/"
                 + segment(exactId), "", "TEST_EXECUTION", null);
-        requireVersion(response,
-                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1);
+        requireStabilityResponseVersion(response);
         TestSuiteStabilityRun run = projectStabilityRun(response);
         try {
             run.requireRunIdentity(exactId);
@@ -1168,6 +1167,16 @@ public final class ResourceGatewayTestClient {
                 && !TestingProtocol.TEST_EXECUTION_RESPONSE_V2.equals(actual)) {
             throw ResourceGatewayTestException.local("RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported test execution response version.", null);
+        }
+    }
+
+    private static void requireStabilityResponseVersion(JsonNode response) {
+        String actual = response.path("schemaVersion").asText();
+        if (!TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1.equals(actual)
+                && !TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2.equals(actual)) {
+            throw ResourceGatewayTestException.local(
+                    "RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
+                    "The server returned an unsupported suite-stability response version.", null);
         }
     }
 

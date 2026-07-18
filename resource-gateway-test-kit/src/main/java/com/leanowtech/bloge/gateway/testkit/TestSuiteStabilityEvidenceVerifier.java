@@ -192,6 +192,14 @@ public final class TestSuiteStabilityEvidenceVerifier {
             ref.put("attempt", source.attempt());
             ref.put("suiteRunId", source.suiteRunId());
             ref.put("aggregateEvidenceFingerprint", source.aggregateEvidenceFingerprint());
+            if (source.sourcePromotionStatus() == null) {
+                return;
+            }
+            ref.put("sourcePromotionStatus", source.sourcePromotionStatus().name());
+            if (!source.sourcePromotionReasons().isEmpty()) {
+                ArrayNode reasons = ref.putArray("sourcePromotionReasons");
+                source.sourcePromotionReasons().forEach(reasons::add);
+            }
         });
         material.put("signedAt", value.signedAt().toString());
         return material;

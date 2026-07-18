@@ -153,7 +153,11 @@ and production-isolation workflow. Java/JUnit/CI consumers can use the independe
 builders, typed catalog materialization, exact suite execution, signed bounded stability analysis,
 pinned-key-set offline verification, payload-free assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The stability protocol's
-invariants and deliberately unclaimed statistical guarantees are recorded in
+v2 evidence keeps behavioral stability separate from release eligibility: every verified source
+suite promotion verdict is signed into the attempt closure, so `STABLE + BLOCKED` remains visible
+when behavior is repeatable but source certification is insufficient. Historical v1 evidence stays
+auditable but cannot enter a release gate. The invariants and deliberately unclaimed statistical
+guarantees are recorded in
 [Stage 5 suite-stability verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md).
 
 ### Create a durable graph test

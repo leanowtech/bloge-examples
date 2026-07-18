@@ -88,12 +88,21 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_MUTATION_SUITE_EXECUTION_REQUEST_V1);
             assertConstant(definitions, "testSuiteStabilityExecutionRequest",
                     TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1);
-            assertConstant(definitions, "testSuiteStabilityEvidence",
-                    TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V1);
-            assertConstant(definitions, "testSuiteStabilityAttestation",
-                    TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1);
-            assertConstant(definitions, "testSuiteStabilityExecutionResponse",
-                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1);
+            assertThat(definitions.at(
+                    "/testSuiteStabilityEvidence/properties/schemaVersion/enum"))
+                    .extracting(JsonNode::asText).containsExactly(
+                            TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V1,
+                            TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V2);
+            assertThat(definitions.at(
+                    "/testSuiteStabilityAttestation/properties/schemaVersion/enum"))
+                    .extracting(JsonNode::asText).containsExactly(
+                            TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1,
+                            TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2);
+            assertThat(definitions.at(
+                    "/testSuiteStabilityExecutionResponse/properties/schemaVersion/enum"))
+                    .extracting(JsonNode::asText).containsExactly(
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1,
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2);
             assertConstant(definitions, "testSuiteExecutionResponseV1",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV2",

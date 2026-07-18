@@ -260,7 +260,11 @@ Stability execution always runs `COLLECT_ALL` exactly 3..20 times. A case is com
 `evidenceStatus + semanticResultFingerprint`, not only by pass/fail status. The aggregate is
 `STABLE`, `FLAKY`, `CONSISTENT_FAILURE`, or `INCONCLUSIVE`; plan drift, reused source/child run ids,
 missing evidence, an invalid signature, or an incomplete source closure can never be promoted to
-stable. A `FLAKY` result carries a quarantine recommendation, but the API does not mutate suite
+stable. Stability response v2 also binds each source suite's promotion status and reasons. A result
+may therefore be `STABLE + BLOCKED`: its behavior is invariant, but at least one source run was not
+certifiable. Signed v1 responses remain verifiable for audit, while
+`sourcePromotionClosureAvailable()` is false and every release assertion fails closed. A `FLAKY`
+result carries a quarantine recommendation, but the API does not mutate suite
 state or bypass a business failure. This is bounded deterministic rerun evidence, not a statistical
 confidence interval or adaptive stopping policy.
 
@@ -578,7 +582,8 @@ The command returns:
 - `0` only when the selected evaluation mode's typed verdict passes and, by default, promotion status
   is `ELIGIBLE`; mutation mode additionally requires a passing baseline and independently re-derived
   `SATISFIED` score policy, while stability mode requires `STABLE`, promotion eligibility, exact
-  source closure, and a signature rooted in the externally pinned key set;
+  v2 source-promotion closure, exact source evidence closure, and a signature rooted in the
+  externally pinned key set;
 - `1` when governed terminal evidence was obtained but its quality, promotion, or trust gate failed;
 - `2` when configuration, transport, protocol validation, report generation, or a non-terminal
   `RUNNING` checkpoint prevents a trustworthy gate verdict.

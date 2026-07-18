@@ -110,12 +110,21 @@ public final class TestingProtocol {
     /** Payload-free bounded suite-stability evidence wire version. */
     public static final String TEST_SUITE_STABILITY_EVIDENCE_V1 =
             "bloge.testSuiteStabilityEvidence.v1";
+    /** Source-promotion-closed suite-stability evidence wire version. */
+    public static final String TEST_SUITE_STABILITY_EVIDENCE_V2 =
+            "bloge.testSuiteStabilityEvidence.v2";
     /** Domain-separated detached suite-stability attestation wire version. */
     public static final String TEST_SUITE_STABILITY_ATTESTATION_V1 =
             "bloge.testSuiteStabilityAttestation.v1";
+    /** Source-promotion-closed suite-stability attestation wire version. */
+    public static final String TEST_SUITE_STABILITY_ATTESTATION_V2 =
+            "bloge.testSuiteStabilityAttestation.v2";
     /** Signed terminal suite-stability execution response wire version. */
     public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteStabilityExecutionResponse.v1";
+    /** Signed terminal suite-stability response with source-promotion closure. */
+    public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2 =
+            "bloge.testSuiteStabilityExecutionResponse.v2";
     /** Immutable suite execution response wire version. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteExecutionResponse.v1";

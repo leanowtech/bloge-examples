@@ -160,7 +160,8 @@ public final class DatabaseTestSuiteStabilityRunRepository
                         && !value.aggregateEvidenceFingerprint().isBlank())
                 .map(value -> new TestSuiteStabilityAttestation.SourceSuiteEvidenceRef(
                         value.attempt(), value.suiteRunId(),
-                        value.aggregateEvidenceFingerprint()))
+                        value.aggregateEvidenceFingerprint(), value.sourcePromotionStatus(),
+                        value.sourcePromotionReasons()))
                 .toList();
     }
 

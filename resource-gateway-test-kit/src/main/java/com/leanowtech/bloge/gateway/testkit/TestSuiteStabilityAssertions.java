@@ -54,6 +54,13 @@ public final class TestSuiteStabilityAssertions {
             TestSuiteStabilityEvidenceVerifier.VerificationResult verification) {
         assertVerified(run, verification);
         assertStable(run);
+        if (!run.sourcePromotionClosureAvailable()) {
+            throw new AssertionFailedError("Resource Gateway stability analysis "
+                    + run.stabilityRunId()
+                    + " cannot enter a release gate; v2 source-promotion closure is required",
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2,
+                    run.schemaVersion());
+        }
         if (!run.promotionEligible()) {
             throw new AssertionFailedError("Resource Gateway stability analysis "
                     + run.stabilityRunId() + " is not promotion eligible; reasons="

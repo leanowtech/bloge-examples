@@ -14,7 +14,9 @@ The claim is intentionally bounded:
 2. Attempts are fixed before execution, use `COLLECT_ALL`, and are limited to 3..20.
 3. Stability means invariant observed behavior under one exact suite and effective-plan closure. It
    is not a probability estimate or proof about all future executions.
-4. Quarantine is a signed recommendation only. This increment does not mutate suite state, waive a
+4. Stability is necessary but not sufficient for promotion. Every verified source suite must also
+   carry an `ELIGIBLE` promotion verdict in v2 evidence.
+5. Quarantine is a signed recommendation only. This increment does not mutate suite state, waive a
    failure, authorize publication, or call an external governance system.
 
 ## 2. Exact request and idempotency boundary
@@ -44,6 +46,7 @@ For every suite case and attempt, the server resolves the exact signed source ag
 child evidence. A verified observation binds:
 
 - source suite run and aggregate-evidence fingerprint;
+- source suite promotion status and bounded reason closure;
 - child run and complete-evidence fingerprint;
 - child evidence status and evidence class;
 - exact fixture and effective-plan fingerprints;
@@ -62,8 +65,10 @@ must have fresh operational identities.
 
 Aggregate precedence is `FLAKY`, `INCONCLUSIVE`, `CONSISTENT_FAILURE`, then `STABLE`. Thus two proven
 variants remain flaky even if another attempt is unavailable, while plan drift invalidates
-comparability and makes affected observations inconclusive. Only aggregate `STABLE` is promotion
-eligible. Consistent failure is repeatable but still wrong.
+comparability and makes affected observations inconclusive. Aggregate `STABLE` is a necessary
+promotion condition, not a sufficient one. If any verified source suite is promotion-blocked, the
+analysis remains `STABLE` but promotion is `BLOCKED` with `SOURCE_SUITE_PROMOTION_BLOCKED`.
+Consistent failure is repeatable but still wrong.
 
 ## 4. Independence and fail-closed rules
 
@@ -87,28 +92,32 @@ The public generations are:
 | Object | Version |
 | --- | --- |
 | request | `bloge.testSuiteStabilityExecutionRequest.v1` |
-| evidence | `bloge.testSuiteStabilityEvidence.v1` |
-| attestation | `bloge.testSuiteStabilityAttestation.v1` |
-| response | `bloge.testSuiteStabilityExecutionResponse.v1` |
+| evidence | current `bloge.testSuiteStabilityEvidence.v2`; audit-compatible v1 |
+| attestation | current `bloge.testSuiteStabilityAttestation.v2`; audit-compatible v1 |
+| response | current `bloge.testSuiteStabilityExecutionResponse.v2`; audit-compatible v1 |
 
-The stability-specific signing domain binds the canonical parent request fingerprint, canonical
-evidence fingerprint, and exact ordered `(attempt, suiteRunId, aggregateEvidenceFingerprint)` source
-closure. Only a complete verified terminal signature may enter the immutable stability store.
+The stability-specific v2 signing domain binds the canonical parent request fingerprint, canonical
+evidence fingerprint, and exact ordered `(attempt, suiteRunId, aggregateEvidenceFingerprint,
+sourcePromotionStatus, sourcePromotionReasons)` source closure. Only a complete verified terminal
+signature may enter the immutable stability store.
 `GET /api/testing/stability-executions/{stabilityRunId}` verifies stored fingerprints and signature
 again before returning the result.
 
 The JDBC repository is independent from ordinary suite-run tables and enforces one immutable parent
 request identity per tenant/environment. Stability retention uses
 `gateway.testing.store.retention-days` and is capped from the earliest source start. The service
-refuses to persist an analysis when the source retention window can no longer support it. Generation
-one has no stability-retention sweeper or legal-hold workflow; database expiry is a protocol bound,
+refuses to persist an analysis when the source retention window can no longer support it. Historical
+v1 decode/encode preserves its canonical JSON and fingerprint; v1 may be queried and verified for
+audit, but cannot enter a release gate because it lacks source-promotion closure. Generation one has
+no stability-retention sweeper or legal-hold workflow; database expiry is a protocol bound,
 not yet a complete physical-deletion proof.
 
 ## 6. Public Schema and capability discovery
 
-The authoritative Draft 2020-12 testing Schema rejects unknown fields, invalid generations, malformed
-fingerprints, incomplete case/source closures, invalid status combinations, and unsigned terminal
-responses. Capability discovery advertises the four supported objects, both HTTP endpoints, and two
+The authoritative Draft 2020-12 testing Schema has strict N/N-1 branches and rejects unknown fields,
+invalid or mixed generations, malformed fingerprints, incomplete case/source closures, invalid
+status combinations, and unsigned terminal responses. Capability discovery advertises v1 and v2
+for the three response-side objects, both HTTP endpoints, and two
 independent feature flags:
 
 - `signedSuiteStabilityAnalysis`
@@ -122,13 +131,15 @@ Production profile omission remains the security boundary; a feature flag is not
 
 `resource-gateway-test-kit` packages the authoritative Schema without depending on the Spring Boot
 server. `TestSuiteStabilityRun` independently re-derives case classification, aggregate status,
-counts, promotion/quarantine verdicts, diagnostics, timestamps, canonical evidence fingerprint, and
-the ordered source-reference closure embedded in the signed analysis. A producer-supplied aggregate
+counts, source-promotion closure, promotion/quarantine verdicts, diagnostics, timestamps, canonical
+evidence fingerprint, and the ordered source-reference closure embedded in the signed analysis. A producer-supplied aggregate
 label that disagrees with those facts is rejected during projection.
 
 `TestSuiteStabilityEvidenceVerifier` then recomputes signature material, applies signing-time key
 lifecycle policy, verifies the Ed25519 signature, and can require an atomic key-set fingerprint
-obtained through an independent channel. This consumer verifies the signed stability projection; it
+obtained through an independent channel. This consumer verifies the signed stability projection. A
+valid v1 signature remains `VERIFIED` for audit, while
+`sourcePromotionClosureAvailable=false` forces assertions, JUnit, and CLI release gates closed. It
 does not re-execute the suite or independently refetch every source child, which remains a server-side
 evidence-admission responsibility.
 
@@ -136,7 +147,8 @@ The shaded CLI exposes explicit `--mode STABILITY`, requires 3..20 attempts and 
 pin, and rejects `--strategy` and `--allow-non-eligible`. It emits one payload-free JUnit row per
 case, one pinned-trust attestation row, and one aggregate gate row. Exit semantics are:
 
-- `0`: stable, promotion eligible, exact evidence semantics valid, and pinned trust verified;
+- `0`: v2 source-promotion closure available, stable, promotion eligible, exact evidence semantics
+  valid, and pinned trust verified;
 - `1`: terminal governed evidence exists, but a stability, promotion, or trust gate fails;
 - `2`: configuration, transport, protocol, or infrastructure prevents a trustworthy verdict.
 
@@ -152,9 +164,10 @@ TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,\
 DatabaseTestSuiteStabilityRunRepositoryTest test
 ```
 
-Result on 2026-07-18: **34 tests, 0 failures, 0 errors, 0 skips**. The set covers stable, flaky,
+Result on 2026-07-18: **36 tests, 0 failures, 0 errors, 0 skips**. The set covers stable, flaky,
 consistent-failure and inconclusive outcomes; plan/source/child drift; signature failure; exact
-idempotency; persistence conflicts; strict Schema; and capability/endpoint gating.
+idempotency; source-promotion blocking; v1 canonical compatibility; persistence conflicts; strict
+Schema; and capability/endpoint gating.
 
 Full Resource Gateway command:
 
@@ -162,7 +175,7 @@ Full Resource Gateway command:
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-Result on 2026-07-18: **2464 tests, 0 failures, 0 errors, 2 conditional skips**, including 34
+Result on 2026-07-18: **2466 tests, 0 failures, 0 errors, 2 conditional skips**, including 34
 configured browser tests, followed by successful Spring Boot executable-JAR packaging.
 
 Full independent test-kit command:
@@ -171,10 +184,11 @@ Full independent test-kit command:
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-Result on 2026-07-18: **130 tests, 0 failures, 0 errors, 0 skips**, followed by authoritative Schema
+Result on 2026-07-18: **133 tests, 0 failures, 0 errors, 0 skips**, followed by authoritative Schema
 packaging, normal JAR, shaded CLI JAR, and strict public JavaDoc verification. Stability coverage
-includes typed re-derivation, invalid closures, wrong/missing key-set pins, attempt bounds, assertions,
-payload-free JUnit cardinality, and `0/1/2` CLI behavior.
+includes typed re-derivation, source-promotion laundering rejection, v1 audit-only compatibility,
+invalid closures, wrong/missing key-set pins, attempt bounds, assertions, payload-free JUnit
+cardinality, and `0/1/2` CLI behavior.
 
 ## 9. Deliberately unclaimed work
 

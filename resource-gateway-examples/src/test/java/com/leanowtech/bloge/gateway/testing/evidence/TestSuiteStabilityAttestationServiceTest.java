@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.testing.evidence;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
@@ -85,6 +87,47 @@ class TestSuiteStabilityAttestationServiceTest {
                 .isEqualTo(TestSuiteStabilityAttestationService.SIGNER_UNAVAILABLE);
         assertThat(result.attestation().signatureStatus())
                 .isEqualTo(TestSuiteStabilityAttestation.SignatureStatus.VERIFICATION_UNAVAILABLE);
+    }
+
+    @Test
+    void preservesHistoricalV1CanonicalShapeAcrossDecodeAndEncode() throws Exception {
+        TestSuiteStabilityEvidence current =
+                TestSuiteStabilityProtocolFixtures.stableEvidence();
+        ObjectNode legacyEvidence = mapper.valueToTree(current);
+        legacyEvidence.put("schemaVersion", TestSuiteStabilityEvidence.SCHEMA_VERSION_V1);
+        legacyEvidence.path("attempts").forEach(value -> {
+            ObjectNode attempt = (ObjectNode) value;
+            attempt.remove("sourcePromotionStatus");
+            attempt.remove("sourcePromotionReasons");
+        });
+        ((ObjectNode) legacyEvidence.path("promotion"))
+                .remove("allSourceSuitesPromotionEligible");
+
+        TestSuiteStabilityEvidence decodedEvidence = mapper.treeToValue(
+                legacyEvidence, TestSuiteStabilityEvidence.class);
+        JsonNode encodedEvidence = mapper.valueToTree(decodedEvidence);
+        assertThat(encodedEvidence).isEqualTo(legacyEvidence);
+        TestSuiteStabilityAttestation resealedLegacy =
+                service.seal(decodedEvidence, REQUEST_FINGERPRINT).attestation();
+        assertThat(resealedLegacy.schemaVersion())
+                .isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION_V1);
+        assertThat(service.verify(decodedEvidence, resealedLegacy))
+                .isEqualTo(TestSuiteStabilityAttestationService.Verification.VERIFIED);
+
+        TestSuiteStabilityAttestation currentAttestation =
+                service.seal(current, REQUEST_FINGERPRINT).attestation();
+        ObjectNode legacyAttestation = mapper.valueToTree(currentAttestation);
+        legacyAttestation.put("schemaVersion", TestSuiteStabilityAttestation.SCHEMA_VERSION_V1);
+        legacyAttestation.path("sourceSuiteEvidenceRefs").forEach(value -> {
+            ObjectNode source = (ObjectNode) value;
+            source.remove("sourcePromotionStatus");
+            source.remove("sourcePromotionReasons");
+        });
+
+        TestSuiteStabilityAttestation decodedAttestation = mapper.treeToValue(
+                legacyAttestation, TestSuiteStabilityAttestation.class);
+        JsonNode encodedAttestation = mapper.valueToTree(decodedAttestation);
+        assertThat(encodedAttestation).isEqualTo(legacyAttestation);
     }
 
     private static TestSuiteStabilityAttestation copy(
