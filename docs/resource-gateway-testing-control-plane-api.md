@@ -138,6 +138,15 @@ Independent-store settings:
 | `gateway.testing.stability-jobs.authority.http.jwks.request-timeout-ms` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_TIMEOUT_MS` | `3000` |
 | `gateway.testing.stability-jobs.authority.http.jwks.maximum-snapshot-age-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_MAXIMUM_AGE_SECONDS` | `60`; at least refresh + timeout |
 | `gateway.testing.stability-jobs.authority.http.jwks.allow-insecure-loopback` | `RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ENABLED` | `false`; exact configured cross-replica gate |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID` | empty; stable across deployment generations |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.cohort-id` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ID` | empty; immutable deployment generation |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.instance-id` | `RG_RESOURCE_GATEWAY_INSTANCE_ID` | exact serving slot; required in staging |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.artifact-fingerprint` | `RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT` | canonical `sha256:<lowercase-hex>` |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.expected-instance-ids` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS` | exact comma-separated 1..256 set including local instance |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.heartbeat-interval-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS` | `10`; 1..300 |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.lease-duration-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS` | `30`; 3..900 and at least three heartbeats |
+| `gateway.testing.stability-jobs.authority.http.jwks.cohort.record-retention-seconds` | `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS` | `86400`; 3600..2592000 and at least the lease |
 | `gateway.testing.replay-payloads.maximum-retention-days` | `RG_TEST_REPLAY_MAX_RETENTION_DAYS` | `30` |
 | `gateway.testing.replay-payloads.sweep-interval-ms` | `RG_TEST_REPLAY_SWEEP_INTERVAL_MS` | `60000` |
 | `gateway.testing.replay-payloads.sweep-batch-size` | `RG_TEST_REPLAY_SWEEP_BATCH_SIZE` | `100` |

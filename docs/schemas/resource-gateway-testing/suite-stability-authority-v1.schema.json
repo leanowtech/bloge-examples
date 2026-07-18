@@ -209,11 +209,22 @@
         "privateMaterialPresent": { "const": false },
         "requestTimeoutMillis": { "type": "integer", "minimum": 100, "maximum": 30000 },
         "trustProviderType": { "$ref": "#/$defs/identifier" },
+        "trustLocalAvailable": { "type": "boolean" },
         "trustRefreshState": { "$ref": "#/$defs/identifier" },
         "trustRefreshIntervalSeconds": { "type": "integer", "minimum": 0, "maximum": 3600 },
         "trustMaximumSnapshotAgeSeconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
         "trustFailClosedOnRefreshFailure": { "type": "boolean" },
-        "trustAutomaticRefresh": { "type": "boolean" }
+        "trustAutomaticRefresh": { "type": "boolean" },
+        "trustCohortConfigured": { "type": "boolean" },
+        "trustCohortConverged": { "type": "boolean" },
+        "trustCohortStatus": { "$ref": "#/$defs/identifier" },
+        "trustCohortExpectedReplicaCount": { "type": "integer", "minimum": 0, "maximum": 256 },
+        "trustCohortLiveReplicaCount": { "type": "integer", "minimum": 0, "maximum": 512 },
+        "trustCohortHealthyReplicaCount": { "type": "integer", "minimum": 0, "maximum": 512 },
+        "trustCohortDistinctSnapshotCount": { "type": "integer", "minimum": 0, "maximum": 512 },
+        "trustCohortLeaseDurationSeconds": { "type": "integer", "minimum": 0, "maximum": 900 },
+        "trustCohortDatabaseAuthority": { "type": "boolean" },
+        "trustCohortExactConfiguredInventory": { "type": "boolean" }
       }
     },
     "authorizerDescriptor": {

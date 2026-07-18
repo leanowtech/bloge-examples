@@ -416,6 +416,29 @@ class TestRuntimeProfileIsolationTest {
         properties.put(
                 "gateway.testing.stability-jobs.authority.http.jwks.maximum-snapshot-age-seconds",
                 "3610");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.enabled", "true");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id",
+                "profile-stability-authority");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.cohort-id",
+                "deployment-profile-a");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.instance-id",
+                "profile-replica-a");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.artifact-fingerprint",
+                "sha256:" + "f".repeat(64));
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.expected-instance-ids",
+                "profile-replica-a");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.heartbeat-interval-seconds",
+                "1");
+        properties.put(
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.lease-duration-seconds",
+                "3");
         try {
             try (AnnotationConfigApplicationContext context = context(properties, 0, "test")) {
                 assertThat(context.getBeansOfType(
@@ -438,9 +461,17 @@ class TestRuntimeProfileIsolationTest {
                         .containsEntry("trustProviderType", "DYNAMIC_JWKS_ED25519")
                         .containsEntry("trustRefreshState", "HEALTHY")
                         .containsEntry("trustAutomaticRefresh", true)
+                        .containsEntry("trustLocalAvailable", true)
+                        .containsEntry("trustCohortConfigured", true)
+                        .containsEntry("trustCohortConverged", true)
+                        .containsEntry("trustCohortStatus", "CONVERGED")
                         .doesNotContainKeys("jwksUri", "baseUri", "publicKey", "privateKey");
                 assertThat(context.getBean(TestSuiteStabilityAuthorityTrustHealth.class)
                         .health().getStatus()).isEqualTo(Status.UP);
+                assertThat(context.getBean(TestSuiteStabilityAuthorityCohortHealth.class)
+                        .health().getStatus()).isEqualTo(Status.UP);
+                assertThat(context.getBeansOfType(
+                        TestSuiteStabilityAuthorityCohortGate.class)).hasSize(1);
                 assertThat(context.getBean(TestabilityAvailability.class)
                         .suiteStabilityJobSubmissionEnabled()).isTrue();
             }

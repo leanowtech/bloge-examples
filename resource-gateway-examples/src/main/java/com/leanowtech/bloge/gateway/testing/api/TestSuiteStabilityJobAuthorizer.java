@@ -18,9 +18,13 @@ public interface TestSuiteStabilityJobAuthorizer {
             "protocolVersion", "responseProtocolVersion", "signedDecisions",
             "challengeBound", "redirectsFollowed", "automaticRetries",
             "privateMaterialPresent", "requestTimeoutMillis", "trustProviderType",
-            "trustRefreshState", "trustRefreshIntervalSeconds",
+            "trustLocalAvailable", "trustRefreshState", "trustRefreshIntervalSeconds",
             "trustMaximumSnapshotAgeSeconds", "trustFailClosedOnRefreshFailure",
-            "trustAutomaticRefresh");
+            "trustAutomaticRefresh", "trustCohortConfigured", "trustCohortConverged",
+            "trustCohortStatus", "trustCohortExpectedReplicaCount",
+            "trustCohortLiveReplicaCount", "trustCohortHealthyReplicaCount",
+            "trustCohortDistinctSnapshotCount", "trustCohortLeaseDurationSeconds",
+            "trustCohortDatabaseAuthority", "trustCohortExactConfiguredInventory");
 
     /**
      * Key-free deployment readiness descriptor for capability and startup diagnostics.

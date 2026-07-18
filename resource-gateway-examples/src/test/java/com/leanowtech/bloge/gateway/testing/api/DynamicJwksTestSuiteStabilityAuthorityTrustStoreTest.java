@@ -56,6 +56,7 @@ class DynamicJwksTestSuiteStabilityAuthorityTrustStoreTest {
         fetcher.publish(jwks(Map.of("key-a", keyA)), "generation-a");
         DynamicJwksTestSuiteStabilityAuthorityTrustStore store =
                 store(clock, fetcher, false);
+        String firstGeneration = store.cohortObservation().snapshotFingerprint();
         fetcher.publish(jwks(Map.of("key-b", keyB)), "generation-b");
         TestSuiteStabilityAuthorityRequest request = request(JSON);
         TestSuiteStabilityAuthorityResponse response = response(
@@ -83,6 +84,13 @@ class DynamicJwksTestSuiteStabilityAuthorityTrustStoreTest {
         }
         executor.shutdownNow();
         assertThat(fetcher.calls()).isEqualTo(2);
+        assertThat(store.cohortObservation()).satisfies(observation -> {
+            assertThat(observation.available()).isTrue();
+            assertThat(observation.snapshotFingerprint())
+                    .matches("sha256:[a-f0-9]{64}")
+                    .isNotEqualTo(firstGeneration)
+                    .doesNotContain("key-a", "key-b");
+        });
         assertThat(store.descriptor()).satisfies(descriptor -> {
             assertThat(descriptor.available()).isTrue();
             assertThat(descriptor.providerType()).isEqualTo("DYNAMIC_JWKS_ED25519");
@@ -167,11 +175,13 @@ class DynamicJwksTestSuiteStabilityAuthorityTrustStoreTest {
         fetcher.publish(jwks(Map.of("key-a", keyPair())), "generation-a");
         DynamicJwksTestSuiteStabilityAuthorityTrustStore store =
                 store(clock, fetcher, false);
+        String generation = store.cohortObservation().snapshotFingerprint();
         clock.advance(Duration.ofSeconds(50));
 
         assertThat(store.refreshNow()).isTrue();
 
         assertThat(fetcher.lastConditionalEtag()).isEqualTo("generation-a");
+        assertThat(store.cohortObservation().snapshotFingerprint()).isEqualTo(generation);
         clock.advance(Duration.ofSeconds(50));
         assertThat(store.descriptor().available()).isTrue();
     }

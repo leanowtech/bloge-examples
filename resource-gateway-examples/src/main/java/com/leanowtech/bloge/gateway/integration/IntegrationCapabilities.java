@@ -650,6 +650,29 @@ public record IntegrationCapabilities(
                         instanceof Number
                         && Boolean.TRUE.equals(authority.properties().get(
                         "trustFailClosedOnRefreshFailure")));
+        features.put("exactSuiteStabilityAuthorityTrustCohort",
+                testExecutionEndpointEnabled
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortConfigured"))
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortDatabaseAuthority"))
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortExactConfiguredInventory")));
+        features.put("convergedSuiteStabilityAuthorityTrustCohort",
+                testExecutionEndpointEnabled
+                        && authority.available()
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortConfigured"))
+                        && Boolean.TRUE.equals(authority.properties().get(
+                        "trustCohortConverged"))
+                        && authority.properties().get("trustCohortExpectedReplicaCount")
+                        instanceof Number expected && expected.intValue() > 0
+                        && authority.properties().get("trustCohortLiveReplicaCount")
+                        instanceof Number live && live.intValue() == expected.intValue()
+                        && authority.properties().get("trustCohortHealthyReplicaCount")
+                        instanceof Number healthy && healthy.intValue() == expected.intValue()
+                        && authority.properties().get("trustCohortDistinctSnapshotCount")
+                        instanceof Number generations && generations.intValue() == 1);
         features.put("asyncSuiteStabilityJobQuery", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellation", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellationSemanticAudit",

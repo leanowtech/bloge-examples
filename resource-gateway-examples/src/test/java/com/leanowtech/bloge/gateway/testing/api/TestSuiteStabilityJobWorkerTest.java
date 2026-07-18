@@ -52,8 +52,25 @@ class TestSuiteStabilityJobWorkerTest {
         worker = new TestSuiteStabilityJobWorker(
                 repository, executions, coordinator, authorizer, policy, "worker-a", 1);
         when(repository.claimNext("test", "worker-a", policy)).thenReturn(claim());
+        when(authorizer.descriptor()).thenReturn(
+                new TestSuiteStabilityJobAuthorizer.Descriptor(
+                        "", true, "TEST", "authority-a", Map.of()));
         when(authorizer.reauthorize(job))
                 .thenReturn(TestSuiteStabilityJobAuthorizer.Authorization.authorized());
+    }
+
+    @Test
+    void unavailableAuthorityCohortStopsBeforeDurableClaim() {
+        when(authorizer.descriptor()).thenReturn(
+                new TestSuiteStabilityJobAuthorizer.Descriptor(
+                        "", false, "HTTPS_SIGNED_PDP", "authority-a", Map.of()));
+
+        TestSuiteStabilityJobWorkResult result = worker.processNext("test");
+
+        assertThat(result).isEqualTo(TestSuiteStabilityJobWorkResult.authorityUnavailable());
+        verify(repository, never()).claimNext(any(), any(), any());
+        verify(authorizer, never()).reauthorize(any());
+        verifyNoInteractions(executions);
     }
 
     @AfterEach

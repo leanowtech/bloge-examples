@@ -97,6 +97,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("asyncSuiteStabilityJobSubmission", false)
                 .containsEntry("dynamicSuiteStabilityAuthorityTrust", false)
                 .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", false)
+                .containsEntry("exactSuiteStabilityAuthorityTrustCohort", false)
+                .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", false)
                 .containsEntry("asyncSuiteStabilityJobQuery", true)
                 .containsEntry("asyncSuiteStabilityJobCancellation", true)
                 .containsEntry("asyncSuiteStabilityJobCancellationSemanticAudit", true);
@@ -144,7 +146,9 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true)
                 .containsEntry("signedChallengeBoundSuiteStabilityAuthority", true)
                 .containsEntry("dynamicSuiteStabilityAuthorityTrust", false)
-                .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", false);
+                .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", false)
+                .containsEntry("exactSuiteStabilityAuthorityTrustCohort", false)
+                .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", false);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority())
                 .isEqualTo(signed);
         assertThat(capabilities.toString()).doesNotContain("http://");
@@ -165,7 +169,15 @@ class TestabilityCapabilitiesTest {
                                 java.util.Map.entry("trustRefreshIntervalSeconds", 30),
                                 java.util.Map.entry("trustMaximumSnapshotAgeSeconds", 60),
                                 java.util.Map.entry("trustFailClosedOnRefreshFailure", true),
-                                java.util.Map.entry("trustAutomaticRefresh", true)));
+                                java.util.Map.entry("trustAutomaticRefresh", true),
+                                java.util.Map.entry("trustCohortConfigured", true),
+                                java.util.Map.entry("trustCohortConverged", true),
+                                java.util.Map.entry("trustCohortExpectedReplicaCount", 3),
+                                java.util.Map.entry("trustCohortLiveReplicaCount", 3),
+                                java.util.Map.entry("trustCohortHealthyReplicaCount", 3),
+                                java.util.Map.entry("trustCohortDistinctSnapshotCount", 1),
+                                java.util.Map.entry("trustCohortDatabaseAuthority", true),
+                                java.util.Map.entry("trustCohortExactConfiguredInventory", true)));
 
         IntegrationCapabilities capabilities = IntegrationCapabilities.current(
                 VisualEvidenceSigner.unavailable().descriptor(),
@@ -178,6 +190,8 @@ class TestabilityCapabilitiesTest {
         assertThat(capabilities.features())
                 .containsEntry("dynamicSuiteStabilityAuthorityTrust", true)
                 .containsEntry("suiteStabilityAuthorityTrustRefreshSlo", true)
+                .containsEntry("exactSuiteStabilityAuthorityTrustCohort", true)
+                .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", true)
                 .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority().properties())
                 .doesNotContainKeys("jwksUri", "etag", "publicKey", "privateKey");

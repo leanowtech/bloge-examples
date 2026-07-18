@@ -72,6 +72,13 @@ switches:
 The PDP base URI, expected authority id and decision time policy remain mandatory. Dynamic mode does
 not read `RG_TEST_STABILITY_JOB_AUTHORITY_KEYS_JSON`.
 
+For multi-replica deployments, dynamic local refresh is necessary but not sufficient: replicas can
+briefly hold different valid key generations. The optional database-clock exact configured cohort
+gate closes submission and worker claim until every expected process reports one equivalent trust
+snapshot. Its invariants, rollout behavior, configuration, and deliberately unclaimed external
+inventory guarantee are specified in
+[authority cohort verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-authority-cohort-verification.md).
+
 ## Capability and health truth
 
 The authorizer descriptor adds only closed, non-secret trust facts: provider type, refresh state,

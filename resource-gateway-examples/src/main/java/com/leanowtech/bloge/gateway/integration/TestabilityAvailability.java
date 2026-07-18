@@ -10,7 +10,7 @@ import java.util.Objects;
  * Profile-owned capability marker; absent from production application contexts.
  *
  * @param executionEndpointEnabled whether the isolated testing control plane is assembled
- * @param suiteStabilityJobSubmissionEnabled whether fresh asynchronous stability jobs can run
+ * @param suiteStabilityJobSubmissionEnabled whether the asynchronous worker runtime is configured
  * @param workerQuarantineRequestIndexMode exact request-index write/readiness mode of this replica
  * @param workerQuarantineChangeAuthorizationTrust key-free external approval readiness
  * @param suiteStabilityCurrentAuthority key-free background reauthorization readiness
@@ -42,10 +42,6 @@ public record TestabilityAvailability(
                         : workerQuarantineChangeAuthorizationTrust;
         suiteStabilityCurrentAuthority = suiteStabilityCurrentAuthority == null
                 ? unavailableCurrentAuthority() : suiteStabilityCurrentAuthority;
-        if (suiteStabilityJobSubmissionEnabled && !suiteStabilityCurrentAuthority.available()) {
-            throw new IllegalArgumentException(
-                    "Stability-job submission requires a ready current-authority provider");
-        }
     }
 
     /** Preserves the previous marker shape with undeclared current-authority readiness. */

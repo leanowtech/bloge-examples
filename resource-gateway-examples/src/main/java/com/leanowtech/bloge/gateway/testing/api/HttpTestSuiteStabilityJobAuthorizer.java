@@ -42,6 +42,7 @@ public final class HttpTestSuiteStabilityJobAuthorizer
 
     private final ObjectMapper objectMapper;
     private final TestSuiteStabilityAuthorityTrustStore trustStore;
+    private final TestSuiteStabilityAuthorityCohortGate cohortGate;
     private final Settings settings;
     private final HttpClient client;
     private final URI authorityUri;
@@ -59,7 +60,25 @@ public final class HttpTestSuiteStabilityJobAuthorizer
             ObjectMapper objectMapper,
             TestSuiteStabilityAuthorityTrustStore trustStore,
             Settings settings) {
-        this(objectMapper, trustStore, settings, Clock.systemUTC(), new SecureRandom(), null);
+        this(objectMapper, trustStore, TestSuiteStabilityAuthorityCohortGate.localOnly(),
+                settings, Clock.systemUTC(), new SecureRandom(), null);
+    }
+
+    /**
+     * Creates the HTTP adapter with an exact cross-replica trust-convergence gate.
+     *
+     * @param objectMapper application JSON mapper
+     * @param trustStore signed-decision verification policy
+     * @param cohortGate database-authoritative pre-request convergence guard
+     * @param settings bounded endpoint and timeout settings
+     */
+    public HttpTestSuiteStabilityJobAuthorizer(
+            ObjectMapper objectMapper,
+            TestSuiteStabilityAuthorityTrustStore trustStore,
+            TestSuiteStabilityAuthorityCohortGate cohortGate,
+            Settings settings) {
+        this(objectMapper, trustStore, cohortGate, settings,
+                Clock.systemUTC(), new SecureRandom(), null);
     }
 
     /** Package-visible seam for deterministic protocol and timeout tests. */
@@ -70,12 +89,25 @@ public final class HttpTestSuiteStabilityJobAuthorizer
             Clock clock,
             SecureRandom secureRandom,
             HttpClient client) {
+        this(objectMapper, trustStore, TestSuiteStabilityAuthorityCohortGate.localOnly(),
+                settings, clock, secureRandom, client);
+    }
+
+    HttpTestSuiteStabilityJobAuthorizer(
+            ObjectMapper objectMapper,
+            TestSuiteStabilityAuthorityTrustStore trustStore,
+            TestSuiteStabilityAuthorityCohortGate cohortGate,
+            Settings settings,
+            Clock clock,
+            SecureRandom secureRandom,
+            HttpClient client) {
         this.settings = Objects.requireNonNull(settings, "settings").validated();
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper").copy()
                 .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
+        this.cohortGate = Objects.requireNonNull(cohortGate, "cohortGate");
         if (!this.trustStore.descriptor().available()) {
             throw new IllegalArgumentException(
                     "Stability authority trust store must be ready before HTTP authorization");
@@ -91,6 +123,15 @@ public final class HttpTestSuiteStabilityJobAuthorizer
 
     @Override
     public Authorization reauthorize(TestSuiteStabilityJobRecord job) {
+        try {
+            if (!cohortGate.descriptor().available()) {
+                return Authorization.unavailable(
+                        "RG.TEST.STABILITY_JOB_AUTHORITY_COHORT_UNAVAILABLE");
+            }
+        } catch (RuntimeException unavailable) {
+            return Authorization.unavailable(
+                    "RG.TEST.STABILITY_JOB_AUTHORITY_COHORT_UNAVAILABLE");
+        }
         Instant requestedAt = clock.instant();
         byte[] challengeBytes = new byte[32];
         secureRandom.nextBytes(challengeBytes);
@@ -133,7 +174,13 @@ public final class HttpTestSuiteStabilityJobAuthorizer
     @Override
     public Descriptor descriptor() {
         TestSuiteStabilityAuthorityTrustStore.Descriptor trust = trustStore.descriptor();
-        return new Descriptor("", trust.available(), "HTTPS_SIGNED_PDP",
+        TestSuiteStabilityAuthorityCohortGate.Descriptor cohort;
+        try {
+            cohort = cohortGate.descriptor();
+        } catch (RuntimeException unavailable) {
+            cohort = TestSuiteStabilityAuthorityCohortGate.Descriptor.unavailable(0, 0);
+        }
+        return new Descriptor("", trust.available() && cohort.available(), "HTTPS_SIGNED_PDP",
                 trust.expectedAuthorityId(), Map.ofEntries(
                 Map.entry("protocolVersion", TestSuiteStabilityAuthorityRequest.SCHEMA_VERSION),
                 Map.entry("responseProtocolVersion",
@@ -145,6 +192,7 @@ public final class HttpTestSuiteStabilityJobAuthorizer
                 Map.entry("privateMaterialPresent", false),
                 Map.entry("requestTimeoutMillis", settings.requestTimeout().toMillis()),
                 Map.entry("trustProviderType", trust.providerType()),
+                Map.entry("trustLocalAvailable", trust.available()),
                 Map.entry("trustRefreshState",
                         trust.properties().getOrDefault("refreshState", "STATIC")),
                 Map.entry("trustRefreshIntervalSeconds",
@@ -154,7 +202,20 @@ public final class HttpTestSuiteStabilityJobAuthorizer
                 Map.entry("trustFailClosedOnRefreshFailure",
                         trust.properties().getOrDefault("failClosedOnRefreshFailure", true)),
                 Map.entry("trustAutomaticRefresh",
-                        trust.properties().getOrDefault("automaticRefresh", false))));
+                        trust.properties().getOrDefault("automaticRefresh", false)),
+                Map.entry("trustCohortConfigured", cohort.configured()),
+                Map.entry("trustCohortConverged", cohort.available()),
+                Map.entry("trustCohortStatus", cohort.status()),
+                Map.entry("trustCohortExpectedReplicaCount", cohort.expectedReplicaCount()),
+                Map.entry("trustCohortLiveReplicaCount", cohort.liveReplicaCount()),
+                Map.entry("trustCohortHealthyReplicaCount", cohort.healthyReplicaCount()),
+                Map.entry("trustCohortDistinctSnapshotCount",
+                        cohort.distinctSnapshotCount()),
+                Map.entry("trustCohortLeaseDurationSeconds",
+                        cohort.leaseDurationSeconds()),
+                Map.entry("trustCohortDatabaseAuthority", cohort.databaseAuthority()),
+                Map.entry("trustCohortExactConfiguredInventory",
+                        cohort.exactConfiguredInventory())));
     }
 
     private ExchangeResult exchange(

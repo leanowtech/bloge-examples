@@ -60,6 +60,13 @@ Environment:
   RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE  required for staging; staged rollout mode
   RG_RESOURCE_GATEWAY_INSTANCE_ID                  required for staging; exact serving replica id
   RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT         required for staging; sha256 image/JAR identity
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ENABLED   optional; exact dynamic-JWKS replica gate
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID  required when cohort is enabled; stable fleet scope
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ID        required when cohort is enabled; deployment generation
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS  required; exact comma-separated ids
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS  default: 10; 1..300
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS      default: 30; 3..900 and >= 3x heartbeat
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS  default: 86400; 3600..2592000
   RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_TRUST_DOMAIN  required for staging
   RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_POLICY_FINGERPRINTS  required; comma-separated sha256 values
   RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD  required; 1..32 authorities
@@ -159,6 +166,92 @@ validate_profile_secrets() {
             return 1
             ;;
     esac
+
+    if truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ENABLED:-false}"; then
+        if ! truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED:-false}" ||
+            ! truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_JWKS_ENABLED:-false}"; then
+            echo "Authority trust cohort requires the HTTP authority and dynamic JWKS trust." >&2
+            return 1
+        fi
+        if [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ID:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS:-}" ]; then
+            echo "Authority trust cohort requires scope, cohort, and exact expected instance ids." >&2
+            return 1
+        fi
+        if ! printf '%s' "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID}" |
+            grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+            echo "Invalid authority trust cohort scope id." >&2
+            return 1
+        fi
+        if ! printf '%s' "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ID}" |
+            grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+            echo "Invalid authority trust cohort id." >&2
+            return 1
+        fi
+
+        local -a cohort_instances
+        local cohort_instance
+        local cohort_seen="|"
+        local local_instance_present=0
+        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS}" in
+            ,*|*,|*,,*)
+                echo "Invalid authority trust cohort expected instance list." >&2
+                return 1
+                ;;
+        esac
+        IFS=',' read -r -a cohort_instances <<< \
+            "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS}"
+        if [ "${#cohort_instances[@]}" -lt 1 ] || [ "${#cohort_instances[@]}" -gt 256 ]; then
+            echo "Authority trust cohort expected instance count must be 1..256." >&2
+            return 1
+        fi
+        for cohort_instance in "${cohort_instances[@]}"; do
+            if ! printf '%s' "${cohort_instance}" |
+                grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+                echo "Invalid authority trust cohort expected instance id." >&2
+                return 1
+            fi
+            case "${cohort_seen}" in
+                *"|${cohort_instance}|"*)
+                    echo "Duplicate authority trust cohort expected instance id." >&2
+                    return 1
+                    ;;
+            esac
+            cohort_seen="${cohort_seen}${cohort_instance}|"
+            if [ "${cohort_instance}" = "${RG_RESOURCE_GATEWAY_INSTANCE_ID}" ]; then
+                local_instance_present=1
+            fi
+        done
+        if [ "${local_instance_present}" -ne 1 ]; then
+            echo "Authority trust cohort must include the local Resource Gateway instance id." >&2
+            return 1
+        fi
+
+        local heartbeat_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS:-10}"
+        local lease_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS:-30}"
+        local retention_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS:-86400}"
+        if printf '%s\n%s\n%s\n' \
+            "${heartbeat_seconds}" "${lease_seconds}" "${retention_seconds}" |
+            grep -Eqv '^[1-9][0-9]*$'; then
+            echo "Authority trust cohort timing values must be canonical positive whole seconds." >&2
+            return 1
+        fi
+        if [ "${heartbeat_seconds}" -lt 1 ] || [ "${heartbeat_seconds}" -gt 300 ]; then
+            echo "Authority trust cohort heartbeat must be 1..300 seconds." >&2
+            return 1
+        fi
+        if [ "${lease_seconds}" -lt 3 ] || [ "${lease_seconds}" -gt 900 ] ||
+            [ "${lease_seconds}" -lt $((heartbeat_seconds * 3)) ]; then
+            echo "Authority trust cohort lease must be 3..900 seconds and at least 3x heartbeat." >&2
+            return 1
+        fi
+        if [ "${retention_seconds}" -lt 3600 ] || [ "${retention_seconds}" -gt 2592000 ] ||
+            [ "${retention_seconds}" -lt "${lease_seconds}" ]; then
+            echo "Authority trust cohort retention must be 3600..2592000 seconds and at least the lease." >&2
+            return 1
+        fi
+    fi
 }
 
 pid_file() {

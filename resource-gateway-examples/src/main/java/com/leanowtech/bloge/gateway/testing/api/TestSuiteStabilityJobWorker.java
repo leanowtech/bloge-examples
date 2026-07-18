@@ -81,6 +81,9 @@ public final class TestSuiteStabilityJobWorker {
             return TestSuiteStabilityJobWorkResult.localCapacity();
         }
         try {
+            if (!currentAuthorityReady()) {
+                return TestSuiteStabilityJobWorkResult.authorityUnavailable();
+            }
             TestSuiteStabilityJobClaim claim;
             try {
                 claim = repository.claimNext(environment, ownerId, policy);
@@ -95,6 +98,15 @@ public final class TestSuiteStabilityJobWorker {
             return execute(claim);
         } finally {
             localSlots.release();
+        }
+    }
+
+    private boolean currentAuthorityReady() {
+        try {
+            TestSuiteStabilityJobAuthorizer.Descriptor descriptor = authorizer.descriptor();
+            return descriptor != null && descriptor.available();
+        } catch (RuntimeException unavailable) {
+            return false;
         }
     }
 

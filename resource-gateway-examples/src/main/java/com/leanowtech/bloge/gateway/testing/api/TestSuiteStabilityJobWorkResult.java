@@ -22,6 +22,7 @@ public record TestSuiteStabilityJobWorkResult(
         NO_WORK,
         LOCAL_CAPACITY,
         QUEUE_UNAVAILABLE,
+        AUTHORITY_UNAVAILABLE,
         SUCCEEDED,
         RETRIED,
         FAILED,
@@ -39,7 +40,8 @@ public record TestSuiteStabilityJobWorkResult(
         jobId = jobId == null ? "" : jobId.trim();
         failureCode = failureCode == null ? "" : failureCode.trim();
         boolean noJob = outcome == Outcome.NO_WORK || outcome == Outcome.LOCAL_CAPACITY
-                || outcome == Outcome.QUEUE_UNAVAILABLE;
+                || outcome == Outcome.QUEUE_UNAVAILABLE
+                || outcome == Outcome.AUTHORITY_UNAVAILABLE;
         boolean noFailure = outcome == Outcome.NO_WORK || outcome == Outcome.LOCAL_CAPACITY
                 || outcome == Outcome.SUCCEEDED;
         if (noJob != jobId.isBlank()
@@ -65,6 +67,13 @@ public record TestSuiteStabilityJobWorkResult(
                 Outcome.QUEUE_UNAVAILABLE, "", "RG.TEST.STABILITY_JOB_QUEUE_UNAVAILABLE");
     }
 
+    /** @return current authority or its configured trust cohort blocked before durable claim */
+    public static TestSuiteStabilityJobWorkResult authorityUnavailable() {
+        return new TestSuiteStabilityJobWorkResult(
+                Outcome.AUTHORITY_UNAVAILABLE, "",
+                "RG.TEST.STABILITY_JOB_AUTHORITY_UNAVAILABLE");
+    }
+
     /** @return successful acquired job */
     public static TestSuiteStabilityJobWorkResult succeeded(String jobId) {
         return new TestSuiteStabilityJobWorkResult(Outcome.SUCCEEDED, jobId, "");
@@ -77,6 +86,7 @@ public record TestSuiteStabilityJobWorkResult(
             String failureCode) {
         if (outcome == Outcome.NO_WORK || outcome == Outcome.LOCAL_CAPACITY
                 || outcome == Outcome.QUEUE_UNAVAILABLE
+                || outcome == Outcome.AUTHORITY_UNAVAILABLE
                 || outcome == Outcome.SUCCEEDED) {
             throw new IllegalArgumentException(
                     "Stopped stability work requires an acquired non-success outcome");

@@ -191,7 +191,16 @@ short-lived Ed25519-signed `AUTHORIZED` or `REVOKED` response from
 an atomic bootstrap, ETag-based background refresh, cooldown-bound unknown-key refresh and hard
 snapshot-age expiry. Any refresh ambiguity closes fresh admission; it never silently continues with
 stale revocation state. HTTPS is mandatory; the insecure-loopback escape hatches exist only for
-local tests. A deployment may instead contribute one custom
+local tests. Multi-replica dynamic-JWKS deployments can additionally enable
+`RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ENABLED=true`. Each process then publishes a database-clock
+lease keyed by fleet scope, deployment cohort, serving instance, and process start. Fresh submission, worker
+claim, and post-claim reauthorization remain closed until the exact configured instance set is
+live, healthy, on one artifact/protocol/policy, and observing one complete JWKS generation. A stable
+scope elects only one live deployment cohort, so overlapping rollouts cannot each self-admit. This
+is an exact configuration-convergence control, not external proof that the configured set equals
+the platform's real serving inventory. Scope, cohort, expected-instance and lease settings are
+listed below and checked by `scripts/visual-canvas-demo.sh` for staging startup. A deployment may
+instead contribute one custom
 `TestSuiteStabilityJobAuthorizer` with a ready key-free descriptor. There is no allow-all fallback:
 zero providers, multiple providers, an undeclared provider, missing trust, unsafe URI, or invalid
 time policy fails startup. Queue capacity, fairness, retry, lease, deadline, and retention use the
@@ -208,7 +217,10 @@ appear absent or cause it to execute twice. The capability probe separates
 `suiteStabilityCurrentAuthorityRevalidation` plus
 `signedChallengeBoundSuiteStabilityAuthority`. Dynamic deployments additionally expose
 `dynamicSuiteStabilityAuthorityTrust` and `suiteStabilityAuthorityTrustRefreshSlo`, so clients do
-not infer executability merely because the routes or Schema exist. The private authority request
+not infer executability merely because the routes or Schema exist. Cohort deployments also expose
+`exactSuiteStabilityAuthorityTrustCohort` and the current-state
+`convergedSuiteStabilityAuthorityTrustCohort`; descriptors and health contain aggregate counts and
+status only, never instance ids, cohort ids, endpoints, key ids, or trust fingerprints. The private authority request
 excludes credentials, correlation id,
 execution metadata, fixture/context/payload and node output. HTTP denial, redirect, timeout,
 malformed/oversized JSON, stale decision, echo mismatch, unknown/revoked key, or invalid signature
@@ -217,6 +229,7 @@ is `UNAVAILABLE`; only a verified signed revocation is definitive. Capacity resp
 `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` (default `5`). See the focused
 [current-authority verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md),
 [dynamic authority trust verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-authority-trust-verification.md),
+[authority cohort verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-authority-cohort-verification.md),
 and [machine-readable authority Schema](../docs/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json).
 Actuator exposes separate stability-queue and dynamic-authority-trust health contributors. The
 `RG_TEST_STABILITY_JOB_SLO_*` settings bound per-environment queue depth, oldest wait, observation

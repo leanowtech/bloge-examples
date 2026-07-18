@@ -4,8 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
-import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
+import com.leanowtech.bloge.gateway.integration.ToolStudioResourceGatewayProtocol;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionCoordinator;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
@@ -26,6 +27,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepositor
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityAuthorityCohortRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
@@ -1412,6 +1414,77 @@ public class TestRuntimeConfiguration {
         return new TestSuiteStabilityAuthorityTrustHealth(trustStore);
     }
 
+    /** Freezes one exact configured serving cohort for database trust-generation convergence. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityAuthorityCohortPolicy testSuiteStabilityAuthorityCohortPolicy(
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
+            String scopeId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.cohort-id:}")
+            String cohortId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.instance-id:}")
+            String instanceId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.artifact-fingerprint:}")
+            String artifactFingerprint,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.expected-instance-ids:}")
+            String expectedInstanceIds,
+            @Value("${gateway.testing.stability-jobs.authority.http.expected-authority-id:}")
+            String authorityId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.heartbeat-interval-seconds:10}")
+            long heartbeatIntervalSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.lease-duration-seconds:30}")
+            long leaseDurationSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.record-retention-seconds:86400}")
+            long recordRetentionSeconds) {
+        return new TestSuiteStabilityAuthorityCohortPolicy(
+                scopeId, cohortId, instanceId, UUID.randomUUID().toString(), artifactFingerprint,
+                stabilityAuthorityExpectedInstances(expectedInstanceIds), authorityId,
+                ToolStudioResourceGatewayProtocol.VERSION,
+                Duration.ofSeconds(heartbeatIntervalSeconds),
+                Duration.ofSeconds(leaseDurationSeconds),
+                Duration.ofSeconds(recordRetentionSeconds));
+    }
+
+    /** Creates the database-clock process-start lease and exact cohort inventory authority. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort",
+            name = "enabled", havingValue = "true")
+    DatabaseTestSuiteStabilityAuthorityCohortRepository
+            testSuiteStabilityAuthorityCohortRepository(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            TestSuiteStabilityAuthorityCohortPolicy policy) {
+        DatabaseTestSuiteStabilityAuthorityCohortRepository repository =
+                new DatabaseTestSuiteStabilityAuthorityCohortRepository(
+                        database.jdbc(), objectMapper, policy, database.transactionManager());
+        return repository;
+    }
+
+    /** Publishes local dynamic trust and gates on exact database cohort convergence. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityAuthorityCohortMonitor testSuiteStabilityAuthorityCohortMonitor(
+            DatabaseTestSuiteStabilityAuthorityCohortRepository repository,
+            DynamicJwksTestSuiteStabilityAuthorityTrustStore trustStore,
+            TestSuiteStabilityAuthorityCohortPolicy policy,
+            ObjectMapper objectMapper) {
+        return new TestSuiteStabilityAuthorityCohortMonitor(
+                repository, trustStore, policy, objectMapper);
+    }
+
+    /** Exposes aggregate-only configured cohort convergence through Actuator. */
+    @Bean
+    @ConditionalOnBean(TestSuiteStabilityAuthorityCohortMonitor.class)
+    TestSuiteStabilityAuthorityCohortHealth testSuiteStabilityAuthorityCohortHealth(
+            TestSuiteStabilityAuthorityCohortMonitor monitor) {
+        return new TestSuiteStabilityAuthorityCohortHealth(monitor);
+    }
+
     /**
      * Creates the product HTTPS PDP adapter; the worker still enforces exactly one authorizer.
      */
@@ -1421,12 +1494,15 @@ public class TestRuntimeConfiguration {
     TestSuiteStabilityJobAuthorizer httpTestSuiteStabilityJobAuthorizer(
             ObjectMapper objectMapper,
             TestSuiteStabilityAuthorityTrustStore trustStore,
+            ObjectProvider<TestSuiteStabilityAuthorityCohortGate> cohortGates,
             @Value("${gateway.testing.stability-jobs.authority.http.base-uri:}")
             String baseUri,
             @Value("${gateway.testing.stability-jobs.authority.http.request-timeout-ms:3000}")
             long requestTimeoutMillis,
             @Value("${gateway.testing.stability-jobs.authority.http.allow-insecure-loopback:false}")
-            boolean allowInsecureLoopback) {
+            boolean allowInsecureLoopback,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.enabled:false}")
+            boolean cohortEnabled) {
         URI uri;
         try {
             uri = URI.create(baseUri == null ? "" : baseUri.trim());
@@ -1434,8 +1510,21 @@ public class TestRuntimeConfiguration {
             throw new IllegalArgumentException(
                     "Stability authority base URI is invalid", invalid);
         }
+        List<TestSuiteStabilityAuthorityCohortGate> configuredGates =
+                cohortGates.orderedStream().toList();
+        if (cohortEnabled && configuredGates.size() != 1) {
+            throw new IllegalStateException(
+                    "Enabled stability authority cohort requires exactly one gate");
+        }
+        if (!cohortEnabled && !configuredGates.isEmpty()) {
+            throw new IllegalStateException(
+                    "Stability authority cohort gate requires its explicit switch");
+        }
+        TestSuiteStabilityAuthorityCohortGate cohortGate = cohortEnabled
+                ? configuredGates.getFirst()
+                : TestSuiteStabilityAuthorityCohortGate.localOnly();
         return new HttpTestSuiteStabilityJobAuthorizer(
-                objectMapper, trustStore,
+                objectMapper, trustStore, cohortGate,
                 new HttpTestSuiteStabilityJobAuthorizer.Settings(
                         uri, Duration.ofMillis(requestTimeoutMillis), allowInsecureLoopback));
     }
@@ -1466,9 +1555,9 @@ public class TestRuntimeConfiguration {
                     "Enabled stability worker requires exactly one "
                             + "TestSuiteStabilityJobAuthorizer bean");
         }
-        if (!currentAuthorities.getFirst().descriptor().available()) {
+        if (!currentAuthorityLocallyReady(currentAuthorities.getFirst().descriptor())) {
             throw new IllegalStateException(
-                    "Enabled stability worker requires a ready "
+                    "Enabled stability worker requires locally ready "
                             + "TestSuiteStabilityJobAuthorizer descriptor");
         }
         String ownerId = instanceId == null || instanceId.isBlank()
@@ -1540,5 +1629,24 @@ public class TestRuntimeConfiguration {
         } catch (RuntimeException unavailable) {
             return false;
         }
+    }
+
+    private static boolean currentAuthorityLocallyReady(
+            TestSuiteStabilityJobAuthorizer.Descriptor descriptor) {
+        return descriptor != null && (descriptor.available()
+                || Boolean.TRUE.equals(descriptor.properties().get("trustLocalAvailable")));
+    }
+
+    private static Set<String> stabilityAuthorityExpectedInstances(String instances) {
+        String[] values = instances == null ? new String[0] : instances.split(",", -1);
+        LinkedHashSet<String> exact = new LinkedHashSet<>();
+        for (String value : values) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank() || !exact.add(normalized)) {
+                throw new IllegalArgumentException(
+                        "Stability authority cohort instance inventory is invalid");
+            }
+        }
+        return Set.copyOf(exact);
     }
 }

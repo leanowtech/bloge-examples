@@ -151,14 +151,47 @@ class HttpTestSuiteStabilityJobAuthorizerTest {
                 .baseUri()).hasToString("https://iam.example/pdp");
     }
 
+    @Test
+    void unavailableCohortPreventsAnyPdpRequestAndClosesDescriptor() throws Exception {
+        TestSuiteStabilityAuthorityCohortGate gate = () ->
+                TestSuiteStabilityAuthorityCohortGate.Descriptor.unavailable(2, 30);
+        try (AuthorityServer server = AuthorityServer.start(objectMapper, request -> signed(
+                request.request(), keyPair,
+                TestSuiteStabilityAuthorityResponse.Decision.AUTHORIZED, ""))) {
+            HttpTestSuiteStabilityJobAuthorizer authorizer = authorizer(
+                    server.baseUri(), Duration.ofSeconds(1), gate);
+
+            assertThat(authorizer.reauthorize(job())).isEqualTo(
+                    TestSuiteStabilityJobAuthorizer.Authorization.unavailable(
+                            "RG.TEST.STABILITY_JOB_AUTHORITY_COHORT_UNAVAILABLE"));
+            assertThat(server.requests()).isZero();
+            assertThat(authorizer.descriptor()).satisfies(descriptor -> {
+                assertThat(descriptor.available()).isFalse();
+                assertThat(descriptor.properties())
+                        .containsEntry("trustLocalAvailable", true)
+                        .containsEntry("trustCohortConfigured", true)
+                        .containsEntry("trustCohortConverged", false)
+                        .containsEntry("trustCohortStatus", "STORE_UNAVAILABLE")
+                        .doesNotContainKeys("instanceId", "snapshotFingerprint", "cohortId");
+            });
+        }
+    }
+
     private HttpTestSuiteStabilityJobAuthorizer authorizer(URI baseUri, Duration timeout) {
+        return authorizer(baseUri, timeout, TestSuiteStabilityAuthorityCohortGate.localOnly());
+    }
+
+    private HttpTestSuiteStabilityJobAuthorizer authorizer(
+            URI baseUri,
+            Duration timeout,
+            TestSuiteStabilityAuthorityCohortGate gate) {
         var trustStore = new ConfiguredTestSuiteStabilityAuthorityTrustStore(
                 objectMapper, AUTHORITY_ID, Duration.ofSeconds(60), Duration.ofSeconds(5),
                 Duration.ofMillis(10), List.of(
                 new ConfiguredTestSuiteStabilityAuthorityTrustStore.AuthorityKey(
                         KEY_ID, keyPair.getPublic(), null, null, true, false)));
         return new HttpTestSuiteStabilityJobAuthorizer(
-                objectMapper, trustStore,
+                objectMapper, trustStore, gate,
                 new HttpTestSuiteStabilityJobAuthorizer.Settings(baseUri, timeout, true),
                 Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(),
                 HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)

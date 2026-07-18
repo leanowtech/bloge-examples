@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -210,6 +212,28 @@ public final class DynamicJwksTestSuiteStabilityAuthorityTrustStore
     }
 
     /**
+     * Returns the local trust generation used only for database-backed cohort convergence.
+     *
+     * <p>The generation fingerprint covers the complete authority id, public key material and key
+     * lifecycle but exposes none of them. Health, capability and logs deliberately do not publish
+     * this value.</p>
+     *
+     * @return immutable local observation suitable for a private cohort heartbeat
+     */
+    public CohortObservation cohortObservation() {
+        State observed = state;
+        Instant now = clock.instant();
+        long activeKeys = observed.keys().values().stream()
+                .filter(key -> key.activeAt(now)).count();
+        String refreshState = effectiveRefreshState(observed, now);
+        return new CohortObservation(
+                "bloge.testSuiteStabilityAuthorityTrustCohortObservation.v1",
+                !closed && "HEALTHY".equals(refreshState) && activeKeys > 0,
+                refreshState, observed.snapshotFingerprint(), activeKeys,
+                observed.lastSuccessfulRefreshAt());
+    }
+
+    /**
      * Stops background refresh and makes the local snapshot unavailable.
      */
     @Override
@@ -277,7 +301,10 @@ public final class DynamicJwksTestSuiteStabilityAuthorityTrustStore
                             clockSkew, minimumRemainingValidity,
                             new ArrayList<>(keys.values()));
             String etag = document.etag().isBlank() ? previous.etag() : document.etag();
-            state = new State(keys, verifier, etag, RefreshState.HEALTHY, now,
+            String snapshotFingerprint = document.notModified()
+                    ? previous.snapshotFingerprint() : snapshotFingerprint(keys);
+            state = new State(keys, verifier, etag, snapshotFingerprint,
+                    RefreshState.HEALTHY, now,
                     previous.refreshSuccessCount() + 1,
                     previous.refreshFailureCount(), "");
             refreshFailureLogged.set(false);
@@ -364,6 +391,25 @@ public final class DynamicJwksTestSuiteStabilityAuthorityTrustStore
         } catch (GeneralSecurityException invalid) {
             throw new IllegalArgumentException("Authority JWKS public key is invalid", invalid);
         }
+    }
+
+    private String snapshotFingerprint(
+            Map<String, ConfiguredTestSuiteStabilityAuthorityTrustStore.AuthorityKey> keys) {
+        List<Map<String, Object>> material = new TreeMap<>(keys).values().stream()
+                .map(key -> Map.<String, Object>ofEntries(
+                        Map.entry("keyId", key.keyId()),
+                        Map.entry("algorithm", key.publicKey().getAlgorithm()),
+                        Map.entry("publicKey", Base64.getEncoder().encodeToString(
+                                key.publicKey().getEncoded())),
+                        Map.entry("notBefore", key.notBefore().toString()),
+                        Map.entry("expiresAt", key.expiresAt().toString()),
+                        Map.entry("enabled", key.enabled()),
+                        Map.entry("revoked", key.revoked())))
+                .toList();
+        return ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.testSuiteStabilityAuthorityTrustGeneration.v1",
+                "authorityId", expectedAuthorityId,
+                "keys", material));
     }
 
     private ScheduledThreadPoolExecutor scheduler() {
@@ -651,6 +697,7 @@ public final class DynamicJwksTestSuiteStabilityAuthorityTrustStore
             Map<String, ConfiguredTestSuiteStabilityAuthorityTrustStore.AuthorityKey> keys,
             ConfiguredTestSuiteStabilityAuthorityTrustStore verifier,
             String etag,
+            String snapshotFingerprint,
             RefreshState refreshState,
             Instant lastSuccessfulRefreshAt,
             long refreshSuccessCount,
@@ -660,18 +707,20 @@ public final class DynamicJwksTestSuiteStabilityAuthorityTrustStore
         private State {
             keys = keys == null ? Map.of() : Map.copyOf(keys);
             etag = normalized(etag);
+            snapshotFingerprint = normalized(snapshotFingerprint);
             refreshState = refreshState == null
                     ? RefreshState.UNAVAILABLE : refreshState;
             lastFailureCode = normalized(lastFailureCode);
         }
 
         private static State empty() {
-            return new State(Map.of(), null, "", RefreshState.BOOTSTRAPPING,
+            return new State(Map.of(), null, "", "", RefreshState.BOOTSTRAPPING,
                     null, 0, 0, "");
         }
 
         private State failed(String failureCode) {
-            return new State(keys, verifier, etag, RefreshState.UNAVAILABLE,
+            return new State(keys, verifier, etag, snapshotFingerprint,
+                    RefreshState.UNAVAILABLE,
                     lastSuccessfulRefreshAt, refreshSuccessCount,
                     refreshFailureCount + 1, failureCode);
         }
@@ -718,6 +767,42 @@ public final class DynamicJwksTestSuiteStabilityAuthorityTrustStore
                         "Invalid stability authority trust refresh snapshot");
             }
             lastFailureCode = normalized(lastFailureCode);
+        }
+    }
+
+    /**
+     * Private control-plane observation for exact trust-generation convergence.
+     *
+     * @param schemaVersion observation protocol generation
+     * @param available whether this process can currently verify authority decisions
+     * @param refreshState closed local refresh state
+     * @param snapshotFingerprint SHA-256 identity of the complete public trust generation
+     * @param activeKeyCount currently active verification-key cardinality
+     * @param lastSuccessfulRefreshAt last complete local snapshot publication
+     */
+    public record CohortObservation(
+            String schemaVersion,
+            boolean available,
+            String refreshState,
+            String snapshotFingerprint,
+            long activeKeyCount,
+            Instant lastSuccessfulRefreshAt) {
+
+        /** Validates the bounded private heartbeat projection. */
+        public CohortObservation {
+            schemaVersion = normalized(schemaVersion);
+            refreshState = normalized(refreshState);
+            snapshotFingerprint = normalized(snapshotFingerprint);
+            if (!"bloge.testSuiteStabilityAuthorityTrustCohortObservation.v1".equals(
+                    schemaVersion)
+                    || refreshState.isBlank()
+                    || activeKeyCount < 0 || activeKeyCount > MAXIMUM_KEYS
+                    || available && (!"HEALTHY".equals(refreshState)
+                    || !snapshotFingerprint.matches("sha256:[a-f0-9]{64}")
+                    || activeKeyCount == 0 || lastSuccessfulRefreshAt == null)) {
+                throw new IllegalArgumentException(
+                        "Invalid stability authority trust cohort observation");
+            }
         }
     }
 }
