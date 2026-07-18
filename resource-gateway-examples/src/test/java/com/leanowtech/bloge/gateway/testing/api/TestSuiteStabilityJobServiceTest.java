@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +40,7 @@ class TestSuiteStabilityJobServiceTest {
     private ObjectMapper mapper;
     private TestSuiteStabilityJobRepository jobs;
     private TestSuiteStabilityExecutionService executions;
+    private TestSecurityEventRepository securityEvents;
     private TestSuiteStabilityQueuePolicy policy;
     private TestSuiteStabilityJobService service;
 
@@ -47,6 +49,9 @@ class TestSuiteStabilityJobServiceTest {
         mapper = new ObjectMapper().findAndRegisterModules();
         jobs = mock(TestSuiteStabilityJobRepository.class);
         executions = mock(TestSuiteStabilityExecutionService.class);
+        securityEvents = mock(TestSecurityEventRepository.class);
+        when(securityEvents.boundAppend(any()))
+                .thenReturn(TestRuntimeTransactionMutation.noop());
         policy = new TestSuiteStabilityQueuePolicy(
                 1, 100, 10, 4, 2, Duration.ofSeconds(30), Duration.ofMinutes(5),
                 Duration.ofSeconds(1), Duration.ofMinutes(1), 3,
@@ -230,15 +235,27 @@ class TestSuiteStabilityJobServiceTest {
         when(jobs.find("tenant-a", "test", existing.jobId()))
                 .thenReturn(Optional.of(existing));
         AtomicReference<String> firstFingerprint = new AtomicReference<>();
-        when(jobs.cancel(eq("tenant-a"), eq("test"), eq(existing.jobId()),
-                eq("cancel-1"), anyString(), eq(policy))).thenAnswer(invocation -> {
-            String fingerprint = invocation.getArgument(4);
+        when(jobs.cancel(any(), eq(policy), any())).thenAnswer(invocation -> {
+            TestSuiteStabilityJobCancellationCommand command = invocation.getArgument(0);
+            String fingerprint = command.commandFingerprint();
+            boolean replay = firstFingerprint.get() != null;
             if (firstFingerprint.get() == null) {
                 firstFingerprint.set(fingerprint);
             } else {
                 assertThat(fingerprint).isEqualTo(firstFingerprint.get());
             }
-            return cancelled(existing, fingerprint);
+            if (!replay) {
+                @SuppressWarnings("unchecked")
+                Function<TestSuiteStabilityJobCancellationReceipt,
+                        TestRuntimeTransactionMutation> audit = invocation.getArgument(2);
+                audit.apply(new TestSuiteStabilityJobCancellationReceipt(
+                        command, TestSuiteStabilityJobRecord.Status.QUEUED,
+                        TestSuiteStabilityJobRecord.Status.CANCELLED,
+                        TestSuiteStabilityJobCancellationReceipt.Outcome.CANCELLED_BEFORE_START,
+                        DEADLINE.minusSeconds(1)));
+            }
+            return new TestSuiteStabilityJobRepository.CancellationResult(
+                    cancelled(existing, fingerprint), replay);
         });
         TestSuiteStabilityJobCancelRequest cancellation =
                 new TestSuiteStabilityJobCancelRequest(
@@ -253,6 +270,19 @@ class TestSuiteStabilityJobServiceTest {
         assertThat(first.terminal()).isTrue();
         assertThat(replay).isEqualTo(first);
         assertThat(firstFingerprint.get()).matches("sha256:[a-f0-9]{64}");
+        org.mockito.ArgumentCaptor<TestSecurityEvent> events =
+                org.mockito.ArgumentCaptor.forClass(TestSecurityEvent.class);
+        verify(securityEvents).boundAppend(events.capture());
+        assertThat(events.getAllValues()).allSatisfy(event -> {
+            assertThat(event.eventType()).isEqualTo("SUITE_STABILITY_JOB_CANCELLATION");
+            assertThat(event.actorId()).isEqualTo("runner");
+            assertThat(event.facts())
+                    .containsEntry("schemaVersion",
+                            "bloge.testSuiteStabilityJobCancellationAudit.v1")
+                    .containsEntry("jobId", existing.jobId())
+                    .containsEntry("cancellationOutcome", "CANCELLED_BEFORE_START")
+                    .doesNotContainKeys("context", "metadata", "credential", "groups");
+        });
     }
 
     @ParameterizedTest
@@ -289,7 +319,8 @@ class TestSuiteStabilityJobServiceTest {
 
     private TestSuiteStabilityJobService service(boolean enabled) {
         return new TestSuiteStabilityJobService(
-                jobs, executions, policy, mapper, enabled, Duration.ofSeconds(7));
+                jobs, executions, policy, mapper, securityEvents, enabled,
+                Duration.ofSeconds(7));
     }
 
     private String jobId(

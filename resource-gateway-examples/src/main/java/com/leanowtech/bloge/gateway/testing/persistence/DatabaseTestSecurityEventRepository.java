@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCancellationReceipt;
 import jakarta.annotation.PostConstruct;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -17,7 +18,13 @@ import java.sql.Timestamp;
 import java.util.List;
 import java.util.Map;
 
-/** Append-only test-control security-event repository in the independent test database. */
+/**
+ * Append-only test-control security-event repository in the independent test database.
+ *
+ * <p>Typed cancellation semantic events are verified over their complete top-level identity and
+ * fact projection before append and after read; a changed actor, scope, time, outcome, reason, or
+ * fact therefore fails closed.</p>
+ */
 public final class DatabaseTestSecurityEventRepository implements TestSecurityEventRepository {
 
     private final JdbcTemplate jdbc;
@@ -95,12 +102,12 @@ public final class DatabaseTestSecurityEventRepository implements TestSecurityEv
                         SELECT sequence, occurred_at, correlation_id, tenant_id, environment_id,
                                actor_id, event_type, outcome, reason_code, facts_json
                         FROM rg_test_security_events ORDER BY sequence DESC LIMIT ?
-                        """, (rs, row) -> new TestSecurityEvent(
+                        """, (rs, row) -> verifyStoredEvent(new TestSecurityEvent(
                         rs.getLong("sequence"), rs.getTimestamp("occurred_at").toInstant(),
                         rs.getString("correlation_id"), rs.getString("tenant_id"),
                         rs.getString("environment_id"), rs.getString("actor_id"),
                         rs.getString("event_type"), rs.getString("outcome"),
-                        rs.getString("reason_code"), read(rs.getString("facts_json"))),
+                        rs.getString("reason_code"), read(rs.getString("facts_json")))),
                 Math.max(1, Math.min(1000, limit)));
     }
 
@@ -112,10 +119,19 @@ public final class DatabaseTestSecurityEventRepository implements TestSecurityEv
         }
     }
 
-    private static void requireEvent(TestSecurityEvent event) {
+    private void requireEvent(TestSecurityEvent event) {
         if (event == null || event.occurredAt() == null) {
             throw new IllegalArgumentException("Security event and timestamp are required");
         }
+        verifyStoredEvent(event);
+    }
+
+    private TestSecurityEvent verifyStoredEvent(TestSecurityEvent event) {
+        if (TestSuiteStabilityJobCancellationReceipt.EVENT_TYPE.equals(event.eventType())) {
+            return TestSuiteStabilityJobCancellationReceipt.verifySecurityEvent(
+                    objectMapper, event);
+        }
+        return event;
     }
 
     private Map<String, Object> read(String value) {

@@ -2909,6 +2909,18 @@ cooperative checkpoint. `COMMITTING` has already crossed the final cancellation/
 linearization point and is returned unchanged. Cancellation replay is bound to the authenticated
 actor/delegation command but not transient correlation ids.
 
+The first accepted command is also an exactly-once semantic audit boundary. Queue state and the
+`SUITE_STABILITY_JOB_CANCELLATION` event commit in the same test-runtime database transaction;
+failure or absence of the transaction-bound audit mutation rolls back the queue change. The event
+records only schema version, job/command fingerprints, organization/project, actor/delegation,
+purpose, clearance, group count/fingerprint, database-time previous/resulting status and the closed
+outcome. It never records bearer credentials, group names, execution metadata, suite request,
+fixture, graph context, payload, node result, or lease fence. A first command received in
+`COMMITTING` or any terminal state is retained and audited as `TOO_LATE_TO_CANCEL` or
+`ALREADY_TERMINAL`; exact replay returns the retained job without another semantic event, while a
+different command id/fingerprint conflicts. See the
+[cancellation audit verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-cancellation-audit-verification.md).
+
 Fresh submit is available only when
 `gateway.testing.stability-jobs.worker.enabled=true` and startup has found exactly one current-IAM
 `TestSuiteStabilityJobAuthorizer`. When disabled, query/cancel remain operational and submit returns
@@ -2916,7 +2928,8 @@ Fresh submit is available only when
 return `429`; policy drift returns retryable `503`; expired retained detail returns `410`. Discover
 the distinction through `testability.suiteStabilityJobSubmissionEnabled` and the
 `asyncSuiteStabilityJobProtocol`, `asyncSuiteStabilityJobSubmission`,
-`asyncSuiteStabilityJobQuery`, and `asyncSuiteStabilityJobCancellation` feature flags. The strict
+`asyncSuiteStabilityJobQuery`, `asyncSuiteStabilityJobCancellation`, and
+`asyncSuiteStabilityJobCancellationSemanticAudit` feature flags. The strict
 request/response definitions live in
 [`testing-control-plane-v1.schema.json`](schemas/resource-gateway-testing/testing-control-plane-v1.schema.json).
 Implementation evidence and deliberately unclaimed guarantees are recorded in

@@ -709,12 +709,13 @@ public class TestRuntimeConfiguration {
             TestSuiteStabilityExecutionService executions,
             TestSuiteStabilityQueuePolicy policy,
             ObjectMapper objectMapper,
+            TestSecurityEventRepository securityEvents,
             @Value("${gateway.testing.stability-jobs.worker.enabled:false}")
             boolean submissionEnabled,
             @Value("${gateway.testing.stability-jobs.api.retry-after-seconds:5}")
             long retryAfterSeconds) {
         return new TestSuiteStabilityJobService(
-                repository, executions, policy, objectMapper, submissionEnabled,
+                repository, executions, policy, objectMapper, securityEvents, submissionEnabled,
                 Duration.ofSeconds(retryAfterSeconds));
     }
 

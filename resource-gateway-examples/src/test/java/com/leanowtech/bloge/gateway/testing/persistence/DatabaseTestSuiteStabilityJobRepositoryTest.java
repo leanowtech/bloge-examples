@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobClaim;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCancellationCommand;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCompletionPreparation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLeaseCheck;
@@ -16,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRetentionAt
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueueSnapshot;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -221,7 +223,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
         String cancellationFingerprint = TestSuiteStabilityProtocolFixtures.fingerprint('7');
 
-        TestSuiteStabilityJobRecord requested = repository.cancel(
+        TestSuiteStabilityJobRecord requested = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 cancellationFingerprint, policy);
 
@@ -248,15 +250,15 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         repository.submit(submission, policy);
         String fingerprint = TestSuiteStabilityProtocolFixtures.fingerprint('7');
 
-        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+        TestSuiteStabilityJobRecord cancelled = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a", fingerprint, policy);
 
         assertThat(cancelled.status()).isEqualTo(TestSuiteStabilityJobRecord.Status.CANCELLED);
-        assertThat(repository.cancel("tenant-a", "test", submission.jobId(),
+        assertThat(cancel("tenant-a", "test", submission.jobId(),
                 "cancel-a", fingerprint, policy)).isEqualTo(cancelled);
         assertThat(repository.claimNext("test", "worker-a", policy).outcome())
                 .isEqualTo(TestSuiteStabilityJobClaim.Outcome.NO_WORK);
-        assertThatThrownBy(() -> repository.cancel("tenant-a", "test", submission.jobId(),
+        assertThatThrownBy(() -> cancel("tenant-a", "test", submission.jobId(),
                 "cancel-b", TestSuiteStabilityProtocolFixtures.fingerprint('8'), policy))
                 .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(
@@ -282,7 +284,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 "stability-signed-winner",
                 TestSuiteStabilityProtocolFixtures.fingerprint('6'));
 
-        TestSuiteStabilityJobRecord result = repository.cancel(
+        TestSuiteStabilityJobRecord result = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
 
@@ -290,7 +292,9 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         assertThat(result.terminalStabilityRunId()).isEqualTo("stability-signed-winner");
         assertThat(result.terminalEvidenceFingerprint())
                 .isEqualTo(TestSuiteStabilityProtocolFixtures.fingerprint('6'));
-        assertThat(result.cancellationRequestId()).isBlank();
+        assertThat(result.cancellationRequestId()).isEqualTo("cancel-a");
+        assertThat(result.cancellationFingerprint())
+                .isEqualTo(TestSuiteStabilityProtocolFixtures.fingerprint('7'));
         assertThat(result.failureCode()).isBlank();
     }
 
@@ -302,7 +306,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         repository.submit(submission, policy);
         parentAuthority.failure = new IllegalStateException("parent stop unavailable");
 
-        assertThatThrownBy(() -> repository.cancel(
+        assertThatThrownBy(() -> cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy))
                 .isInstanceOf(IllegalStateException.class)
@@ -324,7 +328,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
         TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
-        repository.cancel("tenant-a", "test", submission.jobId(), "cancel-a",
+        cancel("tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
 
         TestSuiteStabilityJobRecord result = repository.retry(claim.lease(),
@@ -343,7 +347,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         repository.submit(cancelled, policy);
         TestSuiteStabilityJobClaim cancelledClaim =
                 repository.claimNext("test", "worker-a", policy);
-        repository.cancel("tenant-a", "test", cancelled.jobId(), "cancel-a",
+        cancel("tenant-a", "test", cancelled.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
 
         var cancellation = repository.prepareCompletion(cancelledClaim.lease(), policy);
@@ -359,7 +363,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         repository.submit(completed, policy);
         TestSuiteStabilityJobClaim completedClaim =
                 repository.claimNext("test", "worker-a", policy);
-        repository.cancel("tenant-b", "test", completed.jobId(), "cancel-b",
+        cancel("tenant-b", "test", completed.jobId(), "cancel-b",
                 TestSuiteStabilityProtocolFixtures.fingerprint('8'), policy);
         parentAuthority.resolution = TestSuiteStabilityJobParentAuthority.Resolution.completed(
                 "stability-parent", TestSuiteStabilityProtocolFixtures.fingerprint('6'));
@@ -446,7 +450,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         assertThat(repository.find("tenant-a", "test", submission.jobId()))
                 .get().extracting(TestSuiteStabilityJobRecord::status)
                 .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
-        assertThat(repository.cancel("tenant-a", "test", submission.jobId(), "cancel-a",
+        assertThat(cancel("tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy).status())
                 .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
         assertThat(repository.retry(committingLease,
@@ -461,14 +465,184 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         assertThat(recovery.job().status())
                 .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
         assertThat(recovery.lease().epoch()).isEqualTo(committingLease.epoch() + 1);
-        assertThat(repository.cancel("tenant-a", "test", submission.jobId(), "cancel-b",
-                TestSuiteStabilityProtocolFixtures.fingerprint('8'), policy).status())
+        assertThat(cancel("tenant-a", "test", submission.jobId(), "cancel-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy).status())
                 .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+        assertThatThrownBy(() -> cancel(
+                "tenant-a", "test", submission.jobId(), "cancel-b",
+                TestSuiteStabilityProtocolFixtures.fingerprint('8'), policy))
+                .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityJobConflictException.Reason
+                                        .CANCELLATION_CONFLICT));
         assertThatThrownBy(() -> repository.fail(recovery.lease(),
                 "RG.TEST.STABILITY_JOB_PUBLICATION_FAILED", policy))
                 .isInstanceOfSatisfying(TestSuiteStabilityJobConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityJobConflictException.Reason.TERMINAL_CONFLICT));
+    }
+
+    @Test
+    void cancellationAndSemanticAuditCommitOnceInTheSameTransaction() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        DatabaseTestSecurityEventRepository securityEvents =
+                new DatabaseTestSecurityEventRepository(jdbc, mapper);
+        securityEvents.init();
+        TestSuiteStabilityJobCancellationCommand command = cancellation(
+                submission, "cancel-a", TestSuiteStabilityProtocolFixtures.fingerprint('7'));
+
+        TestSuiteStabilityJobRepository.CancellationResult first = repository.cancel(
+                command, policy,
+                receipt -> securityEvents.boundAppend(receipt.toSecurityEvent(mapper)));
+        TestSuiteStabilityJobRepository.CancellationResult replay = repository.cancel(
+                command, policy,
+                receipt -> securityEvents.boundAppend(receipt.toSecurityEvent(mapper)));
+
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(first.job().status())
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.CANCELLED);
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.job()).isEqualTo(first.job());
+        assertThat(securityEvents.recent(10)).singleElement().satisfies(event -> {
+            assertThat(event.eventType()).isEqualTo("SUITE_STABILITY_JOB_CANCELLATION");
+            assertThat(event.outcome()).isEqualTo("COMMITTED");
+            assertThat(event.reasonCode())
+                    .isEqualTo("RG.TEST.STABILITY_JOB_CANCELLATION_APPLIED");
+            assertThat(event.actorId()).isEqualTo("ci-runner");
+            assertThat(event.facts())
+                    .containsEntry("jobId", submission.jobId())
+                    .containsEntry("previousStatus", "QUEUED")
+                    .containsEntry("resultingStatus", "CANCELLED")
+                    .containsEntry("cancellationOutcome", "CANCELLED_BEFORE_START")
+                    .containsKeys("commandFingerprint", "groupFingerprint",
+                            "semanticFingerprint")
+                    .doesNotContainKeys("request", "metadata", "context", "groups",
+                            "credential", "payload");
+        });
+    }
+
+    @Test
+    void semanticAuditFailureRollsBackTheCancellationFence() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        TestSuiteStabilityJobRecord original = repository.submit(submission, policy);
+        TestSuiteStabilityJobCancellationCommand command = cancellation(
+                submission, "cancel-a", TestSuiteStabilityProtocolFixtures.fingerprint('7'));
+
+        assertThatThrownBy(() -> repository.cancel(command, policy,
+                ignored -> transactionJdbc -> {
+                    throw new IllegalStateException("semantic audit unavailable");
+                }))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("semantic audit unavailable");
+
+        assertThat(repository.find("tenant-a", "test", submission.jobId()))
+                .contains(original);
+    }
+
+    @Test
+    void tamperedCancellationAuditProjectionFailsClosedOnRead() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        DatabaseTestSecurityEventRepository securityEvents =
+                new DatabaseTestSecurityEventRepository(jdbc, mapper);
+        securityEvents.init();
+        repository.cancel(cancellation(
+                        submission, "cancel-a",
+                        TestSuiteStabilityProtocolFixtures.fingerprint('7')),
+                policy, receipt -> securityEvents.boundAppend(
+                        receipt.toSecurityEvent(mapper)));
+        jdbc.update("""
+                UPDATE rg_test_security_events SET actor_id = 'tampered-actor'
+                WHERE event_type = 'SUITE_STABILITY_JOB_CANCELLATION'
+                """);
+
+        assertThatThrownBy(() -> securityEvents.recent(10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("integrity");
+    }
+
+    @Test
+    void tooLateCancellationIsAuditedOnceAndDoesNotFencePublication() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
+        var committing = repository.prepareCompletion(claim.lease(), policy).lease();
+        DatabaseTestSecurityEventRepository securityEvents =
+                new DatabaseTestSecurityEventRepository(jdbc, mapper);
+        securityEvents.init();
+        TestSuiteStabilityJobCancellationCommand command = cancellation(
+                submission, "cancel-a", TestSuiteStabilityProtocolFixtures.fingerprint('7'));
+
+        TestSuiteStabilityJobRepository.CancellationResult cancelled = repository.cancel(
+                command, policy,
+                receipt -> securityEvents.boundAppend(receipt.toSecurityEvent(mapper)));
+        TestSuiteStabilityJobRecord completed = repository.complete(
+                committing, "stability-result-a",
+                TestSuiteStabilityProtocolFixtures.fingerprint('6'), policy);
+        TestSuiteStabilityJobRepository.CancellationResult replay = repository.cancel(
+                command, policy,
+                receipt -> securityEvents.boundAppend(receipt.toSecurityEvent(mapper)));
+
+        assertThat(cancelled.idempotentReplay()).isFalse();
+        assertThat(cancelled.job().status())
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+        assertThat(completed.status()).isEqualTo(TestSuiteStabilityJobRecord.Status.SUCCEEDED);
+        assertThat(completed.cancellationRequestId()).isEqualTo("cancel-a");
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.job()).isEqualTo(completed);
+        assertThat(securityEvents.recent(10)).singleElement().satisfies(event -> {
+            assertThat(event.reasonCode())
+                    .isEqualTo("RG.TEST.STABILITY_JOB_CANCELLATION_TOO_LATE");
+            assertThat(event.facts())
+                    .containsEntry("previousStatus", "COMMITTING")
+                    .containsEntry("resultingStatus", "COMMITTING")
+                    .containsEntry("cancellationOutcome", "TOO_LATE_TO_CANCEL");
+        });
+    }
+
+    @Test
+    void firstCancellationAfterTerminalStateIsAuditedAndExactlyReplayable() {
+        TestSuiteStabilityQueuePolicy policy = policy(10, 10, 2, 1, 3);
+        TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
+                TestSuiteStabilityJobSubmission.Priority.NORMAL);
+        repository.submit(submission, policy);
+        TestSuiteStabilityJobClaim claim = repository.claimNext("test", "worker-a", policy);
+        TestSuiteStabilityJobRecord terminal = repository.fail(
+                claim.lease(), "RG.TEST.STABILITY_JOB_ASSERTION_FAILED", policy);
+        DatabaseTestSecurityEventRepository securityEvents =
+                new DatabaseTestSecurityEventRepository(jdbc, mapper);
+        securityEvents.init();
+        TestSuiteStabilityJobCancellationCommand command = cancellation(
+                submission, "cancel-a", TestSuiteStabilityProtocolFixtures.fingerprint('7'));
+
+        TestSuiteStabilityJobRepository.CancellationResult first = repository.cancel(
+                command, policy,
+                receipt -> securityEvents.boundAppend(receipt.toSecurityEvent(mapper)));
+        TestSuiteStabilityJobRepository.CancellationResult replay = repository.cancel(
+                command, policy,
+                receipt -> securityEvents.boundAppend(receipt.toSecurityEvent(mapper)));
+
+        assertThat(terminal.status()).isEqualTo(TestSuiteStabilityJobRecord.Status.FAILED);
+        assertThat(first.job().status()).isEqualTo(terminal.status());
+        assertThat(first.job().cancellationRequestId()).isEqualTo("cancel-a");
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(securityEvents.recent(10)).singleElement().satisfies(event -> {
+            assertThat(event.reasonCode())
+                    .isEqualTo("RG.TEST.STABILITY_JOB_CANCELLATION_TERMINAL_NOOP");
+            assertThat(event.facts())
+                    .containsEntry("previousStatus", "FAILED")
+                    .containsEntry("resultingStatus", "FAILED")
+                    .containsEntry("cancellationOutcome", "ALREADY_TERMINAL");
+        });
     }
 
     @Test
@@ -531,7 +705,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityJobConflictException.Reason.POLICY_DRIFT));
 
-        repository.cancel("tenant-a", "test", submission.jobId(), "cancel-a",
+        cancel("tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), firstPolicy);
         assertThat(repository.claimNext("test", "worker-a", changed).outcome())
                 .isEqualTo(TestSuiteStabilityJobClaim.Outcome.NO_WORK);
@@ -546,7 +720,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(queued, policy);
         repository.submit(cancelled, policy);
-        repository.cancel("tenant-b", "test", cancelled.jobId(), "cancel-b",
+        cancel("tenant-b", "test", cancelled.jobId(), "cancel-b",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
 
         var snapshot = repository.observe("test");
@@ -570,7 +744,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
-        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+        TestSuiteStabilityJobRecord cancelled = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
         expireJob(cancelled);
@@ -653,7 +827,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
-        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+        TestSuiteStabilityJobRecord cancelled = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
         expireJob(cancelled);
@@ -688,9 +862,9 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(first, policy);
         repository.submit(second, policy);
-        expireJob(repository.cancel("tenant-a", "test", first.jobId(), "cancel-a",
+        expireJob(cancel("tenant-a", "test", first.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy));
-        expireJob(repository.cancel("tenant-b", "test", second.jobId(), "cancel-b",
+        expireJob(cancel("tenant-b", "test", second.jobId(), "cancel-b",
                 TestSuiteStabilityProtocolFixtures.fingerprint('8'), policy));
 
         assertThat(repository.observeRetention()).satisfies(snapshot -> {
@@ -733,7 +907,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
-        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+        TestSuiteStabilityJobRecord cancelled = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
         expireJob(cancelled);
@@ -760,7 +934,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
-        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+        TestSuiteStabilityJobRecord cancelled = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
         expireJob(cancelled);
@@ -791,7 +965,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
-        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+        TestSuiteStabilityJobRecord cancelled = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
         expireJob(cancelled);
@@ -824,7 +998,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
-        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+        TestSuiteStabilityJobRecord cancelled = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
         expireJob(cancelled);
@@ -851,7 +1025,7 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
         TestSuiteStabilityJobSubmission submission = submission('1', "tenant-a", "request-a",
                 TestSuiteStabilityJobSubmission.Priority.NORMAL);
         repository.submit(submission, policy);
-        TestSuiteStabilityJobRecord cancelled = repository.cancel(
+        TestSuiteStabilityJobRecord cancelled = cancel(
                 "tenant-a", "test", submission.jobId(), "cancel-a",
                 TestSuiteStabilityProtocolFixtures.fingerprint('7'), policy);
         expireJob(cancelled);
@@ -1098,6 +1272,33 @@ class DatabaseTestSuiteStabilityJobRepositoryTest {
                         "ci-runner", "", "TEST_EXECUTION", "correlation-1",
                         Set.of("test-runners"), "INTERNAL", ""),
                 priority, Instant.now().plus(Duration.ofHours(1)));
+    }
+
+    private static TestSuiteStabilityJobCancellationCommand cancellation(
+            TestSuiteStabilityJobSubmission submission,
+            String clientRequestId,
+            String commandFingerprint) {
+        return new TestSuiteStabilityJobCancellationCommand(
+                submission.principal().tenantId(), submission.principal().environmentId(),
+                submission.jobId(), clientRequestId, commandFingerprint,
+                submission.principal());
+    }
+
+    private TestSuiteStabilityJobRecord cancel(
+            String tenantId,
+            String environmentId,
+            String jobId,
+            String clientRequestId,
+            String commandFingerprint,
+            TestSuiteStabilityQueuePolicy policy) {
+        TestSuiteStabilityJobPrincipal actor = repository.find(
+                tenantId, environmentId, jobId).orElseThrow().principal();
+        TestSuiteStabilityJobCancellationCommand command =
+                new TestSuiteStabilityJobCancellationCommand(
+                        tenantId, environmentId, jobId, clientRequestId,
+                        commandFingerprint, actor);
+        return repository.cancel(
+                command, policy, ignored -> TestRuntimeTransactionMutation.noop()).job();
     }
 
     private static final class FakeParentAuthority

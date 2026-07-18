@@ -64,11 +64,16 @@ terminal references. It excludes:
 | `QUEUED` | parent stop first, then terminal `CANCELLED` |
 | `RUNNING` | parent stop first, then `CANCEL_REQUESTED`; worker converges to `CANCELLED` |
 | `CANCEL_REQUESTED` / `CANCELLED` | exact command replay returns retained state; another command id conflicts |
-| `COMMITTING` | unchanged; final publication linearization point already won |
-| other terminal state | unchanged; cancellation has no retroactive effect |
+| `COMMITTING` | state unchanged; first command is retained/audited as `TOO_LATE_TO_CANCEL` and exact replay is stable |
+| other terminal state | state unchanged; first command is retained/audited as `ALREADY_TERMINAL` and has no retroactive effect |
 
 The cancellation fingerprint binds tenant, environment, job, command id, actor, delegation, and
 purpose, but deliberately excludes transient correlation id so a transport retry is stable.
+The first command and its database-observed previous/resulting state also produce one payload-free
+`SUITE_STABILITY_JOB_CANCELLATION` security event in the same local transaction as the job mutation.
+Audit failure rolls back that mutation; exact replay does not append a duplicate event. Details and
+negative proofs are in the
+[cancellation audit verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-cancellation-audit-verification.md).
 
 ## 6. Error protocol
 
@@ -94,6 +99,7 @@ isolated testing control plane exists. Runtime truth is split rather than collap
 - `asyncSuiteStabilityJobProtocol`: routes and Schema exist;
 - `asyncSuiteStabilityJobQuery`: retained job reads exist;
 - `asyncSuiteStabilityJobCancellation`: cancellation exists;
+- `asyncSuiteStabilityJobCancellationSemanticAudit`: first-command result and audit are one local transaction;
 - `asyncSuiteStabilityJobSubmission`: worker is explicitly enabled;
 - `testability.suiteStabilityJobSubmissionEnabled`: same exact runtime fact.
 
@@ -134,12 +140,11 @@ conditions, capability on/off truth, production isolation, and invalid retry con
 This protocol does not close the following risks:
 
 1. no product-supplied real IAM/delegation current-authority adapter exists;
-2. cancellation actor is cryptographically bound in the command fingerprint but is not yet a
-   separately queryable immutable semantic audit event;
-3. durable fleet membership, poison-row quarantine/repair, non-H2 certification, soak/chaos/DR,
+2. durable fleet membership, poison-row quarantine/repair, non-H2 certification, soak/chaos/DR,
    legal hold, and backup erasure remain open;
-4. cooperative cancellation cannot interrupt a non-cooperative operator; hard process isolation is
+3. cooperative cancellation cannot interrupt a non-cooperative operator; hard process isolation is
    still required for that guarantee.
 
-The independent test-kit follow-up is complete. The next server-side step should close real current
-authority and cancellation audit semantics before expanding background execution claims.
+The independent test-kit and cancellation semantic-audit follow-ups are complete. The next
+server-side step should close the real current-authority adapter before expanding background
+execution claims.

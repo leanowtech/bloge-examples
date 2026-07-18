@@ -36,6 +36,7 @@ public final class TestSuiteStabilityJobService {
     private final TestSuiteStabilityExecutionService executions;
     private final TestSuiteStabilityQueuePolicy policy;
     private final ObjectMapper objectMapper;
+    private final TestSecurityEventRepository securityEvents;
     private final boolean submissionEnabled;
     private final long retryAfterSeconds;
 
@@ -46,6 +47,7 @@ public final class TestSuiteStabilityJobService {
      * @param executions shared suite/current-authority validator
      * @param policy exact cross-replica queue policy
      * @param objectMapper canonical protocol fingerprint mapper
+     * @param securityEvents transaction-bindable semantic security-event store
      * @param submissionEnabled whether a worker runtime is assembled for fresh work
      * @param retryAfter bounded caller retry hint for capacity or disabled submission
      */
@@ -54,12 +56,14 @@ public final class TestSuiteStabilityJobService {
             TestSuiteStabilityExecutionService executions,
             TestSuiteStabilityQueuePolicy policy,
             ObjectMapper objectMapper,
+            TestSecurityEventRepository securityEvents,
             boolean submissionEnabled,
             Duration retryAfter) {
         this.jobs = Objects.requireNonNull(jobs, "jobs");
         this.executions = Objects.requireNonNull(executions, "executions");
         this.policy = Objects.requireNonNull(policy, "policy");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.submissionEnabled = submissionEnabled;
         Duration boundedRetry = Objects.requireNonNull(retryAfter, "retryAfter");
         if (boundedRetry.toMillis() % 1_000 != 0 || boundedRetry.isZero()
@@ -180,9 +184,15 @@ public final class TestSuiteStabilityJobService {
                 "purpose", identity.purpose()), identity,
                 "RG.TEST.STABILITY_JOB_CANCELLATION_INVALID");
         try {
+            TestSuiteStabilityJobCancellationCommand command =
+                    new TestSuiteStabilityJobCancellationCommand(
+                            identity.tenantId(), identity.environmentId(), exactJobId,
+                            request.clientRequestId(), commandFingerprint,
+                            TestSuiteStabilityJobPrincipal.from(identity));
             TestSuiteStabilityJobRecord cancelled = jobs.cancel(
-                    identity.tenantId(), identity.environmentId(), exactJobId,
-                    request.clientRequestId(), commandFingerprint, policy);
+                    command, policy,
+                    receipt -> securityEvents.boundAppend(
+                            receipt.toSecurityEvent(objectMapper))).job();
             requireSameStoredIdentity(existing, cancelled, identity);
             return view(requireVisible(cancelled, identity), identity);
         } catch (TestSuiteStabilityJobConflictException conflict) {

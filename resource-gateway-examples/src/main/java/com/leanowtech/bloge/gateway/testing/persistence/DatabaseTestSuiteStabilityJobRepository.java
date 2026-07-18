@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobClaim;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCancellationCommand;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCancellationReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCompletionPreparation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobLease;
@@ -20,6 +22,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueueSnapshot;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
@@ -44,6 +47,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -387,7 +391,9 @@ public final class DatabaseTestSuiteStabilityJobRepository
                             stored.record().retryCount(), stored.record().nextEligibleAt(),
                             observedAt, stored.record().expiresAt(), stored.ownerId(),
                             stored.leaseEpoch(), observedAt.plus(policy.leaseDuration()),
-                            "", "", stored.record().failureCode(), "", "");
+                            "", "", stored.record().failureCode(),
+                            stored.record().cancellationRequestId(),
+                            stored.record().cancellationFingerprint());
                     updateExact(stored, renewed);
                     return TestSuiteStabilityJobLeaseCheck.continuing(lease(renewed));
                 }
@@ -492,7 +498,9 @@ public final class DatabaseTestSuiteStabilityJobRepository
                     TestSuiteStabilityJobRecord.Status.COMMITTING,
                     stored.record().retryCount(), stored.record().nextEligibleAt(), observedAt,
                     stored.record().expiresAt(), stored.ownerId(), stored.leaseEpoch(),
-                    observedAt.plus(policy.leaseDuration()), "", "", "", "", "");
+                    observedAt.plus(policy.leaseDuration()), "", "", "",
+                    stored.record().cancellationRequestId(),
+                    stored.record().cancellationFingerprint());
             updateExact(stored, committing);
             return TestSuiteStabilityJobCompletionPreparation.prepared(lease(committing));
         });
@@ -530,7 +538,8 @@ public final class DatabaseTestSuiteStabilityJobRepository
                         TestSuiteStabilityJobRecord.Status.COMMITTING, retryCount,
                         observedAt.plus(policy.retryDelay(retryCount)), observedAt,
                         stored.record().expiresAt(), "", stored.leaseEpoch(), null,
-                        "", "", code, "", "");
+                        "", "", code, stored.record().cancellationRequestId(),
+                        stored.record().cancellationFingerprint());
                 updateExact(stored, recoverable);
                 return recoverable.record();
             }
@@ -554,7 +563,8 @@ public final class DatabaseTestSuiteStabilityJobRepository
                 successor = transition(stored, TestSuiteStabilityJobRecord.Status.QUEUED,
                         retryCount, observedAt.plus(policy.retryDelay(retryCount)), observedAt,
                         stored.record().expiresAt(), "", stored.leaseEpoch(), null,
-                        "", "", code, "", "");
+                        "", "", code, stored.record().cancellationRequestId(),
+                        stored.record().cancellationFingerprint());
             }
             updateExact(stored, successor);
             return successor.record();
@@ -637,7 +647,9 @@ public final class DatabaseTestSuiteStabilityJobRepository
                     TestSuiteStabilityJobRecord.Status.SUCCEEDED,
                     stored.record().retryCount(), stored.record().nextEligibleAt(), observedAt,
                     observedAt.plus(policy.terminalRetention()), "", stored.leaseEpoch(), null,
-                    parent.stabilityRunId(), parent.evidenceFingerprint(), "", "", "");
+                    parent.stabilityRunId(), parent.evidenceFingerprint(), "",
+                    stored.record().cancellationRequestId(),
+                    stored.record().cancellationFingerprint());
             updateExact(stored, completed);
             return completed.record();
         });
@@ -645,21 +657,22 @@ public final class DatabaseTestSuiteStabilityJobRepository
     }
 
     @Override
-    public TestSuiteStabilityJobRecord cancel(
-            String tenantId,
-            String environmentId,
-            String jobId,
-            String clientRequestId,
-            String commandFingerprint,
-            TestSuiteStabilityQueuePolicy policy) {
-        String tenant = identifier(tenantId, "tenantId");
-        String environment = environment(environmentId);
-        String job = identifier(jobId, "jobId");
-        String requestId = identifier(clientRequestId, "clientRequestId");
-        String cancellationFingerprint = fingerprint(
-                commandFingerprint, "commandFingerprint");
+    public CancellationResult cancel(
+            TestSuiteStabilityJobCancellationCommand command,
+            TestSuiteStabilityQueuePolicy policy,
+            Function<TestSuiteStabilityJobCancellationReceipt,
+                    TestRuntimeTransactionMutation> committedAudit) {
+        TestSuiteStabilityJobCancellationCommand requiredCommand =
+                Objects.requireNonNull(command, "command");
+        String tenant = requiredCommand.tenantId();
+        String environment = requiredCommand.environmentId();
+        String job = requiredCommand.jobId();
+        String requestId = requiredCommand.clientRequestId();
+        String cancellationFingerprint = requiredCommand.commandFingerprint();
         Objects.requireNonNull(policy, "policy");
-        TestSuiteStabilityJobRecord result = mutations.execute(status -> {
+        Function<TestSuiteStabilityJobCancellationReceipt, TestRuntimeTransactionMutation>
+                safeAudit = Objects.requireNonNull(committedAudit, "committedAudit");
+        CancellationResult result = mutations.execute(status -> {
             lockEnvironment(environment);
             Instant observedAt = currentTime();
             ensurePolicy(environment, policy, observedAt);
@@ -674,38 +687,57 @@ public final class DatabaseTestSuiteStabilityJobRepository
                             TestSuiteStabilityJobConflictException.Reason.CANCELLATION_CONFLICT,
                             "Cancellation identity already represents another command");
                 }
-                return stored.record();
+                return new CancellationResult(stored.record(), true);
             }
-            if (stored.record().status().terminal()) {
-                return stored.record();
-            }
-            if (stored.record().status()
-                    == TestSuiteStabilityJobRecord.Status.COMMITTING) {
-                return stored.record();
-            }
-            TestSuiteStabilityJobRecord.Status next = stored.record().status()
-                    == TestSuiteStabilityJobRecord.Status.QUEUED
-                    ? TestSuiteStabilityJobRecord.Status.CANCELLED
-                    : TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED;
-            TestSuiteStabilityJobParentAuthority.Resolution parent = stopParent(
-                    stored.record(), TestSuiteStabilityExecutionStop.Reason.CANCELLED,
-                    "RG.TEST.STABILITY_JOB_CANCELLED", policy.terminalRetention());
-            StoredJob cancelled;
-            if (parent.outcome()
-                    == TestSuiteStabilityJobParentAuthority.Outcome.COMPLETED) {
-                cancelled = parentCompleted(stored, parent, observedAt, policy,
-                        stored.record().retryCount());
+            TestSuiteStabilityJobRecord.Status previous = stored.record().status();
+            StoredJob successor;
+            TestSuiteStabilityJobCancellationReceipt.Outcome outcome;
+            if (previous.terminal()) {
+                successor = withCancellation(
+                        stored, previous, observedAt, requestId, cancellationFingerprint);
+                outcome = TestSuiteStabilityJobCancellationReceipt.Outcome.ALREADY_TERMINAL;
+            } else if (previous == TestSuiteStabilityJobRecord.Status.COMMITTING) {
+                successor = withCancellation(
+                        stored, previous, observedAt, requestId, cancellationFingerprint);
+                outcome = TestSuiteStabilityJobCancellationReceipt.Outcome.TOO_LATE_TO_CANCEL;
             } else {
-                Instant expiresAt = next.terminal()
-                        ? observedAt.plus(policy.terminalRetention())
-                        : stored.record().expiresAt();
-                cancelled = transition(stored, next, stored.record().retryCount(),
-                        stored.record().nextEligibleAt(), observedAt, expiresAt,
-                        stored.ownerId(), stored.leaseEpoch(), stored.leaseExpiresAt(), "", "",
-                        "RG.TEST.STABILITY_JOB_CANCELLED", requestId, cancellationFingerprint);
+                TestSuiteStabilityJobRecord.Status next = previous
+                        == TestSuiteStabilityJobRecord.Status.QUEUED
+                        ? TestSuiteStabilityJobRecord.Status.CANCELLED
+                        : TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED;
+                TestSuiteStabilityJobParentAuthority.Resolution parent = stopParent(
+                        stored.record(), TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                        "RG.TEST.STABILITY_JOB_CANCELLED", policy.terminalRetention());
+                if (parent.outcome()
+                        == TestSuiteStabilityJobParentAuthority.Outcome.COMPLETED) {
+                    successor = parentCompleted(stored, parent, observedAt, policy,
+                            stored.record().retryCount(), requestId, cancellationFingerprint);
+                    outcome = TestSuiteStabilityJobCancellationReceipt.Outcome
+                            .PARENT_ALREADY_COMPLETED;
+                } else {
+                    Instant expiresAt = next.terminal()
+                            ? observedAt.plus(policy.terminalRetention())
+                            : stored.record().expiresAt();
+                    successor = transition(stored, next, stored.record().retryCount(),
+                            stored.record().nextEligibleAt(), observedAt, expiresAt,
+                            stored.ownerId(), stored.leaseEpoch(), stored.leaseExpiresAt(), "", "",
+                            "RG.TEST.STABILITY_JOB_CANCELLED", requestId,
+                            cancellationFingerprint);
+                    outcome = previous == TestSuiteStabilityJobRecord.Status.QUEUED
+                            ? TestSuiteStabilityJobCancellationReceipt.Outcome
+                            .CANCELLED_BEFORE_START
+                            : TestSuiteStabilityJobCancellationReceipt.Outcome
+                            .CANCELLATION_REQUESTED;
+                }
             }
-            updateExact(stored, cancelled);
-            return cancelled.record();
+            updateExact(stored, successor);
+            TestSuiteStabilityJobCancellationReceipt receipt =
+                    new TestSuiteStabilityJobCancellationReceipt(
+                            requiredCommand, previous, successor.record().status(),
+                            outcome, observedAt);
+            Objects.requireNonNull(safeAudit.apply(receipt), "committedAudit result")
+                    .apply(jdbc);
+            return new CancellationResult(successor.record(), false);
         });
         return required(result, "Suite-stability queue cancellation returned no result");
     }
@@ -964,7 +996,9 @@ public final class DatabaseTestSuiteStabilityJobRepository
                         : transition(job, TestSuiteStabilityJobRecord.Status.QUEUED,
                         retryCount, observedAt.plus(policy.retryDelay(retryCount)), observedAt,
                         job.record().expiresAt(), "", job.leaseEpoch(), null, "", "",
-                        "RG.TEST.STABILITY_JOB_WORKER_LEASE_EXPIRED", "", "");
+                        "RG.TEST.STABILITY_JOB_WORKER_LEASE_EXPIRED",
+                        job.record().cancellationRequestId(),
+                        job.record().cancellationFingerprint());
             }
             updateExact(job, successor);
         }
@@ -1653,10 +1687,38 @@ public final class DatabaseTestSuiteStabilityJobRepository
             Instant observedAt,
             TestSuiteStabilityQueuePolicy policy,
             int retryCount) {
+        return parentCompleted(source, parent, observedAt, policy, retryCount,
+                source.record().cancellationRequestId(),
+                source.record().cancellationFingerprint());
+    }
+
+    private StoredJob parentCompleted(
+            StoredJob source,
+            TestSuiteStabilityJobParentAuthority.Resolution parent,
+            Instant observedAt,
+            TestSuiteStabilityQueuePolicy policy,
+            int retryCount,
+            String cancellationRequestId,
+            String cancellationFingerprint) {
         return transition(source, TestSuiteStabilityJobRecord.Status.SUCCEEDED,
                 retryCount, source.record().nextEligibleAt(), observedAt,
                 observedAt.plus(policy.terminalRetention()), "", source.leaseEpoch(), null,
-                parent.stabilityRunId(), parent.evidenceFingerprint(), "", "", "");
+                parent.stabilityRunId(), parent.evidenceFingerprint(), "",
+                cancellationRequestId, cancellationFingerprint);
+    }
+
+    private StoredJob withCancellation(
+            StoredJob source,
+            TestSuiteStabilityJobRecord.Status status,
+            Instant observedAt,
+            String cancellationRequestId,
+            String cancellationFingerprint) {
+        TestSuiteStabilityJobRecord record = source.record();
+        return transition(source, status, record.retryCount(), record.nextEligibleAt(),
+                observedAt, record.expiresAt(), source.ownerId(), source.leaseEpoch(),
+                source.leaseExpiresAt(), record.terminalStabilityRunId(),
+                record.terminalEvidenceFingerprint(), record.failureCode(),
+                cancellationRequestId, cancellationFingerprint);
     }
 
     private TestSuiteStabilityJobParentAuthority.Resolution stopParent(

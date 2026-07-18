@@ -585,6 +585,8 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled && suiteStabilityJobSubmissionEnabled);
         features.put("asyncSuiteStabilityJobQuery", testExecutionEndpointEnabled);
         features.put("asyncSuiteStabilityJobCancellation", testExecutionEndpointEnabled);
+        features.put("asyncSuiteStabilityJobCancellationSemanticAudit",
+                testExecutionEndpointEnabled);
         features.put("propertySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);

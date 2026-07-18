@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * Database-authoritative interface for asynchronous suite-stability parent jobs.
@@ -133,23 +134,34 @@ public interface TestSuiteStabilityJobRepository {
             TestSuiteStabilityQueuePolicy policy);
 
     /**
-     * Requests idempotent cancellation without disclosing another scope's job.
+     * Requests idempotent cancellation and atomically appends its semantic audit event.
      *
-     * @param tenantId verified tenant
-     * @param environmentId verified environment
-     * @param jobId governed job identity
-     * @param clientRequestId cancellation idempotency key
-     * @param commandFingerprint canonical cancellation command
+     * <p>The audit factory is invoked exactly once for the first accepted command and inside the
+     * same transaction as the resulting queue state. Exact replay returns the retained state
+     * without another audit write. Implementations must roll back the queue mutation when the
+     * factory is absent, returns no mutation, or its mutation fails.</p>
+     *
+     * @param command exact current actor and cancellation intent
      * @param policy active cross-replica queue policy
-     * @return immediate cancellation, cooperative request, or existing terminal job
+     * @param committedAudit transaction-bound audit mutation derived from the database result
+     * @return resulting job and transaction-authoritative replay disposition
      */
-    TestSuiteStabilityJobRecord cancel(
-            String tenantId,
-            String environmentId,
-            String jobId,
-            String clientRequestId,
-            String commandFingerprint,
-            TestSuiteStabilityQueuePolicy policy);
+    CancellationResult cancel(
+            TestSuiteStabilityJobCancellationCommand command,
+            TestSuiteStabilityQueuePolicy policy,
+            Function<TestSuiteStabilityJobCancellationReceipt,
+                    TestRuntimeTransactionMutation> committedAudit);
+
+    /** Payload-free result of one serialized cancellation command. */
+    record CancellationResult(
+            TestSuiteStabilityJobRecord job,
+            boolean idempotentReplay) {
+
+        /** Requires a retained job for fresh and replayed cancellation commands. */
+        public CancellationResult {
+            job = java.util.Objects.requireNonNull(job, "job");
+        }
+    }
 
     /** Resolves one integrity-verified job inside its exact tenant and environment scope. */
     Optional<TestSuiteStabilityJobRecord> find(

@@ -24,8 +24,8 @@ import java.util.regex.Pattern;
  * @param terminalStabilityRunId completed signed analysis id, otherwise blank
  * @param terminalEvidenceFingerprint completed signed analysis fingerprint, otherwise blank
  * @param failureCode bounded terminal or retry diagnostic, otherwise blank
- * @param cancellationRequestId caller cancellation idempotency key, otherwise blank
- * @param cancellationFingerprint canonical cancellation command fingerprint, otherwise blank
+ * @param cancellationRequestId first accepted cancellation idempotency key, otherwise blank
+ * @param cancellationFingerprint canonical first cancellation fingerprint, otherwise blank
  * @param recordFingerprint complete mutable-row integrity fingerprint
  */
 public record TestSuiteStabilityJobRecord(
@@ -73,7 +73,13 @@ public record TestSuiteStabilityJobRecord(
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final Pattern CODE = Pattern.compile("[A-Z][A-Z0-9_.-]{0,127}");
 
-    /** Validates state-dependent terminal, cancellation, and integrity fields. */
+    /**
+     * Validates state-dependent terminal, cancellation, and integrity fields.
+     *
+     * <p>A cancellation command is retained even when it arrives after publication linearization
+     * or after terminal state. This makes those semantic no-ops exactly replayable without writing
+     * duplicate audit events.</p>
+     */
     public TestSuiteStabilityJobRecord {
         jobId = normalized(jobId);
         request = java.util.Objects.requireNonNull(request, "request");
@@ -98,7 +104,12 @@ public record TestSuiteStabilityJobRecord(
                 && FINGERPRINT.matcher(terminalEvidenceFingerprint).matches();
         boolean noTerminalReference = terminalStabilityRunId.isBlank()
                 && terminalEvidenceFingerprint.isBlank();
-        boolean cancelled = status == Status.CANCEL_REQUESTED || status == Status.CANCELLED;
+        boolean cancellationRequired = status == Status.CANCEL_REQUESTED
+                || status == Status.CANCELLED;
+        boolean completeCancellation = !cancellationRequestId.isBlank()
+                && FINGERPRINT.matcher(cancellationFingerprint).matches();
+        boolean noCancellation = cancellationRequestId.isBlank()
+                && cancellationFingerprint.isBlank();
         if (jobId.isBlank() || !FINGERPRINT.matcher(requestFingerprint).matches()
                 || !Set.of("PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED")
                 .contains(classification)
@@ -107,8 +118,8 @@ public record TestSuiteStabilityJobRecord(
                 || (succeeded && !completeTerminalReference)
                 || (!succeeded && !noTerminalReference)
                 || (!failureCode.isBlank() && !CODE.matcher(failureCode).matches())
-                || cancelled != (!cancellationRequestId.isBlank()
-                && FINGERPRINT.matcher(cancellationFingerprint).matches())
+                || !(completeCancellation || noCancellation)
+                || (cancellationRequired && !completeCancellation)
                 || !FINGERPRINT.matcher(recordFingerprint).matches()) {
             throw new IllegalArgumentException("Invalid suite-stability job record");
         }

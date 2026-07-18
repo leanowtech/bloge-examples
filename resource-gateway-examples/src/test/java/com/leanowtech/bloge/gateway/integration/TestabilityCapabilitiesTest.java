@@ -93,7 +93,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("asyncSuiteStabilityJobProtocol", true)
                 .containsEntry("asyncSuiteStabilityJobSubmission", false)
                 .containsEntry("asyncSuiteStabilityJobQuery", true)
-                .containsEntry("asyncSuiteStabilityJobCancellation", true);
+                .containsEntry("asyncSuiteStabilityJobCancellation", true)
+                .containsEntry("asyncSuiteStabilityJobCancellationSemanticAudit", true);
         assertThat(executable.testability().suiteStabilityJobSubmissionEnabled()).isTrue();
         assertThat(executable.features())
                 .containsEntry("asyncSuiteStabilityJobSubmission", true);
