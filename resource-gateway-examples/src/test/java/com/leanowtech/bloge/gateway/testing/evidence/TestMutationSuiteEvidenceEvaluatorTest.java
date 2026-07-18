@@ -162,6 +162,28 @@ class TestMutationSuiteEvidenceEvaluatorTest {
     }
 
     @Test
+    void collectAllCheckpointRetainsAProvenKillWhileLaterCasesRemainPending() {
+        TestSuiteV5 suite = suite(new TestSuiteV5.MutationScorePolicy(
+                0, 2, false, false));
+
+        TestMutationSuiteEvidenceEvaluator.Evaluation result = evaluator.evaluate(suite,
+                TestSuiteRunEvidenceV5.BaselineStatus.PASSED, List.of(
+                        List.of(observation(suite, 0, 0,
+                                        TestRunEvidence.Status.ASSERTION_FAILED),
+                                pending(suite, 0, 1)),
+                        List.of(pending(suite, 1, 0), pending(suite, 1, 1))));
+
+        assertThat(result.mutantResults().getFirst().status())
+                .isEqualTo(TestSuiteRunEvidenceV5.MutantStatus.RUNNING);
+        assertThat(result.mutantResults().getFirst().killingCaseIds())
+                .containsExactly("golden");
+        assertThat(result.score().status())
+                .isEqualTo(TestSuiteRunEvidenceV5.MutationScoreStatus.INCOMPLETE);
+        assertThat(result.score().killedMutants()).isZero();
+        assertThat(result.score().unclassifiedMutants()).isEqualTo(2);
+    }
+
+    @Test
     void evidenceRecomputesScoreAndRejectsFalseKillOrTamperedVerdict() {
         TestSuiteV5 suite = suite(new TestSuiteV5.MutationScorePolicy(
                 5_000, 0, false, false));

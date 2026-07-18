@@ -3085,7 +3085,7 @@
       "oneOf": [
         {"properties": {"status": {"const": "PENDING"}, "killingCaseIds": {"maxItems": 0},
           "caseResults": {"items": {"properties": {"status": {"const": "PENDING"}}}}}},
-        {"properties": {"status": {"const": "RUNNING"}, "killingCaseIds": {"maxItems": 0},
+        {"properties": {"status": {"const": "RUNNING"},
           "caseResults": {"contains": {"properties": {"status": {"const": "PENDING"}}}}}},
         {"properties": {"status": {"const": "KILLED"}, "killingCaseIds": {"minItems": 1},
           "caseResults": {"contains": {

@@ -350,10 +350,8 @@ public record TestSuiteRunEvidenceV5(
                 throw new IllegalArgumentException(
                         "Mutant killing cases must match signed assertion-failure results");
             }
-            if (status == MutantStatus.RUNNING && !killingCaseIds.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "A proven kill must terminalize the mutant before checkpointing");
-            }
+            // COLLECT_ALL may retain a proven kill while later diagnostic cases are still pending.
+            // The RUNNING classification keeps the score incomplete until that case row closes.
         }
     }
 
