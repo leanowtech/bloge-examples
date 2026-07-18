@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ExecutionControlCompilerTest {
 
     private static final String TARGET = "sha256:" + "a".repeat(64);
+    private static final String MUTANT_TARGET = "sha256:" + "b".repeat(64);
     private static final String REPLAY_REF = "bloge-replay:approved-order@7#sha256:"
             + "c".repeat(64);
     private final DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
@@ -49,6 +50,41 @@ class ExecutionControlCompilerTest {
             assertThat(site.resolution()).isEqualTo(EffectiveExecutionPlan.Resolution.TEST_DOUBLE);
             assertThat(site.ruleRefs()).containsExactly("return-result");
         });
+    }
+
+    @Test
+    void mutationCompilationSeparatesBaselineFixtureBindingFromMutantIdentity() {
+        FixtureBundle fixture = bundle();
+
+        assertThatThrownBy(() -> compiler.compile(graph(new ReadOnlyOperator()), fixture,
+                "MUTATION_SUITE_EXECUTION", MUTANT_TARGET))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, failure ->
+                        assertThat(failure.diagnostics()).anyMatch(value ->
+                                value.contains("does not match")));
+
+        CompiledExecutionControl compiled = compiler.compileMutation(
+                graph(new ReadOnlyOperator()), fixture, "MUTATION_SUITE_EXECUTION",
+                MUTANT_TARGET, TARGET, ResolvedReplayPayloads.empty());
+
+        assertThat(compiled.effectivePlan().targetFingerprint()).isEqualTo(MUTANT_TARGET);
+        assertThat(compiled.effectivePlan().fixtureBundleFingerprint()).isNotBlank();
+        assertThat(compiled.effectivePlan().authorizedPurpose())
+                .isEqualTo("MUTATION_SUITE_EXECUTION");
+        assertThat(compiled.effectivePlan().planFingerprint()).startsWith("sha256:");
+    }
+
+    @Test
+    void separateFixtureBindingIsUnavailableToOtherPurposesOrSameTarget() {
+        assertThatThrownBy(() -> compiler.compileMutation(graph(new ReadOnlyOperator()), bundle(),
+                "GRAPH_CONTRACT_TEST", MUTANT_TARGET, TARGET, ResolvedReplayPayloads.empty()))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, failure ->
+                        assertThat(failure.code())
+                                .isEqualTo("CONTROL_PLAN_MUTATION_BINDING_INVALID"));
+        assertThatThrownBy(() -> compiler.compileMutation(graph(new ReadOnlyOperator()), bundle(),
+                "MUTATION_SUITE_EXECUTION", TARGET, TARGET, ResolvedReplayPayloads.empty()))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, failure ->
+                        assertThat(failure.code())
+                                .isEqualTo("CONTROL_PLAN_MUTATION_BINDING_INVALID"));
     }
 
     @Test

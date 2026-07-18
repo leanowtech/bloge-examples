@@ -41,11 +41,13 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 class TestRunServiceTest {
 
     private static final String TARGET = "sha256:" + "b".repeat(64);
+    private static final String MUTANT_TARGET = "sha256:" + "a".repeat(64);
     private static final String REPLAY_REF = "bloge-replay:approved-order@7#sha256:"
             + "c".repeat(64);
     private final TestRunService service = new TestRunService(
@@ -75,6 +77,51 @@ class TestRunServiceTest {
             });
         });
         assertThat(result.evidence().evidenceClass()).isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+    }
+
+    @Test
+    void mutationExecutionUsesBaselineFixtureAndEmitsMutantTargetEvidence() {
+        Graph graph = single(new PureOperator());
+        TestExecutionRequest request = new TestExecutionRequest(graph,
+                new GraphContext(Map.of("input", "hello")), bundle(),
+                "MUTATION_SUITE_EXECUTION", MUTANT_TARGET,
+                TestExecutionRequest.FixtureSource.STORED,
+                Map.of("baselineTargetFingerprint", TARGET), true,
+                ResolvedReplayPayloads.empty());
+
+        TestExecutionResult result = service.executeMutation(request, TARGET);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.plan().targetFingerprint()).isEqualTo(MUTANT_TARGET);
+        assertThat(result.plan().authorizedPurpose()).isEqualTo("MUTATION_SUITE_EXECUTION");
+        assertThat(result.evidence().targetFingerprint()).isEqualTo(MUTANT_TARGET);
+        assertThat(result.evidence().executionPurpose()).isEqualTo("MUTATION_SUITE_EXECUTION");
+        assertThat(result.evidence().metadata())
+                .containsEntry("baselineTargetFingerprint", TARGET);
+    }
+
+    @Test
+    void mutationExecutionRejectsInlineWrongPurposeAndSameTargetMisuse() {
+        Graph graph = single(new PureOperator());
+        TestExecutionRequest valid = new TestExecutionRequest(graph, new GraphContext(), bundle(),
+                "MUTATION_SUITE_EXECUTION", MUTANT_TARGET,
+                TestExecutionRequest.FixtureSource.STORED, Map.of(), true,
+                ResolvedReplayPayloads.empty());
+        TestExecutionRequest inline = new TestExecutionRequest(graph, new GraphContext(), bundle(),
+                "MUTATION_SUITE_EXECUTION", MUTANT_TARGET,
+                TestExecutionRequest.FixtureSource.INLINE, Map.of(), true,
+                ResolvedReplayPayloads.empty());
+        TestExecutionRequest wrongPurpose = new TestExecutionRequest(
+                graph, new GraphContext(), bundle(), "GRAPH_CONTRACT_TEST", MUTANT_TARGET,
+                TestExecutionRequest.FixtureSource.STORED, Map.of(), true,
+                ResolvedReplayPayloads.empty());
+
+        assertThatThrownBy(() -> service.executeMutation(inline, TARGET))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.executeMutation(wrongPurpose, TARGET))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.executeMutation(valid, MUTANT_TARGET))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestAssertionEvaluator;
@@ -101,13 +102,61 @@ public class TestRunService {
     public TestExecutionResult execute(
             TestExecutionRequest request,
             AdmissionFactory admissionFactory) {
+        return executeBound(request, request == null ? "" : request.targetFingerprint(),
+                admissionFactory, false);
+    }
+
+    /**
+     * Executes one server-regenerated mutation child with a stored baseline-bound fixture.
+     *
+     * <p>The separate fixture-binding target is never accepted by the ordinary execution methods.
+     * This entry requires the mutation-suite purpose, stored fixture provenance, and a distinct
+     * mutant execution target. It exists so child evidence identifies the mutant while fixture
+     * lineage continues to identify the immutable reviewed baseline.</p>
+     *
+     * @param request exact mutant graph request and mutant target identity
+     * @param baselineTargetFingerprint fixture's exact reviewed baseline target identity
+     * @return plan, optional graph result, and terminal mutant evidence
+     * @throws IllegalArgumentException when the mutation-only boundary is misused
+     */
+    public TestExecutionResult executeMutation(
+            TestExecutionRequest request,
+            String baselineTargetFingerprint) {
+        return executeBound(request, baselineTargetFingerprint, compiled -> new AdmissionGuard() {
+            @Override
+            public void checkpoint() {
+                // The mutation suite parent owns the distributed permit and checkpoint.
+            }
+
+            @Override
+            public void close() {
+                // No child permit exists under the parent mutation-suite permit.
+            }
+        }, true);
+    }
+
+    private TestExecutionResult executeBound(
+            TestExecutionRequest request,
+            String fixtureBindingTargetFingerprint,
+            AdmissionFactory admissionFactory,
+            boolean mutationExecution) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(admissionFactory, "admissionFactory");
+        if (mutationExecution && (request.fixtureSource() != TestExecutionRequest.FixtureSource.STORED
+                || !TestSuiteRunEvidenceV5.EXECUTION_PURPOSE.equals(request.authorizedPurpose())
+                || Objects.equals(request.targetFingerprint(), fixtureBindingTargetFingerprint))) {
+            throw new IllegalArgumentException(
+                    "Mutation execution requires its purpose, stored fixture, and distinct targets");
+        }
         String runId = "test-run-" + UUID.randomUUID();
         Instant startedAt = Instant.now();
         CompiledExecutionControl compiled;
         try {
-            compiled = compiler.compile(request.graph(), request.fixtureBundle(),
+            compiled = mutationExecution
+                    ? compiler.compileMutation(request.graph(), request.fixtureBundle(),
+                    request.authorizedPurpose(), request.targetFingerprint(),
+                    fixtureBindingTargetFingerprint, request.replayPayloads())
+                    : compiler.compile(request.graph(), request.fixtureBundle(),
                     request.authorizedPurpose(), request.targetFingerprint(), request.replayPayloads());
         } catch (ControlPlanRejectedException ex) {
             TestRunEvidence evidence = rejectedEvidence(runId, request, startedAt, ex);

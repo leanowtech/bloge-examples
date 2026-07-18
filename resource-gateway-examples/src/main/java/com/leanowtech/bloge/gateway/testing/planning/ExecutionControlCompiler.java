@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.GovernedExecutionServices;
@@ -112,10 +113,57 @@ public class ExecutionControlCompiler {
                                             String authorizedPurpose, String targetFingerprint,
                                             ResolvedReplayPayloads replayPayloads,
                                             ExecutionServiceStateSnapshot providerState) {
+        return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                targetFingerprint, replayPayloads, providerState);
+    }
+
+    /**
+     * Compiles a mutation child while retaining the fixture's exact baseline target binding.
+     *
+     * <p>This is an internal test-runtime capability, not a general target-retargeting API. It is
+     * accepted only for the server-minted mutation-suite purpose and only when the execution target
+     * differs from the fixture-binding target. Selectors and invocation inventory are compiled from
+     * the mutant graph; the baseline target is used solely for fixture provenance validation and is
+     * included in the resulting plan fingerprint.</p>
+     *
+     * @param graph exact server-regenerated mutant graph
+     * @param fixtureBundle immutable stored fixture bound to the reviewed baseline
+     * @param authorizedPurpose server-minted mutation-suite purpose
+     * @param executionTargetFingerprint exact mutant target fingerprint used by plan and evidence
+     * @param fixtureBindingTargetFingerprint exact reviewed baseline target fingerprint
+     * @param replayPayloads exact run-scoped replay values
+     * @return executable and auditable frozen mutant plan
+     * @throws ControlPlanRejectedException when the mutation-only boundary is misused
+     */
+    public CompiledExecutionControl compileMutation(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String executionTargetFingerprint,
+            String fixtureBindingTargetFingerprint,
+            ResolvedReplayPayloads replayPayloads) {
+        if (!TestSuiteRunEvidenceV5.EXECUTION_PURPOSE.equals(authorizedPurpose)
+                || Objects.equals(executionTargetFingerprint, fixtureBindingTargetFingerprint)) {
+            throw new ControlPlanRejectedException("CONTROL_PLAN_MUTATION_BINDING_INVALID", List.of(
+                    "Separate fixture binding is restricted to a distinct mutation-suite target."));
+        }
+        return compileBound(graph, fixtureBundle, authorizedPurpose, executionTargetFingerprint,
+                fixtureBindingTargetFingerprint, replayPayloads, null);
+    }
+
+    private CompiledExecutionControl compileBound(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            String fixtureBindingTargetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            ExecutionServiceStateSnapshot providerState) {
         Objects.requireNonNull(graph, "graph");
         ResolvedReplayPayloads resolvedReplays = replayPayloads == null
                 ? ResolvedReplayPayloads.empty() : replayPayloads;
-        safetyPreflight.validate(fixtureBundle, authorizedPurpose, targetFingerprint, resolvedReplays);
+        safetyPreflight.validate(fixtureBundle, authorizedPurpose,
+                fixtureBindingTargetFingerprint, resolvedReplays);
 
         InvocationInventory inventory = inventoryBuilder.build(graph, targetFingerprint);
         GovernedExecutionServices executionServices = GovernedExecutionServices.prepare(
@@ -155,18 +203,21 @@ public class ExecutionControlCompiler {
                 "selectorZeroMatch", "FAIL",
                 "selectorAmbiguity", "FAIL",
                 "productionControl", "REJECT");
-        Map<String, Object> fingerprintMaterial = Map.of(
-                "purpose", authorizedPurpose,
-                "target", targetFingerprint,
-                "fixture", fixtureFingerprint,
-                "inventory", inventory.entries().stream().map(entry -> Map.of(
-                        "engineStructuralId", entry.engineStructuralId(),
-                        "invocationSiteId", entry.site().invocationSiteId(),
-                        "bindingFingerprint", entry.site().runtimeBindingFingerprint())).toList(),
-                "sites", sites,
-                "replayDependencies", resolvedReplays.planDependencies(),
-                "executionServiceBindings", executionServices.bindings(),
-                "defaults", defaults);
+        Map<String, Object> fingerprintMaterial = new LinkedHashMap<>();
+        fingerprintMaterial.put("purpose", authorizedPurpose);
+        fingerprintMaterial.put("target", targetFingerprint);
+        fingerprintMaterial.put("fixture", fixtureFingerprint);
+        fingerprintMaterial.put("inventory", inventory.entries().stream().map(entry -> Map.of(
+                "engineStructuralId", entry.engineStructuralId(),
+                "invocationSiteId", entry.site().invocationSiteId(),
+                "bindingFingerprint", entry.site().runtimeBindingFingerprint())).toList());
+        fingerprintMaterial.put("sites", sites);
+        fingerprintMaterial.put("replayDependencies", resolvedReplays.planDependencies());
+        fingerprintMaterial.put("executionServiceBindings", executionServices.bindings());
+        fingerprintMaterial.put("defaults", defaults);
+        if (!Objects.equals(targetFingerprint, fixtureBindingTargetFingerprint)) {
+            fingerprintMaterial.put("fixtureBindingTarget", fixtureBindingTargetFingerprint);
+        }
         String planFingerprint = ProtocolFingerprint.of(objectMapper, fingerprintMaterial);
         if (providerState == null) {
             executionServices.bindToPlan(planFingerprint);
