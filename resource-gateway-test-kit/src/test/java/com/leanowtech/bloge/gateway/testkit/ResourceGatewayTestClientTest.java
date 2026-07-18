@@ -263,14 +263,18 @@ class ResourceGatewayTestClientTest {
                 Map.of("pipeline", "nightly"));
         TestSuiteStabilityRun found = client.findSuiteStability(
                 TestSuiteStabilityTestFixtures.STABILITY_RUN_ID);
+        TestSuiteStabilityProgress progress = client.findSuiteStabilityProgress(
+                TestSuiteStabilityTestFixtures.STABILITY_RUN_ID);
 
         assertThat(executed.stable()).isTrue();
         assertThat(executed.attestation().requestFingerprint())
                 .isEqualTo(EvidenceVerificationSupport.sha256(requests.get(0).body()));
         assertThat(found.stabilityRunId())
                 .isEqualTo(TestSuiteStabilityTestFixtures.STABILITY_RUN_ID);
+        assertThat(progress.status()).isEqualTo(TestSuiteStabilityProgress.Status.RECOVERABLE);
+        assertThat(progress.completedAttempts()).isEqualTo(2);
         assertThat(requests).extracting(CapturedRequest::purpose)
-                .containsExactly("TEST_EXECUTION", "TEST_EXECUTION");
+                .containsExactly("TEST_EXECUTION", "TEST_EXECUTION", "TEST_EXECUTION");
         assertThat(requests.get(0).method()).isEqualTo("POST");
         assertThat(requests.get(0).rawPath())
                 .endsWith("/suites/orders-suite/stability-executions");
@@ -278,6 +282,9 @@ class ResourceGatewayTestClientTest {
         assertThat(requests.get(1).method()).isEqualTo("GET");
         assertThat(requests.get(1).rawPath()).endsWith(
                 "/stability-executions/" + TestSuiteStabilityTestFixtures.STABILITY_RUN_ID);
+        assertThat(requests.get(2).rawPath()).endsWith(
+                "/stability-executions/" + TestSuiteStabilityTestFixtures.STABILITY_RUN_ID
+                        + "/progress");
     }
 
     @Test
@@ -864,6 +871,8 @@ class ResourceGatewayTestClientTest {
                     .put("clientRequestId", body.path("clientRequestId").asText());
             TestSuiteStabilityTestFixtures.seal(response, stabilityFixture.keyPair(), false);
             respond(exchange, 200, response.toString());
+        } else if ("GET".equals(exchange.getRequestMethod()) && path.endsWith("/progress")) {
+            respond(exchange, 200, stabilityProgressResponse());
         } else if ("GET".equals(exchange.getRequestMethod())
                 && path.contains("/stability-executions/")) {
             respond(exchange, 200, stabilityFixture.response().toString());
@@ -926,6 +935,20 @@ class ResourceGatewayTestClientTest {
         } else {
             respond(exchange, 200, runResponse());
         }
+    }
+
+    private static String stabilityProgressResponse() {
+        return """
+                {"schemaVersion":"bloge.testSuiteStabilityProgress.v1",
+                 "stabilityRunId":"%s","status":"RECOVERABLE",
+                 "suiteRef":{"suiteId":"%s","revision":%d,"fingerprint":"%s"},
+                 "plannedAttempts":3,"completedAttempts":2,
+                 "createdAt":"2026-07-18T01:02:03Z",
+                 "updatedAt":"2026-07-18T01:03:03Z"}
+                """.formatted(TestSuiteStabilityTestFixtures.STABILITY_RUN_ID,
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT);
     }
 
     private static String propertyMaterializationRequest() {

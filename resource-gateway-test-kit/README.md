@@ -21,8 +21,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   key lookup, and dependency-light offline Ed25519 verification, including schema-admission v3
   evidence with a signed empty business-child closure, bounded-property v4 evidence, and mutation
   v5 score/child-closure re-derivation;
-- bounded suite-stability execution/query, typed stability-evidence re-derivation, exact source-run
-  closure verification, and offline Ed25519 verification against a caller-owned key-set pin;
+- bounded suite-stability execution/query, typed payload-free durable-parent progress polling,
+  typed stability-evidence re-derivation, exact source-run closure verification, and offline Ed25519
+  verification against a caller-owned key-set pin;
 - challenge-bound request-index replica proof collection plus an offline exact-inventory rollout
   gate that rejects missing, duplicate, unexpected, stale, mixed-scope/artifact/protocol/mode, or
   cryptographically invalid cohorts against an externally pinned key set;
@@ -245,6 +246,10 @@ TestSuiteStabilityRun stability = client.executeSuiteStability(
         5,
         Map.of("source", "nightly"));
 
+TestSuiteStabilityProgress progress =
+        client.findSuiteStabilityProgress(stability.stabilityRunId());
+// RUNNING: live DB owner; RECOVERABLE: exact retry may take over; COMPLETED: terminal exists.
+
 String trustedPin = System.getenv("RESOURCE_GATEWAY_TRUSTED_KEY_SET_FINGERPRINT");
 TestSuiteStabilityEvidenceVerifier.VerificationResult stabilityVerification =
         client.verifySuiteStability(stability.stabilityRunId(), trustedPin);
@@ -287,6 +292,9 @@ certifiable. Signed v1 responses remain verifiable for audit, while
 result carries a quarantine recommendation, but the API does not mutate suite state or bypass a
 business failure. V3 confidence is a conditional zero-instability-event bound, not a correctness
 proof, non-zero-event confidence interval, adaptive stopping policy, or historical flake-rate trend.
+`findSuiteStabilityProgress` is an operational poll, not a release gate. Its strict
+`bloge.testSuiteStabilityProgress.v1` projection returns only lifecycle, exact suite identity,
+planned/completed counts, and timestamps; owner, epoch, source ids, fixtures, and payloads are absent.
 
 Execute a reviewed `bloge.testSuite.v3` reference returned by the server's boundary-suite
 materialization API without confusing schema admission with business execution:

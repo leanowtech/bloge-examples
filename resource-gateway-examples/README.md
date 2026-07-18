@@ -62,6 +62,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/mutation-executions` | Execute an exact V5 suite baseline-first, classify every regenerated mutant, and emit signed mutation-score evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-executions` | Execute one exact V1/V2/V4 suite with deterministic request v1 (3..20) or exact-binomial request v2 (3..1000, bounded work), under a cross-replica parent lease, then retain signed payload-free evidence (test/staging only) |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}` | Read one retained stability analysis with its exact ordered source-run closure and detached signature (test/staging only) |
+| `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}/progress` | Poll payload-free `RUNNING`, `RECOVERABLE`, or `COMPLETED` durable parent progress without exposing owner/epoch/source ids/payloads (test/staging only) |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/operators/{operatorRef}` | Idempotently freeze an exact operator test at its server-owned start gate (test/staging only) |
@@ -159,13 +160,16 @@ when behavior is repeatable but source certification is insufficient. Historical
 auditable but cannot enter a release gate. Statistical v3 adds a precommitted fixed horizon, exact
 integer zero-event confidence bound, fail-closed censoring and independent test-kit reconstruction;
 it remains conditional repeatability evidence, not a correctness proof. A database-clock parent
-lease now returns retryable `429` to concurrent duplicates before child execution, rejects stale
-owners at a final synchronous fence, and atomically consumes the lease with terminal insertion.
-Crash retries reuse completed child attempts; this is not yet queueing or distributed attempt
-scheduling. The invariants and deliberately unclaimed guarantees are recorded in
+lease now returns retryable `429` to concurrent duplicates before child execution. Every verified
+source reference and lease renewal then commit atomically before another attempt can start. Crash
+takeover verifies the durable prefix and executes only the remaining horizon; terminal insertion
+atomically consumes both progress and lease. The public progress projection exposes only lifecycle,
+suite identity, and counts. This is not yet asynchronous queueing or distributed attempt scheduling.
+The invariants and deliberately unclaimed guarantees are recorded in
 [Stage 5 suite-stability verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)
 and the focused
-[execution-lease verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md).
+[execution-lease verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md)
+and [durable-progress verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md).
 
 ### Create a durable graph test
 

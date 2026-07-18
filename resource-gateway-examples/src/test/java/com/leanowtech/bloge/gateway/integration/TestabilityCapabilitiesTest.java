@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteMaterialization
 import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimRequest;
 import com.leanowtech.bloge.gateway.testing.api.DurableTestOwnerClaimResponse;
@@ -134,7 +135,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("signedSuiteStabilityAnalysis", false)
                 .containsEntry("idempotentSuiteStabilityRerun", false)
                 .containsEntry("exactBinomialSuiteStabilityConfidence", false)
-                .containsEntry("crossReplicaSuiteStabilityExecutionLease", false);
+                .containsEntry("crossReplicaSuiteStabilityExecutionLease", false)
+                .containsEntry("durableSuiteStabilityParentProgress", false);
         assertThat(enabled.testability().executionEndpointEnabled()).isTrue();
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
@@ -143,6 +145,7 @@ class TestabilityCapabilitiesTest {
                 "testSuiteExecutionRequest", "testMutationSuiteExecutionRequest",
                 "testSuiteStabilityExecutionRequest", "testSuiteStabilityEvidence",
                 "testSuiteStabilityAttestation", "testSuiteStabilityExecutionResponse",
+                "testSuiteStabilityProgress",
                 "testSuiteExecutionResponse", "testSuiteRunEvidence",
                 "testSuiteRunAttestation", "testSuiteEvidenceBundle", "testSuiteRunReconciliation",
                 "semanticCorrectnessWorkbookBundle",
@@ -257,6 +260,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("idempotentSuiteStabilityRerun", false)
                 .containsEntry("exactBinomialSuiteStabilityConfidence", false)
                 .containsEntry("crossReplicaSuiteStabilityExecutionLease", false)
+                .containsEntry("durableSuiteStabilityParentProgress", false)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)
@@ -289,6 +293,8 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V2,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuiteStabilityProgress"))
+                .containsExactly(TestSuiteStabilityProgressResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterializationRequest"))
                 .containsExactly(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterialization"))
@@ -433,6 +439,9 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
                 && endpoint.path().equals(
                 "/api/testing/stability-executions/{stabilityRunId}"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
+                && endpoint.path().equals(
+                "/api/testing/stability-executions/{stabilityRunId}/progress"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/targets/operators/{operatorRef}/boundary-suites"));
@@ -522,7 +531,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("signedTestRunEvidence", true)
                 .containsEntry("suiteSignedChildEvidenceGate", true)
                 .containsEntry("signedTestSuiteRunAttestation", true)
-                .containsEntry("portableTestSuiteEvidenceBundle", true);
+                .containsEntry("portableTestSuiteEvidenceBundle", true)
+                .containsEntry("durableSuiteStabilityParentProgress", true);
     }
 
     @Test

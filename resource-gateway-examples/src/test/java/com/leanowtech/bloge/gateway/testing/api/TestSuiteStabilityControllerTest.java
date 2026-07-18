@@ -93,6 +93,38 @@ class TestSuiteStabilityControllerTest {
 
         verify(service).find(eq("stability-" + "a".repeat(64)),
                 org.mockito.ArgumentMatchers.argThat(identity ->
+                                identity.purpose().equals("TEST_EXECUTION")));
+    }
+
+    @Test
+    void durableParentProgressUsesTheSameAuthorityAndReturnsThePayloadFreeProjection()
+            throws Exception {
+        String runId = "stability-" + "b".repeat(64);
+        TestSuiteStabilityExecutionService service =
+                mock(TestSuiteStabilityExecutionService.class);
+        Instant startedAt = Instant.parse("2026-07-18T01:02:03Z");
+        when(service.findProgress(eq(runId), any())).thenReturn(
+                new TestSuiteStabilityProgressResponse("", runId,
+                        TestSuiteStabilityProgressResponse.Status.RECOVERABLE,
+                        new TestSuiteExecutionRequest.SuiteRef(
+                                "orders-suite", 7, "sha256:" + "a".repeat(64)),
+                        29, 11, startedAt, startedAt.plusSeconds(60)));
+        MockMvc mvc = mvc(service, Set.of("TEST_EXECUTION"));
+
+        mvc.perform(get("/api/testing/stability-executions/" + runId + "/progress")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion")
+                        .value(TestSuiteStabilityProgressResponse.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.status").value("RECOVERABLE"))
+                .andExpect(jsonPath("$.plannedAttempts").value(29))
+                .andExpect(jsonPath("$.completedAttempts").value(11))
+                .andExpect(jsonPath("$.ownerId").doesNotExist())
+                .andExpect(jsonPath("$.attempts").doesNotExist());
+
+        verify(service).findProgress(eq(runId),
+                org.mockito.ArgumentMatchers.argThat(identity ->
                         identity.purpose().equals("TEST_EXECUTION")));
     }
 
@@ -107,6 +139,22 @@ class TestSuiteStabilityControllerTest {
                         .header("X-Purpose", "TEST_SUITE_WRITE")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.PURPOSE_FORBIDDEN"));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void suiteWritePurposeCannotReadDurableParentProgress() throws Exception {
+        TestSuiteStabilityExecutionService service =
+                mock(TestSuiteStabilityExecutionService.class);
+        MockMvc mvc = mvc(service, Set.of("TEST_SUITE_WRITE"));
+
+        mvc.perform(get("/api/testing/stability-executions/stability-"
+                        + "a".repeat(64) + "/progress")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_SUITE_WRITE"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("RG.INTEGRATION.PURPOSE_FORBIDDEN"));
 

@@ -601,6 +601,29 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Retrieves payload-free durable progress for an active, takeover-ready, or completed parent.
+     *
+     * <p>This operational projection is suitable for polling and recovery coordination. It is not
+     * signed release evidence and intentionally omits source attempt and lease coordinates.</p>
+     *
+     * @param stabilityRunId deterministic stability parent id
+     * @return strict typed progress projection
+     */
+    public TestSuiteStabilityProgress findSuiteStabilityProgress(String stabilityRunId) {
+        String exactId = requiredIdentifier(stabilityRunId, "stabilityRunId", 255);
+        JsonNode response = exchange("GET", "/api/testing/stability-executions/"
+                + segment(exactId) + "/progress", "", "TEST_EXECUTION", null);
+        TestSuiteStabilityProgress progress = projectStabilityProgress(response);
+        try {
+            progress.requireRunIdentity(exactId);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned a mismatched suite-stability progress identity.");
+        }
+        return progress;
+    }
+
+    /**
      * Fetches and independently verifies one retained stability analysis with its public key.
      *
      * @param stabilityRunId deterministic stability analysis id
@@ -1201,6 +1224,15 @@ public final class ResourceGatewayTestClient {
         } catch (IllegalArgumentException failure) {
             throw responseContractInvalid(
                     "The server returned an invalid suite-stability projection.");
+        }
+    }
+
+    private static TestSuiteStabilityProgress projectStabilityProgress(JsonNode response) {
+        try {
+            return TestSuiteStabilityProgress.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid suite-stability progress projection.");
         }
     }
 

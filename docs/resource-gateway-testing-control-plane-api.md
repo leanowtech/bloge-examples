@@ -2746,17 +2746,22 @@ Repeating the parent request therefore reuses the same retained terminal analysi
 `RG.TEST.STABILITY_IDEMPOTENCY_CONFLICT`. Use `TEST_REPLAY` when the exact suite contains a governed
 replay fixture.
 
-Before attempt one, a separate database-authoritative parent lease serializes the scoped request
+Before attempt one, a separate database-authoritative parent progress record and lease serialize the scoped request
 across replicas without consuming another child suite quota permit. A concurrent same-intent call
 returns `429 RG.TEST.STABILITY_EXECUTION_IN_PROGRESS` and `retryAfterSeconds` before any child is
 scheduled. Database-clock expiry permits only an epoch-incrementing takeover. The owner renews
-before every attempt and immediately before publication; terminal insert and exact lease deletion
-commit atomically. A stale owner returns `503 RG.TEST.STABILITY_EXECUTION_LEASE_LOST` and cannot
-persist an `INCONCLUSIVE` substitute. Bounded cleanup removes expired orphan leases, while derived
-child idempotency keys let a successor reuse completed attempts. See
+before every new attempt. After a source suite run and child closure are verified, the server
+atomically appends their payload-free source reference and renews the exact lease before scheduling
+the next attempt. An expired-owner takeover receives this contiguous prefix, refetches and verifies
+every source/child closure, and executes only the remaining attempts. Terminal insert, complete
+journal validation, progress deletion, and exact lease deletion commit atomically. A stale owner
+returns `503 RG.TEST.STABILITY_EXECUTION_LEASE_LOST` and cannot persist an `INCONCLUSIVE`
+substitute. Bounded cleanup removes expired orphan leases, while derived child idempotency keys close
+the narrower source-terminal-before-parent-checkpoint crash window. See
 [Stage 5 suite-stability execution-lease verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md)
-for the state, shutdown, and failure matrices. This is single-owner coordination, not asynchronous
-queueing or distributed attempt scheduling.
+and [durable parent-progress verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md)
+for the state, shutdown, crash-window, and failure matrices. This is resumable single-owner
+coordination, not asynchronous queueing or distributed attempt scheduling.
 
 Request v1 returns complete terminal response/evidence/attestation v2. Request v2 returns matching
 v3 objects containing the signed statistical assessment. Retained v1 responses remain queryable for
@@ -2799,6 +2804,22 @@ curl -sS http://localhost:8080/api/testing/stability-executions/<stabilityRunId>
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: TEST_EXECUTION'
 ```
+
+Poll the payload-free parent lifecycle with the same authority:
+
+```bash
+curl -sS http://localhost:8080/api/testing/stability-executions/<stabilityRunId>/progress \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_EXECUTION'
+```
+
+`bloge.testSuiteStabilityProgress.v1` reports `RUNNING` when a database-clock-live owner exists,
+`RECOVERABLE` when retained progress has no live owner, and `COMPLETED` when signed terminal evidence
+exists. It returns exact suite identity and planned/completed counts, but omits owner, epoch, source
+run ids, journal entries, fixture/context values, and payloads. This operational projection is not
+signed release evidence. Java consumers call
+`ResourceGatewayTestClient.findSuiteStabilityProgress(stabilityRunId)`; the test-kit validates both
+the authoritative Schema and semantic count/time relationships.
 
 The independent test-kit re-derives case/aggregate classification, source promotion closure,
 promotion and quarantine verdicts, request/evidence/source-closure fingerprints, source suite

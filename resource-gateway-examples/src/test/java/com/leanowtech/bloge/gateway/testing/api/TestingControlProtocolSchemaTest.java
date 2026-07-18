@@ -102,6 +102,9 @@ class TestingControlProtocolSchemaTest {
                 .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V2,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityProgress/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityProgressResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV1/properties/schemaVersion/const").asText())
@@ -433,6 +436,7 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteStabilityEvidence")).isTrue();
         assertThat(definitions.has("testSuiteStabilityAttestation")).isTrue();
         assertThat(definitions.has("testSuiteStabilityExecutionResponse")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityProgress")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponse")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV1")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV2")).isTrue();
@@ -1038,6 +1042,17 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at(
                 "/testSuiteStabilityExecutionResponse/properties/attestation/allOf/1/properties"
                         + "/signatureStatus/const").asText()).isEqualTo("VERIFIED");
+        assertThat(definitions.at(
+                "/testSuiteStabilityProgress/additionalProperties").asBoolean()).isFalse();
+        assertThat(definitions.at("/testSuiteStabilityProgress/properties/status/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("RUNNING", "RECOVERABLE", "COMPLETED");
+        assertThat(definitions.at("/testSuiteStabilityProgress/properties").has("ownerId"))
+                .isFalse();
+        assertThat(definitions.at("/testSuiteStabilityProgress/properties").has("leaseEpoch"))
+                .isFalse();
+        assertThat(definitions.at("/testSuiteStabilityProgress/properties").has("attempts"))
+                .isFalse();
     }
 
     @Test

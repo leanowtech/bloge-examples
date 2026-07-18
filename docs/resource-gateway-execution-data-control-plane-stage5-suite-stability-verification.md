@@ -20,6 +20,8 @@ The claim is intentionally bounded:
    carry an `ELIGIBLE` promotion verdict in v2/v3 evidence; v3 must also satisfy confidence.
 5. Quarantine is a signed recommendation only. This increment does not mutate suite state, waive a
    failure, authorize publication, or call an external governance system.
+6. Every verified source reference is durably checkpointed before the next attempt. A successor
+   verifies that prefix and schedules only the remaining horizon.
 
 ## 2. Exact request and idempotency boundary
 
@@ -46,9 +48,12 @@ conflict.
 Before attempt one, the service now acquires a database-clock parent execution lease bound to that
 same scope and request fingerprint. A concurrent immutable duplicate receives retryable `429`
 without scheduling a child. An expired owner may be replaced only by an epoch-incrementing takeover;
-the service renews before every attempt and immediately before terminal publication. Terminal insert
-and exact lease consumption share one transaction. Detailed persistence and failure evidence is in
+the service renews before every new attempt and immediately before terminal publication. Each
+verified source reference and lease renewal commit atomically; terminal insert, full-journal
+validation, and exact progress/lease consumption share one transaction. Detailed evidence is in
 [Stage 5 suite-stability execution-lease verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md).
+Crash-prefix reconstruction and the public progress projection are verified in
+[Stage 5 suite-stability durable parent progress verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md).
 
 Each attempt receives a server-derived idempotency key under the parent namespace and executes the
 ordinary immutable suite through `COLLECT_ALL`. A parent retry can therefore reuse already committed
@@ -126,9 +131,9 @@ confidence, status, fixed stop reason, and four explicit assumptions.
 again before returning the result.
 
 The JDBC repository is independent from ordinary suite-run tables and enforces one immutable parent
-request identity per tenant/environment. A payload-free execution-lease table, fixed-cardinality
-lock stripes, database time, owner/epoch fencing, and bounded expired-orphan cleanup prevent two
-replicas from executing or publishing the same live parent intent. Stability terminal retention uses
+request identity per tenant/environment. Payload-free progress and execution-lease tables,
+fixed-cardinality lock stripes, database time, owner/epoch fencing, and bounded expired-orphan lease
+cleanup prevent two replicas from executing or publishing the same live parent intent. Stability terminal retention uses
 `gateway.testing.store.retention-days` and is capped from the earliest source start. The service
 refuses to persist an analysis when the source retention window can no longer support it. Historical
 v1 decode/encode preserves its canonical JSON and fingerprint; v1 may be queried and verified for
@@ -148,6 +153,7 @@ request v1/v2 and response-side v1/v2/v3, both HTTP endpoints, and three indepen
 - `idempotentSuiteStabilityRerun`
 - `exactBinomialSuiteStabilityConfidence`
 - `crossReplicaSuiteStabilityExecutionLease`
+- `durableSuiteStabilityParentProgress`
 
 The supported objects and endpoints appear only when the isolated test execution surface is
 assembled. These feature flags become `true` only when that surface and a signer are available.
@@ -231,11 +237,13 @@ work bounds, assertions, payload-free JUnit cardinality, and `0/1/2` CLI behavio
 1. Non-zero-event confidence intervals, adaptive/alpha-spending stopping, or historical trend
    analysis.
 2. Automatic quarantine state mutation, expiry, owner approval, remediation, or ANEKE gate feedback.
-3. Cross-replica parent ownership is closed, but distributed attempt scheduling, durable queueing,
-   fairness, backpressure, cancellation, or autoscaling remain absent.
+3. Cross-replica parent ownership and prefix recovery are closed, but asynchronous submission,
+   distributed attempt scheduling, durable queueing, fairness, backpressure, cancellation, or
+   autoscaling remain absent.
 4. Physical test-runtime, network, identity, secret, and data-store isolation proof.
 5. Independent client refetch and verification of every source aggregate and child evidence bundle.
-6. Non-H2 dialect certification, long-duration soak, capacity, chaos, or disaster-recovery proof.
+6. Bounded physical progress/terminal deletion, non-H2 dialect certification, long-duration soak,
+   capacity, chaos, or disaster-recovery proof.
 
 These gaps remain visible because a bounded repeated result is useful evidence, but it is not a
 complete enterprise flaky-test management system.

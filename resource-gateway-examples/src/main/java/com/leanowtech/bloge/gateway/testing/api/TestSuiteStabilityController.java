@@ -51,4 +51,14 @@ public final class TestSuiteStabilityController {
                 authenticator.authenticate(headers,
                         IntegrationOperation.TEST_SUITE_EXECUTION));
     }
+
+    /** Resolves payload-free active, takeover-ready, or completed parent progress. */
+    @GetMapping("/stability-executions/{stabilityRunId}/progress")
+    public TestSuiteStabilityProgressResponse findProgress(
+            @PathVariable String stabilityRunId,
+            @RequestHeader HttpHeaders headers) {
+        return service.findProgress(stabilityRunId,
+                authenticator.authenticate(headers,
+                        IntegrationOperation.TEST_SUITE_EXECUTION));
+    }
 }

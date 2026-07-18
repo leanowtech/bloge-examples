@@ -109,6 +109,8 @@ class TestingProtocolTest {
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1,
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2,
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3);
+            assertConstant(definitions, "testSuiteStabilityProgress",
+                    TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV1",
                     TestingProtocol.TEST_SUITE_EXECUTION_RESPONSE_V1);
             assertConstant(definitions, "testSuiteExecutionResponseV2",

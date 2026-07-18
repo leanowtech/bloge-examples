@@ -32,9 +32,10 @@ import java.util.regex.Pattern;
  * Idempotent bounded rerun service for signed suite-stability evidence.
  *
  * <p>Each attempt delegates to the ordinary immutable suite runner with a deterministic derived
- * idempotency key and {@code COLLECT_ALL}. A process crash therefore leaves reusable durable source
- * runs rather than an ambiguous parent checkpoint. Only a fully signed terminal analysis crosses
- * the stability repository boundary; concurrent creators converge on the stored winner.</p>
+ * idempotency key and {@code COLLECT_ALL}. After every verified source attempt, a payload-free
+ * parent journal is checkpointed under the live owner/epoch fence before another attempt may be
+ * scheduled. A successor refetches and verifies that exact prefix. Only a fully signed terminal
+ * analysis consumes the journal and lease; concurrent creators converge on one stored winner.</p>
  */
 public final class TestSuiteStabilityExecutionService {
     private static final int MAX_CLIENT_REQUEST_ID_LENGTH = 255;
@@ -126,7 +127,8 @@ public final class TestSuiteStabilityExecutionService {
         try {
             leaseRequest = leaseCoordinator.request(
                     stabilityRunId, identity.tenantId(), identity.environmentId(),
-                    request.clientRequestId(), requestFingerprint);
+                    request.clientRequestId(), requestFingerprint, request.suiteRef(),
+                    stored.suite().classification(), request.attempts(), retention);
         } catch (LeaseLostException closed) {
             throw unavailable(identity, "RG.TEST.STABILITY_LEASE_COORDINATOR_UNAVAILABLE",
                     "The local suite-stability lease coordinator is shutting down.");
@@ -159,7 +161,7 @@ public final class TestSuiteStabilityExecutionService {
         }
         try (LeaseGuard lease = owner) {
             return executeOwned(stored, request, identity, requestFingerprint,
-                    stabilityRunId, lease);
+                    stabilityRunId, claim.progress(), lease);
         }
     }
 
@@ -177,10 +179,13 @@ public final class TestSuiteStabilityExecutionService {
             IntegrationRequestContext identity,
             String requestFingerprint,
             String stabilityRunId,
+            TestSuiteStabilityExecutionProgress progress,
             LeaseGuard lease) {
         List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> observations =
-                new ArrayList<>();
-        for (int attempt = 1; attempt <= request.attempts(); attempt++) {
+                restoreProgress(progress, request, stored, identity);
+        TestSuiteStabilityExecutionProgress currentProgress = progress;
+        for (int attempt = progress.completedAttempts() + 1;
+             attempt <= request.attempts(); attempt++) {
             requireLiveLease(lease, identity);
             TestSuiteExecutionRequest attemptRequest = new TestSuiteExecutionRequest("",
                     request.suiteRef(), attemptClientRequestId(
@@ -191,18 +196,16 @@ public final class TestSuiteStabilityExecutionService {
                             "stabilityRequestFingerprint", requestFingerprint));
             TestSuiteExecutionResponse executed = suiteExecutions.execute(
                     stored.suiteId(), attemptRequest, identity);
+            if (executed == null) {
+                throw unavailable(identity, "RG.TEST.STABILITY_SOURCE_EXECUTION_UNAVAILABLE",
+                        "A stability source suite execution returned no durable result.");
+            }
             TestSuiteExecutionResponse source = suiteExecutions.find(
                     executed.suiteRunId(), identity);
-            Map<String, TestSuiteStabilityEvidenceEvaluator.ChildObservation> children =
-                    new LinkedHashMap<>();
-            source.attestation().childEvidenceRefs().forEach(child -> {
-                TestExecutionApiResponse full = childExecutions.find(child.runId(),
-                        TestExecutionApiRequest.Verbosity.FULL, identity);
-                children.put(child.runId(),
-                        new TestSuiteStabilityEvidenceEvaluator.ChildObservation(full, true));
-            });
-            observations.add(new TestSuiteStabilityEvidenceEvaluator.AttemptObservation(
-                    attempt, source, true, children, Instant.now(), ""));
+            TestSuiteStabilityEvidenceEvaluator.AttemptObservation observation =
+                    observeSource(attempt, source, identity);
+            currentProgress = checkpointProgress(lease, currentProgress, source, attempt, identity);
+            observations.add(observation);
         }
 
         TestSuiteStabilityEvidence evidence = request.statisticalPolicy() == null
@@ -244,6 +247,98 @@ public final class TestSuiteStabilityExecutionService {
         }
     }
 
+    private List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> restoreProgress(
+            TestSuiteStabilityExecutionProgress progress,
+            TestSuiteStabilityExecutionRequest request,
+            StoredTestSuite stored,
+            IntegrationRequestContext identity) {
+        if (progress == null
+                || !progress.tenantId().equals(identity.tenantId())
+                || !progress.environmentId().equals(identity.environmentId())
+                || !progress.clientRequestId().equals(request.clientRequestId())
+                || !progress.suiteRef().equals(request.suiteRef())
+                || !progress.classification().equals(stored.suite().classification())
+                || progress.plannedAttempts() != request.attempts()) {
+            throw unavailable(identity, "RG.TEST.STABILITY_PROGRESS_CONFLICT",
+                    "Durable suite-stability progress contradicts the immutable execution intent.");
+        }
+        List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> observations =
+                new ArrayList<>(progress.completedAttempts());
+        try {
+            for (TestSuiteStabilityExecutionProgress.AttemptReference reference
+                    : progress.attempts()) {
+                TestSuiteExecutionResponse source = suiteExecutions.find(
+                        reference.suiteRunId(), identity);
+                if (source == null
+                        || !reference.suiteRunId().equals(source.suiteRunId())
+                        || !reference.aggregateEvidenceFingerprint().equals(
+                        source.evidenceFingerprint())) {
+                    throw new IllegalStateException(
+                            "Source suite evidence contradicts durable progress");
+                }
+                observations.add(observeSource(reference.attempt(), source, identity));
+            }
+            return observations;
+        } catch (RuntimeException unavailable) {
+            throw TestSuiteStabilityExecutionService.unavailable(identity,
+                    "RG.TEST.STABILITY_PROGRESS_SOURCE_UNAVAILABLE",
+                    "A durable stability prefix cannot be reconstructed from its governed source evidence.");
+        }
+    }
+
+    private TestSuiteStabilityEvidenceEvaluator.AttemptObservation observeSource(
+            int attempt,
+            TestSuiteExecutionResponse source,
+            IntegrationRequestContext identity) {
+        if (source == null || source.evidence() == null || source.attestation() == null
+                || source.evidence().status() == com.leanowtech.bloge.gateway.testing.domain
+                .TestSuiteRunEvidence.Status.RUNNING
+                || !source.suiteRunId().equals(source.evidence().suiteRunId())
+                || !source.suiteRunId().equals(source.attestation().suiteRunId())
+                || !source.evidenceFingerprint().equals(
+                source.attestation().aggregateEvidenceFingerprint())
+                || !source.attestation().terminallyVerifiable()) {
+            throw unavailable(identity, "RG.TEST.STABILITY_SOURCE_EVIDENCE_INVALID",
+                    "A stability source suite run is not terminally verifiable.");
+        }
+        Map<String, TestSuiteStabilityEvidenceEvaluator.ChildObservation> children =
+                new LinkedHashMap<>();
+        source.attestation().childEvidenceRefs().forEach(child -> {
+            TestExecutionApiResponse full = childExecutions.find(child.runId(),
+                    TestExecutionApiRequest.Verbosity.FULL, identity);
+            children.put(child.runId(),
+                    new TestSuiteStabilityEvidenceEvaluator.ChildObservation(full, true));
+        });
+        return new TestSuiteStabilityEvidenceEvaluator.AttemptObservation(
+                attempt, source, true, children, Instant.now(), "");
+    }
+
+    private TestSuiteStabilityExecutionProgress checkpointProgress(
+            LeaseGuard lease,
+            TestSuiteStabilityExecutionProgress current,
+            TestSuiteExecutionResponse source,
+            int attempt,
+            IntegrationRequestContext identity) {
+        TestSuiteStabilityExecutionProgress.AttemptReference reference =
+                new TestSuiteStabilityExecutionProgress.AttemptReference(
+                        attempt, source.suiteRunId(), source.evidenceFingerprint());
+        try {
+            TestSuiteStabilityExecutionProgress successor = lease.checkpoint(reference, retention);
+            if (successor.completedAttempts() != current.completedAttempts() + 1
+                    || !successor.attempts().getLast().equals(reference)
+                    || !successor.stabilityRunId().equals(current.stabilityRunId())
+                    || !successor.requestFingerprint().equals(current.requestFingerprint())) {
+                throw new IllegalStateException(
+                        "Durable stability checkpoint returned a contradictory successor");
+            }
+            return successor;
+        } catch (RuntimeException unavailable) {
+            throw TestSuiteStabilityExecutionService.unavailable(identity,
+                    "RG.TEST.STABILITY_PROGRESS_CHECKPOINT_FAILED",
+                    "The next stability attempt was stopped because durable parent progress could not be committed.");
+        }
+    }
+
     private static TestSuiteStabilityExecutionLease requireLiveLease(
             LeaseGuard lease,
             IntegrationRequestContext identity) {
@@ -268,6 +363,9 @@ public final class TestSuiteStabilityExecutionService {
             case LEASE_LOST -> unavailable(identity,
                     "RG.TEST.STABILITY_EXECUTION_LEASE_LOST",
                     "Suite-stability ownership was lost before terminal evidence publication.");
+            case PROGRESS_CONFLICT -> unavailable(identity,
+                    "RG.TEST.STABILITY_PROGRESS_CONFLICT",
+                    "Durable suite-stability progress is missing or contradicts the execution.");
             case TERMINAL_CONFLICT -> conflict(identity,
                     "RG.TEST.STABILITY_TERMINAL_CONFLICT",
                     "The deterministic stability identity already has a different terminal record.");
@@ -302,6 +400,68 @@ public final class TestSuiteStabilityExecutionService {
         requireClearance(record.classification(), identity);
         verifyRecord(record, identity);
         return response(record);
+    }
+
+    /**
+     * Resolves payload-free active, takeover-ready, or terminal parent progress.
+     *
+     * @param stabilityRunId deterministic parent identity
+     * @param identity verified test-runtime identity
+     * @return authorized progress projection
+     */
+    public TestSuiteStabilityProgressResponse findProgress(
+            String stabilityRunId,
+            IntegrationRequestContext identity) {
+        requireExecutionIdentity(identity);
+        String exactRunId = normalized(stabilityRunId);
+        try {
+            Optional<TestSuiteStabilityRunRecord> terminal = repository.find(
+                    identity.tenantId(), identity.environmentId(), exactRunId);
+            if (terminal.isPresent()) {
+                TestSuiteStabilityRunRecord record = terminal.get();
+                requireClearance(record.classification(), identity);
+                verifyRecord(record, identity);
+                return completedProgress(record);
+            }
+            Optional<TestSuiteStabilityProgressSnapshot> active = repository.findProgress(
+                    identity.tenantId(), identity.environmentId(), exactRunId);
+            if (active.isPresent()) {
+                TestSuiteStabilityExecutionProgress progress = active.get().progress();
+                requireClearance(progress.classification(), identity);
+                return new TestSuiteStabilityProgressResponse("", progress.stabilityRunId(),
+                        active.get().liveOwner()
+                                ? TestSuiteStabilityProgressResponse.Status.RUNNING
+                                : TestSuiteStabilityProgressResponse.Status.RECOVERABLE,
+                        progress.suiteRef(), progress.plannedAttempts(),
+                        progress.completedAttempts(), progress.createdAt(), progress.updatedAt());
+            }
+            terminal = repository.find(
+                    identity.tenantId(), identity.environmentId(), exactRunId);
+            if (terminal.isPresent()) {
+                TestSuiteStabilityRunRecord record = terminal.get();
+                requireClearance(record.classification(), identity);
+                verifyRecord(record, identity);
+                return completedProgress(record);
+            }
+            throw new IntegrationProblemException(IntegrationProblem.notFound(
+                    "RG.TEST.STABILITY_PROGRESS_NOT_FOUND",
+                    "Stability progress was not found in the authorized retained scope.",
+                    identity.correlationId(), Map.of()));
+        } catch (IntegrationProblemException failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw unavailable(identity, "RG.TEST.STABILITY_PROGRESS_STORE_UNAVAILABLE",
+                    "The durable suite-stability progress store is unavailable.");
+        }
+    }
+
+    private static TestSuiteStabilityProgressResponse completedProgress(
+            TestSuiteStabilityRunRecord record) {
+        TestSuiteStabilityEvidence evidence = record.evidence();
+        return new TestSuiteStabilityProgressResponse("", record.stabilityRunId(),
+                TestSuiteStabilityProgressResponse.Status.COMPLETED, evidence.suiteRef(),
+                evidence.requestedAttempts(), evidence.attempts().size(),
+                evidence.startedAt(), evidence.completedAt());
     }
 
     private TestSuiteStabilityExecutionResponse idempotentResponse(

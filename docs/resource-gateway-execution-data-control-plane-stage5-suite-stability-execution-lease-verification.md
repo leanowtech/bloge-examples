@@ -11,13 +11,18 @@ duplicate-work window left by terminal-only idempotency:
    while that database-clock lease is live;
 3. a changed request under the same parent idempotency identity is rejected as a conflict;
 4. an expired lease may be taken over only by incrementing its epoch under the same database lock;
-5. the service renews synchronously before every attempt and once more before publication;
-6. terminal insert and exact lease consumption commit in one local transaction;
-7. process shutdown invalidates every local guard before attempting exact release;
-8. an oldest-first bounded sweep removes expired orphan leases that nobody retries.
+5. claim also creates or restores an exact durable parent progress journal;
+6. every source-reference append and lease renewal commit atomically before the next attempt;
+7. the service renews synchronously before each new attempt and once more before publication;
+8. terminal insert, complete-progress validation, and exact progress/lease consumption commit in
+   one local transaction;
+9. process shutdown invalidates every local guard before attempting exact release;
+10. an oldest-first bounded sweep removes expired orphan leases that nobody retries.
 
 This is cross-replica **single-owner coordination**, not an asynchronous or distributed attempt
 scheduler. The endpoint still runs one precommitted horizon synchronously on one owning replica.
+Durable prefix recovery is specified separately in
+[Stage 5 suite-stability durable parent progress verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md).
 
 ## 2. Root cause
 
@@ -61,12 +66,13 @@ scoped request without creating an unbounded lock row per business identity. Eve
 
 | Operation | Required fence | Atomic result |
 | --- | --- | --- |
-| first claim | no terminal and no lease | epoch `0` live lease |
+| first claim | no terminal, progress, or lease contradiction | empty progress plus epoch `0` live lease |
 | duplicate claim | same intent, live lease | `IN_PROGRESS` plus bounded retry delay |
-| takeover | same intent, expired lease | same run id, new owner, `epoch + 1` |
+| takeover | same intent, expired lease, retained progress | same prefix, new owner, `epoch + 1` |
 | renew | exact scope/run/request/owner/epoch and live DB expiry | successor DB expiry |
+| progress checkpoint | exact live fence and next contiguous source reference | append plus successor DB expiry |
 | release | exact live fence | lease deletion; otherwise no-op |
-| complete | exact live fence and complete signed record | terminal insert plus lease deletion |
+| complete | exact live fence, complete journal, and matching signed record | terminal insert plus progress/lease deletion |
 | purge | expired candidate rechecked after stripe lock | bounded conditional deletion |
 
 Terminal lookup is performed under the same claim transaction. A retained exact terminal result is
@@ -85,10 +91,11 @@ attempt prevents further scheduling after observed ownership loss. The final syn
 the publication fence. It closes the interval in which a prior heartbeat appeared healthy locally
 but database time has since expired and another replica has taken over.
 
-Normal local failure cancels heartbeat and releases the exact live lease. A crash or release-store
-failure leaves the row to database expiry. Derived child idempotency keys allow the successor owner
-to reuse already committed source suite runs. The successor still reconstructs and verifies the
-entire ordered source/child closure before signing; it does not trust partial parent memory.
+Normal local failure cancels heartbeat and releases the exact live lease while retaining parent
+progress. A crash or release-store failure leaves the row to database expiry. The successor receives
+the committed journal, refetches and verifies its ordered source/child closure, then schedules only
+the remaining attempts. Derived child idempotency closes the narrower window in which a source
+terminal committed immediately before its parent-reference checkpoint.
 
 ## 6. Failure semantics
 
@@ -101,6 +108,8 @@ entire ordered source/child closure before signing; it does not trust partial pa
 | lease store unavailable | `503 RG.TEST.STABILITY_LEASE_STORE_UNAVAILABLE` | none before claim |
 | coordinator shutting down | `503 RG.TEST.STABILITY_LEASE_COORDINATOR_UNAVAILABLE` | none |
 | heartbeat/checkpoint loss | `503 RG.TEST.STABILITY_EXECUTION_LEASE_LOST` | no next attempt, no terminal |
+| progress append ambiguity | `503 RG.TEST.STABILITY_PROGRESS_CHECKPOINT_FAILED` | no next attempt, no terminal |
+| stored prefix cannot be rebuilt | `503 RG.TEST.STABILITY_PROGRESS_SOURCE_UNAVAILABLE` | no new attempt |
 | stale owner calls complete | `503 RG.TEST.STABILITY_EXECUTION_LEASE_LOST` | transaction rejects insert |
 | terminal identity collision | `409 RG.TEST.STABILITY_TERMINAL_CONFLICT` | transaction rolls back |
 
@@ -120,7 +129,8 @@ The test and staging profiles expose these fail-fast settings:
 | `gateway.testing.stability-runs.lease-cleanup-interval-ms` | `RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS` | `15000` | Spring fixed delay |
 | `gateway.testing.stability-runs.lease-cleanup-batch-size` | `RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE` | `1000` | clamped to 1..10000 |
 
-Capability discovery reports `crossReplicaSuiteStabilityExecutionLease=true` only when the isolated
+Capability discovery reports `crossReplicaSuiteStabilityExecutionLease=true` and
+`durableSuiteStabilityParentProgress=true` only when the isolated
 test execution surface and evidence signer are both available. This flag states the coordination
 protocol above; it does not state queueing, fairness, remote supervision, or hard cancellation.
 
@@ -136,6 +146,7 @@ The focused suite covers:
 - bounded orphan cleanup without deleting a reacquired live lease;
 - service-level `429` before child execution;
 - mid-horizon lease loss before the next attempt;
+- durable prefix append, rollback, takeover restoration, and exact remaining-attempt execution;
 - final synchronous renewal and atomic completion;
 - coordinator shutdown invalidation and fail-fast configuration;
 - Spring profile composition and capability truth.
@@ -152,11 +163,11 @@ Reproducible command and final counts are maintained in the parent
 
 This increment does not provide:
 
-1. a durable parent progress record or a public `RUNNING` status projection;
-2. asynchronous submission, queue position, tenant weighting, priority, aging, or fairness;
-3. attempt distribution across workers, regional scheduling, or autoscaling;
-4. cooperative cancellation or process/container-level hard timeout;
-5. independent parent-level capacity metrics, backlog SLO, or alert routing;
+1. asynchronous submission, queue position, tenant weighting, priority, aging, or fairness;
+2. attempt distribution across workers, regional scheduling, or autoscaling;
+3. cooperative cancellation or process/container-level hard timeout;
+4. independent parent-level capacity metrics, backlog SLO, or alert routing;
+5. bounded physical progress/terminal retention purge and tombstone compaction;
 6. non-H2 dialect certification, long soak, capacity, chaos, or disaster-recovery proof.
 
 The next scheduling increment must build on this owner fence rather than weaken it: queued work may

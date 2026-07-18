@@ -108,6 +108,10 @@ public final class TestSuiteStabilityLeaseCoordinator implements AutoCloseable {
      * @param environmentId verified non-production environment
      * @param clientRequestId caller-stable idempotency identity
      * @param requestFingerprint canonical immutable request fingerprint
+     * @param suiteRef exact immutable suite revision
+     * @param classification frozen suite data classification
+     * @param plannedAttempts precommitted horizon
+     * @param progressRetention sliding recoverable-progress retention
      * @return complete persistence claim request
      */
     public TestSuiteStabilityLeaseRequest request(
@@ -115,12 +119,17 @@ public final class TestSuiteStabilityLeaseCoordinator implements AutoCloseable {
             String tenantId,
             String environmentId,
             String clientRequestId,
-            String requestFingerprint) {
+            String requestFingerprint,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            String classification,
+            int plannedAttempts,
+            Duration progressRetention) {
         if (closed) {
             throw new LeaseLostException("Suite-stability lease coordinator is closed");
         }
         return new TestSuiteStabilityLeaseRequest(stabilityRunId, tenantId, environmentId,
-                clientRequestId, requestFingerprint, newInvocationOwner(), leaseDuration);
+                clientRequestId, requestFingerprint, suiteRef, classification, plannedAttempts,
+                newInvocationOwner(), leaseDuration, progressRetention);
     }
 
     /**
@@ -195,6 +204,37 @@ public final class TestSuiteStabilityLeaseCoordinator implements AutoCloseable {
                 lost = true;
                 throw new LeaseLostException(
                         "Suite-stability execution lease could not be verified", unavailable);
+            }
+        }
+
+        /**
+         * Atomically journals the next verified source attempt and renews this exact fence.
+         *
+         * @param attempt next contiguous source reference
+         * @param progressRetention sliding durable-progress retention
+         * @return durable successor progress
+         * @throws LeaseLostException after any ambiguous, stale, or rejected checkpoint
+         */
+        public synchronized TestSuiteStabilityExecutionProgress checkpoint(
+                TestSuiteStabilityExecutionProgress.AttemptReference attempt,
+                Duration progressRetention) {
+            if (closed || consumed || lost) {
+                throw new LeaseLostException(
+                        "Suite-stability execution lease is no longer checkpointable");
+            }
+            try {
+                TestSuiteStabilityProgressCheckpoint checkpoint = repository.checkpoint(
+                        lease, attempt, leaseDuration, progressRetention);
+                lease = checkpoint.lease();
+                return checkpoint.progress();
+            } catch (TestSuiteStabilityRunConflictException rejected) {
+                lost = true;
+                throw new LeaseLostException(
+                        "Suite-stability progress checkpoint was rejected", rejected);
+            } catch (RuntimeException unavailable) {
+                lost = true;
+                throw new LeaseLostException(
+                        "Suite-stability progress checkpoint could not be verified", unavailable);
             }
         }
 

@@ -137,6 +137,9 @@ public final class TestingProtocol {
     /** Signed terminal statistical suite-stability response wire version. */
     public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3 =
             "bloge.testSuiteStabilityExecutionResponse.v3";
+    /** Payload-free active, recoverable, or completed stability parent progress. */
+    public static final String TEST_SUITE_STABILITY_PROGRESS_V1 =
+            "bloge.testSuiteStabilityProgress.v1";
     /** Immutable suite execution response wire version. */
     public static final String TEST_SUITE_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteExecutionResponse.v1";

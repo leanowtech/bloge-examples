@@ -1,10 +1,14 @@
 package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionLease;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionProgress;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressCheckpoint;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressSnapshot;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRepository;
@@ -40,6 +44,8 @@ public final class DatabaseTestSuiteStabilityRunRepository
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final int LOCK_STRIPES = 4_096;
     private static final int MAXIMUM_PURGE_BATCH = 10_000;
+    private static final TypeReference<List<TestSuiteStabilityExecutionProgress.AttemptReference>>
+            ATTEMPT_REFERENCES = new TypeReference<>() { };
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -79,6 +85,31 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 CREATE TABLE IF NOT EXISTS rg_test_suite_stability_execution_locks (
                     lock_key VARCHAR(71) PRIMARY KEY
                 )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_progress (
+                    stability_run_id VARCHAR(255) PRIMARY KEY,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(255) NOT NULL,
+                    client_request_id VARCHAR(255) NOT NULL,
+                    request_fingerprint VARCHAR(71) NOT NULL,
+                    suite_id VARCHAR(255) NOT NULL,
+                    suite_revision BIGINT NOT NULL,
+                    suite_fingerprint VARCHAR(71) NOT NULL,
+                    classification VARCHAR(32) NOT NULL,
+                    planned_attempts INTEGER NOT NULL,
+                    completed_attempts INTEGER NOT NULL,
+                    attempts_json CLOB NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    CONSTRAINT uq_rg_test_suite_stability_progress_request
+                        UNIQUE (tenant_id, environment_id, client_request_id)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_progress_retention
+                ON rg_test_suite_stability_progress (expires_at, stability_run_id)
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_suite_stability_execution_leases (
@@ -162,6 +193,19 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 return TestSuiteStabilityLeaseClaim.completed(existing);
             }
 
+            TestSuiteStabilityExecutionProgress progress = progressByClientRequestId(
+                    request.tenantId(), request.environmentId(), request.clientRequestId())
+                    .map(existing -> {
+                        requireSameProgressIntent(existing, request);
+                        if (!existing.expiresAt().isAfter(observedAt)) {
+                            throw conflict(
+                                    TestSuiteStabilityRunConflictException.Reason.IDEMPOTENCY_RETIRED,
+                                    "Stability progress identity is retained after recovery expiry");
+                        }
+                        return existing;
+                    })
+                    .orElseGet(() -> createProgress(request, observedAt));
+
             Optional<TestSuiteStabilityExecutionLease> stored = leaseByClientRequestId(
                     request.tenantId(), request.environmentId(), request.clientRequestId());
             long epoch = 0;
@@ -211,10 +255,12 @@ public final class DatabaseTestSuiteStabilityRunRepository
                             "Deterministic stability identity already belongs to another row");
                 }
             }
-            return TestSuiteStabilityLeaseClaim.acquired(new TestSuiteStabilityExecutionLease(
-                    request.stabilityRunId(), request.tenantId(), request.environmentId(),
-                    request.clientRequestId(), request.requestFingerprint(), request.ownerId(),
-                    epoch, expiresAt));
+            return TestSuiteStabilityLeaseClaim.acquired(
+                    new TestSuiteStabilityExecutionLease(
+                            request.stabilityRunId(), request.tenantId(), request.environmentId(),
+                            request.clientRequestId(), request.requestFingerprint(),
+                            request.ownerId(), epoch, expiresAt),
+                    progress);
         });
         if (result == null) {
             throw new IllegalStateException("Stability lease claim returned no result");
@@ -260,6 +306,90 @@ public final class DatabaseTestSuiteStabilityRunRepository
     }
 
     @Override
+    public TestSuiteStabilityProgressCheckpoint checkpoint(
+            TestSuiteStabilityExecutionLease lease,
+            TestSuiteStabilityExecutionProgress.AttemptReference attempt,
+            Duration leaseDuration,
+            Duration progressRetention) {
+        Objects.requireNonNull(lease, "lease");
+        Objects.requireNonNull(attempt, "attempt");
+        Duration boundedLease = boundedLease(leaseDuration);
+        Duration boundedRetention = boundedProgressRetention(progressRetention);
+        TestSuiteStabilityProgressCheckpoint checkpoint = mutations.execute(status -> {
+            lock(lease.tenantId(), lease.environmentId(), lease.clientRequestId());
+            Instant observedAt = currentTime();
+            TestSuiteStabilityExecutionLease storedLease = leaseByRunId(
+                    lease.tenantId(), lease.environmentId(), lease.stabilityRunId())
+                    .filter(value -> sameFence(value, lease)
+                            && value.expiresAt().isAfter(observedAt))
+                    .orElseThrow(() -> conflict(
+                            TestSuiteStabilityRunConflictException.Reason.LEASE_LOST,
+                            "Suite-stability progress requires a live exact lease"));
+            TestSuiteStabilityExecutionProgress storedProgress = progressByRunId(
+                    lease.tenantId(), lease.environmentId(), lease.stabilityRunId())
+                    .orElseThrow(() -> conflict(
+                            TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
+                            "Suite-stability durable progress is missing"));
+            requireProgressMatchesLease(storedProgress, lease);
+            if (!storedProgress.expiresAt().isAfter(observedAt)) {
+                throw conflict(TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
+                        "Suite-stability durable progress has expired");
+            }
+
+            Instant progressExpiresAt = observedAt.plus(boundedRetention);
+            TestSuiteStabilityExecutionProgress successor;
+            try {
+                successor = storedProgress.append(attempt, observedAt, progressExpiresAt);
+            } catch (IllegalArgumentException rejected) {
+                throw conflict(TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
+                        "Suite-stability progress append is non-contiguous or contradictory");
+            }
+            int progressUpdated = jdbc.update("""
+                    UPDATE rg_test_suite_stability_progress
+                    SET completed_attempts = ?, attempts_json = ?, updated_at = ?, expires_at = ?
+                    WHERE stability_run_id = ? AND tenant_id = ? AND environment_id = ?
+                      AND client_request_id = ? AND request_fingerprint = ?
+                      AND completed_attempts = ? AND updated_at = ?
+                    """, successor.completedAttempts(), writeAttempts(successor.attempts()),
+                    Timestamp.from(successor.updatedAt()), Timestamp.from(successor.expiresAt()),
+                    successor.stabilityRunId(), successor.tenantId(), successor.environmentId(),
+                    successor.clientRequestId(), successor.requestFingerprint(),
+                    storedProgress.completedAttempts(), Timestamp.from(storedProgress.updatedAt()));
+            if (progressUpdated != 1) {
+                throw conflict(TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
+                        "Suite-stability progress lost its exact checkpoint revision");
+            }
+
+            Instant leaseExpiresAt = observedAt.plus(boundedLease);
+            int leaseUpdated = jdbc.update("""
+                    UPDATE rg_test_suite_stability_execution_leases
+                    SET lease_expires_at = ?, updated_at = ?
+                    WHERE stability_run_id = ? AND tenant_id = ? AND environment_id = ?
+                      AND client_request_id = ? AND request_fingerprint = ?
+                      AND owner_id = ? AND lease_epoch = ? AND lease_expires_at = ?
+                    """, Timestamp.from(leaseExpiresAt), Timestamp.from(observedAt),
+                    storedLease.stabilityRunId(), storedLease.tenantId(),
+                    storedLease.environmentId(), storedLease.clientRequestId(),
+                    storedLease.requestFingerprint(), storedLease.ownerId(), storedLease.epoch(),
+                    Timestamp.from(storedLease.expiresAt()));
+            if (leaseUpdated != 1) {
+                throw conflict(TestSuiteStabilityRunConflictException.Reason.LEASE_LOST,
+                        "Suite-stability progress checkpoint lost its execution fence");
+            }
+            TestSuiteStabilityExecutionLease renewed = new TestSuiteStabilityExecutionLease(
+                    storedLease.stabilityRunId(), storedLease.tenantId(),
+                    storedLease.environmentId(), storedLease.clientRequestId(),
+                    storedLease.requestFingerprint(), storedLease.ownerId(), storedLease.epoch(),
+                    leaseExpiresAt);
+            return new TestSuiteStabilityProgressCheckpoint(renewed, successor);
+        });
+        if (checkpoint == null) {
+            throw new IllegalStateException("Stability progress checkpoint returned no result");
+        }
+        return checkpoint;
+    }
+
+    @Override
     public boolean release(TestSuiteStabilityExecutionLease lease) {
         Objects.requireNonNull(lease, "lease");
         Boolean released = mutations.execute(status -> {
@@ -293,7 +423,27 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 throw conflict(TestSuiteStabilityRunConflictException.Reason.LEASE_LOST,
                         "Suite-stability terminal publication requires a live exact lease");
             }
+            TestSuiteStabilityExecutionProgress progress = progressByRunId(
+                    lease.tenantId(), lease.environmentId(), lease.stabilityRunId())
+                    .orElseThrow(() -> conflict(
+                            TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
+                            "Suite-stability terminal publication requires durable progress"));
+            requireProgressMatchesLease(progress, lease);
+            requireTerminalMatchesProgress(record, progress);
             insertTerminal(record);
+            int progressDeleted = jdbc.update("""
+                    DELETE FROM rg_test_suite_stability_progress
+                    WHERE stability_run_id = ? AND tenant_id = ? AND environment_id = ?
+                      AND client_request_id = ? AND request_fingerprint = ?
+                      AND completed_attempts = ? AND updated_at = ?
+                    """, progress.stabilityRunId(), progress.tenantId(),
+                    progress.environmentId(), progress.clientRequestId(),
+                    progress.requestFingerprint(), progress.completedAttempts(),
+                    Timestamp.from(progress.updatedAt()));
+            if (progressDeleted != 1) {
+                throw new IllegalStateException(
+                        "Stability terminal insert did not consume exact durable progress");
+            }
             int deleted = jdbc.update("""
                     DELETE FROM rg_test_suite_stability_execution_leases
                     WHERE stability_run_id = ? AND tenant_id = ? AND environment_id = ?
@@ -350,6 +500,28 @@ public final class DatabaseTestSuiteStabilityRunRepository
     }
 
     @Override
+    public Optional<TestSuiteStabilityProgressSnapshot> findProgress(
+            String tenantId,
+            String environmentId,
+            String stabilityRunId) {
+        Optional<TestSuiteStabilityProgressSnapshot> snapshot = mutations.execute(status -> {
+            Instant observedAt = currentTime();
+            Optional<TestSuiteStabilityExecutionProgress> progress = progressByRunId(
+                    tenantId, environmentId, stabilityRunId)
+                    .filter(value -> value.expiresAt().isAfter(observedAt));
+            if (progress.isEmpty()) {
+                return Optional.empty();
+            }
+            boolean liveOwner = leaseByRunId(tenantId, environmentId, stabilityRunId)
+                    .filter(value -> value.expiresAt().isAfter(observedAt))
+                    .isPresent();
+            return Optional.of(new TestSuiteStabilityProgressSnapshot(
+                    progress.get(), liveOwner, observedAt));
+        });
+        return snapshot == null ? Optional.empty() : snapshot;
+    }
+
+    @Override
     public Optional<TestSuiteStabilityRunRecord> find(
             String tenantId,
             String environmentId,
@@ -387,6 +559,97 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 SELECT record_json FROM rg_test_suite_stability_records
                 WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
                 """, tenantId, environmentId, clientRequestId);
+    }
+
+    private TestSuiteStabilityExecutionProgress createProgress(
+            TestSuiteStabilityLeaseRequest request,
+            Instant observedAt) {
+        TestSuiteStabilityExecutionProgress progress =
+                new TestSuiteStabilityExecutionProgress(
+                        request.stabilityRunId(), request.tenantId(), request.environmentId(),
+                        request.clientRequestId(), request.requestFingerprint(), request.suiteRef(),
+                        request.classification(), request.plannedAttempts(), List.of(),
+                        observedAt, observedAt,
+                        observedAt.plus(request.progressRetention()));
+        try {
+            int inserted = jdbc.update("""
+                    INSERT INTO rg_test_suite_stability_progress (
+                        stability_run_id, tenant_id, environment_id, client_request_id,
+                        request_fingerprint, suite_id, suite_revision, suite_fingerprint,
+                        classification, planned_attempts, completed_attempts, attempts_json,
+                        created_at, updated_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, progress.stabilityRunId(), progress.tenantId(), progress.environmentId(),
+                    progress.clientRequestId(), progress.requestFingerprint(),
+                    progress.suiteRef().suiteId(), progress.suiteRef().revision(),
+                    progress.suiteRef().fingerprint(), progress.classification(),
+                    progress.plannedAttempts(),
+                    progress.completedAttempts(), writeAttempts(progress.attempts()),
+                    Timestamp.from(progress.createdAt()), Timestamp.from(progress.updatedAt()),
+                    Timestamp.from(progress.expiresAt()));
+            if (inserted != 1) {
+                throw new IllegalStateException(
+                        "Stability progress insert did not create exactly one row");
+            }
+        } catch (DuplicateKeyException collision) {
+            throw conflict(TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT,
+                    "Deterministic stability progress identity already belongs to another row");
+        }
+        return progress;
+    }
+
+    private Optional<TestSuiteStabilityExecutionProgress> progressByClientRequestId(
+            String tenantId,
+            String environmentId,
+            String clientRequestId) {
+        return progress("""
+                SELECT stability_run_id, tenant_id, environment_id, client_request_id,
+                       request_fingerprint, suite_id, suite_revision, suite_fingerprint,
+                       classification, planned_attempts, completed_attempts, attempts_json,
+                       created_at, updated_at, expires_at
+                FROM rg_test_suite_stability_progress
+                WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
+                """, tenantId, environmentId, clientRequestId);
+    }
+
+    private Optional<TestSuiteStabilityExecutionProgress> progressByRunId(
+            String tenantId,
+            String environmentId,
+            String stabilityRunId) {
+        return progress("""
+                SELECT stability_run_id, tenant_id, environment_id, client_request_id,
+                       request_fingerprint, suite_id, suite_revision, suite_fingerprint,
+                       classification, planned_attempts, completed_attempts, attempts_json,
+                       created_at, updated_at, expires_at
+                FROM rg_test_suite_stability_progress
+                WHERE tenant_id = ? AND environment_id = ? AND stability_run_id = ?
+                """, tenantId, environmentId, stabilityRunId);
+    }
+
+    private Optional<TestSuiteStabilityExecutionProgress> progress(
+            String sql,
+            Object... arguments) {
+        List<TestSuiteStabilityExecutionProgress> records = jdbc.query(sql, (rs, row) -> {
+            List<TestSuiteStabilityExecutionProgress.AttemptReference> attempts =
+                    readAttempts(rs.getString("attempts_json"));
+            int completed = rs.getInt("completed_attempts");
+            if (completed != attempts.size()) {
+                throw new IllegalStateException(
+                        "Stored stability progress count contradicts its attempt journal");
+            }
+            return new TestSuiteStabilityExecutionProgress(
+                    rs.getString("stability_run_id"), rs.getString("tenant_id"),
+                    rs.getString("environment_id"), rs.getString("client_request_id"),
+                    rs.getString("request_fingerprint"),
+                    new com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest.SuiteRef(
+                            rs.getString("suite_id"), rs.getLong("suite_revision"),
+                            rs.getString("suite_fingerprint")),
+                    rs.getString("classification"), rs.getInt("planned_attempts"), attempts,
+                    rs.getTimestamp("created_at").toInstant(),
+                    rs.getTimestamp("updated_at").toInstant(),
+                    rs.getTimestamp("expires_at").toInstant());
+        }, arguments);
+        return records.stream().findFirst();
     }
 
     private Optional<TestSuiteStabilityExecutionLease> leaseByClientRequestId(
@@ -482,6 +745,42 @@ public final class DatabaseTestSuiteStabilityRunRepository
         }
     }
 
+    private static void requireProgressMatchesLease(
+            TestSuiteStabilityExecutionProgress progress,
+            TestSuiteStabilityExecutionLease lease) {
+        if (!progress.stabilityRunId().equals(lease.stabilityRunId())
+                || !progress.tenantId().equals(lease.tenantId())
+                || !progress.environmentId().equals(lease.environmentId())
+                || !progress.clientRequestId().equals(lease.clientRequestId())
+                || !progress.requestFingerprint().equals(lease.requestFingerprint())) {
+            throw conflict(TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
+                    "Suite-stability progress does not match its execution lease");
+        }
+    }
+
+    private static void requireTerminalMatchesProgress(
+            TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityExecutionProgress progress) {
+        List<TestSuiteStabilityExecutionProgress.AttemptReference> terminalAttempts;
+        try {
+            terminalAttempts = record.evidence().attempts().stream()
+                    .map(value -> new TestSuiteStabilityExecutionProgress.AttemptReference(
+                            value.attempt(), value.suiteRunId(),
+                            value.aggregateEvidenceFingerprint()))
+                    .toList();
+        } catch (IllegalArgumentException incomplete) {
+            throw conflict(TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
+                    "Terminal stability evidence has no complete durable source closure");
+        }
+        if (!record.evidence().suiteRef().equals(progress.suiteRef())
+                || record.evidence().requestedAttempts() != progress.plannedAttempts()
+                || progress.completedAttempts() != progress.plannedAttempts()
+                || !terminalAttempts.equals(progress.attempts())) {
+            throw conflict(TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
+                    "Terminal stability evidence contradicts durable parent progress");
+        }
+    }
+
     private static void requireSameTerminalIntent(
             TestSuiteStabilityRunRecord record,
             TestSuiteStabilityLeaseRequest request) {
@@ -494,6 +793,19 @@ public final class DatabaseTestSuiteStabilityRunRepository
             TestSuiteStabilityLeaseRequest request) {
         requireCompleteCoordinates(lease.stabilityRunId(), lease.requestFingerprint(),
                 request.stabilityRunId(), request.requestFingerprint());
+    }
+
+    private static void requireSameProgressIntent(
+            TestSuiteStabilityExecutionProgress progress,
+            TestSuiteStabilityLeaseRequest request) {
+        requireCompleteCoordinates(progress.stabilityRunId(), progress.requestFingerprint(),
+                request.stabilityRunId(), request.requestFingerprint());
+        if (!progress.suiteRef().equals(request.suiteRef())
+                || !progress.classification().equals(request.classification())
+                || progress.plannedAttempts() != request.plannedAttempts()) {
+            throw conflict(TestSuiteStabilityRunConflictException.Reason.IDEMPOTENCY_CONFLICT,
+                    "Suite-stability progress represents a different immutable execution plan");
+        }
     }
 
     private static void requireCompleteCoordinates(
@@ -561,6 +873,17 @@ public final class DatabaseTestSuiteStabilityRunRepository
         return value;
     }
 
+    private static Duration boundedProgressRetention(Duration value) {
+        if (value == null
+                || value.compareTo(TestSuiteStabilityLeaseRequest.MINIMUM_PROGRESS_RETENTION) < 0
+                || value.compareTo(TestSuiteStabilityLeaseRequest.MAXIMUM_PROGRESS_RETENTION) > 0
+                || value.toMillis() % 1_000 != 0) {
+            throw new IllegalArgumentException(
+                    "Stability progress retention is outside bounded whole-second limits");
+        }
+        return value;
+    }
+
     private static long retryAfterSeconds(Instant expiresAt, Instant observedAt) {
         long millis = Duration.between(observedAt, expiresAt).toMillis();
         return Math.max(1, Math.min(3_600, Math.floorDiv(millis + 999, 1_000)));
@@ -589,6 +912,25 @@ public final class DatabaseTestSuiteStabilityRunRepository
             return objectMapper.writeValueAsString(record);
         } catch (JsonProcessingException failure) {
             throw new IllegalStateException("Cannot serialize stability analysis", failure);
+        }
+    }
+
+    private String writeAttempts(
+            List<TestSuiteStabilityExecutionProgress.AttemptReference> attempts) {
+        try {
+            return objectMapper.writeValueAsString(attempts);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot serialize suite-stability progress journal", failure);
+        }
+    }
+
+    private List<TestSuiteStabilityExecutionProgress.AttemptReference> readAttempts(String value) {
+        try {
+            return objectMapper.readValue(value, ATTEMPT_REFERENCES);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Stored suite-stability progress journal is corrupt", failure);
         }
     }
 

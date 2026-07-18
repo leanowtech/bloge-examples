@@ -5,12 +5,14 @@ package com.leanowtech.bloge.gateway.testing.api;
  *
  * @param state acquired, already-running, or already-completed state
  * @param lease exact fence only when acquired
+ * @param progress retained parent journal only when acquired
  * @param terminal retained signed result only when completed
  * @param retryAfterSeconds bounded database-clock delay only when another owner is active
  */
 public record TestSuiteStabilityLeaseClaim(
         State state,
         TestSuiteStabilityExecutionLease lease,
+        TestSuiteStabilityExecutionProgress progress,
         TestSuiteStabilityRunRecord terminal,
         long retryAfterSeconds
 ) {
@@ -27,11 +29,11 @@ public record TestSuiteStabilityLeaseClaim(
     /** Enforces one unambiguous payload-free shape per claim state. */
     public TestSuiteStabilityLeaseClaim {
         if (state == null
-                || state == State.ACQUIRED && (lease == null || terminal != null
+                || state == State.ACQUIRED && (lease == null || progress == null || terminal != null
                 || retryAfterSeconds != 0)
-                || state == State.IN_PROGRESS && (lease != null || terminal != null
+                || state == State.IN_PROGRESS && (lease != null || progress != null || terminal != null
                 || retryAfterSeconds < 1 || retryAfterSeconds > 3_600)
-                || state == State.COMPLETED && (lease != null || terminal == null
+                || state == State.COMPLETED && (lease != null || progress != null || terminal == null
                 || retryAfterSeconds != 0)) {
             throw new IllegalArgumentException("Suite-stability lease claim shape is invalid");
         }
@@ -39,11 +41,14 @@ public record TestSuiteStabilityLeaseClaim(
 
     /**
      * @param lease acquired exact fence
+     * @param progress initialized or resumed durable parent journal
      * @return acquired claim
      */
     public static TestSuiteStabilityLeaseClaim acquired(
-            TestSuiteStabilityExecutionLease lease) {
-        return new TestSuiteStabilityLeaseClaim(State.ACQUIRED, lease, null, 0);
+            TestSuiteStabilityExecutionLease lease,
+            TestSuiteStabilityExecutionProgress progress) {
+        return new TestSuiteStabilityLeaseClaim(
+                State.ACQUIRED, lease, progress, null, 0);
     }
 
     /**
@@ -52,7 +57,7 @@ public record TestSuiteStabilityLeaseClaim(
      */
     public static TestSuiteStabilityLeaseClaim inProgress(long retryAfterSeconds) {
         return new TestSuiteStabilityLeaseClaim(
-                State.IN_PROGRESS, null, null, retryAfterSeconds);
+                State.IN_PROGRESS, null, null, null, retryAfterSeconds);
     }
 
     /**
@@ -61,6 +66,7 @@ public record TestSuiteStabilityLeaseClaim(
      */
     public static TestSuiteStabilityLeaseClaim completed(
             TestSuiteStabilityRunRecord terminal) {
-        return new TestSuiteStabilityLeaseClaim(State.COMPLETED, null, terminal, 0);
+        return new TestSuiteStabilityLeaseClaim(
+                State.COMPLETED, null, null, terminal, 0);
     }
 }

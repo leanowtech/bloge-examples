@@ -259,6 +259,29 @@ priority/aging/fairness、跨 worker attempt 分发、autoscaling、hard cancell
 执行 2494 tests，0 failures、0 errors、2 个既有条件跳过，34 个配置的真实浏览器测试完成，并成功生成
 Spring Boot 可执行 JAR。
 
+第五十二增量把第五十一增量的 single-owner fence 深化为数据库权威的 resumable parent state。首次 claim
+原子创建 empty progress + lease，并冻结 exact suite、classification 和 planned horizon；每个 source suite
+terminal/child closure 验证后，以 payload-free source reference 连续 append，append 与 lease renewal 同事务，
+未提交 parent checkpoint 不得开始下一 attempt。过期接管保留 journal 并推进 epoch；successor 不相信旧进程
+内存，而是 refetch 每个 source、回绑 aggregate fingerprint、验签并重建 child closure，随后只调度剩余
+attempt。终态发布要求 journal 已满且逐项等于 signed evidence source closure，并原子插入 terminal、删除
+progress、消费 lease。由此关闭 checkpoint 后 crash 重跑前缀、stale owner append/publish 与 partial-terminal
+窗口。
+
+新的 `bloge.testSuiteStabilityProgress.v1` 以同 scope/purpose/clearance 提供
+`RUNNING/RECOVERABLE/COMPLETED` 运维投影；owner、epoch、source closure 和 payload 均故意不公开。
+capability probe、strict Schema、HTTP authority 与独立 test-kit typed client 同步发布。实现、时序图、
+transaction/crash/failure matrix 与负空间见
+[Stage 5 suite-stability durable parent progress verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md)。
+根治顺序仍保持“先建立 durable state authority，再做调度”：当前 endpoint 仍同步占用请求线程，尚无 SQL
+queue、tenant fairness/priority/aging、deadline/cancel、backlog SLO、physical retention purge、非 H2 与
+soak/chaos/DR 认证。
+本增量服务端聚焦门禁执行 43 tests，独立 test-kit 聚焦门禁执行 48 tests，均为 0 failures、0 errors、
+0 skips；完整 Resource Gateway `clean verify` 执行 2503 tests，0 failures、0 errors、2 个既有条件跳过，
+其中 34 个配置的真实浏览器测试完成并成功生成 Spring Boot 可执行 JAR。独立 test-kit
+`clean verify` 执行 152 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR
+与严格 public JavaDoc 门禁。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制

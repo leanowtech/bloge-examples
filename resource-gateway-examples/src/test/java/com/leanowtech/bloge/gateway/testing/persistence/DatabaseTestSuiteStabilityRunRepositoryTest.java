@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionLease;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionProgress;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
@@ -52,7 +53,8 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     void signedTerminalAnalysisRoundTripsOnlyInsideItsScope() {
         TestSuiteStabilityRunRecord record = record("tenant-a", "test",
                 "stability-request", Instant.now().plusSeconds(30));
-        TestSuiteStabilityExecutionLease lease = acquired(record, "owner-a");
+        TestSuiteStabilityExecutionLease lease = checkpointed(
+                record, acquired(record, "owner-a"));
 
         assertThat(repository.complete(record, lease)).isEqualTo(record);
         assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
@@ -61,6 +63,111 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 "tenant-a", "test", "stability-request")).contains(record);
         assertThat(repository.find("tenant-b", "test", record.stabilityRunId())).isEmpty();
         assertThat(repository.find("tenant-a", "staging", record.stabilityRunId())).isEmpty();
+        assertThat(repository.findProgress("tenant-a", "test", record.stabilityRunId()))
+                .isEmpty();
+    }
+
+    @Test
+    void claimCreatesAnEmptyScopedProgressJournalWithALiveOwner() {
+        TestSuiteStabilityRunRecord record = record("tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+
+        TestSuiteStabilityLeaseClaim claim = repository.claim(
+                leaseRequest(record, "owner-a"));
+
+        assertThat(claim.state()).isEqualTo(TestSuiteStabilityLeaseClaim.State.ACQUIRED);
+        assertThat(claim.progress().stabilityRunId()).isEqualTo(record.stabilityRunId());
+        assertThat(claim.progress().suiteRef()).isEqualTo(record.evidence().suiteRef());
+        assertThat(claim.progress().plannedAttempts())
+                .isEqualTo(record.evidence().requestedAttempts());
+        assertThat(claim.progress().attempts()).isEmpty();
+        assertThat(repository.findProgress("tenant-a", "test", record.stabilityRunId()))
+                .get()
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.liveOwner()).isTrue();
+                    assertThat(snapshot.progress()).isEqualTo(claim.progress());
+                });
+        assertThat(repository.findProgress("tenant-b", "test", record.stabilityRunId()))
+                .isEmpty();
+    }
+
+    @Test
+    void checkpointAppendsOnlyTheNextAttemptAndRenewsTheExactFenceAtomically() {
+        TestSuiteStabilityRunRecord record = record("tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+        TestSuiteStabilityExecutionLease lease = acquired(record, "owner-a");
+        TestSuiteStabilityExecutionProgress.AttemptReference first = reference(record, 0);
+
+        var checkpoint = repository.checkpoint(lease, first,
+                Duration.ofSeconds(60), Duration.ofDays(30));
+
+        assertThat(checkpoint.lease().expiresAt()).isAfter(lease.expiresAt());
+        assertThat(checkpoint.progress().attempts()).containsExactly(first);
+        assertThat(repository.findProgress("tenant-a", "test", record.stabilityRunId()))
+                .get().extracting(value -> value.progress().attempts())
+                .isEqualTo(List.of(first));
+
+        assertThatThrownBy(() -> repository.checkpoint(checkpoint.lease(), reference(record, 2),
+                Duration.ofSeconds(30), Duration.ofDays(30)))
+                .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT));
+        assertThat(repository.findProgress("tenant-a", "test", record.stabilityRunId()))
+                .get().extracting(value -> value.progress().attempts())
+                .isEqualTo(List.of(first));
+        assertThat(repository.renew(checkpoint.lease(), Duration.ofSeconds(30))).isPresent();
+    }
+
+    @Test
+    void takeoverResumesTheDurablePrefixAndFencesTheExpiredOwner() {
+        TestSuiteStabilityRunRecord record = record("tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+        TestSuiteStabilityExecutionLease old = acquired(record, "owner-a");
+        TestSuiteStabilityExecutionLease afterFirst = repository.checkpoint(
+                old, reference(record, 0), Duration.ofSeconds(30), Duration.ofDays(30)).lease();
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_execution_leases
+                SET lease_expires_at = DATEADD('SECOND', -1, CURRENT_TIMESTAMP)
+                WHERE stability_run_id = ?
+                """, old.stabilityRunId());
+
+        TestSuiteStabilityLeaseClaim takeover = repository.claim(
+                leaseRequest(record, "owner-b"));
+
+        assertThat(takeover.state()).isEqualTo(TestSuiteStabilityLeaseClaim.State.ACQUIRED);
+        assertThat(takeover.lease().epoch()).isEqualTo(1);
+        assertThat(takeover.progress().attempts()).containsExactly(reference(record, 0));
+        assertThatThrownBy(() -> repository.checkpoint(
+                afterFirst, reference(record, 1), Duration.ofSeconds(30), Duration.ofDays(30)))
+                .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityRunConflictException.Reason.LEASE_LOST));
+
+        TestSuiteStabilityExecutionLease completeLease = checkpointRemaining(
+                record, takeover.lease(), 1);
+        assertThat(repository.complete(record, completeLease)).isEqualTo(record);
+    }
+
+    @Test
+    void incompleteProgressCannotPublishAndTheTransactionLeavesItRecoverable() {
+        TestSuiteStabilityRunRecord record = record("tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+        TestSuiteStabilityExecutionLease lease = acquired(record, "owner-a");
+        lease = repository.checkpoint(lease, reference(record, 0),
+                Duration.ofSeconds(30), Duration.ofDays(30)).lease();
+        TestSuiteStabilityExecutionLease incomplete = lease;
+
+        assertThatThrownBy(() -> repository.complete(record, incomplete))
+                .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT));
+        assertThat(repository.find("tenant-a", "test", record.stabilityRunId())).isEmpty();
+        assertThat(repository.findProgress("tenant-a", "test", record.stabilityRunId()))
+                .get().satisfies(snapshot -> {
+                    assertThat(snapshot.liveOwner()).isTrue();
+                    assertThat(snapshot.progress().completedAttempts()).isEqualTo(1);
+                });
+        assertThat(repository.renew(incomplete, Duration.ofSeconds(30))).isPresent();
     }
 
     @Test
@@ -70,7 +177,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         TestSuiteStabilityRunRecord record = record(evidence, "tenant-a", "test",
                 "stability-request", Instant.now().plusSeconds(30));
 
-        repository.complete(record, acquired(record, "owner-a"));
+        repository.complete(record, checkpointed(record, acquired(record, "owner-a")));
 
         assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
                 .get().extracting(value -> value.evidence().statisticalAssessment().status())
@@ -81,11 +188,13 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     void scopedIdempotencyKeyCannotBeReboundAfterTerminalPublication() {
         TestSuiteStabilityRunRecord record = record("tenant-a", "test",
                 "stability-request", Instant.now().plusSeconds(30));
-        repository.complete(record, acquired(record, "owner-a"));
+        repository.complete(record, checkpointed(record, acquired(record, "owner-a")));
         TestSuiteStabilityLeaseRequest changed = new TestSuiteStabilityLeaseRequest(
                 record.stabilityRunId(), record.tenantId(), record.environmentId(),
                 record.clientRequestId(), TestSuiteStabilityProtocolFixtures.fingerprint('8'),
-                "owner-b", Duration.ofSeconds(30));
+                record.evidence().suiteRef(), record.classification(),
+                record.evidence().requestedAttempts(), "owner-b", Duration.ofSeconds(30),
+                Duration.ofDays(30));
 
         assertThatThrownBy(() -> repository.claim(changed))
                 .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
@@ -154,7 +263,8 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityRunConflictException.Reason.LEASE_LOST));
         assertThat(repository.find("tenant-a", "test", record.stabilityRunId())).isEmpty();
-        assertThat(repository.complete(record, takeover.lease())).isEqualTo(record);
+        assertThat(repository.complete(record, checkpointed(record, takeover.lease())))
+                .isEqualTo(record);
     }
 
     @Test
@@ -215,7 +325,42 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
             String owner) {
         return new TestSuiteStabilityLeaseRequest(record.stabilityRunId(), record.tenantId(),
                 record.environmentId(), record.clientRequestId(), record.requestFingerprint(),
-                owner, Duration.ofSeconds(30));
+                record.evidence().suiteRef(), record.classification(),
+                record.evidence().requestedAttempts(), owner, Duration.ofSeconds(30),
+                Duration.ofDays(30));
+    }
+
+    private TestSuiteStabilityExecutionLease checkpointed(
+            TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityExecutionLease lease) {
+        return checkpointRemaining(record, lease, 0);
+    }
+
+    private TestSuiteStabilityExecutionLease checkpointRemaining(
+            TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityExecutionLease lease,
+            int completedAttempts) {
+        TestSuiteStabilityExecutionLease current = lease;
+        for (TestSuiteStabilityEvidence.AttemptResult attempt
+                : record.evidence().attempts().subList(
+                completedAttempts, record.evidence().attempts().size())) {
+            current = repository.checkpoint(current,
+                    new TestSuiteStabilityExecutionProgress.AttemptReference(
+                            attempt.attempt(), attempt.suiteRunId(),
+                            attempt.aggregateEvidenceFingerprint()),
+                    Duration.ofSeconds(30), Duration.ofDays(30)).lease();
+        }
+        return current;
+    }
+
+    private static TestSuiteStabilityExecutionProgress.AttemptReference reference(
+            TestSuiteStabilityRunRecord record,
+            int zeroBasedIndex) {
+        TestSuiteStabilityEvidence.AttemptResult attempt =
+                record.evidence().attempts().get(zeroBasedIndex);
+        return new TestSuiteStabilityExecutionProgress.AttemptReference(
+                attempt.attempt(), attempt.suiteRunId(),
+                attempt.aggregateEvidenceFingerprint());
     }
 
     private TestSuiteStabilityRunRecord record(

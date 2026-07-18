@@ -254,6 +254,29 @@ capability、配置、时序图和反例见
 执行 2494 tests，0 failures、0 errors、2 个既有条件跳过，34 个配置的真实浏览器测试完成，并成功生成
 Spring Boot 可执行 JAR。
 
+第五十二增量根治 stability owner 已可接管、但 parent prefix 仍只存在于进程内存的问题。新的
+`rg_test_suite_stability_progress` 在首次 claim 时冻结 scope、request fingerprint、exact suite revision、
+classification 与 planned horizon；每个已验证 source suite run 只以 `(attempt, suiteRunId,
+aggregateEvidenceFingerprint)` 进入 payload-free contiguous journal。append 与 exact lease renewal 在同一
+数据库事务提交，只有提交后才允许调度下一 attempt。crash 后 successor claim 取得原 prefix，逐条 refetch
+并验证 source attestation 与 child closure，只运行剩余 horizon；完整 journal、terminal source closure、
+terminal insert、progress delete 与 lease consume 同事务，旧 owner、缺口、重复 source 或矛盾终态均 fail
+closed。
+
+公开 `bloge.testSuiteStabilityProgress.v1` 与
+`GET /api/testing/stability-executions/{stabilityRunId}/progress` 只投影 `RUNNING/RECOVERABLE/COMPLETED`、
+exact suite identity、planned/completed counts 和时间，不泄露 owner、epoch、source ids、fixture/context 或
+payload；classification clearance 与 terminal read 相同。capability、权威 Schema 与独立 test-kit typed
+client 同步闭合。设计、crash-window 矩阵、corporate draw.io 时序图与反例见
+[Stage 5 suite-stability durable parent progress verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md)。
+本增量仍是同步 HTTP-bound owner execution；SQL 异步队列、tenant fairness/priority/aging、deadline/cancel、
+backlog SLO/telemetry、物理 retention purge、非 H2/soak/chaos/DR 认证仍是下一阶段。
+本增量服务端聚焦门禁执行 43 tests，独立 test-kit 聚焦门禁执行 48 tests，均为 0 failures、0 errors、
+0 skips；完整 Resource Gateway `clean verify` 执行 2503 tests，0 failures、0 errors、2 个既有条件跳过，
+其中 34 个配置的真实浏览器测试完成，并成功生成 Spring Boot 可执行 JAR。独立 test-kit
+`clean verify` 执行 152 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR
+与严格 public JavaDoc 门禁。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

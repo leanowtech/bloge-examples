@@ -12,6 +12,8 @@ public final class TestSuiteStabilityRunConflictException extends RuntimeExcepti
         IDEMPOTENCY_RETIRED,
         /** The caller no longer owns the exact database-clock-live execution lease. */
         LEASE_LOST,
+        /** Durable parent progress is missing, expired, non-contiguous, or contradicts evidence. */
+        PROGRESS_CONFLICT,
         /** A terminal record already occupies the deterministic stability identity. */
         TERMINAL_CONFLICT
     }

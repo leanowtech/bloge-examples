@@ -291,6 +291,9 @@ public record IntegrationCapabilities(
                             .SCHEMA_VERSION_V2,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse
                             .SCHEMA_VERSION));
+            objects.put("testSuiteStabilityProgress", List.of(
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressResponse
+                            .SCHEMA_VERSION));
             objects.put("testSuiteExecutionResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse.SCHEMA_VERSION,
@@ -541,6 +544,8 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled && signer.available());
         features.put("crossReplicaSuiteStabilityExecutionLease",
                 testExecutionEndpointEnabled && signer.available());
+        features.put("durableSuiteStabilityParentProgress",
+                testExecutionEndpointEnabled && signer.available());
         features.put("propertySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteExecution", testExecutionEndpointEnabled);
         features.put("schemaBoundarySuiteMaterialization", testExecutionEndpointEnabled);
@@ -739,6 +744,8 @@ public record IntegrationCapabilities(
                     "/api/testing/suites/{suiteId}/stability-executions"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/stability-executions/{stabilityRunId}"));
+            endpoints.add(new Endpoint("GET",
+                    "/api/testing/stability-executions/{stabilityRunId}/progress"));
             endpoints.add(new Endpoint("GET", "/api/testing/suite-executions/{suiteRunId}"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/suite-executions/{suiteRunId}/evidence-bundle"));

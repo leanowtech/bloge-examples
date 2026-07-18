@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -77,14 +78,49 @@ class TestSuiteStabilityLeaseCoordinatorTest {
                 TestSuiteStabilityLeaseCoordinator.passive(
                         repository, Duration.ofSeconds(30));
 
-        TestSuiteStabilityLeaseRequest first = coordinator.request(
-                runId(), "tenant-a", "test", "request-a", fingerprint('a'));
-        TestSuiteStabilityLeaseRequest second = coordinator.request(
-                runId(), "tenant-a", "test", "request-a", fingerprint('a'));
+        TestSuiteStabilityLeaseRequest first = request(coordinator);
+        TestSuiteStabilityLeaseRequest second = request(coordinator);
 
         assertThat(first.ownerId()).isNotEqualTo(second.ownerId());
         assertThat(first.leaseDuration()).isEqualTo(Duration.ofSeconds(30));
         assertThat(second.leaseDuration()).isEqualTo(Duration.ofSeconds(30));
+        assertThat(first.progressRetention()).isEqualTo(Duration.ofDays(30));
+        assertThat(first.plannedAttempts()).isEqualTo(3);
+    }
+
+    @Test
+    void progressCheckpointAtomicallyAdvancesTheJournalAndTheGuardFence() {
+        TestSuiteStabilityRunRepository repository = mock(TestSuiteStabilityRunRepository.class);
+        Instant now = Instant.now();
+        TestSuiteStabilityExecutionLease initial = lease(
+                "owner-a", 0, now.plusSeconds(30));
+        TestSuiteStabilityExecutionLease renewed = lease(
+                "owner-a", 0, now.plusSeconds(60));
+        TestSuiteStabilityExecutionProgress progress = progress(now);
+        TestSuiteStabilityExecutionProgress.AttemptReference attempt =
+                new TestSuiteStabilityExecutionProgress.AttemptReference(
+                        1, "suite-run-1", fingerprint('c'));
+        TestSuiteStabilityExecutionProgress successor = progress.append(
+                attempt, now.plusSeconds(1), now.plus(Duration.ofDays(30)));
+        when(repository.checkpoint(initial, attempt, Duration.ofSeconds(30),
+                Duration.ofDays(30))).thenReturn(
+                new TestSuiteStabilityProgressCheckpoint(renewed, successor));
+        when(repository.renew(renewed, Duration.ofSeconds(30)))
+                .thenReturn(Optional.of(renewed));
+        TestSuiteStabilityLeaseCoordinator coordinator =
+                TestSuiteStabilityLeaseCoordinator.passive(
+                        repository, Duration.ofSeconds(30));
+
+        try (TestSuiteStabilityLeaseCoordinator.LeaseGuard guard =
+                     coordinator.monitor(initial)) {
+            assertThat(guard.checkpoint(attempt, Duration.ofDays(30)))
+                    .isEqualTo(successor);
+            assertThat(guard.checkpoint()).isEqualTo(renewed);
+        }
+
+        verify(repository).checkpoint(initial, attempt, Duration.ofSeconds(30),
+                Duration.ofDays(30));
+        verify(repository).renew(renewed, Duration.ofSeconds(30));
     }
 
     @Test
@@ -104,7 +140,8 @@ class TestSuiteStabilityLeaseCoordinatorTest {
         assertThatThrownBy(() -> coordinator.monitor(initial))
                 .isInstanceOf(TestSuiteStabilityLeaseCoordinator.LeaseLostException.class);
         assertThatThrownBy(() -> coordinator.request(
-                runId(), "tenant-a", "test", "request-a", fingerprint('a')))
+                runId(), "tenant-a", "test", "request-a", fingerprint('a'), suiteRef(),
+                "INTERNAL", 3, Duration.ofDays(30)))
                 .isInstanceOf(TestSuiteStabilityLeaseCoordinator.LeaseLostException.class);
         verify(repository).release(initial);
     }
@@ -115,6 +152,22 @@ class TestSuiteStabilityLeaseCoordinatorTest {
             Instant expiresAt) {
         return new TestSuiteStabilityExecutionLease(runId(), "tenant-a", "test", "request-a",
                 fingerprint('a'), owner, epoch, expiresAt);
+    }
+
+    private static TestSuiteStabilityLeaseRequest request(
+            TestSuiteStabilityLeaseCoordinator coordinator) {
+        return coordinator.request(runId(), "tenant-a", "test", "request-a",
+                fingerprint('a'), suiteRef(), "INTERNAL", 3, Duration.ofDays(30));
+    }
+
+    private static TestSuiteStabilityExecutionProgress progress(Instant now) {
+        return new TestSuiteStabilityExecutionProgress(runId(), "tenant-a", "test",
+                "request-a", fingerprint('a'), suiteRef(), "INTERNAL", 3, List.of(),
+                now, now, now.plus(Duration.ofDays(30)));
+    }
+
+    private static TestSuiteExecutionRequest.SuiteRef suiteRef() {
+        return new TestSuiteExecutionRequest.SuiteRef("orders-suite", 7, fingerprint('b'));
     }
 
     private static String runId() {

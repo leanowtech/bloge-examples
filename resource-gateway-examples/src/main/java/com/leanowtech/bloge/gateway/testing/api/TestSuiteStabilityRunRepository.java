@@ -4,7 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
-/** Database-authoritative execution fence and terminal store for suite-stability analyses. */
+/** Database-authoritative progress, execution fence, and terminal store for stability analyses. */
 public interface TestSuiteStabilityRunRepository {
     /**
      * Returns persistence-authoritative time for lease and retention decisions.
@@ -34,6 +34,21 @@ public interface TestSuiteStabilityRunRepository {
             TestSuiteStabilityExecutionLease lease, Duration leaseDuration);
 
     /**
+     * Atomically appends the next source attempt, advances progress retention, and renews ownership.
+     *
+     * @param lease caller's latest exact live fence
+     * @param attempt next contiguous verified source reference
+     * @param leaseDuration bounded successor lease duration
+     * @param progressRetention bounded sliding progress retention
+     * @return renewed fence and durable successor journal
+     */
+    TestSuiteStabilityProgressCheckpoint checkpoint(
+            TestSuiteStabilityExecutionLease lease,
+            TestSuiteStabilityExecutionProgress.AttemptReference attempt,
+            Duration leaseDuration,
+            Duration progressRetention);
+
+    /**
      * Releases exact live ownership after a local failure; expiry handles crashes and store outages.
      *
      * @param lease exact owner fence
@@ -42,7 +57,7 @@ public interface TestSuiteStabilityRunRepository {
     boolean release(TestSuiteStabilityExecutionLease lease);
 
     /**
-     * Atomically verifies a live fence, inserts signed terminal evidence, and consumes the lease.
+     * Atomically verifies a full journal/live fence, inserts terminal evidence, and consumes both.
      *
      * @param record complete signed terminal analysis
      * @param lease exact live owner fence
@@ -58,6 +73,17 @@ public interface TestSuiteStabilityRunRepository {
      * @return number of deleted rows
      */
     int purgeExpiredLeases(int limit);
+
+    /**
+     * Resolves one retained progress journal and owner liveness at database time.
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param stabilityRunId deterministic parent identity
+     * @return active or takeover-ready progress snapshot
+     */
+    Optional<TestSuiteStabilityProgressSnapshot> findProgress(
+            String tenantId, String environmentId, String stabilityRunId);
 
     /**
      * Resolves one retained analysis inside the verified scope.
