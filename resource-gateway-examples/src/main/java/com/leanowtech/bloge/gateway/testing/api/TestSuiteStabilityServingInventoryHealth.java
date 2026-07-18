@@ -53,6 +53,14 @@ public final class TestSuiteStabilityServingInventoryHealth implements HealthInd
                     snapshot.witnessSignatureThreshold());
             details.put("durablePublicationFloor",
                     snapshot.durablePublicationFloor());
+            details.put("externallyAnchoredPublicationFloor",
+                    snapshot.externallyAnchoredPublicationFloor());
+            details.put("externallyAnchoredTrustRootFloor",
+                    snapshot.externallyAnchoredTrustRootFloor());
+            details.put("externalInventoryNonEquivocation",
+                    snapshot.externalInventoryNonEquivocation());
+            details.put("byzantineQuorumInventoryNonEquivocation",
+                    snapshot.byzantineQuorumInventoryNonEquivocation());
             return (snapshot.available() ? Health.up() : Health.down())
                     .withDetails(Map.copyOf(details)).build();
         } catch (RuntimeException unavailable) {

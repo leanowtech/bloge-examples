@@ -237,7 +237,18 @@ public final class DynamicTestSuiteStabilityServingInventoryTrustRootAuthority
                 rootSnapshot == null ? 0 : rootSnapshot.witnessSignatureThreshold(),
                 rootSnapshot == null ? 0 : rootSnapshot.activeDeploymentAuthorityCount(),
                 rootSnapshot == null ? 0 : rootSnapshot.activeWitnessAuthorityCount(),
-                true, scheduler != null && !closed);
+                true, floor.externallyAnchored(), floor.byzantineQuorumAnchored(),
+                scheduler != null && !closed);
+    }
+
+    /** @return true only when managed-root ordering is anchored outside the local database */
+    boolean externallyAnchoredFloor() {
+        return floor.externallyAnchored();
+    }
+
+    /** @return true only when managed-root ordering uses an intersecting Byzantine quorum */
+    boolean byzantineQuorumAnchoredFloor() {
+        return floor.byzantineQuorumAnchored();
     }
 
     /** Returns the private managed root generation for exact cohort convergence. */
@@ -657,6 +668,8 @@ public final class DynamicTestSuiteStabilityServingInventoryTrustRootAuthority
             long activeDeploymentAuthorityCount,
             long activeWitnessAuthorityCount,
             boolean durableFloor,
+            boolean externalNonEquivocation,
+            boolean byzantineQuorumNonEquivocation,
             boolean automaticRefresh) {
 
         /** Current aggregate dynamic trust-root snapshot generation. */

@@ -1,11 +1,14 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -104,6 +107,49 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
                 .hasMessageContaining("forbid static runtime keys");
     }
 
+    @Test
+    void externalNonEquivocationIsRequiredExplicitlyAndWrapsBothLocalFloors() {
+        ObjectProvider<TestSuiteStabilityExternalSequenceAnchor> empty = anchorProvider();
+        when(empty.orderedStream()).thenReturn(Stream.empty());
+        assertThatThrownBy(() -> configuration
+                .testSuiteStabilityServingInventoryPublicationFloor(
+                        mock(TestRuntimeDatabase.class), new ObjectMapper(), empty,
+                        "scope-a", false, true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires external serving-inventory non-equivocation");
+
+        TestSuiteStabilityExternalSequenceAnchor anchor =
+                mock(TestSuiteStabilityExternalSequenceAnchor.class);
+        when(anchor.descriptor()).thenReturn(
+                new TestSuiteStabilityExternalSequenceAnchor.Descriptor(
+                        TestSuiteStabilityExternalSequenceAnchor.Descriptor.SCHEMA_VERSION,
+                        true, true, true, true, 4, 3, 1, 4, java.util.Map.of()));
+        ObjectProvider<TestSuiteStabilityExternalSequenceAnchor> configured = anchorProvider();
+        when(configured.orderedStream()).thenAnswer(ignored -> Stream.of(anchor));
+        try (TestRuntimeDatabase database = new TestRuntimeDatabase(
+                new TestRuntimeDatabase.Settings(
+                        "jdbc:h2:mem:external-anchor-config-" + UUID.randomUUID()
+                                + ";DB_CLOSE_DELAY=-1",
+                        "sa", "", 2))) {
+            var publication = configuration
+                    .testSuiteStabilityServingInventoryPublicationFloor(
+                            database, new ObjectMapper().findAndRegisterModules(), configured,
+                            "scope-a", true, true);
+            var roots = configuration.testSuiteStabilityServingInventoryTrustRootFloor(
+                    database, new ObjectMapper().findAndRegisterModules(), configured,
+                    "scope-a", "inventory-roots", true, true);
+
+            assertThat(publication)
+                    .isInstanceOf(
+                            ExternallyAnchoredTestSuiteStabilityServingInventoryPublicationFloor.class);
+            assertThat(roots)
+                    .isInstanceOf(
+                            ExternallyAnchoredTestSuiteStabilityServingInventoryTrustRootFloor.class);
+            assertThat(publication.externallyAnchored()).isTrue();
+            assertThat(roots.externallyAnchored()).isTrue();
+        }
+    }
+
     private TestSuiteStabilityAuthorityCohortPolicy policy(
             ObjectProvider<TestSuiteStabilityServingInventoryAuthority> provider,
             String configuredInstances,
@@ -173,5 +219,10 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
                 mock(ObjectProvider.class);
         when(provider.orderedStream()).thenReturn(Stream.empty());
         return provider;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ObjectProvider<TestSuiteStabilityExternalSequenceAnchor> anchorProvider() {
+        return mock(ObjectProvider.class);
     }
 }

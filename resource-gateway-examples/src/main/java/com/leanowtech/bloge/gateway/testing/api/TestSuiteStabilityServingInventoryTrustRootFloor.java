@@ -19,6 +19,19 @@ public interface TestSuiteStabilityServingInventoryTrustRootFloor {
     boolean durable();
 
     /**
+     * @return true only when every accepted head is first committed outside the rollbackable
+     * Resource Gateway database
+     */
+    default boolean externallyAnchored() {
+        return false;
+    }
+
+    /** @return true only when the external anchor declares an intersecting Byzantine quorum */
+    default boolean byzantineQuorumAnchored() {
+        return false;
+    }
+
+    /**
      * Exact private identity submitted to the durable floor.
      *
      * @param schemaVersion floor-candidate protocol generation

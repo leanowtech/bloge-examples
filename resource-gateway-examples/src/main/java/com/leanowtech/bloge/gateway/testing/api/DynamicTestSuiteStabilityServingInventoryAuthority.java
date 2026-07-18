@@ -385,9 +385,18 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                         Map.entry("witnessSignatureThreshold",
                                 currentWitnessSignatureThreshold()),
                         Map.entry("durablePublicationFloor", true),
+                        Map.entry("externallyAnchoredPublicationFloor",
+                                publicationFloor.externallyAnchored()),
                         Map.entry("managedTrustRootRefresh", managedTrustRoots != null),
                         Map.entry("atomicDualTrustRootPublication",
-                                managedTrustRoots != null)));
+                                managedTrustRoots != null),
+                        Map.entry("externallyAnchoredTrustRootFloor",
+                                managedTrustRoots != null
+                                        && managedTrustRoots.externallyAnchoredFloor()),
+                        Map.entry("externalInventoryNonEquivocation",
+                                externalInventoryNonEquivocation()),
+                        Map.entry("byzantineQuorumInventoryNonEquivocation",
+                                byzantineQuorumInventoryNonEquivocation())));
     }
 
     /**
@@ -408,7 +417,11 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                 observed.refreshSuccessCount(), observed.refreshFailureCount(),
                 observed.lastFailureCode(), settings.refreshInterval().toSeconds(),
                 settings.maximumSnapshotAge().toSeconds(),
-                currentWitnessSignatureThreshold(), true);
+                currentWitnessSignatureThreshold(), true,
+                publicationFloor.externallyAnchored(),
+                managedTrustRoots != null && managedTrustRoots.externallyAnchoredFloor(),
+                externalInventoryNonEquivocation(),
+                byzantineQuorumInventoryNonEquivocation());
     }
 
     /** Stops background refresh and immediately makes the local authority unavailable. */
@@ -955,6 +968,10 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
      * @param maximumSnapshotAgeSeconds hard local freshness fence
      * @param witnessSignatureThreshold configured independent witness threshold
      * @param durablePublicationFloor whether the chain head survives complete fleet restart
+     * @param externallyAnchoredPublicationFloor whether publication ordering is externalized
+     * @param externallyAnchoredTrustRootFloor whether managed-root ordering is externalized
+     * @param externalInventoryNonEquivocation whether every mutable ordering stream is external
+     * @param byzantineQuorumInventoryNonEquivocation whether those streams use intersecting quorums
      */
     public record Snapshot(
             String schemaVersion,
@@ -969,7 +986,11 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
             long refreshIntervalSeconds,
             long maximumSnapshotAgeSeconds,
             int witnessSignatureThreshold,
-            boolean durablePublicationFloor) {
+            boolean durablePublicationFloor,
+            boolean externallyAnchoredPublicationFloor,
+            boolean externallyAnchoredTrustRootFloor,
+            boolean externalInventoryNonEquivocation,
+            boolean byzantineQuorumInventoryNonEquivocation) {
 
         /** Enforces a bounded aggregate-only operational projection. */
         public Snapshot {
@@ -987,6 +1008,17 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                         "Invalid serving-inventory refresh snapshot");
             }
         }
+    }
+
+    private boolean externalInventoryNonEquivocation() {
+        return publicationFloor.externallyAnchored()
+                && (managedTrustRoots == null || managedTrustRoots.externallyAnchoredFloor());
+    }
+
+    private boolean byzantineQuorumInventoryNonEquivocation() {
+        return publicationFloor.byzantineQuorumAnchored()
+                && (managedTrustRoots == null
+                || managedTrustRoots.byzantineQuorumAnchoredFloor());
     }
 
     private static Duration bounded(

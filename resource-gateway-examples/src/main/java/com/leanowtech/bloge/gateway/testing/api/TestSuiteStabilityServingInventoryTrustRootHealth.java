@@ -56,6 +56,9 @@ public final class TestSuiteStabilityServingInventoryTrustRootHealth implements 
             details.put("activeWitnessAuthorityCount",
                     snapshot.activeWitnessAuthorityCount());
             details.put("durableFloor", snapshot.durableFloor());
+            details.put("externalNonEquivocation", snapshot.externalNonEquivocation());
+            details.put("byzantineQuorumNonEquivocation",
+                    snapshot.byzantineQuorumNonEquivocation());
             details.put("automaticRefresh", snapshot.automaticRefresh());
             return (snapshot.available() ? Health.up() : Health.down())
                     .withDetails(Map.copyOf(details)).build();

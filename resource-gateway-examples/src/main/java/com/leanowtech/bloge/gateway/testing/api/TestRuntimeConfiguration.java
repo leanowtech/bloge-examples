@@ -1547,19 +1547,79 @@ public class TestRuntimeConfiguration {
             prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote",
             name = "enabled", havingValue = "true")
     @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityExternalSequenceAnchor testSuiteStabilityExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.trust-domain:}")
+            String trustDomain,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.anchor-set-id:}")
+            String anchorSetId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.signature-threshold:0}")
+            int signatureThreshold,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-faults:0}")
+            int maximumFaults,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.authority-keys-json:[]}")
+            String authorityKeysJson,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.endpoints-json:[]}")
+            String endpointsJson,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.request-timeout-ms:3000}")
+            long requestTimeoutMillis,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.clock-skew-seconds:5}")
+            long clockSkewSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-receipt-lifetime-seconds:15}")
+            long maximumReceiptLifetimeSeconds,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.allow-insecure-loopback:false}")
+            boolean allowInsecureLoopback) {
+        return HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
+                objectMapper, trustDomain, anchorSetId, signatureThreshold, maximumFaults,
+                authorityKeysJson, endpointsJson,
+                new HttpTestSuiteStabilityExternalSequenceAnchor.Settings(
+                        Duration.ofMillis(requestTimeoutMillis),
+                        Duration.ofSeconds(clockSkewSeconds),
+                        Duration.ofSeconds(maximumReceiptLifetimeSeconds),
+                        allowInsecureLoopback));
+    }
+
+    /** Exposes endpoint- and key-free health for the external non-equivocation quorum. */
+    @Bean
+    @ConditionalOnBean(TestSuiteStabilityExternalSequenceAnchor.class)
+    TestSuiteStabilityExternalSequenceAnchorHealth
+            testSuiteStabilityExternalSequenceAnchorHealth(
+            TestSuiteStabilityExternalSequenceAnchor anchor) {
+        return new TestSuiteStabilityExternalSequenceAnchorHealth(anchor);
+    }
+
+    /** Persists and externally anchors the managed dual runtime-key publication. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(
             prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots",
             name = "enabled", havingValue = "true")
     TestSuiteStabilityServingInventoryTrustRootFloor
             testSuiteStabilityServingInventoryTrustRootFloor(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
+            ObjectProvider<TestSuiteStabilityExternalSequenceAnchor> externalAnchors,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
             String scopeId,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.trust-root-set-id:}")
-            String trustRootSetId) {
-        return new DatabaseTestSuiteStabilityServingInventoryTrustRootFloor(
+            String trustRootSetId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.enabled:false}")
+            boolean externalAnchorEnabled,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.required:false}")
+            boolean externalAnchorRequired) {
+        TestSuiteStabilityExternalSequenceAnchor externalAnchor = externalAnchor(
+                externalAnchors, externalAnchorEnabled, externalAnchorRequired);
+        TestSuiteStabilityServingInventoryTrustRootFloor local =
+                new DatabaseTestSuiteStabilityServingInventoryTrustRootFloor(
                 database.jdbc(), objectMapper, scopeId, trustRootSetId,
                 database.transactionManager());
+        return externalAnchor == null ? local
+                : new ExternallyAnchoredTestSuiteStabilityServingInventoryTrustRootFloor(
+                local, externalAnchor);
     }
 
     /** Bootstraps and refreshes one atomic dual-quorum serving-inventory runtime-key set. */
@@ -1665,10 +1725,21 @@ public class TestRuntimeConfiguration {
             testSuiteStabilityServingInventoryPublicationFloor(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
+            ObjectProvider<TestSuiteStabilityExternalSequenceAnchor> externalAnchors,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
-            String scopeId) {
-        return new DatabaseTestSuiteStabilityServingInventoryPublicationFloor(
+            String scopeId,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.enabled:false}")
+            boolean externalAnchorEnabled,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.required:false}")
+            boolean externalAnchorRequired) {
+        TestSuiteStabilityExternalSequenceAnchor externalAnchor = externalAnchor(
+                externalAnchors, externalAnchorEnabled, externalAnchorRequired);
+        TestSuiteStabilityServingInventoryPublicationFloor local =
+                new DatabaseTestSuiteStabilityServingInventoryPublicationFloor(
                 database.jdbc(), objectMapper, scopeId, database.transactionManager());
+        return externalAnchor == null ? local
+                : new ExternallyAnchoredTestSuiteStabilityServingInventoryPublicationFloor(
+                objectMapper, local, externalAnchor);
     }
 
     /** Exposes key-free refresh health for the dynamic witnessed serving-inventory source. */
@@ -1977,5 +2048,32 @@ public class TestRuntimeConfiguration {
         } catch (java.io.IOException invalid) {
             return false;
         }
+    }
+
+    private static TestSuiteStabilityExternalSequenceAnchor externalAnchor(
+            ObjectProvider<TestSuiteStabilityExternalSequenceAnchor> anchors,
+            boolean enabled,
+            boolean required) {
+        if (required && !enabled) {
+            throw new IllegalStateException(
+                    "This profile requires external serving-inventory non-equivocation");
+        }
+        List<TestSuiteStabilityExternalSequenceAnchor> configured =
+                anchors.orderedStream().toList();
+        if ((enabled && configured.size() != 1) || (!enabled && !configured.isEmpty())) {
+            throw new IllegalStateException(
+                    "External serving-inventory non-equivocation requires exactly one anchor");
+        }
+        if (!enabled) {
+            return null;
+        }
+        TestSuiteStabilityExternalSequenceAnchor result = configured.getFirst();
+        TestSuiteStabilityExternalSequenceAnchor.Descriptor descriptor = result.descriptor();
+        if (!descriptor.available() || !descriptor.externallyDurable()
+                || !descriptor.challengeBound()) {
+            throw new IllegalStateException(
+                    "External serving-inventory non-equivocation anchor is unavailable");
+        }
+        return result;
     }
 }
