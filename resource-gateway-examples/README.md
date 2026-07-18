@@ -228,7 +228,23 @@ rollback, fork, partial publication, threshold revocation, or generation disagre
 admission. The root health contributor and cohort descriptor expose only aggregate state and
 boolean protocol facts.
 
-Scope, cohort, inventory/witness trust, managed-root freshness, and lease settings are checked by
+Staging additionally requires both mutable ordering streams to be anchored outside the rollbackable
+Resource Gateway database. Set
+`RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED=true` and configure one
+stable trust domain/set id, public Ed25519 key array, and one HTTPS endpoint plus distinct failure
+domain per notary. The built-in policy uses `3f+1` authorities and a `2f+1` accepted-receipt
+threshold; staging enforces `f>=1`, so the smallest deployment is four independently operated
+notaries with a three-signature quorum. Every request carries a fresh 256-bit challenge and exact
+publication or trust-root sequence head. A valid signed conflict is fatal even when another quorum
+accepts; unavailable or malformed minority responses are tolerated only while the acceptance
+threshold remains. The external compare-and-append commits before the local database floor. Thus an
+external success followed by local failure is safe to retry, while no local generation can become
+visible without an external checkpoint. This closes complete database-backup rollback only under
+the declared `<=f` Byzantine and independent-failure-domain assumptions; deploying, certifying,
+backing up, and monitoring the external notary service remains a deployment responsibility.
+
+Scope, cohort, inventory/witness trust, managed-root freshness, external-anchor quorum/timing, and
+lease settings are checked by
 `scripts/visual-canvas-demo.sh` before staging startup. A deployment may
 instead contribute one custom
 `TestSuiteStabilityJobAuthorizer` with a ready key-free descriptor. There is no allow-all fallback:
@@ -258,7 +274,11 @@ set comes from a currently verified external attestation;
 complete fleet restart. Managed deployments additionally report
 `restartFreeSuiteStabilityServingInventoryKeyRotation` and
 `atomicDualQuorumSuiteStabilityServingInventoryTrustRoots`; convergence requires every member to
-declare the same atomic dual-root protocol. None expose instance ids, cohort ids,
+declare the same atomic dual-root protocol. The stronger
+`externallyAnchoredSuiteStabilityServingInventoryOrdering` and
+`byzantineQuorumSuiteStabilityServingInventoryNonEquivocation` flags are true only when both
+publication and managed-root ordering streams have the corresponding external guarantee. None
+expose instance ids, cohort ids,
 inventory ids, endpoints, key ids, signatures, or trust fingerprints. The private authority request
 excludes credentials, correlation id,
 execution metadata, fixture/context/payload and node output. HTTP denial, redirect, timeout,
@@ -271,8 +291,10 @@ is `UNAVAILABLE`; only a verified signed revocation is definitive. Capacity resp
 [authority cohort verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-authority-cohort-verification.md),
 [signed serving-inventory verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-serving-inventory-verification.md),
 [managed trust-root rotation verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-trust-root-rotation-verification.md),
+[external non-equivocation verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-external-non-equivocation-verification.md),
 [machine-readable serving-inventory Schema](../docs/schemas/resource-gateway-testing/suite-stability-serving-inventory-v1.schema.json),
 [machine-readable managed trust-root publication Schema](../docs/schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json),
+[machine-readable external checkpoint Schema](../docs/schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json),
 and [machine-readable authority Schema](../docs/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json).
 Actuator exposes separate stability-queue, dynamic-authority-trust, and managed inventory-root
 health contributors. The

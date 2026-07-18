@@ -42,12 +42,14 @@ timeout 与 ETag/304，并对 duplicate、unknown、trailing JSON fail closed。
 1. 严格解析并验证 canonical material fingerprint。
 2. 验证本地 binding、有效期、生命周期和双 bootstrap-root quorum。
 3. 验证进程内 sequence/predecessor successor。
-4. 向 `TestSuiteStabilityServingInventoryTrustRootFloor` 提交数据库权威代际。
-5. 只有 floor 成功后才原子替换进程内不可变双 key-set snapshot。
+4. staging 先向外部 compare-and-append quorum 提交 exact root head。
+5. 外部成功后向数据库 `TestSuiteStabilityServingInventoryTrustRootFloor` 提交权威代际。
+6. 只有两层 floor 都成功后才原子替换进程内不可变双 key-set snapshot。
 
 数据库 floor 通过 `(scope_id, trust_root_set_id)` 独立锁行线性化并发后继，使用数据库时钟和
 whole-record fingerprint。rollback、same-sequence fork、gap、broken predecessor、记录腐化和 store
-outage 全部拒绝。相同代际和相同材料可幂等重放。
+outage 全部拒绝。相同代际和相同材料可幂等重放。external-first 顺序使“外部成功、数据库失败”可安全
+重试，并结构性禁止“数据库成功、外部失败”的未锚定代际。
 
 ## 4. 与 serving inventory 的联动
 
@@ -78,13 +80,16 @@ outage 全部拒绝。相同代际和相同材料可幂等重放。
    composition root 在网络 bootstrap 前检查该约束，避免错误配置先产生外部副作用。
 4. root publication 采用严格 Draft 2020-12 JSON Schema；重复、未知和 trailing 属性仍由应用层严格
    parser 拒绝，跨字段 domain/key 独立性、阈值和时间顺序由语义验证器拒绝。
-5. cohort descriptor 升至 v3，并原子声明 `managedInventoryTrustRoots` 与
+5. cohort descriptor 升至 v4，并原子声明 `managedInventoryTrustRoots` 与
    `atomicDualInventoryTrustRootPublication`；任何副本缺少原子能力都不能收敛。
 6. capability 分别公开 `restartFreeSuiteStabilityServingInventoryKeyRotation` 与
    `atomicDualQuorumSuiteStabilityServingInventoryTrustRoots`。Actuator root health 只输出状态、时序、
    计数、阈值和 key 数量，不输出 URI、ETag、root-set id、fingerprint、authority/key id 或密钥材料。
 7. staging preflight 在启动 JVM 前检查 HTTPS、标识符、policy fingerprints、独立根域、阈值、JSON
    array 形状、刷新/timeout/hard-age 关系和 legacy mixed mode。
+8. staging 同时强制 external anchor `f>=1`，publication 与 trust-root 两条可变顺序流必须都先经过
+   `3f+1 / 2f+1` challenge-bound signed notary quorum；完整设计与证明见
+   [外部非等价锚验证](resource-gateway-execution-data-control-plane-stage5-suite-stability-external-non-equivocation-verification.md)。
 
 ## 6. 自动验证
 
@@ -110,11 +115,15 @@ outage 全部拒绝。相同代际和相同材料可幂等重放。
 `clean verify` 执行 2736 tests，0 failures、0 errors、2 个条件浏览器跳过，并成功重打包 Spring Boot
 可执行 JAR。`zsh -n scripts/visual-canvas-demo.sh` 与 `git diff --check` 同时通过。
 
-## 7. 明确未完成
+## 7. 外部依赖与明确未完成
 
-本增量已交付协议、内核和 Resource Gateway 内部的生产接线，但不把外部基础设施包装成已完成能力。
-后续仍需：
+Resource Gateway 侧的数据库备份回退检测客户端、wire contract、法定人数、双 floor external-first
+接线、staging 门禁和 aggregate-only capability/health 已由后续
+[外部非等价锚增量](resource-gateway-execution-data-control-plane-stage5-suite-stability-external-non-equivocation-verification.md)
+闭合。但本仓库不把外部基础设施包装成已完成能力，生产投用仍需：
 
 - bootstrap root 轮换 ceremony、KMS/HSM/mTLS、根签名发布服务 HA。
-- 数据库整库备份回退的外部不可回退锚、transparency/WORM/gossip 与跨域 split-view 检测。
+- 独立 notary 服务部署、WORM/tamper evidence、backup/restore、容量与跨地域 DR 认证。
+- 若监管要求公开可验证历史，再增加 transparency inclusion/consistency proof、gossip 与跨域
+  split-view 检测；当前 federated quorum 不等价于公开 transparency log。
 - PostgreSQL 等非 H2 方言、backup/restore、灾备切换和大规模并发认证。

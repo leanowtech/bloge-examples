@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.env.Environment;
 
 import java.time.Instant;
 import java.util.List;
@@ -148,6 +149,18 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
             assertThat(publication.externallyAnchored()).isTrue();
             assertThat(roots.externallyAnchored()).isTrue();
         }
+    }
+
+    @Test
+    void deploymentFaultPolicyCannotBeDowngradedToSingleNotaryMode() {
+        Environment environment = mock(Environment.class);
+        when(environment.getActiveProfiles()).thenReturn(new String[] {"staging"});
+        assertThatThrownBy(() -> configuration.testSuiteStabilityExternalSequenceAnchor(
+                new ObjectMapper().findAndRegisterModules(),
+                environment, "inventory-transparency", "notary-set-a", 1, 0, 0,
+                "[]", "[]", 3000, 5, 15, false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("does not meet the deployment fault policy");
     }
 
     private TestSuiteStabilityAuthorityCohortPolicy policy(

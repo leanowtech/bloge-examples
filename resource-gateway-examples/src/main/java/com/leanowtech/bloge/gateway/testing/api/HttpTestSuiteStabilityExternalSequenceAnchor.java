@@ -238,6 +238,7 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
                 .firstValue("Content-Type").orElse(""))
                 || !TestSuiteStabilityExternalSequenceCheckpointReceipt.SCHEMA_VERSION.equals(
                 response.headers().firstValue(PROTOCOL_HEADER).orElse(""))) {
+            closeQuietly(response.body());
             throw new CompletionException(new IllegalArgumentException(
                     "External checkpoint response protocol is invalid"));
         }
@@ -264,12 +265,12 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
             TestSuiteStabilityExternalSequenceCheckpointReceipt receipt,
             int status) {
         Instant now = clock.instant();
-        boolean statusMatches = status == 200
+        boolean statusMatches = (status == 200
                 && receipt.decision()
-                == TestSuiteStabilityExternalSequenceCheckpointReceipt.Decision.ACCEPTED
-                || status == 409
+                == TestSuiteStabilityExternalSequenceCheckpointReceipt.Decision.ACCEPTED)
+                || (status == 409
                 && receipt.decision()
-                == TestSuiteStabilityExternalSequenceCheckpointReceipt.Decision.CONFLICT;
+                == TestSuiteStabilityExternalSequenceCheckpointReceipt.Decision.CONFLICT);
         if (!statusMatches || !receipt.fingerprintVerified(objectMapper)
                 || !request.requestFingerprint().equals(receipt.requestFingerprint())
                 || !trustDomain.equals(receipt.trustDomain())
@@ -282,7 +283,9 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
                 || receipt.issuedAt().isBefore(
                 request.requestedAt().minus(settings.clockSkew()))
                 || receipt.issuedAt().isAfter(now.plus(settings.clockSkew()))
+                || !now.isBefore(request.expiresAt())
                 || !now.isBefore(receipt.expiresAt())
+                || receipt.expiresAt().isAfter(request.expiresAt())
                 || Duration.between(receipt.issuedAt(), receipt.expiresAt())
                 .compareTo(settings.maximumReceiptLifetime()) > 0
                 || receipt.decision()
@@ -453,6 +456,17 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
 
     private static HttpClient defaultClient() {
         return HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+    }
+
+    private static void closeQuietly(InputStream input) {
+        if (input == null) {
+            return;
+        }
+        try {
+            input.close();
+        } catch (IOException ignored) {
+            // The bounded protocol failure remains authoritative.
+        }
     }
 
     private static ObjectMapper strict(ObjectMapper source) {

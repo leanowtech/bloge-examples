@@ -172,6 +172,10 @@ class HttpTestSuiteStabilityJobAuthorizerTest {
                         .containsEntry("trustCohortConfigured", true)
                         .containsEntry("trustCohortConverged", false)
                         .containsEntry("trustCohortStatus", "STORE_UNAVAILABLE")
+                        .containsEntry(
+                                "trustCohortExternalInventoryNonEquivocation", false)
+                        .containsEntry(
+                                "trustCohortByzantineQuorumInventoryNonEquivocation", false)
                         .doesNotContainKeys("instanceId", "snapshotFingerprint", "cohortId");
             });
         }

@@ -74,6 +74,45 @@ class TestSuiteStabilityExternalSequenceCheckpointProtocolTest {
                 true, true, true, true, 3, 2, 1, 3, Map.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Invalid external sequence-anchor descriptor");
+        assertThatThrownBy(() -> new TestSuiteStabilityExternalSequenceAnchor.Descriptor(
+                TestSuiteStabilityExternalSequenceAnchor.Descriptor.SCHEMA_VERSION,
+                true, true, true, true, 4, 3, 1, 4,
+                Map.of("endpoint", "https://notary.example")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid external sequence-anchor descriptor");
+        assertThatThrownBy(() -> new TestSuiteStabilityExternalSequenceAnchor.Snapshot(
+                TestSuiteStabilityExternalSequenceAnchor.Snapshot.SCHEMA_VERSION,
+                true, "HEALTHY", NOW, 1, 0, 0, 3, 2, 1, 3))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid external sequence-anchor snapshot");
+    }
+
+    @Test
+    void receiptRejectsMalformedEd25519AndSnapshotsRejectPartialSafetyClaims() {
+        assertThatThrownBy(() -> new TestSuiteStabilityExternalSequenceCheckpointReceipt(
+                TestSuiteStabilityExternalSequenceCheckpointReceipt.SCHEMA_VERSION,
+                SHA_A, SHA_A, "inventory-transparency", "notary-set-a",
+                "notary-a", "region-a", "key-a",
+                TestSuiteStabilityExternalSequenceCheckpointReceipt.Decision.ACCEPTED,
+                1, SHA_A, 1, SHA_A, NOW, NOW.plusSeconds(10), "Ed25519",
+                Base64.getEncoder().encodeToString(new byte[63])))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid external checkpoint receipt");
+
+        assertThatThrownBy(() -> new DynamicTestSuiteStabilityServingInventoryAuthority.Snapshot(
+                "bloge.testSuiteStabilityServingInventoryRefreshSnapshot.v1",
+                true, "HEALTHY", "ACTIVE", 1, NOW, 1, 0, "",
+                30, 60, 1, true, false, false, false, true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid serving-inventory refresh snapshot");
+        assertThatThrownBy(() ->
+                new DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.Snapshot(
+                        DynamicTestSuiteStabilityServingInventoryTrustRootAuthority.Snapshot
+                                .SCHEMA_VERSION,
+                        true, "HEALTHY", 1, NOW, 1, 0, "", 30, 3000,
+                        5, 60, 1, 1, 1, 1, true, false, true, true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Dynamic serving-inventory trust-root snapshot is invalid");
     }
 
     private static TestSuiteStabilityExternalSequenceAnchor.Head head(

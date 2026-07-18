@@ -143,6 +143,20 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
     }
 
     @Test
+    void receiptThatOutlivesItsFreshRequestCannotContributeToQuorum() {
+        modes.replaceAll((authority, ignored) -> Mode.OUTLIVES_REQUEST);
+        HttpTestSuiteStabilityExternalSequenceAnchor anchor = anchor(3, 1);
+
+        assertThatThrownBy(() -> anchor.accept(head()))
+                .isInstanceOf(
+                        TestSuiteStabilityExternalSequenceAnchor.ExternalAnchorException.class)
+                .extracting(error -> ((TestSuiteStabilityExternalSequenceAnchor
+                        .ExternalAnchorException) error).reason())
+                .isEqualTo(TestSuiteStabilityExternalSequenceAnchor.ExternalAnchorException
+                        .Reason.QUORUM_NOT_MET);
+    }
+
+    @Test
     void configurationEnforcesIntersectingQuorumAndIndependentDomains() {
         assertThatThrownBy(() -> new HttpTestSuiteStabilityExternalSequenceAnchor(
                 objectMapper, Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(),
@@ -199,7 +213,8 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
                 receipt = cached.get(authority);
             } else {
                 receipt = receipt(request, authority, failureDomain, keyId,
-                        mode == Mode.CONFLICT, mode == Mode.INVALID_SIGNATURE);
+                        mode == Mode.CONFLICT, mode == Mode.INVALID_SIGNATURE,
+                        mode == Mode.OUTLIVES_REQUEST);
                 cached.put(authority, receipt);
             }
             byte[] body = objectMapper.writeValueAsBytes(receipt);
@@ -227,19 +242,22 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
             String failureDomain,
             String keyId,
             boolean conflict,
-            boolean invalidSignature) throws Exception {
+            boolean invalidSignature,
+            boolean outlivesRequest) throws Exception {
         var decision = conflict
                 ? TestSuiteStabilityExternalSequenceCheckpointReceipt.Decision.CONFLICT
                 : TestSuiteStabilityExternalSequenceCheckpointReceipt.Decision.ACCEPTED;
         long observedSequence = request.head().sequence();
         String observedFingerprint = conflict ? fingerprint('f')
                 : request.head().headFingerprint();
+        Instant issuedAt = outlivesRequest ? NOW.plusSeconds(1) : NOW;
+        Instant expiresAt = outlivesRequest ? NOW.plusSeconds(11) : NOW.plusSeconds(10);
         var material = new TestSuiteStabilityExternalSequenceCheckpointReceipt.Material(
                 TestSuiteStabilityExternalSequenceCheckpointReceipt.SCHEMA_VERSION,
                 request.requestFingerprint(), TRUST_DOMAIN, ANCHOR_SET, authority,
                 failureDomain, keyId, decision, request.head().sequence(),
                 request.head().headFingerprint(), observedSequence, observedFingerprint,
-                NOW, NOW.plusSeconds(10), "Ed25519");
+                issuedAt, expiresAt, "Ed25519");
         String receiptFingerprint = ProtocolFingerprint.of(objectMapper, material);
         Signature signer = Signature.getInstance("Ed25519");
         signer.initSign(keyPairs.get(authority).getPrivate());
@@ -253,7 +271,7 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
                 receiptFingerprint, request.requestFingerprint(), TRUST_DOMAIN, ANCHOR_SET,
                 authority, failureDomain, keyId, decision, request.head().sequence(),
                 request.head().headFingerprint(), observedSequence, observedFingerprint,
-                NOW, NOW.plusSeconds(10), "Ed25519",
+                issuedAt, expiresAt, "Ed25519",
                 Base64.getEncoder().encodeToString(signed));
     }
 
@@ -274,6 +292,7 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
         CONFLICT,
         UNAVAILABLE,
         INVALID_SIGNATURE,
-        REPLAY
+        REPLAY,
+        OUTLIVES_REQUEST
     }
 }

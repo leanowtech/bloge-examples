@@ -230,7 +230,11 @@ public final class HttpTestSuiteStabilityJobAuthorizer
                 Map.entry("trustCohortManagedInventoryTrustRoots",
                         cohort.managedInventoryTrustRoots()),
                 Map.entry("trustCohortAtomicDualInventoryTrustRootPublication",
-                        cohort.atomicDualInventoryTrustRootPublication())));
+                        cohort.atomicDualInventoryTrustRootPublication()),
+                Map.entry("trustCohortExternalInventoryNonEquivocation",
+                        cohort.externalInventoryNonEquivocation()),
+                Map.entry("trustCohortByzantineQuorumInventoryNonEquivocation",
+                        cohort.byzantineQuorumInventoryNonEquivocation())));
     }
 
     private ExchangeResult exchange(

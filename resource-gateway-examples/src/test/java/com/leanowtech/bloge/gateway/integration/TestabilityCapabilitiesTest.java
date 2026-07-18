@@ -158,7 +158,11 @@ class TestabilityCapabilitiesTest {
                 .containsEntry(
                         "restartFreeSuiteStabilityServingInventoryKeyRotation", false)
                 .containsEntry(
-                        "atomicDualQuorumSuiteStabilityServingInventoryTrustRoots", false);
+                        "atomicDualQuorumSuiteStabilityServingInventoryTrustRoots", false)
+                .containsEntry(
+                        "externallyAnchoredSuiteStabilityServingInventoryOrdering", false)
+                .containsEntry(
+                        "byzantineQuorumSuiteStabilityServingInventoryNonEquivocation", false);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority())
                 .isEqualTo(signed);
         assertThat(capabilities.toString()).doesNotContain("http://");
@@ -202,6 +206,11 @@ class TestabilityCapabilitiesTest {
                                         "trustCohortManagedInventoryTrustRoots", true),
                                 java.util.Map.entry(
                                         "trustCohortAtomicDualInventoryTrustRootPublication",
+                                        true),
+                                java.util.Map.entry(
+                                        "trustCohortExternalInventoryNonEquivocation", true),
+                                java.util.Map.entry(
+                                        "trustCohortByzantineQuorumInventoryNonEquivocation",
                                         true)));
 
         IntegrationCapabilities capabilities = IntegrationCapabilities.current(
@@ -227,6 +236,10 @@ class TestabilityCapabilitiesTest {
                         "restartFreeSuiteStabilityServingInventoryKeyRotation", true)
                 .containsEntry(
                         "atomicDualQuorumSuiteStabilityServingInventoryTrustRoots", true)
+                .containsEntry(
+                        "externallyAnchoredSuiteStabilityServingInventoryOrdering", true)
+                .containsEntry(
+                        "byzantineQuorumSuiteStabilityServingInventoryNonEquivocation", true)
                 .containsEntry("suiteStabilityCurrentAuthorityRevalidation", true);
         assertThat(capabilities.testability().suiteStabilityCurrentAuthority().properties())
                 .doesNotContainKeys("jwksUri", "etag", "publicKey", "privateKey");
@@ -263,6 +276,24 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("restartFreeSuiteStabilityServingInventoryKeyRotation", false)
                 .containsEntry(
                         "atomicDualQuorumSuiteStabilityServingInventoryTrustRoots", false);
+
+        var propertiesWithoutExternal = new java.util.LinkedHashMap<>(dynamic.properties());
+        propertiesWithoutExternal.remove("trustCohortExternalInventoryNonEquivocation");
+        var impossibleQuorum = new TestSuiteStabilityJobAuthorizer.Descriptor(
+                "", true, "HTTPS_SIGNED_PDP", "iam.example", propertiesWithoutExternal);
+        IntegrationCapabilities unsafeQuorum = IntegrationCapabilities.current(
+                VisualEvidenceSigner.unavailable().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true,
+                EvidenceKeySetTrustStore.unavailable().descriptor(),
+                WorkerQuarantineRequestIndexMode.KEYED_ONLY,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                true, impossibleQuorum);
+        assertThat(unsafeQuorum.features())
+                .containsEntry("convergedSuiteStabilityAuthorityTrustCohort", false)
+                .containsEntry(
+                        "externallyAnchoredSuiteStabilityServingInventoryOrdering", false)
+                .containsEntry(
+                        "byzantineQuorumSuiteStabilityServingInventoryNonEquivocation", false);
     }
 
     @Test

@@ -649,7 +649,30 @@ public final class DynamicTestSuiteStabilityServingInventoryTrustRootAuthority
         }
     }
 
-    /** Aggregate key-free refresh and lifecycle status. */
+    /**
+     * Aggregate key-free refresh and lifecycle status.
+     *
+     * @param schemaVersion snapshot protocol generation
+     * @param available whether the current dual key set may verify inventory publications
+     * @param status bounded refresh lifecycle state
+     * @param sequence current accepted trust-root sequence
+     * @param lastSuccessfulRefreshAt last complete dual-root publication time
+     * @param refreshSuccessCount process-local successful refresh count
+     * @param refreshFailureCount process-local failed refresh count
+     * @param lastFailureCode stable payload-free failure family
+     * @param refreshIntervalSeconds configured background refresh interval
+     * @param requestTimeoutMillis configured source request timeout
+     * @param unknownKeyRefreshIntervalSeconds minimum synchronous refresh interval
+     * @param maximumSnapshotAgeSeconds hard local freshness fence
+     * @param deploymentSignatureThreshold active deployment-key threshold
+     * @param witnessSignatureThreshold active witness-key threshold
+     * @param activeDeploymentAuthorityCount active deployment authorities
+     * @param activeWitnessAuthorityCount active witness authorities
+     * @param durableFloor whether the local root head survives fleet restart
+     * @param externalNonEquivocation whether root ordering is anchored outside the database
+     * @param byzantineQuorumNonEquivocation whether that anchor tolerates declared faulty notaries
+     * @param automaticRefresh whether the runtime owns a background refresh lane
+     */
     public record Snapshot(
             String schemaVersion,
             boolean available,
@@ -688,7 +711,8 @@ public final class DynamicTestSuiteStabilityServingInventoryTrustRootAuthority
                     || deploymentSignatureThreshold < 0
                     || witnessSignatureThreshold < 0
                     || activeDeploymentAuthorityCount < 0
-                    || activeWitnessAuthorityCount < 0 || !durableFloor) {
+                    || activeWitnessAuthorityCount < 0 || !durableFloor
+                    || byzantineQuorumNonEquivocation && !externalNonEquivocation) {
                 throw new IllegalArgumentException(
                         "Dynamic serving-inventory trust-root snapshot is invalid");
             }

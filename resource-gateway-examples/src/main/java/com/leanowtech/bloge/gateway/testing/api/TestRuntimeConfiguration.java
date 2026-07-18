@@ -60,6 +60,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
 
 import java.net.URI;
 import java.time.Duration;
@@ -1541,7 +1542,7 @@ public class TestRuntimeConfiguration {
                 authorityKeysJson, inventoryJson, binding);
     }
 
-    /** Persists the managed dual runtime-key publication before local key publication. */
+    /** Configures the external signed quorum shared by both mutable inventory chains. */
     @Bean
     @ConditionalOnProperty(
             prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote",
@@ -1551,6 +1552,7 @@ public class TestRuntimeConfiguration {
             name = "enabled", havingValue = "true")
     TestSuiteStabilityExternalSequenceAnchor testSuiteStabilityExternalSequenceAnchor(
             ObjectMapper objectMapper,
+            Environment environment,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.trust-domain:}")
             String trustDomain,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.anchor-set-id:}")
@@ -1559,6 +1561,8 @@ public class TestRuntimeConfiguration {
             int signatureThreshold,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-faults:0}")
             int maximumFaults,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.minimum-faults:0}")
+            int minimumFaults,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.authority-keys-json:[]}")
             String authorityKeysJson,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.endpoints-json:[]}")
@@ -1571,6 +1575,14 @@ public class TestRuntimeConfiguration {
             long maximumReceiptLifetimeSeconds,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.allow-insecure-loopback:false}")
             boolean allowInsecureLoopback) {
+        int profileMinimumFaults = Arrays.asList(environment.getActiveProfiles())
+                .contains("staging") ? 1 : 0;
+        int effectiveMinimumFaults = Math.max(minimumFaults, profileMinimumFaults);
+        if (minimumFaults < 0 || minimumFaults > 10
+                || maximumFaults < effectiveMinimumFaults) {
+            throw new IllegalStateException(
+                    "External sequence anchor does not meet the deployment fault policy");
+        }
         return HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
                 objectMapper, trustDomain, anchorSetId, signatureThreshold, maximumFaults,
                 authorityKeysJson, endpointsJson,

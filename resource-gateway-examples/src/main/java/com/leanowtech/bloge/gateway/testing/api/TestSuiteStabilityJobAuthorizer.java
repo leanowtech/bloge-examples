@@ -31,7 +31,9 @@ public interface TestSuiteStabilityJobAuthorizer {
             "trustCohortWitnessedInventoryPublications",
             "trustCohortDurableInventoryPublicationFloor",
             "trustCohortManagedInventoryTrustRoots",
-            "trustCohortAtomicDualInventoryTrustRootPublication");
+            "trustCohortAtomicDualInventoryTrustRootPublication",
+            "trustCohortExternalInventoryNonEquivocation",
+            "trustCohortByzantineQuorumInventoryNonEquivocation");
 
     /**
      * Key-free deployment readiness descriptor for capability and startup diagnostics.

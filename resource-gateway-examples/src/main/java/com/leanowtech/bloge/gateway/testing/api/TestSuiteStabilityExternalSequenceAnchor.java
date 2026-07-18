@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -14,6 +15,11 @@ import java.util.regex.Pattern;
  * against an already anchored external head without creating an unanchored local generation.</p>
  */
 public interface TestSuiteStabilityExternalSequenceAnchor {
+
+    /** Closed aggregate descriptor vocabulary; identities and chain material are forbidden. */
+    Set<String> DESCRIPTOR_PROPERTIES = Set.of(
+            "sourceType", "externalFirstCommit", "authenticatedConflictFatal",
+            "concurrentNotaryRequests");
 
     /** Anchors one exact stream head or throws before local durable state may advance. */
     void accept(Head head);
@@ -117,6 +123,10 @@ public interface TestSuiteStabilityExternalSequenceAnchor {
                     && independentFailureDomainCount == authorityCount;
             if (!SCHEMA_VERSION.equals(schemaVersion) || authorityCount < 0
                     || signatureThreshold < 0 || independentFailureDomainCount < 0
+                    || !DESCRIPTOR_PROPERTIES.containsAll(properties.keySet())
+                    || properties.size() > DESCRIPTOR_PROPERTIES.size()
+                    || properties.entrySet().stream().anyMatch(
+                    entry -> !safeDescriptorValue(entry.getValue()))
                     || available && (!externallyDurable || !challengeBound || !quorumShape)
                     || byzantineQuorum != (available && maximumFaults > 0)) {
                 throw new IllegalArgumentException("Invalid external sequence-anchor descriptor");
@@ -160,10 +170,18 @@ public interface TestSuiteStabilityExternalSequenceAnchor {
         public Snapshot {
             schemaVersion = normalized(schemaVersion);
             status = normalized(status);
+            boolean emptyConfiguration = authorityCount == 0 && signatureThreshold == 0
+                    && maximumFaults == 0 && independentFailureDomainCount == 0;
+            boolean quorumShape = authorityCount >= 3 * maximumFaults + 1
+                    && signatureThreshold >= 2 * maximumFaults + 1
+                    && signatureThreshold <= authorityCount
+                    && independentFailureDomainCount == authorityCount;
             if (!SCHEMA_VERSION.equals(schemaVersion) || status.isEmpty()
                     || successCount < 0 || failureCount < 0 || conflictCount < 0
                     || authorityCount < 0 || signatureThreshold < 0 || maximumFaults < 0
-                    || independentFailureDomainCount < 0) {
+                    || independentFailureDomainCount < 0
+                    || !emptyConfiguration && !quorumShape
+                    || available && emptyConfiguration) {
                 throw new IllegalArgumentException("Invalid external sequence-anchor snapshot");
             }
         }
@@ -226,5 +244,11 @@ public interface TestSuiteStabilityExternalSequenceAnchor {
 
     private static String normalized(String value) {
         return Objects.requireNonNullElse(value, "").trim();
+    }
+
+    private static boolean safeDescriptorValue(Object value) {
+        return value instanceof Boolean
+                || value instanceof String text && !text.isBlank() && text.length() <= 128
+                && text.chars().noneMatch(Character::isISOControl);
     }
 }

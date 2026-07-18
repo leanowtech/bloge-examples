@@ -231,7 +231,9 @@
         "trustCohortWitnessedInventoryPublications": { "type": "boolean" },
         "trustCohortDurableInventoryPublicationFloor": { "type": "boolean" },
         "trustCohortManagedInventoryTrustRoots": { "type": "boolean" },
-        "trustCohortAtomicDualInventoryTrustRootPublication": { "type": "boolean" }
+        "trustCohortAtomicDualInventoryTrustRootPublication": { "type": "boolean" },
+        "trustCohortExternalInventoryNonEquivocation": { "type": "boolean" },
+        "trustCohortByzantineQuorumInventoryNonEquivocation": { "type": "boolean" }
       }
     },
     "authorizerDescriptor": {

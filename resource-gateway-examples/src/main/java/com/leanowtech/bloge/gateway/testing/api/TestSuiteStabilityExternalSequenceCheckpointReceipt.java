@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -109,6 +110,12 @@ public record TestSuiteStabilityExternalSequenceCheckpointReceipt(
         boolean conflictShape = decision != Decision.CONFLICT
                 || observedSequence != candidateSequence
                 || !observedHeadFingerprint.equals(candidateHeadFingerprint);
+        boolean validSignature;
+        try {
+            validSignature = Base64.getDecoder().decode(signature).length == 64;
+        } catch (IllegalArgumentException malformed) {
+            validSignature = false;
+        }
         if (!SCHEMA_VERSION.equals(schemaVersion)
                 || !FINGERPRINT.matcher(receiptFingerprint).matches()
                 || !FINGERPRINT.matcher(requestFingerprint).matches()
@@ -123,8 +130,7 @@ public record TestSuiteStabilityExternalSequenceCheckpointReceipt(
                 || issuedAt == null || expiresAt == null || issuedAt.getNano() != 0
                 || expiresAt.getNano() != 0 || !expiresAt.isAfter(issuedAt)
                 || Duration.between(issuedAt, expiresAt).compareTo(MAXIMUM_LIFETIME) > 0
-                || !"Ed25519".equals(algorithm) || signature.isEmpty()
-                || signature.length() > 4096) {
+                || !"Ed25519".equals(algorithm) || !validSignature) {
             throw new IllegalArgumentException("Invalid external checkpoint receipt");
         }
     }

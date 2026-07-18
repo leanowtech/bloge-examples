@@ -3047,6 +3047,28 @@ closes admission. Managed and legacy static runtime-key modes cannot be mixed. C
 and Actuator projections contain only aggregate counts, status, and protocol booleans; source URI,
 ETag, root-set id, authority/key ids, public keys, signatures, and fingerprints stay private.
 
+Staging also externalizes the ordering of both the inventory publication/witness chain and the
+managed trust-root chain. The private
+`bloge.testSuiteStabilityExternalSequenceCheckpointRequest.v1` submits the exact stream head with a
+fresh 256-bit challenge and at most 60-second whole-second window to every configured notary in
+parallel. Each notary returns a signed
+`bloge.testSuiteStabilityExternalSequenceCheckpointReceipt.v1` with `ACCEPTED` or `CONFLICT`, the
+exact request fingerprint, candidate head, observed head, authority/failure-domain identity, and
+short expiry. Resource Gateway requires `3f+1` independently configured authorities and at least
+`2f+1` accepted receipts; staging fixes the minimum at `f=1`. One authenticated, meaningful conflict
+fails closed even if another threshold accepts. This intentionally prefers safety over availability:
+a compromised configured notary can deny progress, but cannot make a conflicting local generation
+acceptable while the `<=f` assumption holds.
+
+The ordering is external-first: the notary quorum compare-and-append completes before the local
+database floor transaction. External success plus local failure is idempotently retryable; local
+success without external acceptance is impossible. Receipt signature, challenge replay, request/
+receipt deadline containment, media/protocol header, duplicate/unknown/trailing JSON, redirect,
+endpoint/failure-domain uniqueness, quorum math, and HTTPS are all enforced. JSON Schema defines
+the wire shape; Java validation owns cross-field equality, time ordering, threshold, signature, and
+meaningful-conflict semantics. Health and capability reads never contact a notary and expose no
+endpoint, authority, key, stream, challenge, or fingerprint identity.
+
 The built-in adapters rely on the JVM TLS context, so mTLS identity belongs in deployment TLS
 material, not in JSON properties. Both `allow-insecure-loopback` settings must remain disabled
 outside local tests. A deployment-owned KMS/certificate implementation may still replace
@@ -3067,6 +3089,8 @@ the distinction through `testability.suiteStabilityJobSubmissionEnabled` and the
 `durableSuiteStabilityServingInventoryPublicationFloor`,
 `restartFreeSuiteStabilityServingInventoryKeyRotation`,
 `atomicDualQuorumSuiteStabilityServingInventoryTrustRoots`,
+`externallyAnchoredSuiteStabilityServingInventoryOrdering`,
+`byzantineQuorumSuiteStabilityServingInventoryNonEquivocation`,
 `asyncSuiteStabilityJobQuery`, `asyncSuiteStabilityJobCancellation`, and
 `asyncSuiteStabilityJobCancellationSemanticAudit` feature flags. The strict
 request/response definitions live in
@@ -3078,15 +3102,19 @@ The dynamic serving-inventory publication is separately versioned in
 [`suite-stability-serving-inventory-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-publication-v1.schema.json).
 The atomic dual-root runtime-key publication is defined by
 [`suite-stability-serving-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json).
+The external compare-and-append request/receipt contract is defined by
+[`suite-stability-external-sequence-checkpoint-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json).
 Implementation evidence and deliberately unclaimed guarantees are recorded in
 [Stage 5 current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
 Dynamic refresh invariants, health semantics and deliberately unclaimed fleet guarantees are in
 [Stage 5 dynamic authority trust verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-authority-trust-verification.md).
 Signed membership, revocation, witness, and cross-replica generation invariants are recorded in
 [Stage 5 dynamic serving-inventory verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-dynamic-serving-inventory-verification.md).
-Managed runtime-key rotation, durable ordering, staging composition, and remaining external-anchor
-limits are recorded in
+Managed runtime-key rotation and local durable ordering are recorded in
 [Stage 5 serving-inventory trust-root rotation verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-trust-root-rotation-verification.md).
+External non-equivocation threat assumptions, commit ordering, failure semantics, and deployment
+responsibilities are recorded in
+[Stage 5 serving-inventory external non-equivocation verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-external-non-equivocation-verification.md).
 
 The standalone Java test-kit exposes the same protocol without depending on Resource Gateway
 server classes:

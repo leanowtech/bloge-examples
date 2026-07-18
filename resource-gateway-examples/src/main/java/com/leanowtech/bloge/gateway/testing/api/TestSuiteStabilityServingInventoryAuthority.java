@@ -17,7 +17,10 @@ public interface TestSuiteStabilityServingInventoryAuthority {
             "refreshIntervalSeconds", "maximumSnapshotAgeSeconds", "conditionalRequests",
             "failClosedOnRefreshFailure", "signedRevocation", "witnessedPublications",
             "protocolVersion", "witnessSignatureThreshold", "durablePublicationFloor",
-            "managedTrustRootRefresh", "atomicDualTrustRootPublication");
+            "managedTrustRootRefresh", "atomicDualTrustRootPublication",
+            "externallyAnchoredPublicationFloor", "externallyAnchoredTrustRootFloor",
+            "externalInventoryNonEquivocation",
+            "byzantineQuorumInventoryNonEquivocation");
 
     /** @return current verified inventory state without network or database I/O */
     Observation observation();

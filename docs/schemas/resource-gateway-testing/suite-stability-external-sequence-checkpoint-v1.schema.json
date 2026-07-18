@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json",
+  "title": "Resource Gateway Suite Stability External Sequence Checkpoint v1",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/receipt" }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "optionalFingerprint": {
+      "oneOf": [
+        { "const": "" },
+        { "$ref": "#/$defs/fingerprint" }
+      ]
+    },
+    "wholeSecondInstant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "streamKind", "scopeId", "streamId", "sequence",
+        "headFingerprint", "previousHeadFingerprint"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityExternalSequenceHead.v1"
+        },
+        "streamKind": {
+          "enum": [
+            "SERVING_INVENTORY_PUBLICATION",
+            "SERVING_INVENTORY_TRUST_ROOT"
+          ]
+        },
+        "scopeId": { "$ref": "#/$defs/identifier" },
+        "streamId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "headFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "previousHeadFingerprint": { "$ref": "#/$defs/optionalFingerprint" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "sequence": { "const": 1 } },
+            "required": ["sequence"]
+          },
+          "then": {
+            "properties": { "previousHeadFingerprint": { "const": "" } }
+          },
+          "else": {
+            "properties": {
+              "previousHeadFingerprint": { "$ref": "#/$defs/fingerprint" }
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "requestFingerprint", "trustDomain", "anchorSetId",
+        "head", "challenge", "requestedAt", "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityExternalSequenceCheckpointRequest.v1"
+        },
+        "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "trustDomain": { "$ref": "#/$defs/identifier" },
+        "anchorSetId": { "$ref": "#/$defs/identifier" },
+        "head": { "$ref": "#/$defs/head" },
+        "challenge": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 43,
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "requestedAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "expiresAt": { "$ref": "#/$defs/wholeSecondInstant" }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "receiptFingerprint", "requestFingerprint", "trustDomain",
+        "anchorSetId", "authorityId", "failureDomain", "keyId", "decision",
+        "candidateSequence", "candidateHeadFingerprint", "observedSequence",
+        "observedHeadFingerprint", "issuedAt", "expiresAt", "algorithm", "signature"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityExternalSequenceCheckpointReceipt.v1"
+        },
+        "receiptFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "trustDomain": { "$ref": "#/$defs/identifier" },
+        "anchorSetId": { "$ref": "#/$defs/identifier" },
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "failureDomain": { "$ref": "#/$defs/identifier" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "decision": { "enum": ["ACCEPTED", "CONFLICT"] },
+        "candidateSequence": { "type": "integer", "minimum": 1 },
+        "candidateHeadFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "observedSequence": { "type": "integer", "minimum": 0 },
+        "observedHeadFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "issuedAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "expiresAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "algorithm": { "const": "Ed25519" },
+        "signature": {
+          "type": "string",
+          "minLength": 88,
+          "maxLength": 88,
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "observedSequence": { "const": 0 } },
+            "required": ["observedSequence"]
+          },
+          "then": {
+            "properties": { "observedHeadFingerprint": { "const": "" } }
+          },
+          "else": {
+            "properties": {
+              "observedHeadFingerprint": { "$ref": "#/$defs/fingerprint" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

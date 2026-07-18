@@ -176,6 +176,10 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityServingInventoryTrustRootHealth.class)).isEmpty();
             assertThat(context.getBeansOfType(
+                    TestSuiteStabilityExternalSequenceAnchor.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityExternalSequenceAnchorHealth.class)).isEmpty();
+            assertThat(context.getBeansOfType(
                     HttpTestSuiteStabilityJobAuthorizer.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
@@ -291,6 +295,10 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityServingInventoryTrustRootFloor.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityServingInventoryTrustRootHealth.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityExternalSequenceAnchor.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityExternalSequenceAnchorHealth.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityJobParentAuthority.class)).hasSize(1);
             assertThat(context.getBeansOfType(

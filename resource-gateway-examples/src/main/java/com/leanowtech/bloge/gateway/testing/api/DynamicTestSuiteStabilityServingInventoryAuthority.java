@@ -1003,7 +1003,11 @@ public final class DynamicTestSuiteStabilityServingInventoryAuthority
                     || sequence < 0 || refreshSuccessCount < 0 || refreshFailureCount < 0
                     || refreshIntervalSeconds < 1 || maximumSnapshotAgeSeconds < 2
                     || witnessSignatureThreshold < 1 || witnessSignatureThreshold > 32
-                    || !durablePublicationFloor) {
+                    || !durablePublicationFloor
+                    || externalInventoryNonEquivocation
+                    && !externallyAnchoredPublicationFloor
+                    || byzantineQuorumInventoryNonEquivocation
+                    && !externalInventoryNonEquivocation) {
                 throw new IllegalArgumentException(
                         "Invalid serving-inventory refresh snapshot");
             }

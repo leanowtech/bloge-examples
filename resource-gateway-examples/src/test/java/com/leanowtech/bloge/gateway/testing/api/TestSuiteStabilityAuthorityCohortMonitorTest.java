@@ -123,6 +123,8 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
             assertThat(descriptor.durableInventoryPublicationFloor()).isTrue();
             assertThat(descriptor.managedInventoryTrustRoots()).isTrue();
             assertThat(descriptor.atomicDualInventoryTrustRootPublication()).isTrue();
+            assertThat(descriptor.externalInventoryNonEquivocation()).isTrue();
+            assertThat(descriptor.byzantineQuorumInventoryNonEquivocation()).isTrue();
         });
 
         when(inventoryAuthority.observation()).thenReturn(
@@ -140,6 +142,8 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
                 .containsEntry("durableInventoryPublicationFloor", true)
                 .containsEntry("managedInventoryTrustRoots", true)
                 .containsEntry("atomicDualInventoryTrustRootPublication", true)
+                .containsEntry("externalInventoryNonEquivocation", true)
+                .containsEntry("byzantineQuorumInventoryNonEquivocation", true)
                 .doesNotContainKeys("inventoryId", "materialFingerprint",
                         "policyFingerprint", "instanceIds");
 
@@ -180,6 +184,34 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
                 objectMapper, false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("semantics are incomplete");
+    }
+
+    @Test
+    void byzantineQuorumClaimWithoutExternalAnchorIsRejectedBeforeHeartbeat() {
+        TestSuiteStabilityServingInventoryAuthority inventoryAuthority =
+                mock(TestSuiteStabilityServingInventoryAuthority.class);
+        when(inventoryAuthority.descriptor()).thenReturn(
+                new TestSuiteStabilityServingInventoryAuthority.Descriptor(
+                        TestSuiteStabilityServingInventoryAuthority.Descriptor.SCHEMA_VERSION,
+                        true, true, true, "VERIFIED", 1, 17,
+                        java.util.Map.ofEntries(
+                                java.util.Map.entry("sourceType",
+                                        DynamicTestSuiteStabilityServingInventoryAuthority
+                                                .SOURCE_TYPE),
+                                java.util.Map.entry("privateMaterialPresent", false),
+                                java.util.Map.entry(
+                                        "externalInventoryNonEquivocation", false),
+                                java.util.Map.entry(
+                                        "byzantineQuorumInventoryNonEquivocation", true))));
+
+        assertThatThrownBy(() -> new TestSuiteStabilityAuthorityCohortMonitor(
+                mock(TestSuiteStabilityAuthorityCohortRepository.class),
+                mock(DynamicJwksTestSuiteStabilityAuthorityTrustStore.class),
+                inventoryAuthority, policy(inventoryObservation(true, "VERIFIED",
+                DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE)),
+                objectMapper, false))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("external non-equivocation semantics are incomplete");
     }
 
     private TestSuiteStabilityAuthorityCohortPolicy policy() {
@@ -229,7 +261,12 @@ class TestSuiteStabilityAuthorityCohortMonitorTest {
                                 DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE),
                         java.util.Map.entry("privateMaterialPresent", false),
                         java.util.Map.entry("managedTrustRootRefresh", true),
-                        java.util.Map.entry("atomicDualTrustRootPublication", true)));
+                        java.util.Map.entry("atomicDualTrustRootPublication", true),
+                        java.util.Map.entry("externallyAnchoredPublicationFloor", true),
+                        java.util.Map.entry("externallyAnchoredTrustRootFloor", true),
+                        java.util.Map.entry("externalInventoryNonEquivocation", true),
+                        java.util.Map.entry(
+                                "byzantineQuorumInventoryNonEquivocation", true)));
     }
 
     private static DynamicJwksTestSuiteStabilityAuthorityTrustStore.CohortObservation observation(

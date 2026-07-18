@@ -71,6 +71,17 @@ Environment:
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_REFRESH_SECONDS  default: 30; 1..3600
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_TIMEOUT_MS  default: 3000; 100..30000
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_MAXIMUM_AGE_SECONDS  default: 60; 2..86400
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED  required true for staging cohort
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN  required external trust domain
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID  required stable notary-set id
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD  required 2f+1 quorum
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS  required; 1..10
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MINIMUM_FAULTS  default: 1
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON  required public Ed25519 keys
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON  required HTTPS notary endpoints
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS  default: 3000; 100..30000
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS  default: 5; 0..30
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS  default: 15; 1..60
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED  required true for staging cohort
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_URI  required HTTPS dual-root endpoint
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOT_SET_ID  required stable root-set identity
@@ -212,6 +223,11 @@ validate_profile_secrets() {
         if ! truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED:-false}";
             then
             echo "Staging dynamic inventory requires managed dual trust roots." >&2
+            return 1
+        fi
+        if ! truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED:-false}";
+            then
+            echo "Staging dynamic inventory requires external non-equivocation anchoring." >&2
             return 1
         fi
         if [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_POLICY_FINGERPRINTS:-}" ] ||
@@ -377,6 +393,83 @@ validate_profile_secrets() {
                 return 1
                 ;;
         esac
+
+        if [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON:-}" ] ||
+            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON:-}" ]; then
+            echo "External inventory anchoring requires trust, quorum, public keys, and endpoints." >&2
+            return 1
+        fi
+        if truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ALLOW_INSECURE_LOOPBACK:-false}"; then
+            echo "Staging external inventory anchors must use HTTPS." >&2
+            return 1
+        fi
+        if printf '%s\n%s\n' \
+            "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN}" \
+            "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID}" |
+            grep -Eqv '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+            echo "Invalid external inventory anchor trust domain or set id." >&2
+            return 1
+        fi
+        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON}" in
+            \[*\]) ;;
+            *)
+                echo "External inventory anchor keys must be a JSON array." >&2
+                return 1
+                ;;
+        esac
+        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON}" in
+            \[*\]) ;;
+            *)
+                echo "External inventory anchor endpoints must be a JSON array." >&2
+                return 1
+                ;;
+        esac
+        if printf '%s' \
+            "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON}" |
+            grep -Eq '^\[[[:space:]]*\]$' ||
+            printf '%s' \
+            "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON}" |
+            grep -Eq '^\[[[:space:]]*\]$'; then
+            echo "External inventory anchor keys and endpoints must be non-empty." >&2
+            return 1
+        fi
+
+        local anchor_threshold="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD}"
+        local anchor_maximum_faults="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS}"
+        local anchor_minimum_faults="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MINIMUM_FAULTS:-1}"
+        local anchor_timeout_ms="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS:-3000}"
+        local anchor_clock_skew_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS:-5}"
+        local anchor_lifetime_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS:-15}"
+        if printf '%s\n%s\n%s\n%s\n%s\n' "${anchor_threshold}" \
+            "${anchor_maximum_faults}" "${anchor_minimum_faults}" \
+            "${anchor_timeout_ms}" "${anchor_lifetime_seconds}" |
+            grep -Eqv '^[1-9][0-9]*$' ||
+            ! printf '%s' "${anchor_clock_skew_seconds}" |
+            grep -Eq '^(0|[1-9][0-9]*)$'; then
+            echo "External inventory anchor policy values must be canonical integers." >&2
+            return 1
+        fi
+        if [ "${anchor_threshold}" -gt 32 ] ||
+            [ "${anchor_maximum_faults}" -lt 1 ] ||
+            [ "${anchor_maximum_faults}" -gt 10 ] ||
+            [ "${anchor_minimum_faults}" -lt 1 ] ||
+            [ "${anchor_minimum_faults}" -gt 10 ] ||
+            [ "${anchor_maximum_faults}" -lt "${anchor_minimum_faults}" ] ||
+            [ "${anchor_threshold}" -lt $((anchor_maximum_faults * 2 + 1)) ]; then
+            echo "External inventory anchor quorum must satisfy f>=1 and threshold>=2f+1." >&2
+            return 1
+        fi
+        if [ "${anchor_timeout_ms}" -lt 100 ] || [ "${anchor_timeout_ms}" -gt 30000 ] ||
+            [ "${anchor_clock_skew_seconds}" -gt 30 ] ||
+            [ "${anchor_lifetime_seconds}" -gt 60 ] ||
+            [ "${anchor_timeout_ms}" -ge $((anchor_lifetime_seconds * 1000)) ]; then
+            echo "External inventory anchor timing bounds are invalid." >&2
+            return 1
+        fi
 
         local inventory_refresh_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_REFRESH_SECONDS:-30}"
         local inventory_timeout_ms="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_TIMEOUT_MS:-3000}"

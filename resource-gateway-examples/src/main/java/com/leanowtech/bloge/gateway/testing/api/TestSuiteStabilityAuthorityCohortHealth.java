@@ -51,7 +51,11 @@ public final class TestSuiteStabilityAuthorityCohortHealth implements HealthIndi
                     Map.entry("managedInventoryTrustRoots",
                             descriptor.managedInventoryTrustRoots()),
                     Map.entry("atomicDualInventoryTrustRootPublication",
-                            descriptor.atomicDualInventoryTrustRootPublication()));
+                            descriptor.atomicDualInventoryTrustRootPublication()),
+                    Map.entry("externalInventoryNonEquivocation",
+                            descriptor.externalInventoryNonEquivocation()),
+                    Map.entry("byzantineQuorumInventoryNonEquivocation",
+                            descriptor.byzantineQuorumInventoryNonEquivocation()));
             return (descriptor.available() ? Health.up() : Health.down())
                     .withDetails(details).build();
         } catch (RuntimeException unavailable) {
