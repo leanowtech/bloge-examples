@@ -44,7 +44,7 @@ class TestSuiteStabilityControllerTest {
         verify(service).execute(eq("orders-suite"),
                 org.mockito.ArgumentMatchers.argThat(request ->
                         request.schemaVersion().equals(
-                                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION)
+                                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V1)
                                 && request.suiteRef().revision() == 7
                                 && request.clientRequestId().equals("stability-ci-42")
                                 && request.attempts() == 5),
@@ -52,6 +52,31 @@ class TestSuiteStabilityControllerTest {
                         identity.purpose().equals("TEST_EXECUTION")
                                 && identity.tenantId().equals("tenant-a")
                                 && identity.environmentId().equals("test")));
+    }
+
+    @Test
+    void statisticalRequestBindsTheCompletePrecommittedPolicy() throws Exception {
+        TestSuiteStabilityExecutionService service =
+                mock(TestSuiteStabilityExecutionService.class);
+        when(service.execute(eq("orders-suite"), any(), any())).thenReturn(null);
+        MockMvc mvc = mvc(service, Set.of("TEST_EXECUTION"));
+
+        mvc.perform(post("/api/testing/suites/orders-suite/stability-executions")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(statisticalRequest()))
+                .andExpect(status().isOk());
+
+        verify(service).execute(eq("orders-suite"),
+                org.mockito.ArgumentMatchers.argThat(request ->
+                        request.schemaVersion().equals(
+                                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION)
+                                && request.attempts() == 29
+                                && request.statisticalPolicy() != null
+                                && request.statisticalPolicy().confidenceLevelBps() == 9_500
+                                && request.statisticalPolicy()
+                                .maximumInstabilityRateBps() == 1_000), any());
     }
 
     @Test
@@ -110,6 +135,21 @@ class TestSuiteStabilityControllerTest {
                  "suiteRef":{"suiteId":"orders-suite","revision":7,
                  "fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
                  "clientRequestId":"stability-ci-42","attempts":5,
+                 "metadata":{"pipeline":"nightly"}}
+                """;
+    }
+
+    private static String statisticalRequest() {
+        return """
+                {"schemaVersion":"bloge.testSuiteStabilityExecutionRequest.v2",
+                 "suiteRef":{"suiteId":"orders-suite","revision":7,
+                 "fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                 "clientRequestId":"stability-statistical-ci-42","attempts":29,
+                 "statisticalPolicy":{"model":"ZERO_INSTABILITY_EXACT_BINOMIAL",
+                 "claimScope":"SUITE_ATTEMPT_ANY_CASE",
+                 "stoppingRule":"PRECOMMITTED_FIXED_HORIZON",
+                 "censoringPolicy":"FAIL_CLOSED","confidenceLevelBps":9500,
+                 "maximumInstabilityRateBps":1000},
                  "metadata":{"pipeline":"nightly"}}
                 """;
     }

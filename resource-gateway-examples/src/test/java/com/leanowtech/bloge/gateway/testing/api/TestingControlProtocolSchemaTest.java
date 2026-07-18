@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
@@ -80,21 +81,26 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at("/$defs/testSuiteExecutionRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionRequest.SCHEMA_VERSION);
         assertThat(schema.at(
-                "/$defs/testSuiteStabilityExecutionRequest/properties/schemaVersion/const")
-                .asText()).isEqualTo(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
+                "/$defs/testSuiteStabilityExecutionRequest/properties/schemaVersion/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteStabilityEvidence/properties/schemaVersion/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityEvidence.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityEvidence.SCHEMA_VERSION_V2,
                         TestSuiteStabilityEvidence.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityAttestation/properties/schemaVersion/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityAttestation.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityAttestation.SCHEMA_VERSION_V2,
                         TestSuiteStabilityAttestation.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityExecutionResponse/properties/schemaVersion/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V2,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteExecutionResponseV2/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteExecutionResponse.SCHEMA_VERSION);
@@ -422,6 +428,8 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteExecutionRequest")).isTrue();
         assertThat(definitions.has("testMutationSuiteExecutionRequest")).isTrue();
         assertThat(definitions.has("testSuiteStabilityExecutionRequest")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityStatisticalPolicy")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityStatisticalAssessment")).isTrue();
         assertThat(definitions.has("testSuiteStabilityEvidence")).isTrue();
         assertThat(definitions.has("testSuiteStabilityAttestation")).isTrue();
         assertThat(definitions.has("testSuiteStabilityExecutionResponse")).isTrue();
@@ -985,7 +993,7 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteStabilityEvidence.MIN_ATTEMPTS);
         assertThat(definitions.at(
                 "/testSuiteStabilityExecutionRequest/properties/attempts/maximum").asInt())
-                .isEqualTo(TestSuiteStabilityEvidence.MAX_ATTEMPTS);
+                .isEqualTo(TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS);
         assertThat(definitions.at("/stabilityProvenanceMetadata/maxProperties").asInt())
                 .isEqualTo(32);
         assertThat(definitions.at(
@@ -1003,15 +1011,27 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestSuiteStabilityEvidence.MIN_ATTEMPTS);
         assertThat(definitions.at(
                 "/testSuiteStabilityEvidence/properties/attempts/maxItems").asInt())
-                .isEqualTo(TestSuiteStabilityEvidence.MAX_ATTEMPTS);
+                .isEqualTo(TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS);
         assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/0/oneOf")).hasSize(4);
-        assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/1/oneOf")).hasSize(2);
+        assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/1/oneOf")).hasSize(3);
         assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/0/oneOf")).hasSize(3);
-        assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/1/oneOf")).hasSize(2);
+        assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/1/oneOf")).hasSize(3);
         assertThat(definitions.at(
                 "/testSuiteStabilityPromotionVerdict/properties"
                         + "/allSourceSuitesPromotionEligible/type").asText())
                 .isEqualTo("boolean");
+        assertThat(definitions.at(
+                "/testSuiteStabilityPromotionVerdict/properties"
+                        + "/statisticalConfidenceSatisfied/type").asText())
+                .isEqualTo("boolean");
+        assertThat(definitions.at(
+                "/testSuiteStabilityStatisticalPolicy/properties/model/const").asText())
+                .isEqualTo("ZERO_INSTABILITY_EXACT_BINOMIAL");
+        assertThat(definitions.at(
+                "/testSuiteStabilityStatisticalAssessment/properties/assumptions"
+                        + "/prefixItems"))
+                .extracting(node -> node.path("const").asText())
+                .containsExactlyElementsOf(TestSuiteStabilityEvidence.STATISTICAL_MODEL_ASSUMPTIONS);
         assertThat(definitions.at(
                 "/testSuiteStabilityAttemptResult/properties/sourcePromotionReasons/items/pattern")
                 .asText()).isEqualTo("^[A-Z][A-Z0-9_]{0,127}$");

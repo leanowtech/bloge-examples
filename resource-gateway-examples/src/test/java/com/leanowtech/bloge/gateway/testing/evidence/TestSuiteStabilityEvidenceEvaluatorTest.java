@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -63,6 +65,112 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
         assertThat(evidence.promotion().allSourceSuitesPromotionEligible()).isTrue();
         assertThat(evidence.quarantine().status())
                 .isEqualTo(TestSuiteStabilityEvidence.QuarantineStatus.NOT_REQUIRED);
+    }
+
+    @Test
+    void derivesSatisfiedStatisticalConfidenceFromTheExactCleanHorizon() {
+        TestSuiteStabilityEvidence evidence = evaluator.evaluateStatistical(suite, suiteRef,
+                STABILITY_RUN, "statistical-request", 29,
+                statisticalAttempts("same"), Map.of("pipeline", "release"), statisticalPolicy());
+
+        assertThat(evidence.schemaVersion())
+                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+        assertThat(evidence.status()).isEqualTo(TestSuiteStabilityEvidence.Status.STABLE);
+        assertThat(evidence.statisticalAssessment())
+                .extracting(TestSuiteStabilityEvidence.StatisticalAssessment::requiredAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::verifiedAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::censoredAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::observedInstabilityEvents,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::status)
+                .containsExactly(29, 29, 0, 0,
+                        TestSuiteStabilityEvidence.StatisticalStatus.SATISFIED);
+        assertThat(evidence.statisticalAssessment().achievedConfidenceBps())
+                .isGreaterThanOrEqualTo(9_500);
+        assertThat(evidence.promotion().status())
+                .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.ELIGIBLE);
+        assertThat(evidence.promotion().statisticalConfidenceSatisfied()).isTrue();
+    }
+
+    @Test
+    void rejectsStatisticalConfidenceWhenOneVerifiedSuiteVectorChanges() {
+        List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> attempts =
+                new ArrayList<>(statisticalAttempts("same"));
+        attempts.set(1, attempt(2, outcomes("variant")));
+
+        TestSuiteStabilityEvidence evidence = evaluator.evaluateStatistical(suite, suiteRef,
+                STABILITY_RUN, "statistical-request", 29, attempts, Map.of(), statisticalPolicy());
+
+        assertThat(evidence.status()).isEqualTo(TestSuiteStabilityEvidence.Status.FLAKY);
+        assertThat(evidence.statisticalAssessment().status())
+                .isEqualTo(TestSuiteStabilityEvidence.StatisticalStatus.REJECTED);
+        assertThat(evidence.statisticalAssessment().observedInstabilityEvents()).isEqualTo(1);
+        assertThat(evidence.statisticalAssessment().achievedConfidenceBps()).isZero();
+        assertThat(evidence.promotion().reasons())
+                .containsExactly("FLAKY_CASE_OBSERVED", "STATISTICAL_CONFIDENCE_REJECTED");
+        assertThat(evidence.quarantine().status())
+                .isEqualTo(TestSuiteStabilityEvidence.QuarantineStatus.REQUIRED);
+    }
+
+    @Test
+    void treatsOneCensoredAttemptAsStatisticallyInconclusiveWithoutDenominatorRepair() {
+        List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> attempts =
+                new ArrayList<>(statisticalAttempts("same"));
+        attempts.set(10, TestSuiteStabilityEvidenceEvaluator.AttemptObservation.missing(
+                11, START.plusSeconds(110), "WORKER_UNAVAILABLE"));
+
+        TestSuiteStabilityEvidence evidence = evaluator.evaluateStatistical(suite, suiteRef,
+                STABILITY_RUN, "statistical-request", 29, attempts, Map.of(), statisticalPolicy());
+
+        assertThat(evidence.statisticalAssessment())
+                .extracting(TestSuiteStabilityEvidence.StatisticalAssessment::observedAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::verifiedAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::censoredAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::status)
+                .containsExactly(29, 28, 1,
+                        TestSuiteStabilityEvidence.StatisticalStatus.INCONCLUSIVE);
+        assertThat(evidence.promotion().reasons())
+                .contains("STATISTICAL_CONFIDENCE_INCONCLUSIVE");
+    }
+
+    @Test
+    void keepsRepeatableConsistentFailureBlockedDespiteSatisfiedConfidence() {
+        Map<String, Outcome> failed = Map.of(
+                "golden", outcome(TestRunEvidence.Status.ASSERTION_FAILED, "same-failure"),
+                "negative", outcome(TestRunEvidence.Status.PASSED, "same-negative"));
+        List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> attempts =
+                IntStream.rangeClosed(1, 29).mapToObj(value -> attempt(value, failed)).toList();
+
+        TestSuiteStabilityEvidence evidence = evaluator.evaluateStatistical(suite, suiteRef,
+                STABILITY_RUN, "statistical-request", 29, attempts, Map.of(), statisticalPolicy());
+
+        assertThat(evidence.status())
+                .isEqualTo(TestSuiteStabilityEvidence.Status.CONSISTENT_FAILURE);
+        assertThat(evidence.statisticalAssessment().status())
+                .isEqualTo(TestSuiteStabilityEvidence.StatisticalStatus.SATISFIED);
+        assertThat(evidence.promotion().status())
+                .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.BLOCKED);
+        assertThat(evidence.promotion().reasons())
+                .containsExactly("CONSISTENT_TEST_FAILURE");
+    }
+
+    @Test
+    void sourcePromotionBlockCannotBeLaunderedBySatisfiedStatisticalConfidence() {
+        List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> attempts =
+                new ArrayList<>(statisticalAttempts("same"));
+        attempts.set(1, withSourcePromotion(attempt(2, outcomes("same")),
+                new TestSuiteRunEvidence.PromotionVerdict(
+                        TestSuiteRunEvidence.PromotionStatus.BLOCKED,
+                        List.of("NO_CERTIFIABLE_CASES"), true, 0, 2, true, true, true)));
+
+        TestSuiteStabilityEvidence evidence = evaluator.evaluateStatistical(suite, suiteRef,
+                STABILITY_RUN, "statistical-request", 29, attempts, Map.of(), statisticalPolicy());
+
+        assertThat(evidence.statisticalAssessment().status())
+                .isEqualTo(TestSuiteStabilityEvidence.StatisticalStatus.SATISFIED);
+        assertThat(evidence.promotion().status())
+                .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.BLOCKED);
+        assertThat(evidence.promotion().reasons())
+                .containsExactly("SOURCE_SUITE_PROMOTION_BLOCKED");
     }
 
     @Test
@@ -336,6 +444,21 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
     private Map<String, Outcome> outcomes(String goldenVariant) {
         return Map.of("golden", outcome(TestRunEvidence.Status.PASSED, goldenVariant),
                 "negative", outcome(TestRunEvidence.Status.PASSED, "same-negative"));
+    }
+
+    private List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> statisticalAttempts(
+            String goldenVariant) {
+        return IntStream.rangeClosed(1, 29)
+                .mapToObj(value -> attempt(value, outcomes(goldenVariant))).toList();
+    }
+
+    private static TestSuiteStabilityStatisticalPolicy statisticalPolicy() {
+        return new TestSuiteStabilityStatisticalPolicy(
+                TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL,
+                TestSuiteStabilityStatisticalPolicy.ClaimScope.SUITE_ATTEMPT_ANY_CASE,
+                TestSuiteStabilityStatisticalPolicy.StoppingRule.PRECOMMITTED_FIXED_HORIZON,
+                TestSuiteStabilityStatisticalPolicy.CensoringPolicy.FAIL_CLOSED,
+                9_500, 1_000);
     }
 
     private TestSuiteStabilityEvidenceEvaluator.AttemptObservation attempt(

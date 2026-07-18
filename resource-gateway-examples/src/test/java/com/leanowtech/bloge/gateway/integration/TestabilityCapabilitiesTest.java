@@ -132,7 +132,8 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("pureDslMutationExecution", false)
                 .containsEntry("mutationScoreEvidence", false)
                 .containsEntry("signedSuiteStabilityAnalysis", false)
-                .containsEntry("idempotentSuiteStabilityRerun", false);
+                .containsEntry("idempotentSuiteStabilityRerun", false)
+                .containsEntry("exactBinomialSuiteStabilityConfidence", false);
         assertThat(enabled.testability().executionEndpointEnabled()).isTrue();
         assertThat(enabled.supportedObjects()).containsKeys("testExecutionRequest", "testExecutionResponse",
                 "testExecutionBatchRequest", "testExecutionBatchResponse", "fixtureBundleRegistrationRequest",
@@ -253,6 +254,7 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("mutationSuiteMaterialization", true)
                 .containsEntry("signedSuiteStabilityAnalysis", false)
                 .containsEntry("idempotentSuiteStabilityRerun", false)
+                .containsEntry("exactBinomialSuiteStabilityConfidence", false)
                 .containsEntry("signedTestRunEvidence", false)
                 .containsEntry("suiteSignedChildEvidenceGate", false)
                 .containsEntry("signedTestSuiteRunAttestation", false)
@@ -271,15 +273,19 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects().get("testMutationSuiteExecutionRequest"))
                 .containsExactly(TestMutationSuiteExecutionRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityExecutionRequest"))
-                .containsExactly(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
+                .containsExactly(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityEvidence"))
                 .containsExactly(TestSuiteStabilityEvidence.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityEvidence.SCHEMA_VERSION_V2,
                         TestSuiteStabilityEvidence.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityAttestation"))
                 .containsExactly(TestSuiteStabilityAttestation.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityAttestation.SCHEMA_VERSION_V2,
                         TestSuiteStabilityAttestation.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityExecutionResponse"))
                 .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V2,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterializationRequest"))
                 .containsExactly(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);

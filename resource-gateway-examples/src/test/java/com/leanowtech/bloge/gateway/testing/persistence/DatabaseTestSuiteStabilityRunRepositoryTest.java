@@ -53,6 +53,20 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     }
 
     @Test
+    void statisticalV3AnalysisRoundTripsWithoutLosingItsSignedAssessment() {
+        TestSuiteStabilityEvidence evidence =
+                TestSuiteStabilityProtocolFixtures.statisticalStableEvidence();
+        TestSuiteStabilityRunRecord record = record(evidence, "tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+
+        repository.create(record);
+
+        assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
+                .get().extracting(value -> value.evidence().statisticalAssessment().status())
+                .isEqualTo(TestSuiteStabilityEvidence.StatisticalStatus.SATISFIED);
+    }
+
+    @Test
     void scopedIdempotencyKeyAndDeterministicIdAreImmutableRaceBarriers() {
         TestSuiteStabilityRunRecord record = record("tenant-a", "test",
                 "stability-request", Instant.now().plusSeconds(30));
@@ -92,6 +106,15 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
             Instant expiresAt) {
         TestSuiteStabilityEvidence evidence =
                 TestSuiteStabilityProtocolFixtures.stableEvidence();
+        return record(evidence, tenantId, environmentId, clientRequestId, expiresAt);
+    }
+
+    private TestSuiteStabilityRunRecord record(
+            TestSuiteStabilityEvidence evidence,
+            String tenantId,
+            String environmentId,
+            String clientRequestId,
+            Instant expiresAt) {
         var seal = attestations.seal(evidence, REQUEST_FINGERPRINT);
         Instant createdAt = Instant.now();
         return new TestSuiteStabilityRunRecord(evidence.stabilityRunId(), clientRequestId,

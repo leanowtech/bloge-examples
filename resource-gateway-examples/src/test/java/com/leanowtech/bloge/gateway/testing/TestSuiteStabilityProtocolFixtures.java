@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -40,11 +41,32 @@ public final class TestSuiteStabilityProtocolFixtures {
      * @return immutable stable evidence
      */
     public static TestSuiteStabilityEvidence stableEvidence() {
+        return stableEvidence(3, null);
+    }
+
+    /**
+     * Creates v3 evidence satisfying a 95% confidence claim at a 10% instability ceiling.
+     *
+     * @return immutable statistical stability evidence
+     */
+    public static TestSuiteStabilityEvidence statisticalStableEvidence() {
+        TestSuiteStabilityStatisticalPolicy policy = new TestSuiteStabilityStatisticalPolicy(
+                TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL,
+                TestSuiteStabilityStatisticalPolicy.ClaimScope.SUITE_ATTEMPT_ANY_CASE,
+                TestSuiteStabilityStatisticalPolicy.StoppingRule.PRECOMMITTED_FIXED_HORIZON,
+                TestSuiteStabilityStatisticalPolicy.CensoringPolicy.FAIL_CLOSED,
+                9_500, 1_000);
+        return stableEvidence(29, policy);
+    }
+
+    private static TestSuiteStabilityEvidence stableEvidence(
+            int attemptCount,
+            TestSuiteStabilityStatisticalPolicy statisticalPolicy) {
         TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
                 "fixture-a", 2, FIXTURE_FINGERPRINT);
         List<TestSuiteStabilityEvidence.AttemptResult> attempts = new ArrayList<>();
         List<TestSuiteStabilityEvidence.CaseObservation> observations = new ArrayList<>();
-        for (int attempt = 1; attempt <= 3; attempt++) {
+        for (int attempt = 1; attempt <= attemptCount; attempt++) {
             attempts.add(new TestSuiteStabilityEvidence.AttemptResult(attempt,
                     TestSuiteStabilityEvidence.AttemptStatus.VERIFIED,
                     "suite-run-" + attempt, indexedFingerprint(attempt),
@@ -66,11 +88,20 @@ public final class TestSuiteStabilityProtocolFixtures {
                         observations, 1, List.of());
         List<TestSuiteStabilityEvidence.CaseStabilityResult> cases = List.of(result);
         TestSuiteStabilityEvidence.Status status = TestSuiteStabilityEvidence.Status.STABLE;
-        return new TestSuiteStabilityEvidence("", STABILITY_RUN_ID, "stability-request",
-                SUITE_REF, TARGET, 3, status, attempts, cases,
-                TestSuiteStabilityEvidence.derivePromotion(attempts, cases, status),
+        TestSuiteStabilityEvidence.StatisticalAssessment statistics = statisticalPolicy == null
+                ? null : TestSuiteStabilityEvidence.deriveStatisticalAssessment(
+                statisticalPolicy, attemptCount, attempts, cases);
+        TestSuiteStabilityEvidence.PromotionVerdict promotion = statisticalPolicy == null
+                ? TestSuiteStabilityEvidence.derivePromotion(attempts, cases, status)
+                : TestSuiteStabilityEvidence.deriveStatisticalPromotion(
+                attempts, cases, status, statistics);
+        return new TestSuiteStabilityEvidence(
+                statisticalPolicy == null ? TestSuiteStabilityEvidence.SCHEMA_VERSION_V2
+                        : TestSuiteStabilityEvidence.SCHEMA_VERSION,
+                STABILITY_RUN_ID, "stability-request",
+                SUITE_REF, TARGET, attemptCount, status, attempts, cases, promotion,
                 TestSuiteStabilityEvidence.deriveQuarantine(cases, status),
-                START.plusSeconds(1), START.plusSeconds(4), List.of(),
+                statistics, START.plusSeconds(1), START.plusSeconds(attemptCount + 1L), List.of(),
                 Map.of("pipeline", "nightly"));
     }
 

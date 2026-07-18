@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 
@@ -78,10 +79,61 @@ public final class TestSuiteStabilityEvidenceEvaluator {
             int requestedAttempts,
             List<AttemptObservation> attemptObservations,
             Map<String, Object> metadata) {
+        return evaluateInternal(suite, suiteRef, stabilityRunId, clientRequestId,
+                requestedAttempts, attemptObservations, metadata, null,
+                TestSuiteStabilityEvidence.SCHEMA_VERSION_V2,
+                TestSuiteStabilityEvidence.MAX_ATTEMPTS);
+    }
+
+    /**
+     * Evaluates a precommitted fixed horizon and derives exact statistical confidence evidence.
+     *
+     * @param suite immutable executable suite
+     * @param suiteRef exact content-addressed suite reference
+     * @param stabilityRunId deterministic scope-and-request identity
+     * @param clientRequestId caller idempotency key
+     * @param requestedAttempts complete precommitted fixed horizon
+     * @param attemptObservations exact source suite and child closure
+     * @param metadata bounded caller provenance copied without payloads
+     * @param policy exact request-v2 probability model
+     * @return immutable v3 evidence with a server-derived statistical assessment
+     */
+    public TestSuiteStabilityEvidence evaluateStatistical(
+            TestSuiteProtocol suite,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            String stabilityRunId,
+            String clientRequestId,
+            int requestedAttempts,
+            List<AttemptObservation> attemptObservations,
+            Map<String, Object> metadata,
+            TestSuiteStabilityStatisticalPolicy policy) {
+        return evaluateInternal(suite, suiteRef, stabilityRunId, clientRequestId,
+                requestedAttempts, attemptObservations, metadata,
+                Objects.requireNonNull(policy, "policy"),
+                TestSuiteStabilityEvidence.SCHEMA_VERSION,
+                TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS);
+    }
+
+    private TestSuiteStabilityEvidence evaluateInternal(
+            TestSuiteProtocol suite,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            String stabilityRunId,
+            String clientRequestId,
+            int requestedAttempts,
+            List<AttemptObservation> attemptObservations,
+            Map<String, Object> metadata,
+            TestSuiteStabilityStatisticalPolicy statisticalPolicy,
+            String evidenceVersion,
+            int maximumAttempts) {
         requireSupportedSuite(suite, suiteRef);
         if (requestedAttempts < TestSuiteStabilityEvidence.MIN_ATTEMPTS
-                || requestedAttempts > TestSuiteStabilityEvidence.MAX_ATTEMPTS) {
+                || requestedAttempts > maximumAttempts) {
             throw new IllegalArgumentException("Stability attempt count is outside protocol bounds");
+        }
+        if (statisticalPolicy != null
+                && !statisticalPolicy.horizonSufficient(requestedAttempts)) {
+            throw new IllegalArgumentException(
+                    "Statistical stability horizon cannot satisfy the precommitted policy");
         }
 
         List<AttemptObservation> ordered = orderedAttempts(
@@ -161,17 +213,24 @@ public final class TestSuiteStabilityEvidenceEvaluator {
         }
 
         TestSuiteStabilityEvidence.Status aggregateStatus = aggregateStatus(caseResults);
-        TestSuiteStabilityEvidence.PromotionVerdict promotion =
-                TestSuiteStabilityEvidence.derivePromotion(attempts, caseResults, aggregateStatus);
+        TestSuiteStabilityEvidence.StatisticalAssessment statistics = statisticalPolicy == null
+                ? null : TestSuiteStabilityEvidence.deriveStatisticalAssessment(
+                statisticalPolicy, requestedAttempts, attempts, caseResults);
+        TestSuiteStabilityEvidence.PromotionVerdict promotion = statisticalPolicy == null
+                ? TestSuiteStabilityEvidence.derivePromotion(
+                attempts, caseResults, aggregateStatus)
+                : TestSuiteStabilityEvidence.deriveStatisticalPromotion(
+                attempts, caseResults, aggregateStatus, statistics);
         TestSuiteStabilityEvidence.QuarantineVerdict quarantine =
                 TestSuiteStabilityEvidence.deriveQuarantine(caseResults, aggregateStatus);
         Instant startedAt = sources.stream().map(SourceEvaluation::startedAt)
                 .filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(Instant.EPOCH);
         Instant completedAt = sources.stream().map(SourceEvaluation::completedAt)
                 .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(startedAt);
-        return new TestSuiteStabilityEvidence("", stabilityRunId, clientRequestId, suiteRef,
+        return new TestSuiteStabilityEvidence(evidenceVersion, stabilityRunId, clientRequestId,
+                suiteRef,
                 suite.target(), requestedAttempts, aggregateStatus, attempts, caseResults,
-                promotion, quarantine, startedAt, completedAt, diagnostics, metadata);
+                promotion, quarantine, statistics, startedAt, completedAt, diagnostics, metadata);
     }
 
     private SourceEvaluation evaluateSource(

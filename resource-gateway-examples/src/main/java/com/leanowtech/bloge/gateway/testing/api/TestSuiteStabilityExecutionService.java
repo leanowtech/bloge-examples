@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -112,6 +113,7 @@ public final class TestSuiteStabilityExecutionService {
                     "Stored suite differs from the exact stability execution reference.");
         }
         requireSupportedSuite(stored.suite(), identity);
+        requireStatisticalWorkBudget(stored.suite(), request, identity);
 
         String stabilityRunId = stabilityRunId(identity, requestFingerprint);
         List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> observations =
@@ -140,9 +142,12 @@ public final class TestSuiteStabilityExecutionService {
                     attempt, source, true, children, Instant.now(), ""));
         }
 
-        TestSuiteStabilityEvidence evidence = evaluator.evaluate(stored.suite(),
-                request.suiteRef(), stabilityRunId, request.clientRequestId(), request.attempts(),
-                observations, request.metadata());
+        TestSuiteStabilityEvidence evidence = request.statisticalPolicy() == null
+                ? evaluator.evaluate(stored.suite(), request.suiteRef(), stabilityRunId,
+                request.clientRequestId(), request.attempts(), observations, request.metadata())
+                : evaluator.evaluateStatistical(stored.suite(), request.suiteRef(), stabilityRunId,
+                request.clientRequestId(), request.attempts(), observations, request.metadata(),
+                request.statisticalPolicy());
         TestSuiteStabilityAttestationService.SealResult seal =
                 attestations.seal(evidence, requestFingerprint);
         if (!seal.verified()) {
@@ -262,17 +267,42 @@ public final class TestSuiteStabilityExecutionService {
             TestSuiteStabilityExecutionRequest request,
             IntegrationRequestContext identity) {
         if (request == null
-                || !TestSuiteStabilityExecutionRequest.SCHEMA_VERSION.equals(
-                request.schemaVersion())
                 || request.suiteRef() == null
                 || normalized(pathSuiteId).isBlank()
                 || !normalized(pathSuiteId).equals(request.suiteRef().suiteId())
                 || request.suiteRef().revision() <= 0
-                || !fingerprint(request.suiteRef().fingerprint())
-                || request.attempts() < TestSuiteStabilityEvidence.MIN_ATTEMPTS
-                || request.attempts() > TestSuiteStabilityEvidence.MAX_ATTEMPTS) {
+                || !fingerprint(request.suiteRef().fingerprint())) {
             throw badRequest(identity, "RG.TEST.STABILITY_REQUEST_INVALID",
-                    "An exact suite reference and 3..20 bounded attempts are required.");
+                    "An exact suite reference and supported bounded request are required.");
+        }
+        boolean deterministic = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V1.equals(
+                request.schemaVersion());
+        boolean statistical = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION.equals(
+                request.schemaVersion());
+        if (!deterministic && !statistical
+                || deterministic && (request.statisticalPolicy() != null
+                || request.attempts() < TestSuiteStabilityEvidence.MIN_ATTEMPTS
+                || request.attempts() > TestSuiteStabilityEvidence.MAX_ATTEMPTS)
+                || statistical && (request.statisticalPolicy() == null
+                || request.attempts() < TestSuiteStabilityStatisticalPolicy.MIN_ATTEMPTS
+                || request.attempts() > TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS)) {
+            throw badRequest(identity, "RG.TEST.STABILITY_REQUEST_INVALID",
+                    "Request v1 requires 3..20 deterministic attempts; v2 requires a 3..1000 statistical horizon.");
+        }
+        if (statistical) {
+            try {
+                int required = request.statisticalPolicy().minimumRequiredAttempts();
+                if (request.attempts() < required
+                        || !request.statisticalPolicy().horizonSufficient(request.attempts())) {
+                    throw badRequest(identity, "RG.TEST.STABILITY_STATISTICAL_HORIZON_INVALID",
+                            "The precommitted horizon cannot satisfy the requested confidence policy.");
+                }
+            } catch (IntegrationProblemException failure) {
+                throw failure;
+            } catch (IllegalArgumentException invalid) {
+                throw badRequest(identity, "RG.TEST.STABILITY_STATISTICAL_HORIZON_INVALID",
+                        "The statistical confidence target exceeds the bounded protocol horizon.");
+            }
         }
         if (request.clientRequestId().isBlank()
                 || request.clientRequestId().length() > MAX_CLIENT_REQUEST_ID_LENGTH) {
@@ -313,7 +343,21 @@ public final class TestSuiteStabilityExecutionService {
             IntegrationRequestContext identity) {
         if (suite instanceof TestSuiteV3 || suite instanceof TestSuiteV5) {
             throw badRequest(identity, "RG.TEST.STABILITY_SUITE_GENERATION_UNSUPPORTED",
-                    "Stability v1 requires executable child evidence for every suite case.");
+                    "Stability analysis requires executable child evidence for every suite case.");
+        }
+    }
+
+    private static void requireStatisticalWorkBudget(
+            TestSuiteProtocol suite,
+            TestSuiteStabilityExecutionRequest request,
+            IntegrationRequestContext identity) {
+        if (request.statisticalPolicy() == null) {
+            return;
+        }
+        long observations = (long) request.attempts() * suite.cases().size();
+        if (observations > TestSuiteStabilityStatisticalPolicy.MAX_CASE_OBSERVATIONS) {
+            throw badRequest(identity, "RG.TEST.STABILITY_STATISTICAL_WORK_BUDGET_EXCEEDED",
+                    "The statistical horizon exceeds the bounded attempt-by-case work budget.");
         }
     }
 
@@ -376,10 +420,16 @@ public final class TestSuiteStabilityExecutionService {
 
     private static TestSuiteStabilityExecutionResponse response(
             TestSuiteStabilityRunRecord record) {
-        String version = TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(
-                record.evidence().schemaVersion())
-                ? TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1
-                : TestSuiteStabilityExecutionResponse.SCHEMA_VERSION;
+        String version;
+        if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(
+                record.evidence().schemaVersion())) {
+            version = TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1;
+        } else if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V2.equals(
+                record.evidence().schemaVersion())) {
+            version = TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V2;
+        } else {
+            version = TestSuiteStabilityExecutionResponse.SCHEMA_VERSION;
+        }
         return new TestSuiteStabilityExecutionResponse(version, record.stabilityRunId(),
                 record.evidenceFingerprint(), record.evidence(), record.attestation());
     }

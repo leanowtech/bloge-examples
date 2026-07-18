@@ -70,10 +70,7 @@ public final class TestSuiteStabilityAttestationService {
         }
         try {
             Instant signedAt = clock.instant();
-            String attestationVersion = TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(
-                    evidence.schemaVersion())
-                    ? TestSuiteStabilityAttestation.SCHEMA_VERSION_V1
-                    : TestSuiteStabilityAttestation.SCHEMA_VERSION;
+            String attestationVersion = attestationVersion(evidence.schemaVersion());
             String materialFingerprint = materialFingerprint(evidence.stabilityRunId(),
                     evidence.suiteRef(), requestFingerprint, evidenceFingerprint,
                     sources, signedAt, attestationVersion);
@@ -185,6 +182,15 @@ public final class TestSuiteStabilityAttestationService {
                         value.aggregateEvidenceFingerprint(), value.sourcePromotionStatus(),
                         value.sourcePromotionReasons()))
                 .toList();
+    }
+
+    private static String attestationVersion(String evidenceVersion) {
+        if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(evidenceVersion)) {
+            return TestSuiteStabilityAttestation.SCHEMA_VERSION_V1;
+        }
+        return TestSuiteStabilityEvidence.SCHEMA_VERSION_V2.equals(evidenceVersion)
+                ? TestSuiteStabilityAttestation.SCHEMA_VERSION_V2
+                : TestSuiteStabilityAttestation.SCHEMA_VERSION;
     }
 
     private record SignatureMaterial(

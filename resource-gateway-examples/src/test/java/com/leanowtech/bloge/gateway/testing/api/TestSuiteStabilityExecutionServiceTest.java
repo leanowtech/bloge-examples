@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunEvidenceProtocolCodec;
@@ -65,7 +66,7 @@ class TestSuiteStabilityExecutionServiceTest {
         suite = suite();
         sourceById = new LinkedHashMap<>();
         childById = new LinkedHashMap<>();
-        for (int attempt = 1; attempt <= 4; attempt++) {
+        for (int attempt = 1; attempt <= 29; attempt++) {
             TestSuiteExecutionResponse source = source(attempt);
             sourceById.put(source.suiteRunId(), source);
         }
@@ -123,6 +124,42 @@ class TestSuiteStabilityExecutionServiceTest {
         verify(suiteExecutions, times(3)).find(any(), eq(identity));
         verify(childExecutions, times(3)).find(any(),
                 eq(TestExecutionApiRequest.Verbosity.FULL), eq(identity));
+    }
+
+    @Test
+    void executesThePrecommittedStatisticalHorizonAndReturnsV3Evidence() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+
+        TestSuiteStabilityExecutionResponse response = service.execute(
+                suite.suiteId(), statisticalRequest(29), identity);
+
+        assertThat(response.schemaVersion())
+                .isEqualTo(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
+        assertThat(response.evidence().schemaVersion())
+                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+        assertThat(response.evidence().statisticalAssessment().status())
+                .isEqualTo(TestSuiteStabilityEvidence.StatisticalStatus.SATISFIED);
+        assertThat(response.evidence().statisticalAssessment().requiredAttempts()).isEqualTo(29);
+        assertThat(response.evidence().promotion().status())
+                .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.ELIGIBLE);
+        verify(suiteExecutions, times(29)).execute(eq(suite.suiteId()), any(), eq(identity));
+    }
+
+    @Test
+    void rejectsAnInsufficientStatisticalHorizonBeforeSuiteResolution() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+
+        assertThatThrownBy(() -> service.execute(
+                suite.suiteId(), statisticalRequest(28), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(400);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.STABILITY_STATISTICAL_HORIZON_INVALID");
+                });
+        verify(suites, times(0)).find(any(), anyLong(), eq(identity));
+        verify(suiteExecutions, times(0)).execute(any(), any(), eq(identity));
     }
 
     @Test
@@ -201,6 +238,21 @@ class TestSuiteStabilityExecutionServiceTest {
                 new TestSuiteExecutionRequest.SuiteRef(
                         suite.suiteId(), suite.revision(), SUITE_FINGERPRINT),
                 "stability-ci-42", attempts, Map.of("pipeline", "nightly"));
+    }
+
+    private TestSuiteStabilityExecutionRequest statisticalRequest(int attempts) {
+        TestSuiteStabilityStatisticalPolicy policy = new TestSuiteStabilityStatisticalPolicy(
+                TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL,
+                TestSuiteStabilityStatisticalPolicy.ClaimScope.SUITE_ATTEMPT_ANY_CASE,
+                TestSuiteStabilityStatisticalPolicy.StoppingRule.PRECOMMITTED_FIXED_HORIZON,
+                TestSuiteStabilityStatisticalPolicy.CensoringPolicy.FAIL_CLOSED,
+                9_500, 1_000);
+        return new TestSuiteStabilityExecutionRequest(
+                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION,
+                new TestSuiteExecutionRequest.SuiteRef(
+                        suite.suiteId(), suite.revision(), SUITE_FINGERPRINT),
+                "stability-statistical-ci-42", attempts, policy,
+                Map.of("pipeline", "nightly"));
     }
 
     private TestSuiteExecutionResponse source(int attempt) {

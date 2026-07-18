@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestSuiteStabilityAttestationServiceTest {
     private static final String REQUEST_FINGERPRINT =
@@ -49,6 +50,35 @@ class TestSuiteStabilityAttestationServiceTest {
                 .containsExactly(1, 2, 3);
         assertThat(service.verify(evidence, result.attestation()))
                 .isEqualTo(TestSuiteStabilityAttestationService.Verification.VERIFIED);
+    }
+
+    @Test
+    void signsAndVerifiesV3StatisticalEvidenceAndItsFullSourceClosure() {
+        TestSuiteStabilityEvidence evidence =
+                TestSuiteStabilityProtocolFixtures.statisticalStableEvidence();
+
+        TestSuiteStabilityAttestationService.SealResult result =
+                service.seal(evidence, REQUEST_FINGERPRINT);
+
+        assertThat(result.verified()).isTrue();
+        assertThat(result.attestation().schemaVersion())
+                .isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+        assertThat(result.attestation().sourceSuiteEvidenceRefs()).hasSize(29);
+        assertThat(service.verify(evidence, result.attestation()))
+                .isEqualTo(TestSuiteStabilityAttestationService.Verification.VERIFIED);
+    }
+
+    @Test
+    void rejectsAProducerForgedStatisticalAggregateBeforeItCanBeSigned() {
+        ObjectNode forged = mapper.valueToTree(
+                TestSuiteStabilityProtocolFixtures.statisticalStableEvidence());
+        ((ObjectNode) forged.path("statisticalAssessment"))
+                .put("achievedConfidenceBps", 9_999);
+
+        assertThatThrownBy(() -> mapper.treeToValue(forged, TestSuiteStabilityEvidence.class))
+                .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage(
+                        "Stability status, promotion, quarantine, and statistics must be server-derived");
     }
 
     @Test

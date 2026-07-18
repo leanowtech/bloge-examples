@@ -46,8 +46,10 @@ public record TestSuiteStabilityAttestation(
 ) {
     /** Historical attestation version without source-promotion closure. */
     public static final String SCHEMA_VERSION_V1 = "bloge.testSuiteStabilityAttestation.v1";
-    /** Current stability-attestation protocol version with source-promotion closure. */
-    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityAttestation.v2";
+    /** Deterministic attestation version with source-promotion closure. */
+    public static final String SCHEMA_VERSION_V2 = "bloge.testSuiteStabilityAttestation.v2";
+    /** Current attestation version over statistical v3 evidence. */
+    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityAttestation.v3";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final Pattern STABILITY_RUN_ID = Pattern.compile("stability-[a-f0-9]{64}");
     private static final Pattern REASON_CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,127}");
@@ -102,7 +104,7 @@ public record TestSuiteStabilityAttestation(
 
     /** Normalizes protocol fields and derives independent verifiability. */
     public TestSuiteStabilityAttestation {
-        schemaVersion = defaulted(schemaVersion, SCHEMA_VERSION);
+        schemaVersion = defaulted(schemaVersion, SCHEMA_VERSION_V2);
         signatureStatus = signatureStatus == null ? SignatureStatus.UNSIGNED : signatureStatus;
         stabilityRunId = normalized(stabilityRunId);
         requestFingerprint = normalized(requestFingerprint);
@@ -117,7 +119,8 @@ public record TestSuiteStabilityAttestation(
                 && completeIdentity(stabilityRunId, suiteRef, requestFingerprint,
                 evidenceFingerprint) && !keyId.isBlank() && !algorithm.isBlank()
                 && !signature.isBlank() && !Instant.EPOCH.equals(signedAt);
-        if (!List.of(SCHEMA_VERSION_V1, SCHEMA_VERSION).contains(schemaVersion)) {
+        if (!List.of(SCHEMA_VERSION_V1, SCHEMA_VERSION_V2, SCHEMA_VERSION)
+                .contains(schemaVersion)) {
             throw new IllegalArgumentException("Unsupported stability attestation schemaVersion");
         }
         if (signatureStatus == SignatureStatus.VERIFIED && !independentlyVerifiable) {
@@ -146,8 +149,7 @@ public record TestSuiteStabilityAttestation(
             String requestFingerprint,
             String evidenceFingerprint,
             List<SourceSuiteEvidenceRef> sources) {
-        String version = TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(
-                evidence.schemaVersion()) ? SCHEMA_VERSION_V1 : SCHEMA_VERSION;
+        String version = attestationVersion(evidence.schemaVersion());
         return new TestSuiteStabilityAttestation(version,
                 SignatureStatus.VERIFICATION_UNAVAILABLE,
                 evidence.stabilityRunId(), evidence.suiteRef(), requestFingerprint,
@@ -157,6 +159,14 @@ public record TestSuiteStabilityAttestation(
     /** @return true only for a complete verified terminal analysis signature */
     public boolean terminallyVerifiable() {
         return independentlyVerifiable;
+    }
+
+    private static String attestationVersion(String evidenceVersion) {
+        if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(evidenceVersion)) {
+            return SCHEMA_VERSION_V1;
+        }
+        return TestSuiteStabilityEvidence.SCHEMA_VERSION_V2.equals(evidenceVersion)
+                ? SCHEMA_VERSION_V2 : SCHEMA_VERSION;
     }
 
     private static boolean completeIdentity(

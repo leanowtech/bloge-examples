@@ -267,20 +267,28 @@ public record IntegrationCapabilities(
                             .SCHEMA_VERSION));
             objects.put("testSuiteStabilityExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest
+                            .SCHEMA_VERSION_V1,
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest
                             .SCHEMA_VERSION));
             objects.put("testSuiteStabilityEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence
                             .SCHEMA_VERSION_V1,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence
+                            .SCHEMA_VERSION_V2,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence
                             .SCHEMA_VERSION));
             objects.put("testSuiteStabilityAttestation", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation
                             .SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation
+                            .SCHEMA_VERSION_V2,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation
                             .SCHEMA_VERSION));
             objects.put("testSuiteStabilityExecutionResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse
                             .SCHEMA_VERSION_V1,
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse
+                            .SCHEMA_VERSION_V2,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse
                             .SCHEMA_VERSION));
             objects.put("testSuiteExecutionResponse", List.of(
@@ -528,6 +536,8 @@ public record IntegrationCapabilities(
         features.put("signedSuiteStabilityAnalysis",
                 testExecutionEndpointEnabled && signer.available());
         features.put("idempotentSuiteStabilityRerun",
+                testExecutionEndpointEnabled && signer.available());
+        features.put("exactBinomialSuiteStabilityConfidence",
                 testExecutionEndpointEnabled && signer.available());
         features.put("propertySuiteMaterialization", testExecutionEndpointEnabled);
         features.put("propertySuiteExecution", testExecutionEndpointEnabled);
