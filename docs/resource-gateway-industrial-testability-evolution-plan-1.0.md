@@ -844,8 +844,8 @@ receipt、expected object、archive、retirement 与删除任一失败全部回�
 并成功打包 Spring Boot 可执行 JAR。
 设计见 [Stage 5 observation external reconciliation control plane](resource-gateway-execution-data-control-plane-stage5-observation-external-reconciliation-design.md)。
 该 Phase A 当时只完成 durable local expectation index；下述 Phase B 现已补齐 database-clock authority
-lease、remote page staging 和 terminal root/count replay。双向分类与 governed finding lifecycle 仍是下一
-实现边界，capability 不得提前转真。
+lease、remote page staging 和 terminal root/count replay。该阶段当时仍缺双向分类；下述 Phase C 现已补齐，
+governed finding lifecycle 仍是下一实现边界，capability 不得提前转真。
 
 同一子步 Phase B 随后落地 `DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane`。
 每个 authority page 由 database-clock owner/token/epoch/revision/deadline fence 独占；远端 HTTPS 调用不持有
@@ -858,8 +858,27 @@ page zero。终页不信任 aggregate checkpoint，而以常量内存流式重�
 restart、事务回滚、外层事务隔离、空快照、cursor 漂移、item 篡改和 page gap。Phase B 冻结源码的完整
 Resource Gateway `clean verify` 执行 2925 tests，0 failures、0 errors、2 个既有浏览器条件跳过，并成功
 打包 Spring Boot 可执行 JAR。当前已完成 verified inventory cycle staging；ordered local/remote
-classification、governed finding lifecycle、scheduler、
+classification 当时仍未完成，见下述 Phase C；governed finding lifecycle、scheduler、
 health/readiness/capability 接线仍未完成，不能对外宣称 orphan reconciliation。
+
+同一子步 Phase C 新增
+`DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane`。每轮 comparison 先在同一
+事务中复核 completed remote cycle，并把当时全部 local expected objects 冻结为 topology-bearing snapshot；
+后续调用以每侧 `N + 1` keyset window 求安全共同上界，单事务最多提交 `2N` 条 union outcome 和 exact cursor，
+可跨进程/副本继续。六类闭合结果为 `MATCHED`、`MISSING_REMOTE`、`UNEXPECTED_REMOTE`、
+`MATERIAL_CONFLICT`、`RETENTION_SHORTENED`、`UNKNOWN`。终态不接受自哈希循环：除 expected/remote/
+classification 三组 count/root replay 和 exact union coverage 外，还从 source union 重新推演每条语义；即使
+错误 outcome、分类 hash、aggregate root/counter 与 comparison record fingerprint 被同步改成内部自洽，仍会
+回滚。只有 completed comparison 可按 object-id keyset 导出，公开 API 无 remediation/delete 权限。
+锁等待后的时间推进取事务数据库时间与已锁定记录 `updated_at` 的最大值，消除 PostgreSQL/H2
+`CURRENT_TIMESTAMP` 固定于事务起点造成的时间倒退，且不引入进程时钟或第二连接。
+Phase C 13 项数据库测试和 A-C 联合 83 项聚焦门禁全部通过，覆盖六类结果、冻结 cut、next-cycle visibility、
+跨副本恢复、四层篡改、缺历史分类、独立 semantic oracle、active export denial、空集合、外层事务隔离和
+幂等 current，以及事务先启动后等待 authority lock 时持久时间仍单调。Phase C 冻结源码的 Resource Gateway
+`clean verify` 执行 2938 tests，0 failures、0 errors、
+2 个既有浏览器条件跳过，并成功打包 Spring Boot 可执行 JAR。当前已完成 completed payload-free
+classification evidence；finding open/reopen/observe/resolve、
+retention、scheduler、health/readiness/capability 仍未落地，不能宣称 governed reconciliation。
 
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与

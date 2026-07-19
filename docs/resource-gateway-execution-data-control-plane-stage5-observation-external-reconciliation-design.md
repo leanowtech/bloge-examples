@@ -1,13 +1,14 @@
 # Stage 5 observation external reconciliation control-plane design
 
-**Phases A-B and the terminal completeness gate implemented (2026-07-20): every externally
+**Phases A-C and both terminal completeness gates implemented (2026-07-20): every externally
 acknowledged WORM copy is normalized into a payload-free expected-object index in the exact
 retirement transaction. Per-authority database-clock owner/token/epoch leases now fence durable
 snapshot cycles; verified page envelopes and normalized items commit atomically with cursor/root
 progress, and a terminal page succeeds only after a constant-memory replay reproduces every staged
-item, page sequence, signed count, and signed root. Bidirectional classification, governed findings,
-scheduling, and capability wiring remain subsequent phases, so reconciliation is not yet advertised
-as complete.**
+item, page sequence, signed count, and signed root. Each completed cycle is then compared with an
+atomically frozen local snapshot by a bounded ordered merge; only a second terminal replay may expose
+self-verifying classifications. Governed findings, scheduling, and capability wiring remain
+subsequent phases, so reconciliation is not yet advertised as complete.**
 
 ## 1. Root problem
 
@@ -32,7 +33,7 @@ The first durable reconciliation invariant is therefore:
 | --- | --- | --- |
 | Retirement repository | receipt-set persistence, expected-object normalization, local deletion transaction | remote inventory reads, findings, external deletion |
 | Expected-object index | exact local comparison material per authority and object | retired observations, credentials, provider addresses |
-| Reconciliation control plane | database lease, durable remote pages, root completion; later merge comparison | WORM mutation |
+| Reconciliation control plane | database lease, durable remote pages, root completion, frozen comparison and classification evidence | WORM mutation or remediation |
 | ANEKE/governance | disposition, exception workflow, remediation approval | rewriting signed local or remote facts |
 | External authority | immutable object retention and signed inventory | local governance classification |
 
@@ -77,7 +78,7 @@ globally unique receipt fingerprint.
 
 The table has no JSON, business payload, observation, input/output, signature, challenge, endpoint,
 key, or credential column. Its object-id and retirement indexes support the two directions required
-by the future ordered comparison:
+by the ordered comparison:
 
 1. remote item to local expectation, detecting unknown or conflicting remote objects;
 2. local expectation to completed remote snapshot, detecting acknowledged objects that disappeared.
@@ -174,7 +175,53 @@ The accumulated root is only a resumable checkpoint. It is never accepted as ter
 the independent streaming replay. This avoids O(snapshot size) heap use while refusing to derive a
 completeness claim from mutable aggregate columns alone.
 
-## 9. Failure analysis
+## 9. Frozen bidirectional classification
+
+`DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane` accepts only the
+authority pointer to a completed cycle. Its first `compareNextPage(authorityId)` transaction locks
+that pointer, replays the complete remote item root, copies the current local expected-object set to
+an immutable comparison snapshot, independently replays a topology-bearing expected root, and
+publishes one active comparison. A local object committed later cannot enter the already pinned
+comparison; it is visible to the next completed remote cycle.
+
+Each subsequent `REQUIRES_NEW` call locks the comparison authority and active run, reads at most
+`N + 1` rows from each sorted source, chooses a safe shared upper bound, and commits no more than
+`2N` union outcomes plus one exact cursor. No remote I/O occurs while these rows are locked. A process
+or replica switch resumes the same frozen snapshots and cursor. The closed outcome rules are:
+
+Comparison timestamps remain monotonic across lock waits. Because PostgreSQL/H2
+`CURRENT_TIMESTAMP` denotes transaction-start time, a transaction that started before waiting for
+the authority lock may otherwise publish time older than the row it eventually acquires. After the
+lock, the control plane therefore advances time to the maximum of transaction database time and the
+locked record's persisted `updated_at`. This database-derived Lamport lower bound prevents time
+regression without relying on a process clock or a second connection.
+
+| Outcome | Deterministic meaning |
+| --- | --- |
+| `MATCHED` | topology and canonical item fingerprint are identical |
+| `MISSING_REMOTE` | expected object exists, complete remote snapshot has no object id |
+| `UNEXPECTED_REMOTE` | remote object exists, frozen local snapshot has no object id |
+| `RETENTION_SHORTENED` | same topology and object id, observed retain-until is earlier |
+| `MATERIAL_CONFLICT` | same topology and object id, other immutable material differs |
+| `UNKNOWN` | both object ids exist but topology drift makes material comparison unsafe |
+
+Every row binds comparison, cycle, authority, object, both optional item/commitment/retention facts,
+both topology facts, and outcome in a canonical fingerprint. The mutable comparison state has a
+whole-record fingerprint and exact outcome counters/root. These are checkpoints, not the completion
+oracle. Before changing `ACTIVE` to `COMPLETED`, the control plane independently:
+
+1. streams and reproduces the frozen expected count/root;
+2. streams and reproduces the signed remote count/root;
+3. streams and reproduces every classification fingerprint, count, outcome counter, and root;
+4. proves classifications cover the exact local/remote object-id union with no missing or extra row;
+5. re-derives every outcome from a fresh SQL source-union and compares the complete semantic record.
+
+The fifth gate deliberately rejects a stable but incorrect classifier even when an operator has
+recomputed every public SHA checkpoint consistently. Any failure rolls back the terminal page and
+cursor. `classifications(comparisonId, afterObjectId, limit)` exports only a completed comparison in
+strict keyset order and verifies each row again. The public boundary has no remediation operation.
+
+## 10. Failure analysis
 
 | Failure | Root cause | Control |
 | --- | --- | --- |
@@ -196,8 +243,16 @@ completeness claim from mutable aggregate columns alone.
 | aggregate root is tampered | final proof trusts checkpoint | stream all staged item fingerprints at terminal |
 | historical page disappears | items alone hide envelope gap | terminal page-span proof requires exact `0..N` |
 | surrounding request rolls back | propagation joins caller | independent `REQUIRES_NEW` mutations |
+| local objects change between comparison pages | live-table merge has no stable left side | atomically frozen expected snapshot per remote cycle |
+| one side has a denser key range | equal offsets skip the sparse side | safe shared object-id upper bound over two keyset windows |
+| process dies during comparison | in-memory merge cursor | active comparison, page sequence, counts, root, and cursor are durable |
+| valid-shaped source row is changed | constructor shape mistaken for integrity | canonical item and topology-bearing root replay |
+| classification row disappears | aggregate state trusted alone | terminal classification stream and exact union coverage |
+| classifier emits stable wrong outcome | self-hash is circular evidence | independent source-union semantic derivation |
+| transaction waits for authority lock and publishes older time | `CURRENT_TIMESTAMP` is fixed at transaction start | advance from the maximum of database time and locked persisted `updated_at` |
+| partial comparison is exported | staged rows look authoritative | export requires fingerprint-verified `COMPLETED` state |
 
-## 10. Executable evidence
+## 11. Executable evidence
 
 The focused gate executes 59 tests with zero failures, errors, or skips. New and extended cases prove:
 
@@ -232,17 +287,29 @@ The frozen Phase B source then passed the complete Resource Gateway `clean verif
 failures, zero errors, two existing browser-environment skips, and a successfully repackaged Spring
 Boot executable JAR.
 
-## 11. Remaining phases and acceptance
+The Phase C focused gate adds 13 green database tests and the joint A-C gate executes 83 tests with
+zero failures, errors, or skips. They prove all six outcomes, bounded multi-page order, immutable
+local snapshot cuts, next-cycle visibility, cross-replica resume, expected/remote/run/classification
+tamper rejection, missing historical classification rollback, semantic-oracle independence, active
+export denial, empty roots, outer-transaction isolation, current-cycle idempotency, and absence of a
+destructive public operation. A lock-wait regression test additionally proves that a transaction
+started before the authority lock cannot move persisted comparison time backward.
 
-The lease, durable cycle, page staging, crash/takeover semantics, and terminal replay portions of
-Phases B-C are complete. The next phase must perform an ordered bidirectional merge of a completed
-remote cycle against the local expected-object index. No partial or active cycle may classify an
-object.
+The frozen Phase C source passed the complete Resource Gateway `clean verify`: 2938 tests, zero
+failures, zero errors, two existing browser-environment skips, and a successfully repackaged Spring
+Boot executable JAR.
+
+## 12. Remaining phases and acceptance
+
+The local expectation, durable remote cycle, frozen comparison, bounded ordered merge, and terminal
+semantic classification portions of Phases A-C are complete. No partial or active comparison can be
+exported as governance evidence.
 
 Phase D must persist payload-free governed findings for at least `MISSING_REMOTE`, `UNEXPECTED_REMOTE`,
 `MATERIAL_CONFLICT`, `RETENTION_SHORTENED`, and `UNKNOWN`. Finding open/reopen/observe/resolve transitions
 must be fingerprinted, fenced, retained, exported, and separated from remediation authority.
 
-Until comparison, findings, scheduler, health/readiness, and capability truth are implemented,
-Resource Gateway may claim **durable local expectation indexing and verified inventory cycle
-staging**, but not external orphan reconciliation.
+Until findings, scheduler, health/readiness, retention, and capability truth are implemented,
+Resource Gateway may claim **durable local expectation indexing, verified inventory cycle staging,
+and completed payload-free classification evidence**, but not governed external orphan
+reconciliation.

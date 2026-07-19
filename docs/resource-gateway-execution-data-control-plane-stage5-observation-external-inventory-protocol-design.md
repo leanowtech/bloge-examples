@@ -195,29 +195,21 @@ browser-environment skips, and a successful executable-JAR package. Independent 
 `clean verify` executes 228 tests with zero failures, errors, or skips and passes ordinary/shaded
 JAR, authoritative Schema packaging, and strict public Javadoc gates.
 
-## 9. Deliberately unclaimed and next root gap
+## 9. Protocol boundary and downstream status
 
-This increment makes remote inventory pages trustworthy enough to consume. It does not yet:
+The inventory protocol itself makes remote pages trustworthy enough to consume. It deliberately does
+not own cycle persistence, local expectations, classifications, findings, scheduling, or
+remediation. Those remain downstream responsibilities rather than being smuggled into a signed page
+contract.
 
-- persist a multi-page cycle or recover it after process failure;
-- fence two replicas from advancing the same authority cursor;
-- normalize committed local object/authority identities;
-- classify `COMMITTED`, `PENDING`, `ORPHAN`, `CONFLICT`, and `UNKNOWN`;
-- detect a locally acknowledged object missing before retain-until;
-- create, reopen, transition, resolve, retain, or export governed findings;
-- expose aggregate reconciliation health or schedule bounded work.
-
-The next increment must add a database-clock lease and epoch per authority, persist every verified
-page before cursor advance, resume exact snapshot progress after crash, verify final count/root, and
-compare both remote-to-local and local-to-remote. Findings must be durable and payload-free. The
-repository and service still must not contain any external delete method; remediation remains an
-ANEKE/governance workflow with a separately controlled storage authority.
-
-The first prerequisite is now implemented: every accepted authority receipt is normalized into a
+The downstream control plane now normalizes every accepted authority receipt into a
 payload-free expected inventory item in the exact retirement transaction, with bounded historical
 backfill and exact-replay repair. See
 [Stage 5 observation external reconciliation control plane](resource-gateway-execution-data-control-plane-stage5-observation-external-reconciliation-design.md).
 Per-authority database-clock leases, durable page/item staging, cross-replica continuation,
 snapshot-expiry closure, and terminal count/root/page-sequence replay are now implemented there as
-well. Ordered local/remote comparison, governed findings, scheduling, and capability wiring remain
-unimplemented.
+well. A later phase now also freezes local expectations per completed cycle and produces a bounded,
+durable, independently replayed six-outcome comparison. Governed finding lifecycle, retention,
+scheduling, health/readiness, and capability wiring remain unimplemented. The repository and service
+still contain no external delete method; remediation remains an ANEKE/governance workflow with a
+separately controlled storage authority.
