@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationFloorRetirementEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationExternalArchiveIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementIntegrity;
 
@@ -12,29 +13,35 @@ import java.util.Objects;
 /**
  * Orchestrates prepare, sign, verify, and atomic commit for one observation-ledger floor move.
  *
- * <p>This service is deliberately not an HTTP capability. It establishes the durable retention
- * primitive needed by a future policy scheduler. External WORM acknowledgement, legal-hold
+ * <p>This service is deliberately not an HTTP capability. It obtains independently verified
+ * external immutable-archive receipts before invoking the local transaction, so no supported
+ * retirement path can delete active rows using same-database durability alone. Legal-hold
  * authorization, backup purge, and witnessed non-equivocation remain separate admission gates.</p>
  */
 public final class TestSuiteStabilityObservationFloorRetirementService {
     private final ObjectMapper objectMapper;
     private final TestSuiteStabilityRunRepository repository;
     private final TestSuiteStabilityObservationFloorRetirementAttestationService attestations;
+    private final TestSuiteStabilityObservationExternalArchiveAuthority archiveAuthority;
 
     /**
-     * Creates an internal signed floor-retirement boundary.
+     * Creates an external-first signed floor-retirement boundary.
      *
      * @param objectMapper canonical protocol mapper
      * @param repository database-authoritative stability store
      * @param attestations retirement-specific signing and verification service
+     * @param archiveAuthority independently trusted external immutable-archive authority
      */
     public TestSuiteStabilityObservationFloorRetirementService(
             ObjectMapper objectMapper,
             TestSuiteStabilityRunRepository repository,
-            TestSuiteStabilityObservationFloorRetirementAttestationService attestations) {
+            TestSuiteStabilityObservationFloorRetirementAttestationService attestations,
+            TestSuiteStabilityObservationExternalArchiveAuthority archiveAuthority) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.repository = Objects.requireNonNull(repository, "repository");
         this.attestations = Objects.requireNonNull(attestations, "attestations");
+        this.archiveAuthority = Objects.requireNonNull(
+                archiveAuthority, "archiveAuthority");
     }
 
     /**
@@ -47,7 +54,8 @@ public final class TestSuiteStabilityObservationFloorRetirementService {
      * @param minimumRetainedEntries minimum active suffix that must remain
      * @param maximumRetiredEntries maximum entries in one atomic archive segment
      * @param retentionPolicyFingerprint immutable external policy identity
-     * @return committed, no-op, or signer-unavailable result
+     * @param retainUntil minimum external compliance-retention deadline
+     * @return committed, no-op, or fail-closed result
      */
     public Result retire(
             String tenantId,
@@ -56,7 +64,8 @@ public final class TestSuiteStabilityObservationFloorRetirementService {
             Instant cutoffExclusive,
             int minimumRetainedEntries,
             int maximumRetiredEntries,
-            String retentionPolicyFingerprint) {
+            String retentionPolicyFingerprint,
+            Instant retainUntil) {
         var planned = repository.planObservationFloorRetirement(
                 tenantId, environmentId, suiteRef, cutoffExclusive,
                 minimumRetainedEntries, maximumRetiredEntries,
@@ -91,8 +100,42 @@ public final class TestSuiteStabilityObservationFloorRetirementService {
                     TestSuiteStabilityObservationFloorRetirementAttestationService
                             .SIGNATURE_INVALID);
         }
+        if (retainUntil == null || !retainUntil.isAfter(evidence.retiredAt())) {
+            return Result.failed(
+                    TestSuiteStabilityObservationExternalArchiveAuthority
+                            .ARCHIVE_RECEIPT_INVALID);
+        }
+        TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet;
+        try {
+            receiptSet = archiveAuthority.archive(retirement, retainUntil);
+        } catch (TestSuiteStabilityObservationExternalArchiveAuthority
+                 .ExternalArchiveException failure) {
+            return Result.failed(archiveFailureCode(failure.reason()));
+        } catch (RuntimeException unavailable) {
+            return Result.failed(
+                    TestSuiteStabilityObservationExternalArchiveAuthority.ARCHIVE_UNAVAILABLE);
+        }
+        TestSuiteStabilityObservationExternalArchiveAuthority.Verification archiveVerification;
+        try {
+            archiveVerification = archiveAuthority.verify(receiptSet);
+        } catch (RuntimeException unavailable) {
+            archiveVerification =
+                    TestSuiteStabilityObservationExternalArchiveAuthority.Verification.UNAVAILABLE;
+        }
+        if (archiveVerification
+                != TestSuiteStabilityObservationExternalArchiveAuthority.Verification.VERIFIED
+                || !TestSuiteStabilityObservationExternalArchiveIntegrity.valid(
+                objectMapper, receiptSet)
+                || !retirement.equals(receiptSet.request().retirement())
+                || receiptSet.request().retainUntil().isBefore(retainUntil)) {
+            return Result.failed(archiveVerification
+                    == TestSuiteStabilityObservationExternalArchiveAuthority.Verification.UNAVAILABLE
+                    ? TestSuiteStabilityObservationExternalArchiveAuthority.ARCHIVE_UNAVAILABLE
+                    : TestSuiteStabilityObservationExternalArchiveAuthority
+                            .ARCHIVE_RECEIPT_INVALID);
+        }
         TestSuiteStabilityObservationLedgerFloor successor =
-                repository.commitObservationFloorRetirement(retirement);
+                repository.commitObservationFloorRetirement(retirement, receiptSet);
         if (!successor.latestRetirementId().equals(evidence.retirementId())
                 || !successor.latestRetirementFingerprint().equals(
                 retirement.retirementFingerprint())
@@ -100,20 +143,22 @@ public final class TestSuiteStabilityObservationFloorRetirementService {
             throw new IllegalStateException(
                     "Committed stability observation floor contradicts its retirement");
         }
-        return Result.retired(retirement, successor);
+        return Result.retired(retirement, receiptSet, successor);
     }
 
     /**
-     * Closed orchestration result without payload or policy-authority material.
+     * Closed orchestration result without business payload or remote diagnostic material.
      *
      * @param status closed result status
      * @param retirement committed signed retirement; present only for {@code RETIRED}
+     * @param archiveReceiptSet external receipts committed with the retirement
      * @param successorFloor committed successor floor; present only for {@code RETIRED}
      * @param failureCode bounded stable reason; present only for {@code FAILED}
      */
     public record Result(
             Status status,
             TestSuiteStabilityObservationFloorRetirement retirement,
+            TestSuiteStabilityObservationExternalArchiveReceiptSet archiveReceiptSet,
             TestSuiteStabilityObservationLedgerFloor successorFloor,
             String failureCode
     ) {
@@ -121,11 +166,14 @@ public final class TestSuiteStabilityObservationFloorRetirementService {
         public Result {
             failureCode = failureCode == null ? "" : failureCode.trim();
             boolean retired = status == Status.RETIRED
-                    && retirement != null && successorFloor != null && failureCode.isBlank();
+                    && retirement != null && archiveReceiptSet != null
+                    && successorFloor != null && failureCode.isBlank();
             boolean noOp = status == Status.NO_ELIGIBLE_PREFIX
-                    && retirement == null && successorFloor == null && failureCode.isBlank();
+                    && retirement == null && archiveReceiptSet == null
+                    && successorFloor == null && failureCode.isBlank();
             boolean failed = status == Status.FAILED
-                    && retirement == null && successorFloor == null && !failureCode.isBlank();
+                    && retirement == null && archiveReceiptSet == null
+                    && successorFloor == null && !failureCode.isBlank();
             if (!retired && !noOp && !failed) {
                 throw new IllegalArgumentException(
                         "Floor retirement result must contain exactly one outcome");
@@ -136,20 +184,23 @@ public final class TestSuiteStabilityObservationFloorRetirementService {
          * Creates a successful committed result.
          *
          * @param retirement committed signed retirement
+         * @param archiveReceiptSet independently verified committed external receipts
          * @param successorFloor exact committed successor floor
          * @return successful result
          */
         public static Result retired(
                 TestSuiteStabilityObservationFloorRetirement retirement,
+                TestSuiteStabilityObservationExternalArchiveReceiptSet archiveReceiptSet,
                 TestSuiteStabilityObservationLedgerFloor successorFloor) {
             return new Result(Status.RETIRED,
                     Objects.requireNonNull(retirement, "retirement"),
+                    Objects.requireNonNull(archiveReceiptSet, "archiveReceiptSet"),
                     Objects.requireNonNull(successorFloor, "successorFloor"), "");
         }
 
         /** @return no-op result when no bounded eligible prefix exists */
         public static Result noEligiblePrefix() {
-            return new Result(Status.NO_ELIGIBLE_PREFIX, null, null, "");
+            return new Result(Status.NO_ELIGIBLE_PREFIX, null, null, null, "");
         }
 
         /**
@@ -159,7 +210,7 @@ public final class TestSuiteStabilityObservationFloorRetirementService {
          * @return failed result
          */
         public static Result failed(String failureCode) {
-            return new Result(Status.FAILED, null, null,
+            return new Result(Status.FAILED, null, null, null,
                     Objects.requireNonNull(failureCode, "failureCode"));
         }
     }
@@ -170,11 +221,24 @@ public final class TestSuiteStabilityObservationFloorRetirementService {
         RETIRED,
         /** Policy and minimum-suffix bounds selected no active prefix. */
         NO_ELIGIBLE_PREFIX,
-        /** Signing or immediate verification failed before mutation. */
+        /** Signing, external archive, or immediate verification failed before mutation. */
         FAILED
     }
 
     private static String zeroFingerprint() {
         return "sha256:" + "0".repeat(64);
+    }
+
+    private static String archiveFailureCode(
+            TestSuiteStabilityObservationExternalArchiveAuthority.ExternalArchiveException.Reason
+                    reason) {
+        return switch (reason) {
+            case AUTHENTICATED_CONFLICT ->
+                    TestSuiteStabilityObservationExternalArchiveAuthority.ARCHIVE_CONFLICT;
+            case INVALID_RECEIPT ->
+                    TestSuiteStabilityObservationExternalArchiveAuthority.ARCHIVE_RECEIPT_INVALID;
+            case UNAVAILABLE, CLOSED ->
+                    TestSuiteStabilityObservationExternalArchiveAuthority.ARCHIVE_UNAVAILABLE;
+        };
     }
 }

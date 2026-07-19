@@ -3325,6 +3325,10 @@ The atomic dual-root runtime-key publication is defined by
 [`suite-stability-serving-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json).
 The external compare-and-append request/receipt contract is defined by
 [`suite-stability-external-sequence-checkpoint-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json).
+The internal pre-delete compact-observation archive request/receipt-set contract is defined by
+[`suite-stability-observation-external-archive-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-observation-external-archive-v1.schema.json).
+It is a write-side persistence boundary, not a caller-facing endpoint or an advertised production
+WORM capability; lifecycle v1 does not export these receipt sets.
 Implementation evidence and deliberately unclaimed guarantees are recorded in
 [Stage 5 current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
 Dynamic refresh invariants, health semantics and deliberately unclaimed fleet guarantees are in

@@ -319,6 +319,7 @@ is `UNAVAILABLE`; only a verified signed revocation is definitive. Capacity resp
 [machine-readable serving-inventory Schema](../docs/schemas/resource-gateway-testing/suite-stability-serving-inventory-v1.schema.json),
 [machine-readable managed trust-root publication Schema](../docs/schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json),
 [machine-readable external checkpoint Schema](../docs/schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json),
+[machine-readable compact-observation external archive Schema](../docs/schemas/resource-gateway-testing/suite-stability-observation-external-archive-v1.schema.json),
 and [machine-readable authority Schema](../docs/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json).
 Actuator exposes separate stability-queue, dynamic-authority-trust, and managed inventory-root
 health contributors. The

@@ -1,10 +1,12 @@
 # Stage 5 observation-floor lifecycle protocol design
 
-**Implementation status (2026-07-19): strict lifecycle request/page/attestation Schema, an
+**Implementation status (2026-07-20): strict lifecycle request/page/attestation Schema, an
 authorized default-disabled HTTP adapter, database-snapshot pagination, server-side retirement and
-page verification, and an independent test-kit verifier are implemented. The advertised
-`crossRetentionSuiteStabilityTrend` capability remains false because external WORM, legal hold and
-erasure, backup purge, disaster-recovery continuity, and witnessed non-equivocation are not closed.**
+page verification, an independent test-kit verifier, and write-side external archive-receipt
+admission are implemented. Lifecycle v1 does not export or independently verify those receipts. The
+advertised `crossRetentionSuiteStabilityTrend` capability remains false because a production WORM
+adapter, receipt-aware lifecycle v2, legal hold and erasure, backup purge, disaster-recovery
+continuity, and witnessed non-equivocation are not closed.**
 
 ## 1. Strongest judgment
 
@@ -32,7 +34,8 @@ does not turn the same-database archive into an externally durable or non-equivo
 | Retirement signer | Exact retirement evidence and archive transition signature | That all consumers saw the same generation |
 | Lifecycle signer | Exact page, snapshot pins, and ordered retirement refs | That an omitted alternative history does not exist |
 | Independent test-kit | Strict Schema, canonical identities, all nested signatures, transitions, and cross-page checkpoint | Producer database completeness beyond signed material |
-| External governance plane | Future key pins, WORM acknowledgements, hold/erasure policy, witness quorum, release decision | Resource Gateway business execution |
+| External archive authority | Pre-delete WORM acknowledgement and receipt signatures | Public lifecycle receipt export or governance release decision |
+| External governance plane | Future receipt/key pins, hold/erasure policy, witness quorum, release decision | Resource Gateway business execution |
 
 The server and test-kit intentionally implement canonical verification independently. The test-kit
 does not depend on Resource Gateway server classes, Spring Boot, or retired full stability records.
@@ -227,7 +230,7 @@ verification and range verification are separate evidence objects and both are r
 | Outer page re-signed over forged inner data | independent inner observation and retirement verification | trusted key compromise remains an external incident |
 | Database restore rolls floor backward | local fingerprints may still verify | external witness/checkpoint is required to detect rollback |
 | Producer serves two internally valid forks | one database authority prevents local concurrent fork | cross-authority split view needs witnessed non-equivocation |
-| Archive and active rows share one failure domain | transactional consistency only | external WORM and disaster recovery remain required |
+| Lifecycle v1 omits external receipt sets | write side still requires a persisted exact receipt set | lifecycle v2 and independent receipt verification remain required |
 
 ## 9. Verification coverage
 
@@ -254,15 +257,18 @@ also passes ordinary/shaded JAR, authoritative-Schema packaging, and strict publ
 This increment closes public local floor discovery and independent local-chain verification. It does
 not close the following industrial requirements:
 
-1. external WORM acknowledgement before active deletion;
-2. legal-hold precedence, authorized hold release, erasure proof, and backup purge evidence;
-3. externally witnessed generation checkpoints, gossip, and rollback/fork/split-view detection;
-4. multi-region restore continuity and disaster-recovery conformance tests;
-5. managed key lifecycle and compromise response tested across archived signing generations;
-6. database-leased retirement scheduling, backlog/freshness SLO, readiness, and bounded repair;
-7. externally pinned lifecycle checkpoints retained independently of Resource Gateway;
-8. a scalable authenticated accumulator before lifecycle histories exceed bounded linear verification;
-9. cross-version producer/consumer conformance and independent implementation certification.
+1. strict HTTPS multi-authority WORM adapter, certified failure-domain independence, and staging
+   required wiring;
+2. lifecycle v2 receipt-set export plus independent signature, policy, threshold, and retention
+   verification;
+3. legal-hold precedence, authorized hold release, erasure proof, and backup purge evidence;
+4. externally witnessed generation checkpoints, gossip, and rollback/fork/split-view detection;
+5. multi-region restore continuity and disaster-recovery conformance tests;
+6. managed key lifecycle and compromise response tested across archived signing generations;
+7. database-leased retirement scheduling, backlog/freshness SLO, readiness, and bounded repair;
+8. externally pinned lifecycle checkpoints retained independently of Resource Gateway;
+9. a scalable authenticated accumulator before lifecycle histories exceed bounded linear verification;
+10. cross-version producer/consumer conformance and independent implementation certification.
 
 Until those gates close, the endpoint remains a default-disabled test/staging preview, production
 wiring remains absent, and `crossRetentionSuiteStabilityTrend` remains false. The honest product

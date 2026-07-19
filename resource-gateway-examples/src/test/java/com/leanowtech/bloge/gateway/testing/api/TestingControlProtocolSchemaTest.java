@@ -1359,6 +1359,66 @@ class TestingControlProtocolSchemaTest {
     }
 
     @Test
+    void externalArchiveSchemaFreezesStrictDeletionAdmissionReceipts() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        Path schemaDirectory = Path.of("..", "docs", "schemas",
+                "resource-gateway-testing");
+        JsonNode standalone = mapper.readTree(Files.readString(schemaDirectory.resolve(
+                "suite-stability-observation-external-archive-v1.schema.json")));
+        JsonNode definitions = mapper.readTree(Files.readString(schemaDirectory.resolve(
+                "testing-control-plane-v1.schema.json"))).path("$defs");
+
+        JsonNode request = definitions.path(
+                "testSuiteStabilityObservationExternalArchiveRequest");
+        JsonNode receipt = definitions.path(
+                "testSuiteStabilityObservationExternalArchiveReceipt");
+        JsonNode receiptSet = definitions.path(
+                "testSuiteStabilityObservationExternalArchiveReceiptSet");
+        assertThat(standalone.path("oneOf")).hasSize(3);
+        assertThat(standalone.at("/$defs/request/properties/retirement/$ref").asText())
+                .isEqualTo("testing-control-plane-v1.schema.json#/$defs/"
+                        + "testSuiteStabilityObservationFloorRetirement");
+        assertThat(request.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(receipt.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(receiptSet.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(request.at("/properties/schemaVersion/const").asText()).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveRequest.SCHEMA_VERSION);
+        assertThat(receipt.at("/properties/schemaVersion/const").asText()).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveReceipt.SCHEMA_VERSION);
+        assertThat(receiptSet.at("/properties/schemaVersion/const").asText()).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveReceiptSet.SCHEMA_VERSION);
+        assertThat(request.path("required")).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(
+                        "schemaVersion", "requestFingerprint", "trustDomain", "archiveSetId",
+                        "retirement", "retainUntil", "challenge", "requestedAt", "expiresAt");
+        assertThat(receipt.path("required")).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(
+                        "schemaVersion", "receiptFingerprint", "requestFingerprint",
+                        "trustDomain", "archiveSetId", "authorityId", "failureDomain", "keyId",
+                        "objectId", "retirementId", "retirementFingerprint", "segmentId",
+                        "segmentFingerprint", "retentionPolicyFingerprint", "retainUntil",
+                        "storedAt", "issuedAt", "expiresAt", "retentionMode",
+                        "externallyDurable", "writeOnce", "deleteBeforeRetentionDenied",
+                        "algorithm", "signature");
+        assertThat(receiptSet.path("required")).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(
+                        "schemaVersion", "receiptSetId", "request", "requiredCopies",
+                        "receipts", "confirmedAt", "receiptSetFingerprint");
+        assertThat(receipt.at("/properties/retentionMode/const").asText())
+                .isEqualTo("COMPLIANCE");
+        assertThat(receipt.at("/properties/externallyDurable/const").asBoolean()).isTrue();
+        assertThat(receipt.at("/properties/writeOnce/const").asBoolean()).isTrue();
+        assertThat(receipt.at("/properties/deleteBeforeRetentionDenied/const").asBoolean())
+                .isTrue();
+        assertThat(receiptSet.at("/properties/receipts/maxItems").asInt()).isEqualTo(16);
+        assertThat(java.util.List.of("tenantId", "environmentId", "actorId", "payload",
+                        "input", "output", "fixtureValue", "endpoint", "credential"))
+                .noneMatch(request.path("properties")::has)
+                .noneMatch(receipt.path("properties")::has)
+                .noneMatch(receiptSet.path("properties")::has);
+    }
+
+    @Test
     void evidenceSchemaFreezesOccurrenceAttemptAndEdgeCoordinates() throws Exception {
         JsonNode definitions = new ObjectMapper().readTree(Files.readString(Path.of("..", "docs", "schemas",
                 "resource-gateway-testing", "testing-control-plane-v1.schema.json"))).path("$defs");

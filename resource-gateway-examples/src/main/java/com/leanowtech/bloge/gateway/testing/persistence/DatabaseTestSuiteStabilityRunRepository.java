@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationArchiveSegment;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationFloorRetirement;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReceiptSet;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerEntry;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerFloor;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerHead;
@@ -31,6 +32,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationFloorRetirementEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationExternalArchiveIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerFloorIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationProjector;
@@ -287,6 +289,35 @@ public final class DatabaseTestSuiteStabilityRunRepository
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     floor_fingerprint VARCHAR(71) NOT NULL,
                     floor_json CLOB NOT NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_observation_archive_receipts (
+                    receipt_set_id VARCHAR(255) PRIMARY KEY,
+                    retirement_id VARCHAR(255) NOT NULL,
+                    scope_fingerprint VARCHAR(71) NOT NULL,
+                    retirement_generation BIGINT NOT NULL,
+                    segment_id VARCHAR(255) NOT NULL,
+                    retirement_fingerprint VARCHAR(71) NOT NULL,
+                    segment_fingerprint VARCHAR(71) NOT NULL,
+                    retention_policy_fingerprint VARCHAR(71) NOT NULL,
+                    retain_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    required_copies INTEGER NOT NULL,
+                    receipt_count INTEGER NOT NULL,
+                    confirmed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    receipt_set_fingerprint VARCHAR(71) NOT NULL,
+                    receipt_set_json CLOB NOT NULL,
+                    CONSTRAINT uq_rg_test_suite_stability_observation_archive_receipt_retirement
+                        UNIQUE (retirement_id),
+                    CONSTRAINT uq_rg_test_suite_stability_observation_archive_receipt_generation
+                        UNIQUE (scope_fingerprint, retirement_generation)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS
+                    idx_rg_test_suite_stability_observation_archive_receipt_scope
+                ON rg_test_suite_stability_observation_archive_receipts (
+                    scope_fingerprint, retirement_generation
                 )
                 """);
         jdbc.execute("""
@@ -1429,12 +1460,20 @@ public final class DatabaseTestSuiteStabilityRunRepository
 
     @Override
     public TestSuiteStabilityObservationLedgerFloor commitObservationFloorRetirement(
-            TestSuiteStabilityObservationFloorRetirement retirement) {
+            TestSuiteStabilityObservationFloorRetirement retirement,
+            TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet) {
         Objects.requireNonNull(retirement, "retirement");
+        Objects.requireNonNull(receiptSet, "receiptSet");
         if (!TestSuiteStabilityObservationFloorRetirementIntegrity.valid(
                 objectMapper, retirement)) {
             throw new IllegalArgumentException(
                     "Canonical signed stability observation floor retirement is required");
+        }
+        if (!TestSuiteStabilityObservationExternalArchiveIntegrity.valid(
+                objectMapper, receiptSet)
+                || !retirement.equals(receiptSet.request().retirement())) {
+            throw new IllegalArgumentException(
+                    "Canonical external archive receipts for the exact retirement are required");
         }
         TestSuiteStabilityObservationFloorRetirementEvidence evidence = retirement.evidence();
         TestSuiteStabilityObservationArchiveSegment archive = evidence.archiveSegment();
@@ -1446,6 +1485,14 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 if (!replay.get().equals(retirement)) {
                     throw new IllegalStateException(
                             "Stability observation retirement identity has different material");
+                }
+                TestSuiteStabilityObservationExternalArchiveReceiptSet storedReceiptSet =
+                        findObservationExternalArchiveReceiptSet(evidence.retirementId())
+                                .orElseThrow(() -> new IllegalStateException(
+                                        "Committed retirement has no external archive receipts"));
+                if (!storedReceiptSet.equals(receiptSet)) {
+                    throw new IllegalStateException(
+                            "Stability observation retirement replay has different archive receipts");
                 }
                 return successorFloor(retirement);
             }
@@ -1467,6 +1514,7 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 throw new IllegalStateException(
                         "Stability observation retirement is ahead of database time");
             }
+            insertExternalArchiveReceiptSet(receiptSet);
             insertArchive(archive);
             insertRetirement(retirement);
             TestSuiteStabilityObservationLedgerFloor successorFloor =
@@ -1530,6 +1578,30 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 values.stream().findFirst();
         result.ifPresent(value -> requireStoredArchive(value.evidence().archiveSegment()));
         return result;
+    }
+
+    @Override
+    public Optional<TestSuiteStabilityObservationExternalArchiveReceiptSet>
+            findObservationExternalArchiveReceiptSet(String retirementId) {
+        String exactId = normalized(retirementId);
+        if (!exactId.matches("stability-observation-retirement-[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(
+                    "Complete stability observation retirement id is required");
+        }
+        List<TestSuiteStabilityObservationExternalArchiveReceiptSet> values = jdbc.query("""
+                SELECT receipt_set_id, retirement_id, scope_fingerprint,
+                       retirement_generation, segment_id, retirement_fingerprint,
+                       segment_fingerprint, retention_policy_fingerprint, retain_until,
+                       required_copies, receipt_count, confirmed_at,
+                       receipt_set_fingerprint, receipt_set_json
+                FROM rg_test_suite_stability_observation_archive_receipts
+                WHERE retirement_id = ?
+                """, this::storedExternalArchiveReceiptSet, exactId);
+        if (values.size() > 1) {
+            throw new IllegalStateException(
+                    "External observation archive receipt identity is not unique");
+        }
+        return values.stream().findFirst();
     }
 
     private Optional<TestSuiteStabilityRunRecord> query(String sql, Object... arguments) {
@@ -2006,6 +2078,40 @@ public final class DatabaseTestSuiteStabilityRunRepository
         } catch (DuplicateKeyException duplicate) {
             throw new IllegalStateException(
                     "Stability observation archive generation already exists", duplicate);
+        }
+    }
+
+    private void insertExternalArchiveReceiptSet(
+            TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet) {
+        TestSuiteStabilityObservationFloorRetirement retirement =
+                receiptSet.request().retirement();
+        TestSuiteStabilityObservationFloorRetirementEvidence evidence = retirement.evidence();
+        TestSuiteStabilityObservationArchiveSegment archive = evidence.archiveSegment();
+        try {
+            int inserted = jdbc.update("""
+                    INSERT INTO rg_test_suite_stability_observation_archive_receipts (
+                        receipt_set_id, retirement_id, scope_fingerprint,
+                        retirement_generation, segment_id, retirement_fingerprint,
+                        segment_fingerprint, retention_policy_fingerprint, retain_until,
+                        required_copies, receipt_count, confirmed_at,
+                        receipt_set_fingerprint, receipt_set_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, receiptSet.receiptSetId(), evidence.retirementId(),
+                    evidence.scopeFingerprint(), evidence.retirementGeneration(),
+                    archive.segmentId(), retirement.retirementFingerprint(),
+                    archive.segmentFingerprint(), evidence.retentionPolicyFingerprint(),
+                    Timestamp.from(receiptSet.request().retainUntil()),
+                    receiptSet.requiredCopies(), receiptSet.receipts().size(),
+                    Timestamp.from(receiptSet.confirmedAt()),
+                    receiptSet.receiptSetFingerprint(),
+                    writeExternalArchiveReceiptSet(receiptSet));
+            if (inserted != 1) {
+                throw new IllegalStateException(
+                        "External observation archive receipt insert was incomplete");
+            }
+        } catch (DuplicateKeyException duplicate) {
+            throw new IllegalStateException(
+                    "External observation archive receipt generation already exists", duplicate);
         }
     }
 
@@ -2767,6 +2873,43 @@ public final class DatabaseTestSuiteStabilityRunRepository
         return retirement;
     }
 
+    private TestSuiteStabilityObservationExternalArchiveReceiptSet
+            storedExternalArchiveReceiptSet(ResultSet result, int row) throws SQLException {
+        TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet =
+                readExternalArchiveReceiptSet(result.getString("receipt_set_json"));
+        TestSuiteStabilityObservationFloorRetirement retirement =
+                receiptSet.request().retirement();
+        TestSuiteStabilityObservationFloorRetirementEvidence evidence = retirement.evidence();
+        TestSuiteStabilityObservationArchiveSegment archive = evidence.archiveSegment();
+        if (!TestSuiteStabilityObservationExternalArchiveIntegrity.valid(
+                objectMapper, receiptSet)
+                || !receiptSet.receiptSetId().equals(result.getString("receipt_set_id"))
+                || !evidence.retirementId().equals(result.getString("retirement_id"))
+                || !evidence.scopeFingerprint().equals(
+                result.getString("scope_fingerprint"))
+                || evidence.retirementGeneration()
+                != result.getLong("retirement_generation")
+                || !archive.segmentId().equals(result.getString("segment_id"))
+                || !retirement.retirementFingerprint().equals(
+                result.getString("retirement_fingerprint"))
+                || !archive.segmentFingerprint().equals(
+                result.getString("segment_fingerprint"))
+                || !evidence.retentionPolicyFingerprint().equals(
+                result.getString("retention_policy_fingerprint"))
+                || !receiptSet.request().retainUntil().equals(
+                result.getTimestamp("retain_until").toInstant())
+                || receiptSet.requiredCopies() != result.getInt("required_copies")
+                || receiptSet.receipts().size() != result.getInt("receipt_count")
+                || !receiptSet.confirmedAt().equals(
+                result.getTimestamp("confirmed_at").toInstant())
+                || !receiptSet.receiptSetFingerprint().equals(
+                result.getString("receipt_set_fingerprint"))) {
+            throw new IllegalStateException(
+                    "Stored external observation archive receipt columns contradict its record");
+        }
+        return receiptSet;
+    }
+
     private void requireStoredArchive(
             TestSuiteStabilityObservationArchiveSegment expected) {
         List<TestSuiteStabilityObservationArchiveSegment> values = jdbc.query("""
@@ -2832,6 +2975,27 @@ public final class DatabaseTestSuiteStabilityRunRepository
         } catch (JsonProcessingException failure) {
             throw new IllegalStateException(
                     "Cannot serialize suite-stability observation archive", failure);
+        }
+    }
+
+    private String writeExternalArchiveReceiptSet(
+            TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet) {
+        try {
+            return objectMapper.writeValueAsString(receiptSet);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot serialize external observation archive receipt set", failure);
+        }
+    }
+
+    private TestSuiteStabilityObservationExternalArchiveReceiptSet
+            readExternalArchiveReceiptSet(String value) {
+        try {
+            return objectMapper.readValue(
+                    value, TestSuiteStabilityObservationExternalArchiveReceiptSet.class);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot deserialize external observation archive receipt set", failure);
         }
     }
 

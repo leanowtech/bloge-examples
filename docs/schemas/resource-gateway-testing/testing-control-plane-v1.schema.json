@@ -6208,6 +6208,156 @@
         }
       }
     },
+    "testSuiteStabilityObservationExternalArchiveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "requestFingerprint", "trustDomain", "archiveSetId",
+        "retirement", "retainUntil", "challenge", "requestedAt", "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationExternalArchiveRequest.v1"
+        },
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "trustDomain": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "archiveSetId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "retirement": {
+          "$ref": "#/$defs/testSuiteStabilityObservationFloorRetirement"
+        },
+        "retainUntil": {"type": "string", "format": "date-time"},
+        "challenge": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 43,
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "requestedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        }
+      }
+    },
+    "testSuiteStabilityObservationExternalArchiveReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "receiptFingerprint", "requestFingerprint", "trustDomain",
+        "archiveSetId", "authorityId", "failureDomain", "keyId", "objectId",
+        "retirementId", "retirementFingerprint", "segmentId", "segmentFingerprint",
+        "retentionPolicyFingerprint", "retainUntil", "storedAt", "issuedAt",
+        "expiresAt", "retentionMode", "externallyDurable", "writeOnce",
+        "deleteBeforeRetentionDenied", "algorithm", "signature"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationExternalArchiveReceipt.v1"
+        },
+        "receiptFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "trustDomain": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "archiveSetId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "authorityId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "failureDomain": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "objectId": {
+          "type": "string",
+          "pattern": "^stability-observation-worm-[a-f0-9]{64}$"
+        },
+        "retirementId": {
+          "type": "string",
+          "pattern": "^stability-observation-retirement-[a-f0-9]{64}$"
+        },
+        "retirementFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "segmentId": {
+          "type": "string",
+          "pattern": "^stability-observation-archive-[a-f0-9]{64}$"
+        },
+        "segmentFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "retentionPolicyFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "retainUntil": {"type": "string", "format": "date-time"},
+        "storedAt": {"type": "string", "format": "date-time"},
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "retentionMode": {"const": "COMPLIANCE"},
+        "externallyDurable": {"const": true},
+        "writeOnce": {"const": true},
+        "deleteBeforeRetentionDenied": {"const": true},
+        "algorithm": {"const": "Ed25519"},
+        "signature": {
+          "type": "string",
+          "minLength": 88,
+          "maxLength": 88,
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    },
+    "testSuiteStabilityObservationExternalArchiveReceiptSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "receiptSetId", "request", "requiredCopies", "receipts",
+        "confirmedAt", "receiptSetFingerprint"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationExternalArchiveReceiptSet.v1"
+        },
+        "receiptSetId": {
+          "type": "string",
+          "pattern": "^stability-observation-external-archive-receipts-[a-f0-9]{64}$"
+        },
+        "request": {
+          "$ref": "#/$defs/testSuiteStabilityObservationExternalArchiveRequest"
+        },
+        "requiredCopies": {"type": "integer", "minimum": 1, "maximum": 16},
+        "receipts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/testSuiteStabilityObservationExternalArchiveReceipt"
+          }
+        },
+        "confirmedAt": {"type": "string", "format": "date-time"},
+        "receiptSetFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
     "testGraphTargetDescriptor": {
       "type": "object",
       "additionalProperties": false,

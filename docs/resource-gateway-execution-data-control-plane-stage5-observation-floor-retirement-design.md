@@ -1,9 +1,11 @@
 # Stage 5 compact-observation floor retirement design
 
-**Implementation status (2026-07-19): internal database-authoritative signed floor-retirement core,
-strict public lifecycle Schema, default-disabled authorized pagination, and an independent test-kit
-verifier are implemented and verified. External WORM, legal hold/erasure, backup purge,
-disaster-recovery continuity, and witnessed non-equivocation remain unavailable.**
+**Implementation status (2026-07-20): internal database-authoritative signed floor-retirement core,
+strict public lifecycle Schema, default-disabled authorized pagination, independent lifecycle
+verification, and mandatory external-first archive-receipt admission are implemented and verified.
+The production HTTPS WORM adapter, public receipt export and independent receipt verification, legal
+hold/erasure, backup purge, disaster-recovery continuity, and witnessed non-equivocation remain
+unavailable.**
 
 ## 1. Strongest judgment
 
@@ -30,14 +32,16 @@ default-disabled lifecycle proof endpoint without weakening the range protocol's
 | Retirement intent | Retirement-specific Ed25519 signer | exact floor, head, archive, policy, generation, and database time are signed | external M-of-N authorization |
 | Atomic mutation | Local relational transaction | archive + retirement + floor/head CAS + active deletion commit together | cross-store distributed transaction |
 | Replay | Deterministic retirement id and exact stored record | identical retry returns the historical successor floor | externally durable consumer checkpoint |
-| Archive durability | Same database, payload-free bounded segment | local transactional recovery and indexed/JSON integrity checks | independent WORM acknowledgement and geographic durability |
+| Archive durability | External-first receipt protocol plus same-database bounded segment | no supported local commit can delete active rows without exact pre-verified compliance-retention receipts | production HTTPS WORM adapter, certified independent failure domains, and geographic durability |
 | History consistency | Per-scope sequence, predecessor chain, signed retirement generations | local non-forking transition under one database authority | external witnessed non-equivocation and gossip |
 
 `TestSuiteStabilityObservationFloorRetirementService` is the trusted orchestration boundary. It
-performs prepare, sign, immediate signature verification, canonical envelope construction, and
-commit. `DatabaseTestSuiteStabilityRunRepository` revalidates canonical identities and database
-state but does not own the signing key and therefore does not independently resolve the signature
-again. Direct repository commit is an internal trusted call, not an untrusted adapter surface.
+performs prepare, sign, immediate retirement verification, external immutable archive admission,
+receipt verification, canonical envelope construction, and commit. The repository commit API has
+no receipt-free overload. `DatabaseTestSuiteStabilityRunRepository` revalidates canonical identities,
+exact receipt-to-retirement binding, and database state but deliberately performs neither remote I/O
+nor external key resolution under its transaction lock. Direct repository commit remains an internal
+trusted call, not an untrusted adapter surface.
 
 ## 3. Durable model
 
@@ -96,12 +100,16 @@ The implementation fails closed unless all invariants hold:
 6. At least `minimumRetainedEntries` remain at or below the pinned head.
 7. The current floor and head still equal the signed plan when commit acquires the scope lock.
 8. Every active retired row and the successor still equal the signed archive material.
-9. Archive, retirement, successor floor, adjusted head, and active-prefix deletion share one local
-   transaction.
+9. The exact external receipt set, local archive, retirement, successor floor, adjusted head, and
+   active-prefix deletion share one local transaction.
 10. Floor and head updates use exact predecessor fingerprints and coordinates, not last-write-wins.
 11. Indexed projections and stored JSON must agree on every security-relevant coordinate.
 12. A scope with active rows, floor, archive, or retirement material but no committed head is
     corruption, not an empty ledger; direct floor reads also require a committed head.
+13. Every receipt binds the exact signed retirement, nested archive, policy, immutable retention
+    deadline, external object id, unique authority, and unique failure domain.
+14. An external outage, invalid receipt, insufficient copy threshold, or authenticated immutable
+    conflict returns before any local retirement mutation.
 
 ## 5. Prepare, sign, commit
 
@@ -126,7 +134,20 @@ An append may legitimately occur while signing. That makes the pinned head stale
 to reject the plan. The caller must prepare a new intent; silently widening the signed deletion set
 is forbidden.
 
-### 5.3 Commit under the same scope lock
+### 5.3 Archive externally before the local lock
+
+After retirement verification, the service sends the complete signed retirement and immutable
+retention deadline to the configured external authority. The challenge-bound request embeds the
+complete retirement rather than a caller-projected reference. Each authority signs exact object,
+retirement, archive, policy, retention, durability, write-once, and early-delete-denial facts. The
+service verifies the multi-copy set before invoking the repository. An authority outage, bad
+signature/topology, or authenticated immutable conflict cannot reach local mutation.
+
+Remote I/O happens before the local transaction. A subsequent append can make the signed plan stale;
+the safe outcome is an externally durable orphan plus zero local mutation. Orphan reconciliation is
+a later bounded workflow and has no authority to shorten the signed retention deadline.
+
+### 5.4 Commit under the same scope lock
 
 One transaction performs this ordered protocol:
 
@@ -135,12 +156,13 @@ One transaction performs this ordered protocol:
 3. re-read and compare the complete current floor and head with the signed pins;
 4. compare every retired active row and the surviving successor with the signed archive;
 5. reject retirement time ahead of current database time;
-6. insert the immutable local archive segment;
-7. insert the immutable signed retirement record;
-8. CAS the floor to the derived successor generation;
-9. CAS the head coverage boundary while preserving its pinned latest coordinate;
-10. delete exactly the archived active prefix and verify the affected-row count;
-11. commit all changes, or roll back all changes on any failure.
+6. insert the exact external archive receipt set;
+7. insert the immutable local archive segment;
+8. insert the immutable signed retirement record;
+9. CAS the floor to the derived successor generation;
+10. CAS the head coverage boundary while preserving its pinned latest coordinate;
+11. delete exactly the archived active prefix and verify the affected-row count;
+12. commit all changes, or roll back all changes on any failure.
 
 The insert-before-delete order ensures no active row can disappear unless the same transaction also
 contains its archive and signed retirement. The final row-count check catches unexpected gaps even
@@ -195,6 +217,8 @@ default-disabled, absent in production, and the advertised cross-retention capab
 | Failure | Detection | Required outcome |
 | --- | --- | --- |
 | Signer unavailable | seal result | no archive, retirement, floor, head, or row mutation |
+| External archive unavailable or conflicting | bounded authority result | no local receipt, archive, retirement, floor, head, or row mutation |
+| Invalid, rebound, duplicate-domain, or insufficient receipts | authority and canonical closure verification | reject before local transaction |
 | Future cutoff, even with no eligible prefix | database-time validation before ledger lookup | reject invalid policy request |
 | Evidence or nested fingerprint forged | pre-sign and pre-commit canonical checks | reject before deletion |
 | Append races with signing | head pin mismatch | whole commit rolls back |
@@ -203,19 +227,22 @@ default-disabled, absent in production, and the advertised cross-retention capab
 | Floor/head CAS miss | affected-row count | whole commit rolls back |
 | Partial prefix delete | affected-row count | archive, retirement, floor, and head roll back |
 | Archive indexed column tampered | indexed-to-JSON read validation | signed retirement becomes unreadable |
+| Receipt indexed column or JSON tampered | canonical and indexed-to-JSON read validation | external acknowledgement becomes unreadable |
 | Floor or retirement material remains without head | bidirectional consistency read | fail closed as corruption |
 | Two startup replicas backfill | scope lock plus in-lock absence recheck | exactly one generation-zero floor |
 
 ## 10. Verification evidence
 
-The floor-retirement focused gate executes 44 tests with zero failures, errors, or skips:
+The external-first floor-retirement focused gate executes 52 tests with zero failures, errors, or
+skips:
 
-- 4 attestation tests cover valid seal/verify, policy rebinding, detached-signature rebinding, and
-  unavailable authority;
-- 40 repository tests include the pre-existing lease/terminal/ledger contract plus signed archive
+- 4 external archive protocol tests cover canonical closure, malformed challenge, shortened
+  retention, insufficient/duplicate/unsorted topology, and receipt-material rebinding;
+- 48 repository/service tests include the pre-existing lease/terminal/ledger contract plus signed archive
   continuity, exact replay across generations, append conflict, missing-row rollback, projection
-  tamper, signer outage, legacy backfill, concurrent backfill, bidirectional orphan-floor and
-  orphan-lifecycle rejection, future-cutoff rejection, cross-replica commit convergence, and
+  tamper, signer/archive outage, invalid receipt verification, authenticated immutable conflict,
+  legacy backfill, concurrent backfill, bidirectional orphan-floor and orphan-lifecycle rejection,
+  future-cutoff rejection, cross-replica commit convergence, exact-receipt replay, and
   duplicate-generation rollback.
 
 Lifecycle-specific repository, service, signer, controller, profile, Schema, independent verifier,
@@ -238,23 +265,26 @@ whole-project counts are recorded in the parent industrial evolution plan after 
 The public lifecycle contract and independent verifier close the former first two gates. The
 advertised capability must remain false until the remaining mandatory gates are closed:
 
-1. obtain external WORM acknowledgement before local active deletion, with idempotent reconciliation;
-2. define legal hold precedence, hold release authorization, erasure proof, backup expiry, and purge
+1. implement and certify the strict HTTPS multi-authority WORM adapter, staging-required wiring,
+   health/readiness, key lifecycle, timeout/body/redirect controls, and idempotent orphan reconciliation;
+2. export exact receipt sets in lifecycle v2 and independently verify every external signature,
+   signing-time policy, trust membership, copy threshold, and retention binding in test-kit;
+3. define legal hold precedence, hold release authorization, erasure proof, backup expiry, and purge
    evidence across replicas and disaster-recovery copies;
-3. anchor each retirement generation to externally witnessed non-equivocation checkpoints and prove
+4. anchor each retirement generation to externally witnessed non-equivocation checkpoints and prove
    rollback/fork/split-view resistance after restore;
-4. add a database-leased bounded scheduler, backlog/SLO telemetry, readiness, and capability truth;
-5. run restart, failover, backup/restore, key lifecycle, cross-version, and multi-region fault tests;
-6. add operational repair procedures for corrupted floor/head/archive state without fabricating a
+5. add a database-leased bounded scheduler, backlog/SLO telemetry, readiness, and capability truth;
+6. run restart, failover, backup/restore, key lifecycle, cross-version, and multi-region fault tests;
+7. add operational repair procedures for corrupted floor/head/archive state without fabricating a
    signed history.
 
 ## 13. Quality judgment
 
-The internal deletion transition is now materially stronger than a scheduler-driven retention
-implementation: it has explicit authority material, bounded work, exact snapshot pins, deterministic
-replay, cross-replica serialization, atomic archive-before-delete, CAS state movement, conservative
-migration, and executable corruption proofs. The remaining gap is primarily outside the local
-transaction boundary. Floor discovery and local lifecycle verification are now independently
-verifiable, but external durability, lifecycle governance, restore continuity, and non-equivocation
-are not. Resource Gateway may describe this as a signed local floor-retirement lifecycle, not as
-industrial cross-retention continuity.
+The internal deletion transition is now structurally incapable of committing without an exact
+external acknowledgement object: it has explicit authority material, bounded work, exact snapshot
+pins, deterministic replay, cross-replica serialization, atomic receipt-and-archive-before-delete,
+CAS state movement, conservative migration, and executable corruption proofs. The remaining gap is
+deployment and independent consumption, not write-side protocol shape. Floor discovery and local
+lifecycle verification are independently verifiable, but the current lifecycle v1 omits receipt
+sets and no production WORM adapter is wired. Resource Gateway may describe this as an
+external-first receipt-gated local retirement core, not as industrial cross-retention continuity.

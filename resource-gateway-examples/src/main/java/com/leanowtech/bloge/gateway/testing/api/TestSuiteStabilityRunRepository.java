@@ -260,8 +260,9 @@ public interface TestSuiteStabilityRunRepository {
      * Prepares a bounded exact floor-retirement intent under the exact-suite ledger lock.
      *
      * <p>The returned evidence is not authority to delete. A caller must sign and immediately verify
-     * it, then pass the complete signed retirement to {@link #commitObservationFloorRetirement}.
-     * The commit rechecks the exact floor, head, and active rows before any mutation.</p>
+     * it, obtain and independently verify an external immutable-archive receipt set, then pass both
+     * to {@link #commitObservationFloorRetirement}. The commit rechecks the exact receipt,
+     * floor, head, and active rows before any mutation.</p>
      *
      * @param tenantId verified tenant scope
      * @param environmentId verified non-production environment
@@ -286,18 +287,22 @@ public interface TestSuiteStabilityRunRepository {
     }
 
     /**
-     * Atomically archives an exact prefix, records its signed retirement, advances the floor, and
-     * removes only the archived active rows.
+     * Atomically records a previously verified external archive receipt set, archives the exact
+     * local prefix, records its signed retirement, advances the floor, and removes only the
+     * externally acknowledged active rows.
      *
      * <p>This is an internal trusted persistence boundary. The caller must verify the detached
-     * signature immediately before invocation; the repository rechecks canonical material and
-     * current database state but does not own external trust-key resolution.</p>
+     * retirement signature and every external receipt immediately before invocation. The repository
+     * rechecks canonical material, exact receipt binding, and current database state but does not
+     * own external trust-key resolution or remote I/O.</p>
      *
      * @param retirement complete independently verifiable retirement
+     * @param receiptSet independently verified external immutable-archive receipts
      * @return committed successor floor; exact replay returns the same value
      */
     default TestSuiteStabilityObservationLedgerFloor commitObservationFloorRetirement(
-            TestSuiteStabilityObservationFloorRetirement retirement) {
+            TestSuiteStabilityObservationFloorRetirement retirement,
+            TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet) {
         throw new UnsupportedOperationException(
                 "Stability observation floor retirement is unavailable in this repository");
     }
@@ -310,6 +315,17 @@ public interface TestSuiteStabilityRunRepository {
      */
     default Optional<TestSuiteStabilityObservationFloorRetirement> findObservationFloorRetirement(
             String retirementId) {
+        return Optional.empty();
+    }
+
+    /**
+     * Resolves the exact external immutable-archive receipt set committed for one retirement.
+     *
+     * @param retirementId deterministic retirement identity
+     * @return canonical receipt set, if that retirement committed with external acknowledgement
+     */
+    default Optional<TestSuiteStabilityObservationExternalArchiveReceiptSet>
+            findObservationExternalArchiveReceiptSet(String retirementId) {
         return Optional.empty();
     }
 }
