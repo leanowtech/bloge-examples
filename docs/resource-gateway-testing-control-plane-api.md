@@ -3150,6 +3150,7 @@ gateway:
           minimum-retention-days: 365
           request-timeout-ms: 3000
           maximum-receipt-lifetime-seconds: 15
+          maximum-inventory-snapshot-age-seconds: 300
           allow-insecure-loopback: false
           authority-keys-json: '<public Ed25519 key array>'
           endpoints-json: '<authority/failureDomain/https URI array>'
@@ -3168,6 +3169,7 @@ The environment-variable equivalents are:
 | `endpoints-json` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_ENDPOINTS_JSON` |
 | `request-timeout-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_TIMEOUT_MS` |
 | `maximum-receipt-lifetime-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECEIPT_LIFETIME_SECONDS` |
+| `maximum-inventory-snapshot-age-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_INVENTORY_MAXIMUM_AGE_SECONDS` |
 | `allow-insecure-loopback` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_ALLOW_INSECURE_LOOPBACK` |
 
 Each key entry contains `authorityId`, `keyId`, X.509-encoded `publicKeyBase64`, `notBefore`,
@@ -3176,6 +3178,13 @@ exclusive `expiresAt`, `enabled`, and `revoked`. Each endpoint entry contains ex
 endpoint and key authority sets must match. Staging requires at least two copies and rejects the
 loopback HTTP escape hatch. Production never creates the adapter, retirement service, or health
 bean even when these properties are supplied.
+
+The inventory endpoint may answer from a pre-generated immutable snapshot so a fleet-wide listing
+does not sit on the request critical path. Resource Gateway accepts that snapshot only when its
+signed `snapshotAt` is not in the future and is no older than
+`maximum-inventory-snapshot-age-seconds`; the allowed range is one second through seven days and
+the default is 300 seconds. The exact age boundary is accepted, while one second beyond it fails
+closed as `INVALID_PAGE`.
 
 Every endpoint receives the same fresh request concurrently with exact vendor media type,
 protocol-version header, and deterministic object id as `Idempotency-Key`. Redirects and automatic
@@ -3186,11 +3195,22 @@ commitment. Actuator reports only aggregate `UNVERIFIED`, `HEALTHY`, `DEGRADED_C
 failure, or authenticated-conflict state without endpoint/key/object identities. See the
 [HTTPS WORM adapter design](resource-gateway-execution-data-control-plane-stage5-observation-http-worm-adapter-design.md).
 
+The same configured URI also accepts the read-only inventory media type
+`application/vnd.bloge.suite-stability-observation-external-archive-inventory.v1+json`. Page zero
+uses empty snapshot/object cursors; each continuation pins the signed snapshot id, exact last object
+id, and increasing page sequence. Every signed page repeats the complete object count and ordered
+item-fingerprint root, allowing a durable consumer to prove completeness only after the terminal
+page. Pages contain payload-free object/retirement/segment/policy fingerprints and retention times,
+are limited to 500 items and 2 MiB, and use the same strict JSON, timeout, topology, freshness, and
+Ed25519 trust controls. HTTP 410 is the closed `SNAPSHOT_EXPIRED` result. There is no controller,
+scheduler, delete, purge, overwrite, or retention-shortening API. See the
+[external inventory protocol design](resource-gateway-execution-data-control-plane-stage5-observation-external-inventory-protocol-design.md).
+
 Both lifecycle endpoints are absent in production and disabled by default. V2 proves that an
 approved authority signed the acknowledgement recorded before deletion, but production WORM
 provider certification/wiring, legal hold/erasure, backup purge, recovery continuity, historical
-authority publication, orphan reconciliation, and external non-equivocation policy are still
-missing. Capability
+authority publication, durable orphan-reconciliation cursor/findings, and external non-equivocation
+policy are still missing. Capability
 `crossRetentionSuiteStabilityTrend` therefore remains `false`; strict verification proves the returned
 local lifecycle, external acknowledgement, and range, not physical persistence or a globally unique
 long-term history.
@@ -3420,11 +3440,12 @@ The atomic dual-root runtime-key publication is defined by
 [`suite-stability-serving-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json).
 The external compare-and-append request/receipt contract is defined by
 [`suite-stability-external-sequence-checkpoint-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json).
-The pre-delete compact-observation archive request/accepted-receipt/signed-conflict/receipt-set
-contract is defined by
+The pre-delete compact-observation archive request/accepted-receipt/signed-conflict/receipt-set and
+read-only signed inventory request/item/page contracts are defined by
 [`suite-stability-observation-external-archive-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-observation-external-archive-v1.schema.json).
-It is a private write-side transport and persistence boundary, not a caller-facing endpoint or an
-advertised production WORM capability; lifecycle v1 does not export these receipt sets.
+They are private write/read transport and persistence boundaries, not caller-facing endpoints or an
+advertised production WORM capability; lifecycle v1 does not export these receipt sets, and the
+inventory boundary has no destructive operation.
 Implementation evidence and deliberately unclaimed guarantees are recorded in
 [Stage 5 current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
 Dynamic refresh invariants, health semantics and deliberately unclaimed fleet guarantees are in

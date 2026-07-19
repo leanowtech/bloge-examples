@@ -122,6 +122,7 @@ Required deployment facts are:
 | `endpoints-json` | exact authority/failure-domain/URI triples |
 | `request-timeout-ms` | 100 ms..30 s and shorter than receipt lifetime |
 | `maximum-receipt-lifetime-seconds` | 1..60 s |
+| `maximum-inventory-snapshot-age-seconds` | 1 s..7 days; default 300 s; bounds accepted pre-generated read snapshots |
 | `allow-insecure-loopback` | test-only escape hatch; staging rejects it |
 
 Authority ids, failure domains, and endpoint URIs must each be unique. The authority set in endpoint
@@ -258,10 +259,11 @@ This implementation verifies a trusted authority's signed WORM assertions. It do
 - a provider continues to retain an object after its short admission receipt expires;
 - every externally written object has a corresponding committed local receipt set.
 
-The next root gap is external orphan inventory and reconciliation. The safe external-first order
-intentionally creates possible remote objects after local CAS loss or response loss. The next
-increment must enumerate or challenge-bound query those objects, compare them with committed local
-receipt-set identities, classify `COMMITTED`, `PENDING`, `ORPHAN`, `CONFLICT`, and `UNKNOWN`, and
-create durable governed findings. It must have no early-delete authority. Legal hold, erasure,
+The read-only signed inventory protocol is now implemented as the first half of external orphan
+reconciliation. It challenge-binds each page, pins an immutable snapshot, signs complete count/root,
+and exposes no destructive operation; see
+[Stage 5 observation external inventory protocol](resource-gateway-execution-data-control-plane-stage5-observation-external-inventory-protocol-design.md).
+The remaining root gap is durable multi-replica cycle ownership, exact page staging, final root
+replay, bidirectional local comparison, and governed finding lifecycle. Legal hold, erasure,
 backup/DR continuity, witnessed non-equivocation, scheduler/readiness, and production capability
 remain later gates.

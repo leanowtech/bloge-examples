@@ -805,6 +805,34 @@ repository/lifecycle 回归。完整 Resource Gateway `clean verify` 执行 2898
 下一病根是无 early-delete authority 的 external orphan inventory/reconciliation，随后仍需 historical trust
 publication、legal hold/erasure、backup/DR continuity 和 witnessed non-equivocation。
 
+第五十三增量第二十六子步第九阶段先根治“把普通对象 list 当成 reconciliation evidence”的错误前提。
+新增 `ExternalArchiveInventoryRequest.v1`、`InventoryItem.v1`、`InventoryPage.v1` 与
+`ExternalArchiveInventoryRootLink.v1`：page zero 以 fresh 256-bit challenge 建立 immutable snapshot，续页
+必须钉住 snapshot id、exact last object id 与单调 page sequence；每页重复 complete object count 与 ordered
+item-fingerprint chain root，deterministic snapshot id 再绑定 trust/archive set/authority/failure domain/time/count/root。
+item 只包含 object/retirement/segment/policy fingerprints 和 retention times，不携带退休 observation 或凭据。
+
+`HttpTestSuiteStabilityObservationExternalArchiveAuthority` 同时实现只读
+`TestSuiteStabilityObservationExternalArchiveInventoryAuthority`，在同一 endpoint 使用独立 vendor media type，
+强制 exact protocol header、2 MiB response、500-item page、no redirect/no retry、strict duplicate/unknown/trailing
+JSON、freshness、topology、deterministic snapshot identity 与 Ed25519 signature；410 映射为 payload-free
+`SNAPSHOT_EXPIRED`。为避免把全库扫描压到请求关键路径，authority 可返回预生成 immutable snapshot，客户端按
+默认 300 秒、可配置 1 秒至 7 天的最大年龄验证；future 或超龄 snapshot fail closed。inventory interface
+结构上没有 delete/purge/overwrite/shorten 操作。standalone 与 authoritative
+Schema 已同步 request/item/page。设计见
+[Stage 5 observation external inventory protocol](resource-gateway-execution-data-control-plane-stage5-observation-external-inventory-protocol-design.md)。
+
+本阶段 transport/schema 聚焦门禁执行 34 tests，0 failures、0 errors、0 skips；其中 11 项真实 HTTP/协议
+反例覆盖多页连续性、count/root、旧 challenge replay、snapshot drift、root substitution、invalid signature、
+unknown/duplicate/oversized body、410、exclusive expiry、预生成 snapshot age boundary、cursor shape 与
+destructive-API absence。该阶段只证明
+远端只读页足以作为后续 reconciliation 输入。完整 Resource Gateway `clean verify` 执行 2909 tests，
+0 failures、0 errors、2 个既有条件浏览器跳过，并成功打包 Spring Boot 可执行 JAR；独立 test-kit
+`clean verify` 执行 228 tests，0 failures、0 errors、0 skips，并通过普通/shaded JAR、权威 Schema 打包与
+严格 public Javadoc 门禁。该阶段尚未宣称 durable reconciliation 完成；下一步必须实现数据库时钟
+lease/epoch、逐页持久化与 crash resume、最终 root replay、双向 local/remote 比对和 governed finding
+lifecycle，且继续保持无外部删除权。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

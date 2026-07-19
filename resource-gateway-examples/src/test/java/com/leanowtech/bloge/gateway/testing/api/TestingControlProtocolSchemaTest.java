@@ -1424,7 +1424,13 @@ class TestingControlProtocolSchemaTest {
                 "testSuiteStabilityObservationExternalArchiveConflictReceipt");
         JsonNode receiptSet = definitions.path(
                 "testSuiteStabilityObservationExternalArchiveReceiptSet");
-        assertThat(standalone.path("oneOf")).hasSize(4);
+        JsonNode inventoryRequest = definitions.path(
+                "testSuiteStabilityObservationExternalArchiveInventoryRequest");
+        JsonNode inventoryItem = definitions.path(
+                "testSuiteStabilityObservationExternalArchiveInventoryItem");
+        JsonNode inventoryPage = definitions.path(
+                "testSuiteStabilityObservationExternalArchiveInventoryPage");
+        assertThat(standalone.path("oneOf")).hasSize(7);
         assertThat(standalone.at("/$defs/request/properties/retirement/$ref").asText())
                 .isEqualTo("testing-control-plane-v1.schema.json#/$defs/"
                         + "testSuiteStabilityObservationFloorRetirement");
@@ -1432,6 +1438,9 @@ class TestingControlProtocolSchemaTest {
         assertThat(receipt.path("additionalProperties").asBoolean()).isFalse();
         assertThat(conflict.path("additionalProperties").asBoolean()).isFalse();
         assertThat(receiptSet.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(inventoryRequest.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(inventoryItem.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(inventoryPage.path("additionalProperties").asBoolean()).isFalse();
         assertThat(request.at("/properties/schemaVersion/const").asText()).isEqualTo(
                 TestSuiteStabilityObservationExternalArchiveRequest.SCHEMA_VERSION);
         assertThat(receipt.at("/properties/schemaVersion/const").asText()).isEqualTo(
@@ -1440,6 +1449,12 @@ class TestingControlProtocolSchemaTest {
                 TestSuiteStabilityObservationExternalArchiveConflictReceipt.SCHEMA_VERSION);
         assertThat(receiptSet.at("/properties/schemaVersion/const").asText()).isEqualTo(
                 TestSuiteStabilityObservationExternalArchiveReceiptSet.SCHEMA_VERSION);
+        assertThat(inventoryRequest.at("/properties/schemaVersion/const").asText()).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveInventoryRequest.SCHEMA_VERSION);
+        assertThat(inventoryItem.at("/properties/schemaVersion/const").asText()).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveInventoryItem.SCHEMA_VERSION);
+        assertThat(inventoryPage.at("/properties/schemaVersion/const").asText()).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveInventoryPage.SCHEMA_VERSION);
         assertThat(request.path("required")).extracting(JsonNode::asText)
                 .containsExactlyInAnyOrder(
                         "schemaVersion", "requestFingerprint", "trustDomain", "archiveSetId",
@@ -1464,6 +1479,23 @@ class TestingControlProtocolSchemaTest {
                         "keyId", "objectId", "expectedObjectCommitment",
                         "observedObjectCommitment", "issuedAt", "expiresAt", "algorithm",
                         "signature");
+        assertThat(inventoryRequest.path("required")).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(
+                        "schemaVersion", "requestFingerprint", "trustDomain", "archiveSetId",
+                        "authorityId", "snapshotId", "afterObjectId", "pageSequence",
+                        "maximumItems", "challenge", "requestedAt", "expiresAt");
+        assertThat(inventoryItem.path("required")).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(
+                        "schemaVersion", "itemFingerprint", "objectId", "objectCommitment",
+                        "retirementId", "retirementFingerprint", "segmentId",
+                        "segmentFingerprint", "retentionPolicyFingerprint", "retainUntil",
+                        "storedAt");
+        assertThat(inventoryPage.path("required")).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(
+                        "schemaVersion", "pageFingerprint", "request", "authorityId",
+                        "failureDomain", "keyId", "snapshotId", "snapshotAt",
+                        "snapshotObjectCount", "snapshotRoot", "items", "nextAfterObjectId",
+                        "complete", "issuedAt", "expiresAt", "algorithm", "signature");
         assertThat(receipt.at("/properties/retentionMode/const").asText())
                 .isEqualTo("COMPLIANCE");
         assertThat(receipt.at("/properties/externallyDurable/const").asBoolean()).isTrue();
@@ -1471,12 +1503,27 @@ class TestingControlProtocolSchemaTest {
         assertThat(receipt.at("/properties/deleteBeforeRetentionDenied/const").asBoolean())
                 .isTrue();
         assertThat(receiptSet.at("/properties/receipts/maxItems").asInt()).isEqualTo(16);
+        assertThat(inventoryRequest.at("/properties/maximumItems/maximum").asInt())
+                .isEqualTo(TestSuiteStabilityObservationExternalArchiveInventoryRequest
+                        .MAXIMUM_ITEMS);
+        assertThat(inventoryPage.at("/properties/items/maxItems").asInt())
+                .isEqualTo(TestSuiteStabilityObservationExternalArchiveInventoryRequest
+                        .MAXIMUM_ITEMS);
+        assertThat(inventoryPage.at("/properties/items/items/$ref").asText()).isEqualTo(
+                "#/$defs/testSuiteStabilityObservationExternalArchiveInventoryItem");
+        assertThat(inventoryPage.at("/properties/request/$ref").asText()).isEqualTo(
+                "#/$defs/testSuiteStabilityObservationExternalArchiveInventoryRequest");
+        assertThat(inventoryRequest.path("oneOf")).hasSize(2);
+        assertThat(inventoryPage.path("oneOf")).hasSize(2);
         assertThat(java.util.List.of("tenantId", "environmentId", "actorId", "payload",
                         "input", "output", "fixtureValue", "endpoint", "credential"))
                 .noneMatch(request.path("properties")::has)
                 .noneMatch(receipt.path("properties")::has)
                 .noneMatch(conflict.path("properties")::has)
-                .noneMatch(receiptSet.path("properties")::has);
+                .noneMatch(receiptSet.path("properties")::has)
+                .noneMatch(inventoryRequest.path("properties")::has)
+                .noneMatch(inventoryItem.path("properties")::has)
+                .noneMatch(inventoryPage.path("properties")::has);
     }
 
     @Test

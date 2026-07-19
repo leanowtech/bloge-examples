@@ -113,6 +113,7 @@ gateway:
           endpoints-json: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_ENDPOINTS_JSON:[]}
           request-timeout-ms: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_TIMEOUT_MS:3000}
           maximum-receipt-lifetime-seconds: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECEIPT_LIFETIME_SECONDS:15}
+          maximum-inventory-snapshot-age-seconds: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_INVENTORY_MAXIMUM_AGE_SECONDS:300}
           allow-insecure-loopback: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_ALLOW_INSECURE_LOOPBACK:false}
     stability-jobs:
       api:

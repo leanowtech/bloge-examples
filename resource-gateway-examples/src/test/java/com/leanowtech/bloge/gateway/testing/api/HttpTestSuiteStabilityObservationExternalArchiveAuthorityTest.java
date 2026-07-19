@@ -135,7 +135,8 @@ class HttpTestSuiteStabilityObservationExternalArchiveAuthorityTest {
         concurrentArrivals = new CountDownLatch(2);
         var authority = authority(Clock.fixed(NOW, ZoneOffset.UTC), 1,
                 new HttpTestSuiteStabilityObservationExternalArchiveAuthority.Settings(
-                        Duration.ofSeconds(2), Duration.ofSeconds(5), true));
+                        Duration.ofSeconds(2), Duration.ofSeconds(5),
+                        Duration.ofMinutes(5), true));
 
         CompletableFuture<TestSuiteStabilityObservationExternalArchiveReceiptSet> first =
                 CompletableFuture.supplyAsync(
@@ -223,7 +224,8 @@ class HttpTestSuiteStabilityObservationExternalArchiveAuthorityTest {
             var authority = authority(Clock.fixed(NOW, ZoneOffset.UTC), 1,
                     invalid == Mode.SLOW
                             ? new HttpTestSuiteStabilityObservationExternalArchiveAuthority
-                            .Settings(Duration.ofMillis(100), Duration.ofSeconds(2), true)
+                            .Settings(Duration.ofMillis(100), Duration.ofSeconds(2),
+                                    Duration.ofMinutes(5), true)
                             : settings());
 
             assertThatThrownBy(() -> authority.archive(retirement(), retainUntil()))
@@ -270,7 +272,8 @@ class HttpTestSuiteStabilityObservationExternalArchiveAuthorityTest {
         assertThatThrownBy(() -> newAuthority(
                 Clock.fixed(NOW, ZoneOffset.UTC), 1, List.of(keys.getFirst()),
                 List.of(insecure), new HttpTestSuiteStabilityObservationExternalArchiveAuthority
-                        .Settings(Duration.ofSeconds(1), Duration.ofSeconds(2), false)))
+                        .Settings(Duration.ofSeconds(1), Duration.ofSeconds(2),
+                                Duration.ofMinutes(5), false)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("must use HTTPS");
     }
@@ -330,7 +333,7 @@ class HttpTestSuiteStabilityObservationExternalArchiveAuthorityTest {
 
     private HttpTestSuiteStabilityObservationExternalArchiveAuthority.Settings settings() {
         return new HttpTestSuiteStabilityObservationExternalArchiveAuthority.Settings(
-                Duration.ofSeconds(1), Duration.ofSeconds(10), true);
+                Duration.ofSeconds(1), Duration.ofSeconds(10), Duration.ofMinutes(5), true);
     }
 
     private TestSuiteStabilityObservationFloorRetirement retirement() {

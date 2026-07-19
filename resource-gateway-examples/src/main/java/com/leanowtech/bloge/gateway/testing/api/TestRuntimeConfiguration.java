@@ -1422,6 +1422,8 @@ public class TestRuntimeConfiguration {
             long requestTimeoutMillis,
             @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.maximum-receipt-lifetime-seconds:15}")
             long maximumReceiptLifetimeSeconds,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.maximum-inventory-snapshot-age-seconds:300}")
+            long maximumInventorySnapshotAgeSeconds,
             @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.allow-insecure-loopback:false}")
             boolean allowInsecureLoopback) {
         boolean staging = Arrays.asList(environment.getActiveProfiles()).contains("staging");
@@ -1435,6 +1437,7 @@ public class TestRuntimeConfiguration {
                 new HttpTestSuiteStabilityObservationExternalArchiveAuthority.Settings(
                         Duration.ofMillis(requestTimeoutMillis),
                         Duration.ofSeconds(maximumReceiptLifetimeSeconds),
+                        Duration.ofSeconds(maximumInventorySnapshotAgeSeconds),
                         allowInsecureLoopback));
     }
 

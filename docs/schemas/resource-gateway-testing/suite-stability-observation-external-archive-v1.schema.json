@@ -6,7 +6,10 @@
     { "$ref": "#/$defs/request" },
     { "$ref": "#/$defs/receipt" },
     { "$ref": "#/$defs/conflictReceipt" },
-    { "$ref": "#/$defs/receiptSet" }
+    { "$ref": "#/$defs/receiptSet" },
+    { "$ref": "#/$defs/inventoryRequest" },
+    { "$ref": "#/$defs/inventoryItem" },
+    { "$ref": "#/$defs/inventoryPage" }
   ],
   "$defs": {
     "identifier": {
@@ -167,6 +170,165 @@
         "confirmedAt": { "type": "string", "format": "date-time" },
         "receiptSetFingerprint": { "$ref": "#/$defs/fingerprint" }
       }
+    },
+    "inventoryRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "requestFingerprint", "trustDomain", "archiveSetId",
+        "authorityId", "snapshotId", "afterObjectId", "pageSequence",
+        "maximumItems", "challenge", "requestedAt", "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationExternalArchiveInventoryRequest.v1"
+        },
+        "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "trustDomain": { "$ref": "#/$defs/identifier" },
+        "archiveSetId": { "$ref": "#/$defs/identifier" },
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "snapshotId": {
+          "oneOf": [
+            { "const": "" },
+            { "type": "string", "pattern": "^stability-observation-external-inventory-[a-f0-9]{64}$" }
+          ]
+        },
+        "afterObjectId": {
+          "oneOf": [
+            { "const": "" },
+            { "type": "string", "pattern": "^stability-observation-worm-[a-f0-9]{64}$" }
+          ]
+        },
+        "pageSequence": { "type": "integer", "minimum": 0 },
+        "maximumItems": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "challenge": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 43,
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "requestedAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "expiresAt": { "$ref": "#/$defs/wholeSecondInstant" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "snapshotId": { "const": "" },
+            "afterObjectId": { "const": "" },
+            "pageSequence": { "const": 0 }
+          }
+        },
+        {
+          "properties": {
+            "snapshotId": { "type": "string", "pattern": "^stability-observation-external-inventory-[a-f0-9]{64}$" },
+            "afterObjectId": { "type": "string", "pattern": "^stability-observation-worm-[a-f0-9]{64}$" },
+            "pageSequence": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    },
+    "inventoryItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "itemFingerprint", "objectId", "objectCommitment",
+        "retirementId", "retirementFingerprint", "segmentId", "segmentFingerprint",
+        "retentionPolicyFingerprint", "retainUntil", "storedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationExternalArchiveInventoryItem.v1"
+        },
+        "itemFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "objectId": {
+          "type": "string",
+          "pattern": "^stability-observation-worm-[a-f0-9]{64}$"
+        },
+        "objectCommitment": { "$ref": "#/$defs/fingerprint" },
+        "retirementId": {
+          "type": "string",
+          "pattern": "^stability-observation-retirement-[a-f0-9]{64}$"
+        },
+        "retirementFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "segmentId": {
+          "type": "string",
+          "pattern": "^stability-observation-archive-[a-f0-9]{64}$"
+        },
+        "segmentFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "retentionPolicyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "retainUntil": { "type": "string", "format": "date-time" },
+        "storedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "inventoryPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "pageFingerprint", "request", "authorityId",
+        "failureDomain", "keyId", "snapshotId", "snapshotAt",
+        "snapshotObjectCount", "snapshotRoot", "items", "nextAfterObjectId",
+        "complete", "issuedAt", "expiresAt", "algorithm", "signature"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationExternalArchiveInventoryPage.v1"
+        },
+        "pageFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "request": { "$ref": "#/$defs/inventoryRequest" },
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "failureDomain": { "$ref": "#/$defs/identifier" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "snapshotId": {
+          "type": "string",
+          "pattern": "^stability-observation-external-inventory-[a-f0-9]{64}$"
+        },
+        "snapshotAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "snapshotObjectCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "snapshotRoot": { "$ref": "#/$defs/fingerprint" },
+        "items": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/inventoryItem" }
+        },
+        "nextAfterObjectId": {
+          "oneOf": [
+            { "const": "" },
+            { "type": "string", "pattern": "^stability-observation-worm-[a-f0-9]{64}$" }
+          ]
+        },
+        "complete": { "type": "boolean" },
+        "issuedAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "expiresAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "algorithm": { "const": "Ed25519" },
+        "signature": {
+          "type": "string",
+          "minLength": 88,
+          "maxLength": 88,
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "complete": { "const": true },
+            "nextAfterObjectId": { "const": "" }
+          }
+        },
+        {
+          "properties": {
+            "complete": { "const": false },
+            "nextAfterObjectId": {
+              "type": "string",
+              "pattern": "^stability-observation-worm-[a-f0-9]{64}$"
+            },
+            "items": { "minItems": 1 }
+          }
+        }
+      ]
     }
   }
 }

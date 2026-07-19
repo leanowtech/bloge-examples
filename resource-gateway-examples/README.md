@@ -144,6 +144,11 @@ domain, archive-set id, minimum retention, copy threshold, bounded timeout/lifet
 Ed25519-key JSON, and authority/failure-domain/HTTPS-endpoint JSON documented in the
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md). Staging rejects
 loopback HTTP and fewer than two copies; production never installs the adapter or retirement bean.
+The same endpoint now accepts a distinct signed, challenge-bound read-only inventory protocol for
+immutable snapshot paging. A provider may serve a pre-generated snapshot, but the client rejects
+future snapshots and snapshots older than the configured bound (300 seconds by default). There is
+no inventory controller, scheduler, or delete operation yet;
+durable reconciliation and governed findings remain disabled work in progress.
 
 The start command becomes ready only after the integration capability probe
 succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;
@@ -180,13 +185,15 @@ payload-free local archive, move the durable floor/head coverage, and delete onl
 prefix. A separate default-disabled lifecycle endpoint and independent test-kit now prove the
 ordered local retirement chain from generation zero to one snapshot-pinned current floor/head,
 which can then seed the active compact-range request. `crossRetentionSuiteStabilityTrend`
-intentionally remains disabled. The strict multi-authority HTTPS adapter now closes the
-test/staging transport shape with concurrent bounded requests, signed conflict receipts, exact
-topology/key verification, and aggregate health; certified providers, historical trust
-publication, orphan reconciliation, legal-hold/erasure/backup and recovery controls, and witnessed
-non-equivocation are still required. See the
+intentionally remains disabled. The strict multi-authority HTTPS adapter closes the test/staging
+write shape with concurrent bounded requests, signed conflict receipts, exact topology/key
+verification, and aggregate health. Its signed immutable-snapshot inventory protocol now closes the
+read transport shape, but durable lease/cursor/finding reconciliation is not yet wired. Certified
+providers, historical trust publication, legal-hold/erasure/backup and recovery controls, and
+witnessed non-equivocation are still required. See the
 [lifecycle protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md)
-and [HTTPS WORM adapter design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-http-worm-adapter-design.md).
+the [HTTPS WORM adapter design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-http-worm-adapter-design.md),
+and the [external inventory protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-external-inventory-protocol-design.md).
 The stability protocol's
 v2+ evidence keeps behavioral stability separate from release eligibility: every verified source
 suite promotion verdict is signed into the attempt closure, so `STABLE + BLOCKED` remains visible
@@ -333,6 +340,7 @@ is `UNAVAILABLE`; only a verified signed revocation is definitive. Capacity resp
 [machine-readable external checkpoint Schema](../docs/schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json),
 [machine-readable compact-observation external archive Schema](../docs/schemas/resource-gateway-testing/suite-stability-observation-external-archive-v1.schema.json),
 [strict HTTPS WORM adapter design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-http-worm-adapter-design.md),
+[signed external inventory protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-external-inventory-protocol-design.md),
 the [receipt-aware lifecycle v2 design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-lifecycle-v2-external-proof-design.md),
 and [machine-readable authority Schema](../docs/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json).
 Actuator exposes separate stability-queue, dynamic-authority-trust, and managed inventory-root

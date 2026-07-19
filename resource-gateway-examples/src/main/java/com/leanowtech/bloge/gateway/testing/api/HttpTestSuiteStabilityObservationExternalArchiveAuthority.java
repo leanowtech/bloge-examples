@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationExternalArchiveIntegrity;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationExternalArchiveInventoryIntegrity;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -47,17 +48,22 @@ import java.util.regex.Pattern;
  * no endpoint, authority, key, object, request, challenge, or fingerprint identity.</p>
  */
 public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
-        implements TestSuiteStabilityObservationExternalArchiveAuthority {
+        implements TestSuiteStabilityObservationExternalArchiveAuthority,
+        TestSuiteStabilityObservationExternalArchiveInventoryAuthority {
 
     /** Exact request and response media type. */
     public static final String MEDIA_TYPE =
             "application/vnd.bloge.suite-stability-observation-external-archive.v1+json";
+    /** Exact read-only inventory request and response media type. */
+    public static final String INVENTORY_MEDIA_TYPE =
+            "application/vnd.bloge.suite-stability-observation-external-archive-inventory.v1+json";
     /** Explicit request/response wire-version header. */
     public static final String PROTOCOL_HEADER =
             "X-BLOGE-Stability-Observation-External-Archive-Protocol";
 
     private static final int MAXIMUM_REQUEST_BYTES = 2 * 1024 * 1024;
     private static final int MAXIMUM_RESPONSE_BYTES = 128 * 1024;
+    private static final int MAXIMUM_INVENTORY_RESPONSE_BYTES = 2 * 1024 * 1024;
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
     private static final Set<String> ENDPOINT_FIELDS =
@@ -226,7 +232,8 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
         } catch (RuntimeException invalid) {
             throw failed(ExternalArchiveException.Reason.INVALID_RECEIPT);
         }
-        if (verifyAt(receiptSet, clock.instant()) != Verification.VERIFIED) {
+        if (verifyAt(receiptSet, clock.instant())
+                != TestSuiteStabilityObservationExternalArchiveAuthority.Verification.VERIFIED) {
             throw failed(ExternalArchiveException.Reason.INVALID_RECEIPT);
         }
         boolean degraded = invalidResponse || accepted.size() < endpoints.size();
@@ -236,12 +243,12 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
 
     /** Re-verifies canonical closure, configured topology, freshness, and every signature. */
     @Override
-    public Verification verify(
+    public TestSuiteStabilityObservationExternalArchiveAuthority.Verification verify(
             TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet) {
         try {
             return verifyAt(Objects.requireNonNull(receiptSet, "receiptSet"), clock.instant());
         } catch (RuntimeException invalid) {
-            return Verification.INVALID;
+            return TestSuiteStabilityObservationExternalArchiveAuthority.Verification.INVALID;
         }
     }
 
@@ -267,7 +274,84 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
                 requiredCopies, endpoints.size());
     }
 
-    private Verification verifyAt(
+    /** Returns configured inventory authorities in stable lexical order. */
+    @Override
+    public List<String> inventoryAuthorities() {
+        return endpointsByAuthority.keySet().stream().sorted().toList();
+    }
+
+    /**
+     * Reads one strict signed page without exposing any remote mutation operation.
+     *
+     * <p>The same configured endpoint accepts a distinct inventory media type. A first-page call
+     * establishes an immutable snapshot; later calls must carry the exact snapshot and object
+     * cursor supplied by the preceding verified page.</p>
+     */
+    @Override
+    public TestSuiteStabilityObservationExternalArchiveInventoryPage inventoryPage(
+            String authorityId,
+            Cursor cursor,
+            int maximumItems) {
+        String exactAuthority = normalized(authorityId);
+        Cursor exactCursor = Objects.requireNonNull(cursor, "cursor");
+        Endpoint endpoint = endpointsByAuthority.get(exactAuthority);
+        Instant requestedAt = clock.instant().truncatedTo(ChronoUnit.SECONDS);
+        if (endpoint == null || !activeAuthority(exactAuthority, requestedAt)) {
+            throw inventoryFailed(InventoryException.Reason.UNAVAILABLE);
+        }
+        TestSuiteStabilityObservationExternalArchiveInventoryRequest request;
+        byte[] body;
+        try {
+            request = TestSuiteStabilityObservationExternalArchiveInventoryRequest.create(
+                    objectMapper, trustDomain, archiveSetId, exactAuthority,
+                    exactCursor.snapshotId(), exactCursor.afterObjectId(),
+                    exactCursor.pageSequence(), maximumItems, challenge(), requestedAt,
+                    requestedAt.plus(settings.maximumReceiptLifetime()));
+            body = writeInventoryRequest(request);
+        } catch (RuntimeException invalid) {
+            throw inventoryFailed(InventoryException.Reason.INVALID_PAGE);
+        }
+        HttpRequest httpRequest = HttpRequest.newBuilder(endpoint.uri())
+                .timeout(settings.requestTimeout())
+                .header("Accept", INVENTORY_MEDIA_TYPE)
+                .header("Content-Type", INVENTORY_MEDIA_TYPE)
+                .header(PROTOCOL_HEADER,
+                        TestSuiteStabilityObservationExternalArchiveInventoryRequest
+                                .SCHEMA_VERSION)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                .build();
+        HttpResponse<InputStream> response;
+        try {
+            response = httpClient.send(
+                    httpRequest, HttpResponse.BodyHandlers.ofInputStream());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw inventoryFailed(InventoryException.Reason.UNAVAILABLE);
+        } catch (IOException | RuntimeException unavailable) {
+            throw inventoryFailed(InventoryException.Reason.UNAVAILABLE);
+        }
+        return inventoryResponse(endpoint, request, response);
+    }
+
+    /** Re-verifies one page against local topology, key lifecycle, and admission time. */
+    @Override
+    public TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Verification
+            verifyInventoryPage(
+                    TestSuiteStabilityObservationExternalArchiveInventoryPage page) {
+        Objects.requireNonNull(page, "page");
+        Endpoint endpoint = endpointsByAuthority.get(page.authorityId());
+        if (endpoint == null || !activeAuthority(page.authorityId(), clock.instant())) {
+            return TestSuiteStabilityObservationExternalArchiveInventoryAuthority
+                    .Verification.UNAVAILABLE;
+        }
+        return inventoryPageValid(endpoint, page.request(), page, clock.instant())
+                ? TestSuiteStabilityObservationExternalArchiveInventoryAuthority
+                .Verification.VERIFIED
+                : TestSuiteStabilityObservationExternalArchiveInventoryAuthority
+                .Verification.INVALID;
+    }
+
+    private TestSuiteStabilityObservationExternalArchiveAuthority.Verification verifyAt(
             TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet,
             Instant observedAt) {
         if (!TestSuiteStabilityObservationExternalArchiveIntegrity.valid(
@@ -282,17 +366,18 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
                 settings.maximumReceiptLifetime()) > 0
                 || receiptSet.request().retainUntil().isBefore(
                 receiptSet.request().requestedAt().plus(minimumRetention))) {
-            return Verification.INVALID;
+            return TestSuiteStabilityObservationExternalArchiveAuthority.Verification.INVALID;
         }
         for (TestSuiteStabilityObservationExternalArchiveReceipt receipt
                 : receiptSet.receipts()) {
             Endpoint endpoint = endpointsByAuthority.get(receipt.authorityId());
             if (endpoint == null || !acceptedReceiptValid(
                     endpoint, receiptSet.request(), receipt, observedAt)) {
-                return Verification.INVALID;
+                return TestSuiteStabilityObservationExternalArchiveAuthority
+                        .Verification.INVALID;
             }
         }
-        return Verification.VERIFIED;
+        return TestSuiteStabilityObservationExternalArchiveAuthority.Verification.VERIFIED;
     }
 
     private CompletableFuture<Observation> observeAsync(
@@ -316,6 +401,85 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
         } catch (RuntimeException unavailable) {
             return CompletableFuture.failedFuture(unavailable);
         }
+    }
+
+    private TestSuiteStabilityObservationExternalArchiveInventoryPage inventoryResponse(
+            Endpoint endpoint,
+            TestSuiteStabilityObservationExternalArchiveInventoryRequest request,
+            HttpResponse<InputStream> response) {
+        if (response.statusCode() == 410) {
+            closeQuietly(response.body());
+            throw inventoryFailed(InventoryException.Reason.SNAPSHOT_EXPIRED);
+        }
+        if (response.statusCode() != 200) {
+            closeQuietly(response.body());
+            throw inventoryFailed(InventoryException.Reason.UNAVAILABLE);
+        }
+        if (!INVENTORY_MEDIA_TYPE.equalsIgnoreCase(response.headers()
+                .firstValue("Content-Type").orElse(""))
+                || !TestSuiteStabilityObservationExternalArchiveInventoryPage.SCHEMA_VERSION
+                .equals(response.headers().firstValue(PROTOCOL_HEADER).orElse(""))
+                || response.headers().firstValueAsLong("Content-Length").orElse(-1)
+                > MAXIMUM_INVENTORY_RESPONSE_BYTES) {
+            closeQuietly(response.body());
+            throw inventoryFailed(InventoryException.Reason.INVALID_PAGE);
+        }
+        byte[] bytes;
+        try (InputStream input = response.body()) {
+            bytes = input.readNBytes(MAXIMUM_INVENTORY_RESPONSE_BYTES + 1);
+        } catch (IOException invalid) {
+            throw inventoryFailed(InventoryException.Reason.INVALID_PAGE);
+        }
+        if (bytes.length == 0 || bytes.length > MAXIMUM_INVENTORY_RESPONSE_BYTES) {
+            throw inventoryFailed(InventoryException.Reason.INVALID_PAGE);
+        }
+        try {
+            TestSuiteStabilityObservationExternalArchiveInventoryPage page =
+                    objectMapper.readValue(bytes,
+                            TestSuiteStabilityObservationExternalArchiveInventoryPage.class);
+            if (!inventoryPageValid(endpoint, request, page, clock.instant())) {
+                throw inventoryFailed(InventoryException.Reason.INVALID_PAGE);
+            }
+            return page;
+        } catch (InventoryException invalid) {
+            throw invalid;
+        } catch (IOException | RuntimeException invalid) {
+            throw inventoryFailed(InventoryException.Reason.INVALID_PAGE);
+        }
+    }
+
+    private boolean inventoryPageValid(
+            Endpoint endpoint,
+            TestSuiteStabilityObservationExternalArchiveInventoryRequest request,
+            TestSuiteStabilityObservationExternalArchiveInventoryPage page,
+            Instant observedAt) {
+        String expectedSnapshotId =
+                TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.snapshotId(
+                        objectMapper, trustDomain, archiveSetId, endpoint.authorityId(),
+                        endpoint.failureDomain(), page.snapshotAt(),
+                        page.snapshotObjectCount(), page.snapshotRoot());
+        if (!page.fingerprintVerified(objectMapper)
+                || !request.equals(page.request())
+                || !trustDomain.equals(request.trustDomain())
+                || !archiveSetId.equals(request.archiveSetId())
+                || !endpoint.authorityId().equals(page.authorityId())
+                || !endpoint.failureDomain().equals(page.failureDomain())
+                || !expectedSnapshotId.equals(page.snapshotId())
+                || !request.snapshotId().isEmpty()
+                && !request.snapshotId().equals(page.snapshotId())
+                || page.snapshotAt().isAfter(observedAt)
+                || page.snapshotAt().isBefore(
+                observedAt.minus(settings.maximumInventorySnapshotAge()))
+                || page.issuedAt().isAfter(observedAt)
+                || !observedAt.isBefore(request.expiresAt())
+                || !observedAt.isBefore(page.expiresAt())
+                || Duration.between(page.issuedAt(), page.expiresAt()).compareTo(
+                settings.maximumReceiptLifetime()) > 0) {
+            return false;
+        }
+        return signatureValid(page.authorityId(), page.keyId(), page.algorithm(),
+                page.issuedAt(), page.expiresAt(), page.pageFingerprint(), page.signature(),
+                observedAt, "External archive inventory page");
     }
 
     private Observation observe(
@@ -492,6 +656,11 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
         return active.size();
     }
 
+    private boolean activeAuthority(String authorityId, Instant observedAt) {
+        return keys.values().stream().anyMatch(key -> authorityId.equals(key.authorityId())
+                && key.activeAt(observedAt));
+    }
+
     private ExternalArchiveException failed(ExternalArchiveException.Reason reason) {
         state.updateAndGet(current -> switch (reason) {
             case AUTHENTICATED_CONFLICT -> current.conflicted();
@@ -509,6 +678,25 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
             throw new IllegalArgumentException(
                     "External archive request cannot be serialized", invalid);
         }
+    }
+
+    private byte[] writeInventoryRequest(
+            TestSuiteStabilityObservationExternalArchiveInventoryRequest request) {
+        try {
+            byte[] body = objectMapper.writeValueAsBytes(request);
+            if (body.length > MAXIMUM_REQUEST_BYTES) {
+                throw new IllegalArgumentException(
+                        "External inventory request exceeds its byte limit");
+            }
+            return body;
+        } catch (IOException invalid) {
+            throw new IllegalArgumentException(
+                    "External inventory request cannot be serialized", invalid);
+        }
+    }
+
+    private static InventoryException inventoryFailed(InventoryException.Reason reason) {
+        return new InventoryException(reason);
     }
 
     private String challenge() {
@@ -653,13 +841,16 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
      *
      * @param requestTimeout per-authority HTTP timeout, 100 ms through 30 seconds
      * @param maximumReceiptLifetime request/receipt lifetime, one through 60 seconds
+     * @param maximumInventorySnapshotAge accepted age of a pre-generated immutable inventory
+     *                                    snapshot, one second through seven days
      * @param allowInsecureLoopback explicit local-test-only HTTP escape hatch
      */
     public record Settings(
             Duration requestTimeout,
             Duration maximumReceiptLifetime,
+            Duration maximumInventorySnapshotAge,
             boolean allowInsecureLoopback) {
-        /** Enforces bounded synchronous write latency and challenge replay windows. */
+        /** Enforces bounded latency, challenge replay windows, and inventory staleness. */
         public Settings {
             if (requestTimeout == null
                     || requestTimeout.compareTo(Duration.ofMillis(100)) < 0
@@ -668,6 +859,9 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
                     || maximumReceiptLifetime.compareTo(Duration.ofSeconds(1)) < 0
                     || maximumReceiptLifetime.compareTo(
                     TestSuiteStabilityObservationExternalArchiveRequest.MAXIMUM_LIFETIME) > 0
+                    || maximumInventorySnapshotAge == null
+                    || maximumInventorySnapshotAge.compareTo(Duration.ofSeconds(1)) < 0
+                    || maximumInventorySnapshotAge.compareTo(Duration.ofDays(7)) > 0
                     || requestTimeout.compareTo(maximumReceiptLifetime) >= 0) {
                 throw new IllegalArgumentException(
                         "External archive timing policy is invalid");
