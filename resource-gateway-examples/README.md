@@ -158,7 +158,11 @@ finding, completed-evidence age, and derived-evidence retention freshness/backlo
 transient failure budget, stage-idle and lifecycle thresholds are bounded configuration; authority,
 object, cursor, lease and fingerprint identities never appear. `/api/integration/capabilities`
 separately reports `configured` and current `ready` truth. Open governance findings are reported as
-an aggregate business outcome and do not make the control loop unhealthy.
+an aggregate business outcome and do not make the control loop unhealthy. Inventory authority and
+cycle rows now use the same versioned whole-record fingerprint in collection, comparison, and
+readiness paths. The first upgraded test/staging startup establishes a one-time baseline for legacy
+rows and then requires non-null fingerprints; perform that upgrade with all replicas stopped because
+it is not an N/N-1 production migration protocol.
 
 The start command becomes ready only after the integration capability probe
 succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;

@@ -37,6 +37,11 @@ import java.util.regex.Pattern;
  * release are committed in one local transaction. A crash before commit leaves the previous cursor;
  * a crash after commit exposes the successor cursor to another replica.</p>
  *
+ * <p>Authority and cycle rows carry versioned whole-record fingerprints. Every lock read verifies
+ * the fingerprint before state can drive remote I/O or readiness, and every mutation uses the
+ * previous fingerprint plus revision as its compare-and-set fence. Startup performs an explicit
+ * one-time trust migration for legacy test/staging rows that predate these columns.</p>
+ *
  * <p>The control plane has no external delete, purge, overwrite, legal-hold, or retention mutation
  * authority. Staged values contain signed payload-free inventory metadata only. Classification,
  * finding workflow, and remediation are deliberately separate later phases.</p>
@@ -115,7 +120,8 @@ public final class
                     active_cycle_id VARCHAR(36) NOT NULL,
                     last_completed_cycle_id VARCHAR(36) NOT NULL,
                     last_success_at TIMESTAMP WITH TIME ZONE,
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL
                 )
                 """);
         jdbc.execute("""
@@ -139,7 +145,8 @@ public final class
                     revision BIGINT NOT NULL,
                     started_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     completed_at TIMESTAMP WITH TIME ZONE,
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL
                 )
                 """);
         jdbc.execute("""
@@ -207,6 +214,7 @@ public final class
                     cycle_id, page_sequence, object_id
                 )
                 """);
+        migrateStateFingerprints();
     }
 
     /**
@@ -306,17 +314,11 @@ public final class
             long successorRevision = increment(state.revision(), "inventory authority revision");
             String token = UUID.randomUUID().toString();
             Instant leaseUntil = now.plus(settings.leaseDuration());
-            int updated = jdbc.update("""
-                    UPDATE rg_test_suite_stability_observation_external_inventory_authorities
-                    SET lease_owner = ?, lease_token = ?, lease_epoch = ?, lease_until = ?,
-                        revision = ?, active_cycle_id = ?, updated_at = ?
-                    WHERE authority_id = ? AND revision = ?
-                    """, settings.ownerId(), token, successorEpoch,
-                    Timestamp.from(leaseUntil), successorRevision, cycleId, Timestamp.from(now),
-                    authorityId, state.revision());
-            if (updated != 1) {
-                throw new LeaseLostException();
-            }
+            StoredAuthority successor = fingerprinted(new StoredAuthority(
+                    state.authorityId(), settings.ownerId(), token, successorEpoch, leaseUntil,
+                    successorRevision, cycleId, state.lastCompletedCycleId(),
+                    state.lastSuccessAt(), now, ""));
+            updateAuthority(state, successor);
             return Optional.of(new PageLease(authorityId, cycleId, settings.ownerId(), token,
                     successorEpoch, successorRevision, leaseUntil, cycle.cursor()));
         });
@@ -386,41 +388,20 @@ public final class
                     ? cycle.lastObjectId() : page.items().getLast().objectId();
             String statusValue = page.complete() ? "COMPLETED" : "ACTIVE";
             String nextAfterObjectId = page.complete() ? "" : page.nextAfterObjectId();
-            int cycleUpdated = jdbc.update("""
-                    UPDATE rg_test_suite_stability_observation_external_inventory_cycles
-                    SET cycle_status = ?, trust_domain = ?, archive_set_id = ?,
-                        failure_domain = ?, snapshot_id = ?, snapshot_at = ?,
-                        snapshot_object_count = ?, snapshot_root = ?,
-                        next_after_object_id = ?, next_page_sequence = ?,
-                        accumulated_object_count = ?, accumulated_root = ?,
-                        last_object_id = ?, revision = ?, completed_at = ?, updated_at = ?
-                    WHERE cycle_id = ? AND revision = ? AND cycle_status = 'ACTIVE'
-                    """, statusValue, page.request().trustDomain(),
-                    page.request().archiveSetId(), page.failureDomain(), page.snapshotId(),
-                    Timestamp.from(page.snapshotAt()),
+            StoredCycle cycleSuccessor = fingerprinted(new StoredCycle(
+                    cycle.cycleId(), cycle.authorityId(), statusValue,
+                    page.request().trustDomain(), page.request().archiveSetId(),
+                    page.failureDomain(), page.snapshotId(), page.snapshotAt(),
                     page.snapshotObjectCount(), page.snapshotRoot(), nextAfterObjectId,
                     successorPageSequence, accumulatedCount, accumulatedRoot, lastObjectId,
-                    cycleRevision, page.complete() ? Timestamp.from(now) : null,
-                    Timestamp.from(now), lease.cycleId(), cycle.revision());
-            if (cycleUpdated != 1) {
-                throw new LeaseLostException();
-            }
-            int authorityUpdated = jdbc.update("""
-                    UPDATE rg_test_suite_stability_observation_external_inventory_authorities
-                    SET lease_owner = '', lease_token = '', lease_until = ?, revision = ?,
-                        active_cycle_id = ?, last_completed_cycle_id = ?,
-                        last_success_at = ?, updated_at = ?
-                    WHERE authority_id = ? AND revision = ? AND lease_owner = ?
-                      AND lease_token = ? AND lease_epoch = ?
-                    """, Timestamp.from(now), authorityRevision,
-                    page.complete() ? "" : lease.cycleId(),
+                    cycleRevision, cycle.startedAt(), page.complete() ? now : null, now, ""));
+            updateCycle(cycle, cycleSuccessor);
+            StoredAuthority authoritySuccessor = fingerprinted(new StoredAuthority(
+                    state.authorityId(), "", "", state.leaseEpoch(), now,
+                    authorityRevision, page.complete() ? "" : lease.cycleId(),
                     page.complete() ? lease.cycleId() : state.lastCompletedCycleId(),
-                    page.complete() ? Timestamp.from(now) : state.lastSuccessAt(),
-                    Timestamp.from(now), lease.authorityId(), state.revision(), lease.ownerId(),
-                    lease.token(), lease.epoch());
-            if (authorityUpdated != 1) {
-                throw new LeaseLostException();
-            }
+                    page.complete() ? now : state.lastSuccessAt(), now, ""));
+            updateAuthority(state, authoritySuccessor);
             return new PageAttempt(
                     page.complete() ? PageStatus.COMPLETED : PageStatus.STAGED,
                     lease.authorityId(), lease.cycleId(), page.request().pageSequence(),
@@ -441,25 +422,19 @@ public final class
             cycle.requireActiveFor(lease.authorityId());
             long cycleRevision = increment(cycle.revision(), "inventory cycle revision");
             long authorityRevision = increment(state.revision(), "inventory authority revision");
-            int cycleUpdated = jdbc.update("""
-                    UPDATE rg_test_suite_stability_observation_external_inventory_cycles
-                    SET cycle_status = 'SNAPSHOT_EXPIRED', revision = ?,
-                        completed_at = ?, updated_at = ?
-                    WHERE cycle_id = ? AND revision = ? AND cycle_status = 'ACTIVE'
-                    """, cycleRevision, Timestamp.from(now), Timestamp.from(now),
-                    cycle.cycleId(), cycle.revision());
-            int authorityUpdated = jdbc.update("""
-                    UPDATE rg_test_suite_stability_observation_external_inventory_authorities
-                    SET lease_owner = '', lease_token = '', lease_until = ?, revision = ?,
-                        active_cycle_id = '', updated_at = ?
-                    WHERE authority_id = ? AND revision = ? AND lease_owner = ?
-                      AND lease_token = ? AND lease_epoch = ?
-                    """, Timestamp.from(now), authorityRevision, Timestamp.from(now),
-                    lease.authorityId(), state.revision(), lease.ownerId(), lease.token(),
-                    lease.epoch());
-            if (cycleUpdated != 1 || authorityUpdated != 1) {
-                throw new LeaseLostException();
-            }
+            StoredCycle cycleSuccessor = fingerprinted(new StoredCycle(
+                    cycle.cycleId(), cycle.authorityId(), "SNAPSHOT_EXPIRED",
+                    cycle.trustDomain(), cycle.archiveSetId(), cycle.failureDomain(),
+                    cycle.snapshotId(), cycle.snapshotAt(), cycle.snapshotObjectCount(),
+                    cycle.snapshotRoot(), cycle.nextAfterObjectId(), cycle.nextPageSequence(),
+                    cycle.accumulatedObjectCount(), cycle.accumulatedRoot(),
+                    cycle.lastObjectId(), cycleRevision, cycle.startedAt(), now, now, ""));
+            updateCycle(cycle, cycleSuccessor);
+            StoredAuthority authoritySuccessor = fingerprinted(new StoredAuthority(
+                    state.authorityId(), "", "", state.leaseEpoch(), now,
+                    authorityRevision, "", state.lastCompletedCycleId(), state.lastSuccessAt(),
+                    now, ""));
+            updateAuthority(state, authoritySuccessor);
             return new PageAttempt(PageStatus.SNAPSHOT_EXPIRED, lease.authorityId(),
                     lease.cycleId(), cycle.nextPageSequence(), 0,
                     cycle.accumulatedObjectCount());
@@ -487,18 +462,11 @@ public final class
             }
             Instant now = databaseNow();
             long successorRevision = increment(state.revision(), "inventory authority revision");
-            int updated = jdbc.update("""
-                    UPDATE rg_test_suite_stability_observation_external_inventory_authorities
-                    SET lease_owner = '', lease_token = '', lease_until = ?,
-                        revision = ?, updated_at = ?
-                    WHERE authority_id = ? AND revision = ? AND lease_owner = ?
-                      AND lease_token = ? AND lease_epoch = ?
-                    """, Timestamp.from(now), successorRevision, Timestamp.from(now),
-                    lease.authorityId(), state.revision(), lease.ownerId(), lease.token(),
-                    lease.epoch());
-            if (updated != 1) {
-                throw new LeaseLostException();
-            }
+            StoredAuthority successor = fingerprinted(new StoredAuthority(
+                    state.authorityId(), "", "", state.leaseEpoch(), now,
+                    successorRevision, state.activeCycleId(), state.lastCompletedCycleId(),
+                    state.lastSuccessAt(), now, ""));
+            updateAuthority(state, successor);
         });
     }
 
@@ -691,17 +659,185 @@ public final class
         return rows.getFirst();
     }
 
+    /**
+     * Establishes a fingerprint trust baseline for rows written before record fingerprints existed.
+     *
+     * <p>This migration is intentionally local to the test/staging-only reconciliation surface. It
+     * trusts each legacy row exactly once, writes the derived fingerprint under its revision fence,
+     * then makes both columns non-null. Rows that already carry a fingerprint must verify and are
+     * never silently re-baselined.</p>
+     */
+    private void migrateStateFingerprints() {
+        jdbc.execute("""
+                ALTER TABLE
+                    rg_test_suite_stability_observation_external_inventory_authorities
+                ADD COLUMN IF NOT EXISTS record_fingerprint VARCHAR(71)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_observation_external_inventory_cycles
+                ADD COLUMN IF NOT EXISTS record_fingerprint VARCHAR(71)
+                """);
+        transactions.executeWithoutResult(status -> {
+            List<StoredAuthority> authorities = jdbc.query("""
+                    SELECT authority_id, lease_owner, lease_token, lease_epoch, lease_until,
+                           revision, active_cycle_id, last_completed_cycle_id,
+                           last_success_at, updated_at, record_fingerprint
+                    FROM rg_test_suite_stability_observation_external_inventory_authorities
+                    ORDER BY authority_id
+                    FOR UPDATE
+                    """, this::unverifiedAuthority);
+            for (StoredAuthority authorityState : authorities) {
+                if (normalized(authorityState.recordFingerprint()).isEmpty()) {
+                    StoredAuthority migrated = fingerprinted(authorityState);
+                    int updated = jdbc.update("""
+                            UPDATE
+                                rg_test_suite_stability_observation_external_inventory_authorities
+                            SET record_fingerprint = ?
+                            WHERE authority_id = ? AND revision = ?
+                              AND (record_fingerprint IS NULL OR record_fingerprint = '')
+                            """, migrated.recordFingerprint(), migrated.authorityId(),
+                            migrated.revision());
+                    if (updated != 1) {
+                        throw new IllegalStateException(
+                                "External inventory authority fingerprint migration lost its fence");
+                    }
+                } else {
+                    verify(authorityState);
+                }
+            }
+            List<StoredCycle> cycles = jdbc.query("""
+                    SELECT cycle_id, authority_id, cycle_status, trust_domain,
+                           archive_set_id, failure_domain, snapshot_id, snapshot_at,
+                           snapshot_object_count, snapshot_root, next_after_object_id,
+                           next_page_sequence, accumulated_object_count, accumulated_root,
+                           last_object_id, revision, started_at, completed_at, updated_at,
+                           record_fingerprint
+                    FROM rg_test_suite_stability_observation_external_inventory_cycles
+                    ORDER BY cycle_id
+                    FOR UPDATE
+                    """, this::unverifiedCycle);
+            for (StoredCycle cycle : cycles) {
+                if (normalized(cycle.recordFingerprint()).isEmpty()) {
+                    StoredCycle migrated = fingerprinted(cycle);
+                    int updated = jdbc.update("""
+                            UPDATE rg_test_suite_stability_observation_external_inventory_cycles
+                            SET record_fingerprint = ?
+                            WHERE cycle_id = ? AND revision = ?
+                              AND (record_fingerprint IS NULL OR record_fingerprint = '')
+                            """, migrated.recordFingerprint(), migrated.cycleId(),
+                            migrated.revision());
+                    if (updated != 1) {
+                        throw new IllegalStateException(
+                                "External inventory cycle fingerprint migration lost its fence");
+                    }
+                } else {
+                    verify(cycle);
+                }
+            }
+        });
+        jdbc.execute("""
+                ALTER TABLE
+                    rg_test_suite_stability_observation_external_inventory_authorities
+                ALTER COLUMN record_fingerprint SET NOT NULL
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_observation_external_inventory_cycles
+                ALTER COLUMN record_fingerprint SET NOT NULL
+                """);
+    }
+
+    private void updateAuthority(StoredAuthority expected, StoredAuthority successor) {
+        verify(expected);
+        verify(successor);
+        int updated = jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_external_inventory_authorities
+                SET lease_owner = ?, lease_token = ?, lease_epoch = ?, lease_until = ?,
+                    revision = ?, active_cycle_id = ?, last_completed_cycle_id = ?,
+                    last_success_at = ?, updated_at = ?, record_fingerprint = ?
+                WHERE authority_id = ? AND revision = ? AND record_fingerprint = ?
+                """, successor.updateArguments(expected));
+        if (updated != 1) {
+            throw new LeaseLostException();
+        }
+    }
+
+    private void updateCycle(StoredCycle expected, StoredCycle successor) {
+        verify(expected);
+        verify(successor);
+        int updated = jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_external_inventory_cycles
+                SET cycle_status = ?, trust_domain = ?, archive_set_id = ?,
+                    failure_domain = ?, snapshot_id = ?, snapshot_at = ?,
+                    snapshot_object_count = ?, snapshot_root = ?,
+                    next_after_object_id = ?, next_page_sequence = ?,
+                    accumulated_object_count = ?, accumulated_root = ?, last_object_id = ?,
+                    revision = ?, started_at = ?, completed_at = ?, updated_at = ?,
+                    record_fingerprint = ?
+                WHERE cycle_id = ? AND revision = ? AND record_fingerprint = ?
+                """, successor.updateArguments(expected));
+        if (updated != 1) {
+            throw new LeaseLostException();
+        }
+    }
+
+    private StoredAuthority fingerprinted(StoredAuthority state) {
+        state.validate();
+        return state.withFingerprint(authorityFingerprint(state));
+    }
+
+    private StoredCycle fingerprinted(StoredCycle cycle) {
+        cycle.validate();
+        return cycle.withFingerprint(cycleFingerprint(cycle));
+    }
+
+    private void verify(StoredAuthority state) {
+        state.validate();
+        if (!FINGERPRINT.matcher(normalized(state.recordFingerprint())).matches()
+                || !state.recordFingerprint().equals(authorityFingerprint(state))) {
+            throw new IllegalStateException(
+                    "External inventory authority record fingerprint is corrupt");
+        }
+    }
+
+    private void verify(StoredCycle cycle) {
+        cycle.validate();
+        if (!FINGERPRINT.matcher(normalized(cycle.recordFingerprint())).matches()
+                || !cycle.recordFingerprint().equals(cycleFingerprint(cycle))) {
+            throw new IllegalStateException(
+                    "External inventory cycle record fingerprint is corrupt");
+        }
+    }
+
+    private String authorityFingerprint(StoredAuthority state) {
+        return ExternalArchiveInventoryStateIntegrity.authorityFingerprint(
+                objectMapper, state.authorityId(), state.leaseOwner(), state.leaseToken(),
+                state.leaseEpoch(), state.leaseUntil(), state.revision(), state.activeCycleId(),
+                state.lastCompletedCycleId(), state.lastSuccessAt(), state.updatedAt());
+    }
+
+    private String cycleFingerprint(StoredCycle cycle) {
+        return ExternalArchiveInventoryStateIntegrity.cycleFingerprint(
+                objectMapper, cycle.cycleId(), cycle.authorityId(), cycle.status(),
+                cycle.trustDomain(), cycle.archiveSetId(), cycle.failureDomain(),
+                cycle.snapshotId(), cycle.snapshotAt(), cycle.snapshotObjectCount(),
+                cycle.snapshotRoot(), cycle.nextAfterObjectId(), cycle.nextPageSequence(),
+                cycle.accumulatedObjectCount(), cycle.accumulatedRoot(), cycle.lastObjectId(),
+                cycle.revision(), cycle.startedAt(), cycle.completedAt(), cycle.updatedAt());
+    }
+
     private void initializeAuthority(String authorityId) {
         Instant now = databaseNow();
+        StoredAuthority initial = fingerprinted(new StoredAuthority(
+                authorityId, "", "", 0, now, 0, "", "", null, now, ""));
         try {
             jdbc.update("""
                     INSERT INTO
                         rg_test_suite_stability_observation_external_inventory_authorities (
                         authority_id, lease_owner, lease_token, lease_epoch, lease_until,
                         revision, active_cycle_id, last_completed_cycle_id,
-                        last_success_at, updated_at
-                    ) VALUES (?, '', '', 0, ?, 0, '', '', NULL, ?)
-                    """, authorityId, Timestamp.from(now), Timestamp.from(now));
+                        last_success_at, updated_at, record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, initial.sqlArguments());
         } catch (DuplicateKeyException ignored) {
             // Another replica already initialized the authority row.
         }
@@ -709,6 +845,10 @@ public final class
 
     private StoredCycle insertCycle(String authorityId, Instant now) {
         String cycleId = UUID.randomUUID().toString();
+        StoredCycle initial = fingerprinted(new StoredCycle(
+                cycleId, authorityId, "ACTIVE", "", "", "", "", null, -1, "", "",
+                0, 0, TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.EMPTY_ROOT,
+                "", 0, now, null, now, ""));
         try {
             int inserted = jdbc.update("""
                     INSERT INTO
@@ -717,12 +857,10 @@ public final class
                         archive_set_id, failure_domain, snapshot_id, snapshot_at,
                         snapshot_object_count, snapshot_root, next_after_object_id,
                         next_page_sequence, accumulated_object_count, accumulated_root,
-                        last_object_id, revision, started_at, completed_at, updated_at
-                    ) VALUES (?, ?, 'ACTIVE', '', '', '', '', NULL, -1, '', '', 0, 0, ?, '', 0,
-                              ?, NULL, ?)
-                    """, cycleId, authorityId,
-                    TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.EMPTY_ROOT,
-                    Timestamp.from(now), Timestamp.from(now));
+                        last_object_id, revision, started_at, completed_at, updated_at,
+                        record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, initial.sqlArguments());
             if (inserted != 1) {
                 throw new IllegalStateException("External inventory cycle insert was incomplete");
             }
@@ -736,7 +874,7 @@ public final class
         List<StoredAuthority> rows = jdbc.query("""
                 SELECT authority_id, lease_owner, lease_token, lease_epoch, lease_until,
                        revision, active_cycle_id, last_completed_cycle_id,
-                       last_success_at, updated_at
+                       last_success_at, updated_at, record_fingerprint
                 FROM rg_test_suite_stability_observation_external_inventory_authorities
                 WHERE authority_id = ?
                 FOR UPDATE
@@ -753,7 +891,8 @@ public final class
                        archive_set_id, failure_domain, snapshot_id, snapshot_at,
                        snapshot_object_count, snapshot_root, next_after_object_id,
                        next_page_sequence, accumulated_object_count, accumulated_root,
-                       last_object_id, revision, started_at, completed_at, updated_at
+                       last_object_id, revision, started_at, completed_at, updated_at,
+                       record_fingerprint
                 FROM rg_test_suite_stability_observation_external_inventory_cycles
                 WHERE cycle_id = ?
                 FOR UPDATE
@@ -765,19 +904,30 @@ public final class
     }
 
     private StoredAuthority storedAuthority(ResultSet result, int row) throws SQLException {
-        StoredAuthority state = new StoredAuthority(
+        StoredAuthority state = unverifiedAuthority(result, row);
+        verify(state);
+        return state;
+    }
+
+    private StoredAuthority unverifiedAuthority(ResultSet result, int row) throws SQLException {
+        return new StoredAuthority(
                 result.getString("authority_id"), result.getString("lease_owner"),
                 result.getString("lease_token"), result.getLong("lease_epoch"),
                 instant(result, "lease_until"), result.getLong("revision"),
                 result.getString("active_cycle_id"),
                 result.getString("last_completed_cycle_id"),
-                nullableInstant(result, "last_success_at"), instant(result, "updated_at"));
-        state.validate();
-        return state;
+                nullableInstant(result, "last_success_at"), instant(result, "updated_at"),
+                result.getString("record_fingerprint"));
     }
 
     private StoredCycle storedCycle(ResultSet result, int row) throws SQLException {
-        StoredCycle cycle = new StoredCycle(
+        StoredCycle cycle = unverifiedCycle(result, row);
+        verify(cycle);
+        return cycle;
+    }
+
+    private StoredCycle unverifiedCycle(ResultSet result, int row) throws SQLException {
+        return new StoredCycle(
                 result.getString("cycle_id"), result.getString("authority_id"),
                 result.getString("cycle_status"), result.getString("trust_domain"),
                 result.getString("archive_set_id"), result.getString("failure_domain"),
@@ -789,9 +939,8 @@ public final class
                 result.getLong("accumulated_object_count"),
                 result.getString("accumulated_root"), result.getString("last_object_id"),
                 result.getLong("revision"), instant(result, "started_at"),
-                nullableInstant(result, "completed_at"), instant(result, "updated_at"));
-        cycle.validate();
-        return cycle;
+                nullableInstant(result, "completed_at"), instant(result, "updated_at"),
+                result.getString("record_fingerprint"));
     }
 
     private String configuredAuthority(String authorityId) {
@@ -1033,7 +1182,8 @@ public final class
             String activeCycleId,
             String lastCompletedCycleId,
             Instant lastSuccessAt,
-            Instant updatedAt) {
+            Instant updatedAt,
+            String recordFingerprint) {
         private void validate() {
             if (!IDENTIFIER.matcher(authorityId).matches()
                     || (leaseOwner.isEmpty() != leaseToken.isEmpty())
@@ -1063,6 +1213,27 @@ public final class
                     && revision == lease.revision()
                     && leaseUntil.equals(lease.leaseUntil());
         }
+
+        private StoredAuthority withFingerprint(String fingerprint) {
+            return new StoredAuthority(authorityId, leaseOwner, leaseToken, leaseEpoch,
+                    leaseUntil, revision, activeCycleId, lastCompletedCycleId, lastSuccessAt,
+                    updatedAt, fingerprint);
+        }
+
+        private Object[] sqlArguments() {
+            return new Object[]{authorityId, leaseOwner, leaseToken, leaseEpoch,
+                    Timestamp.from(leaseUntil), revision, activeCycleId, lastCompletedCycleId,
+                    lastSuccessAt == null ? null : Timestamp.from(lastSuccessAt),
+                    Timestamp.from(updatedAt), recordFingerprint};
+        }
+
+        private Object[] updateArguments(StoredAuthority expected) {
+            return new Object[]{leaseOwner, leaseToken, leaseEpoch, Timestamp.from(leaseUntil),
+                    revision, activeCycleId, lastCompletedCycleId,
+                    lastSuccessAt == null ? null : Timestamp.from(lastSuccessAt),
+                    Timestamp.from(updatedAt), recordFingerprint, expected.authorityId,
+                    expected.revision, expected.recordFingerprint};
+        }
     }
 
     private record StoredCycle(
@@ -1084,7 +1255,8 @@ public final class
             long revision,
             Instant startedAt,
             Instant completedAt,
-            Instant updatedAt) {
+            Instant updatedAt,
+            String recordFingerprint) {
         private void validate() {
             boolean knownStatus = "ACTIVE".equals(status) || "COMPLETED".equals(status)
                     || "SNAPSHOT_EXPIRED".equals(status);
@@ -1142,6 +1314,32 @@ public final class
                     ? TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Cursor.initial()
                     : new TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Cursor(
                     snapshotId, nextAfterObjectId, nextPageSequence);
+        }
+
+        private StoredCycle withFingerprint(String fingerprint) {
+            return new StoredCycle(cycleId, authorityId, status, trustDomain, archiveSetId,
+                    failureDomain, snapshotId, snapshotAt, snapshotObjectCount, snapshotRoot,
+                    nextAfterObjectId, nextPageSequence, accumulatedObjectCount, accumulatedRoot,
+                    lastObjectId, revision, startedAt, completedAt, updatedAt, fingerprint);
+        }
+
+        private Object[] sqlArguments() {
+            return new Object[]{cycleId, authorityId, status, trustDomain, archiveSetId,
+                    failureDomain, snapshotId, snapshotAt == null ? null : Timestamp.from(snapshotAt),
+                    snapshotObjectCount, snapshotRoot, nextAfterObjectId, nextPageSequence,
+                    accumulatedObjectCount, accumulatedRoot, lastObjectId, revision,
+                    Timestamp.from(startedAt),
+                    completedAt == null ? null : Timestamp.from(completedAt),
+                    Timestamp.from(updatedAt), recordFingerprint};
+        }
+
+        private Object[] updateArguments(StoredCycle expected) {
+            Object[] inserted = sqlArguments();
+            return new Object[]{inserted[2], inserted[3], inserted[4], inserted[5], inserted[6],
+                    inserted[7], inserted[8], inserted[9], inserted[10], inserted[11],
+                    inserted[12], inserted[13], inserted[14], inserted[15], inserted[16],
+                    inserted[17], inserted[18], inserted[19], expected.cycleId,
+                    expected.revision, expected.recordFingerprint};
         }
     }
 

@@ -1480,6 +1480,8 @@ public class TestRuntimeConfiguration {
             testSuiteStabilityObservationExternalArchiveClassificationControlPlane(
                     TestRuntimeDatabase database,
                     ObjectMapper objectMapper,
+                    DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane
+                            inventoryControlPlane,
                     @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.comparison-page-size:100}")
                     int pageSize) {
         return new DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane(

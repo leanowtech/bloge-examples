@@ -802,35 +802,56 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlaneTes
                 WHERE authority_id = ?
                 """, Integer.class, AUTHORITY);
         if (authorities != null && authorities == 1) {
+            Long currentRevision = database.jdbc().queryForObject("""
+                    SELECT revision
+                    FROM rg_test_suite_stability_observation_external_inventory_authorities
+                    WHERE authority_id = ?
+                    """, Long.class, AUTHORITY);
+            long revision = Math.addExact(currentRevision == null ? 0 : currentRevision, 1);
+            String authorityFingerprint = ExternalArchiveInventoryStateIntegrity
+                    .authorityFingerprint(objectMapper, AUTHORITY, "", "", 0, now, revision,
+                            "", cycleId, now, now);
             database.jdbc().update("""
                     UPDATE rg_test_suite_stability_observation_external_inventory_authorities
-                    SET active_cycle_id = '', last_completed_cycle_id = ?, last_success_at = ?,
-                        revision = revision + 1, updated_at = ?
+                    SET lease_owner = '', lease_token = '', lease_epoch = 0, lease_until = ?,
+                        active_cycle_id = '', last_completed_cycle_id = ?, last_success_at = ?,
+                        revision = ?, updated_at = ?, record_fingerprint = ?
                     WHERE authority_id = ?
-                    """, cycleId, Timestamp.from(now), Timestamp.from(now), AUTHORITY);
+                    """, Timestamp.from(now), cycleId, Timestamp.from(now), revision,
+                    Timestamp.from(now), authorityFingerprint, AUTHORITY);
         } else {
+            long revision = 1;
+            String authorityFingerprint = ExternalArchiveInventoryStateIntegrity
+                    .authorityFingerprint(objectMapper, AUTHORITY, "", "", 0, now, revision,
+                            "", cycleId, now, now);
             database.jdbc().update("""
                     INSERT INTO
                         rg_test_suite_stability_observation_external_inventory_authorities (
                         authority_id, lease_owner, lease_token, lease_epoch, lease_until,
                         revision, active_cycle_id, last_completed_cycle_id,
-                        last_success_at, updated_at
-                    ) VALUES (?, '', '', 0, ?, 1, '', ?, ?, ?)
-                    """, AUTHORITY, Timestamp.from(now), cycleId, Timestamp.from(now),
-                    Timestamp.from(now));
+                        last_success_at, updated_at, record_fingerprint
+                    ) VALUES (?, '', '', 0, ?, ?, '', ?, ?, ?, ?)
+                    """, AUTHORITY, Timestamp.from(now), revision, cycleId,
+                    Timestamp.from(now), Timestamp.from(now), authorityFingerprint);
         }
         String lastObjectId = items.isEmpty() ? "" : items.getLast().objectId();
+        long cycleRevision = 1;
+        String cycleFingerprint = ExternalArchiveInventoryStateIntegrity.cycleFingerprint(
+                objectMapper, cycleId, AUTHORITY, "COMPLETED", TRUST_DOMAIN, ARCHIVE_SET,
+                FAILURE_DOMAIN, snapshotId, snapshotAt, items.size(), root, "", 1,
+                items.size(), root, lastObjectId, cycleRevision, snapshotAt, now, now);
         database.jdbc().update("""
                 INSERT INTO rg_test_suite_stability_observation_external_inventory_cycles (
                     cycle_id, authority_id, cycle_status, trust_domain, archive_set_id,
                     failure_domain, snapshot_id, snapshot_at, snapshot_object_count,
                     snapshot_root, next_after_object_id, next_page_sequence,
                     accumulated_object_count, accumulated_root, last_object_id, revision,
-                    started_at, completed_at, updated_at
-                ) VALUES (?, ?, 'COMPLETED', ?, ?, ?, ?, ?, ?, ?, '', 1, ?, ?, ?, 1, ?, ?, ?)
+                    started_at, completed_at, updated_at, record_fingerprint
+                ) VALUES (?, ?, 'COMPLETED', ?, ?, ?, ?, ?, ?, ?, '', 1, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, cycleId, AUTHORITY, TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN, snapshotId,
                 Timestamp.from(snapshotAt), (long) items.size(), root, (long) items.size(), root,
-                lastObjectId, Timestamp.from(snapshotAt), Timestamp.from(now), Timestamp.from(now));
+                lastObjectId, cycleRevision, Timestamp.from(snapshotAt), Timestamp.from(now),
+                Timestamp.from(now), cycleFingerprint);
         for (TestSuiteStabilityObservationExternalArchiveInventoryItem item : items) {
             database.jdbc().update("""
                     INSERT INTO

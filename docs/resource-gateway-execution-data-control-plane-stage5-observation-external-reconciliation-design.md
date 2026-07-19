@@ -515,6 +515,19 @@ After this second increment, the complete Resource Gateway `clean verify` execut
 zero failures, zero errors, two existing browser-environment skips, and a successfully repackaged
 Spring Boot executable JAR.
 
+The third Phase F increment establishes the integrity precondition for source retention. Inventory
+authority and cycle rows now carry versioned whole-record fingerprints over every persisted state
+column, including lease/cursor/lifecycle fields. Lock reads verify them before remote I/O,
+comparison, or readiness; writes use the previous revision and fingerprint as one CAS fence. The
+comparison control plane reuses the same canonical material and cannot freeze expected state from a
+tampered source pointer or cycle. Startup adds and backfills the two columns for legacy test/staging
+rows exactly once, rejects any row that already has an invalid fingerprint, and then enforces
+non-null storage. This migration is a local trust-baseline transition and is not an N/N-1 production
+rollout protocol. It does not yet delete or bound source history.
+The focused inventory-integrity gate executes 63 tests with zero failures, errors, or skips. The
+complete Resource Gateway `clean verify` executes 2996 tests with zero failures, zero errors, two
+existing browser-environment skips, and a successfully repackaged Spring Boot executable JAR.
+
 ## 15. Remaining phases and acceptance
 
 The local expectation, durable remote cycle, frozen comparison, bounded ordered merge, terminal

@@ -157,6 +157,127 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlP
     }
 
     @Test
+    void structurallyValidAuthorityTamperingFailsClosedBeforeRemoteIo() {
+        FixtureInventoryAuthority authority = new FixtureInventoryAuthority(items(1));
+        var controlPlane = controlPlane("replica-a", Duration.ofSeconds(30), 1, authority);
+        controlPlane.operationalSnapshot(AUTHORITY);
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_observation_external_inventory_authorities
+                SET revision = revision + 1
+                WHERE authority_id = ?
+                """, AUTHORITY);
+
+        assertThatThrownBy(() -> controlPlane.operationalSnapshot(AUTHORITY))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("authority record fingerprint");
+        assertThat(authority.remoteCalls()).isZero();
+    }
+
+    @Test
+    void structurallyValidCycleTamperingFailsClosedBeforeRemoteIo() {
+        FixtureInventoryAuthority authority = new FixtureInventoryAuthority(items(2));
+        var controlPlane = controlPlane("replica-a", Duration.ofSeconds(30), 1, authority);
+        var first = controlPlane.stageNextPage(AUTHORITY);
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_observation_external_inventory_cycles
+                SET updated_at = DATEADD('MILLISECOND', 1, updated_at)
+                WHERE cycle_id = ?
+                """, first.cycleId());
+
+        assertThatThrownBy(() -> controlPlane.operationalSnapshot(AUTHORITY))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cycle record fingerprint");
+        assertThat(authority.remoteCalls()).isEqualTo(1);
+    }
+
+    @Test
+    void startupEstablishesANonNullFingerprintBaselineForLegacyStateRows() {
+        String cycleId = "00000000-0000-0000-0000-000000000001";
+        database.jdbc().execute("""
+                CREATE TABLE rg_test_suite_stability_observation_external_inventory_authorities (
+                    authority_id VARCHAR(255) PRIMARY KEY,
+                    lease_owner VARCHAR(255) NOT NULL,
+                    lease_token VARCHAR(255) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    lease_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    revision BIGINT NOT NULL,
+                    active_cycle_id VARCHAR(36) NOT NULL,
+                    last_completed_cycle_id VARCHAR(36) NOT NULL,
+                    last_success_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+                """);
+        database.jdbc().execute("""
+                CREATE TABLE rg_test_suite_stability_observation_external_inventory_cycles (
+                    cycle_id VARCHAR(36) PRIMARY KEY,
+                    authority_id VARCHAR(255) NOT NULL,
+                    cycle_status VARCHAR(32) NOT NULL,
+                    trust_domain VARCHAR(255) NOT NULL,
+                    archive_set_id VARCHAR(255) NOT NULL,
+                    failure_domain VARCHAR(255) NOT NULL,
+                    snapshot_id VARCHAR(255) NOT NULL,
+                    snapshot_at TIMESTAMP WITH TIME ZONE,
+                    snapshot_object_count BIGINT NOT NULL,
+                    snapshot_root VARCHAR(71) NOT NULL,
+                    next_after_object_id VARCHAR(255) NOT NULL,
+                    next_page_sequence BIGINT NOT NULL,
+                    accumulated_object_count BIGINT NOT NULL,
+                    accumulated_root VARCHAR(71) NOT NULL,
+                    last_object_id VARCHAR(255) NOT NULL,
+                    revision BIGINT NOT NULL,
+                    started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    completed_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+                """);
+        database.jdbc().update("""
+                INSERT INTO rg_test_suite_stability_observation_external_inventory_authorities (
+                    authority_id, lease_owner, lease_token, lease_epoch, lease_until, revision,
+                    active_cycle_id, last_completed_cycle_id, last_success_at, updated_at
+                ) VALUES (?, '', '', 0, CURRENT_TIMESTAMP, 0, ?, '', NULL, CURRENT_TIMESTAMP)
+                """, AUTHORITY, cycleId);
+        database.jdbc().update("""
+                INSERT INTO rg_test_suite_stability_observation_external_inventory_cycles (
+                    cycle_id, authority_id, cycle_status, trust_domain, archive_set_id,
+                    failure_domain, snapshot_id, snapshot_at, snapshot_object_count,
+                    snapshot_root, next_after_object_id, next_page_sequence,
+                    accumulated_object_count, accumulated_root, last_object_id, revision,
+                    started_at, completed_at, updated_at
+                ) VALUES (?, ?, 'ACTIVE', '', '', '', '', NULL, -1, '', '', 0, 0, ?, '', 0,
+                          CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
+                """, cycleId, AUTHORITY,
+                TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.EMPTY_ROOT);
+
+        var controlPlane = controlPlane("replica-a", Duration.ofSeconds(30), 1,
+                new FixtureInventoryAuthority(items(1)));
+
+        assertThat(controlPlane.operationalSnapshot(AUTHORITY).activeCycle()).isTrue();
+        assertThat(database.jdbc().queryForObject("""
+                SELECT record_fingerprint
+                FROM rg_test_suite_stability_observation_external_inventory_authorities
+                WHERE authority_id = ?
+                """, String.class, AUTHORITY)).startsWith("sha256:");
+        assertThat(database.jdbc().queryForObject("""
+                SELECT record_fingerprint
+                FROM rg_test_suite_stability_observation_external_inventory_cycles
+                WHERE cycle_id = ?
+                """, String.class, cycleId)).startsWith("sha256:");
+        assertThatThrownBy(() -> database.jdbc().update("""
+                INSERT INTO rg_test_suite_stability_observation_external_inventory_cycles (
+                    cycle_id, authority_id, cycle_status, trust_domain, archive_set_id,
+                    failure_domain, snapshot_id, snapshot_at, snapshot_object_count,
+                    snapshot_root, next_after_object_id, next_page_sequence,
+                    accumulated_object_count, accumulated_root, last_object_id, revision,
+                    started_at, completed_at, updated_at, record_fingerprint
+                ) VALUES ('00000000-0000-0000-0000-000000000002', ?, 'ACTIVE', '', '', '', '',
+                          NULL, -1, '', '', 0, 0, ?, '', 0, CURRENT_TIMESTAMP, NULL,
+                          CURRENT_TIMESTAMP, NULL)
+                """, AUTHORITY,
+                TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.EMPTY_ROOT))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
     void liveLeaseReturnsBusyWithoutRemoteIoAndExpiredFenceIsTakenOver() throws Exception {
         FixtureInventoryAuthority authority = new FixtureInventoryAuthority(items(1));
         authority.blockFirstCall();
@@ -173,11 +294,7 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlP
                             .PageStatus.BUSY);
             assertThat(authority.remoteCalls()).isEqualTo(1);
 
-            database.jdbc().update("""
-                    UPDATE rg_test_suite_stability_observation_external_inventory_authorities
-                    SET lease_until = DATEADD('SECOND', -1, CURRENT_TIMESTAMP)
-                    WHERE authority_id = ?
-                    """, AUTHORITY);
+            Thread.sleep(1_100);
             var takeover = secondReplica.stageNextPage(AUTHORITY);
             assertThat(takeover.status()).isEqualTo(
                     DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane

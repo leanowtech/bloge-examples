@@ -943,6 +943,16 @@ provider certification、historical trust、法务/备份/灾备与 witnessed no
 第二增量后的完整 Resource Gateway `clean verify` 执行 2991 tests，0 failures、0 errors、2 项既有浏览器环境跳过，
 并成功重打包 Spring Boot 可执行 JAR。
 
+同一子步 Phase F 第三增量先关闭 source retention 的完整性前置缺口。inventory authority/cycle 现对包含
+lease、cursor、lifecycle 在内的完整持久化列计算版本化 whole-record fingerprint；任何 lock read 在远端 I/O、
+comparison 或 readiness 前先验真，所有状态变更以旧 revision + fingerprint 做同一 CAS fence。comparison 冻结
+expected snapshot 前复用同一 canonical material 复核 source authority/cycle，不再存在绕过采集入口消费篡改指针的
+旁路。启动迁移只对尚无 fingerprint 的旧 test/staging 行做一次 trust baseline，已有错误 fingerprint 永不静默重建，
+随后把两列收紧为 non-null。该增量是 source retention 的必要基座，不是 N/N-1 production migration，也尚未令
+source cycle/comparison/classification history 有界。
+本增量 63 项 inventory integrity 聚焦测试全绿；完整 Resource Gateway `clean verify` 执行 2996 tests，
+0 failures、0 errors、2 项既有浏览器环境跳过，并成功重打包 Spring Boot 可执行 JAR。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

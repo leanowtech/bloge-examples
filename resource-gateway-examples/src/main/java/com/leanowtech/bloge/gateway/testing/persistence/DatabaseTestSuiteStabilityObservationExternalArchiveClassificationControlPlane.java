@@ -1002,25 +1002,27 @@ public final class
 
     private StoredInventoryAuthority lockInventoryAuthority(String authorityId) {
         List<StoredInventoryAuthority> rows = jdbc.query("""
-                SELECT authority_id, last_completed_cycle_id
+                SELECT authority_id, lease_owner, lease_token, lease_epoch, lease_until,
+                       revision, active_cycle_id, last_completed_cycle_id,
+                       last_success_at, updated_at, record_fingerprint
                 FROM rg_test_suite_stability_observation_external_inventory_authorities
                 WHERE authority_id = ?
                 FOR UPDATE
-                """, (result, row) -> new StoredInventoryAuthority(
-                result.getString("authority_id"), result.getString("last_completed_cycle_id")),
-                authorityId);
+                """, this::storedInventoryAuthority, authorityId);
         if (rows.size() != 1) {
             throw new IllegalStateException("External inventory authority state is missing");
         }
-        rows.getFirst().validate();
+        rows.getFirst().validate(objectMapper);
         return rows.getFirst();
     }
 
     private StoredCycle lockCompletedCycle(String cycleId, String authorityId) {
         List<StoredCycle> rows = jdbc.query("""
                 SELECT cycle_id, authority_id, cycle_status, trust_domain, archive_set_id,
-                       failure_domain, snapshot_id, snapshot_object_count, snapshot_root,
-                       accumulated_object_count, accumulated_root
+                       failure_domain, snapshot_id, snapshot_at, snapshot_object_count,
+                       snapshot_root, next_after_object_id, next_page_sequence,
+                       accumulated_object_count, accumulated_root, last_object_id, revision,
+                       started_at, completed_at, updated_at, record_fingerprint
                 FROM rg_test_suite_stability_observation_external_inventory_cycles
                 WHERE cycle_id = ?
                 FOR UPDATE
@@ -1029,7 +1031,7 @@ public final class
             throw new IllegalStateException("Completed external inventory cycle is missing");
         }
         StoredCycle cycle = rows.getFirst();
-        cycle.validate(authorityId);
+        cycle.validate(objectMapper, authorityId);
         return cycle;
     }
 
@@ -1098,9 +1100,25 @@ public final class
         return new StoredCycle(result.getString("cycle_id"), result.getString("authority_id"),
                 result.getString("cycle_status"), result.getString("trust_domain"),
                 result.getString("archive_set_id"), result.getString("failure_domain"),
-                result.getString("snapshot_id"), result.getLong("snapshot_object_count"),
-                result.getString("snapshot_root"), result.getLong("accumulated_object_count"),
-                result.getString("accumulated_root"));
+                result.getString("snapshot_id"), instant(result, "snapshot_at"),
+                result.getLong("snapshot_object_count"), result.getString("snapshot_root"),
+                result.getString("next_after_object_id"), result.getLong("next_page_sequence"),
+                result.getLong("accumulated_object_count"), result.getString("accumulated_root"),
+                result.getString("last_object_id"), result.getLong("revision"),
+                instant(result, "started_at"), instant(result, "completed_at"),
+                instant(result, "updated_at"), result.getString("record_fingerprint"));
+    }
+
+    private StoredInventoryAuthority storedInventoryAuthority(
+            ResultSet result,
+            int row) throws SQLException {
+        return new StoredInventoryAuthority(result.getString("authority_id"),
+                result.getString("lease_owner"), result.getString("lease_token"),
+                result.getLong("lease_epoch"), instant(result, "lease_until"),
+                result.getLong("revision"), result.getString("active_cycle_id"),
+                result.getString("last_completed_cycle_id"),
+                nullableInstant(result, "last_success_at"), instant(result, "updated_at"),
+                result.getString("record_fingerprint"));
     }
 
     private ExpectedFact expectedFact(ResultSet result, int row) throws SQLException {
@@ -1635,11 +1653,32 @@ public final class
         }
     }
 
-    private record StoredInventoryAuthority(String authorityId, String lastCompletedCycleId) {
-        private void validate() {
-            if (!IDENTIFIER.matcher(authorityId).matches() || !isUuid(lastCompletedCycleId)) {
+    private record StoredInventoryAuthority(
+            String authorityId,
+            String leaseOwner,
+            String leaseToken,
+            long leaseEpoch,
+            Instant leaseUntil,
+            long revision,
+            String activeCycleId,
+            String lastCompletedCycleId,
+            Instant lastSuccessAt,
+            Instant updatedAt,
+            String recordFingerprint) {
+        private void validate(ObjectMapper objectMapper) {
+            String expected = ExternalArchiveInventoryStateIntegrity.authorityFingerprint(
+                    objectMapper, authorityId, leaseOwner, leaseToken, leaseEpoch, leaseUntil,
+                    revision, activeCycleId, lastCompletedCycleId, lastSuccessAt, updatedAt);
+            if (!IDENTIFIER.matcher(authorityId).matches()
+                    || (leaseOwner.isEmpty() != leaseToken.isEmpty())
+                    || leaseEpoch < 0 || leaseUntil == null || revision < 0
+                    || !activeCycleId.isEmpty() || !isUuid(lastCompletedCycleId)
+                    || lastSuccessAt == null || updatedAt == null
+                    || updatedAt.isBefore(lastSuccessAt)
+                    || !FINGERPRINT.matcher(recordFingerprint).matches()
+                    || !recordFingerprint.equals(expected)) {
                 throw new IllegalStateException(
-                        "External inventory has no completed cycle to compare");
+                        "External inventory authority is corrupt or has no completed cycle to compare");
             }
         }
     }
@@ -1652,11 +1691,25 @@ public final class
             String archiveSetId,
             String failureDomain,
             String snapshotId,
+            Instant snapshotAt,
             long objectCount,
             String root,
+            String nextAfterObjectId,
+            long nextPageSequence,
             long accumulatedObjectCount,
-            String accumulatedRoot) {
-        private void validate(String expectedAuthority) {
+            String accumulatedRoot,
+            String lastObjectId,
+            long revision,
+            Instant startedAt,
+            Instant completedAt,
+            Instant updatedAt,
+            String recordFingerprint) {
+        private void validate(ObjectMapper objectMapper, String expectedAuthority) {
+            String expectedFingerprint = ExternalArchiveInventoryStateIntegrity.cycleFingerprint(
+                    objectMapper, cycleId, authorityId, status, trustDomain, archiveSetId,
+                    failureDomain, snapshotId, snapshotAt, objectCount, root, nextAfterObjectId,
+                    nextPageSequence, accumulatedObjectCount, accumulatedRoot, lastObjectId,
+                    revision, startedAt, completedAt, updatedAt);
             if (!isUuid(cycleId) || !authorityId.equals(expectedAuthority)
                     || !"COMPLETED".equals(status)
                     || !IDENTIFIER.matcher(trustDomain).matches()
@@ -1664,7 +1717,16 @@ public final class
                     || !IDENTIFIER.matcher(failureDomain).matches()
                     || !SNAPSHOT_ID.matcher(snapshotId).matches() || objectCount < 0
                     || !FINGERPRINT.matcher(root).matches()
-                    || accumulatedObjectCount != objectCount || !accumulatedRoot.equals(root)) {
+                    || snapshotAt == null || !nextAfterObjectId.isEmpty()
+                    || nextPageSequence < 1
+                    || accumulatedObjectCount != objectCount || !accumulatedRoot.equals(root)
+                    || (objectCount == 0) != lastObjectId.isEmpty()
+                    || (!lastObjectId.isEmpty() && !OBJECT_ID.matcher(lastObjectId).matches())
+                    || revision < 0 || startedAt == null || completedAt == null
+                    || updatedAt == null || completedAt.isBefore(startedAt)
+                    || updatedAt.isBefore(completedAt)
+                    || !FINGERPRINT.matcher(recordFingerprint).matches()
+                    || !recordFingerprint.equals(expectedFingerprint)) {
                 throw new IllegalStateException("External inventory completed cycle is corrupt");
             }
         }

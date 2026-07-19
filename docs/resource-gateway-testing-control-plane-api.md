@@ -3237,6 +3237,16 @@ current downstream opens the next inventory cycle. One authority failure does no
 members from advancing. Any active `production` profile vetoes the complete control loop regardless
 of properties.
 
+Inventory authority and cycle rows are whole-record fingerprinted across lease, cursor, snapshot,
+root, counter, lifecycle, and time columns. The collector verifies them before remote I/O and uses
+the previous revision plus fingerprint as its mutation fence. Comparison repeats the same canonical
+verification before freezing expected state, so it cannot bypass the collector and consume a
+tampered source pointer. On the first upgraded test/staging startup, rows without these columns are
+fingerprinted from their current value exactly once and the columns become non-null; a row that
+already carries an invalid fingerprint fails startup/read closed. This local trust-baseline
+migration requires an all-replica maintenance upgrade and is not advertised as production N/N-1
+compatibility.
+
 The reconciliation Actuator indicator is not a timer-only probe. It returns `UNKNOWN` during the
 bounded first-pass grace, `UP` only when the latest all-authority scheduler pass, every active
 inventory/comparison/finding stage, completed finding evidence, and derived-evidence retention meet
