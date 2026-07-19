@@ -61,9 +61,9 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/targets/graphs/{graphName}/property-suites` | Freeze one exact property plan's complete root/shrink closure against an existing assertion-bearing fixture (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/executions` | Execute an exact immutable V1-V4 suite revision, including bounded property root/shrink closures, and emit signed aggregate evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/mutation-executions` | Execute an exact V5 suite baseline-first, classify every regenerated mutant, and emit signed mutation-score evidence (test/staging only) |
-| `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-executions` | Execute one exact V1/V2/V4 suite with deterministic request v1 (3..20), legacy zero-event request v2, or current baseline-conditional exact-rate request v3 (3..1000, bounded work), under a cross-replica parent lease, then retain signed payload-free evidence (test/staging only) |
+| `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-executions` | Execute one exact V1/V2/V4 suite with deterministic request v1, fixed-horizon statistical request v2/v3, or anytime-valid maximum-horizon request v4, under a cross-replica parent lease, then retain signed payload-free evidence (test/staging only) |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}` | Read one retained stability analysis with its exact ordered source-run closure and detached signature (test/staging only) |
-| `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}/progress` | Poll payload-free `RUNNING`, `RECOVERABLE`, or `COMPLETED` durable parent progress without exposing owner/epoch/source ids/payloads (test/staging only) |
+| `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}/progress` | Poll payload-free `RUNNING`, `RECOVERABLE`, or `COMPLETED` durable parent progress; v2 distinguishes planned horizon, observed prefix, and terminal reason without exposing owner/epoch/source ids/payloads (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-jobs` | Submit an exact stability request without blocking; returns `202`, deterministic `jobId`, query `Location`, and payload-free lifecycle (test/staging only; fresh submission requires the opt-in worker) |
 | `GET http://localhost:8080/api/testing/stability-jobs/{jobId}` | Read one organization/project-scoped durable job without exposing principal, request metadata, lease fence, cancellation fingerprint, or row seal (test/staging only) |
 | `POST http://localhost:8080/api/testing/stability-jobs/{jobId}/cancellations` | Idempotently cancel queued work or request cooperative running cancellation; every first command, including `COMMITTING`/terminal no-ops, commits one payload-free semantic audit event with the job mutation (test/staging only) |
@@ -171,7 +171,10 @@ lease now returns retryable `429` to concurrent duplicates before child executio
 source reference and lease renewal then commit atomically before another attempt can start. Crash
 takeover verifies the durable prefix and executes only the remaining horizon; terminal insertion
 atomically consumes both progress and lease. The public progress projection exposes only lifecycle,
-suite identity, and counts. This is not yet asynchronous queueing or distributed attempt scheduling.
+suite identity, and counts. V5 adds a precommitted alternative and anytime-valid e-process, stops only
+at the first reconstructed crossing, first censor, or maximum horizon, and signs the actual observed
+prefix plus terminal reason. The durable asynchronous queue is available in test/staging; physical
+distribution and isolation of individual attempts are not yet provided.
 The invariants and deliberately unclaimed guarantees are recorded in
 [Stage 5 suite-stability verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)
 and the focused

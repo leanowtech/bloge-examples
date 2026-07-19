@@ -18,6 +18,7 @@ import java.time.format.DateTimeParseException;
  * @param suiteRef exact immutable suite revision
  * @param plannedAttempts precommitted horizon
  * @param completedAttempts durably checkpointed prefix length
+ * @param terminalReason v2 terminal boundary; absent while active and in historical v1
  * @param createdAt parent creation time
  * @param updatedAt latest durable progress or terminal time
  * @param rawResponse defensive complete public projection
@@ -29,6 +30,7 @@ public record TestSuiteStabilityProgress(
         TestSuiteStabilityAttestation.SuiteRef suiteRef,
         int plannedAttempts,
         int completedAttempts,
+        TestSuiteStabilityRun.StatisticalStopReason terminalReason,
         Instant createdAt,
         Instant updatedAt,
         JsonNode rawResponse
@@ -43,17 +45,52 @@ public record TestSuiteStabilityProgress(
         COMPLETED
     }
 
+    /**
+     * Preserves the historical v1 construction surface, which had no terminal reason.
+     *
+     * @param schemaVersion exact progress wire version
+     * @param stabilityRunId deterministic parent identity
+     * @param status database-observed lifecycle
+     * @param suiteRef exact immutable suite revision
+     * @param plannedAttempts precommitted horizon
+     * @param completedAttempts durably checkpointed prefix length
+     * @param createdAt parent creation time
+     * @param updatedAt latest durable progress or terminal time
+     * @param rawResponse defensive complete public projection
+     */
+    public TestSuiteStabilityProgress(
+            String schemaVersion,
+            String stabilityRunId,
+            Status status,
+            TestSuiteStabilityAttestation.SuiteRef suiteRef,
+            int plannedAttempts,
+            int completedAttempts,
+            Instant createdAt,
+            Instant updatedAt,
+            JsonNode rawResponse) {
+        this(schemaVersion, stabilityRunId, status, suiteRef, plannedAttempts,
+                completedAttempts, null, createdAt, updatedAt, rawResponse);
+    }
+
     /** Validates semantic relationships beyond the structural JSON Schema. */
     public TestSuiteStabilityProgress {
         schemaVersion = normalized(schemaVersion);
         stabilityRunId = normalized(stabilityRunId);
-        if (!TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V1.equals(schemaVersion)
+        boolean historical = TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V1
+                .equals(schemaVersion);
+        boolean current = TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V2.equals(schemaVersion);
+        boolean terminalCoordinatesValid = status != Status.COMPLETED
+                ? terminalReason == null
+                : historical
+                ? terminalReason == null && completedAttempts == plannedAttempts
+                : current && validV2Terminal(terminalReason, completedAttempts, plannedAttempts);
+        if ((!historical && !current)
                 || !stabilityRunId.matches("stability-[0-9a-f]{64}")
                 || status == null || suiteRef == null
                 || plannedAttempts < TestSuiteStabilityStatisticalPolicy.MIN_ATTEMPTS
                 || plannedAttempts > TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS
                 || completedAttempts < 0 || completedAttempts > plannedAttempts
-                || status == Status.COMPLETED && completedAttempts != plannedAttempts
+                || !terminalCoordinatesValid
                 || createdAt == null || updatedAt == null || updatedAt.isBefore(createdAt)) {
             throw new IllegalArgumentException(
                     "Suite-stability durable progress is incomplete or contradictory");
@@ -80,12 +117,30 @@ public record TestSuiteStabilityProgress(
                             suite.path("fingerprint").asText()),
                     response.path("plannedAttempts").asInt(),
                     response.path("completedAttempts").asInt(),
+                    response.has("terminalReason")
+                            ? TestSuiteStabilityRun.StatisticalStopReason.valueOf(
+                            response.path("terminalReason").asText()) : null,
                     Instant.parse(response.path("createdAt").asText()),
                     Instant.parse(response.path("updatedAt").asText()), response);
         } catch (DateTimeParseException | IllegalArgumentException invalid) {
             throw new IllegalArgumentException(
                     "Suite-stability durable progress is invalid", invalid);
         }
+    }
+
+    private static boolean validV2Terminal(
+            TestSuiteStabilityRun.StatisticalStopReason terminalReason,
+            int completedAttempts,
+            int plannedAttempts) {
+        if (terminalReason == null) {
+            return false;
+        }
+        return switch (terminalReason) {
+            case FIXED_HORIZON_REACHED, MAXIMUM_HORIZON_REACHED ->
+                    completedAttempts == plannedAttempts;
+            case E_VALUE_THRESHOLD_REACHED, CENSORING_OBSERVED ->
+                    completedAttempts >= 1 && completedAttempts <= plannedAttempts;
+        };
     }
 
     /** Requires the response identity to match the requested resource. */

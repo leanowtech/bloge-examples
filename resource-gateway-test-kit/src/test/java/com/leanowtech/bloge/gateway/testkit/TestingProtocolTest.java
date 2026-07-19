@@ -91,30 +91,37 @@ class TestingProtocolTest {
                     .extracting(JsonNode::asText).containsExactly(
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V1,
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2,
-                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3);
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3,
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V4);
             assertThat(definitions.at(
                     "/testSuiteStabilityEvidence/properties/schemaVersion/enum"))
                     .extracting(JsonNode::asText).containsExactly(
                             TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V1,
                             TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V2,
                             TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V3,
-                            TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V4);
+                            TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V4,
+                            TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V5);
             assertThat(definitions.at(
                     "/testSuiteStabilityAttestation/properties/schemaVersion/enum"))
                     .extracting(JsonNode::asText).containsExactly(
                             TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1,
                             TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2,
                             TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V3,
-                            TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V4);
+                            TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V4,
+                            TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V5);
             assertThat(definitions.at(
                     "/testSuiteStabilityExecutionResponse/properties/schemaVersion/enum"))
                     .extracting(JsonNode::asText).containsExactly(
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1,
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2,
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3,
-                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4);
-            assertConstant(definitions, "testSuiteStabilityProgress",
-                    TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V1);
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4,
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V5);
+            assertThat(definitions.at(
+                    "/testSuiteStabilityProgress/properties/schemaVersion/enum"))
+                    .extracting(JsonNode::asText).containsExactly(
+                            TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V1,
+                            TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V2);
             assertConstant(definitions, "testSuiteStabilityJobSubmitRequest",
                     TestingProtocol.TEST_SUITE_STABILITY_JOB_SUBMIT_REQUEST_V1);
             assertConstant(definitions, "testSuiteStabilityJobCancelRequest",
@@ -362,6 +369,21 @@ class TestingProtocolTest {
         assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
                 corrected, "testSuiteStabilityExecutionRequest"));
 
+        JsonNode sequential = mapper.readTree("""
+                {"schemaVersion":"bloge.testSuiteStabilityExecutionRequest.v4",
+                 "suiteRef":{"suiteId":"orders-suite","revision":7,
+                   "fingerprint":"sha256:%s"},
+                 "clientRequestId":"stability-sequential-ci-42","attempts":100,
+                 "statisticalPolicy":{"model":"BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS",
+                   "claimScope":"SUITE_ATTEMPT_ANY_CASE",
+                   "stoppingRule":"ANYTIME_VALID_E_PROCESS",
+                   "censoringPolicy":"FAIL_CLOSED","confidenceLevelBps":9500,
+                   "maximumInstabilityRateBps":1000,
+                   "alternativeInstabilityRateBps":500},"metadata":{}}
+                """.formatted("a".repeat(64)));
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                sequential, "testSuiteStabilityExecutionRequest"));
+
         ((com.fasterxml.jackson.databind.node.ObjectNode) corrected
                 .path("statisticalPolicy")).put("model", "ZERO_INSTABILITY_EXACT_BINOMIAL");
         assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
@@ -386,6 +408,18 @@ class TestingProtocolTest {
                 .at("/evidence/statisticalAssessment")).remove("comparisonAttempts");
         assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
                 rate, "testSuiteStabilityExecutionResponse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("authoritative schema");
+
+        com.fasterxml.jackson.databind.node.ObjectNode anytime =
+                TestSuiteStabilityTestFixtures.sequentialFixture().copyResponse();
+        assertThatNoException().isThrownBy(() -> TestingProtocolSchemaValidator.require(
+                anytime, "testSuiteStabilityExecutionResponse"));
+        ((com.fasterxml.jackson.databind.node.ObjectNode) anytime
+                .at("/evidence/statisticalAssessment"))
+                .remove("firstBoundaryCrossingAttempt");
+        assertThatThrownBy(() -> TestingProtocolSchemaValidator.require(
+                anytime, "testSuiteStabilityExecutionResponse"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("authoritative schema");
     }

@@ -87,6 +87,10 @@ public final class TestSuiteStabilityJobRequest {
             statistical.put("confidenceLevelBps", statisticalPolicy.confidenceLevelBps());
             statistical.put("maximumInstabilityRateBps",
                     statisticalPolicy.maximumInstabilityRateBps());
+            if (statisticalPolicy.alternativeInstabilityRateBps() != null) {
+                statistical.put("alternativeInstabilityRateBps",
+                        statisticalPolicy.alternativeInstabilityRateBps());
+            }
         }
         execution.set("metadata", metadata(metadata));
         TestingProtocolSchemaValidator.require(
@@ -134,7 +138,7 @@ public final class TestSuiteStabilityJobRequest {
     }
 
     /**
-     * Creates a precommitted fixed-horizon statistical asynchronous request.
+     * Creates a precommitted fixed-horizon or anytime-valid asynchronous request.
      *
      * @param suiteId exact immutable suite id
      * @param revision exact immutable suite revision
@@ -165,11 +169,14 @@ public final class TestSuiteStabilityJobRequest {
             throw new IllegalArgumentException(
                     "Statistical attempts must satisfy the bounded precommitted horizon");
         }
-        String requestVersion = policy.model()
-                == TestSuiteStabilityStatisticalPolicy.Model
-                .BASELINE_CONDITIONAL_EXACT_BINOMIAL
-                ? TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3
-                : TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2;
+        String requestVersion = switch (policy.model()) {
+            case ZERO_INSTABILITY_EXACT_BINOMIAL ->
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2;
+            case BASELINE_CONDITIONAL_EXACT_BINOMIAL ->
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3;
+            case BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS ->
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V4;
+        };
         return new TestSuiteStabilityJobRequest(
                 requestVersion,
                 suiteId, revision, fingerprint, clientRequestId, attempts, policy,

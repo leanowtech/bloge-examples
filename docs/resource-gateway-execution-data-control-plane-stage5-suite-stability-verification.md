@@ -1,5 +1,10 @@
 # Stage 5 bounded suite-stability verification
 
+> This document preserves the deterministic and fixed-horizon increment boundary. Request v4,
+> response/evidence/attestation v5, progress v2, and independent anytime-valid consumer verification
+> are specified and verified in
+> [Stage 5 anytime-valid stability design](resource-gateway-execution-data-control-plane-stage5-anytime-valid-stability-design.md).
+
 ## 1. Verified claim
 
 Resource Gateway can execute one exact immutable executable suite under either a 3..20-attempt

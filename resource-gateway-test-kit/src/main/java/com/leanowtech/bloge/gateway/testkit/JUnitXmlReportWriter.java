@@ -114,7 +114,7 @@ public final class JUnitXmlReportWriter {
     }
 
     /**
-     * Writes payload-free stability evidence with an optional v3/v4 statistical-confidence gate.
+     * Writes payload-free stability evidence with an optional v3-v5 statistical-confidence gate.
      *
      * @param output destination XML file
      * @param run immutable stability analysis projection
@@ -463,7 +463,9 @@ public final class JUnitXmlReportWriter {
         TestSuiteStabilityRun.StatisticalAssessment value = run.statisticalAssessment();
         return "; statisticalModel=" + value.policy().model()
                 + "; statisticalStatus=" + value.status()
+                + "; statisticalStopReason=" + value.stopReason()
                 + "; requiredAttempts=" + value.requiredAttempts()
+                + "; plannedAttempts=" + run.requestedAttempts()
                 + "; observedAttempts=" + value.observedAttempts()
                 + "; verifiedAttempts=" + value.verifiedAttempts()
                 + "; censoredAttempts=" + value.censoredAttempts()
@@ -474,10 +476,16 @@ public final class JUnitXmlReportWriter {
                 + "; confidenceLevelBps=" + value.policy().confidenceLevelBps()
                 + "; maximumInstabilityRateBps="
                 + value.policy().maximumInstabilityRateBps()
+                + "; alternativeInstabilityRateBps="
+                + (value.policy().alternativeInstabilityRateBps() == null
+                ? "NOT_APPLICABLE" : value.policy().alternativeInstabilityRateBps())
                 + "; achievedConfidenceBps=" + value.achievedConfidenceBps()
                 + "; upperInstabilityRateBps="
                 + (value.upperInstabilityRateBps() == null
-                ? "INCONCLUSIVE" : value.upperInstabilityRateBps());
+                ? "NOT_APPLICABLE" : value.upperInstabilityRateBps())
+                + "; firstBoundaryCrossingAttempt="
+                + (value.firstBoundaryCrossingAttempt() == null
+                ? "NOT_OBSERVED" : value.firstBoundaryCrossingAttempt());
     }
 
     private static String bounded(String value, int maximum) {

@@ -280,10 +280,31 @@ JUnitXmlReportWriter.writeStability(
         statistical, verified, true);
 ```
 
+For optional-stopping-safe early completion, precommit the ceiling, a strictly smaller alternative,
+confidence, and maximum horizon. The returned closure contains the actual observed prefix, which can
+be shorter than the requested maximum:
+
+```java
+TestSuiteStabilityStatisticalPolicy sequentialPolicy =
+        TestSuiteStabilityStatisticalPolicy.anytimeValidEProcess(9_500, 1_000, 500);
+TestSuiteStabilityRun sequential = client.executeStatisticalSuiteStability(
+        storedSuite.suiteId(), storedSuite.revision(), storedSuite.fingerprint(),
+        "stability-ci-984", 100, sequentialPolicy,
+        Map.of("source", "nightly"));
+
+assert sequential.requestedAttempts() == 100;
+assert sequential.attempts().size() == 57;
+assert sequential.statisticalAssessment().firstBoundaryCrossingAttempt() == 57;
+assert sequential.statisticalAssessment().stopReason()
+        == TestSuiteStabilityRun.StatisticalStopReason.E_VALUE_THRESHOLD_REACHED;
+```
+
 Deterministic stability always runs `COLLECT_ALL` exactly 3..20 times. Current statistical request v3
 uses a precommitted 3..1000 horizon, exact integer arithmetic, and a 10,000 attempt-by-case work
-bound. A
-case is compared by
+bound. Request v4 selects the baseline-conditional anytime-valid e-process and treats that horizon as
+a maximum. Its only legal terminals are the first boundary crossing, the first censored attempt, or
+the maximum horizon; the independent verifier replays every signed prefix and rejects a producer
+that reports a later favorable crossing. A case is compared by
 `evidenceStatus + semanticResultFingerprint`, not only by pass/fail status. The aggregate is
 `STABLE`, `FLAKY`, `CONSISTENT_FAILURE`, or `INCONCLUSIVE`; plan drift, reused source/child run ids,
 missing evidence, an invalid signature, or an incomplete source closure can never be promoted to
@@ -294,11 +315,12 @@ certifiable. Signed v1 responses remain verifiable for audit, while
 result carries a quarantine recommendation, but the API does not mutate suite state or bypass a
 business failure. V4 excludes the first verified baseline from its comparison count and independently
 reconstructs the upward-rounded one-sided exact rate bound for complete zero- or non-zero-event
-samples. Historical v3 keeps its original zero-event meaning. Neither generation is a correctness
-proof, adaptive stopping policy, or historical flake-rate trend.
+samples. Historical v3 keeps its original zero-event meaning. V5's e-process is anytime-valid, but
+does not prove business correctness, baseline representativeness, stationarity, or independence from
+common causes.
 `findSuiteStabilityProgress` is an operational poll, not a release gate. Its strict
-`bloge.testSuiteStabilityProgress.v1` projection returns only lifecycle, exact suite identity,
-planned/completed counts, and timestamps; owner, epoch, source ids, fixtures, and payloads are absent.
+v1/v2 projection returns only lifecycle, exact suite identity, planned/completed counts, an optional
+v2 terminal reason, and timestamps; owner, epoch, source ids, fixtures, and payloads are absent.
 
 For a non-blocking parent job, create one exact request and submit it with explicit retry bounds:
 
@@ -331,8 +353,8 @@ TestSuiteStabilityAssertions.assertReleaseEligible(
 ```
 
 `TestSuiteStabilityJobRequest.statistical(...)` creates the request generation required by the
-policy (v2 legacy or v3 current) and rejects a horizon
-that cannot support its exact-binomial policy before network I/O. Submission requires `202` and the
+policy (v2 legacy, v3 fixed horizon, or v4 anytime-valid) and rejects a horizon that cannot support
+its exact policy before network I/O. Submission requires `202` and the
 canonical relative `Location`; the test-kit recalculates the nested execution fingerprint and binds
 suite revision, client request id, priority, and deadline to the response. Query and cancellation
 validate the strict payload-free job view and requested job id.
@@ -678,6 +700,29 @@ java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0
   --report target/test-results/resource-gateway-statistical-stability.xml
 ```
 
+Add an explicit alternative rate to select request v4 and response v5 anytime-valid execution. The
+100 attempts below are a maximum; for a clean path at these coordinates the first valid boundary is
+57 executions, and the CLI/JUnit report exposes both planned and observed counts:
+
+```bash
+java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  --base-uri http://localhost:8080 \
+  --suite-id normalization-regression \
+  --revision 1 \
+  --fingerprint 'sha256:<64 lowercase hex characters>' \
+  --client-request-id "${CI_PIPELINE_ID}-${CI_JOB_ID}-anytime-stability" \
+  --mode STABILITY \
+  --attempts 100 \
+  --confidence-bps 9500 \
+  --max-instability-rate-bps 1000 \
+  --alternative-instability-rate-bps 500 \
+  --report target/test-results/resource-gateway-anytime-stability.xml
+```
+
+The equivalent environment option is
+`RESOURCE_GATEWAY_STABILITY_ALTERNATIVE_INSTABILITY_RATE_BPS`. The CLI never chooses an alternative
+implicitly; specifying it without confidence, ceiling, and maximum horizon is a configuration error.
+
 `STANDARD` is the default mode and accepts `COLLECT_ALL` or `FAIL_FAST`. `MUTATION` accepts
 `COLLECT_ALL` or `STOP_AFTER_KILL`; the latter stops only the current mutant after a signed assertion
 kill and still visits every later mutant. Deterministic `STABILITY` accepts 3..20 attempts;
@@ -694,7 +739,7 @@ The command returns:
   `SATISFIED` score policy, while stability mode requires `STABLE`, promotion eligibility, exact
   v2+ source-promotion closure, exact source evidence closure, and a signature rooted in the
   externally pinned key set; a configured statistical policy additionally requires independently
-  re-derived v3 `SATISFIED` confidence;
+  re-derived v3-v5 `SATISFIED` confidence;
 - `1` when governed terminal evidence was obtained but its quality, promotion, or trust gate failed;
 - `2` when configuration, transport, protocol validation, report generation, or a non-terminal
   `RUNNING` checkpoint prevents a trustworthy gate verdict.

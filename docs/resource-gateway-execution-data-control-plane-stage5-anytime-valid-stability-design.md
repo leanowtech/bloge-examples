@@ -1,12 +1,12 @@
 # Stage 5 anytime-valid suite-stability design
 
-**Implementation status (2026-07-19): server protocol and durable runtime implemented; independent
-consumer integration pending.** The server now serves request v4, evidence/attestation/response v5,
-and progress v2; evaluates only after a durable parent checkpoint; reconstructs the first crossing
-before scheduling after recovery; admits only exact early-terminal repository closures; and exposes
-strict Schema and capability truth. The independent test kit already has separate exact arithmetic,
-but its v5 wire parser, async client, CLI/JUnit projection, and the final dual-project build remain
-before end-to-end completion.
+**Implementation status (2026-07-19): end-to-end protocol and consumer integration implemented.**
+The server serves request v4, evidence/attestation/response v5, and progress v2; evaluates only after
+a durable parent checkpoint; reconstructs the first crossing before scheduling after recovery;
+admits only exact early-terminal repository closures; and exposes strict Schema and capability truth.
+The independent test kit validates the v5 wire objects, replays every signed prefix with separate
+exact arithmetic, supports synchronous and asynchronous clients, and projects planned/observed
+counts, stop reason, alternative, and first crossing through CLI, JUnit XML, and public Java APIs.
 
 ## 1. Root decision
 
@@ -197,10 +197,11 @@ closed:
    blocking;
 8. implemented on the server: forged alternative, count, confidence, crossing, stop reason, and
    signature rejection;
-9. partial: strict Schema, capability, and HTTP gates are implemented; independent async client,
-   CLI, JUnit, and public JavaDoc gates remain;
-10. partial: full Resource Gateway `clean verify` passes 2780 tests with zero failures and errors;
-    the independent test-kit build remains after its protocol consumer is complete.
+9. implemented: strict Schema, capability, HTTP, independent synchronous/asynchronous client, CLI,
+   JUnit, and public JavaDoc gates;
+10. implemented: full Resource Gateway `clean verify` passes 2780 tests with zero failures and
+    errors and two existing conditional skips; independent test-kit `clean verify` passes 187 tests
+    with zero failures, errors, or skips and produces ordinary/shaded JARs plus public JavaDoc.
 
 ## 10. Deliberately unclaimed
 

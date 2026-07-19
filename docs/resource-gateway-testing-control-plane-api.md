@@ -2787,6 +2787,36 @@ comparison trials. Historical request v2 with `ZERO_INSTABILITY_EXACT_BINOMIAL` 
 verification compatibility and returns historical v3 evidence; model/version cross-pairs are
 rejected. Every attempt uses `COLLECT_ALL`; the service derives a
 stable child idempotency key for each attempt and delegates to the ordinary durable suite runner.
+
+To permit optional-stopping-safe early completion, use request v4 and precommit a strictly smaller
+alternative rate in addition to confidence, ceiling, and maximum horizon:
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteStabilityExecutionRequest.v4",
+  "suiteRef": {
+    "suiteId": "loan-decision-regression",
+    "revision": 1,
+    "fingerprint": "sha256:<returned-by-suite-registration>"
+  },
+  "clientRequestId": "risk-ci-1842-anytime-stability",
+  "attempts": 100,
+  "statisticalPolicy": {
+    "model": "BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS",
+    "claimScope": "SUITE_ATTEMPT_ANY_CASE",
+    "stoppingRule": "ANYTIME_VALID_E_PROCESS",
+    "censoringPolicy": "FAIL_CLOSED",
+    "confidenceLevelBps": 9500,
+    "maximumInstabilityRateBps": 1000,
+    "alternativeInstabilityRateBps": 500
+  },
+  "metadata": {"pipeline": "nightly", "buildId": "1842"}
+}
+```
+
+For v4, `attempts` is a maximum rather than an exact execution count. At the example coordinates a
+clean path first crosses after 56 comparisons, so terminal v5 evidence contains 57 executions. The
+only legal stops are the first boundary crossing, the first censored attempt, or maximum horizon.
 Repeating the parent request therefore reuses the same retained terminal analysis, while reusing its
 `clientRequestId` with different suite, attempt count, or metadata returns
 `RG.TEST.STABILITY_IDEMPOTENCY_CONFLICT`. Use `TEST_REPLAY` when the exact suite contains a governed
@@ -2813,7 +2843,9 @@ scheduling.
 
 Request v1 returns complete terminal response/evidence/attestation v2. Historical request v2 returns
 matching v3 objects. Current request v3 returns response/evidence/attestation v4 containing the
-signed baseline-conditional exact-rate assessment. Retained v1 responses remain queryable for
+signed baseline-conditional exact-rate assessment. Request v4 returns v5 objects containing the
+actual ordered prefix, precommitted alternative, first crossing, e-value-derived confidence floor,
+and stop reason. Retained v1 responses remain queryable for
 audit. For each exact case and attempt, v2+ evidence binds the source
 suite promotion status/reasons plus child run/evidence, fixture, effective-plan, evidence-class, and
 semantic-result fingerprints without copying payload values. Classification uses the complete
@@ -2841,9 +2873,16 @@ censoring yields `INCONCLUSIVE`, confidence zero, and no upper bound. Thus a com
 one-event sample at 95% confidence has 59 comparisons and a 7.79% upper bound, but its deterministic
 aggregate is still `FLAKY`, promotion-blocked, and quarantine-required. This is a conditional rate
 bound under signed exchangeability/stationarity and observed-baseline assumptions, not a correctness
-proof, adaptive stopping policy, or guarantee that future runs cannot vary.
+proof or guarantee that future runs cannot vary.
 
-The v2/v3/v4 attestation signs the canonical parent request fingerprint, evidence fingerprint, and
+V5 independently reconstructs the likelihood-ratio e-process at every signed prefix. It accepts a
+partial closure only at the first confidence boundary or first censor; otherwise all requested
+attempts must be present with `MAXIMUM_HORIZON_REACHED`. A producer cannot select the alternative
+after observing data, report a later favorable crossing, or treat censoring as a no-event sample.
+Anytime-valid controls optional stopping under the signed conditional model assumptions; it does not
+prove stationarity, baseline representativeness, common-cause independence, or business correctness.
+
+The v2-v5 attestation signs the canonical parent request fingerprint, evidence fingerprint, and
 exact ordered source-suite closure including source promotion status and reasons. A source suite run
 or child run reused across attempts, an omitted
 source, an invalid source/child signature, or plan drift can never produce `STABLE`. Retention uses
@@ -2866,9 +2905,11 @@ curl -sS http://localhost:8080/api/testing/stability-executions/<stabilityRunId>
   -H 'X-Purpose: TEST_EXECUTION'
 ```
 
-`bloge.testSuiteStabilityProgress.v1` reports `RUNNING` when a database-clock-live owner exists,
+Progress v1/v2 reports `RUNNING` when a database-clock-live owner exists,
 `RECOVERABLE` when retained progress has no live owner, and `COMPLETED` when signed terminal evidence
-exists. It returns exact suite identity and planned/completed counts, but omits owner, epoch, source
+exists. V2 additionally carries the terminal stop reason and permits an actual completed prefix below
+the planned maximum only for first crossing or censoring. It returns exact suite identity and
+planned/completed counts, but omits owner, epoch, source
 run ids, journal entries, fixture/context values, and payloads. This operational projection is not
 signed release evidence. Java consumers call
 `ResourceGatewayTestClient.findSuiteStabilityProgress(stabilityRunId)`; the test-kit validates both
@@ -2876,16 +2917,17 @@ the authoritative Schema and semantic count/time relationships.
 
 The independent test-kit re-derives case/aggregate classification, source promotion closure,
 promotion and quarantine verdicts, request/evidence/source-closure fingerprints, source suite
-evidence, child evidence, and the detached Ed25519 signature. For v3/v4 it also reconstructs the
+evidence, child evidence, and the detached Ed25519 signature. For v3-v5 it also reconstructs the
 exact horizon, attempt vectors, censor/event counts, achieved confidence, assumptions, assessment,
 and promotion flag; v4 additionally recomputes the post-baseline comparison count and exact upper
-rate bound. A valid v1 signature can be verified
+rate bound, while v5 scans every prefix for the first e-value boundary. A valid v1 signature can be verified
 for audit, but v1 fails every release gate because source promotion closure is unavailable. Its CI
 `STABILITY` mode additionally requires an externally supplied
 atomic-key-set fingerprint pin; accepting a key set only because the producer returned it is not a
-trust decision. CLI options `--confidence-bps` and `--max-instability-rate-bps` select the current
-request v3/response v4 gate;
-when `--attempts` is omitted, the exact minimum horizon is used. See
+trust decision. CLI options `--confidence-bps` and `--max-instability-rate-bps` select request
+v3/response v4; adding `--alternative-instability-rate-bps` explicitly selects request v4/response
+v5. The CLI never chooses an alternative implicitly. For fixed horizon, when `--attempts` is omitted,
+the exact minimum horizon is used. See
 [Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)
 for the implementation boundary and negative proofs.
 

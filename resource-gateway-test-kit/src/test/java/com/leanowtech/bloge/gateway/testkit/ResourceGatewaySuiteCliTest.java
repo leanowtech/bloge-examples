@@ -382,6 +382,49 @@ class ResourceGatewaySuiteCliTest {
     }
 
     @Test
+    void runsAnAnytimeValidGateAndReportsPlannedVersusObservedAttempts() throws Exception {
+        Path report = temporaryDirectory.resolve("ci/anytime-stability.xml");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+
+        int exit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                        "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                        "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                        "--client-request-id", TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                        "--mode", "STABILITY",
+                        "--confidence-bps", "9500",
+                        "--max-instability-rate-bps", "1000",
+                        "--alternative-instability-rate-bps", "500",
+                        "--attempts", "100",
+                        "--trusted-key-set-fingerprint",
+                        stabilityFixture.keySet().snapshotFingerprint(),
+                        "--report", report.toString(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(output), new PrintStream(error));
+
+        assertThat(exit).isZero();
+        assertThat(requestBody)
+                .contains("bloge.testSuiteStabilityExecutionRequest.v4")
+                .contains("BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS")
+                .contains("\"alternativeInstabilityRateBps\":500")
+                .contains("\"attempts\":100");
+        assertThat(output.toString(StandardCharsets.UTF_8))
+                .contains("attempts=100")
+                .contains("observedAttempts=57")
+                .contains("statisticalStopReason=E_VALUE_THRESHOLD_REACHED")
+                .contains("firstBoundaryCrossingAttempt=57")
+                .doesNotContain("ci-secret-token");
+        assertThat(error.toString(StandardCharsets.UTF_8)).isEmpty();
+        assertThat(Files.readString(report))
+                .contains("plannedAttempts=100")
+                .contains("observedAttempts=57")
+                .contains("alternativeInstabilityRateBps=500")
+                .contains("firstBoundaryCrossingAttempt=57");
+    }
+
+    @Test
     void rejectsPartialOrInsufficientStatisticalCliPoliciesBeforeNetwork() {
         ByteArrayOutputStream error = new ByteArrayOutputStream();
         String[] partial = {
@@ -417,6 +460,25 @@ class ResourceGatewaySuiteCliTest {
                 }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
                 new PrintStream(new ByteArrayOutputStream()), new PrintStream(error));
         assertThat(insufficientExit).isEqualTo(2);
+        assertThat(requestPath).isEmpty();
+
+        ByteArrayOutputStream alternativeError = new ByteArrayOutputStream();
+        int unboundAlternativeExit = ResourceGatewaySuiteCli.run(new String[]{
+                        "--base-uri", "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "--suite-id", TestSuiteStabilityTestFixtures.SUITE_ID,
+                        "--revision", Long.toString(TestSuiteStabilityTestFixtures.SUITE_REVISION),
+                        "--fingerprint", TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                        "--client-request-id", TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                        "--mode", "STABILITY",
+                        "--alternative-instability-rate-bps", "500",
+                        "--trusted-key-set-fingerprint",
+                        stabilityFixture.keySet().snapshotFingerprint(),
+                }, Map.of("RESOURCE_GATEWAY_TOKEN", "ci-secret-token"),
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(alternativeError));
+        assertThat(unboundAlternativeExit).isEqualTo(2);
+        assertThat(alternativeError.toString(StandardCharsets.UTF_8))
+                .contains("requires confidence-bps");
         assertThat(requestPath).isEmpty();
     }
 
@@ -576,7 +638,10 @@ class ResourceGatewaySuiteCliTest {
         ObjectNode request = (ObjectNode) JSON.readTree(requestBody);
         String requestVersion = request.path("schemaVersion").asText();
         ObjectNode response;
-        if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3.equals(requestVersion)) {
+        if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V4.equals(requestVersion)) {
+            response = TestSuiteStabilityTestFixtures.sequentialResponse(
+                    EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair());
+        } else if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3.equals(requestVersion)) {
             response = TestSuiteStabilityTestFixtures.rateStableResponse(
                     EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair());
         } else if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2

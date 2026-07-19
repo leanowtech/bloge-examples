@@ -40,6 +40,12 @@ final class TestSuiteStabilityTestFixtures {
         return fixture(response, trust.evidence());
     }
 
+    static Fixture sequentialFixture() {
+        EvidenceTrustTestFixtures.Fixture trust = EvidenceTrustTestFixtures.fixture();
+        ObjectNode response = sequentialResponse(fingerprint('1'), trust.evidence());
+        return fixture(response, trust.evidence());
+    }
+
     private static Fixture fixture(ObjectNode response, KeyPair keyPair) {
         EvidenceVerificationKey key = new EvidenceVerificationKey(
                 TestingProtocol.EVIDENCE_VERIFICATION_KEY_V1, "evidence-key-a", "Ed25519",
@@ -208,6 +214,109 @@ final class TestSuiteStabilityTestFixtures {
 
     static ObjectNode rateStableResponse(String requestFingerprint, KeyPair signingKey) {
         return rateResponse(requestFingerprint, signingKey, 30, 0);
+    }
+
+    static ObjectNode sequentialResponse(String requestFingerprint, KeyPair signingKey) {
+        ObjectNode response = rateResponse(requestFingerprint, signingKey, 57, 0);
+        return upgradeToAnytime(response, signingKey, 100, 0, false, 57);
+    }
+
+    static ObjectNode sequentialMaximumResponse(String requestFingerprint, KeyPair signingKey) {
+        ObjectNode response = rateResponse(requestFingerprint, signingKey, 60, 2);
+        return upgradeToAnytime(response, signingKey, 60, 1, false, null);
+    }
+
+    static ObjectNode sequentialCensoredResponse(String requestFingerprint, KeyPair signingKey) {
+        ObjectNode response = rateResponse(requestFingerprint, signingKey, 2, 0);
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        ObjectNode attempt = (ObjectNode) evidence.path("attempts").get(1);
+        attempt.put("status", "INCONCLUSIVE");
+        attempt.put("diagnosticCode", "SOURCE_EVIDENCE_INCOMPLETE");
+        ObjectNode result = (ObjectNode) evidence.path("caseResults").get(0);
+        ObjectNode observation = (ObjectNode) result.path("observations").get(1);
+        observation.put("status", "INCONCLUSIVE");
+        observation.put("diagnosticCode", "SOURCE_EVIDENCE_INCOMPLETE");
+        result.put("status", "INCONCLUSIVE");
+        result.putArray("diagnosticCodes").add("SOURCE_EVIDENCE_INCOMPLETE");
+        evidence.put("status", "INCONCLUSIVE");
+        evidence.putArray("diagnostics").add("SOURCE_EVIDENCE_INCOMPLETE");
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", "BLOCKED");
+        promotion.putArray("reasons")
+                .add("STABILITY_EVIDENCE_INCOMPLETE")
+                .add("STATISTICAL_CONFIDENCE_INCONCLUSIVE");
+        promotion.put("stableCases", 0);
+        promotion.put("flakyCases", 0);
+        promotion.put("inconclusiveCases", 1);
+        promotion.put("allAttemptsVerified", false);
+        promotion.put("allSourceSuitesPromotionEligible", false);
+        promotion.put("statisticalConfidenceSatisfied", false);
+        ObjectNode quarantine = (ObjectNode) evidence.path("quarantine");
+        quarantine.put("status", "UNDETERMINED");
+        quarantine.putArray("caseIds");
+        quarantine.put("reason", "STABILITY_EVIDENCE_INCOMPLETE");
+        return upgradeToAnytime(response, signingKey, 100, 0, true, null);
+    }
+
+    static ObjectNode sequentialLateCrossingResponse(
+            String requestFingerprint,
+            KeyPair signingKey) {
+        ObjectNode response = rateResponse(requestFingerprint, signingKey, 58, 0);
+        return upgradeToAnytime(response, signingKey, 100, 0, false, 58);
+    }
+
+    private static ObjectNode upgradeToAnytime(
+            ObjectNode response,
+            KeyPair signingKey,
+            int requestedAttempts,
+            int observedEvents,
+            boolean censored,
+            Integer reportedCrossing) {
+        response.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V5);
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V5);
+        evidence.put("requestedAttempts", requestedAttempts);
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.anytimeValidEProcess(9_500, 1_000, 500);
+        ObjectNode assessment = (ObjectNode) evidence.path("statisticalAssessment");
+        ObjectNode policyNode = (ObjectNode) assessment.path("policy");
+        policyNode.put("model", policy.model().name());
+        policyNode.put("stoppingRule", policy.stoppingRule().name());
+        policyNode.put("alternativeInstabilityRateBps",
+                policy.alternativeInstabilityRateBps());
+        int observedAttempts = evidence.path("attempts").size();
+        int verifiedAttempts = censored ? observedAttempts - 1 : observedAttempts;
+        int comparisons = Math.max(0, verifiedAttempts - 1);
+        assessment.put("requiredAttempts", policy.minimumRequiredAttempts());
+        assessment.put("observedAttempts", observedAttempts);
+        assessment.put("verifiedAttempts", verifiedAttempts);
+        assessment.put("censoredAttempts", censored ? 1 : 0);
+        assessment.put("observedInstabilityEvents", observedEvents);
+        assessment.put("achievedConfidenceBps", censored ? 0
+                : policy.sequentialAchievedConfidenceBps(observedAttempts - 1, observedEvents));
+        assessment.put("comparisonAttempts", comparisons);
+        assessment.remove("upperInstabilityRateBps");
+        if (reportedCrossing == null) {
+            assessment.remove("firstBoundaryCrossingAttempt");
+        } else {
+            assessment.put("firstBoundaryCrossingAttempt", reportedCrossing);
+        }
+        assessment.put("status", censored ? "INCONCLUSIVE"
+                : reportedCrossing == null ? "REJECTED" : "SATISFIED");
+        assessment.put("stopReason", censored ? "CENSORING_OBSERVED"
+                : reportedCrossing == null
+                ? "MAXIMUM_HORIZON_REACHED" : "E_VALUE_THRESHOLD_REACHED");
+        ArrayNode assumptions = assessment.putArray("assumptions");
+        TestSuiteStabilityRun.ANYTIME_VALID_MODEL_ASSUMPTIONS.forEach(assumptions::add);
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        if (!censored && reportedCrossing == null) {
+            promotion.put("statisticalConfidenceSatisfied", false);
+            ((ArrayNode) promotion.path("reasons")).add("STATISTICAL_CONFIDENCE_REJECTED");
+        }
+        ((ObjectNode) response.path("attestation")).put("schemaVersion",
+                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V5);
+        seal(response, signingKey, true);
+        return response;
     }
 
     private static ObjectNode rateResponse(

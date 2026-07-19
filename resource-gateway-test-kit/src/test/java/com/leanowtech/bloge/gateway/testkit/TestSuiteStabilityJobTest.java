@@ -45,6 +45,21 @@ class TestSuiteStabilityJobTest {
         assertThat(statistical.rawRequest().at(
                 "/execution/statisticalPolicy/stoppingRule").asText())
                 .isEqualTo("PRECOMMITTED_FIXED_HORIZON");
+
+        TestSuiteStabilityStatisticalPolicy sequentialPolicy =
+                TestSuiteStabilityStatisticalPolicy.anytimeValidEProcess(9_500, 1_000, 500);
+        TestSuiteStabilityJobRequest sequential = TestSuiteStabilityJobRequest.statistical(
+                "suite-a", 7, SUITE_FINGERPRINT, "request-3", 100,
+                sequentialPolicy, Map.of("source", "nightly"),
+                TestSuiteStabilityJobRequest.Priority.HIGH, DEADLINE);
+        assertThat(sequential.rawRequest().at("/execution/schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V4);
+        assertThat(sequential.rawRequest().at(
+                "/execution/statisticalPolicy/stoppingRule").asText())
+                .isEqualTo("ANYTIME_VALID_E_PROCESS");
+        assertThat(sequential.rawRequest().at(
+                "/execution/statisticalPolicy/alternativeInstabilityRateBps").asInt())
+                .isEqualTo(500);
         ((ObjectNode) fixedWire.path("execution")).put("clientRequestId", "mutated");
         assertThat(fixed.rawRequest().at("/execution/clientRequestId").asText())
                 .isEqualTo("request-1");

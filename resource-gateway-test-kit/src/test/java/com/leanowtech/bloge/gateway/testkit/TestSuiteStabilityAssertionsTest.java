@@ -28,6 +28,21 @@ class TestSuiteStabilityAssertionsTest {
     }
 
     @Test
+    void acceptsIndependentlyVerifiedAnytimeValidEvidenceAtTheReleaseGate() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.sequentialFixture();
+        TestSuiteStabilityRun run = fixture.run();
+        TestSuiteStabilityEvidenceVerifier.VerificationResult verification =
+                verifier().verify(run, fixture.keySet(), fixture.keySet().snapshotFingerprint());
+
+        assertThat(run.statisticalAssessment().stopReason())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStopReason.E_VALUE_THRESHOLD_REACHED);
+        assertThat(run.statisticalAssessment().firstBoundaryCrossingAttempt()).isEqualTo(57);
+        assertThatNoException().isThrownBy(() ->
+                TestSuiteStabilityAssertions.assertStatisticalReleaseEligible(run, verification));
+    }
+
+    @Test
     void rejectsDeterministicEvidenceAtAStatisticalConfidenceGate() {
         TestSuiteStabilityRun deterministic = TestSuiteStabilityTestFixtures.fixture().run();
 

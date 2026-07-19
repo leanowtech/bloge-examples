@@ -341,6 +341,33 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void executesV4AnytimeRequestAndReconstructsTheEarlyV5TerminalPrefix() {
+        ResourceGatewayTestClient client = client();
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.anytimeValidEProcess(9_500, 1_000, 500);
+
+        TestSuiteStabilityRun run = client.executeStatisticalSuiteStability(
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                100, policy, Map.of("pipeline", "nightly"));
+
+        assertThat(run.schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V5);
+        assertThat(run.requestedAttempts()).isEqualTo(100);
+        assertThat(run.attempts()).hasSize(57);
+        assertThat(run.statisticalAssessment().firstBoundaryCrossingAttempt()).isEqualTo(57);
+        assertThat(run.statisticalAssessment().stopReason())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStopReason
+                        .E_VALUE_THRESHOLD_REACHED);
+        assertThat(requests.getFirst().body().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V4);
+        assertThat(requests.getFirst().body().at(
+                "/statisticalPolicy/alternativeInstabilityRateBps").asInt()).isEqualTo(500);
+    }
+
+    @Test
     void rejectsInsufficientStatisticalHorizonsBeforeNetworkAndMismatchedPoliciesAfterResponse() {
         ResourceGatewayTestClient client = client();
         TestSuiteStabilityStatisticalPolicy policy =
@@ -890,7 +917,11 @@ class ResourceGatewayTestClientTest {
                     : EvidenceVerificationSupport.sha256(body);
             String requestVersion = body.path("schemaVersion").asText();
             ObjectNode response;
-            if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3
+            if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V4
+                    .equals(requestVersion)) {
+                response = TestSuiteStabilityTestFixtures.sequentialResponse(
+                        requestFingerprint, stabilityFixture.keyPair());
+            } else if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3
                     .equals(requestVersion)) {
                 response = TestSuiteStabilityTestFixtures.rateResponse(
                         requestFingerprint, stabilityFixture.keyPair());

@@ -37,6 +37,35 @@ class TestSuiteStabilityProgressTest {
                 .hasMessageContaining("invalid");
     }
 
+    @Test
+    void parsesV2EarlyTerminalReasonWithoutConfusingPlanAndObservedPrefix() throws Exception {
+        ObjectNode response = progressV2("COMPLETED", 57,
+                "E_VALUE_THRESHOLD_REACHED");
+
+        TestSuiteStabilityProgress progress = TestSuiteStabilityProgress.from(response);
+
+        assertThat(progress.schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V2);
+        assertThat(progress.plannedAttempts()).isEqualTo(100);
+        assertThat(progress.completedAttempts()).isEqualTo(57);
+        assertThat(progress.terminalReason())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStopReason
+                        .E_VALUE_THRESHOLD_REACHED);
+    }
+
+    @Test
+    void rejectsV2ReasonsOnActiveRunsAndEarlyMaximumHorizonClaims() throws Exception {
+        ObjectNode activeWithReason = progressV2("RUNNING", 11,
+                "E_VALUE_THRESHOLD_REACHED");
+        ObjectNode earlyMaximum = progressV2("COMPLETED", 99,
+                "MAXIMUM_HORIZON_REACHED");
+
+        assertThatThrownBy(() -> TestSuiteStabilityProgress.from(activeWithReason))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> TestSuiteStabilityProgress.from(earlyMaximum))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static ObjectNode progress(String status, int completed) throws Exception {
         return (ObjectNode) JSON.readTree("""
                 {"schemaVersion":"bloge.testSuiteStabilityProgress.v1",
@@ -48,5 +77,22 @@ class TestSuiteStabilityProgressTest {
                  "createdAt":"2026-07-18T01:02:03Z",
                  "updatedAt":"2026-07-18T01:03:03Z"}
                 """.formatted(status, completed));
+    }
+
+    private static ObjectNode progressV2(
+            String status,
+            int completed,
+            String terminalReason) throws Exception {
+        return (ObjectNode) JSON.readTree("""
+                {"schemaVersion":"bloge.testSuiteStabilityProgress.v2",
+                 "stabilityRunId":"stability-2222222222222222222222222222222222222222222222222222222222222222",
+                 "status":"%s",
+                 "suiteRef":{"suiteId":"orders-suite","revision":7,
+                   "fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                 "plannedAttempts":100,"completedAttempts":%d,
+                 "terminalReason":"%s",
+                 "createdAt":"2026-07-18T01:02:03Z",
+                 "updatedAt":"2026-07-18T01:03:03Z"}
+                """.formatted(status, completed, terminalReason));
     }
 }

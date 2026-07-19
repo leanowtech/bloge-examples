@@ -13,6 +13,99 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TestSuiteStabilityEvidenceVerifierTest {
 
     @Test
+    void independentlyReconstructsAndVerifiesTheFirstAnytimeValidBoundary() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.sequentialFixture();
+
+        TestSuiteStabilityRun run = fixture.run();
+        TestSuiteStabilityEvidenceVerifier.VerificationResult result =
+                new TestSuiteStabilityEvidenceVerifier().verify(run, fixture.key());
+
+        assertThat(result.verified()).isTrue();
+        assertThat(run.schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V5);
+        assertThat(run.requestedAttempts()).isEqualTo(100);
+        assertThat(run.attempts()).hasSize(57);
+        assertThat(run.statisticalAssessment().observedAttempts()).isEqualTo(57);
+        assertThat(run.statisticalAssessment().comparisonAttempts()).isEqualTo(56);
+        assertThat(run.statisticalAssessment().achievedConfidenceBps()).isEqualTo(9_515);
+        assertThat(run.statisticalAssessment().firstBoundaryCrossingAttempt()).isEqualTo(57);
+        assertThat(run.statisticalAssessment().stopReason())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStopReason
+                        .E_VALUE_THRESHOLD_REACHED);
+        assertThat(run.statisticalPromotionEligible()).isTrue();
+    }
+
+    @Test
+    void reconstructsMaximumHorizonRejectionWithoutWashingOutFlakiness() {
+        TestSuiteStabilityTestFixtures.Fixture trust =
+                TestSuiteStabilityTestFixtures.sequentialFixture();
+        ObjectNode response = TestSuiteStabilityTestFixtures.sequentialMaximumResponse(
+                trust.run().attestation().requestFingerprint(), trust.keyPair());
+
+        TestSuiteStabilityRun run = TestSuiteStabilityRun.from(response);
+        TestSuiteStabilityEvidenceVerifier.VerificationResult result =
+                new TestSuiteStabilityEvidenceVerifier().verify(run, trust.key());
+
+        assertThat(result.verified()).isTrue();
+        assertThat(run.status()).isEqualTo(TestSuiteStabilityRun.Status.FLAKY);
+        assertThat(run.statisticalAssessment().status())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStatus.REJECTED);
+        assertThat(run.statisticalAssessment().stopReason())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStopReason
+                        .MAXIMUM_HORIZON_REACHED);
+        assertThat(run.statisticalAssessment().firstBoundaryCrossingAttempt()).isNull();
+        assertThat(run.promotionEligible()).isFalse();
+        assertThat(run.quarantineRequired()).isTrue();
+    }
+
+    @Test
+    void acceptsOnlyTheFirstCensoredAttemptAsAnInconclusiveSequentialTerminal() {
+        TestSuiteStabilityTestFixtures.Fixture trust =
+                TestSuiteStabilityTestFixtures.sequentialFixture();
+        ObjectNode response = TestSuiteStabilityTestFixtures.sequentialCensoredResponse(
+                trust.run().attestation().requestFingerprint(), trust.keyPair());
+
+        TestSuiteStabilityRun run = TestSuiteStabilityRun.from(response);
+
+        assertThat(run.requestedAttempts()).isEqualTo(100);
+        assertThat(run.attempts()).hasSize(2);
+        assertThat(run.statisticalAssessment().verifiedAttempts()).isEqualTo(1);
+        assertThat(run.statisticalAssessment().censoredAttempts()).isEqualTo(1);
+        assertThat(run.statisticalAssessment().status())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStatus.INCONCLUSIVE);
+        assertThat(run.statisticalAssessment().stopReason())
+                .isEqualTo(TestSuiteStabilityRun.StatisticalStopReason.CENSORING_OBSERVED);
+        assertThat(run.statisticalPromotionEligible()).isFalse();
+    }
+
+    @Test
+    void rejectsSignedLateCrossingAndProducerSelectedAnytimeCoordinates() {
+        TestSuiteStabilityTestFixtures.Fixture trust =
+                TestSuiteStabilityTestFixtures.sequentialFixture();
+        String requestFingerprint = trust.run().attestation().requestFingerprint();
+        ObjectNode late = TestSuiteStabilityTestFixtures.sequentialLateCrossingResponse(
+                requestFingerprint, trust.keyPair());
+        ObjectNode forgedConfidence = trust.copyResponse();
+        ((ObjectNode) forgedConfidence.at("/evidence/statisticalAssessment"))
+                .put("achievedConfidenceBps", 9_999);
+        TestSuiteStabilityTestFixtures.seal(forgedConfidence, trust.keyPair(), false);
+        ObjectNode changedAlternative = trust.copyResponse();
+        ((ObjectNode) changedAlternative.at("/evidence/statisticalAssessment/policy"))
+                .put("alternativeInstabilityRateBps", 400);
+        TestSuiteStabilityTestFixtures.seal(changedAlternative, trust.keyPair(), false);
+
+        assertThatThrownBy(() -> TestSuiteStabilityRun.from(late))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("first boundary crossing");
+        assertThatThrownBy(() -> TestSuiteStabilityRun.from(forgedConfidence))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("aggregate");
+        assertThatThrownBy(() -> TestSuiteStabilityRun.from(changedAlternative))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void independentlyReconstructsAndVerifiesStatisticalV3Evidence() {
         TestSuiteStabilityTestFixtures.Fixture fixture =
                 TestSuiteStabilityTestFixtures.statisticalFixture();

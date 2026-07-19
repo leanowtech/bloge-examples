@@ -125,7 +125,8 @@ public record TestSuiteStabilityAttestation(
                 && (!List.of(TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1,
                 TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2,
                 TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V3,
-                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V4).contains(schemaVersion)
+                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V4,
+                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V5).contains(schemaVersion)
                 || !stabilityRunId(stabilityRunId) || suiteRef == null
                 || !fingerprint(requestFingerprint) || !fingerprint(evidenceFingerprint)
                 || Instant.EPOCH.equals(signedAt) || keyId.isBlank() || algorithm.isBlank()

@@ -71,7 +71,7 @@ public final class TestSuiteStabilityAssertions {
     }
 
     /**
-     * Requires an independently reconstructed v3/v4 assessment to satisfy its exact fixed horizon.
+     * Requires an independently reconstructed v3-v5 assessment to satisfy its exact stop rule.
      *
      * <p>This assertion checks the probability claim only. It does not replace
      * {@link #assertStable(TestSuiteStabilityRun)} or source-suite promotion checks.</p>
@@ -86,7 +86,8 @@ public final class TestSuiteStabilityAssertions {
                     + " has no independently reconstructable statistical confidence",
                     java.util.Set.of(
                             TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3,
-                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4),
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4,
+                            TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V5),
                     run.schemaVersion());
         }
         if (!run.statisticalConfidenceSatisfied()) {
@@ -99,7 +100,7 @@ public final class TestSuiteStabilityAssertions {
     }
 
     /**
-     * Requires exact trust, deterministic correctness, source promotion, and v3/v4 confidence.
+     * Requires exact trust, deterministic correctness, source promotion, and v3-v5 confidence.
      *
      * @param run statistical stability analysis to gate
      * @param verification offline verification result for the exact analysis

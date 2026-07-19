@@ -133,6 +133,27 @@ class TestSuiteStabilityJobClientTest {
     }
 
     @Test
+    void submitsAnytimeValidJobsUnderRequestV4WithTheFrozenAlternative() {
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.anytimeValidEProcess(9_500, 1_000, 500);
+        TestSuiteStabilityJobRequest request = TestSuiteStabilityJobRequest.statistical(
+                "suite-a", 7, SUITE_FINGERPRINT, "sequential-1", 100, policy,
+                Map.of("source", "nightly"), TestSuiteStabilityJobRequest.Priority.NORMAL,
+                DEADLINE);
+
+        client().submitSuiteStabilityJob(request);
+
+        assertThat(requests.getFirst().body().at("/execution/schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V4);
+        assertThat(requests.getFirst().body()
+                .at("/execution/statisticalPolicy/model").asText())
+                .isEqualTo("BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS");
+        assertThat(requests.getFirst().body()
+                .at("/execution/statisticalPolicy/alternativeInstabilityRateBps").asInt())
+                .isEqualTo(500);
+    }
+
+    @Test
     void retriesCancellationWithTheSameCommandIdentity() {
         scenario = Scenario.RETRY_CANCELLATION_ONCE;
         ResourceGatewayTestClient client = client();

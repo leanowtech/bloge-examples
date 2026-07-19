@@ -3,6 +3,9 @@
 > Current-state note: the product HTTPS current-authority adapter listed as a later server-side gap
 > in this historical increment is now implemented and verified in
 > [suite-stability current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
+> The independent consumer now also supports request v4, evidence/attestation/response v5, progress
+> v2, and anytime-valid prefix verification. See
+> [anytime-valid stability design](resource-gateway-execution-data-control-plane-stage5-anytime-valid-stability-design.md).
 
 ## 1. Increment boundary
 
@@ -29,7 +32,7 @@ and use the existing pinned-key-set verifier.
 
 | Type | Responsibility |
 | --- | --- |
-| `TestSuiteStabilityJobRequest` | Builds exact request-v1 or request-v2 execution intent and the v1 queue envelope |
+| `TestSuiteStabilityJobRequest` | Builds exact request-v1 through request-v4 execution intent and the v1 queue envelope |
 | `TestSuiteStabilityJob` | Strict payload-free closed lifecycle projection |
 | `TestSuiteStabilityJobSubmission` | Durable admission/replay disposition plus retained job |
 | `TestSuiteStabilityJobRetryPolicy` | HTTP-attempt, single-delay, and monotonic elapsed bounds |
@@ -46,8 +49,9 @@ ordinary and shaded test-kit JAR:
 ## 3. Request construction and binding
 
 `fixedHorizon(...)` admits exactly 3..20 attempts and emits
-`bloge.testSuiteStabilityExecutionRequest.v1`. `statistical(...)` emits request v2, requires the exact
-supported probability policy, and rejects a precommitted horizon that cannot satisfy that policy.
+`bloge.testSuiteStabilityExecutionRequest.v1`. `statistical(...)` emits request v2/v3 for fixed
+horizons or request v4 for the anytime-valid e-process, requires an exact supported probability
+policy, and rejects a precommitted horizon that cannot satisfy that policy.
 
 Both factories require:
 
@@ -139,6 +143,11 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 
 Result: `168` tests, `0` failures, `0` errors, `0` skipped. The ordinary JAR, shaded CLI JAR,
 authoritative Schema resources, and warning-free public JavaDoc were produced successfully.
+
+The later anytime-valid consumer extension passes `114` focused tests and `187` full
+`clean verify` tests with `0` failures, `0` errors, and `0` skips. It independently scans every v5
+prefix, validates v2 progress terminal reasons, and exposes request v4 through synchronous and
+asynchronous clients plus CLI/JUnit projections. The same packaging and public JavaDoc gates pass.
 
 Server compatibility gate:
 

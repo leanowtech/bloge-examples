@@ -414,7 +414,7 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
-     * Executes a precommitted fixed-horizon statistical analysis of one immutable suite revision.
+     * Executes a precommitted fixed-horizon or anytime-valid analysis of one suite revision.
      *
      * <p>The test-kit rejects an insufficient horizon before network I/O. It selects the exact
      * request and response generation from the policy model, independently reconstructs the
@@ -450,17 +450,24 @@ public final class ResourceGatewayTestClient {
                     "statistical stability attempts must satisfy the precommitted horizon; minimum="
                             + minimum);
         }
-        boolean baselineConditional = policy.model()
-                == TestSuiteStabilityStatisticalPolicy.Model
-                .BASELINE_CONDITIONAL_EXACT_BINOMIAL;
+        String requestVersion = switch (policy.model()) {
+            case ZERO_INSTABILITY_EXACT_BINOMIAL ->
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2;
+            case BASELINE_CONDITIONAL_EXACT_BINOMIAL ->
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3;
+            case BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS ->
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V4;
+        };
+        String responseVersion = switch (policy.model()) {
+            case ZERO_INSTABILITY_EXACT_BINOMIAL ->
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3;
+            case BASELINE_CONDITIONAL_EXACT_BINOMIAL ->
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4;
+            case BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS ->
+                    TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V5;
+        };
         return executeSuiteStabilityRequest(suiteId, revision, fingerprint, clientRequestId,
-                attempts, policy, metadata,
-                baselineConditional
-                        ? TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3
-                        : TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2,
-                baselineConditional
-                        ? TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4
-                        : TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3);
+                attempts, policy, metadata, requestVersion, responseVersion);
     }
 
     private TestSuiteStabilityRun executeSuiteStabilityRequest(
@@ -493,6 +500,10 @@ public final class ResourceGatewayTestClient {
             statistical.put("confidenceLevelBps", policy.confidenceLevelBps());
             statistical.put("maximumInstabilityRateBps",
                     policy.maximumInstabilityRateBps());
+            if (policy.alternativeInstabilityRateBps() != null) {
+                statistical.put("alternativeInstabilityRateBps",
+                        policy.alternativeInstabilityRateBps());
+            }
         }
         request.set("metadata", metadata == null
                 ? JSON.createObjectNode() : JSON.valueToTree(metadata));
@@ -1555,7 +1566,9 @@ public final class ResourceGatewayTestClient {
         String actual = response.path("schemaVersion").asText();
         if (!TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1.equals(actual)
                 && !TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2.equals(actual)
-                && !TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3.equals(actual)) {
+                && !TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3.equals(actual)
+                && !TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4.equals(actual)
+                && !TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V5.equals(actual)) {
             throw ResourceGatewayTestException.local(
                     "RG.TESTKIT.PROTOCOL_VERSION_MISMATCH",
                     "The server returned an unsupported suite-stability response version.", null);
