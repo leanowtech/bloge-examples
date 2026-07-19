@@ -2,6 +2,9 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -26,8 +29,10 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationSchedulerTest {
         when(service.advance("archive-c")).thenReturn(attempt(
                 TestSuiteStabilityObservationExternalArchiveReconciliationService.Stage
                         .FINDING_COMPLETED));
+        Instant attemptedAt = Instant.parse("2026-07-20T00:00:00Z");
         var scheduler = new
-                TestSuiteStabilityObservationExternalArchiveReconciliationScheduler(service);
+                TestSuiteStabilityObservationExternalArchiveReconciliationScheduler(
+                service, Clock.fixed(attemptedAt, ZoneOffset.UTC));
 
         var result = scheduler.reconcile();
 
@@ -43,6 +48,9 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationSchedulerTest {
         assertThat(result.stageCounts()).containsEntry(
                 TestSuiteStabilityObservationExternalArchiveReconciliationService.Stage
                         .FINDING_COMPLETED, 1);
+        assertThat(result.attemptedAt()).isEqualTo(attemptedAt);
+        assertThat(result.lastSuccessfulAt()).isNull();
+        assertThat(result.consecutiveUnhealthyTicks()).isEqualTo(1);
         assertThat(scheduler.latest()).isEqualTo(result);
         var order = inOrder(service);
         order.verify(service).advance("archive-a");
@@ -60,15 +68,23 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationSchedulerTest {
         when(service.advance("archive-a")).thenReturn(attempt(
                 TestSuiteStabilityObservationExternalArchiveReconciliationService.Stage
                         .COMPARISON_STAGED));
+        Instant attemptedAt = Instant.parse("2026-07-20T00:01:00Z");
         var scheduler = new
-                TestSuiteStabilityObservationExternalArchiveReconciliationScheduler(service);
+                TestSuiteStabilityObservationExternalArchiveReconciliationScheduler(
+                service, Clock.fixed(attemptedAt, ZoneOffset.UTC));
 
-        assertThat(scheduler.reconcile().status()).isEqualTo(
+        var failed = scheduler.reconcile();
+        assertThat(failed.status()).isEqualTo(
                 TestSuiteStabilityObservationExternalArchiveReconciliationScheduler.TickStatus
                         .FAILED);
-        assertThat(scheduler.reconcile().status()).isEqualTo(
+        assertThat(failed.consecutiveUnhealthyTicks()).isEqualTo(1);
+        assertThat(failed.lastSuccessfulAt()).isNull();
+        var recovered = scheduler.reconcile();
+        assertThat(recovered.status()).isEqualTo(
                 TestSuiteStabilityObservationExternalArchiveReconciliationScheduler.TickStatus
                         .COMPLETED);
+        assertThat(recovered.lastSuccessfulAt()).isEqualTo(attemptedAt);
+        assertThat(recovered.consecutiveUnhealthyTicks()).isZero();
         assertThat(scheduler.latest().sequence()).isEqualTo(2);
     }
 

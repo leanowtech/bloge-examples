@@ -151,6 +151,53 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlaneTes
     }
 
     @Test
+    void exposesVerifiedIdentityFreeFindingProgressBeforeDuringAndAfterCompletion() {
+        List<TestSuiteStabilityObservationExternalArchiveInventoryItem> expected = List.of(
+                item(1, "a", 3_600), item(2, "b", 3_600), item(3, "c", 3_600));
+        expected.forEach(this::insertExpected);
+        completedComparison(List.of());
+        var controlPlane = findingControlPlane(1);
+
+        var before = controlPlane.operationalSnapshot(AUTHORITY);
+        var staged = controlPlane.projectNextPage(AUTHORITY);
+        var active = controlPlane.operationalSnapshot(AUTHORITY);
+        var terminal = completeProjection(controlPlane);
+        var completed = controlPlane.operationalSnapshot(AUTHORITY);
+
+        assertThat(before.initialized()).isFalse();
+        assertThat(staged.status()).isEqualTo(
+                DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane
+                        .ProjectionStatus.STAGED);
+        assertThat(active.initialized()).isTrue();
+        assertThat(active.activeProjection()).isTrue();
+        assertThat(active.nextPageSequence()).isEqualTo(1);
+        assertThat(active.processedClassificationCount()).isEqualTo(1);
+        assertThat(active.actionableTransitionCount()).isEqualTo(1);
+        assertThat(active.activeStartedAt()).isNotNull();
+        assertThat(active.activeUpdatedAt()).isNotNull();
+        assertThat(active.lastCompletedAt()).isNull();
+        assertThat(completed.initialized()).isTrue();
+        assertThat(completed.activeProjection()).isFalse();
+        assertThat(completed.lastCompletedAt()).isNotNull();
+        assertThat(completed.lastCompletedAt()).isEqualTo(
+                database.jdbc().queryForObject("""
+                        SELECT completed_at
+                        FROM rg_test_suite_stability_observation_external_finding_projections
+                        WHERE projection_id = ?
+                        """, Timestamp.class, terminal.projectionId()).toInstant());
+        assertThat(completed.toString()).doesNotContain(
+                terminal.projectionId(), terminal.comparisonId(), expected.getFirst().objectId());
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_observation_external_finding_projections
+                SET record_fingerprint = ?
+                WHERE projection_id = ?
+                """, fingerprint("tampered-operational-projection"), terminal.projectionId());
+        assertThatThrownBy(() -> controlPlane.operationalSnapshot(AUTHORITY))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("projection state is corrupt");
+    }
+
+    @Test
     void resumesAcrossReplicasAndHidesPartiallyAppliedFindingState() {
         List<TestSuiteStabilityObservationExternalArchiveInventoryItem> expected = List.of(
                 item(1, "a", 3_600), item(2, "b", 3_600), item(3, "c", 3_600));

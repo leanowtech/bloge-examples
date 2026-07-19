@@ -128,6 +128,54 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlP
     }
 
     @Test
+    void exposesVerifiedIdentityFreeComparisonProgressBeforeDuringAndAfterCompletion() {
+        List<TestSuiteStabilityObservationExternalArchiveInventoryItem> items = List.of(
+                item(1, "one", 3_600), item(2, "two", 3_600),
+                item(3, "three", 3_600));
+        items.forEach(value -> insertExpected(
+                value, TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN));
+        installCompletedCycle(items, TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN);
+        var controlPlane = controlPlane(1);
+
+        var before = controlPlane.operationalSnapshot(AUTHORITY);
+        var staged = controlPlane.compareNextPage(AUTHORITY);
+        var active = controlPlane.operationalSnapshot(AUTHORITY);
+        var terminal = complete(controlPlane).getLast();
+        var completed = controlPlane.operationalSnapshot(AUTHORITY);
+
+        assertThat(before.initialized()).isFalse();
+        assertThat(staged.status()).isEqualTo(
+                DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
+                        .ComparisonStatus.STAGED);
+        assertThat(active.initialized()).isTrue();
+        assertThat(active.activeComparison()).isTrue();
+        assertThat(active.nextPageSequence()).isEqualTo(1);
+        assertThat(active.classifiedObjectCount()).isEqualTo(1);
+        assertThat(active.activeStartedAt()).isNotNull();
+        assertThat(active.activeUpdatedAt()).isNotNull();
+        assertThat(active.lastCompletedAt()).isNull();
+        assertThat(completed.initialized()).isTrue();
+        assertThat(completed.activeComparison()).isFalse();
+        assertThat(completed.lastCompletedAt()).isNotNull();
+        assertThat(completed.lastCompletedAt()).isEqualTo(
+                database.jdbc().queryForObject("""
+                        SELECT completed_at
+                        FROM rg_test_suite_stability_observation_external_comparisons
+                        WHERE comparison_id = ?
+                        """, Timestamp.class, terminal.comparisonId()).toInstant());
+        assertThat(completed.toString()).doesNotContain(
+                terminal.comparisonId(), terminal.cycleId(), items.getFirst().objectId());
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_observation_external_comparisons
+                SET record_fingerprint = ?
+                WHERE comparison_id = ?
+                """, fingerprint("tampered-operational-comparison"), terminal.comparisonId());
+        assertThatThrownBy(() -> controlPlane.operationalSnapshot(AUTHORITY))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("comparison state is corrupt");
+    }
+
+    @Test
     void freezesExpectedObjectsBeforePagingAndUsesANewSnapshotForTheNextCycle() {
         var first = item(1, "first", 3_600);
         var middle = item(2, "middle", 3_600);

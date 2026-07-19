@@ -347,6 +347,72 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
         return requiredResult(result, "finding event export");
     }
 
+    /**
+     * Returns verified identity-free finding-projection progress for operational readiness.
+     *
+     * <p>The authority and referenced projection records are fingerprint-verified in one
+     * transaction. Projection, comparison, object, cursor, and fingerprint identities are not
+     * exposed; business findings remain outcomes rather than readiness failures.</p>
+     *
+     * @param authorityId exact configured inventory authority
+     * @return database-clock stage initialization, progress, and completion freshness
+     */
+    public OperationalSnapshot operationalSnapshot(String authorityId) {
+        String authorityIdExact = requiredIdentifier(authorityId, "finding authority");
+        OperationalSnapshot result = transactions.execute(status -> {
+            Instant observedAt = databaseNow();
+            Integer comparisonAuthorities = jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_suite_stability_observation_external_comparison_authorities
+                    WHERE authority_id = ?
+                    """, Integer.class, authorityIdExact);
+            if (comparisonAuthorities == null || comparisonAuthorities == 0) {
+                return OperationalSnapshot.uninitialized(observedAt);
+            }
+            if (comparisonAuthorities != 1) {
+                throw new IllegalStateException(
+                        "External comparison authority cardinality is corrupt");
+            }
+            Integer findingAuthorities = jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_suite_stability_observation_external_finding_authorities
+                    WHERE authority_id = ?
+                    """, Integer.class, authorityIdExact);
+            if (findingAuthorities == null || findingAuthorities == 0) {
+                return OperationalSnapshot.uninitialized(observedAt);
+            }
+            if (findingAuthorities != 1) {
+                throw new IllegalStateException(
+                        "External finding authority cardinality is corrupt");
+            }
+            StoredAuthority authority = readAuthority(authorityIdExact, true);
+            StoredProjection active = authority.activeProjectionId().isEmpty()
+                    ? null : readProjection(authority.activeProjectionId(), true);
+            StoredProjection completed = authority.lastCompletedProjectionId().isEmpty()
+                    ? null : readProjection(authority.lastCompletedProjectionId(), true);
+            if (active != null) {
+                active.requireActiveFor(authorityIdExact);
+            }
+            if (completed != null) {
+                completed.requireCompleted();
+                if (!completed.authorityId().equals(authorityIdExact)
+                        || !completed.comparisonId().equals(
+                        authority.lastAppliedComparisonId())) {
+                    throw new IllegalStateException(
+                            "External completed finding projection authority is corrupt");
+                }
+            }
+            return new OperationalSnapshot(observedAt, true, active != null,
+                    active == null ? 0 : active.nextPageSequence(),
+                    active == null ? 0 : active.processedCount(),
+                    active == null ? 0 : active.actionableTransitions(),
+                    active == null ? null : active.startedAt(),
+                    active == null ? null : active.updatedAt(),
+                    completed == null ? null : completed.completedAt());
+        });
+        return requiredResult(result, "finding operational snapshot");
+    }
+
     private ProjectionPage projectInTransaction(String authorityId) {
         initializeAuthority(authorityId);
         StoredAuthority authority = readAuthority(authorityId, true);
@@ -1647,6 +1713,54 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
             throw new IllegalStateException("External " + operation + " returned no result");
         }
         return result;
+    }
+
+    /**
+     * Identity-free bounded finding-projection state consumed by readiness policy.
+     *
+     * @param observedAt database observation time
+     * @param initialized whether the authority has entered finding projection
+     * @param activeProjection whether one projection is partially committed
+     * @param nextPageSequence next active projection page
+     * @param processedClassificationCount active source classifications already committed
+     * @param actionableTransitionCount active non-confirmation transitions already committed
+     * @param activeStartedAt active projection start, or absent
+     * @param activeUpdatedAt latest active projection progress, or absent
+     * @param lastCompletedAt latest replay-verified completed projection, or absent
+     */
+    public record OperationalSnapshot(
+            Instant observedAt,
+            boolean initialized,
+            boolean activeProjection,
+            long nextPageSequence,
+            long processedClassificationCount,
+            long actionableTransitionCount,
+            Instant activeStartedAt,
+            Instant activeUpdatedAt,
+            Instant lastCompletedAt) {
+        /** Validates closed active/inactive timestamp and counter relationships. */
+        public OperationalSnapshot {
+            if (observedAt == null || nextPageSequence < 0
+                    || processedClassificationCount < 0 || actionableTransitionCount < 0
+                    || actionableTransitionCount > processedClassificationCount
+                    || !initialized && (activeProjection || lastCompletedAt != null)
+                    || activeProjection != (activeStartedAt != null)
+                    || activeProjection != (activeUpdatedAt != null)
+                    || !activeProjection && (nextPageSequence != 0
+                    || processedClassificationCount != 0
+                    || actionableTransitionCount != 0)
+                    || activeStartedAt != null && activeUpdatedAt.isBefore(activeStartedAt)
+                    || activeUpdatedAt != null && activeUpdatedAt.isAfter(observedAt)
+                    || lastCompletedAt != null && lastCompletedAt.isAfter(observedAt)) {
+                throw new IllegalArgumentException(
+                        "Invalid external finding operational snapshot");
+            }
+        }
+
+        private static OperationalSnapshot uninitialized(Instant observedAt) {
+            return new OperationalSnapshot(observedAt, false, false,
+                    0, 0, 0, null, null, null);
+        }
     }
 
     /** Bounded finding-projection settings. */

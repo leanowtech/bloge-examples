@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
@@ -247,6 +248,52 @@ class ToolStudioIntegrationServiceTest {
         assertThat(unavailable.testability().suiteStabilityJobSubmissionEnabled()).isFalse();
         assertThat(unavailable.testability().suiteStabilityCurrentAuthority().available())
                 .isFalse();
+    }
+
+    @Test
+    void capabilitiesReevaluateArchiveReconciliationReadinessAndFailClosed() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        service.configureTestability(new TestabilityAvailability(
+                true, false, WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                authorityDescriptor(false)));
+        var health = mock(
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.class);
+        AtomicInteger state = new AtomicInteger();
+        when(health.descriptor()).thenAnswer(ignored -> switch (state.get()) {
+            case 0 -> new
+                    TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor(
+                    "", true, true, "HEALTHY", List.of(),
+                    Instant.parse("2026-07-20T00:00:00Z"), 2);
+            case 1 -> new
+                    TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor(
+                    "", true, false, "SLO_VIOLATED", List.of("SCHEDULER_STALE"),
+                    Instant.parse("2026-07-20T00:01:00Z"), 2);
+            default -> throw new IllegalStateException("archive-a secret-fingerprint");
+        });
+        service.configureExternalArchiveReconciliationHealth(health);
+
+        IntegrationCapabilities available = service.capabilities().payload();
+        state.set(1);
+        IntegrationCapabilities degraded = service.capabilities().payload();
+        state.set(2);
+        IntegrationCapabilities unavailable = service.capabilities().payload();
+
+        assertThat(available.features())
+                .containsEntry("externalObservationArchiveReconciliationConfigured", true)
+                .containsEntry("externalObservationArchiveReconciliationReadiness", true);
+        assertThat(degraded.features())
+                .containsEntry("externalObservationArchiveReconciliationConfigured", true)
+                .containsEntry("externalObservationArchiveReconciliationReadiness", false);
+        assertThat(degraded.testability().externalArchiveReconciliation().violations())
+                .containsExactly("SCHEDULER_STALE");
+        assertThat(unavailable.features())
+                .containsEntry("externalObservationArchiveReconciliationConfigured", true)
+                .containsEntry("externalObservationArchiveReconciliationReadiness", false);
+        assertThat(unavailable.testability().externalArchiveReconciliation().state())
+                .isEqualTo("STORE_UNAVAILABLE");
+        assertThat(unavailable.toString()).doesNotContain(
+                "archive-a", "secret-fingerprint");
     }
 
     @Test

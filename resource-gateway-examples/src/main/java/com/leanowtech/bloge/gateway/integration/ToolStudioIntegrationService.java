@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -65,6 +66,8 @@ public class ToolStudioIntegrationService {
             new TestSuiteStabilityJobAuthorizer.Descriptor(
                     "", false, "UNAVAILABLE", "", Map.of());
     private ObjectProvider<TestSuiteStabilityJobAuthorizer> suiteStabilityAuthorizers;
+    private TestSuiteStabilityObservationExternalArchiveReconciliationHealth
+            externalArchiveReconciliationHealth;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -117,6 +120,13 @@ public class ToolStudioIntegrationService {
     void configureSuiteStabilityAuthorizers(
             ObjectProvider<TestSuiteStabilityJobAuthorizer> authorizers) {
         this.suiteStabilityAuthorizers = authorizers;
+    }
+
+    /** Receives the explicit test/staging reconciliation readiness monitor when assembled. */
+    @Autowired(required = false)
+    void configureExternalArchiveReconciliationHealth(
+            TestSuiteStabilityObservationExternalArchiveReconciliationHealth health) {
+        this.externalArchiveReconciliationHealth = health;
     }
 
     /** Receives the profile-owned semantic workbook projector with the isolated test runtime. */
@@ -213,6 +223,8 @@ public class ToolStudioIntegrationService {
                 currentSuiteStabilityAuthority();
         boolean stabilitySubmissionReady = suiteStabilityJobSubmissionEnabled
                 && currentAuthority.available();
+        TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                archiveReconciliation = currentExternalArchiveReconciliation();
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 IntegrationCapabilities.current(signer.descriptor(), identityResolver.descriptor(),
                         sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor(),
@@ -220,7 +232,23 @@ public class ToolStudioIntegrationService {
                         workerQuarantineRequestIndexMode,
                         workerQuarantineChangeAuthorizationTrust,
                         stabilitySubmissionReady,
-                        currentAuthority));
+                        currentAuthority,
+                        archiveReconciliation));
+    }
+
+    private TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+            currentExternalArchiveReconciliation() {
+        if (externalArchiveReconciliationHealth == null) {
+            return TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                    .unavailable();
+        }
+        try {
+            return externalArchiveReconciliationHealth.descriptor();
+        } catch (RuntimeException unavailable) {
+            return new TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor(
+                    "", true, false, "STORE_UNAVAILABLE",
+                    List.of("RECONCILIATION_STORE_UNAVAILABLE"), Instant.now(), 0);
+        }
     }
 
     private TestSuiteStabilityJobAuthorizer.Descriptor currentSuiteStabilityAuthority() {

@@ -1586,6 +1586,76 @@ public class TestRuntimeConfiguration {
                 Duration.ofSeconds(evidenceRetentionSeconds), pageSize);
     }
 
+    /**
+     * Exposes schedule-aware, database-verified reconciliation readiness and capability truth.
+     *
+     * <p>Open business findings do not veto readiness. Scheduler liveness, active-stage progress,
+     * completed-evidence freshness, retention freshness, and overdue lifecycle backlogs do.</p>
+     */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityObservationExternalArchiveReconciliationHealth
+            testSuiteStabilityObservationExternalArchiveReconciliationHealth(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationService service,
+                    TestSuiteStabilityObservationExternalArchiveReconciliationScheduler scheduler,
+                    DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane
+                            inventories,
+                    DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
+                            comparisons,
+                    DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane findings,
+                    DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
+                            retention,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-observation-interval-ms:30000}")
+                    long observationIntervalMillis,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-startup-grace-seconds:7200}")
+                    long startupGraceSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.interval-ms:300000}")
+                    long schedulerIntervalMillis,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-scheduler-staleness-seconds:900}")
+                    long maximumSchedulerStalenessSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-consecutive-unhealthy-ticks:2}")
+                    long maximumConsecutiveUnhealthyTicks,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-stage-idle-seconds:1800}")
+                    long maximumStageIdleSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-completed-evidence-age-seconds:86400}")
+                    long maximumCompletedEvidenceAgeSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.retention-interval-ms:3600000}")
+                    long retentionIntervalMillis,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-retention-staleness-seconds:7200}")
+                    long maximumRetentionStalenessSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.resolved-retention-seconds:2592000}")
+                    long resolvedRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.archive-retention-seconds:31536000}")
+                    long archiveRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.evidence-retention-seconds:31536000}")
+                    long evidenceRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-overdue-resolved-findings:0}")
+                    long maximumOverdueResolvedFindings,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-overdue-archives:0}")
+                    long maximumOverdueArchives,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-overdue-evidence:0}")
+                    long maximumOverdueEvidence) {
+        return new TestSuiteStabilityObservationExternalArchiveReconciliationHealth(
+                service, scheduler, inventories, comparisons, findings, retention,
+                new TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Policy(
+                        Duration.ofMillis(observationIntervalMillis),
+                        Duration.ofSeconds(startupGraceSeconds),
+                        Duration.ofMillis(schedulerIntervalMillis),
+                        Duration.ofSeconds(maximumSchedulerStalenessSeconds),
+                        maximumConsecutiveUnhealthyTicks,
+                        Duration.ofSeconds(maximumStageIdleSeconds),
+                        Duration.ofSeconds(maximumCompletedEvidenceAgeSeconds),
+                        Duration.ofMillis(retentionIntervalMillis),
+                        Duration.ofSeconds(maximumRetentionStalenessSeconds),
+                        Duration.ofSeconds(resolvedRetentionSeconds),
+                        Duration.ofSeconds(archiveRetentionSeconds),
+                        Duration.ofSeconds(evidenceRetentionSeconds),
+                        maximumOverdueResolvedFindings, maximumOverdueArchives,
+                        maximumOverdueEvidence));
+    }
+
     /** Exposes identity-free health for the configured external WORM copy set. */
     @Bean
     @ConditionalOnBean(TestSuiteStabilityObservationExternalArchiveAuthority.class)

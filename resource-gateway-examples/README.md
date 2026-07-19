@@ -152,8 +152,13 @@ findings, and bounded derived-evidence retention can now run autonomously when t
 `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_ENABLED=true` flag and stable
 `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_INSTANCE_ID` are supplied. The scheduler
 drains findings and comparisons before opening another inventory cycle, isolates one failed
-authority, and remains physically absent in production. Reconciliation health/readiness and
-capability truth are still intentionally unavailable.
+authority, and remains physically absent in production. Its aggregate Actuator indicator now
+combines scheduler freshness, fingerprint-verified database progress for inventory/comparison/
+finding, completed-evidence age, and derived-evidence retention freshness/backlog. Startup grace,
+transient failure budget, stage-idle and lifecycle thresholds are bounded configuration; authority,
+object, cursor, lease and fingerprint identities never appear. `/api/integration/capabilities`
+separately reports `configured` and current `ready` truth. Open governance findings are reported as
+an aggregate business outcome and do not make the control loop unhealthy.
 
 The start command becomes ready only after the integration capability probe
 succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;
@@ -195,8 +200,8 @@ write shape with concurrent bounded requests, signed conflict receipts, exact to
 verification, and aggregate health. Its signed immutable-snapshot inventory protocol now closes the
 read transport shape; the default-off test/staging control loop now wires durable lease/cursor,
 frozen classification, replay-verified finding projection, downstream backpressure, and bounded
-finding/evidence retention. Certified providers, reconciliation readiness/capability truth, source
-history retention, historical trust publication, legal-hold/erasure/backup and recovery controls,
+finding/evidence retention. Certified providers, source-history retention, historical trust
+publication, legal-hold/erasure/backup and recovery controls,
 and witnessed non-equivocation are still required. See the
 [lifecycle protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md),
 the [HTTPS WORM adapter design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-http-worm-adapter-design.md),

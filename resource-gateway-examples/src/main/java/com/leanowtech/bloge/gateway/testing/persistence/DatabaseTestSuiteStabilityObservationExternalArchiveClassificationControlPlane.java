@@ -276,6 +276,71 @@ public final class
         return result;
     }
 
+    /**
+     * Returns verified identity-free comparison progress for operational readiness.
+     *
+     * <p>The read holds the authority row while it verifies the active and latest completed
+     * comparison fingerprints. Comparison, cycle, object, cursor, topology, and fingerprint
+     * identities never leave the control plane.</p>
+     *
+     * @param authorityId exact configured inventory authority
+     * @return database-clock stage initialization, progress, and completion freshness
+     */
+    public OperationalSnapshot operationalSnapshot(String authorityId) {
+        String authority = requiredIdentifier(authorityId, "inventory authority");
+        OperationalSnapshot result = transactions.execute(status -> {
+            Integer inventoryAuthorities = jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_suite_stability_observation_external_inventory_authorities
+                    WHERE authority_id = ?
+                    """, Integer.class, authority);
+            if (inventoryAuthorities == null || inventoryAuthorities != 1) {
+                throw new IllegalArgumentException(
+                        "External inventory authority is not initialized");
+            }
+            Instant observedAt = databaseNow();
+            Integer comparisonAuthorities = jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_suite_stability_observation_external_comparison_authorities
+                    WHERE authority_id = ?
+                    """, Integer.class, authority);
+            if (comparisonAuthorities == null || comparisonAuthorities == 0) {
+                return OperationalSnapshot.uninitialized(observedAt);
+            }
+            if (comparisonAuthorities != 1) {
+                throw new IllegalStateException(
+                        "External comparison authority cardinality is corrupt");
+            }
+            StoredComparisonAuthority state = lockComparisonAuthority(authority);
+            StoredComparison active = state.activeComparisonId().isEmpty()
+                    ? null : lockComparison(state.activeComparisonId());
+            StoredComparison completed = state.lastCompletedComparisonId().isEmpty()
+                    ? null : lockComparison(state.lastCompletedComparisonId());
+            if (active != null) {
+                active.requireActiveFor(authority);
+            }
+            if (completed != null) {
+                completed.requireCompleted();
+                if (!completed.authorityId().equals(authority)) {
+                    throw new IllegalStateException(
+                            "External completed comparison authority is corrupt");
+                }
+            }
+            return new OperationalSnapshot(observedAt, true, active != null,
+                    active == null ? 0 : active.nextPageSequence(),
+                    active == null ? 0 : active.classifiedObjectCount(),
+                    active == null ? 0 : active.findingObjectCount(),
+                    active == null ? null : active.startedAt(),
+                    active == null ? null : active.updatedAt(),
+                    completed == null ? null : completed.completedAt());
+        });
+        if (result == null) {
+            throw new IllegalStateException(
+                    "External comparison operational snapshot returned no result");
+        }
+        return result;
+    }
+
     private ComparisonPage compareInTransaction(String authorityId) {
         initializeComparisonAuthority(authorityId, databaseNow());
         StoredComparisonAuthority state = lockComparisonAuthority(authorityId);
@@ -1242,6 +1307,52 @@ public final class
             return UUID.fromString(value).toString().equals(value);
         } catch (IllegalArgumentException failure) {
             return false;
+        }
+    }
+
+    /**
+     * Identity-free bounded comparison state consumed by readiness policy.
+     *
+     * @param observedAt database observation time
+     * @param initialized whether the authority has entered the comparison stage
+     * @param activeComparison whether one comparison is partially committed
+     * @param nextPageSequence next active comparison page
+     * @param classifiedObjectCount active comparison outcomes already committed
+     * @param findingObjectCount active non-matching outcomes already committed
+     * @param activeStartedAt active comparison start, or absent
+     * @param activeUpdatedAt latest active comparison progress, or absent
+     * @param lastCompletedAt latest verified completed comparison, or absent
+     */
+    public record OperationalSnapshot(
+            Instant observedAt,
+            boolean initialized,
+            boolean activeComparison,
+            long nextPageSequence,
+            long classifiedObjectCount,
+            long findingObjectCount,
+            Instant activeStartedAt,
+            Instant activeUpdatedAt,
+            Instant lastCompletedAt) {
+        /** Validates closed active/inactive timestamp and counter relationships. */
+        public OperationalSnapshot {
+            if (observedAt == null || nextPageSequence < 0 || classifiedObjectCount < 0
+                    || findingObjectCount < 0 || findingObjectCount > classifiedObjectCount
+                    || !initialized && (activeComparison || lastCompletedAt != null)
+                    || activeComparison != (activeStartedAt != null)
+                    || activeComparison != (activeUpdatedAt != null)
+                    || !activeComparison && (nextPageSequence != 0
+                    || classifiedObjectCount != 0 || findingObjectCount != 0)
+                    || activeStartedAt != null && activeUpdatedAt.isBefore(activeStartedAt)
+                    || activeUpdatedAt != null && activeUpdatedAt.isAfter(observedAt)
+                    || lastCompletedAt != null && lastCompletedAt.isAfter(observedAt)) {
+                throw new IllegalArgumentException(
+                        "Invalid external comparison operational snapshot");
+            }
+        }
+
+        private static OperationalSnapshot uninitialized(Instant observedAt) {
+            return new OperationalSnapshot(observedAt, false, false,
+                    0, 0, 0, null, null, null);
         }
     }
 

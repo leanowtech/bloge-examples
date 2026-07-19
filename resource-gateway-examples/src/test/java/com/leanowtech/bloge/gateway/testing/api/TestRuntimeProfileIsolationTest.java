@@ -435,6 +435,9 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler.class))
                     .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationHealth.class))
+                    .isEmpty();
         }
         try (AnnotationConfigApplicationContext context = context(
                 enabled, 0, "production", "test")) {
@@ -492,6 +495,9 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler.class))
                     .hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationHealth.class))
+                    .hasSize(1);
         }
         try (AnnotationConfigApplicationContext context = context(
                 enabled, 0, "production", "test")) {
@@ -503,6 +509,9 @@ class TestRuntimeProfileIsolationTest {
                     .isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationHealth.class))
                     .isEmpty();
         }
 
@@ -564,6 +573,20 @@ class TestRuntimeProfileIsolationTest {
                     .hasMessageContaining("1 through 500");
         } finally {
             pageContext.close();
+        }
+
+        Map<String, Object> blindHealth =
+                externalObservationArchiveReconciliationProperties();
+        blindHealth.put(reconciliationPrefix() + "health-startup-grace-seconds", "60");
+        AnnotationConfigApplicationContext healthContext = unrefreshedContext(
+                blindHealth, 0, "test");
+        try {
+            assertThatThrownBy(healthContext::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("startupGrace");
+        } finally {
+            healthContext.close();
         }
     }
 

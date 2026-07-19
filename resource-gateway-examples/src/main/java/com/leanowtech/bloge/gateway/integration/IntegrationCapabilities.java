@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityReque
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -203,6 +204,30 @@ public record IntegrationCapabilities(
                                                   boolean suiteStabilityJobSubmissionEnabled,
                                                   TestSuiteStabilityJobAuthorizer.Descriptor
                                                           currentAuthority) {
+        return current(evidenceSigner, identityProvider, sideEffectReconcilerAdapters,
+                payloadGovernance, testExecutionEndpointEnabled, evidenceTrust, requestIndexMode,
+                changeAuthorizationTrust, suiteStabilityJobSubmissionEnabled, currentAuthority,
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                        .unavailable());
+    }
+
+    /**
+     * Builds the capability probe with exact external archive reconciliation readiness.
+     */
+    public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters,
+                                                  VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
+                                                  boolean testExecutionEndpointEnabled,
+                                                  EvidenceKeySetTrustStore.Descriptor evidenceTrust,
+                                                  WorkerQuarantineRequestIndexMode requestIndexMode,
+                                                  WorkerQuarantineChangeAuthorizationTrustStore
+                                                          .Descriptor changeAuthorizationTrust,
+                                                  boolean suiteStabilityJobSubmissionEnabled,
+                                                  TestSuiteStabilityJobAuthorizer.Descriptor
+                                                          currentAuthority,
+                                                  TestSuiteStabilityObservationExternalArchiveReconciliationHealth
+                                                          .Descriptor archiveReconciliation) {
         if (suiteStabilityJobSubmissionEnabled && !testExecutionEndpointEnabled) {
             throw new IllegalArgumentException(
                     "Stability-job submission requires the testing control plane");
@@ -217,6 +242,10 @@ public record IntegrationCapabilities(
                         : changeAuthorizationTrust;
         TestSuiteStabilityJobAuthorizer.Descriptor authority = currentAuthority == null
                 ? unavailableCurrentAuthority() : currentAuthority;
+        TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                reconciliation = archiveReconciliation == null
+                ? TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                .unavailable() : archiveReconciliation;
         if (suiteStabilityJobSubmissionEnabled && !authority.available()) {
             throw new IllegalArgumentException(
                     "Stability-job submission requires current-authority readiness");
@@ -285,6 +314,8 @@ public record IntegrationCapabilities(
                 com.leanowtech.bloge.core.operator.SideEffectProtocol.SCHEMA_VERSION));
         objects.put("externalWriteContract", List.of(
                 com.leanowtech.bloge.gateway.resource.ResourceDescriptor.ExternalWriteContract.SCHEMA_VERSION));
+        objects.put("externalArchiveReconciliationReadiness", List.of(
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.SCHEMA_VERSION));
         if (testExecutionEndpointEnabled) {
             objects.put("testExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest.SCHEMA_VERSION));
@@ -858,6 +889,12 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled);
         features.put("boundedCardinalityTestRuntimeAdmissionMetrics",
                 testExecutionEndpointEnabled);
+        features.put("externalObservationArchiveReconciliationConfigured",
+                testExecutionEndpointEnabled && reconciliation.configured());
+        features.put("externalObservationArchiveReconciliationReadiness",
+                testExecutionEndpointEnabled && reconciliation.ready());
+        features.put("boundedExternalObservationArchiveReconciliationHealth",
+                testExecutionEndpointEnabled && reconciliation.configured());
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("signedTestSuiteRunAttestation",
@@ -995,7 +1032,7 @@ public record IntegrationCapabilities(
         return new IntegrationCapabilities("", "", "", objects, features, identityProvider, signer,
                 payloadGovernance, testExecutionEndpointEnabled
                         ? Testability.executionControlPlane(
-                        changeTrust, suiteStabilityJobSubmissionEnabled, authority)
+                        changeTrust, suiteStabilityJobSubmissionEnabled, authority, reconciliation)
                         : Testability.schemaContractOnly(),
                 endpoints);
     }
@@ -1041,6 +1078,7 @@ public record IntegrationCapabilities(
      * @param suiteStabilityJobSubmissionEnabled whether fresh asynchronous stability jobs can run
      * @param workerQuarantineChangeAuthorizationTrust key-free external approval readiness
      * @param suiteStabilityCurrentAuthority key-free current-authority revalidation readiness
+     * @param externalArchiveReconciliation identity-free reconciliation operational readiness
      */
     public record Testability(
             String protocolVersion,
@@ -1050,7 +1088,9 @@ public record IntegrationCapabilities(
             boolean suiteStabilityJobSubmissionEnabled,
             WorkerQuarantineChangeAuthorizationTrustStore.Descriptor
                     workerQuarantineChangeAuthorizationTrust,
-            TestSuiteStabilityJobAuthorizer.Descriptor suiteStabilityCurrentAuthority
+            TestSuiteStabilityJobAuthorizer.Descriptor suiteStabilityCurrentAuthority,
+            TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                    externalArchiveReconciliation
     ) {
         /** Normalizes capability values. */
         public Testability {
@@ -1068,6 +1108,9 @@ public record IntegrationCapabilities(
                             : workerQuarantineChangeAuthorizationTrust;
             suiteStabilityCurrentAuthority = suiteStabilityCurrentAuthority == null
                     ? unavailableCurrentAuthority() : suiteStabilityCurrentAuthority;
+            externalArchiveReconciliation = externalArchiveReconciliation == null
+                    ? TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                    .unavailable() : externalArchiveReconciliation;
             if (suiteStabilityJobSubmissionEnabled
                     && !suiteStabilityCurrentAuthority.available()) {
                 throw new IllegalArgumentException(
@@ -1081,9 +1124,27 @@ public record IntegrationCapabilities(
                 List<String> enabledEnvironments,
                 boolean schemaContractMode,
                 boolean executionEndpointEnabled,
-                WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust) {
+                    WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust) {
             this(protocolVersion, enabledEnvironments, schemaContractMode,
-                    executionEndpointEnabled, false, trust, unavailableCurrentAuthority());
+                    executionEndpointEnabled, false, trust, unavailableCurrentAuthority(),
+                    TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                            .unavailable());
+        }
+
+        /** Preserves the pre-reconciliation constructor with an explicit disabled descriptor. */
+        public Testability(
+                String protocolVersion,
+                List<String> enabledEnvironments,
+                boolean schemaContractMode,
+                boolean executionEndpointEnabled,
+                boolean suiteStabilityJobSubmissionEnabled,
+                WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust,
+                TestSuiteStabilityJobAuthorizer.Descriptor currentAuthority) {
+            this(protocolVersion, enabledEnvironments, schemaContractMode,
+                    executionEndpointEnabled, suiteStabilityJobSubmissionEnabled, trust,
+                    currentAuthority,
+                    TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                            .unavailable());
         }
 
         /** @return Stage 0 capability before the execution endpoint is activated */
@@ -1091,7 +1152,9 @@ public record IntegrationCapabilities(
             return new Testability("bloge.testing.v1", List.of("test", "staging"),
                     true, false, false,
                     WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
-                    unavailableCurrentAuthority());
+                    unavailableCurrentAuthority(),
+                    TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                            .unavailable());
         }
 
         /** @return Stage 2 capability with the caller-driven execution endpoint assembled */
@@ -1121,8 +1184,22 @@ public record IntegrationCapabilities(
                 WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust,
                 boolean suiteStabilityJobSubmissionEnabled,
                 TestSuiteStabilityJobAuthorizer.Descriptor currentAuthority) {
+            return executionControlPlane(trust, suiteStabilityJobSubmissionEnabled,
+                    currentAuthority,
+                    TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                            .unavailable());
+        }
+
+        /** @return execution capability with exact reconciliation readiness */
+        public static Testability executionControlPlane(
+                WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust,
+                boolean suiteStabilityJobSubmissionEnabled,
+                TestSuiteStabilityJobAuthorizer.Descriptor currentAuthority,
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                        archiveReconciliation) {
             return new Testability("bloge.testing.v1", List.of("test", "staging"),
-                    true, true, suiteStabilityJobSubmissionEnabled, trust, currentAuthority);
+                    true, true, suiteStabilityJobSubmissionEnabled, trust, currentAuthority,
+                    archiveReconciliation);
         }
     }
 }

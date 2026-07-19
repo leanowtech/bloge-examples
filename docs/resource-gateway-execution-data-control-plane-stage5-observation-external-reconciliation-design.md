@@ -1,6 +1,6 @@
 # Stage 5 observation external reconciliation control-plane design
 
-**Phases A-E and the Phase F autonomous scheduling increment implemented (2026-07-20): every externally
+**Phases A-E and the Phase F autonomous scheduling/readiness increments implemented (2026-07-20): every externally
 acknowledged WORM copy is normalized into a payload-free expected-object index in the exact
 retirement transaction. Per-authority database-clock owner/token/epoch leases now fence durable
 snapshot cycles; verified page envelopes and normalized items commit atomically with cursor/root
@@ -10,9 +10,11 @@ atomically frozen local snapshot by a bounded ordered merge; only a second termi
 self-verifying classifications. Completed comparisons then drive a separately fenced, payload-free
 finding projection with immutable transition evidence. Derived finding/evidence retention and a
 profile-gated downstream-first scheduler are now active only under explicit test/staging
-configuration. Health/readiness, capability truth, and source cycle/comparison/classification
-retention remain subsequent phases, so reconciliation is not yet advertised as operationally
-ready.**
+configuration. Fingerprint-verified stage snapshots, schedule-aware Actuator readiness, and exact
+configured/ready capability truth now close the operational observation loop. Source cycle/
+comparison/classification retention remains the next phase, and production provider certification,
+legal hold/erasure, backup/recovery continuity, historical trust, and witnessed non-equivocation
+remain outside this preview.**
 
 ## 1. Root problem
 
@@ -368,7 +370,52 @@ corruption.
 | half-enabled reconciliation silently does nothing | optional bean composition hides missing authority or replica identity | explicit property requires inventory authority and stable instance id; startup fails closed |
 | production accidentally enables maintenance | property-only guard | entire composition root remains under `!production & (test | staging)` profile veto |
 
-## 13. Executable evidence
+## 13. Operational readiness and capability truth
+
+A scheduler heartbeat is not evidence that reconciliation is working. It can continue firing while
+one authority fails every pass, a comparison cursor never moves, the latest completed projection is
+days old, or retention has stopped deleting eligible rows. Phase F therefore treats operational
+truth as a join across process-local scheduling and database-authoritative stage/lifecycle facts:
+
+| Fact | Authority | Readiness use |
+| --- | --- | --- |
+| latest attempt, latest complete all-authority success, consecutive unhealthy ticks | process-local scheduler clock | detect a dead lane and bounded transient-failure exhaustion after restart grace |
+| active inventory update and latest completion | fingerprint-verified database snapshot | detect remote collection stall without exposing snapshot/cycle identity |
+| active comparison update and latest completion | fingerprint-verified database snapshot | detect frozen ordered-merge stall without exposing cursor/source identity |
+| active finding update and latest replay-verified completion | fingerprint-verified database snapshot | detect governance projection stall and evidence staleness |
+| last retention success and eligible resolved/archive/evidence backlog | database-clock retention snapshot | detect lifecycle enforcement failure independently of scheduler liveness |
+
+`TestSuiteStabilityObservationExternalArchiveReconciliationHealth` has four closed states:
+
+| State | Actuator | Meaning |
+| --- | --- | --- |
+| `INITIALIZING` | `UNKNOWN` | first scheduler/evidence/retention completion is still inside bounded startup grace |
+| `HEALTHY` | `UP` | all observed authorities and lifecycle SLOs pass |
+| `SLO_VIOLATED` | `OUT_OF_SERVICE` | one or more stable closed violation codes exceed policy |
+| `STORE_UNAVAILABLE` | `DOWN` | membership or any integrity-verified durable aggregate is ambiguous |
+
+Stable violations separate scheduler never-success, scheduler staleness, consecutive unhealthy tick
+budget, inventory/comparison/finding stage stalls, absent or stale completed evidence, retention
+never-success/staleness, and overdue resolved/archive/evidence backlogs. Stage/evidence ages are
+calculated against each database snapshot's own clock. Only scheduler liveness uses process time;
+restart resets that local history and re-enters bounded `INITIALIZING`, never `HEALTHY` by default.
+An `OPEN` finding is a valid business/governance outcome and is reported only as an aggregate count;
+it cannot turn infrastructure readiness red.
+
+Health details and logs contain no authority, object, comparison, projection, snapshot, cursor,
+lease, key, topology, or fingerprint identity. `/api/integration/capabilities` publishes the same
+assessment as `testability.externalArchiveReconciliation` and distinguishes `configured` from
+time-sensitive `ready`. The three feature flags separately state monitor assembly and current
+readiness, preventing both “bean exists therefore ready” and “degraded therefore absent” errors.
+When the profile or property is absent the descriptor is exactly `DISABLED`; any descriptor failure
+is projected as configured but `STORE_UNAVAILABLE`.
+
+Policy validation is schedule-aware: startup grace must cover both scheduler intervals; scheduler,
+stage, evidence, and retention staleness cannot be shorter than their driving interval; every
+duration and backlog count has a hard upper bound. Invalid policy fails startup even before the
+first scheduled run.
+
+## 14. Executable evidence
 
 The focused gate executes 59 tests with zero failures, errors, or skips. New and extended cases prove:
 
@@ -458,16 +505,27 @@ fail-fast behavior, schedule/page bounds, and production-profile physical absenc
 source passed the complete Resource Gateway `clean verify`: 2981 tests, zero failures, zero errors,
 two existing browser-environment skips, and a successfully repackaged Spring Boot executable JAR.
 
-## 14. Remaining phases and acceptance
+The Phase F readiness focused gate executes 81 tests with zero failures, errors, or skips. New
+coverage proves comparison/finding operational snapshots before, during, and after completion;
+fingerprint-tampered operational state rejection; scheduler attempt/success/failure-budget history;
+startup grace; all independent stall/freshness/backlog violations; store-unavailable fail closure and
+identity redaction; open-finding non-veto semantics; schedule-aware policy bounds; default-off and
+production profile absence; and disabled/configured/healthy/degraded capability projection.
+After this second increment, the complete Resource Gateway `clean verify` executes 2991 tests with
+zero failures, zero errors, two existing browser-environment skips, and a successfully repackaged
+Spring Boot executable JAR.
+
+## 15. Remaining phases and acceptance
 
 The local expectation, durable remote cycle, frozen comparison, bounded ordered merge, terminal
 semantic classification, payload-free governed finding lifecycle, and derived finding/evidence
 retention portions of Phases A-E are complete. No partial comparison, finding projection, or evidence
 retirement can be exported as governance evidence.
 
-Until health/readiness, source cycle/comparison/classification retention, and capability truth are
-implemented,
+Until source cycle/comparison/classification retention is implemented,
 Resource Gateway may claim **durable local expectation indexing, verified inventory cycle staging,
 completed payload-free classification evidence, replay-verified governed finding evidence, and
-database-fenced bounded derived-evidence retention with explicitly enabled autonomous scheduling**,
-but not an operationally ready external orphan-reconciliation service.
+database-fenced bounded derived-evidence retention with explicitly enabled autonomous scheduling,
+aggregate readiness, and exact capability truth**. It may claim the explicitly configured test/
+staging loop is operationally observable, but not that its source history is bounded or that it is a
+certified production orphan-reconciliation service.

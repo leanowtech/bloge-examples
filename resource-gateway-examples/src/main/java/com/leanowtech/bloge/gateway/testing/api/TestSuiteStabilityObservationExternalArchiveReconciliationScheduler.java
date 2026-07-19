@@ -4,7 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
@@ -25,6 +27,7 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationSch
             TestSuiteStabilityObservationExternalArchiveReconciliationScheduler.class);
 
     private final TestSuiteStabilityObservationExternalArchiveReconciliationService service;
+    private final Clock clock;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicReference<TickResult> latest =
             new AtomicReference<>(TickResult.notRun());
@@ -36,7 +39,23 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationSch
      */
     public TestSuiteStabilityObservationExternalArchiveReconciliationScheduler(
             TestSuiteStabilityObservationExternalArchiveReconciliationService service) {
+        this(service, Clock.systemUTC());
+    }
+
+    /**
+     * Creates a scheduler with an explicit process clock for deterministic liveness tests.
+     *
+     * <p>The clock timestamps only process-local scheduler attempts. Durable cycle age and
+     * cross-replica ownership continue to use database time in the persistence control plane.</p>
+     *
+     * @param service downstream-first bounded reconciliation pipeline
+     * @param clock process-local UTC liveness clock
+     */
+    TestSuiteStabilityObservationExternalArchiveReconciliationScheduler(
+            TestSuiteStabilityObservationExternalArchiveReconciliationService service,
+            Clock clock) {
         this.service = Objects.requireNonNull(service, "service");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     /**
@@ -48,8 +67,9 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationSch
             initialDelayString = "${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.initial-delay-ms:60000}",
             fixedDelayString = "${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.interval-ms:300000}")
     public TickResult reconcile() {
+        Instant attemptedAt = clock.instant();
         if (!running.compareAndSet(false, true)) {
-            return latest.updateAndGet(previous -> TickResult.overlap(previous.sequence() + 1));
+            return latest.updateAndGet(previous -> TickResult.overlap(previous, attemptedAt));
         }
         long startedAt = System.nanoTime();
         try {
@@ -68,9 +88,8 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationSch
                     failed++;
                 }
             }
-            TickResult result = TickResult.completed(
-                    latest.get().sequence() + 1, authorities.size(), succeeded, failed,
-                    stages, elapsed(startedAt));
+            TickResult result = TickResult.completed(latest.get(), attemptedAt,
+                    authorities.size(), succeeded, failed, stages, elapsed(startedAt));
             latest.set(result);
             if (failed > 0) {
                 log.warn("External archive reconciliation degraded configured={}, succeeded={}, "
@@ -84,7 +103,7 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationSch
             return result;
         } catch (RuntimeException unavailable) {
             TickResult result = TickResult.failed(
-                    latest.get().sequence() + 1, elapsed(startedAt));
+                    latest.get(), attemptedAt, elapsed(startedAt));
             latest.set(result);
             log.warn("External archive reconciliation tick failed before authority processing");
             return result;
@@ -126,6 +145,9 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationSch
      * @param failedAuthorities authority failures isolated during this tick
      * @param stageCounts fixed-enum stage outcome counts
      * @param elapsed monotonic process duration
+     * @param attemptedAt process-clock time of this attempt, absent only before the first attempt
+     * @param lastSuccessfulAt latest complete all-authority pass, or absent before one succeeds
+     * @param consecutiveUnhealthyTicks degraded, failed, or overlapping attempts since success
      */
     public record TickResult(
             long sequence,
@@ -135,7 +157,10 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationSch
             int failedAuthorities,
             Map<TestSuiteStabilityObservationExternalArchiveReconciliationService.Stage, Integer>
                     stageCounts,
-            Duration elapsed) {
+            Duration elapsed,
+            Instant attemptedAt,
+            Instant lastSuccessfulAt,
+            long consecutiveUnhealthyTicks) {
         /** Validates aggregate cardinality and fixed-vocabulary observations. */
         public TickResult {
             Objects.requireNonNull(status, "status");
@@ -149,14 +174,26 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationSch
             int counted = stageCounts.values().stream().mapToInt(Integer::intValue).sum();
             if (sequence < 0 || configuredAuthorities < 0 || succeededAuthorities < 0
                     || failedAuthorities < 0 || elapsed.isNegative()
+                    || consecutiveUnhealthyTicks < 0
                     || configuredAuthorities
                     > TestSuiteStabilityObservationExternalArchiveReceiptSet.MAXIMUM_RECEIPTS
                     || succeededAuthorities + failedAuthorities != configuredAuthorities
                     || counted != succeededAuthorities
                     || stageCounts.values().stream().anyMatch(value -> value == null || value < 1)
-                    || status == TickStatus.NOT_RUN && sequence != 0
+                    || status == TickStatus.NOT_RUN
+                    && (sequence != 0 || attemptedAt != null || lastSuccessfulAt != null
+                    || consecutiveUnhealthyTicks != 0)
+                    || status != TickStatus.NOT_RUN && attemptedAt == null
+                    || lastSuccessfulAt != null && attemptedAt != null
+                    && lastSuccessfulAt.isAfter(attemptedAt)
                     || status == TickStatus.COMPLETED && failedAuthorities != 0
+                    || status == TickStatus.COMPLETED
+                    && (lastSuccessfulAt == null
+                    || !lastSuccessfulAt.equals(attemptedAt)
+                    || consecutiveUnhealthyTicks != 0)
                     || status == TickStatus.DEGRADED && failedAuthorities == 0
+                    || status != TickStatus.COMPLETED && status != TickStatus.NOT_RUN
+                    && consecutiveUnhealthyTicks == 0
                     || (status == TickStatus.FAILED || status == TickStatus.LOCAL_OVERLAP
                     || status == TickStatus.NOT_RUN) && configuredAuthorities != 0) {
                 throw new IllegalArgumentException(
@@ -165,30 +202,46 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationSch
         }
 
         private static TickResult notRun() {
-            return new TickResult(0, TickStatus.NOT_RUN, 0, 0, 0, Map.of(), Duration.ZERO);
+            return new TickResult(0, TickStatus.NOT_RUN, 0, 0, 0, Map.of(), Duration.ZERO,
+                    null, null, 0);
         }
 
-        private static TickResult overlap(long sequence) {
-            return new TickResult(sequence, TickStatus.LOCAL_OVERLAP,
-                    0, 0, 0, Map.of(), Duration.ZERO);
+        private static TickResult overlap(TickResult previous, Instant attemptedAt) {
+            return new TickResult(increment(previous.sequence()), TickStatus.LOCAL_OVERLAP,
+                    0, 0, 0, Map.of(), Duration.ZERO, attemptedAt,
+                    previous.lastSuccessfulAt(), increment(previous.consecutiveUnhealthyTicks()));
         }
 
         private static TickResult completed(
-                long sequence,
+                TickResult previous,
+                Instant attemptedAt,
                 int configured,
                 int succeeded,
                 int failed,
                 Map<TestSuiteStabilityObservationExternalArchiveReconciliationService.Stage,
                         Integer> stages,
                 Duration elapsed) {
-            return new TickResult(sequence,
+            return new TickResult(increment(previous.sequence()),
                     failed == 0 ? TickStatus.COMPLETED : TickStatus.DEGRADED,
-                    configured, succeeded, failed, stages, elapsed);
+                    configured, succeeded, failed, stages, elapsed, attemptedAt,
+                    failed == 0 ? attemptedAt : previous.lastSuccessfulAt(),
+                    failed == 0 ? 0 : increment(previous.consecutiveUnhealthyTicks()));
         }
 
-        private static TickResult failed(long sequence, Duration elapsed) {
-            return new TickResult(sequence, TickStatus.FAILED,
-                    0, 0, 0, Map.of(), elapsed);
+        private static TickResult failed(
+                TickResult previous, Instant attemptedAt, Duration elapsed) {
+            return new TickResult(increment(previous.sequence()), TickStatus.FAILED,
+                    0, 0, 0, Map.of(), elapsed, attemptedAt, previous.lastSuccessfulAt(),
+                    increment(previous.consecutiveUnhealthyTicks()));
+        }
+
+        private static long increment(long value) {
+            try {
+                return Math.incrementExact(value);
+            } catch (ArithmeticException overflow) {
+                throw new IllegalStateException(
+                        "External reconciliation scheduler counter overflow", overflow);
+            }
         }
     }
 }

@@ -21,6 +21,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityTrendAnalysisR
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCancelRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmitRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmitResponse;
@@ -79,6 +80,45 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TestabilityCapabilitiesTest {
 
     @Test
+    void externalArchiveReconciliationCapabilitySeparatesAssemblyFromCurrentReadiness() {
+        var healthy = new
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor(
+                "", true, true, "HEALTHY", java.util.List.of(),
+                java.time.Instant.parse("2026-07-20T00:00:00Z"), 2);
+        var degraded = new
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor(
+                "", true, false, "SLO_VIOLATED",
+                java.util.List.of("SCHEDULER_STALE"),
+                java.time.Instant.parse("2026-07-20T00:01:00Z"), 2);
+        IntegrationCapabilities disabled = capabilitiesWithArchiveReconciliation(
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                        .unavailable());
+        IntegrationCapabilities available = capabilitiesWithArchiveReconciliation(healthy);
+        IntegrationCapabilities unavailable = capabilitiesWithArchiveReconciliation(degraded);
+
+        assertThat(disabled.features())
+                .containsEntry("externalObservationArchiveReconciliationConfigured", false)
+                .containsEntry("externalObservationArchiveReconciliationReadiness", false)
+                .containsEntry("boundedExternalObservationArchiveReconciliationHealth", false);
+        assertThat(disabled.testability().externalArchiveReconciliation().state())
+                .isEqualTo("DISABLED");
+        assertThat(available.features())
+                .containsEntry("externalObservationArchiveReconciliationConfigured", true)
+                .containsEntry("externalObservationArchiveReconciliationReadiness", true)
+                .containsEntry("boundedExternalObservationArchiveReconciliationHealth", true);
+        assertThat(available.testability().externalArchiveReconciliation()).isEqualTo(healthy);
+        assertThat(unavailable.features())
+                .containsEntry("externalObservationArchiveReconciliationConfigured", true)
+                .containsEntry("externalObservationArchiveReconciliationReadiness", false)
+                .containsEntry("boundedExternalObservationArchiveReconciliationHealth", true);
+        assertThat(unavailable.testability().externalArchiveReconciliation()).isEqualTo(degraded);
+        assertThat(available.supportedObjects())
+                .containsEntry("externalArchiveReconciliationReadiness", java.util.List.of(
+                        TestSuiteStabilityObservationExternalArchiveReconciliationHealth
+                                .SCHEMA_VERSION));
+    }
+
+    @Test
     void asynchronousStabilitySubmissionIsAdvertisedOnlyWhenWorkerRuntimeIsEnabled() {
         IntegrationCapabilities queryOnly = IntegrationCapabilities.current(
                 VisualEvidenceSigner.unavailable().descriptor(),
@@ -128,6 +168,21 @@ class TestabilityCapabilitiesTest {
                 .contains("/api/testing/suites/{suiteId}/stability-jobs",
                         "/api/testing/stability-jobs/{jobId}",
                         "/api/testing/stability-jobs/{jobId}/cancellations");
+    }
+
+    private static IntegrationCapabilities capabilitiesWithArchiveReconciliation(
+            TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                    descriptor) {
+        return IntegrationCapabilities.current(
+                VisualEvidenceSigner.unavailable().descriptor(),
+                IntegrationIdentityResolver.unavailable().descriptor(), false, null, true,
+                EvidenceKeySetTrustStore.unavailable().descriptor(),
+                WorkerQuarantineRequestIndexMode.KEYED_ONLY,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                false,
+                new TestSuiteStabilityJobAuthorizer.Descriptor(
+                        "", false, "UNAVAILABLE", "", java.util.Map.of()),
+                descriptor);
     }
 
     @Test

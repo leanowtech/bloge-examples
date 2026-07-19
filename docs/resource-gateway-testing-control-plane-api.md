@@ -3170,6 +3170,16 @@ gateway:
           retention-page-size: 100
           retention-initial-delay-ms: 300000
           retention-interval-ms: 3600000
+          health-observation-interval-ms: 30000
+          health-startup-grace-seconds: 7200
+          health-maximum-scheduler-staleness-seconds: 900
+          health-maximum-consecutive-unhealthy-ticks: 2
+          health-maximum-stage-idle-seconds: 1800
+          health-maximum-completed-evidence-age-seconds: 86400
+          health-maximum-retention-staleness-seconds: 7200
+          health-maximum-overdue-resolved-findings: 0
+          health-maximum-overdue-archives: 0
+          health-maximum-overdue-evidence: 0
 ~~~
 
 The environment-variable equivalents are:
@@ -3208,6 +3218,16 @@ are:
 | `retention-page-size` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_PAGE_SIZE` |
 | `retention-initial-delay-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_INITIAL_DELAY_MS` |
 | `retention-interval-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_INTERVAL_MS` |
+| `health-observation-interval-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_OBSERVATION_INTERVAL_MS` |
+| `health-startup-grace-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_STARTUP_GRACE_SECONDS` |
+| `health-maximum-scheduler-staleness-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_SCHEDULER_STALENESS_SECONDS` |
+| `health-maximum-consecutive-unhealthy-ticks` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_CONSECUTIVE_UNHEALTHY_TICKS` |
+| `health-maximum-stage-idle-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_STAGE_IDLE_SECONDS` |
+| `health-maximum-completed-evidence-age-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_COMPLETED_EVIDENCE_AGE_SECONDS` |
+| `health-maximum-retention-staleness-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_RETENTION_STALENESS_SECONDS` |
+| `health-maximum-overdue-resolved-findings` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_OVERDUE_RESOLVED_FINDINGS` |
+| `health-maximum-overdue-archives` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_OVERDUE_ARCHIVES` |
+| `health-maximum-overdue-evidence` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_OVERDUE_EVIDENCE` |
 
 Enabling reconciliation without the HTTP/custom inventory authority or a stable instance id fails
 startup. Inventory, comparison, finding, and retention pages are independently bounded to 1..500;
@@ -3216,6 +3236,25 @@ one stateful stage per tick. Existing finding projection drains first, then comp
 current downstream opens the next inventory cycle. One authority failure does not prevent later
 members from advancing. Any active `production` profile vetoes the complete control loop regardless
 of properties.
+
+The reconciliation Actuator indicator is not a timer-only probe. It returns `UNKNOWN` during the
+bounded first-pass grace, `UP` only when the latest all-authority scheduler pass, every active
+inventory/comparison/finding stage, completed finding evidence, and derived-evidence retention meet
+policy, `OUT_OF_SERVICE` for stable SLO violations, and `DOWN` when any aggregate durable snapshot
+cannot be verified. Stable violation codes distinguish scheduler never-success/staleness/failure
+budget, each of the three stalled stages, absent/stale completed evidence, retention never-success/
+staleness, and the three overdue lifecycle backlogs. Stage and evidence ages use each snapshot's
+database time; scheduler attempt age is explicitly process-local. `OPEN` finding count is diagnostic
+business output and never a health violation. Details contain only aggregate counts, ages, closed
+labels, and codes.
+
+The unauthenticated integration probe exposes the same latest assessment under
+`testability.externalArchiveReconciliation`. `configured=false`, `ready=false`, `state=DISABLED`
+means the profile did not assemble the loop. A configured loop advertises
+`externalObservationArchiveReconciliationConfigured=true`; only `HEALTHY` also advertises
+`externalObservationArchiveReconciliationReadiness=true`. The separate
+`boundedExternalObservationArchiveReconciliationHealth` feature reports monitor assembly, not
+current readiness, so automation cannot confuse a degraded configured service with an absent one.
 
 Each key entry contains `authorityId`, `keyId`, X.509-encoded `publicKeyBase64`, `notBefore`,
 exclusive `expiresAt`, `enabled`, and `revoked`. Each endpoint entry contains exactly
@@ -3255,8 +3294,9 @@ uses database leases and durable cursors; it does not grant remediation authorit
 Both lifecycle endpoints are absent in production and disabled by default. V2 proves that an
 approved authority signed the acknowledgement recorded before deletion, but production WORM
 provider certification/wiring, legal hold/erasure, backup purge, recovery continuity, historical
-authority publication, reconciliation health/readiness and capability truth, source-history
-retention, and external non-equivocation policy are still missing. Capability
+authority publication, source-history retention, and external non-equivocation policy are still
+missing. Test/staging reconciliation health/readiness and capability truth do not prove those
+physical provider and lifecycle properties. Capability
 `crossRetentionSuiteStabilityTrend` therefore remains `false`; strict verification proves the returned
 local lifecycle, external acknowledgement, and range, not physical persistence or a globally unique
 long-term history.
