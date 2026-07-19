@@ -1,9 +1,10 @@
 # Stage 5 retained-window stability trend design
 
-**Implementation status (2026-07-19): retained-window server/test-kit v1 implemented; signed
-cross-retention observation-ledger core, default-disabled server range preview, strict Schema,
-typed client, and independent five-layer verifier implemented; ledger lifecycle and external
-non-equivocation remain incomplete.**
+**Implementation status (2026-07-19): retained-window server/test-kit v1, signed cross-retention
+observation ledger, default-disabled range preview, strict Schema, typed independent verifier, and
+an internal database-authoritative signed floor-retirement/local-archive core are implemented;
+public floor lifecycle, external WORM, legal hold/erasure, disaster-recovery continuity, and
+witnessed non-equivocation remain incomplete.**
 
 ## 1. Root problem
 
@@ -52,9 +53,11 @@ its aggregate status is always `INCONCLUSIVE`.
 
 This v1 guarantee is intentionally limited to records still represented in the current stability
 store. The compact observation-ledger write path and default-disabled range preview described below
-now exist, but the v1 endpoint does not read them and `crossRetentionSuiteStabilityTrend` remains
-false. Ledger lifecycle policy and externally witnessed non-equivocation are still required before
-the product may claim trend continuity beyond full evidence retention.
+now exist. The ledger also has an internal signed floor-retirement core, but the v1 endpoint does
+not discover a moved floor and `crossRetentionSuiteStabilityTrend` remains false. Public lifecycle
+policy, external archive durability, independent floor-chain verification, and externally witnessed
+non-equivocation are still required before the product may claim trend continuity beyond full
+evidence retention.
 
 ### 3.1 Cross-retention observation-ledger core
 
@@ -110,10 +113,34 @@ payload values, and is absent from production even if the flag is set. The autho
 freezes every request, observation, entry, head, range, evidence, closure, and signature field. The
 test-kit rederives request and deterministic identities, verifies every compact signature and
 signing-time key policy, reconstructs trend labels with the shared pure projection, and verifies the
-outer closure/signature without fetching full source runs. The ledger floor is still the rollout
-floor because retirement/archive/erasure has no signed checkpoint protocol. Therefore
+outer closure/signature without fetching full source runs. The preview contract still assumes the
+rollout floor: its first page requires `afterSequence=0`, so it intentionally fails closed after an
+internal floor retirement instead of hiding an undiscoverable history gap. Therefore
 `crossRetentionSuiteStabilityTrend` remains false and the retained v1 source-closed path remains the
 only advertised trend capability.
+
+### 3.3 Internal signed floor-retirement core
+
+The database now stores an explicit canonical floor in addition to the mutable head. Generation
+zero is inserted with the first terminal observation; later generations reference the exact signed
+retirement that moved the floor. Legacy ledgers are backfilled only when sequence one and head
+`coverageFrom` prove one unambiguous rollout coordinate, with concurrent replicas serialized under
+the exact-suite lock.
+
+Retirement planning freezes the previous floor, pinned head, policy fingerprint, cutoff, bounded
+retired prefix, and immediate surviving successor under the scope lock. A retirement-specific
+Ed25519 service rebuilds all deterministic ids and nested fingerprints, signs outside the database
+transaction, and immediately verifies its result. Commit reacquires the scope lock and atomically
+inserts the payload-free local archive and signed retirement, CAS-advances floor and head coverage,
+then deletes exactly the archived active prefix. Stale head/floor pins, changed or missing rows,
+duplicate generations, CAS misses, incomplete deletes, and storage tampering fail closed or roll the
+whole transaction back. Exact replay returns the same historical successor floor.
+
+This is a local correctness primitive, not a complete lifecycle claim. The archive shares the
+database fault domain, there is no public floor/retirement Schema or independent consumer verifier,
+and legal hold, erasure, backup purge, restore continuity, external WORM acknowledgement, and
+witnessed non-equivocation remain absent. Detailed invariants and failure proofs are recorded in
+[Stage 5 compact-observation floor retirement design](resource-gateway-execution-data-control-plane-stage5-observation-floor-retirement-design.md).
 
 ## 4. Comparable execution regime
 
@@ -206,13 +233,17 @@ Completion requires tests proving rejection or fail-closed projection for:
   a rewritten outer observation reference closure;
 - page continuation after the committed head changed, preview enabled by default, or any preview
   bean present under a production profile.
+- signer outage, stale floor/head pin, changed or missing active prefix, duplicate retirement
+  generation, floor/head CAS miss, or partial deletion leaving a committed local archive;
+- concurrent legacy-floor backfill creating multiple generation-zero floors, and a floor without a
+  committed head being treated as an empty ledger.
 
 ## 10. Deliberately unclaimed
 
 V1 and the range preview do not provide cross-suite common-cause confirmation, cross-revision
-semantic lineage, advertised cross-retention continuity, compact-ledger retention/archive/erasure
-policy, legal-hold/backup erasure proof, externally witnessed ledger non-equivocation, automatic
-quarantine mutation, change-point statistics, seasonal baselines,
+semantic lineage, advertised cross-retention continuity, public floor lifecycle, externally durable
+WORM archive, legal-hold/backup erasure proof, disaster-recovery continuity, externally witnessed
+ledger non-equivocation, automatic quarantine mutation, change-point statistics, seasonal baselines,
 production-path comparison, distributed attempt execution, or physical test-runtime isolation.
 Those controls remain separate because collapsing them into a read projection would make the
 evidence easier to display and harder to trust.

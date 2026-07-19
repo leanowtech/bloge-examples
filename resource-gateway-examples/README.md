@@ -166,8 +166,11 @@ that observation, its contiguous per-suite ledger coordinate, the full terminal 
 consumption, and lease consumption in one database transaction. This is the durable write-side
 foundation for history beyond full-run retention. A bounded, signed range read plus strict Schema and
 independent five-layer test-kit verification now exist as a default-disabled test/staging preview.
-`crossRetentionSuiteStabilityTrend` intentionally remains disabled until signed floor retirement,
-archive/erasure/recovery lifecycle and external non-equivocation are complete. The stability protocol's
+An internal database-authoritative core can sign a bounded retirement intent, atomically retain its
+payload-free local archive, move the durable floor/head coverage, and delete only the exact active
+prefix. It is not wired as a public lifecycle: `crossRetentionSuiteStabilityTrend` intentionally
+remains disabled until floor discovery and independent verification, external WORM, legal-hold/
+erasure/backup and recovery controls, and witnessed non-equivocation are complete. The stability protocol's
 v2+ evidence keeps behavioral stability separate from release eligibility: every verified source
 suite promotion verdict is signed into the attempt closure, so `STABLE + BLOCKED` remains visible
 when behavior is repeatable but source certification is insufficient. Historical v1 evidence stays

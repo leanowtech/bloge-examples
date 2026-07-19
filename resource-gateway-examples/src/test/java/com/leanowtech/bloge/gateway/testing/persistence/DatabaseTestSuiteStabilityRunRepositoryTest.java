@@ -12,13 +12,20 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStopR
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservation;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationFloorRetirement;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationFloorRetirementService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRecord;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationFloorRetirementEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerRangeIntegrity;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,6 +51,9 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     private DatabaseTestSuiteStabilityRunRepository repository;
     private TestSuiteStabilityAttestationService attestations;
     private TestSuiteStabilityObservationAttestationService observationAttestations;
+    private TestSuiteStabilityObservationFloorRetirementAttestationService
+            retirementAttestations;
+    private TestSuiteStabilityObservationFloorRetirementService retirementService;
 
     @BeforeEach
     void setUp() {
@@ -58,6 +68,11 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         attestations = new TestSuiteStabilityAttestationService(mapper, signer);
         observationAttestations = new TestSuiteStabilityObservationAttestationService(
                 mapper, signer, attestations);
+        retirementAttestations =
+                new TestSuiteStabilityObservationFloorRetirementAttestationService(
+                        mapper, signer);
+        retirementService = new TestSuiteStabilityObservationFloorRetirementService(
+                mapper, repository, retirementAttestations);
     }
 
     @Test
@@ -797,6 +812,404 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         }
     }
 
+    @Test
+    void signedFloorRetirementAtomicallyArchivesPrefixAndPreservesRangeClosure() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'1', '2', '3', '4', '5'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(60 - identity),
+                    now.plusSeconds(3_600)));
+        }
+        var suite = TestSuiteStabilityProtocolFixtures.SUITE_REF;
+        var rolloutFloor = repository.observationLedgerFloor(
+                "tenant-a", "test", suite).orElseThrow();
+        assertThat(rolloutFloor.floorSequence()).isEqualTo(1);
+        assertThat(rolloutFloor.retirementGeneration()).isZero();
+
+        var result = retirementService.retire(
+                "tenant-a", "test", suite, repository.currentTime(), 2, 2,
+                TestSuiteStabilityProtocolFixtures.fingerprint('a'));
+
+        assertThat(result.status())
+                .isEqualTo(TestSuiteStabilityObservationFloorRetirementService.Status.RETIRED);
+        assertThat(result.successorFloor().floorSequence()).isEqualTo(3);
+        assertThat(result.successorFloor().retirementGeneration()).isEqualTo(1);
+        assertThat(result.retirement().evidence().archiveSegment().retiredEntries())
+                .extracting(value -> value.sequence()).containsExactly(1L, 2L);
+        assertThat(result.retirement().evidence().archiveSegment().successorEntry().sequence())
+                .isEqualTo(3);
+        assertThat(retirementAttestations.verify(
+                result.retirement().evidence(), result.retirement().attestation()))
+                .isEqualTo(TestSuiteStabilityObservationFloorRetirementAttestationService
+                        .Verification.VERIFIED);
+        assertThat(repository.findObservationFloorRetirement(
+                result.retirement().evidence().retirementId()))
+                .contains(result.retirement());
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observations", Integer.class))
+                .isEqualTo(3);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observation_archives", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observation_retirements",
+                Integer.class)).isEqualTo(1);
+
+        assertThatThrownBy(() -> repository.observations(
+                "tenant-a", "test", suite, 0, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("before the retained floor");
+        assertThat(repository.observations("tenant-a", "test", suite, 2, 10))
+                .extracting(value -> value.sequence()).containsExactly(3L, 4L, 5L);
+        var range = repository.observationRange(
+                "tenant-a", "test", suite, 2, 10).orElseThrow();
+        assertThat(TestSuiteStabilityObservationLedgerRangeIntegrity.valid(mapper, range)).isTrue();
+        assertThat(range.floorSequence()).isEqualTo(3);
+        assertThat(range.floorPreviousObservationId()).isEqualTo(
+                result.successorFloor().previousObservationId());
+        assertThat(range.floorPreviousEntryFingerprint()).isEqualTo(
+                result.successorFloor().previousEntryFingerprint());
+        assertThat(range.head().coverageFrom()).isEqualTo(
+                result.successorFloor().coverageFrom());
+    }
+
+    @Test
+    void exactRetirementReplayIsStableAcrossALaterFloorGeneration() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'6', '7', '8', '9'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(60 - identity),
+                    now.plusSeconds(3_600)));
+        }
+        var suite = TestSuiteStabilityProtocolFixtures.SUITE_REF;
+        String policy = TestSuiteStabilityProtocolFixtures.fingerprint('b');
+        var first = retirementService.retire(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1, policy);
+
+        assertThat(repository.commitObservationFloorRetirement(first.retirement()))
+                .isEqualTo(first.successorFloor());
+        var second = retirementService.retire(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1, policy);
+
+        assertThat(second.successorFloor().retirementGeneration()).isEqualTo(2);
+        assertThat(second.successorFloor().floorSequence()).isEqualTo(3);
+        assertThat(second.retirement().evidence().previousFloor())
+                .isEqualTo(first.successorFloor());
+        assertThat(second.retirement().evidence().archiveSegment().previousObservationId())
+                .isEqualTo(first.successorFloor().previousObservationId());
+        assertThat(repository.commitObservationFloorRetirement(first.retirement()))
+                .isEqualTo(first.successorFloor());
+        assertThat(repository.observationLedgerFloor("tenant-a", "test", suite))
+                .contains(second.successorFloor());
+    }
+
+    @Test
+    void concurrentAppendInvalidatesPinnedRetirementWithoutPartialArchive() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'a', 'b', 'c'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        var suite = TestSuiteStabilityProtocolFixtures.SUITE_REF;
+        var evidence = repository.planObservationFloorRetirement(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('c')).orElseThrow();
+        TestSuiteStabilityObservationFloorRetirement signed = signedRetirement(evidence);
+        completeTrend(trendRecord('d', now.minusSeconds(5), now.plusSeconds(3_600)));
+
+        assertThatThrownBy(() -> repository.commitObservationFloorRetirement(signed))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("floor or head pin changed");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observation_archives", Integer.class))
+                .isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observation_retirements",
+                Integer.class)).isZero();
+        assertThat(repository.observationLedgerFloor("tenant-a", "test", suite))
+                .get().extracting(value -> value.retirementGeneration()).isEqualTo(0L);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observations", Integer.class))
+                .isEqualTo(4);
+    }
+
+    @Test
+    void missingActivePrefixRowRollsBackArchiveRetirementAndFloorMutation() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'1', '2', '3'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        var suite = TestSuiteStabilityProtocolFixtures.SUITE_REF;
+        var evidence = repository.planObservationFloorRetirement(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('d')).orElseThrow();
+        TestSuiteStabilityObservationFloorRetirement signed = signedRetirement(evidence);
+        jdbc.update("""
+                DELETE FROM rg_test_suite_stability_observations
+                WHERE ledger_sequence = 1
+                """);
+
+        assertThatThrownBy(() -> repository.commitObservationFloorRetirement(signed))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("active ledger row");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observation_archives", Integer.class))
+                .isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observation_retirements",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT retirement_generation
+                FROM rg_test_suite_stability_observation_floors
+                """, Long.class)).isZero();
+    }
+
+    @Test
+    void archiveProjectionTamperingMakesSignedRetirementUnreadable() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'4', '5', '6'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        var result = retirementService.retire(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('e'));
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_archives
+                SET segment_fingerprint = ?
+                """, TestSuiteStabilityProtocolFixtures.fingerprint('f'));
+
+        assertThatThrownBy(() -> repository.findObservationFloorRetirement(
+                result.retirement().evidence().retirementId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("archive columns contradict");
+    }
+
+    @Test
+    void unavailableRetirementSignerLeavesLedgerAndFloorUntouched() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'7', '8', '9'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        var unavailable = new TestSuiteStabilityObservationFloorRetirementService(
+                mapper, repository,
+                new TestSuiteStabilityObservationFloorRetirementAttestationService(
+                        mapper, VisualEvidenceSigner.unavailable()));
+
+        var result = unavailable.retire(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('1'));
+
+        assertThat(result.status())
+                .isEqualTo(TestSuiteStabilityObservationFloorRetirementService.Status.FAILED);
+        assertThat(result.failureCode()).isEqualTo(
+                TestSuiteStabilityObservationFloorRetirementAttestationService
+                        .SIGNER_UNAVAILABLE);
+        assertThat(repository.observationLedgerFloor(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF))
+                .get().extracting(value -> value.retirementGeneration()).isEqualTo(0L);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observation_archives", Integer.class))
+                .isZero();
+    }
+
+    @Test
+    void restartBackfillsAnExactGenerationZeroFloorForLegacyLedger() {
+        Instant now = Instant.now();
+        completeTrend(trendRecord('f', now.minusSeconds(10), now.plusSeconds(3_600)));
+        jdbc.update("DELETE FROM rg_test_suite_stability_observation_floors");
+
+        DatabaseTestSuiteStabilityRunRepository restarted =
+                new DatabaseTestSuiteStabilityRunRepository(
+                        new JdbcTemplate(dataSource), mapper);
+        restarted.init();
+
+        assertThat(restarted.observationLedgerFloor(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF))
+                .get().satisfies(floor -> {
+                    assertThat(floor.floorSequence()).isEqualTo(1);
+                    assertThat(floor.retirementGeneration()).isZero();
+                    assertThat(floor.previousObservationId()).isBlank();
+                    assertThat(floor.latestRetirementId()).isBlank();
+                });
+    }
+
+    @Test
+    void concurrentRestartsSerializeLegacyFloorBackfill() throws Exception {
+        Instant now = Instant.now();
+        completeTrend(trendRecord('0', now.minusSeconds(10), now.plusSeconds(3_600)));
+        jdbc.update("DELETE FROM rg_test_suite_stability_observation_floors");
+        DatabaseTestSuiteStabilityRunRepository leftRepository =
+                new DatabaseTestSuiteStabilityRunRepository(
+                        new JdbcTemplate(dataSource), mapper);
+        DatabaseTestSuiteStabilityRunRepository rightRepository =
+                new DatabaseTestSuiteStabilityRunRepository(
+                        new JdbcTemplate(dataSource), mapper);
+        CountDownLatch start = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> left = pool.submit(() -> {
+                start.await();
+                leftRepository.init();
+                return null;
+            });
+            Future<?> right = pool.submit(() -> {
+                start.await();
+                rightRepository.init();
+                return null;
+            });
+            start.countDown();
+
+            left.get();
+            right.get();
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_suite_stability_observation_floors
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(leftRepository.observationLedgerFloor(
+                    "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF))
+                    .isEqualTo(rightRepository.observationLedgerFloor(
+                            "tenant-a", "test",
+                            TestSuiteStabilityProtocolFixtures.SUITE_REF));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void orphanFloorWithActiveRowsButNoHeadFailsClosedFromBothReadDirections() {
+        Instant now = Instant.now();
+        completeTrend(trendRecord('0', now.minusSeconds(10), now.plusSeconds(3_600)));
+        jdbc.update("DELETE FROM rg_test_suite_stability_observation_heads");
+
+        assertThatThrownBy(() -> repository.observationLedgerHead(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("rows or lifecycle state exist without a committed head");
+        assertThatThrownBy(() -> repository.observationLedgerFloor(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("floor has no committed head");
+    }
+
+    @Test
+    void orphanRetirementMaterialCannotMasqueradeAsAnEmptyLedger() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'1', '2', '3'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        retirementService.retire(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('4'));
+        jdbc.update("DELETE FROM rg_test_suite_stability_observations");
+        jdbc.update("DELETE FROM rg_test_suite_stability_observation_floors");
+        jdbc.update("DELETE FROM rg_test_suite_stability_observation_heads");
+
+        assertThatThrownBy(() -> repository.observationLedgerHead(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("lifecycle state exist without a committed head");
+    }
+
+    @Test
+    void futureCutoffIsRejectedEvenWhenNoPrefixCouldBeRetired() {
+        Instant now = Instant.now();
+        completeTrend(trendRecord('0', now.minusSeconds(10), now.plusSeconds(3_600)));
+
+        assertThatThrownBy(() -> repository.planObservationFloorRetirement(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                repository.currentTime().plusSeconds(60), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('5')))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cutoff is in the future");
+    }
+
+    @Test
+    void twoRepositoryInstancesConvergeOnOneSignedRetirementCommit() throws Exception {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'a', 'b', 'c'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        var suite = TestSuiteStabilityProtocolFixtures.SUITE_REF;
+        var evidence = repository.planObservationFloorRetirement(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('2')).orElseThrow();
+        TestSuiteStabilityObservationFloorRetirement retirement = signedRetirement(evidence);
+        DatabaseTestSuiteStabilityRunRepository replica =
+                new DatabaseTestSuiteStabilityRunRepository(new JdbcTemplate(dataSource), mapper);
+        replica.init();
+        CountDownLatch start = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> left = pool.submit(() -> {
+                start.await();
+                return repository.commitObservationFloorRetirement(retirement);
+            });
+            Future<?> right = pool.submit(() -> {
+                start.await();
+                return replica.commitObservationFloorRetirement(retirement);
+            });
+            start.countDown();
+
+            assertThat(left.get()).isEqualTo(right.get());
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_suite_stability_observation_retirements
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_suite_stability_observation_archives
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(repository.observationLedgerFloor("tenant-a", "test", suite))
+                    .get().extracting(value -> value.retirementGeneration()).isEqualTo(1L);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void retirementGenerationConflictRollsBackNewArchiveAndActiveDeletion() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'d', 'e', 'f'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        var suite = TestSuiteStabilityProtocolFixtures.SUITE_REF;
+        var evidence = repository.planObservationFloorRetirement(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('3')).orElseThrow();
+        TestSuiteStabilityObservationFloorRetirement retirement = signedRetirement(evidence);
+        jdbc.update("""
+                INSERT INTO rg_test_suite_stability_observation_retirements (
+                    retirement_id, scope_fingerprint, retirement_generation,
+                    evidence_fingerprint, attestation_fingerprint,
+                    retirement_fingerprint, retired_at, retirement_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, "stability-observation-retirement-" + "f".repeat(64),
+                evidence.scopeFingerprint(), evidence.retirementGeneration(),
+                TestSuiteStabilityProtocolFixtures.fingerprint('a'),
+                TestSuiteStabilityProtocolFixtures.fingerprint('b'),
+                TestSuiteStabilityProtocolFixtures.fingerprint('c'),
+                java.sql.Timestamp.from(evidence.retiredAt()), "{}");
+
+        assertThatThrownBy(() -> repository.commitObservationFloorRetirement(retirement))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("generation already exists");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observation_archives", Integer.class))
+                .isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observations", Integer.class))
+                .isEqualTo(3);
+        assertThat(repository.observationLedgerFloor("tenant-a", "test", suite))
+                .get().extracting(value -> value.retirementGeneration()).isEqualTo(0L);
+    }
+
     private TestSuiteStabilityExecutionLease acquired(
             TestSuiteStabilityRunRecord record,
             String owner) {
@@ -919,5 +1332,22 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     private void completeTrend(TestSuiteStabilityRunRecord record) {
         complete(record, checkpointed(record, acquired(record,
                 "owner-" + record.stabilityRunId().substring(record.stabilityRunId().length() - 1))));
+    }
+
+    private TestSuiteStabilityObservationFloorRetirement signedRetirement(
+            TestSuiteStabilityObservationFloorRetirementEvidence evidence) {
+        var seal = retirementAttestations.seal(evidence);
+        assertThat(seal.verified()).isTrue();
+        String evidenceFingerprint = ProtocolFingerprint.of(mapper, evidence);
+        String attestationFingerprint = ProtocolFingerprint.of(mapper, seal.attestation());
+        TestSuiteStabilityObservationFloorRetirement unsigned =
+                new TestSuiteStabilityObservationFloorRetirement(
+                        evidenceFingerprint, evidence, attestationFingerprint,
+                        seal.attestation(), TestSuiteStabilityProtocolFixtures.fingerprint('0'));
+        return new TestSuiteStabilityObservationFloorRetirement(
+                unsigned.evidenceFingerprint(), unsigned.evidence(),
+                unsigned.attestationFingerprint(), unsigned.attestation(),
+                TestSuiteStabilityObservationFloorRetirementIntegrity.retirementFingerprint(
+                        mapper, unsigned));
     }
 }

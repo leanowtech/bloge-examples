@@ -13,7 +13,10 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityHistoryWindow;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservation;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationArchiveSegment;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationFloorRetirement;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerEntry;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerFloor;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerHead;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerRange;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressCheckpoint;
@@ -24,7 +27,10 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityTrendAnalysisRequest;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationFloorRetirementEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementIntegrity;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerFloorIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationProjector;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerEntryIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerHeadIntegrity;
@@ -258,6 +264,100 @@ public final class DatabaseTestSuiteStabilityRunRepository
                     scope_fingerprint, appended_at, ledger_sequence
                 )
                 """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_observation_floors (
+                    scope_fingerprint VARCHAR(71) PRIMARY KEY,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(255) NOT NULL,
+                    suite_id VARCHAR(255) NOT NULL,
+                    suite_revision BIGINT NOT NULL,
+                    suite_fingerprint VARCHAR(71) NOT NULL,
+                    floor_sequence BIGINT NOT NULL,
+                    previous_observation_id VARCHAR(255) NOT NULL,
+                    previous_entry_fingerprint VARCHAR(71) NOT NULL,
+                    floor_observation_id VARCHAR(255) NOT NULL,
+                    floor_entry_fingerprint VARCHAR(71) NOT NULL,
+                    coverage_from TIMESTAMP WITH TIME ZONE NOT NULL,
+                    retirement_generation BIGINT NOT NULL,
+                    latest_retirement_id VARCHAR(255) NOT NULL,
+                    latest_retirement_fingerprint VARCHAR(71) NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    floor_fingerprint VARCHAR(71) NOT NULL,
+                    floor_json CLOB NOT NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_observation_archives (
+                    segment_id VARCHAR(255) PRIMARY KEY,
+                    scope_fingerprint VARCHAR(71) NOT NULL,
+                    retirement_generation BIGINT NOT NULL,
+                    from_sequence BIGINT NOT NULL,
+                    through_sequence BIGINT NOT NULL,
+                    segment_fingerprint VARCHAR(71) NOT NULL,
+                    archived_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    segment_json CLOB NOT NULL,
+                    CONSTRAINT uq_rg_test_suite_stability_observation_archive_generation
+                        UNIQUE (scope_fingerprint, retirement_generation)
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_observation_retirements (
+                    retirement_id VARCHAR(255) PRIMARY KEY,
+                    scope_fingerprint VARCHAR(71) NOT NULL,
+                    retirement_generation BIGINT NOT NULL,
+                    evidence_fingerprint VARCHAR(71) NOT NULL,
+                    attestation_fingerprint VARCHAR(71) NOT NULL,
+                    retirement_fingerprint VARCHAR(71) NOT NULL,
+                    retired_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    retirement_json CLOB NOT NULL,
+                    CONSTRAINT uq_rg_test_suite_stability_observation_retirement_generation
+                        UNIQUE (scope_fingerprint, retirement_generation)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_observation_retirement_scope
+                ON rg_test_suite_stability_observation_retirements (
+                    scope_fingerprint, retirement_generation
+                )
+                """);
+        backfillObservationFloors();
+    }
+
+    private void backfillObservationFloors() {
+        List<StoredObservationHead> heads = jdbc.query("""
+                SELECT tenant_id, environment_id, scope_fingerprint,
+                       suite_id, suite_revision, suite_fingerprint,
+                       coverage_from, latest_sequence, latest_observation_id,
+                       latest_entry_fingerprint, updated_at, head_fingerprint
+                FROM rg_test_suite_stability_observation_heads
+                ORDER BY scope_fingerprint
+                """, (rs, row) -> new StoredObservationHead(
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                readObservationHead(rs)));
+        for (StoredObservationHead stored : heads) {
+            mutations.executeWithoutResult(status -> {
+                String scopeFingerprint = stored.head().scopeFingerprint();
+                lockObservationScope(scopeFingerprint);
+                Long count = jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM rg_test_suite_stability_observation_floors
+                        WHERE scope_fingerprint = ?
+                        """, Long.class, scopeFingerprint);
+                if (count != null && count > 0) {
+                    return;
+                }
+                TestSuiteStabilityObservationLedgerEntry first = observationEntryAt(
+                        scopeFingerprint, 1L).orElseThrow(() ->
+                        new IllegalStateException(
+                                "Legacy stability observation head has no rollout entry"));
+                requireObservationEntry(first, scopeFingerprint, 1L, "");
+                if (!stored.head().coverageFrom().equals(first.appendedAt())) {
+                    throw new IllegalStateException(
+                            "Legacy stability observation head has an ambiguous rollout floor");
+                }
+                insertRolloutFloor(
+                        stored.tenantId(), stored.environmentId(), first);
+            });
+        }
     }
 
     @Override
@@ -898,6 +998,14 @@ public final class DatabaseTestSuiteStabilityRunRepository
         if (head.isEmpty()) {
             return List.of();
         }
+        TestSuiteStabilityObservationLedgerFloor floor = observationLedgerFloor(
+                tenantId, environmentId, suiteRef).orElseThrow(() ->
+                new IllegalStateException(
+                        "Stability observation ledger has no committed floor"));
+        if (afterSequence < floor.floorSequence() - 1) {
+            throw new IllegalArgumentException(
+                    "Stability observation cursor is before the retained floor");
+        }
         if (afterSequence > head.get().latestSequence()) {
             throw new IllegalArgumentException(
                     "Stability observation cursor is beyond the committed head");
@@ -915,7 +1023,8 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 """, this::storedObservationEntry,
                 scopeFingerprint, afterSequence, head.get().latestSequence(), limit);
         long expected = afterSequence + 1;
-        String predecessor = afterSequence == 0 ? "" : observationIdAt(
+        String predecessor = afterSequence == floor.floorSequence() - 1
+                ? floor.previousObservationId() : observationIdAt(
                 scopeFingerprint, afterSequence).orElseThrow(() ->
                 new IllegalStateException("Stability observation cursor has no predecessor"));
         for (TestSuiteStabilityObservationLedgerEntry entry : entries) {
@@ -967,18 +1076,29 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 return Optional.empty();
             }
             TestSuiteStabilityObservationLedgerHead head = current.get();
+            TestSuiteStabilityObservationLedgerFloor floor = observationFloorByScope(
+                    scopeFingerprint, tenantId, environmentId, suiteRef).orElseThrow(() ->
+                    new IllegalStateException(
+                            "Stability observation ledger has no committed floor"));
+            if (afterSequence < floor.floorSequence() - 1) {
+                throw new IllegalArgumentException(
+                        "Stability observation cursor is before the retained floor");
+            }
             if (afterSequence > head.latestSequence()) {
                 throw new IllegalArgumentException(
                         "Stability observation cursor is beyond the committed head");
             }
-            TestSuiteStabilityObservationLedgerEntry floor = observationEntryAt(
-                    scopeFingerprint, 1L).orElseThrow(() -> new IllegalStateException(
-                    "Stability observation ledger has no rollout floor"));
-            requireObservationEntry(floor, scopeFingerprint, 1L, "");
-            TestSuiteStabilityObservationLedgerEntry predecessor = afterSequence == 0
+            TestSuiteStabilityObservationLedgerEntry floorEntry = observationEntryAt(
+                    scopeFingerprint, floor.floorSequence()).orElseThrow(() ->
+                    new IllegalStateException(
+                            "Stability observation ledger floor has no active entry"));
+            requireObservationEntry(floorEntry, scopeFingerprint, floor.floorSequence(),
+                    floor.previousObservationId());
+            TestSuiteStabilityObservationLedgerEntry predecessor =
+                    afterSequence == floor.floorSequence() - 1
                     ? null : observationEntryAt(scopeFingerprint, afterSequence)
                     .orElseThrow(() -> new IllegalStateException(
-                            "Stability observation cursor has no retained entry"));
+                    "Stability observation cursor has no retained entry"));
             List<TestSuiteStabilityObservationLedgerEntry> entries = observations(
                     tenantId, environmentId, suiteRef, afterSequence, limit);
             boolean hasMore = !entries.isEmpty()
@@ -987,12 +1107,15 @@ public final class DatabaseTestSuiteStabilityRunRepository
             TestSuiteStabilityObservationLedgerRange unsigned =
                     new TestSuiteStabilityObservationLedgerRange(
                     TestSuiteStabilityObservationLedgerRange.SCHEMA_VERSION,
-                    scopeFingerprint, suiteRef, 1L, "", "",
-                    floor.observation().evidence().observationId(), floor.entryFingerprint(),
+                    scopeFingerprint, suiteRef, floor.floorSequence(),
+                    floor.previousObservationId(), floor.previousEntryFingerprint(),
+                    floorEntry.observation().evidence().observationId(),
+                    floorEntry.entryFingerprint(),
                     head, afterSequence,
-                    predecessor == null ? ""
+                    predecessor == null ? floor.previousObservationId()
                             : predecessor.observation().evidence().observationId(),
-                    predecessor == null ? "" : predecessor.entryFingerprint(),
+                    predecessor == null ? floor.previousEntryFingerprint()
+                            : predecessor.entryFingerprint(),
                     entries, hasMore, observedAt,
                     "sha256:0000000000000000000000000000000000000000000000000000000000000000");
             return Optional.of(new TestSuiteStabilityObservationLedgerRange(
@@ -1009,6 +1132,267 @@ public final class DatabaseTestSuiteStabilityRunRepository
             throw new IllegalStateException(
                     "Stability observation range transaction returned no result");
         }
+        return result;
+    }
+
+    @Override
+    public Optional<TestSuiteStabilityObservationLedgerFloor> observationLedgerFloor(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef) {
+        Objects.requireNonNull(suiteRef, "suiteRef");
+        String scopeFingerprint = observationScopeFingerprint(
+                tenantId, environmentId, suiteRef);
+        return observationFloorByScope(
+                scopeFingerprint, tenantId, environmentId, suiteRef);
+    }
+
+    @Override
+    public Optional<TestSuiteStabilityObservationFloorRetirementEvidence>
+            planObservationFloorRetirement(
+                    String tenantId,
+                    String environmentId,
+                    TestSuiteExecutionRequest.SuiteRef suiteRef,
+                    Instant cutoffExclusive,
+                    int minimumRetainedEntries,
+                    int maximumRetiredEntries,
+                    String retentionPolicyFingerprint) {
+        Objects.requireNonNull(suiteRef, "suiteRef");
+        Objects.requireNonNull(cutoffExclusive, "cutoffExclusive");
+        String policyFingerprint = normalized(retentionPolicyFingerprint);
+        if (minimumRetainedEntries < 1
+                || minimumRetainedEntries
+                > TestSuiteStabilityObservationFloorRetirementEvidence
+                .MAXIMUM_RETAINED_ENTRIES
+                || maximumRetiredEntries < 1
+                || maximumRetiredEntries
+                > TestSuiteStabilityObservationArchiveSegment.MAXIMUM_ENTRIES
+                || !FINGERPRINT.matcher(policyFingerprint).matches()) {
+            throw new IllegalArgumentException(
+                    "Stability observation retirement policy is outside bounds");
+        }
+        String scopeFingerprint = observationScopeFingerprint(
+                tenantId, environmentId, suiteRef);
+        Optional<TestSuiteStabilityObservationFloorRetirementEvidence> result =
+                mutations.execute(status -> {
+                    lockObservationScope(scopeFingerprint);
+                    Instant retiredAt = currentTime();
+                    if (cutoffExclusive.isAfter(retiredAt)) {
+                        throw new IllegalArgumentException(
+                                "Stability observation retirement cutoff is in the future");
+                    }
+                    Optional<TestSuiteStabilityObservationLedgerHead> headValue =
+                            observationHeadByScope(
+                                    scopeFingerprint, tenantId, environmentId, suiteRef);
+                    if (headValue.isEmpty()) {
+                        return Optional.empty();
+                    }
+                    TestSuiteStabilityObservationLedgerHead head = headValue.get();
+                    TestSuiteStabilityObservationLedgerFloor floor = observationFloorByScope(
+                            scopeFingerprint, tenantId, environmentId, suiteRef).orElseThrow(() ->
+                            new IllegalStateException(
+                                    "Stability observation ledger has no committed floor"));
+                    long maximumThrough = head.latestSequence() - minimumRetainedEntries;
+                    if (maximumThrough < floor.floorSequence()) {
+                        return Optional.empty();
+                    }
+                    List<TestSuiteStabilityObservationLedgerEntry> candidates = jdbc.query("""
+                            SELECT observation_id, scope_fingerprint, ledger_sequence,
+                                   previous_observation_id, stability_run_id, source_created_at,
+                                   appended_at, observation_fingerprint, attestation_fingerprint,
+                                   entry_fingerprint, entry_json
+                            FROM rg_test_suite_stability_observations
+                            WHERE scope_fingerprint = ? AND ledger_sequence >= ?
+                              AND ledger_sequence <= ?
+                            ORDER BY ledger_sequence
+                            FETCH FIRST ? ROWS ONLY
+                            """, this::storedObservationEntry, scopeFingerprint,
+                            floor.floorSequence(), maximumThrough, maximumRetiredEntries);
+                    int eligible = 0;
+                    String predecessor = floor.previousObservationId();
+                    long sequence = floor.floorSequence();
+                    for (TestSuiteStabilityObservationLedgerEntry candidate : candidates) {
+                        requireObservationEntry(
+                                candidate, scopeFingerprint, sequence, predecessor);
+                        if (!candidate.appendedAt().isBefore(cutoffExclusive)) {
+                            break;
+                        }
+                        eligible++;
+                        predecessor = candidate.observation().evidence().observationId();
+                        sequence++;
+                    }
+                    if (eligible == 0) {
+                        return Optional.empty();
+                    }
+                    List<TestSuiteStabilityObservationLedgerEntry> retired = List.copyOf(
+                            candidates.subList(0, eligible));
+                    TestSuiteStabilityObservationLedgerEntry successor = observationEntryAt(
+                            scopeFingerprint, retired.getLast().sequence() + 1).orElseThrow(() ->
+                            new IllegalStateException(
+                                    "Stability observation retirement has no surviving successor"));
+                    requireObservationEntry(successor, scopeFingerprint,
+                            retired.getLast().sequence() + 1,
+                            retired.getLast().observation().evidence().observationId());
+                    long generation = floor.retirementGeneration() + 1;
+                    String archiveId =
+                            TestSuiteStabilityObservationFloorRetirementIntegrity.archiveId(
+                                    objectMapper, scopeFingerprint, suiteRef, generation,
+                                    floor.previousObservationId(),
+                                    floor.previousEntryFingerprint(), retired, successor,
+                                    retiredAt);
+                    TestSuiteStabilityObservationArchiveSegment unsignedArchive =
+                            new TestSuiteStabilityObservationArchiveSegment(
+                                    TestSuiteStabilityObservationArchiveSegment.SCHEMA_VERSION,
+                                    archiveId, scopeFingerprint, suiteRef, generation,
+                                    floor.previousObservationId(),
+                                    floor.previousEntryFingerprint(), retired, successor,
+                                    retiredAt, zeroFingerprint());
+                    TestSuiteStabilityObservationArchiveSegment archive =
+                            new TestSuiteStabilityObservationArchiveSegment(
+                                    unsignedArchive.schemaVersion(), unsignedArchive.segmentId(),
+                                    unsignedArchive.scopeFingerprint(), unsignedArchive.suiteRef(),
+                                    unsignedArchive.retirementGeneration(),
+                                    unsignedArchive.previousObservationId(),
+                                    unsignedArchive.previousEntryFingerprint(),
+                                    unsignedArchive.retiredEntries(),
+                                    unsignedArchive.successorEntry(), unsignedArchive.archivedAt(),
+                                    TestSuiteStabilityObservationFloorRetirementIntegrity
+                                            .archiveFingerprint(objectMapper, unsignedArchive));
+                    TestSuiteStabilityObservationFloorRetirementEvidence unsignedEvidence =
+                            new TestSuiteStabilityObservationFloorRetirementEvidence(
+                                    TestSuiteStabilityObservationFloorRetirementEvidence
+                                            .SCHEMA_VERSION,
+                                    zeroRetirementId(), scopeFingerprint, suiteRef, generation,
+                                    floor, head, archive, cutoffExclusive, minimumRetainedEntries,
+                                    maximumRetiredEntries, policyFingerprint,
+                                    TestSuiteStabilityObservationFloorRetirementEvidence.Reason
+                                            .RETENTION_POLICY,
+                                    retiredAt);
+                    String retirementId =
+                            TestSuiteStabilityObservationFloorRetirementIntegrity.retirementId(
+                                    objectMapper, unsignedEvidence);
+                    return Optional.of(
+                            new TestSuiteStabilityObservationFloorRetirementEvidence(
+                                    unsignedEvidence.schemaVersion(), retirementId,
+                                    unsignedEvidence.scopeFingerprint(), unsignedEvidence.suiteRef(),
+                                    unsignedEvidence.retirementGeneration(),
+                                    unsignedEvidence.previousFloor(), unsignedEvidence.pinnedHead(),
+                                    unsignedEvidence.archiveSegment(),
+                                    unsignedEvidence.cutoffExclusive(),
+                                    unsignedEvidence.minimumRetainedEntries(),
+                                    unsignedEvidence.maximumRetiredEntries(),
+                                    unsignedEvidence.retentionPolicyFingerprint(),
+                                    unsignedEvidence.reason(), unsignedEvidence.retiredAt()));
+                });
+        if (result == null) {
+            throw new IllegalStateException(
+                    "Stability observation retirement planning transaction returned no result");
+        }
+        return result;
+    }
+
+    @Override
+    public TestSuiteStabilityObservationLedgerFloor commitObservationFloorRetirement(
+            TestSuiteStabilityObservationFloorRetirement retirement) {
+        Objects.requireNonNull(retirement, "retirement");
+        if (!TestSuiteStabilityObservationFloorRetirementIntegrity.valid(
+                objectMapper, retirement)) {
+            throw new IllegalArgumentException(
+                    "Canonical signed stability observation floor retirement is required");
+        }
+        TestSuiteStabilityObservationFloorRetirementEvidence evidence = retirement.evidence();
+        TestSuiteStabilityObservationArchiveSegment archive = evidence.archiveSegment();
+        TestSuiteStabilityObservationLedgerFloor result = mutations.execute(status -> {
+            lockObservationScope(evidence.scopeFingerprint());
+            Optional<TestSuiteStabilityObservationFloorRetirement> replay =
+                    findObservationFloorRetirement(evidence.retirementId());
+            if (replay.isPresent()) {
+                if (!replay.get().equals(retirement)) {
+                    throw new IllegalStateException(
+                            "Stability observation retirement identity has different material");
+                }
+                return successorFloor(retirement);
+            }
+            TestSuiteStabilityObservationLedgerFloor currentFloor = observationFloorByScope(
+                    evidence.scopeFingerprint(), "", "", evidence.suiteRef(), false)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Stability observation ledger has no committed floor"));
+            TestSuiteStabilityObservationLedgerHead currentHead = observationHeadByScope(
+                    evidence.scopeFingerprint(), "", "", evidence.suiteRef(), false)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Stability observation ledger has no committed head"));
+            if (!currentFloor.equals(evidence.previousFloor())
+                    || !currentHead.equals(evidence.pinnedHead())) {
+                throw new IllegalStateException(
+                        "Stability observation retirement floor or head pin changed");
+            }
+            requireArchiveMatchesActiveRows(archive);
+            if (currentTime().isBefore(evidence.retiredAt())) {
+                throw new IllegalStateException(
+                        "Stability observation retirement is ahead of database time");
+            }
+            insertArchive(archive);
+            insertRetirement(retirement);
+            TestSuiteStabilityObservationLedgerFloor successorFloor =
+                    successorFloor(retirement);
+            TestSuiteStabilityObservationLedgerHead unsignedHead =
+                    new TestSuiteStabilityObservationLedgerHead(
+                            currentHead.schemaVersion(), currentHead.scopeFingerprint(),
+                            currentHead.suiteRef(), successorFloor.coverageFrom(),
+                            currentHead.latestSequence(), currentHead.latestObservationId(),
+                            currentHead.latestEntryFingerprint(), currentHead.updatedAt(),
+                            zeroFingerprint());
+            TestSuiteStabilityObservationLedgerHead successorHead =
+                    new TestSuiteStabilityObservationLedgerHead(
+                            unsignedHead.schemaVersion(), unsignedHead.scopeFingerprint(),
+                            unsignedHead.suiteRef(), unsignedHead.coverageFrom(),
+                            unsignedHead.latestSequence(), unsignedHead.latestObservationId(),
+                            unsignedHead.latestEntryFingerprint(), unsignedHead.updatedAt(),
+                            TestSuiteStabilityObservationLedgerHeadIntegrity.fingerprint(
+                                    objectMapper, unsignedHead));
+            advanceFloor(currentFloor, successorFloor);
+            advanceHeadForRetirement(currentHead, successorHead);
+            int deleted = jdbc.update("""
+                    DELETE FROM rg_test_suite_stability_observations
+                    WHERE scope_fingerprint = ? AND ledger_sequence >= ?
+                      AND ledger_sequence <= ?
+                    """, evidence.scopeFingerprint(), archive.fromSequence(),
+                    archive.throughSequence());
+            if (deleted != archive.retiredEntries().size()) {
+                throw new IllegalStateException(
+                        "Stability observation active prefix deletion was incomplete");
+            }
+            return successorFloor;
+        });
+        if (result == null) {
+            throw new IllegalStateException(
+                    "Stability observation retirement commit returned no successor floor");
+        }
+        return result;
+    }
+
+    @Override
+    public Optional<TestSuiteStabilityObservationFloorRetirement>
+            findObservationFloorRetirement(String retirementId) {
+        String exactId = normalized(retirementId);
+        if (!exactId.matches("stability-observation-retirement-[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(
+                    "Complete stability observation retirement id is required");
+        }
+        List<TestSuiteStabilityObservationFloorRetirement> values = jdbc.query("""
+                SELECT retirement_id, scope_fingerprint, retirement_generation,
+                       evidence_fingerprint, attestation_fingerprint,
+                       retirement_fingerprint, retired_at, retirement_json
+                FROM rg_test_suite_stability_observation_retirements
+                WHERE retirement_id = ?
+                """, this::storedRetirement, exactId);
+        if (values.size() > 1) {
+            throw new IllegalStateException(
+                    "Stability observation retirement identity is not unique");
+        }
+        Optional<TestSuiteStabilityObservationFloorRetirement> result =
+                values.stream().findFirst();
+        result.ifPresent(value -> requireStoredArchive(value.evidence().archiveSegment()));
         return result;
     }
 
@@ -1327,6 +1711,7 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 throw new IllegalStateException(
                         "Stability observation rollout floor was not created");
             }
+            insertRolloutFloor(record.tenantId(), record.environmentId(), entry);
         } else {
             TestSuiteStabilityObservationLedgerHead predecessorHead = current.get();
             int updated = jdbc.update("""
@@ -1347,6 +1732,207 @@ public final class DatabaseTestSuiteStabilityRunRepository
                         "Stability observation head did not advance from its exact predecessor");
             }
         }
+    }
+
+    private void insertRolloutFloor(
+            String tenantId,
+            String environmentId,
+            TestSuiteStabilityObservationLedgerEntry first) {
+        TestSuiteStabilityObservationLedgerFloor unsigned =
+                new TestSuiteStabilityObservationLedgerFloor(
+                        TestSuiteStabilityObservationLedgerFloor.SCHEMA_VERSION,
+                        first.scopeFingerprint(), first.observation().evidence().suiteRef(),
+                        1L, "", "", first.observation().evidence().observationId(),
+                        first.entryFingerprint(), first.appendedAt(), 0L, "", "",
+                        first.appendedAt(), zeroFingerprint());
+        insertFloorRow(tenantId, environmentId, copyFloorWithFingerprint(
+                unsigned, TestSuiteStabilityObservationLedgerFloorIntegrity.fingerprint(
+                        objectMapper, unsigned)));
+    }
+
+    private void insertFloorRow(
+            String tenantId,
+            String environmentId,
+            TestSuiteStabilityObservationLedgerFloor floor) {
+        int inserted = jdbc.update("""
+                INSERT INTO rg_test_suite_stability_observation_floors (
+                    scope_fingerprint, tenant_id, environment_id, suite_id, suite_revision,
+                    suite_fingerprint, floor_sequence, previous_observation_id,
+                    previous_entry_fingerprint, floor_observation_id,
+                    floor_entry_fingerprint, coverage_from, retirement_generation,
+                    latest_retirement_id, latest_retirement_fingerprint, updated_at,
+                    floor_fingerprint, floor_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, floor.scopeFingerprint(), tenantId, environmentId,
+                floor.suiteRef().suiteId(), floor.suiteRef().revision(),
+                floor.suiteRef().fingerprint(), floor.floorSequence(),
+                floor.previousObservationId(), floor.previousEntryFingerprint(),
+                floor.floorObservationId(), floor.floorEntryFingerprint(),
+                Timestamp.from(floor.coverageFrom()), floor.retirementGeneration(),
+                floor.latestRetirementId(), floor.latestRetirementFingerprint(),
+                Timestamp.from(floor.updatedAt()), floor.floorFingerprint(), writeFloor(floor));
+        if (inserted != 1) {
+            throw new IllegalStateException(
+                    "Stability observation rollout floor insert was incomplete");
+        }
+    }
+
+    private void advanceFloor(
+            TestSuiteStabilityObservationLedgerFloor predecessor,
+            TestSuiteStabilityObservationLedgerFloor successor) {
+        int updated = jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_floors
+                SET floor_sequence = ?, previous_observation_id = ?,
+                    previous_entry_fingerprint = ?, floor_observation_id = ?,
+                    floor_entry_fingerprint = ?, coverage_from = ?,
+                    retirement_generation = ?, latest_retirement_id = ?,
+                    latest_retirement_fingerprint = ?, updated_at = ?,
+                    floor_fingerprint = ?, floor_json = ?
+                WHERE scope_fingerprint = ? AND floor_sequence = ?
+                  AND retirement_generation = ? AND floor_fingerprint = ?
+                """, successor.floorSequence(), successor.previousObservationId(),
+                successor.previousEntryFingerprint(), successor.floorObservationId(),
+                successor.floorEntryFingerprint(), Timestamp.from(successor.coverageFrom()),
+                successor.retirementGeneration(), successor.latestRetirementId(),
+                successor.latestRetirementFingerprint(), Timestamp.from(successor.updatedAt()),
+                successor.floorFingerprint(), writeFloor(successor),
+                predecessor.scopeFingerprint(), predecessor.floorSequence(),
+                predecessor.retirementGeneration(), predecessor.floorFingerprint());
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "Stability observation floor did not advance from its exact predecessor");
+        }
+    }
+
+    private void advanceHeadForRetirement(
+            TestSuiteStabilityObservationLedgerHead predecessor,
+            TestSuiteStabilityObservationLedgerHead successor) {
+        int updated = jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_heads
+                SET coverage_from = ?, head_fingerprint = ?
+                WHERE scope_fingerprint = ? AND latest_sequence = ?
+                  AND latest_observation_id = ? AND latest_entry_fingerprint = ?
+                  AND updated_at = ? AND head_fingerprint = ?
+                """, Timestamp.from(successor.coverageFrom()), successor.headFingerprint(),
+                predecessor.scopeFingerprint(), predecessor.latestSequence(),
+                predecessor.latestObservationId(), predecessor.latestEntryFingerprint(),
+                Timestamp.from(predecessor.updatedAt()), predecessor.headFingerprint());
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "Stability observation head did not accept the retired floor");
+        }
+    }
+
+    private void requireArchiveMatchesActiveRows(
+            TestSuiteStabilityObservationArchiveSegment archive) {
+        String predecessor = archive.previousObservationId();
+        long sequence = archive.fromSequence();
+        for (TestSuiteStabilityObservationLedgerEntry expected : archive.retiredEntries()) {
+            TestSuiteStabilityObservationLedgerEntry stored = observationEntryAt(
+                    archive.scopeFingerprint(), sequence).orElseThrow(() ->
+                    new IllegalStateException(
+                            "Stability observation retirement active prefix is incomplete"));
+            requireObservationEntry(stored, archive.scopeFingerprint(), sequence, predecessor);
+            if (!stored.equals(expected)) {
+                throw new IllegalStateException(
+                        "Stability observation retirement active prefix changed");
+            }
+            predecessor = stored.observation().evidence().observationId();
+            sequence++;
+        }
+        TestSuiteStabilityObservationLedgerEntry successor = observationEntryAt(
+                archive.scopeFingerprint(), sequence).orElseThrow(() ->
+                new IllegalStateException(
+                        "Stability observation retirement successor is unavailable"));
+        requireObservationEntry(successor, archive.scopeFingerprint(), sequence, predecessor);
+        if (!successor.equals(archive.successorEntry())) {
+            throw new IllegalStateException(
+                    "Stability observation retirement successor changed");
+        }
+    }
+
+    private void insertArchive(TestSuiteStabilityObservationArchiveSegment archive) {
+        try {
+            int inserted = jdbc.update("""
+                    INSERT INTO rg_test_suite_stability_observation_archives (
+                        segment_id, scope_fingerprint, retirement_generation,
+                        from_sequence, through_sequence, segment_fingerprint,
+                        archived_at, segment_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, archive.segmentId(), archive.scopeFingerprint(),
+                    archive.retirementGeneration(), archive.fromSequence(),
+                    archive.throughSequence(), archive.segmentFingerprint(),
+                    Timestamp.from(archive.archivedAt()), writeArchive(archive));
+            if (inserted != 1) {
+                throw new IllegalStateException(
+                        "Stability observation archive insert was incomplete");
+            }
+        } catch (DuplicateKeyException duplicate) {
+            throw new IllegalStateException(
+                    "Stability observation archive generation already exists", duplicate);
+        }
+    }
+
+    private void insertRetirement(
+            TestSuiteStabilityObservationFloorRetirement retirement) {
+        try {
+            int inserted = jdbc.update("""
+                    INSERT INTO rg_test_suite_stability_observation_retirements (
+                        retirement_id, scope_fingerprint, retirement_generation,
+                        evidence_fingerprint, attestation_fingerprint,
+                        retirement_fingerprint, retired_at, retirement_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, retirement.evidence().retirementId(),
+                    retirement.evidence().scopeFingerprint(),
+                    retirement.evidence().retirementGeneration(),
+                    retirement.evidenceFingerprint(), retirement.attestationFingerprint(),
+                    retirement.retirementFingerprint(),
+                    Timestamp.from(retirement.evidence().retiredAt()),
+                    writeRetirement(retirement));
+            if (inserted != 1) {
+                throw new IllegalStateException(
+                        "Stability observation retirement insert was incomplete");
+            }
+        } catch (DuplicateKeyException duplicate) {
+            throw new IllegalStateException(
+                    "Stability observation retirement generation already exists", duplicate);
+        }
+    }
+
+    private static TestSuiteStabilityObservationLedgerFloor copyFloorWithFingerprint(
+            TestSuiteStabilityObservationLedgerFloor floor,
+            String fingerprint) {
+        return new TestSuiteStabilityObservationLedgerFloor(
+                floor.schemaVersion(), floor.scopeFingerprint(), floor.suiteRef(),
+                floor.floorSequence(), floor.previousObservationId(),
+                floor.previousEntryFingerprint(), floor.floorObservationId(),
+                floor.floorEntryFingerprint(), floor.coverageFrom(),
+                floor.retirementGeneration(), floor.latestRetirementId(),
+                floor.latestRetirementFingerprint(), floor.updatedAt(), fingerprint);
+    }
+
+    private TestSuiteStabilityObservationLedgerFloor successorFloor(
+            TestSuiteStabilityObservationFloorRetirement retirement) {
+        TestSuiteStabilityObservationFloorRetirementEvidence evidence = retirement.evidence();
+        TestSuiteStabilityObservationArchiveSegment archive = evidence.archiveSegment();
+        TestSuiteStabilityObservationLedgerEntry retiredLast =
+                archive.retiredEntries().getLast();
+        TestSuiteStabilityObservationLedgerEntry successorEntry = archive.successorEntry();
+        TestSuiteStabilityObservationLedgerFloor unsigned =
+                new TestSuiteStabilityObservationLedgerFloor(
+                        TestSuiteStabilityObservationLedgerFloor.SCHEMA_VERSION,
+                        evidence.scopeFingerprint(), evidence.suiteRef(),
+                        successorEntry.sequence(),
+                        retiredLast.observation().evidence().observationId(),
+                        retiredLast.entryFingerprint(),
+                        successorEntry.observation().evidence().observationId(),
+                        successorEntry.entryFingerprint(), successorEntry.appendedAt(),
+                        evidence.retirementGeneration(), evidence.retirementId(),
+                        retirement.retirementFingerprint(), evidence.retiredAt(),
+                        zeroFingerprint());
+        return copyFloorWithFingerprint(unsigned,
+                TestSuiteStabilityObservationLedgerFloorIntegrity.fingerprint(
+                        objectMapper, unsigned));
     }
 
     private void requireObservation(
@@ -1376,6 +1962,16 @@ public final class DatabaseTestSuiteStabilityRunRepository
             String tenantId,
             String environmentId,
             TestSuiteExecutionRequest.SuiteRef suiteRef) {
+        return observationHeadByScope(
+                scopeFingerprint, tenantId, environmentId, suiteRef, true);
+    }
+
+    private Optional<TestSuiteStabilityObservationLedgerHead> observationHeadByScope(
+            String scopeFingerprint,
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            boolean verifyRequestedScope) {
         List<StoredObservationHead> heads = jdbc.query("""
                 SELECT tenant_id, environment_id, scope_fingerprint,
                        suite_id, suite_revision, suite_fingerprint,
@@ -1390,16 +1986,17 @@ public final class DatabaseTestSuiteStabilityRunRepository
             throw new IllegalStateException("Stability observation head is not unique");
         }
         if (heads.isEmpty()) {
-            if (observationRowsExist(scopeFingerprint)) {
+            if (observationRowsExist(scopeFingerprint)
+                    || observationLifecycleRowsExist(scopeFingerprint)) {
                 throw new IllegalStateException(
-                        "Stability observation ledger rows exist without a committed head");
+                        "Stability observation ledger rows or lifecycle state exist without a committed head");
             }
             return Optional.empty();
         }
         StoredObservationHead stored = heads.getFirst();
         TestSuiteStabilityObservationLedgerHead head = stored.head();
-        if (!tenantId.equals(stored.tenantId())
-                || !environmentId.equals(stored.environmentId())
+        if ((verifyRequestedScope && (!tenantId.equals(stored.tenantId())
+                || !environmentId.equals(stored.environmentId())))
                 || !scopeFingerprint.equals(head.scopeFingerprint())
                 || !suiteRef.equals(head.suiteRef())) {
             throw new IllegalStateException(
@@ -1415,7 +2012,78 @@ public final class DatabaseTestSuiteStabilityRunRepository
             throw new IllegalStateException(
                     "Stability observation head contradicts its latest ledger row");
         }
+        TestSuiteStabilityObservationLedgerFloor floor = observationFloorByScope(
+                scopeFingerprint, stored.tenantId(), stored.environmentId(), suiteRef)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Stability observation head has no committed floor"));
+        if (!head.coverageFrom().equals(floor.coverageFrom())
+                || floor.floorSequence() > head.latestSequence()) {
+            throw new IllegalStateException(
+                    "Stability observation head contradicts its committed floor");
+        }
         return Optional.of(head);
+    }
+
+    private Optional<TestSuiteStabilityObservationLedgerFloor> observationFloorByScope(
+            String scopeFingerprint,
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef) {
+        return observationFloorByScope(
+                scopeFingerprint, tenantId, environmentId, suiteRef, true);
+    }
+
+    private Optional<TestSuiteStabilityObservationLedgerFloor> observationFloorByScope(
+            String scopeFingerprint,
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            boolean verifyRequestedScope) {
+        List<StoredObservationFloor> floors = jdbc.query("""
+                SELECT tenant_id, environment_id, scope_fingerprint,
+                       suite_id, suite_revision, suite_fingerprint, floor_sequence,
+                       previous_observation_id, previous_entry_fingerprint,
+                       floor_observation_id, floor_entry_fingerprint, coverage_from,
+                       retirement_generation, latest_retirement_id,
+                       latest_retirement_fingerprint, updated_at, floor_fingerprint, floor_json
+                FROM rg_test_suite_stability_observation_floors
+                WHERE scope_fingerprint = ?
+                """, (rs, row) -> new StoredObservationFloor(
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                storedObservationFloor(rs, row)), scopeFingerprint);
+        if (floors.size() > 1) {
+            throw new IllegalStateException("Stability observation floor is not unique");
+        }
+        if (floors.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredObservationFloor stored = floors.getFirst();
+        TestSuiteStabilityObservationLedgerFloor floor = stored.floor();
+        if ((verifyRequestedScope && (!tenantId.equals(stored.tenantId())
+                || !environmentId.equals(stored.environmentId())))
+                || !scopeFingerprint.equals(floor.scopeFingerprint())
+                || !suiteRef.equals(floor.suiteRef())) {
+            throw new IllegalStateException(
+                    "Stability observation floor contradicts its indexed scope");
+        }
+        if (!TestSuiteStabilityObservationLedgerFloorIntegrity.valid(objectMapper, floor)) {
+            throw new IllegalStateException(
+                    "Stability observation floor fingerprint is invalid");
+        }
+        if (!observationHeadRowsExist(scopeFingerprint)) {
+            throw new IllegalStateException(
+                    "Stability observation floor has no committed head");
+        }
+        StoredObservationCoordinate coordinate = observationCoordinateAt(
+                scopeFingerprint, floor.floorSequence()).orElseThrow(() ->
+                new IllegalStateException(
+                        "Stability observation floor has no active ledger row"));
+        if (!floor.floorObservationId().equals(coordinate.observationId())
+                || !floor.floorEntryFingerprint().equals(coordinate.entryFingerprint())) {
+            throw new IllegalStateException(
+                    "Stability observation floor contradicts its active ledger row");
+        }
+        return Optional.of(floor);
     }
 
     private boolean observationRowsExist(String scopeFingerprint) {
@@ -1423,6 +2091,30 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 SELECT COUNT(*) FROM rg_test_suite_stability_observations
                 WHERE scope_fingerprint = ?
                 """, Long.class, scopeFingerprint);
+        return count != null && count > 0;
+    }
+
+    private boolean observationHeadRowsExist(String scopeFingerprint) {
+        Long count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_suite_stability_observation_heads
+                WHERE scope_fingerprint = ?
+                """, Long.class, scopeFingerprint);
+        return count != null && count > 0;
+    }
+
+    private boolean observationLifecycleRowsExist(String scopeFingerprint) {
+        Long count = jdbc.queryForObject("""
+                SELECT
+                    (SELECT COUNT(*)
+                     FROM rg_test_suite_stability_observation_floors
+                     WHERE scope_fingerprint = ?)
+                  + (SELECT COUNT(*)
+                     FROM rg_test_suite_stability_observation_archives
+                     WHERE scope_fingerprint = ?)
+                  + (SELECT COUNT(*)
+                     FROM rg_test_suite_stability_observation_retirements
+                     WHERE scope_fingerprint = ?)
+                """, Long.class, scopeFingerprint, scopeFingerprint, scopeFingerprint);
         return count != null && count > 0;
     }
 
@@ -1833,6 +2525,166 @@ public final class DatabaseTestSuiteStabilityRunRepository
         return entry;
     }
 
+    private TestSuiteStabilityObservationLedgerFloor storedObservationFloor(
+            ResultSet result,
+            int row) throws SQLException {
+        TestSuiteStabilityObservationLedgerFloor floor = readFloor(
+                result.getString("floor_json"));
+        if (!floor.scopeFingerprint().equals(result.getString("scope_fingerprint"))
+                || !floor.suiteRef().suiteId().equals(result.getString("suite_id"))
+                || floor.suiteRef().revision() != result.getLong("suite_revision")
+                || !floor.suiteRef().fingerprint().equals(
+                result.getString("suite_fingerprint"))
+                || floor.floorSequence() != result.getLong("floor_sequence")
+                || !floor.previousObservationId().equals(
+                result.getString("previous_observation_id"))
+                || !floor.previousEntryFingerprint().equals(
+                result.getString("previous_entry_fingerprint"))
+                || !floor.floorObservationId().equals(
+                result.getString("floor_observation_id"))
+                || !floor.floorEntryFingerprint().equals(
+                result.getString("floor_entry_fingerprint"))
+                || !floor.coverageFrom().equals(
+                result.getTimestamp("coverage_from").toInstant())
+                || floor.retirementGeneration()
+                != result.getLong("retirement_generation")
+                || !floor.latestRetirementId().equals(
+                result.getString("latest_retirement_id"))
+                || !floor.latestRetirementFingerprint().equals(
+                result.getString("latest_retirement_fingerprint"))
+                || !floor.updatedAt().equals(result.getTimestamp("updated_at").toInstant())
+                || !floor.floorFingerprint().equals(
+                result.getString("floor_fingerprint"))) {
+            throw new IllegalStateException(
+                    "Stored suite-stability observation floor columns contradict its record");
+        }
+        return floor;
+    }
+
+    private TestSuiteStabilityObservationFloorRetirement storedRetirement(
+            ResultSet result,
+            int row) throws SQLException {
+        TestSuiteStabilityObservationFloorRetirement retirement = readRetirement(
+                result.getString("retirement_json"));
+        if (!TestSuiteStabilityObservationFloorRetirementIntegrity.valid(
+                objectMapper, retirement)
+                || !retirement.evidence().retirementId().equals(
+                result.getString("retirement_id"))
+                || !retirement.evidence().scopeFingerprint().equals(
+                result.getString("scope_fingerprint"))
+                || retirement.evidence().retirementGeneration()
+                != result.getLong("retirement_generation")
+                || !retirement.evidenceFingerprint().equals(
+                result.getString("evidence_fingerprint"))
+                || !retirement.attestationFingerprint().equals(
+                result.getString("attestation_fingerprint"))
+                || !retirement.retirementFingerprint().equals(
+                result.getString("retirement_fingerprint"))
+                || !retirement.evidence().retiredAt().equals(
+                result.getTimestamp("retired_at").toInstant())) {
+            throw new IllegalStateException(
+                    "Stored suite-stability observation retirement columns contradict its record");
+        }
+        return retirement;
+    }
+
+    private void requireStoredArchive(
+            TestSuiteStabilityObservationArchiveSegment expected) {
+        List<TestSuiteStabilityObservationArchiveSegment> values = jdbc.query("""
+                SELECT segment_id, scope_fingerprint, retirement_generation,
+                       from_sequence, through_sequence, segment_fingerprint,
+                       archived_at, segment_json
+                FROM rg_test_suite_stability_observation_archives
+                WHERE segment_id = ?
+                """, this::storedArchive, expected.segmentId());
+        if (values.size() != 1 || !values.getFirst().equals(expected)) {
+            throw new IllegalStateException(
+                    "Signed stability observation retirement has no exact local archive");
+        }
+    }
+
+    private TestSuiteStabilityObservationArchiveSegment storedArchive(
+            ResultSet result,
+            int row) throws SQLException {
+        TestSuiteStabilityObservationArchiveSegment archive = readArchive(
+                result.getString("segment_json"));
+        if (!archive.segmentFingerprint().equals(
+                TestSuiteStabilityObservationFloorRetirementIntegrity.archiveFingerprint(
+                        objectMapper, archive))
+                || !archive.segmentId().equals(result.getString("segment_id"))
+                || !archive.scopeFingerprint().equals(
+                result.getString("scope_fingerprint"))
+                || archive.retirementGeneration()
+                != result.getLong("retirement_generation")
+                || archive.fromSequence() != result.getLong("from_sequence")
+                || archive.throughSequence() != result.getLong("through_sequence")
+                || !archive.segmentFingerprint().equals(
+                result.getString("segment_fingerprint"))
+                || !archive.archivedAt().equals(
+                result.getTimestamp("archived_at").toInstant())) {
+            throw new IllegalStateException(
+                    "Stored stability observation archive columns contradict its segment");
+        }
+        return archive;
+    }
+
+    private String writeFloor(TestSuiteStabilityObservationLedgerFloor floor) {
+        try {
+            return objectMapper.writeValueAsString(floor);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot serialize suite-stability observation floor", failure);
+        }
+    }
+
+    private TestSuiteStabilityObservationLedgerFloor readFloor(String value) {
+        try {
+            return objectMapper.readValue(
+                    value, TestSuiteStabilityObservationLedgerFloor.class);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot deserialize suite-stability observation floor", failure);
+        }
+    }
+
+    private String writeArchive(TestSuiteStabilityObservationArchiveSegment archive) {
+        try {
+            return objectMapper.writeValueAsString(archive);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot serialize suite-stability observation archive", failure);
+        }
+    }
+
+    private TestSuiteStabilityObservationArchiveSegment readArchive(String value) {
+        try {
+            return objectMapper.readValue(
+                    value, TestSuiteStabilityObservationArchiveSegment.class);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot deserialize suite-stability observation archive", failure);
+        }
+    }
+
+    private String writeRetirement(TestSuiteStabilityObservationFloorRetirement retirement) {
+        try {
+            return objectMapper.writeValueAsString(retirement);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot serialize suite-stability observation retirement", failure);
+        }
+    }
+
+    private TestSuiteStabilityObservationFloorRetirement readRetirement(String value) {
+        try {
+            return objectMapper.readValue(
+                    value, TestSuiteStabilityObservationFloorRetirement.class);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot deserialize suite-stability observation retirement", failure);
+        }
+    }
+
     private String writeStop(TestSuiteStabilityExecutionStop stop) {
         try {
             return objectMapper.writeValueAsString(stop);
@@ -1932,6 +2784,18 @@ public final class DatabaseTestSuiteStabilityRunRepository
         return new DataSourceTransactionManager(jdbc.getDataSource());
     }
 
+    private static String zeroFingerprint() {
+        return "sha256:" + "0".repeat(64);
+    }
+
+    private static String zeroRetirementId() {
+        return "stability-observation-retirement-" + "0".repeat(64);
+    }
+
+    private static String normalized(String value) {
+        return value == null ? "" : value.trim();
+    }
+
     private record ObservationScopeIdentity(
             String tenantId,
             String environmentId,
@@ -1942,6 +2806,12 @@ public final class DatabaseTestSuiteStabilityRunRepository
             String tenantId,
             String environmentId,
             TestSuiteStabilityObservationLedgerHead head) {
+    }
+
+    private record StoredObservationFloor(
+            String tenantId,
+            String environmentId,
+            TestSuiteStabilityObservationLedgerFloor floor) {
     }
 
     private record StoredObservationCoordinate(

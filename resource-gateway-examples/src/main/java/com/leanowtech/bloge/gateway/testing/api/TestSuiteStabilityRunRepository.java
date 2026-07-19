@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationFloorRetirementEvidence;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -219,5 +221,77 @@ public interface TestSuiteStabilityRunRepository {
             int limit) {
         throw new UnsupportedOperationException(
                 "Stability observation range snapshots are unavailable in this repository");
+    }
+
+    /**
+     * Resolves the exact first retained compact-observation coordinate and retirement chain tip.
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param suiteRef exact immutable suite revision
+     * @return current durable floor, if the ledger exists
+     */
+    default Optional<TestSuiteStabilityObservationLedgerFloor> observationLedgerFloor(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef) {
+        return Optional.empty();
+    }
+
+    /**
+     * Prepares a bounded exact floor-retirement intent under the exact-suite ledger lock.
+     *
+     * <p>The returned evidence is not authority to delete. A caller must sign and immediately verify
+     * it, then pass the complete signed retirement to {@link #commitObservationFloorRetirement}.
+     * The commit rechecks the exact floor, head, and active rows before any mutation.</p>
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param suiteRef exact immutable suite revision
+     * @param cutoffExclusive exclusive database append-time retention boundary
+     * @param minimumRetainedEntries minimum active suffix that must remain
+     * @param maximumRetiredEntries maximum prefix entries archived by this transaction
+     * @param retentionPolicyFingerprint immutable external policy identity
+     * @return exact candidate evidence, or empty when no prefix is eligible
+     */
+    default Optional<TestSuiteStabilityObservationFloorRetirementEvidence>
+            planObservationFloorRetirement(
+                    String tenantId,
+                    String environmentId,
+                    TestSuiteExecutionRequest.SuiteRef suiteRef,
+                    Instant cutoffExclusive,
+                    int minimumRetainedEntries,
+                    int maximumRetiredEntries,
+                    String retentionPolicyFingerprint) {
+        throw new UnsupportedOperationException(
+                "Stability observation floor retirement is unavailable in this repository");
+    }
+
+    /**
+     * Atomically archives an exact prefix, records its signed retirement, advances the floor, and
+     * removes only the archived active rows.
+     *
+     * <p>This is an internal trusted persistence boundary. The caller must verify the detached
+     * signature immediately before invocation; the repository rechecks canonical material and
+     * current database state but does not own external trust-key resolution.</p>
+     *
+     * @param retirement complete independently verifiable retirement
+     * @return committed successor floor; exact replay returns the same value
+     */
+    default TestSuiteStabilityObservationLedgerFloor commitObservationFloorRetirement(
+            TestSuiteStabilityObservationFloorRetirement retirement) {
+        throw new UnsupportedOperationException(
+                "Stability observation floor retirement is unavailable in this repository");
+    }
+
+    /**
+     * Resolves one immutable signed floor-retirement record.
+     *
+     * @param retirementId deterministic retirement identity
+     * @return exact committed record, if present
+     */
+    default Optional<TestSuiteStabilityObservationFloorRetirement> findObservationFloorRetirement(
+            String retirementId) {
+        return Optional.empty();
     }
 }
