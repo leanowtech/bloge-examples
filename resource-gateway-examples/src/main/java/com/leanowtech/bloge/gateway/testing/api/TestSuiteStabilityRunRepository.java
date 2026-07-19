@@ -133,4 +133,29 @@ public interface TestSuiteStabilityRunRepository {
      */
     Optional<TestSuiteStabilityRunRecord> findByClientRequestId(
             String tenantId, String environmentId, String clientRequestId);
+
+    /**
+     * Resolves one bounded chronological exact-suite terminal history window.
+     *
+     * <p>The result distinguishes expired matching rows from query truncation so callers cannot
+     * mistake a retained subset for a complete longitudinal sample.</p>
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param suiteRef exact immutable suite revision
+     * @param fromInclusive inclusive persistence-time lower boundary
+     * @param toExclusive exclusive persistence-time upper boundary
+     * @param maximumRuns hard retained-source budget
+     * @return persistence-authoritative bounded history facts
+     */
+    default TestSuiteStabilityHistoryWindow history(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            Instant fromInclusive,
+            Instant toExclusive,
+            int maximumRuns) {
+        throw new UnsupportedOperationException(
+                "Stability history windows are unavailable in this repository");
+    }
 }

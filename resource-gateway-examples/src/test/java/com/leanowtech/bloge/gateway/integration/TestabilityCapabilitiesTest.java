@@ -16,6 +16,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestMutationSuiteExecutionReques
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityTrendAnalysisRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityTrendAnalysisResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
@@ -67,6 +69,8 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import org.junit.jupiter.api.Test;
 
@@ -367,6 +371,10 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("baselineConditionalSuiteStabilityRateBound", false)
                 .containsEntry("nonZeroSuiteStabilityRateInterval", false)
                 .containsEntry("anytimeValidSuiteStabilityEProcess", false)
+                .containsEntry("signedRetainedSuiteStabilityTrend", false)
+                .containsEntry("crossRetentionSuiteStabilityTrend", false)
+                .containsEntry("suiteStabilityCommonCauseConfirmation", false)
+                .containsEntry("automaticSuiteQuarantineWorkflow", false)
                 .containsEntry("sequentialSuiteStabilityAlphaSpending", false)
                 .containsEntry("crossReplicaSuiteStabilityExecutionLease", false)
                 .containsEntry("durableSuiteStabilityParentProgress", false);
@@ -378,7 +386,9 @@ class TestabilityCapabilitiesTest {
                 "testSuiteExecutionRequest", "testMutationSuiteExecutionRequest",
                 "testSuiteStabilityExecutionRequest", "testSuiteStabilityEvidence",
                 "testSuiteStabilityAttestation", "testSuiteStabilityExecutionResponse",
-                "testSuiteStabilityProgress",
+                "testSuiteStabilityProgress", "testSuiteStabilityTrendAnalysisRequest",
+                "testSuiteStabilityTrendEvidence", "testSuiteStabilityTrendAttestation",
+                "testSuiteStabilityTrendAnalysisResponse",
                 "testSuiteExecutionResponse", "testSuiteRunEvidence",
                 "testSuiteRunAttestation", "testSuiteEvidenceBundle", "testSuiteRunReconciliation",
                 "semanticCorrectnessWorkbookBundle",
@@ -494,6 +504,10 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("exactBinomialSuiteStabilityConfidence", false)
                 .containsEntry("baselineConditionalSuiteStabilityRateBound", false)
                 .containsEntry("nonZeroSuiteStabilityRateInterval", false)
+                .containsEntry("signedRetainedSuiteStabilityTrend", false)
+                .containsEntry("crossRetentionSuiteStabilityTrend", false)
+                .containsEntry("suiteStabilityCommonCauseConfirmation", false)
+                .containsEntry("automaticSuiteQuarantineWorkflow", false)
                 .containsEntry("sequentialSuiteStabilityAlphaSpending", false)
                 .containsEntry("crossReplicaSuiteStabilityExecutionLease", false)
                 .containsEntry("durableSuiteStabilityParentProgress", false)
@@ -540,6 +554,14 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.supportedObjects().get("testSuiteStabilityProgress"))
                 .containsExactly(TestSuiteStabilityProgressResponse.SCHEMA_VERSION_V1,
                         TestSuiteStabilityProgressResponse.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuiteStabilityTrendAnalysisRequest"))
+                .containsExactly(TestSuiteStabilityTrendAnalysisRequest.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuiteStabilityTrendEvidence"))
+                .containsExactly(TestSuiteStabilityTrendEvidence.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuiteStabilityTrendAttestation"))
+                .containsExactly(TestSuiteStabilityTrendAttestation.SCHEMA_VERSION);
+        assertThat(enabled.supportedObjects().get("testSuiteStabilityTrendAnalysisResponse"))
+                .containsExactly(TestSuiteStabilityTrendAnalysisResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterializationRequest"))
                 .containsExactly(TestBoundarySuiteMaterializationRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testBoundarySuiteMaterialization"))
@@ -681,6 +703,9 @@ class TestabilityCapabilitiesTest {
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
                 && endpoint.path().equals(
                 "/api/testing/suites/{suiteId}/stability-executions"));
+        assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("POST")
+                && endpoint.path().equals(
+                "/api/testing/suites/{suiteId}/stability-trend-analyses"));
         assertThat(enabled.endpoints()).anyMatch(endpoint -> endpoint.method().equals("GET")
                 && endpoint.path().equals(
                 "/api/testing/stability-executions/{stabilityRunId}"));
@@ -780,6 +805,10 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("baselineConditionalSuiteStabilityRateBound", true)
                 .containsEntry("nonZeroSuiteStabilityRateInterval", true)
                 .containsEntry("anytimeValidSuiteStabilityEProcess", true)
+                .containsEntry("signedRetainedSuiteStabilityTrend", true)
+                .containsEntry("crossRetentionSuiteStabilityTrend", false)
+                .containsEntry("suiteStabilityCommonCauseConfirmation", false)
+                .containsEntry("automaticSuiteQuarantineWorkflow", false)
                 .containsEntry("sequentialSuiteStabilityAlphaSpending", false)
                 .containsEntry("durableSuiteStabilityParentProgress", true);
     }

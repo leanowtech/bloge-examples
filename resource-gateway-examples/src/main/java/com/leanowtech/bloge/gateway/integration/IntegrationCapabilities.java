@@ -367,6 +367,18 @@ public record IntegrationCapabilities(
                             .SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressResponse
                             .SCHEMA_VERSION));
+            objects.put("testSuiteStabilityTrendAnalysisRequest", List.of(
+                    com.leanowtech.bloge.gateway.testing.api
+                            .TestSuiteStabilityTrendAnalysisRequest.SCHEMA_VERSION));
+            objects.put("testSuiteStabilityTrendEvidence", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain
+                            .TestSuiteStabilityTrendEvidence.SCHEMA_VERSION));
+            objects.put("testSuiteStabilityTrendAttestation", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain
+                            .TestSuiteStabilityTrendAttestation.SCHEMA_VERSION));
+            objects.put("testSuiteStabilityTrendAnalysisResponse", List.of(
+                    com.leanowtech.bloge.gateway.testing.api
+                            .TestSuiteStabilityTrendAnalysisResponse.SCHEMA_VERSION));
             objects.put("testSuiteStabilityJobSubmitRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmitRequest
                             .SCHEMA_VERSION));
@@ -641,6 +653,11 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled && signer.available());
         features.put("anytimeValidSuiteStabilityEProcess",
                 testExecutionEndpointEnabled && signer.available());
+        features.put("signedRetainedSuiteStabilityTrend",
+                testExecutionEndpointEnabled && signer.available());
+        features.put("crossRetentionSuiteStabilityTrend", false);
+        features.put("suiteStabilityCommonCauseConfirmation", false);
+        features.put("automaticSuiteQuarantineWorkflow", false);
         features.put("sequentialSuiteStabilityAlphaSpending", false);
         features.put("crossReplicaSuiteStabilityExecutionLease",
                 testExecutionEndpointEnabled && signer.available());
@@ -956,6 +973,8 @@ public record IntegrationCapabilities(
                     "/api/testing/suites/{suiteId}/mutation-executions"));
             endpoints.add(new Endpoint("POST",
                     "/api/testing/suites/{suiteId}/stability-executions"));
+            endpoints.add(new Endpoint("POST",
+                    "/api/testing/suites/{suiteId}/stability-trend-analyses"));
             endpoints.add(new Endpoint("GET",
                     "/api/testing/stability-executions/{stabilityRunId}"));
             endpoints.add(new Endpoint("GET",

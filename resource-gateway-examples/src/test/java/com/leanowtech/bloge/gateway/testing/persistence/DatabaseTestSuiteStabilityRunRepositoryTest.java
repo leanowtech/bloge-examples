@@ -2,6 +2,9 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
+import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityTrendProtocolFixtures;
+import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityTrendProtocolFixtures.CaseMode;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionProgress;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
@@ -230,6 +233,60 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                             .isEqualTo(TestSuiteStabilityEvidence.StatisticalStopReason
                                     .E_VALUE_THRESHOLD_REACHED);
                 });
+    }
+
+    @Test
+    void exactSuiteHistoryIsChronologicalScopeBoundAndFingerprintLocked() {
+        Instant now = Instant.now();
+        TestSuiteStabilityRunRecord first = trendRecord(
+                '1', now.minusSeconds(300), now.plusSeconds(3_600));
+        TestSuiteStabilityRunRecord second = trendRecord(
+                '2', now.minusSeconds(200), now.plusSeconds(3_600));
+        completeTrend(first);
+        completeTrend(second);
+
+        var history = repository.history("tenant-a", "test",
+                TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                now.minusSeconds(600), now, 10);
+
+        assertThat(history.complete()).isTrue();
+        assertThat(history.records()).extracting(TestSuiteStabilityRunRecord::stabilityRunId)
+                .containsExactly(first.stabilityRunId(), second.stabilityRunId());
+        assertThat(repository.history("tenant-b", "test",
+                TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                now.minusSeconds(600), now, 10).records()).isEmpty();
+        TestSuiteExecutionRequest.SuiteRef forgedRef = new TestSuiteExecutionRequest.SuiteRef(
+                TestSuiteStabilityProtocolFixtures.SUITE_REF.suiteId(),
+                TestSuiteStabilityProtocolFixtures.SUITE_REF.revision(),
+                TestSuiteStabilityProtocolFixtures.fingerprint('9'));
+        assertThatThrownBy(() -> repository.history("tenant-a", "test", forgedRef,
+                now.minusSeconds(600), now, 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("indexed projection");
+    }
+
+    @Test
+    void exactSuiteHistoryMakesRetentionLossAndBudgetTruncationExplicit() {
+        Instant now = Instant.now();
+        TestSuiteStabilityRunRecord expired = trendRecord(
+                '1', now.minusSeconds(300), now.minusSeconds(100));
+        TestSuiteStabilityRunRecord retained = trendRecord(
+                '2', now.minusSeconds(200), now.plusSeconds(3_600));
+        TestSuiteStabilityRunRecord overflow = trendRecord(
+                '3', now.minusSeconds(100), now.plusSeconds(3_600));
+        completeTrend(expired);
+        completeTrend(retained);
+        completeTrend(overflow);
+
+        var history = repository.history("tenant-a", "test",
+                TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                now.minusSeconds(600), now, 2);
+
+        assertThat(history.complete()).isFalse();
+        assertThat(history.expiredMatchingRuns()).isEqualTo(1);
+        assertThat(history.truncated()).isTrue();
+        assertThat(history.records()).extracting(TestSuiteStabilityRunRecord::stabilityRunId)
+                .containsExactly(retained.stabilityRunId(), overflow.stabilityRunId());
     }
 
     @Test
@@ -555,5 +612,20 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 REQUEST_FINGERPRINT, tenantId, "org-a", "project-a", environmentId,
                 "runner", "INTERNAL", seal.attestation().evidenceFingerprint(), evidence,
                 seal.attestation(), createdAt, expiresAt);
+    }
+
+    private TestSuiteStabilityRunRecord trendRecord(
+            char identity,
+            Instant createdAt,
+            Instant expiresAt) {
+        return TestSuiteStabilityTrendProtocolFixtures.record(
+                mapper, attestations, identity, createdAt, expiresAt,
+                TestSuiteStabilityProtocolFixtures.PLAN_FINGERPRINT,
+                CaseMode.STABLE, CaseMode.STABLE, '1', '2');
+    }
+
+    private void completeTrend(TestSuiteStabilityRunRecord record) {
+        repository.complete(record, checkpointed(record, acquired(record,
+                "owner-" + record.stabilityRunId().substring(record.stabilityRunId().length() - 1))));
     }
 }

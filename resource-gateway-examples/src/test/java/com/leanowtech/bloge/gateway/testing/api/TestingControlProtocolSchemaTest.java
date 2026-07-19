@@ -19,6 +19,8 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV4;
@@ -115,6 +117,18 @@ class TestingControlProtocolSchemaTest {
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityProgressResponse.SCHEMA_VERSION_V1,
                         TestSuiteStabilityProgressResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityTrendAnalysisRequest/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityTrendAnalysisRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityTrendEvidence/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityTrendEvidence.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityTrendAttestation/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityTrendAttestation.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityTrendAnalysisResponse/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityTrendAnalysisResponse.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityJobSubmitRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(TestSuiteStabilityJobSubmitRequest.SCHEMA_VERSION);
@@ -1138,6 +1152,32 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.at(
                 "/testSuiteStabilityJobSubmitResponse/properties/job/$ref").asText())
                 .isEqualTo("#/$defs/testSuiteStabilityJobView");
+    }
+
+    @Test
+    void stabilityTrendSchemaIsStrictBoundedSignedAndExplicitlyNonCausal() throws Exception {
+        JsonNode definitions = new ObjectMapper().readTree(Files.readString(Path.of("..", "docs",
+                "schemas", "resource-gateway-testing",
+                "testing-control-plane-v1.schema.json"))).path("$defs");
+
+        JsonNode request = definitions.path("testSuiteStabilityTrendAnalysisRequest");
+        JsonNode evidence = definitions.path("testSuiteStabilityTrendEvidence");
+        JsonNode signal = definitions.path("testSuiteStabilityCorrelationSignal");
+        JsonNode response = definitions.path("testSuiteStabilityTrendAnalysisResponse");
+        assertThat(request.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(request.at("/properties/maximumRuns/maximum").asInt()).isEqualTo(100);
+        assertThat(evidence.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(evidence.at("/properties/sources/maxItems").asInt()).isEqualTo(100);
+        assertThat(evidence.at("/properties/causalityStatus/const").asText())
+                .isEqualTo("NOT_PROVEN");
+        assertThat(signal.at("/properties/type/enum")).extracting(JsonNode::asText)
+                .containsExactly("MULTI_CASE_FLAKINESS", "COINCIDENT_OUTCOME_SHIFT");
+        assertThat(response.at(
+                "/properties/attestation/allOf/1/properties/signatureStatus/const").asText())
+                .isEqualTo("VERIFIED");
+        assertThat(java.util.List.of("tenantId", "environmentId", "actorId", "payload",
+                        "input", "output", "fixtureValue"))
+                .noneMatch(evidence.path("properties")::has);
     }
 
     @Test

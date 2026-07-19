@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionLease
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionProgress;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStopRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityHistoryWindow;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressCheckpoint;
@@ -14,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressSnapsh
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRepository;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityTrendAnalysisRequest;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -730,10 +733,87 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 """, tenantId, environmentId, clientRequestId);
     }
 
+    @Override
+    public TestSuiteStabilityHistoryWindow history(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            Instant fromInclusive,
+            Instant toExclusive,
+            int maximumRuns) {
+        Objects.requireNonNull(suiteRef, "suiteRef");
+        if (fromInclusive == null || toExclusive == null
+                || !fromInclusive.isBefore(toExclusive)
+                || maximumRuns < TestSuiteStabilityTrendAnalysisRequest.MINIMUM_RUNS
+                || maximumRuns > TestSuiteStabilityTrendAnalysisRequest.MAXIMUM_RUNS) {
+            throw new IllegalArgumentException("Stability history query is outside bounds");
+        }
+        Instant observedAt = currentTime();
+        Long totalMatchingRuns = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_suite_stability_records
+                WHERE tenant_id = ? AND environment_id = ?
+                  AND suite_id = ? AND suite_revision = ?
+                  AND created_at >= ? AND created_at < ?
+                """, Long.class,
+                tenantId, environmentId, suiteRef.suiteId(), suiteRef.revision(),
+                Timestamp.from(fromInclusive), Timestamp.from(toExclusive));
+        Long expiredMatchingRuns = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_suite_stability_records
+                WHERE tenant_id = ? AND environment_id = ?
+                  AND suite_id = ? AND suite_revision = ?
+                  AND created_at >= ? AND created_at < ?
+                  AND expires_at <= ?
+                """, Long.class,
+                tenantId, environmentId, suiteRef.suiteId(), suiteRef.revision(),
+                Timestamp.from(fromInclusive), Timestamp.from(toExclusive),
+                Timestamp.from(observedAt));
+        if (totalMatchingRuns == null || expiredMatchingRuns == null) {
+            throw new IllegalStateException("Stability history count query returned no result");
+        }
+        boolean truncated = totalMatchingRuns > maximumRuns;
+        List<TestSuiteStabilityRunRecord> records = jdbc.query("""
+                SELECT record_json
+                FROM rg_test_suite_stability_records
+                WHERE tenant_id = ? AND environment_id = ?
+                  AND suite_id = ? AND suite_revision = ?
+                  AND created_at >= ? AND created_at < ?
+                  AND expires_at > ?
+                ORDER BY created_at, stability_run_id
+                FETCH FIRST ? ROWS ONLY
+                """, (rs, row) -> read(rs.getString("record_json")),
+                tenantId, environmentId, suiteRef.suiteId(), suiteRef.revision(),
+                Timestamp.from(fromInclusive), Timestamp.from(toExclusive),
+                Timestamp.from(observedAt), maximumRuns).stream()
+                .peek(value -> requireHistoryRecord(value, tenantId, environmentId, suiteRef,
+                        fromInclusive, toExclusive))
+                .toList();
+        return new TestSuiteStabilityHistoryWindow(records,
+                Math.toIntExact(expiredMatchingRuns), truncated, observedAt);
+    }
+
     private Optional<TestSuiteStabilityRunRecord> query(String sql, Object... arguments) {
         List<TestSuiteStabilityRunRecord> records = jdbc.query(sql,
                 (rs, row) -> read(rs.getString("record_json")), arguments);
         return records.stream().findFirst();
+    }
+
+    private static void requireHistoryRecord(
+            TestSuiteStabilityRunRecord record,
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            Instant fromInclusive,
+            Instant toExclusive) {
+        if (!tenantId.equals(record.tenantId())
+                || !environmentId.equals(record.environmentId())
+                || !suiteRef.equals(record.evidence().suiteRef())
+                || record.createdAt().isBefore(fromInclusive)
+                || !record.createdAt().isBefore(toExclusive)) {
+            throw new IllegalStateException(
+                    "Stored stability history row contradicts its indexed projection");
+        }
     }
 
     private Optional<TestSuiteStabilityRunRecord> terminalByClientRequestId(

@@ -3311,6 +3311,170 @@
           ]}
       ]
     },
+    "testSuiteStabilityTrendAnalysisRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRef", "fromInclusive", "toExclusive",
+        "minimumRuns", "maximumRuns"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityTrendAnalysisRequest.v1"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "fromInclusive": {"type": "string", "format": "date-time"},
+        "toExclusive": {"type": "string", "format": "date-time"},
+        "minimumRuns": {"type": "integer", "minimum": 2, "maximum": 100},
+        "maximumRuns": {"type": "integer", "minimum": 2, "maximum": 100}
+      }
+    },
+    "testSuiteStabilityTrendCaseSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "status", "outcomeSetFingerprint",
+        "fixtureSetFingerprint", "planSetFingerprint"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "status": {"enum": ["STABLE_PASS", "CONSISTENT_FAILURE", "FLAKY", "INCONCLUSIVE"]},
+        "outcomeSetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "fixtureSetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "planSetFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteStabilityTrendRunObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stabilityRunId", "evidenceFingerprint", "attestationFingerprint",
+        "evidenceSchemaVersion", "targetFingerprint", "status", "promotionStatus",
+        "quarantineStatus", "regimeFingerprint", "cases", "startedAt", "completedAt",
+        "createdAt"],
+      "properties": {
+        "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "attestationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidenceSchemaVersion": {"enum": ["bloge.testSuiteStabilityEvidence.v1",
+          "bloge.testSuiteStabilityEvidence.v2", "bloge.testSuiteStabilityEvidence.v3",
+          "bloge.testSuiteStabilityEvidence.v4", "bloge.testSuiteStabilityEvidence.v5"]},
+        "targetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "status": {"enum": ["STABLE", "FLAKY", "CONSISTENT_FAILURE", "INCONCLUSIVE"]},
+        "promotionStatus": {"enum": ["ELIGIBLE", "BLOCKED"]},
+        "quarantineStatus": {"enum": ["NOT_REQUIRED", "REQUIRED", "UNDETERMINED"]},
+        "statisticalStatus": {"enum": ["SATISFIED", "REJECTED", "INCONCLUSIVE"]},
+        "regimeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "cases": {"type": "array", "minItems": 1, "maxItems": 1000,
+          "items": {"$ref": "#/$defs/testSuiteStabilityTrendCaseSnapshot"}},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "completedAt": {"type": "string", "format": "date-time"},
+        "createdAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "testSuiteStabilityCaseTrend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "status", "sourceRunIds", "changedAtRunIds", "regimeCount"],
+      "properties": {
+        "caseId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "status": {"enum": ["STABLE_PASS", "CONSISTENT_FAILURE_OBSERVED",
+          "INSTABILITY_OBSERVED", "REGIME_DRIFT_OBSERVED", "INCONCLUSIVE"]},
+        "sourceRunIds": {"type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/stabilityRunId"}},
+        "changedAtRunIds": {"type": "array", "maxItems": 100,
+          "items": {"$ref": "#/$defs/stabilityRunId"}},
+        "regimeCount": {"type": "integer", "minimum": 1, "maximum": 100}
+      }
+    },
+    "testSuiteStabilityCorrelationSignal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "previousRunId", "currentRunId", "regimeFingerprint", "caseIds"],
+      "properties": {
+        "type": {"enum": ["MULTI_CASE_FLAKINESS", "COINCIDENT_OUTCOME_SHIFT"]},
+        "previousRunId": {"type": "string", "maxLength": 74},
+        "currentRunId": {"$ref": "#/$defs/stabilityRunId"},
+        "regimeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "caseIds": {"type": "array", "minItems": 2, "maxItems": 1000,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 255}}
+      }
+    },
+    "testSuiteStabilityTrendEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "trendAnalysisId", "requestFingerprint", "suiteRef",
+        "fromInclusive", "toExclusive", "minimumRuns", "maximumRuns", "observedRuns",
+        "expiredMatchingRuns", "completeWindow", "status", "sources", "caseTrends",
+        "correlationSignals", "causalityStatus", "diagnostics", "evaluatedAt"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityTrendEvidence.v1"},
+        "trendAnalysisId": {"type": "string", "pattern": "^stability-trend-[a-f0-9]{64}$"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "fromInclusive": {"type": "string", "format": "date-time"},
+        "toExclusive": {"type": "string", "format": "date-time"},
+        "minimumRuns": {"type": "integer", "minimum": 2, "maximum": 100},
+        "maximumRuns": {"type": "integer", "minimum": 2, "maximum": 100},
+        "observedRuns": {"type": "integer", "minimum": 0, "maximum": 100},
+        "expiredMatchingRuns": {"type": "integer", "minimum": 0},
+        "completeWindow": {"type": "boolean"},
+        "status": {"enum": ["STABLE_PASS", "CONSISTENT_FAILURE_OBSERVED",
+          "INSTABILITY_OBSERVED", "REGIME_DRIFT_OBSERVED", "INCONCLUSIVE"]},
+        "sources": {"type": "array", "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteStabilityTrendRunObservation"}},
+        "caseTrends": {"type": "array", "maxItems": 1000,
+          "items": {"$ref": "#/$defs/testSuiteStabilityCaseTrend"}},
+        "correlationSignals": {"type": "array", "maxItems": 1000,
+          "items": {"$ref": "#/$defs/testSuiteStabilityCorrelationSignal"}},
+        "causalityStatus": {"const": "NOT_PROVEN"},
+        "diagnostics": {"type": "array", "maxItems": 20, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$"}},
+        "evaluatedAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "testSuiteStabilityTrendSourceEvidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stabilityRunId", "evidenceFingerprint", "attestationFingerprint"],
+      "properties": {
+        "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "attestationFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteStabilityTrendAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "signatureStatus", "trendAnalysisId",
+        "requestFingerprint", "evidenceFingerprint", "sourceEvidenceRefs", "signedAt",
+        "keyId", "algorithm", "signature", "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityTrendAttestation.v1"},
+        "signatureStatus": {"enum": ["VERIFIED", "VERIFICATION_UNAVAILABLE"]},
+        "trendAnalysisId": {"type": "string", "pattern": "^stability-trend-[a-f0-9]{64}$"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sourceEvidenceRefs": {"type": "array", "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteStabilityTrendSourceEvidenceRef"}},
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "maxLength": 255},
+        "algorithm": {"type": "string", "maxLength": 64},
+        "signature": {"type": "string", "maxLength": 4096},
+        "independentlyVerifiable": {"type": "boolean"}
+      }
+    },
+    "testSuiteStabilityTrendAnalysisResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "trendAnalysisId", "evidenceFingerprint",
+        "evidence", "attestation"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityTrendAnalysisResponse.v1"},
+        "trendAnalysisId": {"type": "string", "pattern": "^stability-trend-[a-f0-9]{64}$"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidence": {"$ref": "#/$defs/testSuiteStabilityTrendEvidence"},
+        "attestation": {"allOf": [
+          {"$ref": "#/$defs/testSuiteStabilityTrendAttestation"},
+          {"properties": {"signatureStatus": {"const": "VERIFIED"},
+            "independentlyVerifiable": {"const": true}}}
+        ]}
+      }
+    },
     "testSuiteCaseResult": {
       "type": "object",
       "additionalProperties": false,

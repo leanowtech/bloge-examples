@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexM
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityTrendAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
@@ -1105,6 +1106,14 @@ public class TestRuntimeConfiguration {
                 evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
     }
 
+    /** Reuses the evidence signer in the distinct retained-window trend signature domain. */
+    @Bean
+    TestSuiteStabilityTrendAttestationService testSuiteStabilityTrendAttestationService(
+            ObjectMapper objectMapper, ObjectProvider<VisualEvidenceSigner> evidenceSigner) {
+        return new TestSuiteStabilityTrendAttestationService(objectMapper,
+                evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
+    }
+
     /** Captures exact sanitized outputs from signed run history into the isolated replay vault. */
     @Bean
     TestReplayPayloadService testReplayPayloadService(
@@ -1301,6 +1310,20 @@ public class TestRuntimeConfiguration {
         return new TestSuiteStabilityExecutionService(
                 suiteRegistry, suiteExecutions, childExecutions, repository, objectMapper,
                 attestations, leaseCoordinator,
+                Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
+    }
+
+    /** Assembles signed retained-window longitudinal analysis over exact suite revisions. */
+    @Bean
+    TestSuiteStabilityTrendAnalysisService testSuiteStabilityTrendAnalysisService(
+            TestSuiteRegistryService suiteRegistry,
+            TestSuiteStabilityRunRepository repository,
+            ObjectMapper objectMapper,
+            TestSuiteStabilityAttestationService sourceAttestations,
+            TestSuiteStabilityTrendAttestationService trendAttestations,
+            @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
+        return new TestSuiteStabilityTrendAnalysisService(
+                suiteRegistry, repository, objectMapper, sourceAttestations, trendAttestations,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
     }
 
