@@ -4,8 +4,9 @@
 strict public lifecycle Schema, default-disabled authorized pagination, independent lifecycle
 verification, and mandatory external-first archive-receipt admission are implemented and verified.
 Receipt-aware lifecycle v2 now provides public proof export and caller-policy verification. The
-production HTTPS WORM adapter, historical trust publication, orphan reconciliation, legal
-hold/erasure, backup purge, disaster-recovery continuity, and witnessed non-equivocation remain
+the strict multi-authority HTTPS adapter is implemented for test/staging, while certified
+production providers, historical trust publication, orphan reconciliation, legal hold/erasure,
+backup purge, disaster-recovery continuity, and witnessed non-equivocation remain
 unavailable.**
 
 ## 1. Strongest judgment
@@ -33,7 +34,7 @@ default-disabled lifecycle proof endpoint without weakening the range protocol's
 | Retirement intent | Retirement-specific Ed25519 signer | exact floor, head, archive, policy, generation, and database time are signed | external M-of-N authorization |
 | Atomic mutation | Local relational transaction | archive + retirement + floor/head CAS + active deletion commit together | cross-store distributed transaction |
 | Replay | Deterministic retirement id and exact stored record | identical retry returns the historical successor floor | externally durable consumer checkpoint |
-| Archive durability | External-first receipt protocol plus same-database bounded segment | no supported local commit can delete active rows without exact pre-verified compliance-retention receipts | production HTTPS WORM adapter, certified independent failure domains, and geographic durability |
+| Archive durability | External-first receipt protocol, strict test/staging HTTPS adapter, plus same-database bounded segment | no supported local commit can delete active rows without exact pre-verified compliance-retention receipts | certified production providers, independent accounts/failure domains, and geographic durability |
 | History consistency | Per-scope sequence, predecessor chain, signed retirement generations | local non-forking transition under one database authority | external witnessed non-equivocation and gossip |
 
 `TestSuiteStabilityObservationFloorRetirementService` is the trusted orchestration boundary. It
@@ -275,8 +276,8 @@ The public lifecycle v1/v2 contracts and independent verifiers close local disco
 proof portability. The
 advertised capability must remain false until the remaining mandatory gates are closed:
 
-1. implement and certify the strict HTTPS multi-authority WORM adapter, staging-required wiring,
-   health/readiness, key lifecycle, timeout/body/redirect controls, and idempotent orphan reconciliation;
+1. certify provider/account/region independence and historical trust publication for the
+   implemented strict HTTPS multi-authority adapter, then add idempotent orphan reconciliation;
 2. define legal hold precedence, hold release authorization, erasure proof, backup expiry, and purge
    evidence across replicas and disaster-recovery copies;
 3. anchor each retirement generation to externally witnessed non-equivocation checkpoints and prove
@@ -295,5 +296,6 @@ CAS state movement, conservative migration, and executable corruption proofs. Th
 physical deployment, lifecycle operations, and external non-equivocation, not proof portability or
 write-side protocol shape. Floor discovery, local lifecycle verification, and exact recorded
 receipt verification are independently verifiable through separate v1/v2 routes, but no production
-WORM adapter is wired. Resource Gateway may describe this as an external-first receipt-gated local
+WORM adapter is production-certified and wired. Resource Gateway may describe this as an
+external-first receipt-gated local
 retirement core with portable acknowledgement proof, not as industrial cross-retention continuity.

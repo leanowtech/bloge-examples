@@ -187,7 +187,8 @@ business payload, receipt signature bytes, or trust-key material.
    methods.
 4. Keep capability advertisement false and production wiring absent.
 5. Exercise v1 and v2 side by side; a v1 consumer sees no field or behavior change.
-6. Only after a certified production WORM adapter, historical archive trust publication, legal hold,
+6. Only after the test/staging HTTPS adapter is backed by certified production providers,
+   historical archive trust publication, legal hold,
    backup/DR continuity, and witnessed non-equivocation exist may product capability be reconsidered.
 
 There is no synthetic migration for legacy retirements. A v2 read crossing a retirement without an
@@ -237,8 +238,8 @@ forgery/rebinding even after every Gateway-local hash and outer signature has be
 Receipt-aware lifecycle v2 closes independent proof portability, not physical storage deployment.
 The remaining ordered gates are:
 
-1. strict HTTPS multi-authority WORM adapter with provider identity, idempotent immutable conflict,
-   read-after-write proof, bounded retries, circuit breaking, and historical key publication;
+1. certify the implemented strict HTTPS multi-authority adapter's provider identity, account/region
+   independence, and historical trust publication before production wiring;
 2. external orphan inventory and reconciliation with no early-delete authority;
 3. legal hold and governed erasure state machines across active, WORM, backup, and replica copies;
 4. backup purge evidence and disaster-recovery restore continuity drills;

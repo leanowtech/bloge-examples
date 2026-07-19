@@ -101,6 +101,19 @@ gateway:
       heartbeat-interval-seconds: ${RG_TEST_STABILITY_HEARTBEAT_SECONDS:5}
       lease-cleanup-interval-ms: ${RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS:15000}
       lease-cleanup-batch-size: ${RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE:1000}
+    stability-observation-lifecycle:
+      external-archive:
+        http:
+          enabled: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_HTTP_ENABLED:false}
+          trust-domain: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_TRUST_DOMAIN:}
+          archive-set-id: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_SET_ID:}
+          required-copies: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_REQUIRED_COPIES:0}
+          minimum-retention-days: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_MINIMUM_RETENTION_DAYS:0}
+          authority-keys-json: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_AUTHORITY_KEYS_JSON:[]}
+          endpoints-json: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_ENDPOINTS_JSON:[]}
+          request-timeout-ms: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_TIMEOUT_MS:3000}
+          maximum-receipt-lifetime-seconds: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECEIPT_LIFETIME_SECONDS:15}
+          allow-insecure-loopback: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_ALLOW_INSECURE_LOOPBACK:false}
     stability-jobs:
       api:
         retry-after-seconds: ${RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS:5}

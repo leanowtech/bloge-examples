@@ -1420,19 +1420,24 @@ class TestingControlProtocolSchemaTest {
                 "testSuiteStabilityObservationExternalArchiveRequest");
         JsonNode receipt = definitions.path(
                 "testSuiteStabilityObservationExternalArchiveReceipt");
+        JsonNode conflict = definitions.path(
+                "testSuiteStabilityObservationExternalArchiveConflictReceipt");
         JsonNode receiptSet = definitions.path(
                 "testSuiteStabilityObservationExternalArchiveReceiptSet");
-        assertThat(standalone.path("oneOf")).hasSize(3);
+        assertThat(standalone.path("oneOf")).hasSize(4);
         assertThat(standalone.at("/$defs/request/properties/retirement/$ref").asText())
                 .isEqualTo("testing-control-plane-v1.schema.json#/$defs/"
                         + "testSuiteStabilityObservationFloorRetirement");
         assertThat(request.path("additionalProperties").asBoolean()).isFalse();
         assertThat(receipt.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(conflict.path("additionalProperties").asBoolean()).isFalse();
         assertThat(receiptSet.path("additionalProperties").asBoolean()).isFalse();
         assertThat(request.at("/properties/schemaVersion/const").asText()).isEqualTo(
                 TestSuiteStabilityObservationExternalArchiveRequest.SCHEMA_VERSION);
         assertThat(receipt.at("/properties/schemaVersion/const").asText()).isEqualTo(
                 TestSuiteStabilityObservationExternalArchiveReceipt.SCHEMA_VERSION);
+        assertThat(conflict.at("/properties/schemaVersion/const").asText()).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveConflictReceipt.SCHEMA_VERSION);
         assertThat(receiptSet.at("/properties/schemaVersion/const").asText()).isEqualTo(
                 TestSuiteStabilityObservationExternalArchiveReceiptSet.SCHEMA_VERSION);
         assertThat(request.path("required")).extracting(JsonNode::asText)
@@ -1452,6 +1457,13 @@ class TestingControlProtocolSchemaTest {
                 .containsExactlyInAnyOrder(
                         "schemaVersion", "receiptSetId", "request", "requiredCopies",
                         "receipts", "confirmedAt", "receiptSetFingerprint");
+        assertThat(conflict.path("required")).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(
+                        "schemaVersion", "conflictFingerprint", "requestFingerprint",
+                        "trustDomain", "archiveSetId", "authorityId", "failureDomain",
+                        "keyId", "objectId", "expectedObjectCommitment",
+                        "observedObjectCommitment", "issuedAt", "expiresAt", "algorithm",
+                        "signature");
         assertThat(receipt.at("/properties/retentionMode/const").asText())
                 .isEqualTo("COMPLIANCE");
         assertThat(receipt.at("/properties/externallyDurable/const").asBoolean()).isTrue();
@@ -1463,6 +1475,7 @@ class TestingControlProtocolSchemaTest {
                         "input", "output", "fixtureValue", "endpoint", "credential"))
                 .noneMatch(request.path("properties")::has)
                 .noneMatch(receipt.path("properties")::has)
+                .noneMatch(conflict.path("properties")::has)
                 .noneMatch(receiptSet.path("properties")::has);
     }
 

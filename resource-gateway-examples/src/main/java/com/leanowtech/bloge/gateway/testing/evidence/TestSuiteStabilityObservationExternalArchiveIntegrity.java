@@ -40,6 +40,34 @@ public final class TestSuiteStabilityObservationExternalArchiveIntegrity {
     }
 
     /**
+     * Commits the exact externally stored object and requested immutable retention policy.
+     *
+     * <p>The commitment is used only to authenticate an immutable-object conflict. A provider can
+     * disclose this digest without returning the conflicting object or any business payload.</p>
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param retirement complete signed retirement
+     * @param retainUntil requested immutable retention deadline
+     * @return canonical external object commitment
+     */
+    public static String objectCommitment(
+            ObjectMapper objectMapper,
+            TestSuiteStabilityObservationFloorRetirement retirement,
+            Instant retainUntil) {
+        Objects.requireNonNull(objectMapper, "objectMapper");
+        Objects.requireNonNull(retirement, "retirement");
+        Objects.requireNonNull(retainUntil, "retainUntil");
+        return ProtocolFingerprint.of(objectMapper, new ObjectCommitment(
+                objectId(objectMapper, retirement),
+                retirement.evidence().retirementId(),
+                retirement.retirementFingerprint(),
+                retirement.evidence().archiveSegment().segmentId(),
+                retirement.evidence().archiveSegment().segmentFingerprint(),
+                retirement.evidence().retentionPolicyFingerprint(),
+                retainUntil));
+    }
+
+    /**
      * Derives the receipt-set id from the request and ordered external receipt identities.
      *
      * @param objectMapper canonical protocol mapper
@@ -162,6 +190,16 @@ public final class TestSuiteStabilityObservationExternalArchiveIntegrity {
             String segmentId,
             String segmentFingerprint,
             String retentionPolicyFingerprint) {
+    }
+
+    private record ObjectCommitment(
+            String objectId,
+            String retirementId,
+            String retirementFingerprint,
+            String segmentId,
+            String segmentFingerprint,
+            String retentionPolicyFingerprint,
+            Instant retainUntil) {
     }
 
     private record ReceiptRef(

@@ -69,6 +69,12 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationLedgerLifecycleArchiveController.class))
                     .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveAuthority.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveHealth.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationFloorRetirementService.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobService.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -401,6 +407,49 @@ class TestRuntimeProfileIsolationTest {
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationLedgerLifecycleArchiveController.class))
                     .isEmpty();
+        }
+    }
+
+    @Test
+    void externalObservationArchiveRequiresExplicitNonProductionHttpsConfiguration()
+            throws Exception {
+        Map<String, Object> enabled = externalObservationArchiveProperties();
+        try (AnnotationConfigApplicationContext context = context(enabled, 0, "test")) {
+            assertThat(context.getBeansOfType(
+                    HttpTestSuiteStabilityObservationExternalArchiveAuthority.class))
+                    .hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveHealth.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationFloorRetirementService.class)).hasSize(1);
+        }
+        try (AnnotationConfigApplicationContext context = context(
+                enabled, 0, "production", "test")) {
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveAuthority.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveHealth.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationFloorRetirementService.class)).isEmpty();
+        }
+        try (AnnotationConfigApplicationContext context = context(
+                externalObservationArchiveStagingProperties(), 0, "staging")) {
+            var descriptor = context.getBean(
+                    TestSuiteStabilityObservationExternalArchiveAuthority.class).descriptor();
+            assertThat(descriptor.available()).isTrue();
+            assertThat(descriptor.requiredCopies()).isEqualTo(2);
+            assertThat(descriptor.independentFailureDomainCount()).isEqualTo(2);
+        }
+
+        AnnotationConfigApplicationContext staging = unrefreshedContext(
+                enabled, 0, "staging");
+        try {
+            assertThatThrownBy(staging::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("requires HTTPS and two copies");
+        } finally {
+            staging.close();
         }
     }
 
@@ -914,6 +963,74 @@ class TestRuntimeProfileIsolationTest {
         properties.put("gateway.testing.stability-jobs.authority.http.authority-keys-json",
                 "[{\"keyId\":\"iam-key-1\",\"algorithm\":\"Ed25519\","
                         + "\"publicKeyBase64\":\"" + publicKey + "\"}]");
+        return properties;
+    }
+
+    private static Map<String, Object> externalObservationArchiveProperties()
+            throws Exception {
+        KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        String publicKey = Base64.getEncoder().encodeToString(
+                keyPair.getPublic().getEncoded());
+        Map<String, Object> properties = new LinkedHashMap<>();
+        String prefix =
+                "gateway.testing.stability-observation-lifecycle.external-archive.http.";
+        properties.put(prefix + "enabled", "true");
+        properties.put(prefix + "trust-domain", "archive.example");
+        properties.put(prefix + "archive-set-id", "archive-set-a");
+        properties.put(prefix + "required-copies", "1");
+        properties.put(prefix + "minimum-retention-days", "1");
+        properties.put(prefix + "request-timeout-ms", "1000");
+        properties.put(prefix + "maximum-receipt-lifetime-seconds", "10");
+        properties.put(prefix + "allow-insecure-loopback", "true");
+        properties.put(prefix + "authority-keys-json",
+                "[{\"authorityId\":\"archive-a\",\"keyId\":\"archive-key-a\","
+                        + "\"publicKeyBase64\":\"" + publicKey + "\","
+                        + "\"notBefore\":\"2020-01-01T00:00:00Z\","
+                        + "\"expiresAt\":\"2099-01-01T00:00:00Z\","
+                        + "\"enabled\":true,\"revoked\":false}]");
+        properties.put(prefix + "endpoints-json",
+                "[{\"authorityId\":\"archive-a\","
+                        + "\"failureDomain\":\"region-a\","
+                        + "\"uri\":\"http://127.0.0.1:18081/archive\"}]");
+        return properties;
+    }
+
+    private static Map<String, Object> externalObservationArchiveStagingProperties()
+            throws Exception {
+        KeyPair first = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        KeyPair second = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        String firstPublic = Base64.getEncoder().encodeToString(first.getPublic().getEncoded());
+        String secondPublic = Base64.getEncoder().encodeToString(
+                second.getPublic().getEncoded());
+        Map<String, Object> properties = new LinkedHashMap<>();
+        String prefix =
+                "gateway.testing.stability-observation-lifecycle.external-archive.http.";
+        properties.put(prefix + "enabled", "true");
+        properties.put(prefix + "trust-domain", "archive.example");
+        properties.put(prefix + "archive-set-id", "archive-set-a");
+        properties.put(prefix + "required-copies", "2");
+        properties.put(prefix + "minimum-retention-days", "365");
+        properties.put(prefix + "request-timeout-ms", "1000");
+        properties.put(prefix + "maximum-receipt-lifetime-seconds", "10");
+        properties.put(prefix + "allow-insecure-loopback", "false");
+        properties.put(prefix + "authority-keys-json",
+                "[{\"authorityId\":\"archive-a\",\"keyId\":\"key-a\","
+                        + "\"publicKeyBase64\":\"" + firstPublic + "\","
+                        + "\"notBefore\":\"2020-01-01T00:00:00Z\","
+                        + "\"expiresAt\":\"2099-01-01T00:00:00Z\","
+                        + "\"enabled\":true,\"revoked\":false},"
+                        + "{\"authorityId\":\"archive-b\",\"keyId\":\"key-b\","
+                        + "\"publicKeyBase64\":\"" + secondPublic + "\","
+                        + "\"notBefore\":\"2020-01-01T00:00:00Z\","
+                        + "\"expiresAt\":\"2099-01-01T00:00:00Z\","
+                        + "\"enabled\":true,\"revoked\":false}]");
+        properties.put(prefix + "endpoints-json",
+                "[{\"authorityId\":\"archive-a\","
+                        + "\"failureDomain\":\"region-a\","
+                        + "\"uri\":\"https://archive-a.example/v1/objects\"},"
+                        + "{\"authorityId\":\"archive-b\","
+                        + "\"failureDomain\":\"region-b\","
+                        + "\"uri\":\"https://archive-b.example/v1/objects\"}]");
         return properties;
     }
 

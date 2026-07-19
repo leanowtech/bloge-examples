@@ -6419,6 +6419,66 @@
         }
       }
     },
+    "testSuiteStabilityObservationExternalArchiveConflictReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "conflictFingerprint", "requestFingerprint", "trustDomain",
+        "archiveSetId", "authorityId", "failureDomain", "keyId", "objectId",
+        "expectedObjectCommitment", "observedObjectCommitment", "issuedAt",
+        "expiresAt", "algorithm", "signature"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationExternalArchiveConflictReceipt.v1"
+        },
+        "conflictFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "trustDomain": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "archiveSetId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "authorityId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "failureDomain": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+        },
+        "objectId": {
+          "type": "string",
+          "pattern": "^stability-observation-worm-[a-f0-9]{64}$"
+        },
+        "expectedObjectCommitment": {"$ref": "#/$defs/fingerprint"},
+        "observedObjectCommitment": {"$ref": "#/$defs/fingerprint"},
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "algorithm": {"const": "Ed25519"},
+        "signature": {
+          "type": "string",
+          "minLength": 88,
+          "maxLength": 88,
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    },
     "testSuiteStabilityObservationExternalArchiveReceiptSet": {
       "type": "object",
       "additionalProperties": false,

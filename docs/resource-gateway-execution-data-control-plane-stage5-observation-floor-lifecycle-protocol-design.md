@@ -5,8 +5,9 @@ authorized default-disabled HTTP adapter, database-snapshot pagination, server-s
 page verification, an independent test-kit verifier, and write-side external archive-receipt
 admission are implemented. Lifecycle v1 intentionally remains local-chain-only; the dedicated v2
 endpoint now exports exact receipt sets and has an independent caller-policy verifier. The
-advertised `crossRetentionSuiteStabilityTrend` capability remains false because a production WORM
-adapter, historical archive trust publication, orphan reconciliation, legal hold and erasure,
+advertised `crossRetentionSuiteStabilityTrend` capability remains false because the implemented
+strict HTTPS adapter is still test/staging-only and lacks certified production providers,
+historical archive trust publication, orphan reconciliation, legal hold and erasure,
 backup purge, disaster-recovery continuity, and witnessed non-equivocation are not closed.**
 
 ## 1. Strongest judgment
@@ -260,8 +261,8 @@ Receipt-aware v2 specifics and its separate 42-test server gate are documented i
 This increment closes public local floor discovery and independent local-chain verification. It does
 not close the following industrial requirements:
 
-1. strict HTTPS multi-authority WORM adapter, certified failure-domain independence, and staging
-   required wiring;
+1. promote the implemented strict HTTPS multi-authority adapter only after provider/account/region
+   independence certification and historical trust publication;
 2. external orphan inventory and reconciliation without early-delete authority;
 3. legal-hold precedence, authorized hold release, erasure proof, and backup purge evidence;
 4. externally witnessed generation checkpoints, gossip, and rollback/fork/split-view detection;

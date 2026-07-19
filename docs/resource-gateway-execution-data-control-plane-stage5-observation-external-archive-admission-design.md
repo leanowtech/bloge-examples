@@ -3,9 +3,10 @@
 **Implemented non-production core (2026-07-20): independently verified external WORM acknowledgement is a
 mandatory, persisted precondition for every future compact-observation floor retirement. This
 increment closes the write-side deletion-authority gap, and lifecycle v2 now exports the exact
-receipts for caller-policy verification. Production HTTP authority transport, legal hold, backup
-purge, disaster-recovery certification, and witnessed lifecycle non-equivocation remain later
-gates.**
+receipts for caller-policy verification. A strict multi-authority HTTPS adapter and fail-fast
+test/staging wiring are now implemented; certified production provider wiring, historical trust
+publication, orphan reconciliation, legal hold, backup purge, disaster-recovery certification, and
+witnessed lifecycle non-equivocation remain later gates.**
 
 ## 1. Strongest judgment
 
@@ -209,6 +210,13 @@ that authority outage, invalid verification, and authenticated immutable conflic
 archive, retirement, floor, head, and active-row surfaces unchanged; a post-acknowledgement append
 and any later transaction failure also leave no partial local receipt row.
 
+The subsequent HTTPS adapter increment adds a 106-test related gate, including 12 real-HTTP tests
+for threshold/degraded success, signed conflict priority, invalid conflict non-veto, replay,
+retention shortening, strict parsing, redirect, timeout, exclusive expiry, topology/key/HTTPS
+configuration, non-serialized independent writes, profile isolation, staging fail-fast, and Schema
+parity. Its detailed evidence and residual provider-certification boundary are in the
+[HTTPS WORM adapter design](resource-gateway-execution-data-control-plane-stage5-observation-http-worm-adapter-design.md).
+
 Receipt-aware lifecycle v2 now exports each exact persisted set next to its retirement and the
 independent test-kit verifies external signatures against caller-pinned topology and retention
 policy. This closes proof portability; it does not turn the in-memory preview authority into a
@@ -219,10 +227,16 @@ purge, disaster-recovery continuity, and externally witnessed non-equivocation. 
 
 ## 10. Deliberately unclaimed and next stages
 
-This write-side core does not yet claim a deployable WORM integration. The next stages are ordered:
+The [strict HTTPS WORM adapter](resource-gateway-execution-data-control-plane-stage5-observation-http-worm-adapter-design.md)
+now closes the transport shape in test/staging: bounded concurrent writes, exact media/version,
+strict JSON, configured Ed25519 keys and independent failure domains, signed conflict receipts,
+degraded threshold health, and no redirect/retry are executable. It still verifies provider claims;
+it does not certify their physical deployment or authorize production lifecycle operation.
 
-1. strict HTTPS multi-authority adapter with bounded bodies/timeouts, no redirects, fresh challenge,
-   configured Ed25519 keys, signing-time policy, health, and staging-required wiring;
+The remaining stages are ordered:
+
+1. certify provider/account/region independence, publish historical archive trust, and wire only
+   after all production lifecycle gates close;
 2. external orphan inventory/reconciliation without early deletion authority;
 3. legal-hold precedence and release authorization;
 4. backup/replica purge evidence and disaster-recovery continuity;

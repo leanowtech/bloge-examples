@@ -3134,10 +3134,63 @@ failure, missing authority key, and caller-policy rejection. Missing or corrupt 
 bounded `RG.TEST.STABILITY_LIFECYCLE_ARCHIVE_*` transport codes and never returns a partial page.
 See the [lifecycle v2 external-proof design](resource-gateway-execution-data-control-plane-stage5-observation-lifecycle-v2-external-proof-design.md).
 
+The write-side authority can now be backed by a strict multi-authority HTTPS adapter in an
+explicit `test` or `staging` deployment. It is separate from the lifecycle read-preview flag:
+
+~~~yaml
+gateway:
+  testing:
+    stability-observation-lifecycle:
+      external-archive:
+        http:
+          enabled: true
+          trust-domain: archive.example
+          archive-set-id: archive-set-a
+          required-copies: 2
+          minimum-retention-days: 365
+          request-timeout-ms: 3000
+          maximum-receipt-lifetime-seconds: 15
+          allow-insecure-loopback: false
+          authority-keys-json: '<public Ed25519 key array>'
+          endpoints-json: '<authority/failureDomain/https URI array>'
+~~~
+
+The environment-variable equivalents are:
+
+| Property | Environment variable |
+| --- | --- |
+| `enabled` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_HTTP_ENABLED` |
+| `trust-domain` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_TRUST_DOMAIN` |
+| `archive-set-id` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_SET_ID` |
+| `required-copies` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_REQUIRED_COPIES` |
+| `minimum-retention-days` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_MINIMUM_RETENTION_DAYS` |
+| `authority-keys-json` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_AUTHORITY_KEYS_JSON` |
+| `endpoints-json` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_ENDPOINTS_JSON` |
+| `request-timeout-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_TIMEOUT_MS` |
+| `maximum-receipt-lifetime-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECEIPT_LIFETIME_SECONDS` |
+| `allow-insecure-loopback` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_ALLOW_INSECURE_LOOPBACK` |
+
+Each key entry contains `authorityId`, `keyId`, X.509-encoded `publicKeyBase64`, `notBefore`,
+exclusive `expiresAt`, `enabled`, and `revoked`. Each endpoint entry contains exactly
+`authorityId`, `failureDomain`, and `uri`. Authority ids, failure domains, and URIs must be unique;
+endpoint and key authority sets must match. Staging requires at least two copies and rejects the
+loopback HTTP escape hatch. Production never creates the adapter, retirement service, or health
+bean even when these properties are supplied.
+
+Every endpoint receives the same fresh request concurrently with exact vendor media type,
+protocol-version header, and deterministic object id as `Idempotency-Key`. Redirects and automatic
+retries are disabled; request/response sizes, timeout, strict JSON, freshness, topology, retention,
+fingerprints, and Ed25519 signatures are bounded and fail closed. HTTP 409 is definitive only when
+it carries a valid signed `ExternalArchiveConflictReceipt.v1` proving a different opaque object
+commitment. Actuator reports only aggregate `UNVERIFIED`, `HEALTHY`, `DEGRADED_COPY_SET`, threshold
+failure, or authenticated-conflict state without endpoint/key/object identities. See the
+[HTTPS WORM adapter design](resource-gateway-execution-data-control-plane-stage5-observation-http-worm-adapter-design.md).
+
 Both lifecycle endpoints are absent in production and disabled by default. V2 proves that an
 approved authority signed the acknowledgement recorded before deletion, but production WORM
-deployment, legal hold/erasure, backup purge, recovery continuity, historical authority
-publication, orphan reconciliation, and external non-equivocation policy are still missing. Capability
+provider certification/wiring, legal hold/erasure, backup purge, recovery continuity, historical
+authority publication, orphan reconciliation, and external non-equivocation policy are still
+missing. Capability
 `crossRetentionSuiteStabilityTrend` therefore remains `false`; strict verification proves the returned
 local lifecycle, external acknowledgement, and range, not physical persistence or a globally unique
 long-term history.
@@ -3367,10 +3420,11 @@ The atomic dual-root runtime-key publication is defined by
 [`suite-stability-serving-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json).
 The external compare-and-append request/receipt contract is defined by
 [`suite-stability-external-sequence-checkpoint-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json).
-The internal pre-delete compact-observation archive request/receipt-set contract is defined by
+The pre-delete compact-observation archive request/accepted-receipt/signed-conflict/receipt-set
+contract is defined by
 [`suite-stability-observation-external-archive-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-observation-external-archive-v1.schema.json).
-It is a write-side persistence boundary, not a caller-facing endpoint or an advertised production
-WORM capability; lifecycle v1 does not export these receipt sets.
+It is a private write-side transport and persistence boundary, not a caller-facing endpoint or an
+advertised production WORM capability; lifecycle v1 does not export these receipt sets.
 Implementation evidence and deliberately unclaimed guarantees are recorded in
 [Stage 5 current-authority verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-current-authority-verification.md).
 Dynamic refresh invariants, health semantics and deliberately unclaimed fleet guarantees are in

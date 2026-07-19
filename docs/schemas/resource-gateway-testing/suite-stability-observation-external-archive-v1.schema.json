@@ -5,6 +5,7 @@
   "oneOf": [
     { "$ref": "#/$defs/request" },
     { "$ref": "#/$defs/receipt" },
+    { "$ref": "#/$defs/conflictReceipt" },
     { "$ref": "#/$defs/receiptSet" }
   ],
   "$defs": {
@@ -94,6 +95,43 @@
         "externallyDurable": { "const": true },
         "writeOnce": { "const": true },
         "deleteBeforeRetentionDenied": { "const": true },
+        "algorithm": { "const": "Ed25519" },
+        "signature": {
+          "type": "string",
+          "minLength": 88,
+          "maxLength": 88,
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    },
+    "conflictReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "conflictFingerprint", "requestFingerprint", "trustDomain",
+        "archiveSetId", "authorityId", "failureDomain", "keyId", "objectId",
+        "expectedObjectCommitment", "observedObjectCommitment", "issuedAt",
+        "expiresAt", "algorithm", "signature"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationExternalArchiveConflictReceipt.v1"
+        },
+        "conflictFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "trustDomain": { "$ref": "#/$defs/identifier" },
+        "archiveSetId": { "$ref": "#/$defs/identifier" },
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "failureDomain": { "$ref": "#/$defs/identifier" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "objectId": {
+          "type": "string",
+          "pattern": "^stability-observation-worm-[a-f0-9]{64}$"
+        },
+        "expectedObjectCommitment": { "$ref": "#/$defs/fingerprint" },
+        "observedObjectCommitment": { "$ref": "#/$defs/fingerprint" },
+        "issuedAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "expiresAt": { "$ref": "#/$defs/wholeSecondInstant" },
         "algorithm": { "const": "Ed25519" },
         "signature": {
           "type": "string",

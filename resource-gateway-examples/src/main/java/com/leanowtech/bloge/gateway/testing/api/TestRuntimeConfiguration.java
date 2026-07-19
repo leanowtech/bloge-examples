@@ -1390,6 +1390,76 @@ public class TestRuntimeConfiguration {
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
     }
 
+    /**
+     * Configures strict multi-authority HTTPS WORM admission for explicit test/staging use.
+     *
+     * <p>Staging rejects loopback HTTP and requires at least two independent copies. Production
+     * never loads this composition root; legal hold, backup/DR continuity, non-equivocation, and
+     * scheduler gates must close before a production lifecycle capability can be advertised.</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean(TestSuiteStabilityObservationExternalArchiveAuthority.class)
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.http",
+            name = "enabled", havingValue = "true")
+    HttpTestSuiteStabilityObservationExternalArchiveAuthority
+            testSuiteStabilityObservationExternalArchiveAuthority(
+            ObjectMapper objectMapper,
+            Environment environment,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.trust-domain:}")
+            String trustDomain,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.archive-set-id:}")
+            String archiveSetId,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.required-copies:0}")
+            int requiredCopies,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.minimum-retention-days:0}")
+            long minimumRetentionDays,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.authority-keys-json:[]}")
+            String authorityKeysJson,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.endpoints-json:[]}")
+            String endpointsJson,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.request-timeout-ms:3000}")
+            long requestTimeoutMillis,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.maximum-receipt-lifetime-seconds:15}")
+            long maximumReceiptLifetimeSeconds,
+            @Value("${gateway.testing.stability-observation-lifecycle.external-archive.http.allow-insecure-loopback:false}")
+            boolean allowInsecureLoopback) {
+        boolean staging = Arrays.asList(environment.getActiveProfiles()).contains("staging");
+        if (staging && (allowInsecureLoopback || requiredCopies < 2)) {
+            throw new IllegalStateException(
+                    "Staging external observation archive requires HTTPS and two copies");
+        }
+        return HttpTestSuiteStabilityObservationExternalArchiveAuthority.fromJson(
+                objectMapper, trustDomain, archiveSetId, requiredCopies,
+                Duration.ofDays(minimumRetentionDays), authorityKeysJson, endpointsJson,
+                new HttpTestSuiteStabilityObservationExternalArchiveAuthority.Settings(
+                        Duration.ofMillis(requestTimeoutMillis),
+                        Duration.ofSeconds(maximumReceiptLifetimeSeconds),
+                        allowInsecureLoopback));
+    }
+
+    /** Exposes identity-free health for the configured external WORM copy set. */
+    @Bean
+    @ConditionalOnBean(TestSuiteStabilityObservationExternalArchiveAuthority.class)
+    TestSuiteStabilityObservationExternalArchiveHealth
+            testSuiteStabilityObservationExternalArchiveHealth(
+            TestSuiteStabilityObservationExternalArchiveAuthority authority) {
+        return new TestSuiteStabilityObservationExternalArchiveHealth(authority);
+    }
+
+    /** Assembles the external-first retirement boundary only when WORM admission is configured. */
+    @Bean
+    @ConditionalOnBean(TestSuiteStabilityObservationExternalArchiveAuthority.class)
+    TestSuiteStabilityObservationFloorRetirementService
+            testSuiteStabilityObservationFloorRetirementService(
+            ObjectMapper objectMapper,
+            TestSuiteStabilityRunRepository repository,
+            TestSuiteStabilityObservationFloorRetirementAttestationService attestations,
+            TestSuiteStabilityObservationExternalArchiveAuthority authority) {
+        return new TestSuiteStabilityObservationFloorRetirementService(
+                objectMapper, repository, attestations, authority);
+    }
+
     /** Assembles preview-only signed trends over exact compact-observation ledger ranges. */
     @Bean
     @ConditionalOnProperty(
