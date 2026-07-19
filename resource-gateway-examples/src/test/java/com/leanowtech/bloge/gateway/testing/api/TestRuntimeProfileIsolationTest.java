@@ -62,6 +62,8 @@ class TestRuntimeProfileIsolationTest {
         try (AnnotationConfigApplicationContext context = context("production")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityCrossRetentionTrendController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobService.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -190,6 +192,10 @@ class TestRuntimeProfileIsolationTest {
         try (AnnotationConfigApplicationContext context = context("test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityCrossRetentionTrendController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityCrossRetentionTrendAnalysisService.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobController.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityJobService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -341,6 +347,25 @@ class TestRuntimeProfileIsolationTest {
                     .getBean(TestEvidenceIntegrityService.class).seal(evidence);
             assertThat(seal.verified()).isTrue();
             assertThat(seal.failureCode()).isEmpty();
+        }
+    }
+
+    @Test
+    void crossRetentionPreviewRequiresExplicitNonProductionOptIn() {
+        Map<String, Object> enabled = Map.of(
+                "gateway.testing.stability-cross-retention-preview-enabled", "true");
+        try (AnnotationConfigApplicationContext context = context(enabled, 0, "test")) {
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityCrossRetentionTrendAnalysisService.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityCrossRetentionTrendController.class)).hasSize(1);
+        }
+        try (AnnotationConfigApplicationContext context = context(
+                enabled, 0, "production", "test")) {
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityCrossRetentionTrendAnalysisService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityCrossRetentionTrendController.class)).isEmpty();
         }
     }
 
@@ -812,6 +837,7 @@ class TestRuntimeProfileIsolationTest {
         }
         context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
                 TestSuiteStabilityController.class,
+                TestSuiteStabilityCrossRetentionTrendController.class,
                 TestSuiteStabilityJobController.class,
                 DurableTestExecutionQueryController.class,
                 DurableTestOwnerClaimController.class,

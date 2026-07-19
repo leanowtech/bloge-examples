@@ -2998,10 +2998,45 @@ continuity, cross-suite common-cause proof, forecasting, or automatic quarantine
 
 New terminal stability publications also create an independently signed compact observation and
 append it to a database-ordered exact-suite ledger in the same transaction as terminal/progress/lease
-mutation. This write-side ledger is intentionally not read by the v1 endpoint. There is no public
-ledger request/response Schema or test-kit range verifier yet, and capability
+mutation. This write-side ledger is intentionally not read by the v1 endpoint.
+
+A server-only preview can be opted into in a `test` or `staging` deployment with
+`gateway.testing.stability-cross-retention-preview-enabled=true`:
+
+```http
+POST /api/testing/suites/loan-decision-regression/stability-cross-retention-trend-analyses
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+```
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteStabilityCrossRetentionTrendAnalysisRequest.v1",
+  "suiteRef": {
+    "suiteId": "loan-decision-regression",
+    "revision": 1,
+    "fingerprint": "sha256:<returned-by-suite-registration>"
+  },
+  "afterSequence": 0,
+  "minimumRuns": 3,
+  "maximumRuns": 20,
+  "expectedHeadFingerprint": ""
+}
+```
+
+The response binds the retained floor, committed head, exclusive cursor, predecessor, bounded
+contiguous entries, and database observation time in one canonical range fingerprint. Every compact
+observation is reverified before projection; source trend order is signed
+`createdAt + stabilityRunId`, and a separate signature binds the range plus every exact observation,
+evidence, attestation, and entry identity. For pagination, copy the first response head fingerprint
+into `expectedHeadFingerprint`; a concurrent append then returns a conflict instead of mixing heads.
+
+This endpoint is absent in production and disabled by default. It is a development protocol, not an
+ANEKE/CI integration contract: authoritative JSON Schema, independent test-kit verification, signed
+floor retirement/archive/erasure, and external non-equivocation policy are still missing. Capability
 `crossRetentionSuiteStabilityTrend` therefore remains `false`; clients must not infer long-term
-continuity from the presence of internal observation tables.
+continuity from this preview or from internal observation tables.
 
 #### Submit, inspect, and cancel a durable stability job
 

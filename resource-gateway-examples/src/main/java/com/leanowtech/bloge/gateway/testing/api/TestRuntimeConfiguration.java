@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexM
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityCrossRetentionTrendAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityTrendAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
@@ -1120,6 +1121,17 @@ public class TestRuntimeConfiguration {
                 sourceAttestations);
     }
 
+    /** Signs exact compact-observation ranges in a distinct public trend domain. */
+    @Bean
+    TestSuiteStabilityCrossRetentionTrendAttestationService
+            testSuiteStabilityCrossRetentionTrendAttestationService(
+                    ObjectMapper objectMapper,
+                    ObjectProvider<VisualEvidenceSigner> evidenceSigner) {
+        return new TestSuiteStabilityCrossRetentionTrendAttestationService(
+                objectMapper,
+                evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
+    }
+
     /** Reuses the evidence signer in the distinct retained-window trend signature domain. */
     @Bean
     TestSuiteStabilityTrendAttestationService testSuiteStabilityTrendAttestationService(
@@ -1340,6 +1352,23 @@ public class TestRuntimeConfiguration {
         return new TestSuiteStabilityTrendAnalysisService(
                 suiteRegistry, repository, objectMapper, sourceAttestations, trendAttestations,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
+    }
+
+    /** Assembles preview-only signed trends over exact compact-observation ledger ranges. */
+    @Bean
+    @ConditionalOnProperty(
+            name = "gateway.testing.stability-cross-retention-preview-enabled",
+            havingValue = "true")
+    TestSuiteStabilityCrossRetentionTrendAnalysisService
+            testSuiteStabilityCrossRetentionTrendAnalysisService(
+                    TestSuiteRegistryService suiteRegistry,
+                    TestSuiteStabilityRunRepository repository,
+                    ObjectMapper objectMapper,
+                    TestSuiteStabilityObservationAttestationService observationAttestations,
+                    TestSuiteStabilityCrossRetentionTrendAttestationService trendAttestations) {
+        return new TestSuiteStabilityCrossRetentionTrendAnalysisService(
+                suiteRegistry, repository, objectMapper,
+                observationAttestations, trendAttestations);
     }
 
     /**

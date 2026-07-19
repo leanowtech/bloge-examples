@@ -1,7 +1,8 @@
 # Stage 5 retained-window stability trend design
 
 **Implementation status (2026-07-19): retained-window server/test-kit v1 implemented; signed
-cross-retention observation-ledger core implemented but not yet exposed as a public capability.**
+cross-retention observation-ledger core and default-disabled server range preview implemented, but
+strict public Schema, independent test-kit verification, and ledger lifecycle are not complete.**
 
 ## 1. Root problem
 
@@ -49,10 +50,10 @@ cannot be treated as a stable observation. An incomplete window remains useful f
 its aggregate status is always `INCONCLUSIVE`.
 
 This v1 guarantee is intentionally limited to records still represented in the current stability
-store. The compact observation-ledger write path described below now exists, but the v1 endpoint
-does not read it and `crossRetentionSuiteStabilityTrend` remains false. A public v2 range protocol,
-ledger lifecycle policy, and independent consumer verifier are still required before the product
-may claim trend continuity beyond full evidence retention.
+store. The compact observation-ledger write path and default-disabled range preview described below
+now exist, but the v1 endpoint does not read them and `crossRetentionSuiteStabilityTrend` remains
+false. Strict public Schema, ledger lifecycle policy, and an independent consumer verifier are still
+required before the product may claim trend continuity beyond full evidence retention.
 
 ### 3.1 Cross-retention observation-ledger core
 
@@ -80,12 +81,35 @@ cannot leak into an older read snapshot; orphan rows and dangling heads fail clo
 a ledger write failure rolls back the terminal insert, progress deletion, and lease consumption
 together.
 
-This core deliberately does not make the ledger a public proof yet. Sequence, predecessor, rollout
-floor, and database append time are producer-authoritative ordering facts, while each compact
-observation is independently signed. The next protocol generation must sign the exact requested
-ledger range and head/floor closure, publish strict Schema, and let the test kit verify every
-observation signature and reconstruct the trend. Until then, the retained v1 source-closed path is
-the only advertised trend capability.
+This core deliberately does not by itself make the ledger a public proof. Sequence, predecessor,
+rollout floor, and database append time are producer-authoritative ordering facts, while each compact
+observation is independently signed.
+
+### 3.2 Default-disabled signed range preview
+
+The server now has a bounded preview protocol for the next read generation. Under the exact-suite
+ledger lock, one repository operation freezes the retained floor, committed head, exclusive cursor,
+cursor predecessor, at most 100 contiguous entries, `hasMore`, and database `observedAt`. A canonical
+`rangeFingerprint` closes all of those facts. The first page establishes the head fingerprint; a
+caller may send it back as `expectedHeadFingerprint` so a later page fails with
+`RG.TEST.STABILITY_OBSERVATION_HEAD_CHANGED` instead of silently mixing snapshots.
+
+Before deriving a trend, the authorized service verifies the range, head, and every entry whole-record
+fingerprint; exact scope and suite bindings; and every compact observation signature. Trend input is
+then sorted by signed source `createdAt + stabilityRunId`, matching retained-window semantics rather
+than database append latency. The evidence declares this ordering rule. A separate Ed25519 domain
+signs the evidence fingerprint, range fingerprint, and exact ordered observation/evidence/
+attestation/entry references. The signer independently rechecks canonical range structure before it
+will sign, so a future caller cannot bypass the service's validation accidentally.
+
+The HTTP adapter is present only in `test` or `staging` and only when
+`gateway.testing.stability-cross-retention-preview-enabled=true`. It reuses the dedicated stability
+trend read operation, applies exact-suite classification clearance before ledger access, emits no
+payload values, and is absent from production even if the flag is set. This is deliberately an
+unadvertised preview: there is no authoritative JSON Schema or independent test-kit range verifier,
+and the ledger floor is still the rollout floor because retirement/archive/erasure has no signed
+checkpoint protocol yet. Therefore `crossRetentionSuiteStabilityTrend` remains false and the retained
+v1 source-closed path remains the only advertised trend capability.
 
 ## 4. Comparable execution regime
 
@@ -174,11 +198,16 @@ Completion requires tests proving rejection or fail-closed projection for:
 - cross-replica concurrent append producing duplicate sequence or broken predecessor identity;
 - entry/index projection drift, missing tail, corrupt head, or ledger failure leaving a terminal
   without its compact observation.
+- forged range/head/entry fingerprints, invalid or unavailable compact-observation signatures, and
+  a rewritten outer observation reference closure;
+- page continuation after the committed head changed, preview enabled by default, or any preview
+  bean present under a production profile.
 
 ## 10. Deliberately unclaimed
 
-V1 does not provide cross-suite common-cause confirmation, cross-revision semantic lineage, public
-cross-retention continuity, compact-ledger retention/archive/erasure policy, externally witnessed
+V1 and the range preview do not provide cross-suite common-cause confirmation, cross-revision
+semantic lineage, advertised cross-retention continuity, compact-ledger retention/archive/erasure
+policy, externally witnessed
 ledger non-equivocation, automatic quarantine mutation, change-point statistics, seasonal baselines,
 production-path comparison, distributed attempt execution, or physical test-runtime isolation.
 Those controls remain separate because collapsing them into a read projection would make the

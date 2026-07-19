@@ -60,12 +60,9 @@ public final class TestSuiteStabilityTrendEvidenceEvaluator {
         List<RunObservation> sources = window.records().stream()
                 .map(projector::project)
                 .toList();
-        List<CaseTrend> caseTrends = caseTrends(sources);
-        List<CorrelationSignal> signals = correlationSignals(sources);
-        List<String> diagnostics = diagnostics(request, window, sources);
         boolean complete = window.complete();
-        TestSuiteStabilityTrendEvidence.Status status = status(
-                request, complete, sources, caseTrends);
+        Projection projection = project(sources, request.minimumRuns(), complete,
+                diagnostics(request, window, sources));
         AnalysisIdentity identity = new AnalysisIdentity(
                 TestSuiteStabilityTrendEvidence.SCHEMA_VERSION,
                 normalized(tenantId), normalized(environmentId), requestFingerprint,
@@ -80,9 +77,47 @@ public final class TestSuiteStabilityTrendEvidenceEvaluator {
                 trendId, requestFingerprint, request.suiteRef(),
                 request.fromInclusive(), request.toExclusive(), request.minimumRuns(),
                 request.maximumRuns(), sources.size(), window.expiredMatchingRuns(), complete,
-                status, sources, caseTrends, signals,
+                projection.status(), sources, projection.caseTrends(),
+                projection.correlationSignals(),
                 TestSuiteStabilityTrendEvidence.CausalityStatus.NOT_PROVEN,
-                diagnostics, window.observedAt());
+                projection.diagnostics(), window.observedAt());
+    }
+
+    /**
+     * Derives reusable trend labels from an already verified ordered observation range.
+     *
+     * <p>Callers remain responsible for proving source signatures, ordering, and completeness.
+     * The method adds minimum-count and source-inconclusive diagnostics to the supplied bounded
+     * persistence diagnostics and never infers causality.</p>
+     *
+     * @param sources exact ordered payload-free observations
+     * @param minimumRuns precommitted minimum sample count
+     * @param complete whether the caller proved its requested source closure
+     * @param diagnostics caller-provided bounded completeness reasons
+     * @return deterministic reusable trend projection
+     */
+    public Projection project(
+            List<RunObservation> sources,
+            int minimumRuns,
+            boolean complete,
+            List<String> diagnostics) {
+        sources = sources == null ? List.of() : List.copyOf(sources);
+        if (minimumRuns < 2 || minimumRuns > 100 || sources.size() > 100) {
+            throw new IllegalArgumentException("Bounded trend observations are required");
+        }
+        List<CaseTrend> caseTrends = caseTrends(sources);
+        List<CorrelationSignal> signals = correlationSignals(sources);
+        Set<String> reasons = new LinkedHashSet<>(
+                diagnostics == null ? List.of() : diagnostics);
+        if (sources.size() < minimumRuns) {
+            reasons.add("MINIMUM_RUNS_NOT_MET");
+        }
+        if (sources.stream().anyMatch(value ->
+                value.status() == TestSuiteStabilityEvidence.Status.INCONCLUSIVE)) {
+            reasons.add("SOURCE_INCONCLUSIVE");
+        }
+        return new Projection(status(minimumRuns, complete, sources, caseTrends),
+                caseTrends, signals, reasons.stream().sorted().toList());
     }
 
     private static List<CaseTrend> caseTrends(List<RunObservation> sources) {
@@ -167,11 +202,11 @@ public final class TestSuiteStabilityTrendEvidenceEvaluator {
     }
 
     private static TestSuiteStabilityTrendEvidence.Status status(
-            TestSuiteStabilityTrendAnalysisRequest request,
+            int minimumRuns,
             boolean complete,
             List<RunObservation> sources,
             List<CaseTrend> trends) {
-        if (!complete || sources.size() < request.minimumRuns()
+        if (!complete || sources.size() < minimumRuns
                 || sources.stream().anyMatch(value ->
                 value.status() == TestSuiteStabilityEvidence.Status.INCONCLUSIVE)
                 || trends.stream().anyMatch(value ->
@@ -255,5 +290,29 @@ public final class TestSuiteStabilityTrendEvidenceEvaluator {
             List<SourceIdentity> sources,
             int expiredMatchingRuns,
             boolean truncated) {
+    }
+
+    /**
+     * Reusable deterministic trend result over an externally proven ordered source closure.
+     *
+     * @param status aggregate trend state
+     * @param caseTrends ordered per-case trend states
+     * @param correlationSignals bounded non-causal signals
+     * @param diagnostics sorted bounded reasons
+     */
+    public record Projection(
+            TestSuiteStabilityTrendEvidence.Status status,
+            List<CaseTrend> caseTrends,
+            List<CorrelationSignal> correlationSignals,
+            List<String> diagnostics
+    ) {
+        /** Freezes all projection material. */
+        public Projection {
+            status = Objects.requireNonNull(status, "status");
+            caseTrends = caseTrends == null ? List.of() : List.copyOf(caseTrends);
+            correlationSignals = correlationSignals == null
+                    ? List.of() : List.copyOf(correlationSignals);
+            diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        }
     }
 }

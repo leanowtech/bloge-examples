@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRecord;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerRangeIntegrity;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -343,6 +344,58 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 "tenant-a", "test", first.evidence().suiteRef(), 3, 10))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("beyond the committed head");
+    }
+
+    @Test
+    void lockedObservationRangeBindsFloorHeadPredecessorAndExactPages() {
+        Instant now = Instant.now();
+        TestSuiteStabilityRunRecord first = trendRecord(
+                '1', now.minusSeconds(30), now.plusSeconds(3_600));
+        TestSuiteStabilityRunRecord second = trendRecord(
+                '2', now.minusSeconds(20), now.plusSeconds(3_600));
+        TestSuiteStabilityRunRecord third = trendRecord(
+                '3', now.minusSeconds(10), now.plusSeconds(3_600));
+        completeTrend(first);
+        completeTrend(second);
+        completeTrend(third);
+
+        var firstPage = repository.observationRange(
+                "tenant-a", "test", first.evidence().suiteRef(), 0, 2).orElseThrow();
+        assertThat(TestSuiteStabilityObservationLedgerRangeIntegrity.valid(
+                mapper, firstPage)).isTrue();
+        assertThat(firstPage.floorSequence()).isEqualTo(1);
+        assertThat(firstPage.floorPreviousObservationId()).isBlank();
+        assertThat(firstPage.floorPreviousEntryFingerprint()).isBlank();
+        assertThat(firstPage.entries()).extracting(value -> value.sequence())
+                .containsExactly(1L, 2L);
+        assertThat(firstPage.floorObservationId()).isEqualTo(
+                firstPage.entries().getFirst().observation().evidence().observationId());
+        assertThat(firstPage.floorEntryFingerprint()).isEqualTo(
+                firstPage.entries().getFirst().entryFingerprint());
+        assertThat(firstPage.head().latestSequence()).isEqualTo(3);
+        assertThat(firstPage.hasMore()).isTrue();
+
+        var finalPage = repository.observationRange(
+                "tenant-a", "test", first.evidence().suiteRef(), 2, 2).orElseThrow();
+        assertThat(finalPage.entries()).hasSize(1);
+        assertThat(finalPage.entries().getFirst().sequence()).isEqualTo(3);
+        assertThat(finalPage.previousObservationId()).isEqualTo(
+                firstPage.entries().getLast().observation().evidence().observationId());
+        assertThat(finalPage.previousEntryFingerprint()).isEqualTo(
+                firstPage.entries().getLast().entryFingerprint());
+        assertThat(finalPage.head()).isEqualTo(firstPage.head());
+        assertThat(finalPage.hasMore()).isFalse();
+        assertThat(TestSuiteStabilityObservationLedgerRangeIntegrity.valid(
+                mapper, finalPage)).isTrue();
+
+        var exhausted = repository.observationRange(
+                "tenant-a", "test", first.evidence().suiteRef(), 3, 2).orElseThrow();
+        assertThat(exhausted.entries()).isEmpty();
+        assertThat(exhausted.previousObservationId()).isEqualTo(
+                finalPage.entries().getFirst().observation().evidence().observationId());
+        assertThat(exhausted.previousEntryFingerprint()).isEqualTo(
+                finalPage.entries().getFirst().entryFingerprint());
+        assertThat(exhausted.hasMore()).isFalse();
     }
 
     @Test

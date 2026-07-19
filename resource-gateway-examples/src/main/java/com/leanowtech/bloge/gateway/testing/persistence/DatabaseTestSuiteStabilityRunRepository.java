@@ -8,12 +8,14 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionProgr
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStopRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityCrossRetentionTrendAnalysisRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityHistoryWindow;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerEntry;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerHead;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerRange;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressCheckpoint;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressSnapshot;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
@@ -24,6 +26,9 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationProjector;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerEntryIntegrity;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerHeadIntegrity;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerRangeIntegrity;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -938,6 +943,75 @@ public final class DatabaseTestSuiteStabilityRunRepository
         return List.copyOf(entries);
     }
 
+    @Override
+    public Optional<TestSuiteStabilityObservationLedgerRange> observationRange(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            long afterSequence,
+            int limit) {
+        Objects.requireNonNull(suiteRef, "suiteRef");
+        if (afterSequence < 0 || limit < 1
+                || limit > TestSuiteStabilityCrossRetentionTrendAnalysisRequest.MAXIMUM_RUNS) {
+            throw new IllegalArgumentException(
+                    "Stability observation range request is outside bounds");
+        }
+        String scopeFingerprint = observationScopeFingerprint(
+                tenantId, environmentId, suiteRef);
+        Optional<TestSuiteStabilityObservationLedgerRange> result = mutations.execute(status -> {
+            lockObservationScope(scopeFingerprint);
+            Optional<TestSuiteStabilityObservationLedgerHead> current =
+                    observationHeadByScope(
+                            scopeFingerprint, tenantId, environmentId, suiteRef);
+            if (current.isEmpty()) {
+                return Optional.empty();
+            }
+            TestSuiteStabilityObservationLedgerHead head = current.get();
+            if (afterSequence > head.latestSequence()) {
+                throw new IllegalArgumentException(
+                        "Stability observation cursor is beyond the committed head");
+            }
+            TestSuiteStabilityObservationLedgerEntry floor = observationEntryAt(
+                    scopeFingerprint, 1L).orElseThrow(() -> new IllegalStateException(
+                    "Stability observation ledger has no rollout floor"));
+            requireObservationEntry(floor, scopeFingerprint, 1L, "");
+            TestSuiteStabilityObservationLedgerEntry predecessor = afterSequence == 0
+                    ? null : observationEntryAt(scopeFingerprint, afterSequence)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Stability observation cursor has no retained entry"));
+            List<TestSuiteStabilityObservationLedgerEntry> entries = observations(
+                    tenantId, environmentId, suiteRef, afterSequence, limit);
+            boolean hasMore = !entries.isEmpty()
+                    && entries.getLast().sequence() < head.latestSequence();
+            Instant observedAt = currentTime();
+            TestSuiteStabilityObservationLedgerRange unsigned =
+                    new TestSuiteStabilityObservationLedgerRange(
+                    TestSuiteStabilityObservationLedgerRange.SCHEMA_VERSION,
+                    scopeFingerprint, suiteRef, 1L, "", "",
+                    floor.observation().evidence().observationId(), floor.entryFingerprint(),
+                    head, afterSequence,
+                    predecessor == null ? ""
+                            : predecessor.observation().evidence().observationId(),
+                    predecessor == null ? "" : predecessor.entryFingerprint(),
+                    entries, hasMore, observedAt,
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000");
+            return Optional.of(new TestSuiteStabilityObservationLedgerRange(
+                    unsigned.schemaVersion(), unsigned.scopeFingerprint(), unsigned.suiteRef(),
+                    unsigned.floorSequence(), unsigned.floorPreviousObservationId(),
+                    unsigned.floorPreviousEntryFingerprint(), unsigned.floorObservationId(),
+                    unsigned.floorEntryFingerprint(), unsigned.head(), unsigned.afterSequence(),
+                    unsigned.previousObservationId(), unsigned.previousEntryFingerprint(),
+                    unsigned.entries(), unsigned.hasMore(), unsigned.observedAt(),
+                    TestSuiteStabilityObservationLedgerRangeIntegrity.fingerprint(
+                            objectMapper, unsigned)));
+        });
+        if (result == null) {
+            throw new IllegalStateException(
+                    "Stability observation range transaction returned no result");
+        }
+        return result;
+    }
+
     private Optional<TestSuiteStabilityRunRecord> query(String sql, Object... arguments) {
         List<TestSuiteStabilityRunRecord> records = jdbc.query(sql,
                 (rs, row) -> read(rs.getString("record_json")), arguments);
@@ -1181,15 +1255,20 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 .orElse(0L) + 1L;
         String predecessor = current.map(
                 TestSuiteStabilityObservationLedgerHead::latestObservationId).orElse("");
-        LedgerEntryMaterial material = new LedgerEntryMaterial(
-                TestSuiteStabilityObservationLedgerEntry.SCHEMA_VERSION,
-                scopeFingerprint, sequence, predecessor, observation, appendedAt);
-        String entryFingerprint = ProtocolFingerprint.of(objectMapper, material);
-        TestSuiteStabilityObservationLedgerEntry entry =
+        TestSuiteStabilityObservationLedgerEntry unsignedEntry =
                 new TestSuiteStabilityObservationLedgerEntry(
                         TestSuiteStabilityObservationLedgerEntry.SCHEMA_VERSION,
                         scopeFingerprint, sequence, predecessor, observation,
-                        appendedAt, entryFingerprint);
+                        appendedAt,
+                        "sha256:0000000000000000000000000000000000000000000000000000000000000000");
+        String entryFingerprint = TestSuiteStabilityObservationLedgerEntryIntegrity.fingerprint(
+                objectMapper, unsignedEntry);
+        TestSuiteStabilityObservationLedgerEntry entry =
+                new TestSuiteStabilityObservationLedgerEntry(
+                        unsignedEntry.schemaVersion(), unsignedEntry.scopeFingerprint(),
+                        unsignedEntry.sequence(), unsignedEntry.previousObservationId(),
+                        unsignedEntry.observation(), unsignedEntry.appendedAt(),
+                        entryFingerprint);
         try {
             int inserted = jdbc.update("""
                     INSERT INTO rg_test_suite_stability_observations (
@@ -1214,17 +1293,21 @@ public final class DatabaseTestSuiteStabilityRunRepository
 
         Instant coverageFrom = current.map(
                 TestSuiteStabilityObservationLedgerHead::coverageFrom).orElse(appendedAt);
-        LedgerHeadMaterial headMaterial = new LedgerHeadMaterial(
-                TestSuiteStabilityObservationLedgerHead.SCHEMA_VERSION,
-                scopeFingerprint, record.evidence().suiteRef(), coverageFrom,
-                sequence, observation.evidence().observationId(), entryFingerprint, appendedAt);
-        String headFingerprint = ProtocolFingerprint.of(objectMapper, headMaterial);
-        TestSuiteStabilityObservationLedgerHead successor =
+        TestSuiteStabilityObservationLedgerHead unsignedHead =
                 new TestSuiteStabilityObservationLedgerHead(
                         TestSuiteStabilityObservationLedgerHead.SCHEMA_VERSION,
                         scopeFingerprint, record.evidence().suiteRef(), coverageFrom,
                         sequence, observation.evidence().observationId(), entryFingerprint,
-                        appendedAt, headFingerprint);
+                        appendedAt,
+                        "sha256:0000000000000000000000000000000000000000000000000000000000000000");
+        TestSuiteStabilityObservationLedgerHead successor =
+                new TestSuiteStabilityObservationLedgerHead(
+                        unsignedHead.schemaVersion(), unsignedHead.scopeFingerprint(),
+                        unsignedHead.suiteRef(), unsignedHead.coverageFrom(),
+                        unsignedHead.latestSequence(), unsignedHead.latestObservationId(),
+                        unsignedHead.latestEntryFingerprint(), unsignedHead.updatedAt(),
+                        TestSuiteStabilityObservationLedgerHeadIntegrity.fingerprint(
+                                objectMapper, unsignedHead));
         if (current.isEmpty()) {
             int inserted = jdbc.update("""
                     INSERT INTO rg_test_suite_stability_observation_heads (
@@ -1360,11 +1443,7 @@ public final class DatabaseTestSuiteStabilityRunRepository
     }
 
     private void requireObservationHead(TestSuiteStabilityObservationLedgerHead head) {
-        String expected = ProtocolFingerprint.of(objectMapper, new LedgerHeadMaterial(
-                head.schemaVersion(), head.scopeFingerprint(), head.suiteRef(),
-                head.coverageFrom(), head.latestSequence(), head.latestObservationId(),
-                head.latestEntryFingerprint(), head.updatedAt()));
-        if (!expected.equals(head.headFingerprint())) {
+        if (!TestSuiteStabilityObservationLedgerHeadIntegrity.valid(objectMapper, head)) {
             throw new IllegalStateException("Stability observation head fingerprint is invalid");
         }
     }
@@ -1374,16 +1453,13 @@ public final class DatabaseTestSuiteStabilityRunRepository
             String scopeFingerprint,
             long expectedSequence,
             String expectedPredecessor) {
-        String expectedFingerprint = ProtocolFingerprint.of(objectMapper,
-                new LedgerEntryMaterial(entry.schemaVersion(), entry.scopeFingerprint(),
-                        entry.sequence(), entry.previousObservationId(),
-                        entry.observation(), entry.appendedAt()));
         requireObservationShape(entry.observation());
         if (!entry.scopeFingerprint().equals(scopeFingerprint)
                 || !entry.observation().evidence().scopeFingerprint().equals(scopeFingerprint)
                 || entry.sequence() != expectedSequence
                 || !entry.previousObservationId().equals(expectedPredecessor)
-                || !entry.entryFingerprint().equals(expectedFingerprint)) {
+                || !TestSuiteStabilityObservationLedgerEntryIntegrity.valid(
+                objectMapper, entry)) {
             throw new IllegalStateException("Stability observation ledger chain is invalid");
         }
     }
@@ -1412,6 +1488,24 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 """, (rs, row) -> new StoredObservationCoordinate(
                 rs.getString("observation_id"), rs.getString("entry_fingerprint")),
                 scopeFingerprint, sequence);
+        if (values.size() > 1) {
+            throw new IllegalStateException(
+                    "Stability observation ledger sequence is not unique");
+        }
+        return values.stream().findFirst();
+    }
+
+    private Optional<TestSuiteStabilityObservationLedgerEntry> observationEntryAt(
+            String scopeFingerprint,
+            long sequence) {
+        List<TestSuiteStabilityObservationLedgerEntry> values = jdbc.query("""
+                SELECT observation_id, scope_fingerprint, ledger_sequence,
+                       previous_observation_id, stability_run_id, source_created_at,
+                       appended_at, observation_fingerprint, attestation_fingerprint,
+                       entry_fingerprint, entry_json
+                FROM rg_test_suite_stability_observations
+                WHERE scope_fingerprint = ? AND ledger_sequence = ?
+                """, this::storedObservationEntry, scopeFingerprint, sequence);
         if (values.size() > 1) {
             throw new IllegalStateException(
                     "Stability observation ledger sequence is not unique");
@@ -1842,26 +1936,6 @@ public final class DatabaseTestSuiteStabilityRunRepository
             String tenantId,
             String environmentId,
             TestSuiteExecutionRequest.SuiteRef suiteRef) {
-    }
-
-    private record LedgerEntryMaterial(
-            String schemaVersion,
-            String scopeFingerprint,
-            long sequence,
-            String previousObservationId,
-            TestSuiteStabilityObservation observation,
-            Instant appendedAt) {
-    }
-
-    private record LedgerHeadMaterial(
-            String schemaVersion,
-            String scopeFingerprint,
-            TestSuiteExecutionRequest.SuiteRef suiteRef,
-            Instant coverageFrom,
-            long latestSequence,
-            String latestObservationId,
-            String latestEntryFingerprint,
-            Instant updatedAt) {
     }
 
     private record StoredObservationHead(

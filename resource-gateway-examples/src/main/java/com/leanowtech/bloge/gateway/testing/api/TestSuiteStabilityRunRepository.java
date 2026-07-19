@@ -200,4 +200,24 @@ public interface TestSuiteStabilityRunRepository {
         throw new UnsupportedOperationException(
                 "Stability observation ledger is unavailable in this repository");
     }
+
+    /**
+     * Reads one floor/head-pinned compact-observation page under the exact-suite ledger lock.
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param suiteRef exact immutable suite revision
+     * @param afterSequence exclusive retained sequence cursor
+     * @param limit positive bounded page size
+     * @return complete locked range, or empty before this scope has any observation
+     */
+    default Optional<TestSuiteStabilityObservationLedgerRange> observationRange(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            long afterSequence,
+            int limit) {
+        throw new UnsupportedOperationException(
+                "Stability observation range snapshots are unavailable in this repository");
+    }
 }

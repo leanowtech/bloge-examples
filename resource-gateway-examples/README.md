@@ -63,6 +63,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/mutation-executions` | Execute an exact V5 suite baseline-first, classify every regenerated mutant, and emit signed mutation-score evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-executions` | Execute one exact V1/V2/V4 suite with deterministic request v1, fixed-horizon statistical request v2/v3, or anytime-valid maximum-horizon request v4, under a cross-replica parent lease, then retain signed payload-free evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-trend-analyses` | Derive and sign a bounded retained-history trend for one exact suite revision, with explicit retention/truncation gaps, execution-regime drift, case transitions, and non-causal correlation signals (test/staging only) |
+| `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-cross-retention-trend-analyses` | Preview a signed floor/head/cursor-pinned compact-observation range; disabled unless `gateway.testing.stability-cross-retention-preview-enabled=true`, absent in production, and not advertised as a capability yet |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}` | Read one retained stability analysis with its exact ordered source-run closure and detached signature (test/staging only) |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}/progress` | Poll payload-free `RUNNING`, `RECOVERABLE`, or `COMPLETED` durable parent progress; v2 distinguishes planned horizon, observed prefix, and terminal reason without exposing owner/epoch/source ids/payloads (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-jobs` | Submit an exact stability request without blocking; returns `202`, deterministic `jobId`, query `Location`, and payload-free lifecycle (test/staging only; fresh submission requires the opt-in worker) |
@@ -163,9 +164,10 @@ hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The sta
 terminal publication now also verifies and signs a payload-free compact observation, then commits
 that observation, its contiguous per-suite ledger coordinate, the full terminal record, progress
 consumption, and lease consumption in one database transaction. This is the durable write-side
-foundation for history beyond full-run retention; it is not yet a public read contract, and
-`crossRetentionSuiteStabilityTrend` intentionally remains disabled until range closure, lifecycle,
-strict Schema, and independent test-kit verification are complete. The stability protocol's
+foundation for history beyond full-run retention. A bounded, signed range read now exists as a
+default-disabled test/staging preview, but it is not yet a public read contract:
+`crossRetentionSuiteStabilityTrend` intentionally remains disabled until lifecycle, strict Schema,
+and independent test-kit verification are complete. The stability protocol's
 v2+ evidence keeps behavioral stability separate from release eligibility: every verified source
 suite promotion verdict is signed into the attempt closure, so `STABLE + BLOCKED` remains visible
 when behavior is repeatable but source certification is insufficient. Historical v1 evidence stays

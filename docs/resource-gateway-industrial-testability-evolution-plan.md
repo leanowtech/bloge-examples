@@ -651,6 +651,21 @@ terminal。63 项 observation/projector/repository/execution/parent-authority �
 floor/head/range closure 的公开 v2 Schema、授权查询、独立 test-kit 重建，以及 ledger retention/archive/
 erasure 与外部 non-equivocation policy，才能声称跨 retention 趋势连续性。
 
+第五十三增量第二十六子步第二阶段已建立默认关闭的服务端 signed-range preview。repository 在 exact-suite
+数据库锁内一次冻结 rollout floor、committed head、exclusive cursor、cursor predecessor、最多 100 条连续
+entry、`hasMore` 与数据库 `observedAt`，并以 whole-record range fingerprint 封闭；首屏 head fingerprint
+可由后续分页作为 expected pin，head 变化返回冲突而不混读。授权服务在读取前完成 suite classification/
+fingerprint 校验，读取后逐层验证 range/head/entry canonical fingerprint、scope/suite 绑定和每条 compact
+observation 签名；趋势显式按 signed source `createdAt + stabilityRunId` 排序，避免 append latency 改写相邻
+语义。外层独立 Ed25519 domain 再绑定 evidence、range 与完整 ordered observation/evidence/attestation/entry
+closure，且 signer 自身拒绝 canonical range 损坏。endpoint 仅在非 production 的 test/staging 且
+`gateway.testing.stability-cross-retention-preview-enabled=true` 时装配，默认关闭。59 项 repository、
+projection、service、signature、controller 和 profile 聚焦反例为 0 failures、0 errors、0 skips。
+Resource Gateway 完整 `clean verify` 执行 2825 tests，0 failures、0 errors、33 项条件跳过，并完成
+Spring Boot 可执行 JAR 重打包。
+该阶段仍未发布 strict Schema、独立 test-kit verifier，也未实现 signed floor retirement/archive/erasure 与
+外部 non-equivocation；因此它不是公共集成合同，`crossRetentionSuiteStabilityTrend` 继续为 false。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制
