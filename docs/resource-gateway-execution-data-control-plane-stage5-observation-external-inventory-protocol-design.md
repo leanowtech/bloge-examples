@@ -4,8 +4,10 @@
 authority can expose a challenge-bound, Ed25519-signed, immutable paged snapshot over the same
 strict HTTPS trust topology used for WORM admission. Snapshot identity commits authority topology,
 snapshot time, complete object count, and an order-sensitive root. No delete or retention-mutation
-operation exists. Durable multi-replica cursoring and governed finding lifecycle are the next
-increment, so orphan reconciliation is not yet claimed complete.**
+operation exists. The downstream control plane now provides durable multi-replica cursoring,
+six-outcome classification, and a payload-free governed finding lifecycle. Scheduling, bounded
+retention, operational readiness, and capability wiring remain incomplete, so orphan reconciliation
+is not yet claimed complete.**
 
 ## 1. Strongest judgment
 
@@ -22,8 +24,9 @@ The transport must first establish five invariants:
 4. the final ordered item chain reproduces a signed total count and root;
 5. the read boundary has no destructive operation, even for a caller with inventory access.
 
-This increment establishes those invariants. It does not yet own durable cycle leases, persisted
-page progress, local/remote classification, finding lifecycle, or scheduling.
+This transport increment establishes those invariants. It deliberately does not own durable cycle
+leases, persisted page progress, local/remote classification, finding lifecycle, or scheduling;
+the first four now exist in the downstream control plane rather than in this wire contract.
 
 ## 2. Boundary and ownership
 
@@ -31,7 +34,7 @@ page progress, local/remote classification, finding lifecycle, or scheduling.
 | --- | --- | --- |
 | Inventory authority | immutable snapshot creation, ordered pages, signed count/root | local finding policy, deletion |
 | HTTPS adapter | fresh requests, bounded transport, strict parsing, topology/key verification | durable cursor, retries, remediation |
-| Reconciler, next increment | database lease, page staging, root completion, local comparison, findings | WORM deletion or retention shortening |
+| Reconciliation control plane | database lease, page staging, root completion, local comparison, findings | WORM deletion or retention shortening |
 | Governance/ANEKE | finding disposition, owner workflow, legal policy | forging remote completeness from partial pages |
 | Storage administrator | provider retention and separately governed erasure | Resource Gateway inventory protocol semantics |
 
@@ -209,7 +212,10 @@ backfill and exact-replay repair. See
 Per-authority database-clock leases, durable page/item staging, cross-replica continuation,
 snapshot-expiry closure, and terminal count/root/page-sequence replay are now implemented there as
 well. A later phase now also freezes local expectations per completed cycle and produces a bounded,
-durable, independently replayed six-outcome comparison. Governed finding lifecycle, retention,
-scheduling, health/readiness, and capability wiring remain unimplemented. The repository and service
-still contain no external delete method; remediation remains an ANEKE/governance workflow with a
-separately controlled storage authority.
+durable, independently replayed six-outcome comparison. Completed comparisons are now consumed in a
+strict per-authority order by a crash-resumable governed finding projection. It freezes finding
+pre-state, emits one fingerprinted `OPENED/OBSERVED/REOPENED/RESOLVED/CONFIRMED` event per
+classification, and publishes only after independent source, snapshot, event, coverage, and
+resulting-state replay. Bounded retention, scheduling, health/readiness, and capability wiring remain
+unimplemented. The repository and service still contain no external delete method; remediation
+remains an ANEKE/governance workflow with a separately controlled storage authority.

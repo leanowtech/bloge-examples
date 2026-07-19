@@ -1,14 +1,16 @@
 # Stage 5 observation external reconciliation control-plane design
 
-**Phases A-C and both terminal completeness gates implemented (2026-07-20): every externally
+**Phases A-D and all terminal completeness gates implemented (2026-07-20): every externally
 acknowledged WORM copy is normalized into a payload-free expected-object index in the exact
 retirement transaction. Per-authority database-clock owner/token/epoch leases now fence durable
 snapshot cycles; verified page envelopes and normalized items commit atomically with cursor/root
 progress, and a terminal page succeeds only after a constant-memory replay reproduces every staged
 item, page sequence, signed count, and signed root. Each completed cycle is then compared with an
 atomically frozen local snapshot by a bounded ordered merge; only a second terminal replay may expose
-self-verifying classifications. Governed findings, scheduling, and capability wiring remain
-subsequent phases, so reconciliation is not yet advertised as complete.**
+self-verifying classifications. Completed comparisons then drive a separately fenced, payload-free
+finding projection with immutable transition evidence. Scheduling, bounded retention,
+health/readiness, and capability wiring remain subsequent phases, so reconciliation is not yet
+advertised as complete.**
 
 ## 1. Root problem
 
@@ -223,7 +225,53 @@ recomputed every public SHA checkpoint consistently. Any failure rolls back the 
 cursor. `classifications(comparisonId, afterObjectId, limit)` exports only a completed comparison in
 strict keyset order and verifies each row again. The public boundary has no remediation operation.
 
-## 10. Failure analysis
+## 10. Governed finding lifecycle
+
+`DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane` consumes completed
+comparisons without inheriting their mutable aggregate columns as truth. `projectNextPage(authorityId)`
+locks one finding authority, chooses the oldest unprojected comparison, and rejects timestamp ties or
+regression. This ordering is sound because the comparison authority now advances with a strict
+database-derived Lamport successor: newer transaction time, or locked `updated_at` plus one
+microsecond. UUID order is never used to invent business chronology.
+
+Projection start performs two fail-closed actions in one `REQUIRES_NEW` transaction:
+
+1. independently replays the completed comparison count/root/outcome counters and re-derives every
+   classification from the frozen expected/observed source union;
+2. copies every current finding for the authority into an immutable pre-state snapshot and records
+   its count and ordered fingerprint root.
+
+Each later transaction reads at most `N` classifications, where `N` is configured from 1 through
+500. For each source object it verifies that live current state still equals the frozen pre-state,
+applies one deterministic lifecycle transition, inserts one immutable event, and advances one exact
+object-id cursor, page sequence, transition counter set, event root, and whole-record fingerprint.
+Replica changes resume the same projection and cannot duplicate `(comparison, object)` evidence.
+
+| Transition | Deterministic rule |
+| --- | --- |
+| `OPENED` | non-match with no prior finding |
+| `OBSERVED` | non-match while the finding is already open |
+| `REOPENED` | non-match after a resolved episode |
+| `RESOLVED` | `MATCHED` closes an open finding with `MATCHED_ON_RECHECK` |
+| `CONFIRMED` | `MATCHED` needs no finding mutation |
+
+`occurrence_count` counts only non-matched observations; `episode_count` increments only on first
+open and reopen. Resolution is an evidence state transition, not proof that Resource Gateway
+remediated storage. The current row retains the latest non-matched kind, exact classification
+lineage, first/last observation, evaluation/resolution times, version, and a whole-record
+fingerprint. It contains no payload, receipt, signature, endpoint, credential, owner token, or free
+text.
+
+Before publishing `COMPLETED`, the control plane independently replays source classifications,
+source semantics, frozen finding root, event root/counters, exact classification-event coverage,
+and the complete resulting finding table. The last gate re-derives every transition from immutable
+pre-state plus source classification and rejects a stable but wrong event even when its event hash,
+event root, transition counters, and projection fingerprint were all recomputed consistently.
+`events(...)` repeats complete source/event replay before returning any completed page; `findings(...)`
+refuses reads while a projection is partially applied. Neither boundary exposes remediation or a
+destructive operation.
+
+## 11. Failure analysis
 
 | Failure | Root cause | Control |
 | --- | --- | --- |
@@ -253,8 +301,15 @@ strict keyset order and verifies each row again. The public boundary has no reme
 | classifier emits stable wrong outcome | self-hash is circular evidence | independent source-union semantic derivation |
 | transaction waits for authority lock and publishes older or equal time | `CURRENT_TIMESTAMP` is fixed at transaction start | use newer database time or the locked persisted `updated_at` plus one microsecond |
 | partial comparison is exported | staged rows look authoritative | export requires fingerprint-verified `COMPLETED` state |
+| two completed comparisons have equal or regressing time | UUID tie-break invents lifecycle order | strict Lamport successor and fail-closed chronology check |
+| process dies while findings are projected | current rows advance without a durable source cursor | authority, projection, cursor, event root, and frozen pre-state commit atomically per page |
+| active finding projection is queried | partially applied current table looks final | current finding export is denied while authority is active |
+| historical transition disappears | page-only export misses an earlier gap | complete event-root/count and exact source coverage replay before every export |
+| source comparison hashes are consistently rewritten | downstream trusts upstream self-hash | re-derive classifications from frozen expected/observed union |
+| transition hashes are consistently rewritten | event/root/projection self-hash is circular | re-derive transition and full resulting finding table from frozen pre-state |
+| governance resolution gains storage authority | evidence workflow becomes an accidental delete path | finding API has no remediation or WORM mutation operation |
 
-## 11. Executable evidence
+## 12. Executable evidence
 
 The focused gate executes 59 tests with zero failures, errors, or skips. New and extended cases prove:
 
@@ -301,17 +356,26 @@ The frozen Phase C source passed the complete Resource Gateway `clean verify`: 2
 failures, zero errors, two existing browser-environment skips, and a successfully repackaged Spring
 Boot executable JAR.
 
-## 12. Remaining phases and acceptance
+The Phase D focused gate adds 14 green database tests and the joint A-D gate executes 97 tests with
+zero failures, errors, or skips. They prove all five transitions across three strictly ordered
+comparisons, accumulated-backlog ordering, bounded cross-replica resume, active-export denial,
+current-state export, completed-event export, empty roots, outer-transaction isolation, settings and
+destructive-API boundaries, source/snapshot/event/current/projection/authority corruption rejection,
+missing historical event rollback, complete export replay, and two independent semantic-oracle
+attacks in which every public hash and aggregate was made internally self-consistent.
 
-The local expectation, durable remote cycle, frozen comparison, bounded ordered merge, and terminal
-semantic classification portions of Phases A-C are complete. No partial or active comparison can be
-exported as governance evidence.
+The frozen Phase D source passed the complete Resource Gateway `clean verify`: 2952 tests, zero
+failures, zero errors, two existing browser-environment skips, and a successfully repackaged Spring
+Boot executable JAR.
 
-Phase D must persist payload-free governed findings for at least `MISSING_REMOTE`, `UNEXPECTED_REMOTE`,
-`MATERIAL_CONFLICT`, `RETENTION_SHORTENED`, and `UNKNOWN`. Finding open/reopen/observe/resolve transitions
-must be fingerprinted, fenced, retained, exported, and separated from remediation authority.
+## 13. Remaining phases and acceptance
 
-Until findings, scheduler, health/readiness, retention, and capability truth are implemented,
+The local expectation, durable remote cycle, frozen comparison, bounded ordered merge, terminal
+semantic classification, and payload-free governed finding lifecycle portions of Phases A-D are
+complete. No partial comparison or finding projection can be exported as governance evidence.
+
+Until the scheduler, health/readiness, bounded active/event retention, and capability truth are
+implemented,
 Resource Gateway may claim **durable local expectation indexing, verified inventory cycle staging,
-and completed payload-free classification evidence**, but not governed external orphan
-reconciliation.
+completed payload-free classification evidence, and replay-verified governed finding evidence**, but
+not an autonomously operated external orphan-reconciliation service.
