@@ -19,7 +19,9 @@ public interface TestSuiteStabilityExecutionControl {
         BEFORE_ATTEMPT,
         /** After source evidence verification and before its parent journal checkpoint. */
         AFTER_SOURCE_VERIFICATION,
-        /** After the complete horizon and before evidence evaluation and signing. */
+        /** After the parent journal checkpoint and before sequential boundary evaluation. */
+        AFTER_PROGRESS_CHECKPOINT,
+        /** After a fixed horizon or sequential terminal prefix and before evidence signing. */
         BEFORE_EVIDENCE_SEAL
     }
 

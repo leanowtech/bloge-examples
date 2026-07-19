@@ -85,12 +85,14 @@ class TestingControlProtocolSchemaTest {
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V1,
                         TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V2,
+                        TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V3,
                         TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteStabilityEvidence/properties/schemaVersion/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityEvidence.SCHEMA_VERSION_V1,
                         TestSuiteStabilityEvidence.SCHEMA_VERSION_V2,
                         TestSuiteStabilityEvidence.SCHEMA_VERSION_V3,
+                        TestSuiteStabilityEvidence.SCHEMA_VERSION_V4,
                         TestSuiteStabilityEvidence.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityAttestation/properties/schemaVersion/enum"))
@@ -98,6 +100,7 @@ class TestingControlProtocolSchemaTest {
                 .containsExactly(TestSuiteStabilityAttestation.SCHEMA_VERSION_V1,
                         TestSuiteStabilityAttestation.SCHEMA_VERSION_V2,
                         TestSuiteStabilityAttestation.SCHEMA_VERSION_V3,
+                        TestSuiteStabilityAttestation.SCHEMA_VERSION_V4,
                         TestSuiteStabilityAttestation.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityExecutionResponse/properties/schemaVersion/enum"))
@@ -105,10 +108,13 @@ class TestingControlProtocolSchemaTest {
                 .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V2,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V3,
+                        TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V4,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at(
-                "/$defs/testSuiteStabilityProgress/properties/schemaVersion/const").asText())
-                .isEqualTo(TestSuiteStabilityProgressResponse.SCHEMA_VERSION);
+                "/$defs/testSuiteStabilityProgress/properties/schemaVersion/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly(TestSuiteStabilityProgressResponse.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityProgressResponse.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityJobSubmitRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(TestSuiteStabilityJobSubmitRequest.SCHEMA_VERSION);
@@ -1028,14 +1034,17 @@ class TestingControlProtocolSchemaTest {
                 "/testSuiteStabilityCaseObservation/properties").has("output")).isFalse();
         assertThat(definitions.at(
                 "/testSuiteStabilityEvidence/properties/attempts/minItems").asInt())
-                .isEqualTo(TestSuiteStabilityEvidence.MIN_ATTEMPTS);
+                .isEqualTo(1);
+        assertThat(definitions.at(
+                "/testSuiteStabilityEvidence/allOf/1/oneOf/0/properties/attempts/minItems")
+                .asInt()).isEqualTo(TestSuiteStabilityEvidence.MIN_ATTEMPTS);
         assertThat(definitions.at(
                 "/testSuiteStabilityEvidence/properties/attempts/maxItems").asInt())
                 .isEqualTo(TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS);
         assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/0/oneOf")).hasSize(4);
-        assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/1/oneOf")).hasSize(4);
+        assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/1/oneOf")).hasSize(5);
         assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/0/oneOf")).hasSize(3);
-        assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/1/oneOf")).hasSize(4);
+        assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/1/oneOf")).hasSize(5);
         assertThat(definitions.at(
                 "/testSuiteStabilityPromotionVerdict/properties"
                         + "/allSourceSuitesPromotionEligible/type").asText())
@@ -1048,7 +1057,8 @@ class TestingControlProtocolSchemaTest {
                 "/testSuiteStabilityStatisticalPolicy/properties/model/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly("ZERO_INSTABILITY_EXACT_BINOMIAL",
-                        "BASELINE_CONDITIONAL_EXACT_BINOMIAL");
+                        "BASELINE_CONDITIONAL_EXACT_BINOMIAL",
+                        "BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS");
         assertThat(definitions.at(
                 "/testSuiteStabilityStatisticalAssessment/oneOf/0/properties/assumptions"
                         + "/prefixItems"))
@@ -1061,11 +1071,20 @@ class TestingControlProtocolSchemaTest {
                 .containsExactlyElementsOf(
                         TestSuiteStabilityEvidence.BASELINE_CONDITIONAL_MODEL_ASSUMPTIONS);
         assertThat(definitions.at(
+                "/testSuiteStabilityStatisticalAssessment/oneOf/2/properties/assumptions"
+                        + "/prefixItems"))
+                .extracting(node -> node.path("const").asText())
+                .containsExactlyElementsOf(
+                        TestSuiteStabilityEvidence.ANYTIME_VALID_MODEL_ASSUMPTIONS);
+        assertThat(definitions.at(
                 "/testSuiteStabilityStatisticalAssessment/properties/comparisonAttempts/maximum")
                 .asInt()).isEqualTo(999);
         assertThat(definitions.at(
                 "/testSuiteStabilityStatisticalAssessment/properties"
                         + "/upperInstabilityRateBps/maximum").asInt()).isEqualTo(10_000);
+        assertThat(definitions.at(
+                "/testSuiteStabilityStatisticalAssessment/properties"
+                        + "/firstBoundaryCrossingAttempt/maximum").asInt()).isEqualTo(1_000);
         assertThat(definitions.at(
                 "/testSuiteStabilityAttemptResult/properties/sourcePromotionReasons/items/pattern")
                 .asText()).isEqualTo("^[A-Z][A-Z0-9_]{0,127}$");
@@ -1083,6 +1102,11 @@ class TestingControlProtocolSchemaTest {
                 .isFalse();
         assertThat(definitions.at("/testSuiteStabilityProgress/properties").has("attempts"))
                 .isFalse();
+        assertThat(definitions.at(
+                "/testSuiteStabilityProgress/properties/terminalReason/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("FIXED_HORIZON_REACHED", "E_VALUE_THRESHOLD_REACHED",
+                        "MAXIMUM_HORIZON_REACHED", "CENSORING_OBSERVED");
     }
 
     @Test

@@ -34,7 +34,8 @@ import java.util.regex.Pattern;
  * <p>Each attempt delegates to the ordinary immutable suite runner with a deterministic derived
  * idempotency key and {@code COLLECT_ALL}. After every verified source attempt, a payload-free
  * parent journal is checkpointed under the live owner/epoch fence before another attempt may be
- * scheduled. A successor refetches and verifies that exact prefix. Only a fully signed terminal
+ * scheduled. A successor refetches and verifies that exact prefix before deciding whether another
+ * attempt is legal. Only a fully signed fixed-horizon or first-boundary sequential terminal
  * analysis consumes the journal and lease; concurrent creators converge on one stored winner.
  * An optional payload-free cooperative controller can stop work at source boundaries and
  * linearize an external queue before parent terminal publication.</p>
@@ -263,8 +264,10 @@ public final class TestSuiteStabilityExecutionService {
         List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> observations =
                 restoreProgress(progress, request, stored, identity);
         TestSuiteStabilityExecutionProgress currentProgress = progress;
+        Optional<TestSuiteStabilityEvidence> sequentialTerminal = evaluateSequentialPrefix(
+                stored, request, stabilityRunId, observations);
         for (int attempt = progress.completedAttempts() + 1;
-             attempt <= request.attempts(); attempt++) {
+             sequentialTerminal.isEmpty() && attempt <= request.attempts(); attempt++) {
             control.checkpoint(TestSuiteStabilityExecutionControl.Phase.BEFORE_ATTEMPT, attempt);
             requireLiveLease(lease, identity);
             TestSuiteExecutionRequest attemptRequest = new TestSuiteExecutionRequest("",
@@ -288,15 +291,26 @@ public final class TestSuiteStabilityExecutionService {
                     TestSuiteStabilityExecutionControl.Phase.AFTER_SOURCE_VERIFICATION, attempt);
             currentProgress = checkpointProgress(lease, currentProgress, source, attempt, identity);
             observations.add(observation);
+            control.checkpoint(
+                    TestSuiteStabilityExecutionControl.Phase.AFTER_PROGRESS_CHECKPOINT, attempt);
+            sequentialTerminal = evaluateSequentialPrefix(
+                    stored, request, stabilityRunId, observations);
         }
 
         control.checkpoint(TestSuiteStabilityExecutionControl.Phase.BEFORE_EVIDENCE_SEAL, 0);
-        TestSuiteStabilityEvidence evidence = request.statisticalPolicy() == null
-                ? evaluator.evaluate(stored.suite(), request.suiteRef(), stabilityRunId,
-                request.clientRequestId(), request.attempts(), observations, request.metadata())
-                : evaluator.evaluateStatistical(stored.suite(), request.suiteRef(), stabilityRunId,
-                request.clientRequestId(), request.attempts(), observations, request.metadata(),
-                request.statisticalPolicy());
+        TestSuiteStabilityEvidence evidence;
+        if (isSequential(request)) {
+            evidence = sequentialTerminal.orElseThrow(() -> new IllegalStateException(
+                    "The maximum anytime-valid prefix must be terminal"));
+        } else if (request.statisticalPolicy() == null) {
+            evidence = evaluator.evaluate(stored.suite(), request.suiteRef(), stabilityRunId,
+                    request.clientRequestId(), request.attempts(), observations,
+                    request.metadata());
+        } else {
+            evidence = evaluator.evaluateStatistical(stored.suite(), request.suiteRef(),
+                    stabilityRunId, request.clientRequestId(), request.attempts(), observations,
+                    request.metadata(), request.statisticalPolicy());
+        }
         TestSuiteStabilityAttestationService.SealResult seal =
                 attestations.seal(evidence, requestFingerprint);
         if (!seal.verified()) {
@@ -329,6 +343,25 @@ public final class TestSuiteStabilityExecutionService {
             throw unavailable(identity, "RG.TEST.STABILITY_STORE_UNAVAILABLE",
                     "The independent stability evidence store is unavailable.");
         }
+    }
+
+    private Optional<TestSuiteStabilityEvidence> evaluateSequentialPrefix(
+            StoredTestSuite stored,
+            TestSuiteStabilityExecutionRequest request,
+            String stabilityRunId,
+            List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> observations) {
+        if (!isSequential(request)) {
+            return Optional.empty();
+        }
+        return evaluator.evaluateSequential(stored.suite(), request.suiteRef(), stabilityRunId,
+                request.clientRequestId(), request.attempts(), observations, request.metadata(),
+                request.statisticalPolicy());
+    }
+
+    private static boolean isSequential(TestSuiteStabilityExecutionRequest request) {
+        return request.statisticalPolicy() != null && request.statisticalPolicy().model()
+                == TestSuiteStabilityStatisticalPolicy.Model
+                .BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS;
     }
 
     private List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> restoreProgress(
@@ -542,9 +575,14 @@ public final class TestSuiteStabilityExecutionService {
     private static TestSuiteStabilityProgressResponse completedProgress(
             TestSuiteStabilityRunRecord record) {
         TestSuiteStabilityEvidence evidence = record.evidence();
+        TestSuiteStabilityEvidence.StatisticalStopReason terminalReason =
+                evidence.statisticalAssessment() == null
+                        ? TestSuiteStabilityEvidence.StatisticalStopReason.FIXED_HORIZON_REACHED
+                        : evidence.statisticalAssessment().stopReason();
         return new TestSuiteStabilityProgressResponse("", record.stabilityRunId(),
                 TestSuiteStabilityProgressResponse.Status.COMPLETED, evidence.suiteRef(),
                 evidence.requestedAttempts(), evidence.attempts().size(),
+                terminalReason,
                 evidence.startedAt(), evidence.completedAt());
     }
 
@@ -622,15 +660,20 @@ public final class TestSuiteStabilityExecutionService {
                 request.schemaVersion());
         boolean legacyStatistical = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V2.equals(
                 request.schemaVersion());
-        boolean rateStatistical = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION.equals(
+        boolean rateStatistical = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V3.equals(
                 request.schemaVersion());
-        boolean statistical = legacyStatistical || rateStatistical;
+        boolean sequentialStatistical = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION.equals(
+                request.schemaVersion());
+        boolean statistical = legacyStatistical || rateStatistical || sequentialStatistical;
         boolean modelMatchesGeneration = request.statisticalPolicy() != null
                 && (legacyStatistical && request.statisticalPolicy().model()
                 == TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL
                 || rateStatistical && request.statisticalPolicy().model()
                 == TestSuiteStabilityStatisticalPolicy.Model
-                .BASELINE_CONDITIONAL_EXACT_BINOMIAL);
+                .BASELINE_CONDITIONAL_EXACT_BINOMIAL
+                || sequentialStatistical && request.statisticalPolicy().model()
+                == TestSuiteStabilityStatisticalPolicy.Model
+                .BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS);
         if (!deterministic && !statistical
                 || deterministic && (request.statisticalPolicy() != null
                 || request.attempts() < TestSuiteStabilityEvidence.MIN_ATTEMPTS
@@ -639,7 +682,7 @@ public final class TestSuiteStabilityExecutionService {
                 || request.attempts() < TestSuiteStabilityStatisticalPolicy.MIN_ATTEMPTS
                 || request.attempts() > TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS)) {
             throw badRequest(identity, "RG.TEST.STABILITY_REQUEST_INVALID",
-                    "Request v1 requires 3..20 deterministic attempts; v2/v3 require their exact 3..1000 statistical model generation.");
+                    "Request v1 requires 3..20 deterministic attempts; v2-v4 require their exact 3..1000 statistical model generation.");
         }
         if (statistical) {
             try {
@@ -771,6 +814,9 @@ public final class TestSuiteStabilityExecutionService {
         } else if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V3.equals(
                 record.evidence().schemaVersion())) {
             version = TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V3;
+        } else if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V4.equals(
+                record.evidence().schemaVersion())) {
+            version = TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V4;
         } else {
             version = TestSuiteStabilityExecutionResponse.SCHEMA_VERSION;
         }

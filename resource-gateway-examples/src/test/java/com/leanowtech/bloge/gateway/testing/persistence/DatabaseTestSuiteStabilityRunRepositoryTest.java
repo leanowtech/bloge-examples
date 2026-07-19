@@ -198,11 +198,37 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
                 .get().satisfies(value -> {
                     assertThat(value.evidence().schemaVersion())
-                            .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+                            .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION_V4);
                     assertThat(value.evidence().statisticalAssessment()
                             .comparisonAttempts()).isEqualTo(29);
                     assertThat(value.evidence().statisticalAssessment()
                             .upperInstabilityRateBps()).isEqualTo(982);
+                });
+    }
+
+    @Test
+    void anytimeValidV5MayConsumeOnlyItsExactFirstBoundaryPrefix() {
+        TestSuiteStabilityEvidence evidence =
+                TestSuiteStabilityProtocolFixtures.sequentialStableEvidence();
+        TestSuiteStabilityRunRecord record = record(evidence, "tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+        TestSuiteStabilityExecutionLease lease = acquired(record, "owner-a");
+        TestSuiteStabilityExecutionLease after56 = checkpointRemaining(record, lease, 0, 56);
+
+        assertThatThrownBy(() -> repository.complete(record, after56))
+                .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT));
+
+        TestSuiteStabilityExecutionLease after57 = checkpointRemaining(record, after56, 56, 57);
+        assertThat(repository.complete(record, after57)).isEqualTo(record);
+        assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
+                .get().satisfies(value -> {
+                    assertThat(value.evidence().requestedAttempts()).isEqualTo(100);
+                    assertThat(value.evidence().attempts()).hasSize(57);
+                    assertThat(value.evidence().statisticalAssessment().stopReason())
+                            .isEqualTo(TestSuiteStabilityEvidence.StatisticalStopReason
+                                    .E_VALUE_THRESHOLD_REACHED);
                 });
     }
 
@@ -475,10 +501,19 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
             TestSuiteStabilityRunRecord record,
             TestSuiteStabilityExecutionLease lease,
             int completedAttempts) {
+        return checkpointRemaining(record, lease, completedAttempts,
+                record.evidence().attempts().size());
+    }
+
+    private TestSuiteStabilityExecutionLease checkpointRemaining(
+            TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityExecutionLease lease,
+            int completedAttempts,
+            int targetAttempts) {
         TestSuiteStabilityExecutionLease current = lease;
         for (TestSuiteStabilityEvidence.AttemptResult attempt
                 : record.evidence().attempts().subList(
-                completedAttempts, record.evidence().attempts().size())) {
+                completedAttempts, targetAttempts)) {
             current = repository.checkpoint(current,
                     new TestSuiteStabilityExecutionProgress.AttemptReference(
                             attempt.attempt(), attempt.suiteRunId(),

@@ -19,8 +19,8 @@ import java.util.Map;
  * @param schemaVersion exact request protocol version
  * @param suiteRef exact immutable suite revision
  * @param clientRequestId caller-stable parent idempotency key
- * @param attempts bounded independent rerun count
- * @param statisticalPolicy precommitted statistical model; required by request v2/v3
+ * @param attempts bounded independent rerun count or precommitted sequential maximum
+ * @param statisticalPolicy precommitted statistical model; required by request v2-v4
  * @param metadata bounded pipeline and invocation provenance
  */
 public record TestSuiteStabilityExecutionRequest(
@@ -36,8 +36,11 @@ public record TestSuiteStabilityExecutionRequest(
     public static final String SCHEMA_VERSION_V1 = "bloge.testSuiteStabilityExecutionRequest.v1";
     /** Legacy request version with the zero-event statistical policy. */
     public static final String SCHEMA_VERSION_V2 = "bloge.testSuiteStabilityExecutionRequest.v2";
-    /** Current request version with the baseline-conditional exact-rate policy. */
-    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityExecutionRequest.v3";
+    /** Request version with the baseline-conditional fixed-horizon exact-rate policy. */
+    public static final String SCHEMA_VERSION_V3 =
+            "bloge.testSuiteStabilityExecutionRequest.v3";
+    /** Current request version with the anytime-valid e-process policy. */
+    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityExecutionRequest.v4";
 
     /** Applies the minimum useful attempt count and defensively freezes metadata. */
     public TestSuiteStabilityExecutionRequest {
@@ -75,8 +78,10 @@ public record TestSuiteStabilityExecutionRequest(
         if (policy == null) {
             return SCHEMA_VERSION_V1;
         }
-        return policy.model()
-                == TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL
-                ? SCHEMA_VERSION_V2 : SCHEMA_VERSION;
+        return switch (policy.model()) {
+            case ZERO_INSTABILITY_EXACT_BINOMIAL -> SCHEMA_VERSION_V2;
+            case BASELINE_CONDITIONAL_EXACT_BINOMIAL -> SCHEMA_VERSION_V3;
+            case BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS -> SCHEMA_VERSION;
+        };
     }
 }

@@ -50,8 +50,10 @@ public record TestSuiteStabilityAttestation(
     public static final String SCHEMA_VERSION_V2 = "bloge.testSuiteStabilityAttestation.v2";
     /** Legacy attestation version over zero-event statistical v3 evidence. */
     public static final String SCHEMA_VERSION_V3 = "bloge.testSuiteStabilityAttestation.v3";
-    /** Current attestation version over baseline-conditional statistical v4 evidence. */
-    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityAttestation.v4";
+    /** Attestation version over baseline-conditional fixed-horizon v4 evidence. */
+    public static final String SCHEMA_VERSION_V4 = "bloge.testSuiteStabilityAttestation.v4";
+    /** Current attestation version over anytime-valid sequential v5 evidence. */
+    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityAttestation.v5";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final Pattern STABILITY_RUN_ID = Pattern.compile("stability-[a-f0-9]{64}");
     private static final Pattern REASON_CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,127}");
@@ -121,7 +123,8 @@ public record TestSuiteStabilityAttestation(
                 && completeIdentity(stabilityRunId, suiteRef, requestFingerprint,
                 evidenceFingerprint) && !keyId.isBlank() && !algorithm.isBlank()
                 && !signature.isBlank() && !Instant.EPOCH.equals(signedAt);
-        if (!List.of(SCHEMA_VERSION_V1, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3, SCHEMA_VERSION)
+        if (!List.of(SCHEMA_VERSION_V1, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3,
+                SCHEMA_VERSION_V4, SCHEMA_VERSION)
                 .contains(schemaVersion)) {
             throw new IllegalArgumentException("Unsupported stability attestation schemaVersion");
         }
@@ -170,8 +173,11 @@ public record TestSuiteStabilityAttestation(
         if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V2.equals(evidenceVersion)) {
             return SCHEMA_VERSION_V2;
         }
-        return TestSuiteStabilityEvidence.SCHEMA_VERSION_V3.equals(evidenceVersion)
-                ? SCHEMA_VERSION_V3 : SCHEMA_VERSION;
+        if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V3.equals(evidenceVersion)) {
+            return SCHEMA_VERSION_V3;
+        }
+        return TestSuiteStabilityEvidence.SCHEMA_VERSION_V4.equals(evidenceVersion)
+                ? SCHEMA_VERSION_V4 : SCHEMA_VERSION;
     }
 
     private static boolean completeIdentity(

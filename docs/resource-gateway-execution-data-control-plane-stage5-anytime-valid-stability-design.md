@@ -1,10 +1,12 @@
 # Stage 5 anytime-valid suite-stability design
 
-**Implementation status (2026-07-19): arithmetic foundation implemented; wire and runtime pending.**
-The server and independent test kit implement the same exact rational e-process with separate code
-and matching boundary tests. Request/evidence generations, early terminal persistence, progress v2,
-Schema, capability truth, CLI, and full runtime verification remain required before the feature can
-be advertised.
+**Implementation status (2026-07-19): server protocol and durable runtime implemented; independent
+consumer integration pending.** The server now serves request v4, evidence/attestation/response v5,
+and progress v2; evaluates only after a durable parent checkpoint; reconstructs the first crossing
+before scheduling after recovery; admits only exact early-terminal repository closures; and exposes
+strict Schema and capability truth. The independent test kit already has separate exact arithmetic,
+but its v5 wire parser, async client, CLI/JUnit projection, and the final dual-project build remain
+before end-to-end completion.
 
 ## 1. Root decision
 
@@ -94,11 +96,11 @@ Explicit alpha-spending remains a possible future policy family, not an alias fo
 capability name must say `anytimeValidSuiteStabilityEProcess`; the existing
 `sequentialSuiteStabilityAlphaSpending` flag stays false.
 
-## 5. Planned protocol generations
+## 5. Implemented server protocol generations
 
-The implementation will use additive generations and preserve all historical signatures:
+The server uses additive generations and preserves all historical signatures:
 
-| Object | Planned current generation |
+| Object | Current server generation |
 | --- | --- |
 | request | `bloge.testSuiteStabilityExecutionRequest.v4` |
 | evidence | `bloge.testSuiteStabilityEvidence.v5` |
@@ -179,18 +181,26 @@ The generation must reject:
 
 ## 9. Completion evidence
 
-The feature remains unavailable until tests prove:
+The server advertises `anytimeValidSuiteStabilityEProcess` only when the stability endpoint and
+attestation signer are both available. End-to-end portability is not complete until every item is
+closed:
 
-1. server/test-kit exact arithmetic parity at crossing and non-crossing boundaries;
-2. non-zero-event crossing and maximum-horizon rejection;
-3. first-crossing reconstruction over ordered vectors;
-4. crash after checkpoint resumes into terminal without an extra source execution;
-5. repository accepts only valid early v5 terminal closure;
-6. progress v1 compatibility and strict v2 early-terminal semantics;
-7. censoring, flakiness, consistent failure, and source-promotion blocking;
-8. forged alternative, count, confidence, crossing, stop reason, and signature rejection;
-9. strict Schema, capability, HTTP, async job, CLI, JUnit, and JavaDoc gates;
-10. full Resource Gateway and independent test-kit builds.
+1. implemented: separate server/test-kit exact arithmetic parity at crossing and non-crossing
+   boundaries;
+2. implemented on the server: non-zero-event crossing and maximum-horizon rejection;
+3. implemented on the server: first-crossing reconstruction over ordered vectors;
+4. implemented on the server: crash after checkpoint resumes into terminal without an extra source
+   execution;
+5. implemented on the server: repository accepts only valid early v5 terminal closure;
+6. implemented on the server: progress v1 compatibility and strict v2 early-terminal semantics;
+7. implemented on the server: censoring, flakiness, consistent failure, and source-promotion
+   blocking;
+8. implemented on the server: forged alternative, count, confidence, crossing, stop reason, and
+   signature rejection;
+9. partial: strict Schema, capability, and HTTP gates are implemented; independent async client,
+   CLI, JUnit, and public JavaDoc gates remain;
+10. partial: full Resource Gateway `clean verify` passes 2780 tests with zero failures and errors;
+    the independent test-kit build remains after its protocol consumer is complete.
 
 ## 10. Deliberately unclaimed
 

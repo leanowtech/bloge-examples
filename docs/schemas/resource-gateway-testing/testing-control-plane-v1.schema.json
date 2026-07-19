@@ -2459,13 +2459,26 @@
         "confidenceLevelBps", "maximumInstabilityRateBps"],
       "properties": {
         "model": {"enum": ["ZERO_INSTABILITY_EXACT_BINOMIAL",
-          "BASELINE_CONDITIONAL_EXACT_BINOMIAL"]},
+          "BASELINE_CONDITIONAL_EXACT_BINOMIAL",
+          "BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS"]},
         "claimScope": {"const": "SUITE_ATTEMPT_ANY_CASE"},
-        "stoppingRule": {"const": "PRECOMMITTED_FIXED_HORIZON"},
+        "stoppingRule": {"enum": ["PRECOMMITTED_FIXED_HORIZON",
+          "ANYTIME_VALID_E_PROCESS"]},
         "censoringPolicy": {"const": "FAIL_CLOSED"},
         "confidenceLevelBps": {"type": "integer", "minimum": 5000, "maximum": 9999},
-        "maximumInstabilityRateBps": {"type": "integer", "minimum": 1, "maximum": 5000}
-      }
+        "maximumInstabilityRateBps": {"type": "integer", "minimum": 1, "maximum": 5000},
+        "alternativeInstabilityRateBps": {"type": "integer", "minimum": 0, "maximum": 4999}
+      },
+      "oneOf": [
+        {"properties": {
+          "model": {"enum": ["ZERO_INSTABILITY_EXACT_BINOMIAL",
+            "BASELINE_CONDITIONAL_EXACT_BINOMIAL"]},
+          "stoppingRule": {"const": "PRECOMMITTED_FIXED_HORIZON"}},
+          "not": {"required": ["alternativeInstabilityRateBps"]}},
+        {"required": ["alternativeInstabilityRateBps"], "properties": {
+          "model": {"const": "BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS"},
+          "stoppingRule": {"const": "ANYTIME_VALID_E_PROCESS"}}}
+      ]
     },
     "testSuiteStabilityExecutionRequest": {
       "type": "object",
@@ -2474,7 +2487,8 @@
       "properties": {
         "schemaVersion": {"enum": ["bloge.testSuiteStabilityExecutionRequest.v1",
           "bloge.testSuiteStabilityExecutionRequest.v2",
-          "bloge.testSuiteStabilityExecutionRequest.v3"]},
+          "bloge.testSuiteStabilityExecutionRequest.v3",
+          "bloge.testSuiteStabilityExecutionRequest.v4"]},
         "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
         "clientRequestId": {
           "type": "string", "minLength": 1, "maxLength": 255,
@@ -2498,7 +2512,12 @@
           "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionRequest.v3"},
           "attempts": {"maximum": 1000},
           "statisticalPolicy": {"properties": {
-            "model": {"const": "BASELINE_CONDITIONAL_EXACT_BINOMIAL"}}}}}
+            "model": {"const": "BASELINE_CONDITIONAL_EXACT_BINOMIAL"}}}}},
+        {"required": ["statisticalPolicy"], "properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionRequest.v4"},
+          "attempts": {"maximum": 1000},
+          "statisticalPolicy": {"properties": {
+            "model": {"const": "BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS"}}}}}
       ]
     },
     "testSuiteStabilityJobSubmitRequest": {
@@ -2722,7 +2741,7 @@
         "fixtureBundleRef": {"$ref": "#/$defs/governedFixtureBundleRef"},
         "status": {"enum": ["STABLE_PASS", "CONSISTENT_FAILURE", "FLAKY", "INCONCLUSIVE"]},
         "observations": {
-          "type": "array", "minItems": 3, "maxItems": 1000,
+          "type": "array", "minItems": 1, "maxItems": 1000,
           "items": {"$ref": "#/$defs/testSuiteStabilityCaseObservation"}
         },
         "distinctVerifiedOutcomes": {"type": "integer", "minimum": 0, "maximum": 1000},
@@ -2754,22 +2773,24 @@
       "properties": {
         "policy": {"$ref": "#/$defs/testSuiteStabilityStatisticalPolicy"},
         "requiredAttempts": {"type": "integer", "minimum": 3, "maximum": 1000},
-        "observedAttempts": {"type": "integer", "minimum": 3, "maximum": 1000},
+        "observedAttempts": {"type": "integer", "minimum": 1, "maximum": 1000},
         "verifiedAttempts": {"type": "integer", "minimum": 0, "maximum": 1000},
         "censoredAttempts": {"type": "integer", "minimum": 0, "maximum": 1000},
         "observedInstabilityEvents": {"type": "integer", "minimum": 0, "maximum": 999},
         "achievedConfidenceBps": {"type": "integer", "minimum": 0, "maximum": 10000},
         "comparisonAttempts": {"type": "integer", "minimum": 0, "maximum": 999},
         "upperInstabilityRateBps": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "firstBoundaryCrossingAttempt": {"type": "integer", "minimum": 3, "maximum": 1000},
         "status": {"enum": ["SATISFIED", "REJECTED", "INCONCLUSIVE"]},
-        "stopReason": {"const": "FIXED_HORIZON_REACHED"},
-        "assumptions": {
-          "type": "array", "minItems": 4, "maxItems": 6
-        }
+        "stopReason": {"enum": ["FIXED_HORIZON_REACHED", "E_VALUE_THRESHOLD_REACHED",
+          "MAXIMUM_HORIZON_REACHED", "CENSORING_OBSERVED"]},
+        "assumptions": {"type": "array", "minItems": 4, "maxItems": 7}
       },
       "oneOf": [
         {"properties": {
           "policy": {"properties": {"model": {"const": "ZERO_INSTABILITY_EXACT_BINOMIAL"}}},
+          "observedAttempts": {"minimum": 3},
+          "stopReason": {"const": "FIXED_HORIZON_REACHED"},
           "assumptions": {
             "minItems": 4, "maxItems": 4,
             "prefixItems": [
@@ -2782,7 +2803,8 @@
           }},
           "not": {"anyOf": [
             {"required": ["comparisonAttempts"]},
-            {"required": ["upperInstabilityRateBps"]}
+            {"required": ["upperInstabilityRateBps"]},
+            {"required": ["firstBoundaryCrossingAttempt"]}
           ]},
           "oneOf": [
             {"properties": {"status": {"const": "SATISFIED"},
@@ -2800,6 +2822,8 @@
         {"required": ["comparisonAttempts"], "properties": {
           "policy": {"properties": {
             "model": {"const": "BASELINE_CONDITIONAL_EXACT_BINOMIAL"}}},
+          "observedAttempts": {"minimum": 3},
+          "stopReason": {"const": "FIXED_HORIZON_REACHED"},
           "assumptions": {
             "minItems": 6, "maxItems": 6,
             "prefixItems": [
@@ -2812,6 +2836,7 @@
             ],
             "items": false
           }},
+          "not": {"required": ["firstBoundaryCrossingAttempt"]},
           "oneOf": [
             {"required": ["upperInstabilityRateBps"], "properties": {
               "status": {"enum": ["SATISFIED", "REJECTED"]},
@@ -2820,6 +2845,41 @@
               "censoredAttempts": {"minimum": 1},
               "achievedConfidenceBps": {"const": 0}},
               "not": {"required": ["upperInstabilityRateBps"]}}
+          ]},
+        {"required": ["comparisonAttempts"], "properties": {
+          "policy": {"properties": {
+            "model": {"const": "BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS"}}},
+          "assumptions": {
+            "minItems": 7, "maxItems": 7,
+            "prefixItems": [
+              {"const": "CONDITIONAL_EVENT_PROBABILITY_NULL_BOUND"},
+              {"const": "OUTCOME_EVENT_DETECTION_BY_SEMANTIC_FINGERPRINT"},
+              {"const": "BASELINE_IS_FIRST_VERIFIED_ATTEMPT"},
+              {"const": "RATE_IS_CONDITIONAL_ON_OBSERVED_BASELINE"},
+              {"const": "ALTERNATIVE_RATE_PRECOMMITTED_BEFORE_EXECUTION"},
+              {"const": "VILLE_ANYTIME_ERROR_CONTROL"},
+              {"const": "NO_UNOBSERVED_COMMON_CAUSE_CLAIM"}
+            ],
+            "items": false
+          }},
+          "not": {"required": ["upperInstabilityRateBps"]},
+          "oneOf": [
+            {"required": ["firstBoundaryCrossingAttempt"], "properties": {
+              "status": {"const": "SATISFIED"},
+              "stopReason": {"const": "E_VALUE_THRESHOLD_REACHED"},
+              "censoredAttempts": {"const": 0},
+              "achievedConfidenceBps": {"minimum": 5000}}},
+            {"properties": {
+              "status": {"const": "REJECTED"},
+              "stopReason": {"const": "MAXIMUM_HORIZON_REACHED"},
+              "censoredAttempts": {"const": 0}},
+              "not": {"required": ["firstBoundaryCrossingAttempt"]}},
+            {"properties": {
+              "status": {"const": "INCONCLUSIVE"},
+              "stopReason": {"const": "CENSORING_OBSERVED"},
+              "censoredAttempts": {"minimum": 1},
+              "achievedConfidenceBps": {"const": 0}},
+              "not": {"required": ["firstBoundaryCrossingAttempt"]}}
           ]}
       ]
     },
@@ -2883,7 +2943,7 @@
       "properties": {
         "schemaVersion": {"enum": ["bloge.testSuiteStabilityEvidence.v1",
           "bloge.testSuiteStabilityEvidence.v2", "bloge.testSuiteStabilityEvidence.v3",
-          "bloge.testSuiteStabilityEvidence.v4"]},
+          "bloge.testSuiteStabilityEvidence.v4", "bloge.testSuiteStabilityEvidence.v5"]},
         "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
         "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
         "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
@@ -2891,7 +2951,7 @@
         "requestedAttempts": {"type": "integer", "minimum": 3, "maximum": 1000},
         "status": {"enum": ["STABLE", "FLAKY", "CONSISTENT_FAILURE", "INCONCLUSIVE"]},
         "attempts": {
-          "type": "array", "minItems": 3, "maxItems": 1000,
+          "type": "array", "minItems": 1, "maxItems": 1000,
           "items": {"$ref": "#/$defs/testSuiteStabilityAttemptResult"}
         },
         "caseResults": {
@@ -2928,7 +2988,7 @@
         {"properties": {
           "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v1"},
           "requestedAttempts": {"maximum": 20},
-          "attempts": {"maxItems": 20, "items": {"allOf": [
+          "attempts": {"minItems": 3, "maxItems": 20, "items": {"allOf": [
             {"$ref": "#/$defs/testSuiteStabilityAttemptResult"},
             {"not": {"anyOf": [
               {"required": ["sourcePromotionStatus"]},
@@ -2936,7 +2996,7 @@
             ]}}
           ]}},
           "caseResults": {"items": {"properties": {
-            "observations": {"maxItems": 20}}}},
+            "observations": {"minItems": 3, "maxItems": 20}}}},
           "promotion": {"not": {"anyOf": [
             {"required": ["allSourceSuitesPromotionEligible"]},
             {"required": ["statisticalConfidenceSatisfied"]}
@@ -2946,8 +3006,8 @@
           "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v2"},
           "requestedAttempts": {"maximum": 20},
           "caseResults": {"items": {"properties": {
-            "observations": {"maxItems": 20}}}},
-          "attempts": {"maxItems": 20, "items": {"allOf": [
+            "observations": {"minItems": 3, "maxItems": 20}}}},
+          "attempts": {"minItems": 3, "maxItems": 20, "items": {"allOf": [
             {"$ref": "#/$defs/testSuiteStabilityAttemptResult"},
             {
               "oneOf": [
@@ -2962,9 +3022,11 @@
         }, "not": {"required": ["statisticalAssessment"]}},
         {"required": ["statisticalAssessment"], "properties": {
           "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v3"},
+          "caseResults": {"items": {"properties": {
+            "observations": {"minItems": 3}}}},
           "statisticalAssessment": {"properties": {"policy": {"properties": {
             "model": {"const": "ZERO_INSTABILITY_EXACT_BINOMIAL"}}}}},
-          "attempts": {"items": {"allOf": [
+          "attempts": {"minItems": 3, "items": {"allOf": [
             {"$ref": "#/$defs/testSuiteStabilityAttemptResult"},
             {
               "oneOf": [
@@ -2990,8 +3052,38 @@
         },
         {"required": ["statisticalAssessment"], "properties": {
           "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v4"},
+          "caseResults": {"items": {"properties": {
+            "observations": {"minItems": 3}}}},
           "statisticalAssessment": {"properties": {"policy": {"properties": {
             "model": {"const": "BASELINE_CONDITIONAL_EXACT_BINOMIAL"}}}}},
+          "attempts": {"minItems": 3, "items": {"allOf": [
+            {"$ref": "#/$defs/testSuiteStabilityAttemptResult"},
+            {
+              "oneOf": [
+                {"required": ["sourcePromotionStatus"],
+                  "properties": {"status": {"const": "VERIFIED"},
+                  "sourcePromotionStatus": {"enum": ["ELIGIBLE", "BLOCKED"]}}},
+                {"properties": {"status": {"const": "INCONCLUSIVE"}}}
+              ]}
+          ]}},
+          "promotion": {"required": ["allSourceSuitesPromotionEligible",
+            "statisticalConfidenceSatisfied"]}
+        }, "allOf": [{"oneOf": [
+          {"properties": {
+            "statisticalAssessment": {"properties": {"status": {"const": "SATISFIED"}}},
+            "promotion": {"properties": {"statisticalConfidenceSatisfied": {"const": true}}}
+          }},
+          {"properties": {
+            "statisticalAssessment": {"properties": {
+              "status": {"enum": ["REJECTED", "INCONCLUSIVE"]}}},
+            "promotion": {"properties": {"statisticalConfidenceSatisfied": {"const": false}}}
+          }}
+        ]}]
+        },
+        {"required": ["statisticalAssessment"], "properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v5"},
+          "statisticalAssessment": {"properties": {"policy": {"properties": {
+            "model": {"const": "BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS"}}}}},
           "attempts": {"items": {"allOf": [
             {"$ref": "#/$defs/testSuiteStabilityAttemptResult"},
             {
@@ -3047,7 +3139,8 @@
       "properties": {
         "schemaVersion": {"enum": ["bloge.testSuiteStabilityAttestation.v1",
           "bloge.testSuiteStabilityAttestation.v2", "bloge.testSuiteStabilityAttestation.v3",
-          "bloge.testSuiteStabilityAttestation.v4"]},
+          "bloge.testSuiteStabilityAttestation.v4",
+          "bloge.testSuiteStabilityAttestation.v5"]},
         "signatureStatus": {"enum": ["VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE"]},
         "stabilityRunId": {"type": "string", "maxLength": 74},
         "suiteRef": {"oneOf": [{"$ref": "#/$defs/testSuiteRef"}, {"type": "null"}]},
@@ -3118,6 +3211,13 @@
             {"$ref": "#/$defs/testSuiteStabilitySourceEvidenceRef"},
             {"required": ["sourcePromotionStatus"]}
           ]}}
+        }},
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityAttestation.v5"},
+          "sourceSuiteEvidenceRefs": {"items": {"allOf": [
+            {"$ref": "#/$defs/testSuiteStabilitySourceEvidenceRef"},
+            {"required": ["sourcePromotionStatus"]}
+          ]}}
         }}
       ]}]
     },
@@ -3130,7 +3230,8 @@
         "schemaVersion": {"enum": ["bloge.testSuiteStabilityExecutionResponse.v1",
           "bloge.testSuiteStabilityExecutionResponse.v2",
           "bloge.testSuiteStabilityExecutionResponse.v3",
-          "bloge.testSuiteStabilityExecutionResponse.v4"]},
+          "bloge.testSuiteStabilityExecutionResponse.v4",
+          "bloge.testSuiteStabilityExecutionResponse.v5"]},
         "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
         "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
         "evidence": {"$ref": "#/$defs/testSuiteStabilityEvidence"},
@@ -3170,6 +3271,13 @@
             "const": "bloge.testSuiteStabilityEvidence.v4"}}},
           "attestation": {"properties": {"schemaVersion": {
             "const": "bloge.testSuiteStabilityAttestation.v4"}}}
+        }},
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionResponse.v5"},
+          "evidence": {"properties": {"schemaVersion": {
+            "const": "bloge.testSuiteStabilityEvidence.v5"}}},
+          "attestation": {"properties": {"schemaVersion": {
+            "const": "bloge.testSuiteStabilityAttestation.v5"}}}
         }}
       ]
     },
@@ -3179,15 +3287,29 @@
       "required": ["schemaVersion", "stabilityRunId", "status", "suiteRef",
         "plannedAttempts", "completedAttempts", "createdAt", "updatedAt"],
       "properties": {
-        "schemaVersion": {"const": "bloge.testSuiteStabilityProgress.v1"},
+        "schemaVersion": {"enum": ["bloge.testSuiteStabilityProgress.v1",
+          "bloge.testSuiteStabilityProgress.v2"]},
         "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
         "status": {"enum": ["RUNNING", "RECOVERABLE", "COMPLETED"]},
         "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
         "plannedAttempts": {"type": "integer", "minimum": 3, "maximum": 1000},
         "completedAttempts": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "terminalReason": {"enum": ["FIXED_HORIZON_REACHED", "E_VALUE_THRESHOLD_REACHED",
+          "MAXIMUM_HORIZON_REACHED", "CENSORING_OBSERVED"]},
         "createdAt": {"type": "string", "format": "date-time"},
         "updatedAt": {"type": "string", "format": "date-time"}
-      }
+      },
+      "oneOf": [
+        {"properties": {"schemaVersion": {"const": "bloge.testSuiteStabilityProgress.v1"}},
+          "not": {"required": ["terminalReason"]}},
+        {"properties": {"schemaVersion": {"const": "bloge.testSuiteStabilityProgress.v2"}},
+          "oneOf": [
+            {"properties": {"status": {"enum": ["RUNNING", "RECOVERABLE"]}},
+              "not": {"required": ["terminalReason"]}},
+            {"required": ["terminalReason"],
+              "properties": {"status": {"const": "COMPLETED"}}}
+          ]}
+      ]
     },
     "testSuiteCaseResult": {
       "type": "object",

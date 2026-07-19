@@ -64,12 +64,12 @@ public record TestSuiteStabilityEvidence(
     public static final String SCHEMA_VERSION_V2 = "bloge.testSuiteStabilityEvidence.v2";
     /** Legacy zero-event statistical evidence version. */
     public static final String SCHEMA_VERSION_V3 = "bloge.testSuiteStabilityEvidence.v3";
-    /** Current wire-supported baseline-conditional fixed-horizon exact-rate evidence version. */
+    /** Baseline-conditional fixed-horizon exact-rate evidence version. */
     public static final String SCHEMA_VERSION_V4 = "bloge.testSuiteStabilityEvidence.v4";
-    /** Staged anytime-valid sequential evidence version. */
+    /** Current anytime-valid sequential evidence version. */
     public static final String SCHEMA_VERSION_V5 = "bloge.testSuiteStabilityEvidence.v5";
     /** Current fully served evidence protocol version. */
-    public static final String SCHEMA_VERSION = SCHEMA_VERSION_V4;
+    public static final String SCHEMA_VERSION = SCHEMA_VERSION_V5;
     /** Minimum reruns required before stability may be claimed. */
     public static final int MIN_ATTEMPTS = 3;
     /** Generation-one upper bound preventing accidental CI amplification. */

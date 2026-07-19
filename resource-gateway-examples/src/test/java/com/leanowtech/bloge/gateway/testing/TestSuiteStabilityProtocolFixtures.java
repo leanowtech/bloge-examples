@@ -70,14 +70,32 @@ public final class TestSuiteStabilityProtocolFixtures {
                         9_500, 1_000));
     }
 
+    /**
+     * Creates v5 evidence that stops at the first clean anytime-valid boundary.
+     *
+     * @return immutable 57-of-100 sequential stability evidence
+     */
+    public static TestSuiteStabilityEvidence sequentialStableEvidence() {
+        return stableEvidence(57, 100,
+                TestSuiteStabilityStatisticalPolicy.anytimeValidEProcess(
+                        9_500, 1_000, 500));
+    }
+
     private static TestSuiteStabilityEvidence stableEvidence(
             int attemptCount,
+            TestSuiteStabilityStatisticalPolicy statisticalPolicy) {
+        return stableEvidence(attemptCount, attemptCount, statisticalPolicy);
+    }
+
+    private static TestSuiteStabilityEvidence stableEvidence(
+            int observedAttempts,
+            int requestedAttempts,
             TestSuiteStabilityStatisticalPolicy statisticalPolicy) {
         TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
                 "fixture-a", 2, FIXTURE_FINGERPRINT);
         List<TestSuiteStabilityEvidence.AttemptResult> attempts = new ArrayList<>();
         List<TestSuiteStabilityEvidence.CaseObservation> observations = new ArrayList<>();
-        for (int attempt = 1; attempt <= attemptCount; attempt++) {
+        for (int attempt = 1; attempt <= observedAttempts; attempt++) {
             attempts.add(new TestSuiteStabilityEvidence.AttemptResult(attempt,
                     TestSuiteStabilityEvidence.AttemptStatus.VERIFIED,
                     "suite-run-" + attempt, indexedFingerprint(attempt),
@@ -101,7 +119,7 @@ public final class TestSuiteStabilityProtocolFixtures {
         TestSuiteStabilityEvidence.Status status = TestSuiteStabilityEvidence.Status.STABLE;
         TestSuiteStabilityEvidence.StatisticalAssessment statistics = statisticalPolicy == null
                 ? null : TestSuiteStabilityEvidence.deriveStatisticalAssessment(
-                statisticalPolicy, attemptCount, attempts, cases);
+                statisticalPolicy, requestedAttempts, attempts, cases);
         TestSuiteStabilityEvidence.PromotionVerdict promotion = statisticalPolicy == null
                 ? TestSuiteStabilityEvidence.derivePromotion(attempts, cases, status)
                 : TestSuiteStabilityEvidence.deriveStatisticalPromotion(
@@ -112,11 +130,15 @@ public final class TestSuiteStabilityProtocolFixtures {
                         == TestSuiteStabilityStatisticalPolicy.Model
                         .ZERO_INSTABILITY_EXACT_BINOMIAL
                         ? TestSuiteStabilityEvidence.SCHEMA_VERSION_V3
+                        : statisticalPolicy.model()
+                        == TestSuiteStabilityStatisticalPolicy.Model
+                        .BASELINE_CONDITIONAL_EXACT_BINOMIAL
+                        ? TestSuiteStabilityEvidence.SCHEMA_VERSION_V4
                         : TestSuiteStabilityEvidence.SCHEMA_VERSION,
                 STABILITY_RUN_ID, "stability-request",
-                SUITE_REF, TARGET, attemptCount, status, attempts, cases, promotion,
+                SUITE_REF, TARGET, requestedAttempts, status, attempts, cases, promotion,
                 TestSuiteStabilityEvidence.deriveQuarantine(cases, status),
-                statistics, START.plusSeconds(1), START.plusSeconds(attemptCount + 1L), List.of(),
+                statistics, START.plusSeconds(1), START.plusSeconds(observedAttempts + 1L), List.of(),
                 Map.of("pipeline", "nightly"));
     }
 

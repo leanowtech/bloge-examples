@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictExc
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRepository;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
@@ -1004,9 +1005,20 @@ public final class DatabaseTestSuiteStabilityRunRepository
             throw conflict(TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
                     "Terminal stability evidence has no complete durable source closure");
         }
+        boolean completeHorizon = progress.completedAttempts() == progress.plannedAttempts();
+        boolean validSequentialEarlyTerminal = false;
+        TestSuiteStabilityEvidence evidence = record.evidence();
+        if (TestSuiteStabilityEvidence.SCHEMA_VERSION.equals(evidence.schemaVersion())
+                && evidence.statisticalAssessment() != null) {
+            validSequentialEarlyTerminal = List.of(
+                    TestSuiteStabilityEvidence.StatisticalStopReason.E_VALUE_THRESHOLD_REACHED,
+                    TestSuiteStabilityEvidence.StatisticalStopReason.CENSORING_OBSERVED)
+                    .contains(evidence.statisticalAssessment().stopReason());
+        }
         if (!record.evidence().suiteRef().equals(progress.suiteRef())
                 || record.evidence().requestedAttempts() != progress.plannedAttempts()
-                || progress.completedAttempts() != progress.plannedAttempts()
+                || progress.completedAttempts() != terminalAttempts.size()
+                || !completeHorizon && !validSequentialEarlyTerminal
                 || !terminalAttempts.equals(progress.attempts())) {
             throw conflict(TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
                     "Terminal stability evidence contradicts durable parent progress");

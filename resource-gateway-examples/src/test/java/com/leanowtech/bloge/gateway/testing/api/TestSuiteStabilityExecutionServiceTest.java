@@ -67,7 +67,7 @@ class TestSuiteStabilityExecutionServiceTest {
         suite = suite();
         sourceById = new LinkedHashMap<>();
         childById = new LinkedHashMap<>();
-        for (int attempt = 1; attempt <= 30; attempt++) {
+        for (int attempt = 1; attempt <= 100; attempt++) {
             TestSuiteExecutionResponse source = source(attempt);
             sourceById.put(source.suiteRunId(), source);
         }
@@ -160,11 +160,11 @@ class TestSuiteStabilityExecutionServiceTest {
                 suite.suiteId(), correctedStatisticalRequest(30), identity);
 
         assertThat(response.schemaVersion())
-                .isEqualTo(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
+                .isEqualTo(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V4);
         assertThat(response.evidence().schemaVersion())
-                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION_V4);
         assertThat(response.attestation().schemaVersion())
-                .isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+                .isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION_V4);
         assertThat(response.evidence().statisticalAssessment())
                 .extracting(TestSuiteStabilityEvidence.StatisticalAssessment::requiredAttempts,
                         TestSuiteStabilityEvidence.StatisticalAssessment::comparisonAttempts,
@@ -175,6 +175,80 @@ class TestSuiteStabilityExecutionServiceTest {
         assertThat(response.evidence().promotion().status())
                 .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.ELIGIBLE);
         verify(suiteExecutions, times(30)).execute(eq(suite.suiteId()), any(), eq(identity));
+    }
+
+    @Test
+    void stopsAndSignsAtTheFirstAnytimeValidBoundary() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+
+        TestSuiteStabilityExecutionResponse response = service.execute(
+                suite.suiteId(), sequentialRequest(100), identity);
+
+        assertThat(response.schemaVersion())
+                .isEqualTo(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
+        assertThat(response.evidence().schemaVersion())
+                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+        assertThat(response.attestation().schemaVersion())
+                .isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+        assertThat(response.evidence().requestedAttempts()).isEqualTo(100);
+        assertThat(response.evidence().attempts()).hasSize(57);
+        assertThat(response.evidence().statisticalAssessment().stopReason())
+                .isEqualTo(TestSuiteStabilityEvidence.StatisticalStopReason
+                        .E_VALUE_THRESHOLD_REACHED);
+        assertThat(service.findProgress(response.stabilityRunId(), identity))
+                .satisfies(progress -> {
+                    assertThat(progress.schemaVersion())
+                            .isEqualTo(TestSuiteStabilityProgressResponse.SCHEMA_VERSION);
+                    assertThat(progress.plannedAttempts()).isEqualTo(100);
+                    assertThat(progress.completedAttempts()).isEqualTo(57);
+                    assertThat(progress.terminalReason())
+                            .isEqualTo(TestSuiteStabilityEvidence.StatisticalStopReason
+                                    .E_VALUE_THRESHOLD_REACHED);
+                });
+        verify(suiteExecutions, times(57)).execute(eq(suite.suiteId()), any(), eq(identity));
+    }
+
+    @Test
+    void recoverySealsACheckpointedSequentialBoundaryWithoutExecutingAnExtraAttempt() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+        TestSuiteStabilityExecutionControl crashAfterBoundaryCheckpoint =
+                new TestSuiteStabilityExecutionControl() {
+                    @Override
+                    public void executionStarted(TestSuiteStabilityExecutionDescriptor execution) {
+                        // The deterministic descriptor is exercised by the ordinary control path.
+                    }
+
+                    @Override
+                    public void checkpoint(Phase phase, int attempt) {
+                        if (phase == Phase.AFTER_PROGRESS_CHECKPOINT && attempt == 57) {
+                            throw new ControlledStop();
+                        }
+                    }
+
+                    @Override
+                    public void prepareTerminal() {
+                        throw new AssertionError("The crashed owner cannot prepare terminal state");
+                    }
+                };
+
+        assertThatThrownBy(() -> service.executeControlled(
+                suite.suiteId(), sequentialRequest(100), identity,
+                crashAfterBoundaryCheckpoint))
+                .isInstanceOf(ControlledStop.class);
+        assertThat(repository.records).isEmpty();
+        assertThat(repository.progress.values()).singleElement()
+                .extracting(TestSuiteStabilityExecutionProgress::completedAttempts)
+                .isEqualTo(57);
+
+        TestSuiteStabilityExecutionResponse recovered = service.execute(
+                suite.suiteId(), sequentialRequest(100), identity);
+
+        assertThat(recovered.evidence().attempts()).hasSize(57);
+        assertThat(recovered.evidence().statisticalAssessment().firstBoundaryCrossingAttempt())
+                .isEqualTo(57);
+        verify(suiteExecutions, times(57)).execute(eq(suite.suiteId()), any(), eq(identity));
     }
 
     @Test
@@ -311,10 +385,13 @@ class TestSuiteStabilityExecutionServiceTest {
                 "BEFORE_PROGRESS_RESTORE:0",
                 "BEFORE_ATTEMPT:1",
                 "AFTER_SOURCE_VERIFICATION:1",
+                "AFTER_PROGRESS_CHECKPOINT:1",
                 "BEFORE_ATTEMPT:2",
                 "AFTER_SOURCE_VERIFICATION:2",
+                "AFTER_PROGRESS_CHECKPOINT:2",
                 "BEFORE_ATTEMPT:3",
                 "AFTER_SOURCE_VERIFICATION:3",
+                "AFTER_PROGRESS_CHECKPOINT:3",
                 "BEFORE_EVIDENCE_SEAL:0",
                 "PREPARE_TERMINAL");
         assertThat(repository.completions).isEqualTo(1);
@@ -629,10 +706,21 @@ class TestSuiteStabilityExecutionServiceTest {
                 TestSuiteStabilityStatisticalPolicy.baselineConditionalExactBinomial(
                         9_500, 1_000);
         return new TestSuiteStabilityExecutionRequest(
-                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION,
+                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V3,
                 new TestSuiteExecutionRequest.SuiteRef(
                         suite.suiteId(), suite.revision(), SUITE_FINGERPRINT),
                 "stability-rate-ci-42", attempts, policy,
+                Map.of("pipeline", "nightly"));
+    }
+
+    private TestSuiteStabilityExecutionRequest sequentialRequest(int maximumAttempts) {
+        return new TestSuiteStabilityExecutionRequest(
+                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION,
+                new TestSuiteExecutionRequest.SuiteRef(
+                        suite.suiteId(), suite.revision(), SUITE_FINGERPRINT),
+                "stability-sequential-ci-42", maximumAttempts,
+                TestSuiteStabilityStatisticalPolicy.anytimeValidEProcess(
+                        9_500, 1_000, 500),
                 Map.of("pipeline", "nightly"));
     }
 
@@ -861,7 +949,19 @@ class TestSuiteStabilityExecutionServiceTest {
             }
             TestSuiteStabilityExecutionProgress current = progress.get(
                     lease.clientRequestId());
-            if (current == null || current.completedAttempts() != current.plannedAttempts()) {
+            boolean matchingClosure = current != null
+                    && current.completedAttempts() == record.evidence().attempts().size();
+            boolean allowedEarlyTerminal = matchingClosure
+                    && TestSuiteStabilityEvidence.SCHEMA_VERSION.equals(
+                    record.evidence().schemaVersion())
+                    && record.evidence().statisticalAssessment() != null
+                    && List.of(TestSuiteStabilityEvidence.StatisticalStopReason
+                                    .E_VALUE_THRESHOLD_REACHED,
+                            TestSuiteStabilityEvidence.StatisticalStopReason
+                                    .CENSORING_OBSERVED)
+                    .contains(record.evidence().statisticalAssessment().stopReason());
+            if (!matchingClosure || current.completedAttempts() != current.plannedAttempts()
+                    && !allowedEarlyTerminal) {
                 throw new TestSuiteStabilityRunConflictException(
                         TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT,
                         "progress incomplete");

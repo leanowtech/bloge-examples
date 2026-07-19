@@ -22,7 +22,7 @@
 | Stage 2 public control plane | In progress | graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（四类 case intent、内容寻址 fixture/一等 suite 发布、精确 revision 执行与 aggregate coverage/promotion 回显）、fixture/TestSuite registry、幂等 immutable TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、process-owner lease/heartbeat/checkpoint fence、v1/v2/v3 保代的 abandoned RUNNING fail-closed reconciliation、脱敏、10 态 child evidence、profile/identity/production protocol guard、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其 governed catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、exact-ref REPLAY 执行、payload-free plan v2 谱系与认证降级，以及同步 nested/foreach/loop/compensation 控制传播、动态 attempt/occurrence selector 与 occurrence/attempt/node/edge evidence 已落地；streaming/suspendable control/evidence 与物理 network isolation 待完成 |
 | Stage 3 | In progress | graph/operator `TestRunEvidence`、suite checkpoint/terminal attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定和独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
 | Stage 4 | In progress | BLOGE run-scoped services、checkpoint/resume primitives 与 RG deterministic provider、组合 checkpoint、同库事务、数据库时钟 fence、幂等命令和 staged 四 store aggregate 已落地；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal suspended-or-terminal recovery step、有界同步 multi-suspension recovery sequence、兼容 terminal-only recovery 和进程内 lease coordinator 已闭合；recovery sequence 外层及派生 step/claim/automatic-heartbeat 已具备数据库租约化有界 retention、独立 HMAC tombstone、密钥轮换启动自检、固定基数 telemetry 和数据库时钟 backlog SLO/readiness；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；隔离 list/claim/release、数据库权威 maker/checker approved discard、token-free receipt/history、审批 SLO observation、claim-command replay token AES-GCM envelope/旧行迁移/轮换重包、active-control HMAC fence/旧行迁移/轮换重键、命令/审批/历史的数据库租约化有界保留、独立 keyed-HMAC request-index tombstone/在线轮换/旧行惰性迁移、N/N-1 三阶段 write/readiness/capability、challenge-bound 逐副本签名 proof、独立 test-kit exact-inventory fleet gate、外部 Ed25519 M-of-N quarantine change authorization 的 HTTP v2/Schema/config/readiness/capability/数据库唯一消费与四维即时 admission 已落地。其他 durable command family 的统一有界 lifecycle、跨平台 serving-inventory 完整性证明、外部工单全生命周期与动态撤销刷新、法律保留/备份擦除、外部 WORM、runtime-state dispatch、排队/公平/优先级调度、异步/无界多 suspension 调度、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
-| Stage 5 | In progress（bounded mutation、deterministic stability 与 fixed-horizon exact conditional-rate confidence 已闭环） | 已落地 graph/operator schema boundary planning/admission、seeded bounded property plan/materialization/execution/evidence、recoverable AST mutation planning/exact regeneration、immutable V5 mutation suite、baseline-first 隔离执行、V5 signed evidence/abandoned reconciliation，以及 deterministic 3..20 次重跑、统计 request v2/v3、evidence v3/v4、首基线 `n-1` 比较口径、零/非零事件精确单侧区间、精确二项 horizon、fail-closed censoring、签名模型假设、独立同步 test-kit/pinned CI gate、数据库权威的跨副本 stability parent lease、tenant-fair SQL queue、parent-first terminal、签名 success proof、执行围栏、bounded worker/scheduler、database-clock aggregate telemetry/readiness、防 request resurrection 的 HMAC tombstone 与租约化 retention scheduler/SLO、公开异步 submit/query/cancel、strict Schema/capability truth、独立异步 test-kit client、transaction-bound cancellation semantic audit、credential-free challenge-bound HTTPS current-authority PDP、原子 Ed25519 JWKS refresh、exact cohort 的数据库租约/单 active generation/全成员 trust-generation 收敛，以及 deployment-signed serving inventory、稳定 scope revision floor、严格 HTTPS/ETag 动态 `ACTIVE/REVOKED` publication、独立 witness checkpoint、跨重启 durable publication/witness floor、全成员 publication-generation 收敛和 submit/worker 双门禁；运行密钥 restart-free 原子双根发布/刷新、数据库 durable floor、库存重验、外部 challenge-bound `3f+1 / 2f+1` 双流非等价锚、external-first 提交、Spring/staging 接线、cohort v4、health/capability 与 strict Schema 已落地；独立 notary 基础设施认证、公开 transparency/gossip、bootstrap-root ceremony、authority HA/KMS/mTLS、semantic equivalent-mutant proof、adaptive/alpha-spending、历史/共同原因趋势、分布式/物理隔离 attempt runtime 尚未落地 |
+| Stage 5 | In progress（bounded mutation、deterministic/fixed-horizon stability 已闭环，anytime-valid e-process 服务端闭环已完成） | 已落地 graph/operator schema boundary planning/admission、seeded bounded property plan/materialization/execution/evidence、recoverable AST mutation planning/exact regeneration、immutable V5 mutation suite、baseline-first 隔离执行、V5 signed evidence/abandoned reconciliation，以及 deterministic 3..20 次重跑、统计 request v2/v3、evidence v3/v4、首基线 `n-1` 比较口径、零/非零事件精确单侧区间、精确二项 horizon、fail-closed censoring、签名模型假设、独立同步 test-kit/pinned CI gate、数据库权威的跨副本 stability parent lease、tenant-fair SQL queue、parent-first terminal、签名 success proof、执行围栏、bounded worker/scheduler、database-clock aggregate telemetry/readiness、防 request resurrection 的 HMAC tombstone 与租约化 retention scheduler/SLO、公开异步 submit/query/cancel、strict Schema/capability truth、独立异步 test-kit client、transaction-bound cancellation semantic audit、credential-free challenge-bound HTTPS current-authority PDP、原子 Ed25519 JWKS refresh、exact cohort 的数据库租约/单 active generation/全成员 trust-generation 收敛，以及 deployment-signed serving inventory、稳定 scope revision floor、严格 HTTPS/ETag 动态 `ACTIVE/REVOKED` publication、独立 witness checkpoint、跨重启 durable publication/witness floor、全成员 publication-generation 收敛和 submit/worker 双门禁；运行密钥 restart-free 原子双根发布/刷新、数据库 durable floor、库存重验、外部 challenge-bound `3f+1 / 2f+1` 双流非等价锚、external-first 提交、Spring/staging 接线、cohort v4、health/capability 与 strict Schema 已落地；anytime-valid request v4、evidence/attestation/response v5、progress v2、checkpoint-first 早停恢复、early-terminal persistence 与 capability truth 已在服务端落地；独立 anytime-valid test-kit/CLI、显式 alpha-spending、历史/共同原因趋势、分布式/物理隔离 attempt runtime 尚未落地 |
 
 第三十九增量从 Stage 5 先切出一个可诚实交付的 schema-boundary tracer bullet。新的
 `bloge.testBoundaryCasePlan.v1` 对当前 exact GRAPH/OPERATOR target 生成完整输入候选；baseline 由样例
@@ -597,15 +597,19 @@ capability、CLI/JUnit 和伪造上界反例同步闭合。设计与验证见
 该子步仍不声称 sequential/adaptive alpha spending、跨周期共同原因检测、自动 quarantine workflow 或
 物理 attempt runtime 隔离。
 
-第五十三增量第二十四子步第一阶段已冻结 optional-stopping 的根治模型，但尚未宣称运行期可用。方案拒绝
-把固定区间在每个 prefix 重算，也拒绝把有限 look schedule 和 alpha cursor 变成新的恢复状态；改用
-baseline-conditional anytime-valid likelihood-ratio e-process。policy 预提交 `q`、严格更小的 alternative
-rate `r`、confidence 与最大 horizon，服务端和独立 test-kit 以互不依赖的 `BigInteger` 有理数实现验证
-`E >= 1/alpha`。95%/10%/5% 策略的 clean path 在第 56 个比较首次越界，55/56 两侧置信度下界分别为
-94.88%/95.15%；一个事件时 59 比较不通过、99 比较通过。双方各 8 项聚焦测试全绿。当前 capability 仍
-必须保持关闭；只有 request v4、evidence/attestation/response v5、progress v2、first-crossing 重建、
-checkpoint-first 早停、Schema/CLI/异步 worker 与完整门禁闭合后才完成该子步。设计见
+第五十三增量第二十四子步第二阶段把 optional-stopping 根治模型接入服务端协议与 durable runtime。方案
+拒绝把固定区间在每个 prefix 重算，也拒绝把有限 look schedule 和 alpha cursor 变成新的恢复状态；采用
+baseline-conditional anytime-valid likelihood-ratio e-process。request v4 预提交 `q`、严格更小的
+alternative rate `r`、confidence 与最大 horizon；evidence/attestation/response v5 签入完整实际 attempt
+闭包、first crossing、精确 e-value 置信下界和 stop reason，progress v2 区分计划 horizon 与已完成前缀。
+运行顺序固定为 source 执行与验证、durable parent checkpoint、重建 prefix、边界判断、seal 或下一 attempt；
+进程在第 57 次 checkpoint 后崩溃时，接管者先从持久化前缀重建 terminal，不会多执行一次 source。
+repository 仅接受与 durable progress 精确相等的合法 v5 early terminal，strict Schema、HTTP 与 capability
+truth 同步闭合；服务端 96 项跨协议/运行时/数据库聚焦测试全绿。独立 test-kit 的 v5 wire parser、异步
+client、CLI/JUnit projection 与最终双项目完整门禁仍待完成，因此该子步保持进行中。设计见
 [Stage 5 anytime-valid stability design](resource-gateway-execution-data-control-plane-stage5-anytime-valid-stability-design.md)。
+完整 Resource Gateway `clean verify` 执行 2780 tests，0 failures、0 errors、2 个既有条件跳过，并完成
+真实浏览器回归与 Spring Boot 可执行 JAR 重打包。
 
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
@@ -2381,8 +2385,9 @@ identity/feature-flag/test-secret authority 与断点前历史 evidence 恢复�
 - tenant quota、batch scheduler、regional fixture store；
 - sandbox binding registry；
 - property/boundary/mutation test；
-- bounded deterministic stability evidence 与 fixed-horizon zero/non-zero-event exact conditional-rate
-  confidence（已落地），以及后续 adaptive sampling、统计 flaky/共同原因趋势、生产路径对比和反熵任务。
+- bounded deterministic stability evidence、fixed-horizon zero/non-zero-event exact conditional-rate
+  confidence（已落地），以及 anytime-valid e-process 服务端早停闭环（独立消费端待完成）；后续显式
+  alpha-spending、统计 flaky/共同原因趋势、生产路径对比和反熵任务。
 
 验收：完成渗透测试、故障注入、DR、容量、跨租户隔离和“test control 不可能进入 production data plane”的架构证明。
 
@@ -2401,7 +2406,7 @@ identity/feature-flag/test-secret authority 与断点前历史 evidence 恢复�
 | P1 | function/time/random execution services | 提升重复性并覆盖 built-in function |
 | P2 | durable test resume | 长运行和事件驱动图需要 |
 | P2 | separate test deployment | 企业生产隔离目标态 |
-| P2 | equivalent-mutant、adaptive/alpha-spending 与 distributed stability | 在 fixed-horizon exact conditional-rate confidence 之上继续提高可信度 |
+| P2 | equivalent-mutant、anytime-valid 独立消费端、显式 alpha-spending 与 distributed stability | 在 fixed-horizon exact conditional-rate confidence 之上继续提高可信度 |
 
 ## 21. 不建议采用的替代方案
 
