@@ -25,6 +25,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -109,15 +110,55 @@ public final class TestSuiteStabilityEvidenceEvaluator {
             TestSuiteStabilityStatisticalPolicy policy) {
         TestSuiteStabilityStatisticalPolicy exactPolicy =
                 Objects.requireNonNull(policy, "policy");
+        if (exactPolicy.model() == TestSuiteStabilityStatisticalPolicy.Model
+                .BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS) {
+            throw new IllegalArgumentException(
+                    "An anytime-valid policy requires sequential prefix evaluation");
+        }
         String evidenceVersion = exactPolicy.model()
                 == TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL
                 ? TestSuiteStabilityEvidence.SCHEMA_VERSION_V3
-                : TestSuiteStabilityEvidence.SCHEMA_VERSION;
+                : TestSuiteStabilityEvidence.SCHEMA_VERSION_V4;
         return evaluateInternal(suite, suiteRef, stabilityRunId, clientRequestId,
                 requestedAttempts, attemptObservations, metadata,
                 exactPolicy,
                 evidenceVersion,
                 TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS);
+    }
+
+    /**
+     * Evaluates one anytime-valid prefix and returns evidence only at its first terminal boundary.
+     *
+     * @param suite immutable executable suite
+     * @param suiteRef exact content-addressed suite reference
+     * @param stabilityRunId deterministic scope-and-request identity
+     * @param clientRequestId caller idempotency key
+     * @param maximumAttempts precommitted maximum execution horizon
+     * @param attemptObservations contiguous durably checkpointed source prefix
+     * @param metadata bounded caller provenance copied without payloads
+     * @param policy request-v4 anytime-valid probability model
+     * @return v5 terminal evidence, or empty while the prefix must continue
+     */
+    public Optional<TestSuiteStabilityEvidence> evaluateSequential(
+            TestSuiteProtocol suite,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            String stabilityRunId,
+            String clientRequestId,
+            int maximumAttempts,
+            List<AttemptObservation> attemptObservations,
+            Map<String, Object> metadata,
+            TestSuiteStabilityStatisticalPolicy policy) {
+        TestSuiteStabilityStatisticalPolicy exactPolicy =
+                Objects.requireNonNull(policy, "policy");
+        if (exactPolicy.model() != TestSuiteStabilityStatisticalPolicy.Model
+                .BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS) {
+            throw new IllegalArgumentException("An anytime-valid statistical policy is required");
+        }
+        return Optional.ofNullable(evaluateInternal(
+                suite, suiteRef, stabilityRunId, clientRequestId,
+                maximumAttempts, attemptObservations, metadata, exactPolicy,
+                TestSuiteStabilityEvidence.SCHEMA_VERSION_V5,
+                TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS));
     }
 
     private TestSuiteStabilityEvidence evaluateInternal(
@@ -142,8 +183,18 @@ public final class TestSuiteStabilityEvidenceEvaluator {
                     "Statistical stability horizon cannot satisfy the precommitted policy");
         }
 
+        boolean sequential = statisticalPolicy != null && statisticalPolicy.model()
+                == TestSuiteStabilityStatisticalPolicy.Model
+                .BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS;
+        int observedAttempts = sequential
+                ? attemptObservations == null ? 0 : attemptObservations.size()
+                : requestedAttempts;
+        if (sequential && (observedAttempts < 1
+                || observedAttempts > requestedAttempts)) {
+            return null;
+        }
         List<AttemptObservation> ordered = orderedAttempts(
-                requestedAttempts, attemptObservations);
+                observedAttempts, attemptObservations);
         List<SourceEvaluation> sources = ordered.stream()
                 .map(source -> evaluateSource(suite, suiteRef, source))
                 .toList();
@@ -160,7 +211,7 @@ public final class TestSuiteStabilityEvidenceEvaluator {
             }
             byCase.add(List.copyOf(observations));
         }
-        byCase = closeReusedChildRuns(byCase, requestedAttempts);
+        byCase = closeReusedChildRuns(byCase, observedAttempts);
         byCase = byCase.stream().map(
                 TestSuiteStabilityEvidenceEvaluator::closePlanDrift).toList();
 
@@ -219,6 +270,10 @@ public final class TestSuiteStabilityEvidenceEvaluator {
         }
 
         TestSuiteStabilityEvidence.Status aggregateStatus = aggregateStatus(caseResults);
+        if (sequential && !TestSuiteStabilityEvidence.sequentialPrefixTerminal(
+                statisticalPolicy, requestedAttempts, attempts, caseResults)) {
+            return null;
+        }
         TestSuiteStabilityEvidence.StatisticalAssessment statistics = statisticalPolicy == null
                 ? null : TestSuiteStabilityEvidence.deriveStatisticalAssessment(
                 statisticalPolicy, requestedAttempts, attempts, caseResults);

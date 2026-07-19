@@ -101,7 +101,8 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
                 STABILITY_RUN, "rate-request", 30,
                 statisticalAttempts(30, "same"), Map.of(), correctedStatisticalPolicy());
 
-        assertThat(evidence.schemaVersion()).isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+        assertThat(evidence.schemaVersion())
+                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION_V4);
         assertThat(evidence.statisticalAssessment())
                 .extracting(TestSuiteStabilityEvidence.StatisticalAssessment::requiredAttempts,
                         TestSuiteStabilityEvidence.StatisticalAssessment::observedAttempts,
@@ -141,6 +142,104 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
         assertThat(evidence.promotion().reasons()).containsExactly("FLAKY_CASE_OBSERVED");
         assertThat(evidence.quarantine().status())
                 .isEqualTo(TestSuiteStabilityEvidence.QuarantineStatus.REQUIRED);
+    }
+
+    @Test
+    void stopsAtTheFirstAnytimeValidCleanBoundary() {
+        TestSuiteStabilityStatisticalPolicy policy = anytimeValidPolicy();
+
+        assertThat(evaluator.evaluateSequential(suite, suiteRef, STABILITY_RUN,
+                "sequential-request", 100, statisticalAttempts(56, "same"), Map.of(), policy))
+                .isEmpty();
+
+        TestSuiteStabilityEvidence evidence = evaluator.evaluateSequential(
+                suite, suiteRef, STABILITY_RUN, "sequential-request", 100,
+                statisticalAttempts(57, "same"), Map.of(), policy).orElseThrow();
+
+        assertThat(evidence.schemaVersion())
+                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION_V5);
+        assertThat(evidence.requestedAttempts()).isEqualTo(100);
+        assertThat(evidence.attempts()).hasSize(57);
+        assertThat(evidence.statisticalAssessment())
+                .extracting(TestSuiteStabilityEvidence.StatisticalAssessment::observedAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::comparisonAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::observedInstabilityEvents,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::firstBoundaryCrossingAttempt,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::status,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::stopReason)
+                .containsExactly(57, 56, 0, 57,
+                        TestSuiteStabilityEvidence.StatisticalStatus.SATISFIED,
+                        TestSuiteStabilityEvidence.StatisticalStopReason
+                                .E_VALUE_THRESHOLD_REACHED);
+        assertThat(evidence.statisticalAssessment().achievedConfidenceBps()).isEqualTo(9_515);
+        assertThat(evidence.promotion().status())
+                .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.ELIGIBLE);
+    }
+
+    @Test
+    void rejectsAtTheMaximumSequentialHorizonWhenAnEventPreventsCrossing() {
+        List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> attempts =
+                new ArrayList<>(statisticalAttempts(60, "same"));
+        attempts.set(1, attempt(2, outcomes("variant")));
+
+        TestSuiteStabilityEvidence evidence = evaluator.evaluateSequential(
+                suite, suiteRef, STABILITY_RUN, "sequential-request", 60,
+                attempts, Map.of(), anytimeValidPolicy()).orElseThrow();
+
+        assertThat(evidence.status()).isEqualTo(TestSuiteStabilityEvidence.Status.FLAKY);
+        assertThat(evidence.statisticalAssessment())
+                .extracting(TestSuiteStabilityEvidence.StatisticalAssessment::observedAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::comparisonAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::observedInstabilityEvents,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::firstBoundaryCrossingAttempt,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::status,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::stopReason)
+                .containsExactly(60, 59, 1, null,
+                        TestSuiteStabilityEvidence.StatisticalStatus.REJECTED,
+                        TestSuiteStabilityEvidence.StatisticalStopReason
+                                .MAXIMUM_HORIZON_REACHED);
+        assertThat(evidence.promotion().status())
+                .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.BLOCKED);
+    }
+
+    @Test
+    void stopsImmediatelyWhenAnEarlySequentialAttemptIsCensored() {
+        List<TestSuiteStabilityEvidenceEvaluator.AttemptObservation> attempts = List.of(
+                attempt(1, outcomes("same")),
+                TestSuiteStabilityEvidenceEvaluator.AttemptObservation.missing(
+                        2, START.plusSeconds(20), "WORKER_UNAVAILABLE"));
+
+        TestSuiteStabilityEvidence evidence = evaluator.evaluateSequential(
+                suite, suiteRef, STABILITY_RUN, "sequential-request", 100,
+                attempts, Map.of(), anytimeValidPolicy()).orElseThrow();
+
+        assertThat(evidence.attempts()).hasSize(2);
+        assertThat(evidence.statisticalAssessment())
+                .extracting(TestSuiteStabilityEvidence.StatisticalAssessment::observedAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::verifiedAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::censoredAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::status,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::stopReason)
+                .containsExactly(2, 1, 1,
+                        TestSuiteStabilityEvidence.StatisticalStatus.INCONCLUSIVE,
+                        TestSuiteStabilityEvidence.StatisticalStopReason.CENSORING_OBSERVED);
+        assertThat(evidence.statisticalAssessment().achievedConfidenceBps()).isZero();
+    }
+
+    @Test
+    void rejectsEvaluationModesAndPrefixesThatCouldInvalidateOptionalStopping() {
+        TestSuiteStabilityStatisticalPolicy policy = anytimeValidPolicy();
+
+        assertThatThrownBy(() -> evaluator.evaluateStatistical(suite, suiteRef,
+                STABILITY_RUN, "fixed-request", 100,
+                statisticalAttempts(100, "same"), Map.of(), policy))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sequential prefix evaluation");
+        assertThatThrownBy(() -> evaluator.evaluateSequential(suite, suiteRef,
+                STABILITY_RUN, "sequential-request", 100,
+                statisticalAttempts(58, "same"), Map.of(), policy))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("first boundary crossing");
     }
 
     @Test
@@ -558,6 +657,10 @@ class TestSuiteStabilityEvidenceEvaluatorTest {
     private static TestSuiteStabilityStatisticalPolicy correctedStatisticalPolicy() {
         return TestSuiteStabilityStatisticalPolicy.baselineConditionalExactBinomial(
                 9_500, 1_000);
+    }
+
+    private static TestSuiteStabilityStatisticalPolicy anytimeValidPolicy() {
+        return TestSuiteStabilityStatisticalPolicy.anytimeValidEProcess(9_500, 1_000, 500);
     }
 
     private TestSuiteStabilityEvidenceEvaluator.AttemptObservation attempt(
