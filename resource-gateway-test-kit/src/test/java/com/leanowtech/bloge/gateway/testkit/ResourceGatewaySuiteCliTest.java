@@ -361,20 +361,24 @@ class ResourceGatewaySuiteCliTest {
 
         assertThat(exit).isZero();
         assertThat(requestBody)
-                .contains("bloge.testSuiteStabilityExecutionRequest.v2")
-                .contains("\"attempts\":29")
+                .contains("bloge.testSuiteStabilityExecutionRequest.v3")
+                .contains("\"attempts\":30")
+                .contains("BASELINE_CONDITIONAL_EXACT_BINOMIAL")
                 .contains("\"confidenceLevelBps\":9500")
                 .contains("\"maximumInstabilityRateBps\":1000");
         assertThat(output.toString(StandardCharsets.UTF_8))
                 .contains("statisticalStatus=SATISFIED")
-                .contains("requiredAttempts=29")
-                .contains("achievedConfidenceBps=")
+                .contains("requiredAttempts=30")
+                .contains("comparisonAttempts=29")
+                .contains("upperInstabilityRateBps=982")
                 .doesNotContain("ci-secret-token");
         assertThat(error.toString(StandardCharsets.UTF_8)).isEmpty();
         assertThat(Files.readString(report))
-                .contains("statisticalModel=ZERO_INSTABILITY_EXACT_BINOMIAL")
+                .contains("statisticalModel=BASELINE_CONDITIONAL_EXACT_BINOMIAL")
                 .contains("statisticalStatus=SATISFIED")
-                .contains("requiredAttempts=29");
+                .contains("requiredAttempts=30")
+                .contains("comparisonAttempts=29")
+                .contains("upperInstabilityRateBps=982");
     }
 
     @Test
@@ -570,12 +574,19 @@ class ResourceGatewaySuiteCliTest {
         requestPath = exchange.getRequestURI().getPath();
         requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         ObjectNode request = (ObjectNode) JSON.readTree(requestBody);
-        ObjectNode response = TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2.equals(
-                request.path("schemaVersion").asText())
-                ? TestSuiteStabilityTestFixtures.statisticalResponse(
-                EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair())
-                : TestSuiteStabilityTestFixtures.response(
-                EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair());
+        String requestVersion = request.path("schemaVersion").asText();
+        ObjectNode response;
+        if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3.equals(requestVersion)) {
+            response = TestSuiteStabilityTestFixtures.rateStableResponse(
+                    EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair());
+        } else if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2
+                .equals(requestVersion)) {
+            response = TestSuiteStabilityTestFixtures.statisticalResponse(
+                    EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair());
+        } else {
+            response = TestSuiteStabilityTestFixtures.response(
+                    EvidenceVerificationSupport.sha256(request), stabilityFixture.keyPair());
+        }
         ((ObjectNode) response.path("evidence"))
                 .put("clientRequestId", request.path("clientRequestId").asText());
         if (request.path("clientRequestId").asText().contains("flaky")) {

@@ -59,6 +59,17 @@ public final class TestSuiteStabilityProtocolFixtures {
         return stableEvidence(29, policy);
     }
 
+    /**
+     * Creates v4 evidence satisfying the corrected baseline-conditional exact-rate claim.
+     *
+     * @return immutable baseline-conditional statistical evidence
+     */
+    public static TestSuiteStabilityEvidence rateStableEvidence() {
+        return stableEvidence(30,
+                TestSuiteStabilityStatisticalPolicy.baselineConditionalExactBinomial(
+                        9_500, 1_000));
+    }
+
     private static TestSuiteStabilityEvidence stableEvidence(
             int attemptCount,
             TestSuiteStabilityStatisticalPolicy statisticalPolicy) {
@@ -97,6 +108,10 @@ public final class TestSuiteStabilityProtocolFixtures {
                 attempts, cases, status, statistics);
         return new TestSuiteStabilityEvidence(
                 statisticalPolicy == null ? TestSuiteStabilityEvidence.SCHEMA_VERSION_V2
+                        : statisticalPolicy.model()
+                        == TestSuiteStabilityStatisticalPolicy.Model
+                        .ZERO_INSTABILITY_EXACT_BINOMIAL
+                        ? TestSuiteStabilityEvidence.SCHEMA_VERSION_V3
                         : TestSuiteStabilityEvidence.SCHEMA_VERSION,
                 STABILITY_RUN_ID, "stability-request",
                 SUITE_REF, TARGET, attemptCount, status, attempts, cases, promotion,

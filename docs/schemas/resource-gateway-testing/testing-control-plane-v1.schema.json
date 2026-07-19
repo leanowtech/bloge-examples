@@ -2458,7 +2458,8 @@
       "required": ["model", "claimScope", "stoppingRule", "censoringPolicy",
         "confidenceLevelBps", "maximumInstabilityRateBps"],
       "properties": {
-        "model": {"const": "ZERO_INSTABILITY_EXACT_BINOMIAL"},
+        "model": {"enum": ["ZERO_INSTABILITY_EXACT_BINOMIAL",
+          "BASELINE_CONDITIONAL_EXACT_BINOMIAL"]},
         "claimScope": {"const": "SUITE_ATTEMPT_ANY_CASE"},
         "stoppingRule": {"const": "PRECOMMITTED_FIXED_HORIZON"},
         "censoringPolicy": {"const": "FAIL_CLOSED"},
@@ -2472,7 +2473,8 @@
       "required": ["schemaVersion", "suiteRef", "clientRequestId", "attempts", "metadata"],
       "properties": {
         "schemaVersion": {"enum": ["bloge.testSuiteStabilityExecutionRequest.v1",
-          "bloge.testSuiteStabilityExecutionRequest.v2"]},
+          "bloge.testSuiteStabilityExecutionRequest.v2",
+          "bloge.testSuiteStabilityExecutionRequest.v3"]},
         "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
         "clientRequestId": {
           "type": "string", "minLength": 1, "maxLength": 255,
@@ -2489,7 +2491,14 @@
           "not": {"required": ["statisticalPolicy"]}},
         {"required": ["statisticalPolicy"], "properties": {
           "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionRequest.v2"},
-          "attempts": {"maximum": 1000}}}
+          "attempts": {"maximum": 1000},
+          "statisticalPolicy": {"properties": {
+            "model": {"const": "ZERO_INSTABILITY_EXACT_BINOMIAL"}}}}},
+        {"required": ["statisticalPolicy"], "properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionRequest.v3"},
+          "attempts": {"maximum": 1000},
+          "statisticalPolicy": {"properties": {
+            "model": {"const": "BASELINE_CONDITIONAL_EXACT_BINOMIAL"}}}}}
       ]
     },
     "testSuiteStabilityJobSubmitRequest": {
@@ -2750,28 +2759,68 @@
         "censoredAttempts": {"type": "integer", "minimum": 0, "maximum": 1000},
         "observedInstabilityEvents": {"type": "integer", "minimum": 0, "maximum": 999},
         "achievedConfidenceBps": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "comparisonAttempts": {"type": "integer", "minimum": 0, "maximum": 999},
+        "upperInstabilityRateBps": {"type": "integer", "minimum": 0, "maximum": 10000},
         "status": {"enum": ["SATISFIED", "REJECTED", "INCONCLUSIVE"]},
         "stopReason": {"const": "FIXED_HORIZON_REACHED"},
         "assumptions": {
-          "type": "array", "minItems": 4, "maxItems": 4,
-          "prefixItems": [
-            {"const": "ATTEMPTS_EXCHANGEABLE_WITHIN_ANALYSIS_WINDOW"},
-            {"const": "EXECUTION_REGIME_STATIONARY_WITHIN_ANALYSIS_WINDOW"},
-            {"const": "NO_UNOBSERVED_COMMON_CAUSE_CLAIM"},
-            {"const": "OUTCOME_EVENT_DETECTION_BY_SEMANTIC_FINGERPRINT"}
-          ],
-          "items": false
+          "type": "array", "minItems": 4, "maxItems": 6
         }
       },
       "oneOf": [
-        {"properties": {"status": {"const": "SATISFIED"},
-          "censoredAttempts": {"const": 0}, "observedInstabilityEvents": {"const": 0},
-          "achievedConfidenceBps": {"minimum": 5000}}},
-        {"properties": {"status": {"const": "REJECTED"},
-          "observedInstabilityEvents": {"minimum": 1}, "achievedConfidenceBps": {"const": 0}}},
-        {"properties": {"status": {"const": "INCONCLUSIVE"},
-          "censoredAttempts": {"minimum": 1}, "observedInstabilityEvents": {"const": 0},
-          "achievedConfidenceBps": {"const": 0}}}
+        {"properties": {
+          "policy": {"properties": {"model": {"const": "ZERO_INSTABILITY_EXACT_BINOMIAL"}}},
+          "assumptions": {
+            "minItems": 4, "maxItems": 4,
+            "prefixItems": [
+              {"const": "ATTEMPTS_EXCHANGEABLE_WITHIN_ANALYSIS_WINDOW"},
+              {"const": "EXECUTION_REGIME_STATIONARY_WITHIN_ANALYSIS_WINDOW"},
+              {"const": "NO_UNOBSERVED_COMMON_CAUSE_CLAIM"},
+              {"const": "OUTCOME_EVENT_DETECTION_BY_SEMANTIC_FINGERPRINT"}
+            ],
+            "items": false
+          }},
+          "not": {"anyOf": [
+            {"required": ["comparisonAttempts"]},
+            {"required": ["upperInstabilityRateBps"]}
+          ]},
+          "oneOf": [
+            {"properties": {"status": {"const": "SATISFIED"},
+              "censoredAttempts": {"const": 0},
+              "observedInstabilityEvents": {"const": 0},
+              "achievedConfidenceBps": {"minimum": 5000}}},
+            {"properties": {"status": {"const": "REJECTED"},
+              "observedInstabilityEvents": {"minimum": 1},
+              "achievedConfidenceBps": {"const": 0}}},
+            {"properties": {"status": {"const": "INCONCLUSIVE"},
+              "censoredAttempts": {"minimum": 1},
+              "observedInstabilityEvents": {"const": 0},
+              "achievedConfidenceBps": {"const": 0}}}
+          ]},
+        {"required": ["comparisonAttempts"], "properties": {
+          "policy": {"properties": {
+            "model": {"const": "BASELINE_CONDITIONAL_EXACT_BINOMIAL"}}},
+          "assumptions": {
+            "minItems": 6, "maxItems": 6,
+            "prefixItems": [
+              {"const": "ATTEMPTS_EXCHANGEABLE_WITHIN_ANALYSIS_WINDOW"},
+              {"const": "EXECUTION_REGIME_STATIONARY_WITHIN_ANALYSIS_WINDOW"},
+              {"const": "NO_UNOBSERVED_COMMON_CAUSE_CLAIM"},
+              {"const": "OUTCOME_EVENT_DETECTION_BY_SEMANTIC_FINGERPRINT"},
+              {"const": "BASELINE_IS_FIRST_VERIFIED_ATTEMPT"},
+              {"const": "RATE_IS_CONDITIONAL_ON_OBSERVED_BASELINE"}
+            ],
+            "items": false
+          }},
+          "oneOf": [
+            {"required": ["upperInstabilityRateBps"], "properties": {
+              "status": {"enum": ["SATISFIED", "REJECTED"]},
+              "censoredAttempts": {"const": 0}}},
+            {"properties": {"status": {"const": "INCONCLUSIVE"},
+              "censoredAttempts": {"minimum": 1},
+              "achievedConfidenceBps": {"const": 0}},
+              "not": {"required": ["upperInstabilityRateBps"]}}
+          ]}
       ]
     },
     "testSuiteStabilityPromotionVerdict": {
@@ -2833,7 +2882,8 @@
         "startedAt", "completedAt", "diagnostics", "metadata"],
       "properties": {
         "schemaVersion": {"enum": ["bloge.testSuiteStabilityEvidence.v1",
-          "bloge.testSuiteStabilityEvidence.v2", "bloge.testSuiteStabilityEvidence.v3"]},
+          "bloge.testSuiteStabilityEvidence.v2", "bloge.testSuiteStabilityEvidence.v3",
+          "bloge.testSuiteStabilityEvidence.v4"]},
         "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
         "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 255},
         "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
@@ -2912,6 +2962,36 @@
         }, "not": {"required": ["statisticalAssessment"]}},
         {"required": ["statisticalAssessment"], "properties": {
           "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v3"},
+          "statisticalAssessment": {"properties": {"policy": {"properties": {
+            "model": {"const": "ZERO_INSTABILITY_EXACT_BINOMIAL"}}}}},
+          "attempts": {"items": {"allOf": [
+            {"$ref": "#/$defs/testSuiteStabilityAttemptResult"},
+            {
+              "oneOf": [
+                {"required": ["sourcePromotionStatus"],
+                  "properties": {"status": {"const": "VERIFIED"},
+                  "sourcePromotionStatus": {"enum": ["ELIGIBLE", "BLOCKED"]}}},
+                {"properties": {"status": {"const": "INCONCLUSIVE"}}}
+              ]}
+          ]}},
+          "promotion": {"required": ["allSourceSuitesPromotionEligible",
+            "statisticalConfidenceSatisfied"]}
+        }, "allOf": [{"oneOf": [
+          {"properties": {
+            "statisticalAssessment": {"properties": {"status": {"const": "SATISFIED"}}},
+            "promotion": {"properties": {"statisticalConfidenceSatisfied": {"const": true}}}
+          }},
+          {"properties": {
+            "statisticalAssessment": {"properties": {
+              "status": {"enum": ["REJECTED", "INCONCLUSIVE"]}}},
+            "promotion": {"properties": {"statisticalConfidenceSatisfied": {"const": false}}}
+          }}
+        ]}]
+        },
+        {"required": ["statisticalAssessment"], "properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityEvidence.v4"},
+          "statisticalAssessment": {"properties": {"policy": {"properties": {
+            "model": {"const": "BASELINE_CONDITIONAL_EXACT_BINOMIAL"}}}}},
           "attempts": {"items": {"allOf": [
             {"$ref": "#/$defs/testSuiteStabilityAttemptResult"},
             {
@@ -2966,7 +3046,8 @@
         "keyId", "algorithm", "signature", "independentlyVerifiable"],
       "properties": {
         "schemaVersion": {"enum": ["bloge.testSuiteStabilityAttestation.v1",
-          "bloge.testSuiteStabilityAttestation.v2", "bloge.testSuiteStabilityAttestation.v3"]},
+          "bloge.testSuiteStabilityAttestation.v2", "bloge.testSuiteStabilityAttestation.v3",
+          "bloge.testSuiteStabilityAttestation.v4"]},
         "signatureStatus": {"enum": ["VERIFIED", "UNSIGNED", "VERIFICATION_UNAVAILABLE"]},
         "stabilityRunId": {"type": "string", "maxLength": 74},
         "suiteRef": {"oneOf": [{"$ref": "#/$defs/testSuiteRef"}, {"type": "null"}]},
@@ -3030,6 +3111,13 @@
             {"$ref": "#/$defs/testSuiteStabilitySourceEvidenceRef"},
             {"required": ["sourcePromotionStatus"]}
           ]}}
+        }},
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityAttestation.v4"},
+          "sourceSuiteEvidenceRefs": {"items": {"allOf": [
+            {"$ref": "#/$defs/testSuiteStabilitySourceEvidenceRef"},
+            {"required": ["sourcePromotionStatus"]}
+          ]}}
         }}
       ]}]
     },
@@ -3041,7 +3129,8 @@
       "properties": {
         "schemaVersion": {"enum": ["bloge.testSuiteStabilityExecutionResponse.v1",
           "bloge.testSuiteStabilityExecutionResponse.v2",
-          "bloge.testSuiteStabilityExecutionResponse.v3"]},
+          "bloge.testSuiteStabilityExecutionResponse.v3",
+          "bloge.testSuiteStabilityExecutionResponse.v4"]},
         "stabilityRunId": {"$ref": "#/$defs/stabilityRunId"},
         "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
         "evidence": {"$ref": "#/$defs/testSuiteStabilityEvidence"},
@@ -3074,6 +3163,13 @@
             "const": "bloge.testSuiteStabilityEvidence.v3"}}},
           "attestation": {"properties": {"schemaVersion": {
             "const": "bloge.testSuiteStabilityAttestation.v3"}}}
+        }},
+        {"properties": {
+          "schemaVersion": {"const": "bloge.testSuiteStabilityExecutionResponse.v4"},
+          "evidence": {"properties": {"schemaVersion": {
+            "const": "bloge.testSuiteStabilityEvidence.v4"}}},
+          "attestation": {"properties": {"schemaVersion": {
+            "const": "bloge.testSuiteStabilityAttestation.v4"}}}
         }}
       ]
     },

@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -71,12 +72,37 @@ class TestSuiteStabilityControllerTest {
         verify(service).execute(eq("orders-suite"),
                 org.mockito.ArgumentMatchers.argThat(request ->
                         request.schemaVersion().equals(
-                                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION)
+                                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V2)
                                 && request.attempts() == 29
                                 && request.statisticalPolicy() != null
                                 && request.statisticalPolicy().confidenceLevelBps() == 9_500
                                 && request.statisticalPolicy()
                                 .maximumInstabilityRateBps() == 1_000), any());
+    }
+
+    @Test
+    void baselineConditionalRequestBindsTheCorrectedModelGeneration() throws Exception {
+        TestSuiteStabilityExecutionService service =
+                mock(TestSuiteStabilityExecutionService.class);
+        when(service.execute(eq("orders-suite"), any(), any())).thenReturn(null);
+        MockMvc mvc = mvc(service, Set.of("TEST_EXECUTION"));
+
+        mvc.perform(post("/api/testing/suites/orders-suite/stability-executions")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Purpose", "TEST_EXECUTION")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(rateRequest()))
+                .andExpect(status().isOk());
+
+        verify(service).execute(eq("orders-suite"),
+                org.mockito.ArgumentMatchers.argThat(request ->
+                        request.schemaVersion().equals(
+                                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION)
+                                && request.attempts() == 30
+                                && request.statisticalPolicy() != null
+                                && request.statisticalPolicy().model()
+                                == TestSuiteStabilityStatisticalPolicy.Model
+                                .BASELINE_CONDITIONAL_EXACT_BINOMIAL), any());
     }
 
     @Test
@@ -194,6 +220,21 @@ class TestSuiteStabilityControllerTest {
                  "fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
                  "clientRequestId":"stability-statistical-ci-42","attempts":29,
                  "statisticalPolicy":{"model":"ZERO_INSTABILITY_EXACT_BINOMIAL",
+                 "claimScope":"SUITE_ATTEMPT_ANY_CASE",
+                 "stoppingRule":"PRECOMMITTED_FIXED_HORIZON",
+                 "censoringPolicy":"FAIL_CLOSED","confidenceLevelBps":9500,
+                 "maximumInstabilityRateBps":1000},
+                 "metadata":{"pipeline":"nightly"}}
+                """;
+    }
+
+    private static String rateRequest() {
+        return """
+                {"schemaVersion":"bloge.testSuiteStabilityExecutionRequest.v3",
+                 "suiteRef":{"suiteId":"orders-suite","revision":7,
+                 "fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                 "clientRequestId":"stability-rate-ci-42","attempts":30,
+                 "statisticalPolicy":{"model":"BASELINE_CONDITIONAL_EXACT_BINOMIAL",
                  "claimScope":"SUITE_ATTEMPT_ANY_CASE",
                  "stoppingRule":"PRECOMMITTED_FIXED_HORIZON",
                  "censoringPolicy":"FAIL_CLOSED","confidenceLevelBps":9500,

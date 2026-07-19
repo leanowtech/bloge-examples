@@ -27,8 +27,11 @@ public record TestSuiteStabilityExecutionResponse(
     /** Deterministic response version with source-promotion closure. */
     public static final String SCHEMA_VERSION_V2 =
             "bloge.testSuiteStabilityExecutionResponse.v2";
-    /** Current statistical stability response protocol version. */
-    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityExecutionResponse.v3";
+    /** Legacy zero-event statistical response protocol version. */
+    public static final String SCHEMA_VERSION_V3 =
+            "bloge.testSuiteStabilityExecutionResponse.v3";
+    /** Current baseline-conditional exact-rate response protocol version. */
+    public static final String SCHEMA_VERSION = "bloge.testSuiteStabilityExecutionResponse.v4";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Validates one complete generation-consistent terminal response. */
@@ -39,7 +42,8 @@ public record TestSuiteStabilityExecutionResponse(
         evidenceFingerprint = evidenceFingerprint == null ? "" : evidenceFingerprint.trim();
         String expectedEvidenceVersion = expectedEvidenceVersion(schemaVersion);
         String expectedAttestationVersion = expectedAttestationVersion(schemaVersion);
-        if (!java.util.List.of(SCHEMA_VERSION_V1, SCHEMA_VERSION_V2, SCHEMA_VERSION)
+        if (!java.util.List.of(SCHEMA_VERSION_V1, SCHEMA_VERSION_V2,
+                SCHEMA_VERSION_V3, SCHEMA_VERSION)
                 .contains(schemaVersion)
                 || evidence == null || attestation == null
                 || !stabilityRunId.equals(evidence.stabilityRunId())
@@ -58,8 +62,11 @@ public record TestSuiteStabilityExecutionResponse(
         if (SCHEMA_VERSION_V1.equals(responseVersion)) {
             return TestSuiteStabilityEvidence.SCHEMA_VERSION_V1;
         }
-        return SCHEMA_VERSION_V2.equals(responseVersion)
-                ? TestSuiteStabilityEvidence.SCHEMA_VERSION_V2
+        if (SCHEMA_VERSION_V2.equals(responseVersion)) {
+            return TestSuiteStabilityEvidence.SCHEMA_VERSION_V2;
+        }
+        return SCHEMA_VERSION_V3.equals(responseVersion)
+                ? TestSuiteStabilityEvidence.SCHEMA_VERSION_V3
                 : TestSuiteStabilityEvidence.SCHEMA_VERSION;
     }
 
@@ -67,8 +74,11 @@ public record TestSuiteStabilityExecutionResponse(
         if (SCHEMA_VERSION_V1.equals(responseVersion)) {
             return TestSuiteStabilityAttestation.SCHEMA_VERSION_V1;
         }
-        return SCHEMA_VERSION_V2.equals(responseVersion)
-                ? TestSuiteStabilityAttestation.SCHEMA_VERSION_V2
+        if (SCHEMA_VERSION_V2.equals(responseVersion)) {
+            return TestSuiteStabilityAttestation.SCHEMA_VERSION_V2;
+        }
+        return SCHEMA_VERSION_V3.equals(responseVersion)
+                ? TestSuiteStabilityAttestation.SCHEMA_VERSION_V3
                 : TestSuiteStabilityAttestation.SCHEMA_VERSION;
     }
 }

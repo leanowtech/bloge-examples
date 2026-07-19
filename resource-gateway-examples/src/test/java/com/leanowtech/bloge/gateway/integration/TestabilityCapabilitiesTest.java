@@ -364,6 +364,9 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("signedSuiteStabilityAnalysis", false)
                 .containsEntry("idempotentSuiteStabilityRerun", false)
                 .containsEntry("exactBinomialSuiteStabilityConfidence", false)
+                .containsEntry("baselineConditionalSuiteStabilityRateBound", false)
+                .containsEntry("nonZeroSuiteStabilityRateInterval", false)
+                .containsEntry("sequentialSuiteStabilityAlphaSpending", false)
                 .containsEntry("crossReplicaSuiteStabilityExecutionLease", false)
                 .containsEntry("durableSuiteStabilityParentProgress", false);
         assertThat(enabled.testability().executionEndpointEnabled()).isTrue();
@@ -488,6 +491,9 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("signedSuiteStabilityAnalysis", false)
                 .containsEntry("idempotentSuiteStabilityRerun", false)
                 .containsEntry("exactBinomialSuiteStabilityConfidence", false)
+                .containsEntry("baselineConditionalSuiteStabilityRateBound", false)
+                .containsEntry("nonZeroSuiteStabilityRateInterval", false)
+                .containsEntry("sequentialSuiteStabilityAlphaSpending", false)
                 .containsEntry("crossReplicaSuiteStabilityExecutionLease", false)
                 .containsEntry("durableSuiteStabilityParentProgress", false)
                 .containsEntry("signedTestRunEvidence", false)
@@ -509,18 +515,22 @@ class TestabilityCapabilitiesTest {
                 .containsExactly(TestMutationSuiteExecutionRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityExecutionRequest"))
                 .containsExactly(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V2,
                         TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityEvidence"))
                 .containsExactly(TestSuiteStabilityEvidence.SCHEMA_VERSION_V1,
                         TestSuiteStabilityEvidence.SCHEMA_VERSION_V2,
+                        TestSuiteStabilityEvidence.SCHEMA_VERSION_V3,
                         TestSuiteStabilityEvidence.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityAttestation"))
                 .containsExactly(TestSuiteStabilityAttestation.SCHEMA_VERSION_V1,
                         TestSuiteStabilityAttestation.SCHEMA_VERSION_V2,
+                        TestSuiteStabilityAttestation.SCHEMA_VERSION_V3,
                         TestSuiteStabilityAttestation.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityExecutionResponse"))
                 .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V2,
+                        TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V3,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
         assertThat(enabled.supportedObjects().get("testSuiteStabilityProgress"))
                 .containsExactly(TestSuiteStabilityProgressResponse.SCHEMA_VERSION);
@@ -761,6 +771,9 @@ class TestabilityCapabilitiesTest {
                 .containsEntry("suiteSignedChildEvidenceGate", true)
                 .containsEntry("signedTestSuiteRunAttestation", true)
                 .containsEntry("portableTestSuiteEvidenceBundle", true)
+                .containsEntry("baselineConditionalSuiteStabilityRateBound", true)
+                .containsEntry("nonZeroSuiteStabilityRateInterval", true)
+                .containsEntry("sequentialSuiteStabilityAlphaSpending", false)
                 .containsEntry("durableSuiteStabilityParentProgress", true);
     }
 

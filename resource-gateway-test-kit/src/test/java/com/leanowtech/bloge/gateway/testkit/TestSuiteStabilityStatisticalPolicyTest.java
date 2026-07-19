@@ -34,10 +34,50 @@ class TestSuiteStabilityStatisticalPolicyTest {
         assertThat(policy(9_500, 1_000).horizonSufficient(1_001)).isFalse();
     }
 
+    @Test
+    void independentlyExcludesTheBaselineFromCorrectedTrialCount() {
+        TestSuiteStabilityStatisticalPolicy policy = correctedPolicy(9_500, 1_000);
+
+        assertThat(policy.minimumRequiredAttempts()).isEqualTo(30);
+        assertThat(policy.comparisonAttempts(30)).isEqualTo(29);
+        assertThat(policy.horizonSufficient(29)).isFalse();
+        assertThat(policy.horizonSufficient(30)).isTrue();
+    }
+
+    @Test
+    void independentlyReconstructsNonZeroExactRateBounds() {
+        TestSuiteStabilityStatisticalPolicy policy = correctedPolicy(9_500, 1_000);
+
+        assertThat(policy.upperInstabilityRateBps(29, 0)).isEqualTo(982);
+        assertThat(policy.rateAdmissionSatisfied(29, 0)).isTrue();
+        assertThat(policy.achievedConfidenceBps(29, 0)).isEqualTo(9_528);
+        assertThat(policy.upperInstabilityRateBps(29, 1)).isEqualTo(1_534);
+        assertThat(policy.rateAdmissionSatisfied(29, 1)).isFalse();
+        assertThat(policy.achievedConfidenceBps(29, 1)).isEqualTo(8_011);
+        assertThat(policy.upperInstabilityRateBps(59, 1)).isEqualTo(779);
+        assertThat(policy.rateAdmissionSatisfied(59, 1)).isTrue();
+        assertThat(policy.upperInstabilityRateBps(29, 29)).isEqualTo(10_000);
+    }
+
+    @Test
+    void rejectsTheLegacyConfidenceOverloadForTheCorrectedModel() {
+        assertThatThrownBy(() -> correctedPolicy(9_500, 1_000)
+                .achievedConfidenceBps(29))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Legacy zero-event confidence");
+    }
+
     private static TestSuiteStabilityStatisticalPolicy policy(
             int confidenceBps,
             int maximumRateBps) {
         return TestSuiteStabilityStatisticalPolicy.exactBinomial(
+                confidenceBps, maximumRateBps);
+    }
+
+    private static TestSuiteStabilityStatisticalPolicy correctedPolicy(
+            int confidenceBps,
+            int maximumRateBps) {
+        return TestSuiteStabilityStatisticalPolicy.baselineConditionalExactBinomial(
                 confidenceBps, maximumRateBps);
     }
 }

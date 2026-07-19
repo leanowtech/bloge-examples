@@ -188,8 +188,11 @@ public final class TestSuiteStabilityAttestationService {
         if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V1.equals(evidenceVersion)) {
             return TestSuiteStabilityAttestation.SCHEMA_VERSION_V1;
         }
-        return TestSuiteStabilityEvidence.SCHEMA_VERSION_V2.equals(evidenceVersion)
-                ? TestSuiteStabilityAttestation.SCHEMA_VERSION_V2
+        if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V2.equals(evidenceVersion)) {
+            return TestSuiteStabilityAttestation.SCHEMA_VERSION_V2;
+        }
+        return TestSuiteStabilityEvidence.SCHEMA_VERSION_V3.equals(evidenceVersion)
+                ? TestSuiteStabilityAttestation.SCHEMA_VERSION_V3
                 : TestSuiteStabilityAttestation.SCHEMA_VERSION;
     }
 

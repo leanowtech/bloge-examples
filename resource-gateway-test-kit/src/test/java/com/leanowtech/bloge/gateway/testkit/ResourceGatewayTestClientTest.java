@@ -314,6 +314,33 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void executesBaselineConditionalV3RequestAndReconstructsV4RateEvidence() {
+        ResourceGatewayTestClient client = client();
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.baselineConditionalExactBinomial(
+                        9_500, 1_000);
+
+        TestSuiteStabilityRun run = client.executeStatisticalSuiteStability(
+                TestSuiteStabilityTestFixtures.SUITE_ID,
+                TestSuiteStabilityTestFixtures.SUITE_REVISION,
+                TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT,
+                TestSuiteStabilityTestFixtures.CLIENT_REQUEST_ID,
+                60, policy, Map.of("pipeline", "nightly"));
+
+        assertThat(run.schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4);
+        assertThat(run.statisticalAssessment().policy()).isEqualTo(policy);
+        assertThat(run.statisticalAssessment().comparisonAttempts()).isEqualTo(59);
+        assertThat(run.statisticalAssessment().upperInstabilityRateBps()).isEqualTo(779);
+        assertThat(run.statisticalConfidenceSatisfied()).isTrue();
+        assertThat(run.statisticalPromotionEligible()).isFalse();
+        assertThat(requests.getFirst().body().path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3);
+        assertThat(requests.getFirst().body().at("/statisticalPolicy/model").asText())
+                .isEqualTo("BASELINE_CONDITIONAL_EXACT_BINOMIAL");
+    }
+
+    @Test
     void rejectsInsufficientStatisticalHorizonsBeforeNetworkAndMismatchedPoliciesAfterResponse() {
         ResourceGatewayTestClient client = client();
         TestSuiteStabilityStatisticalPolicy policy =
@@ -861,12 +888,20 @@ class ResourceGatewayTestClientTest {
                     .path("forceMismatchedFingerprint").asBoolean(false)
                     ? "sha256:" + "1".repeat(64)
                     : EvidenceVerificationSupport.sha256(body);
-            ObjectNode response = TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2.equals(
-                    body.path("schemaVersion").asText())
-                    ? TestSuiteStabilityTestFixtures.statisticalResponse(
-                    requestFingerprint, stabilityFixture.keyPair())
-                    : TestSuiteStabilityTestFixtures.response(
-                    requestFingerprint, stabilityFixture.keyPair());
+            String requestVersion = body.path("schemaVersion").asText();
+            ObjectNode response;
+            if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3
+                    .equals(requestVersion)) {
+                response = TestSuiteStabilityTestFixtures.rateResponse(
+                        requestFingerprint, stabilityFixture.keyPair());
+            } else if (TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2
+                    .equals(requestVersion)) {
+                response = TestSuiteStabilityTestFixtures.statisticalResponse(
+                        requestFingerprint, stabilityFixture.keyPair());
+            } else {
+                response = TestSuiteStabilityTestFixtures.response(
+                        requestFingerprint, stabilityFixture.keyPair());
+            }
             ((ObjectNode) response.path("evidence"))
                     .put("clientRequestId", body.path("clientRequestId").asText());
             TestSuiteStabilityTestFixtures.seal(response, stabilityFixture.keyPair(), false);

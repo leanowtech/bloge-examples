@@ -29,7 +29,7 @@ import java.util.Set;
  * @param caseResults ordered case stability results
  * @param promotion independently rechecked promotion verdict
  * @param quarantine independently rechecked quarantine recommendation
- * @param statisticalAssessment independently re-derived v3 probability assessment; null in v1/v2
+ * @param statisticalAssessment independently re-derived v3/v4 assessment; null in v1/v2
  * @param startedAt earliest source start
  * @param completedAt latest source completion
  * @param diagnostics bounded payload-free diagnostic codes
@@ -62,6 +62,14 @@ public record TestSuiteStabilityRun(
             "EXECUTION_REGIME_STATIONARY_WITHIN_ANALYSIS_WINDOW",
             "NO_UNOBSERVED_COMMON_CAUSE_CLAIM",
             "OUTCOME_EVENT_DETECTION_BY_SEMANTIC_FINGERPRINT");
+    /** Fixed disclosures required by the baseline-conditional exact-rate generation. */
+    public static final List<String> BASELINE_CONDITIONAL_MODEL_ASSUMPTIONS = List.of(
+            "ATTEMPTS_EXCHANGEABLE_WITHIN_ANALYSIS_WINDOW",
+            "EXECUTION_REGIME_STATIONARY_WITHIN_ANALYSIS_WINDOW",
+            "NO_UNOBSERVED_COMMON_CAUSE_CLAIM",
+            "OUTCOME_EVENT_DETECTION_BY_SEMANTIC_FINGERPRINT",
+            "BASELINE_IS_FIRST_VERIFIED_ATTEMPT",
+            "RATE_IS_CONDITIONAL_ON_OBSERVED_BASELINE");
 
     /** Aggregate stability classification. */
     public enum Status {
@@ -177,9 +185,9 @@ public record TestSuiteStabilityRun(
 
     /** Independently derived conclusion for a precommitted fixed horizon. */
     public enum StatisticalStatus {
-        /** Zero instability events and no censoring satisfy the exact confidence horizon. */
+        /** The complete non-censored sample admits the configured exact rate ceiling. */
         SATISFIED,
-        /** At least one verified suite-attempt outcome vector differs from the baseline. */
+        /** The complete non-censored sample does not admit the configured rate ceiling. */
         REJECTED,
         /** Incomplete source or child evidence prevents the probability claim. */
         INCONCLUSIVE
@@ -392,13 +400,16 @@ public record TestSuiteStabilityRun(
     /**
      * Independently reconstructed probability-model assessment over a complete attempt horizon.
      *
-     * @param policy precommitted policy copied from request v2
+     * @param policy precommitted policy copied from request v2 or v3
      * @param requiredAttempts exact minimum horizon independently derived from the policy
      * @param observedAttempts complete requested horizon size
      * @param verifiedAttempts attempts with verified source and child closure
      * @param censoredAttempts attempts retained in the denominator but excluded from inference
      * @param observedInstabilityEvents verified attempt vectors differing from the baseline vector
-     * @param achievedConfidenceBps conservative display floor; zero if rejected or inconclusive
+     * @param achievedConfidenceBps conservative threshold-confidence floor; zero if inconclusive
+     * @param comparisonAttempts v4 post-baseline comparison count; absent in v3
+     * @param upperInstabilityRateBps v4 conservative one-sided exact upper bound; absent when
+     *                                censored and in v3
      * @param status independently derived statistical conclusion
      * @param stopReason independently checked fixed-horizon stop reason
      * @param assumptions exact conditional model disclosures; these are not empirical proofs
@@ -411,13 +422,59 @@ public record TestSuiteStabilityRun(
             int censoredAttempts,
             int observedInstabilityEvents,
             int achievedConfidenceBps,
+            Integer comparisonAttempts,
+            Integer upperInstabilityRateBps,
             StatisticalStatus status,
             StatisticalStopReason stopReason,
             List<String> assumptions
     ) {
+        /**
+         * Backward-compatible constructor for legacy v3 statistical assessments.
+         *
+         * @param policy legacy zero-event policy
+         * @param requiredAttempts minimum horizon independently derived from the policy
+         * @param observedAttempts complete requested horizon size
+         * @param verifiedAttempts attempts with verified source and child closure
+         * @param censoredAttempts attempts without complete verified closure
+         * @param observedInstabilityEvents vectors differing from the first verified vector
+         * @param achievedConfidenceBps conservative legacy confidence floor
+         * @param status independently derived legacy statistical conclusion
+         * @param stopReason fixed-horizon stop reason
+         * @param assumptions legacy v3 model disclosures
+         */
+        public StatisticalAssessment(
+                TestSuiteStabilityStatisticalPolicy policy,
+                int requiredAttempts,
+                int observedAttempts,
+                int verifiedAttempts,
+                int censoredAttempts,
+                int observedInstabilityEvents,
+                int achievedConfidenceBps,
+                StatisticalStatus status,
+                StatisticalStopReason stopReason,
+                List<String> assumptions) {
+            this(policy, requiredAttempts, observedAttempts, verifiedAttempts, censoredAttempts,
+                    observedInstabilityEvents, achievedConfidenceBps, null, null, status,
+                    stopReason, assumptions);
+        }
+
         /** Freezes disclosures and rejects impossible counters before independent equality checks. */
         public StatisticalAssessment {
             assumptions = assumptions == null ? List.of() : List.copyOf(assumptions);
+            boolean baselineConditional = policy != null && policy.model()
+                    == TestSuiteStabilityStatisticalPolicy.Model
+                    .BASELINE_CONDITIONAL_EXACT_BINOMIAL;
+            boolean rateCoordinatesValid = baselineConditional
+                    ? comparisonAttempts != null
+                    && comparisonAttempts == Math.max(0, verifiedAttempts - 1)
+                    && observedInstabilityEvents <= comparisonAttempts
+                    && (censoredAttempts == 0
+                    ? upperInstabilityRateBps != null
+                    && upperInstabilityRateBps >= 0 && upperInstabilityRateBps <= 10_000
+                    : upperInstabilityRateBps == null)
+                    && BASELINE_CONDITIONAL_MODEL_ASSUMPTIONS.equals(assumptions)
+                    : comparisonAttempts == null && upperInstabilityRateBps == null
+                    && STATISTICAL_MODEL_ASSUMPTIONS.equals(assumptions);
             if (policy == null
                     || requiredAttempts < TestSuiteStabilityStatisticalPolicy.MIN_ATTEMPTS
                     || requiredAttempts > TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS
@@ -430,7 +487,7 @@ public record TestSuiteStabilityRun(
                     || achievedConfidenceBps < 0 || achievedConfidenceBps > 10_000
                     || status == null
                     || stopReason != StatisticalStopReason.FIXED_HORIZON_REACHED
-                    || !STATISTICAL_MODEL_ASSUMPTIONS.equals(assumptions)) {
+                    || !rateCoordinatesValid) {
                 throw new IllegalArgumentException(
                         "Complete independently derived statistical stability assessment is required");
             }
@@ -449,7 +506,7 @@ public record TestSuiteStabilityRun(
      * @param allAttemptsVerified complete source-closure flag
      * @param allSourceSuitesPromotionEligible complete source-promotion eligibility flag;
      *                                         null only for historical v1 evidence
-     * @param statisticalConfidenceSatisfied independently checked v3 confidence flag;
+     * @param statisticalConfidenceSatisfied independently checked v3/v4 statistical flag;
      *                                       null in v1/v2 evidence
      */
     public record PromotionVerdict(
@@ -532,13 +589,17 @@ public record TestSuiteStabilityRun(
         diagnostics = immutableCodes(diagnostics);
         boolean legacy = TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1
                 .equals(schemaVersion);
-        boolean statistical = TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3
+        boolean legacyStatistical = TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3
                 .equals(schemaVersion);
+        boolean rateStatistical = TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4
+                .equals(schemaVersion);
+        boolean statistical = legacyStatistical || rateStatistical;
         int maximumAttempts = statistical
                 ? TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS : 20;
         if (!Set.of(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1,
                 TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2,
-                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3)
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4)
                 .contains(schemaVersion)
                 || !stabilityRunId(stabilityRunId) || clientRequestId.isBlank() || status == null
                 || suiteRef == null || target == null || requestedAttempts < 3
@@ -559,6 +620,12 @@ public record TestSuiteStabilityRun(
                     "Statistical stability evidence exceeds the bounded observation budget");
         }
         Status derivedStatus = deriveStatus(caseResults);
+        if (statistical && statisticalAssessment != null
+                && legacyStatistical != (statisticalAssessment.policy().model()
+                == TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL)) {
+            throw new IllegalArgumentException(
+                    "Statistical response generation does not match its probability model");
+        }
         StatisticalAssessment derivedStatistics = statistical
                 ? deriveStatisticalAssessment(statisticalAssessment == null
                 ? null : statisticalAssessment.policy(), requestedAttempts, attempts, caseResults)
@@ -589,11 +656,13 @@ public record TestSuiteStabilityRun(
         JsonNode evidence = rawResponse.path("evidence");
         String expectedEvidenceVersion = legacy
                 ? TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V1
-                : statistical ? TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V3
+                : legacyStatistical ? TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V3
+                : rateStatistical ? TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V4
                 : TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V2;
         String expectedAttestationVersion = legacy
                 ? TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V1
-                : statistical ? TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V3
+                : legacyStatistical ? TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V3
+                : rateStatistical ? TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V4
                 : TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V2;
         if (status != derivedStatus || !promotion.equals(derivedPromotion)
                 || !quarantine.equals(derivedQuarantine)
@@ -726,21 +795,23 @@ public record TestSuiteStabilityRun(
     /**
      * Reports whether the evidence generation proves every source suite promotion verdict.
      *
-     * @return true only for source-promotion-closed v2 evidence
+     * @return true only for source-promotion-closed v2+ evidence
      */
     public boolean sourcePromotionClosureAvailable() {
         return Set.of(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V2,
-                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3)
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4)
                 .contains(schemaVersion);
     }
 
     /**
      * Reports whether this response carries an independently re-derived probability assessment.
      *
-     * @return true only for statistical response v3
+     * @return true only for statistical response v3 or v4
      */
     public boolean statisticalConfidenceAvailable() {
-        return TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3.equals(schemaVersion)
+        return Set.of(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3,
+                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4).contains(schemaVersion)
                 && statisticalAssessment != null;
     }
 
@@ -751,7 +822,7 @@ public record TestSuiteStabilityRun(
      * {@link #statisticalPromotionEligible()} when both deterministic and statistical gates are
      * required.</p>
      *
-     * @return true only for a v3 satisfied assessment
+     * @return true only for a v3/v4 satisfied assessment
      */
     public boolean statisticalConfidenceSatisfied() {
         return statisticalConfidenceAvailable()
@@ -759,9 +830,9 @@ public record TestSuiteStabilityRun(
     }
 
     /**
-     * Reports whether v3 evidence satisfies correctness, source promotion, and confidence gates.
+     * Reports whether v3/v4 evidence satisfies correctness, source promotion, and confidence gates.
      *
-     * @return true only for an independently reconstructed eligible v3 verdict
+     * @return true only for an independently reconstructed eligible v3/v4 verdict
      */
     public boolean statisticalPromotionEligible() {
         return statisticalConfidenceSatisfied() && promotionEligible();
@@ -912,6 +983,10 @@ public record TestSuiteStabilityRun(
                 value.path("censoredAttempts").asInt(),
                 value.path("observedInstabilityEvents").asInt(),
                 value.path("achievedConfidenceBps").asInt(),
+                value.has("comparisonAttempts")
+                        ? value.path("comparisonAttempts").asInt() : null,
+                value.has("upperInstabilityRateBps")
+                        ? value.path("upperInstabilityRateBps").asInt() : null,
                 enumValue(StatisticalStatus.class,
                         value.path("status").asText(), "statistical status"),
                 enumValue(StatisticalStopReason.class,
@@ -1027,15 +1102,32 @@ public record TestSuiteStabilityRun(
                 value -> value.status() == AttemptStatus.VERIFIED).count();
         int censored = requestedAttempts - verified;
         int instabilityEvents = observedInstabilityEvents(requestedAttempts, cases);
-        StatisticalStatus statisticalStatus = instabilityEvents > 0
-                ? StatisticalStatus.REJECTED
-                : censored > 0 ? StatisticalStatus.INCONCLUSIVE : StatisticalStatus.SATISFIED;
-        int achieved = statisticalStatus == StatisticalStatus.SATISFIED
-                ? policy.achievedConfidenceBps(verified) : 0;
+        if (policy.model()
+                == TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL) {
+            StatisticalStatus statisticalStatus = instabilityEvents > 0
+                    ? StatisticalStatus.REJECTED
+                    : censored > 0 ? StatisticalStatus.INCONCLUSIVE : StatisticalStatus.SATISFIED;
+            int achieved = statisticalStatus == StatisticalStatus.SATISFIED
+                    ? policy.achievedConfidenceBps(verified) : 0;
+            return new StatisticalAssessment(policy, policy.minimumRequiredAttempts(),
+                    requestedAttempts, verified, censored, instabilityEvents, achieved,
+                    statisticalStatus, StatisticalStopReason.FIXED_HORIZON_REACHED,
+                    STATISTICAL_MODEL_ASSUMPTIONS);
+        }
+        int comparisons = Math.max(0, verified - 1);
+        StatisticalStatus statisticalStatus = censored > 0
+                ? StatisticalStatus.INCONCLUSIVE
+                : policy.rateAdmissionSatisfied(comparisons, instabilityEvents)
+                ? StatisticalStatus.SATISFIED : StatisticalStatus.REJECTED;
+        int achieved = censored == 0
+                ? policy.achievedConfidenceBps(comparisons, instabilityEvents) : 0;
+        Integer upperRate = censored == 0
+                ? policy.upperInstabilityRateBps(comparisons, instabilityEvents) : null;
         return new StatisticalAssessment(policy, policy.minimumRequiredAttempts(),
                 requestedAttempts, verified, censored, instabilityEvents, achieved,
-                statisticalStatus, StatisticalStopReason.FIXED_HORIZON_REACHED,
-                STATISTICAL_MODEL_ASSUMPTIONS);
+                comparisons, upperRate, statisticalStatus,
+                StatisticalStopReason.FIXED_HORIZON_REACHED,
+                BASELINE_CONDITIONAL_MODEL_ASSUMPTIONS);
     }
 
     private static int observedInstabilityEvents(

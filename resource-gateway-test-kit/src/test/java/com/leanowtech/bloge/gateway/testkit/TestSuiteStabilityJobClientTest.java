@@ -111,6 +111,28 @@ class TestSuiteStabilityJobClientTest {
     }
 
     @Test
+    void submitsBaselineConditionalJobsUnderRequestV3() {
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.baselineConditionalExactBinomial(
+                        9_500, 1_000);
+        TestSuiteStabilityJobRequest request = TestSuiteStabilityJobRequest.statistical(
+                "suite-a", 7, SUITE_FINGERPRINT, "rate-1",
+                policy.minimumRequiredAttempts(), policy,
+                Map.of("source", "nightly"), TestSuiteStabilityJobRequest.Priority.NORMAL,
+                DEADLINE);
+
+        client().submitSuiteStabilityJob(request);
+
+        assertThat(requests.getFirst().body().at("/execution/schemaVersion").asText())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3);
+        assertThat(requests.getFirst().body()
+                .at("/execution/statisticalPolicy/model").asText())
+                .isEqualTo("BASELINE_CONDITIONAL_EXACT_BINOMIAL");
+        assertThat(requests.getFirst().body().at("/execution/attempts").asInt())
+                .isEqualTo(30);
+    }
+
+    @Test
     void retriesCancellationWithTheSameCommandIdentity() {
         scenario = Scenario.RETRY_CANCELLATION_ONCE;
         ResourceGatewayTestClient client = client();

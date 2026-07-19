@@ -1,229 +1,212 @@
 # Stage 5 statistical suite-stability design
 
-**Implementation status (2026-07-18): implemented.** Request v2, evidence/attestation/response v3,
-exact server evaluation, immutable persistence, strict Schema, capability discovery, independent
-test-kit re-derivation, pinned-key verification, JUnit and opt-in CLI gate are present. The
-deliberately unclaimed items in section 10 remain open work.
+**Implementation status (2026-07-19): implemented.** The current generation is request v3 with
+evidence, attestation, and response v4. It uses an exact baseline-conditional binomial rate bound,
+immutable signed evidence, strict Schema, capability discovery, independent test-kit re-derivation,
+pinned-key verification, payload-free JUnit, and a fail-closed CLI gate. Historical request v2 and
+v3 evidence remain readable and verifiable with their original zero-event semantics; they are not
+silently reinterpreted as v4.
 
 ## 1. Decision
 
-Resource Gateway will add an opt-in statistical generation above deterministic suite-stability
-evidence. The generation uses a precommitted fixed horizon and an exact zero-instability-event
-binomial bound. It does not use a producer-selected confidence label, an observed-pass percentage,
-or an adaptive "stop when green" loop.
+Resource Gateway exposes statistical repeatability as an opt-in, versioned evidence protocol above
+deterministic suite stability. The current model freezes a fixed execution horizon before attempt
+one, reserves the first verified suite outcome vector as the observed baseline, and treats each
+later verified comparison as one Bernoulli trial. It reports an upward-rounded, one-sided exact
+Clopper-Pearson instability-rate bound.
 
-The statistical claim is deliberately precise:
+The signed claim is deliberately conditional:
 
-> Conditional on the signed model assumptions, if the probability that one complete suite attempt
-> changes its verified semantic outcome vector is at least `q`, the probability of observing zero
-> changes in the precommitted horizon is at most `1 - C`.
+> Given the disclosed exchangeability and stationarity assumptions, and conditional on the first
+> verified vector being the observed baseline, the complete uncensored sample admits instability
+> rates no greater than the configured ceiling at the configured confidence level.
 
-This is a bound on repeatability under the observed execution regime. It is not a correctness proof,
-a production SLO, a guarantee about future releases, or proof that the model assumptions are true.
+This is repeatability evidence for one bounded execution regime. It is not proof of business
+correctness, stochastic independence, future behavior, a production SLO, or release eligibility.
 
-## 2. Root problem
+## 2. Root problem and v3 correction
 
-The current v2 evidence proves that an exact suite produced the same verified semantic outcomes in a
-fixed 3..20-attempt sample. That deterministic fact is useful, but it cannot honestly answer:
+Deterministic evidence proves what happened in a fixed sample but cannot by itself quantify the rate
+of behavior changes. Historical statistical v3 added an exact zero-event claim, but its event was
+defined by comparing later vectors with the first verified vector. With `n` complete attempts, the
+first vector establishes the baseline and only `n - 1` Bernoulli comparisons exist. Computing the
+v3 zero-event confidence with exponent `n` therefore overstates the sample by one trial.
 
-1. how much confidence the sample supports;
-2. which minimum instability rate the sample was designed to detect;
-3. whether the horizon was chosen before or after observing results;
-4. whether missing or invalid evidence was silently removed from the denominator;
-5. whether a case count multiplied the false-confidence surface;
-6. whether stable behavior was confused with correct behavior or release eligibility.
+Changing v3 arithmetic in place would make old signed evidence non-reproducible. The correction is
+an additive protocol generation:
 
-The root defect is therefore not a missing percentage field. It is the absence of a signed sampling
-contract from request through evidence, attestation, consumer re-derivation, and CI admission.
+1. v3 keeps its historical wire meaning and remains independently verifiable.
+2. New statistical requests use `BASELINE_CONDITIONAL_EXACT_BINOMIAL` only.
+3. v4 signs `comparisonAttempts = verifiedAttempts - 1` and the exact upper rate bound.
+4. Producer and independent test-kit both re-derive counts, bounds, verdicts, and signatures.
+5. Model/version cross-pairs are rejected, preventing downgrade or semantic aliasing.
 
-## 3. Statistical model
+The protocol fixes the cause, not merely the displayed confidence field: trial identity, sample
+size, estimator, assumptions, censoring, and consumer verification now share one versioned contract.
 
-### 3.1 Event and claim scope
+## 3. Event and claim scope
 
-One trial is one complete `COLLECT_ALL` execution of the exact immutable suite. Its outcome is the
-ordered vector of every case's verified `evidenceStatus + semanticResultFingerprint` identity.
-An instability event occurs when an attempt vector differs from the first verified vector.
+Each complete `COLLECT_ALL` suite execution produces an ordered vector of every case's verified
+`evidenceStatus + semanticResultFingerprint` identity. The first verified vector is the baseline. A
+later verified vector differing in any coordinate is one suite-level instability event.
 
-The claim scope is `SUITE_ATTEMPT_ANY_CASE`. A change in any case is one suite-level event. The model
-does not independently claim `C` confidence for every case, so it does not need to hide a
-multiple-comparison correction behind the number of cases. Per-case statuses remain deterministic
-diagnostics, while the statistical release condition is suite-level.
+The claim scope is `SUITE_ATTEMPT_ANY_CASE`. A change in any case contributes one event for that
+comparison; case count does not multiply the number of independent confidence claims. Per-case
+statuses remain deterministic diagnostics.
 
-### 3.2 Exact horizon rule
+For `n` verified attempts:
+
+```text
+comparisonAttempts = n - 1
+observedInstabilityEvents = count(laterVector != baselineVector)
+```
+
+The first verified attempt can never be counted as both baseline and comparison. The legacy
+single-argument confidence API rejects the corrected model to prevent accidental reuse of the v3
+`n` convention.
+
+## 4. Exact fixed-horizon inference
 
 The request freezes:
 
-- confidence target `C` in basis points;
-- maximum instability rate `q` in basis points;
-- a fixed attempt horizon `n`;
-- model `ZERO_INSTABILITY_EXACT_BINOMIAL`;
+- confidence level `C` in basis points;
+- maximum admitted conditional instability rate `q` in basis points;
+- execution horizon `n`;
+- model `BASELINE_CONDITIONAL_EXACT_BINOMIAL`;
 - scope `SUITE_ATTEMPT_ANY_CASE`;
 - stopping rule `PRECOMMITTED_FIXED_HORIZON`;
 - censoring policy `FAIL_CLOSED`.
 
-For zero observed events, the horizon is sufficient only when:
+Let `m = n - 1` comparisons, `k` observed events, and `alpha = 1 - C`. Admission at the configured
+ceiling is the exact lower-tail test:
 
 ```text
-(1 - q)^n <= 1 - C
+P[X <= k | X ~ Binomial(m, q)] <= alpha
 ```
 
-The server and independent Java consumer must evaluate this relation with exact integer arithmetic.
-For basis-point values `Q` and `C`, the comparison is:
+The reported `upperInstabilityRateBps` is the smallest basis-point rate whose exact lower tail is no
+larger than `alpha`; integer rounding is upward and can never make the release decision more
+favorable. `achievedConfidenceBps` is the conservative floor of `1 - P[X <= k | q]` for display.
+All powers, combinations, CDF sums, admission comparisons, and binary-search decisions use
+`BigInteger`; floating-point rounding cannot affect evidence.
 
-```text
-(10000 - Q)^n * 10000 <= (10000 - C) * 10000^n
-```
+For a 95% confidence target and 10% ceiling:
 
-The minimum sufficient horizon is the first bounded `n` satisfying that relation. Floating-point
-rounding cannot change admission, evidence, or a release gate. `achievedConfidenceBps` is a
-conservative floor for display; the exact cross-product comparison owns the Boolean verdict.
+| Executions | Comparisons | Events | Upper bound | Achieved floor | Statistical result |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 29 | 28 | 0 | above 10% | below 95% | request horizon rejected |
+| 30 | 29 | 0 | 9.82% | 95.28% | `SATISFIED` |
+| 30 | 29 | 1 | 15.34% | 80.11% | `REJECTED` |
+| 60 | 59 | 1 | 7.79% | 98.49% | `SATISFIED` statistically |
 
-Examples:
+The last row is intentionally important: a non-zero event can fit a declared rate ceiling, while
+the same evidence is deterministically `FLAKY`, promotion-blocked, and quarantine-required.
+Statistical tolerance cannot launder an observed correctness variant.
 
-| Confidence | Instability ceiling | Minimum clean attempts |
-| --- | --- | --- |
-| 95% | 10% | 29 |
-| 95% | 5% | 59 |
-| 95% | 1% | 299 |
-| 99% | 1% | 459 |
+The minimum horizon still uses the zero-event planning case before execution. At 95%/10%, v3
+historically required 29 attempts; corrected v4 requires 30 executions for 29 comparisons.
 
-A request whose fixed horizon cannot meet its declared target is rejected before the first suite
-execution. This prevents guaranteed-to-fail sampling jobs and post-hoc relabeling.
+## 5. Fixed stopping and censoring
 
-### 3.3 Why fixed horizon
+The complete horizon is precommitted and executed even after an event. The only stop reason is
+`FIXED_HORIZON_REACHED`. This prevents choosing a favorable prefix or repeatedly sampling until a
+green result appears.
 
-Generation one deliberately rejects optional stopping. The service executes the complete horizon
-even after an early mismatch. This has three properties:
+A source/child signature failure, missing closure, source or child reuse, effective-plan drift, or
+incomplete terminal evidence censors the attempt. Under v4 `FAIL_CLOSED` semantics, any censoring
+produces:
 
-1. the caller cannot keep sampling until a favorable run appears and then choose the prefix;
-2. the signed request fingerprint proves that the sample size preceded the observations;
-3. every retained result has one simple, reproducible stopping reason: `FIXED_HORIZON_REACHED`.
+- statistical status `INCONCLUSIVE`;
+- `achievedConfidenceBps = 0`;
+- no `upperInstabilityRateBps`;
+- no denominator repair, replacement attempt, or favorable partial inference.
 
-Sequential probability-ratio tests and alpha-spending may be added only as a new protocol generation
-with their own estimator, spending schedule, and consumer verifier. They must not be smuggled into
-this fixed-horizon model as an execution optimization.
+Historical v3 retains its signed generation semantics, including its original event/censor
+precedence. Consumers must branch by exact evidence version instead of projecting old evidence into
+the corrected model.
 
-## 4. Censoring and independence
+## 6. Protocol generations
 
-Every requested attempt remains in the ordered signed closure. A source or child signature failure,
-missing evidence, reused source/child run, effective-plan drift, or incomplete terminal result is a
-censored attempt. Under `FAIL_CLOSED`, one censored attempt makes the statistical assessment
-`INCONCLUSIVE`; the service does not drop it, replace it, or increase the denominator with a later
-run. A verified instability event has monotonic negative-proof precedence: if an analysis contains
-both a proven variant and censoring, its assessment is `REJECTED`, not weakened to `INCONCLUSIVE`.
+| Object | Historical statistical | Current statistical | Compatibility rule |
+| --- | --- | --- | --- |
+| request | `bloge.testSuiteStabilityExecutionRequest.v2` | `...Request.v3` | v1 remains deterministic |
+| evidence | `bloge.testSuiteStabilityEvidence.v3` | `...Evidence.v4` | v1/v2/v3 remain readable |
+| attestation | `bloge.testSuiteStabilityAttestation.v3` | `...Attestation.v4` | must match evidence |
+| response | `bloge.testSuiteStabilityExecutionResponse.v3` | `...Response.v4` | must match evidence/attestation |
 
-Distinct server-derived request ids and rejection of reused source/child run ids prove only that the
-same durable run was not counted twice. They do not prove stochastic independence or stationarity.
-The v3 assessment therefore signs these explicit conditional assumptions:
+Request v2 accepts only `ZERO_INSTABILITY_EXACT_BINOMIAL`. Request v3 accepts only
+`BASELINE_CONDITIONAL_EXACT_BINOMIAL`. V4 assessment additionally requires:
+
+- `comparisonAttempts`;
+- `upperInstabilityRateBps` for complete uncensored samples;
+- the two baseline-conditional assumption codes;
+- a status consistent with the exact interval and censoring state.
+
+The signed canonical evidence binds the policy, minimum horizon, observed/verified/censored counts,
+event count, comparison count, confidence floor, optional upper bound, status, stop reason, and
+assumptions. Attestation binds request fingerprint, evidence fingerprint, and ordered source
+promotion closure.
+
+## 7. Verdict and correctness boundaries
+
+For complete uncensored v4 evidence:
+
+| Status | Exact derivation |
+| --- | --- |
+| `SATISFIED` | the one-sided exact upper rate bound is no greater than the configured ceiling |
+| `REJECTED` | the exact upper rate bound exceeds the configured ceiling |
+| `INCONCLUSIVE` | one or more requested attempts are censored |
+
+Promotion remains an intersection, not a statistical shortcut. It requires aggregate `STABLE`, all
+source promotions `ELIGIBLE`, complete verified closure, satisfied statistical assessment, and
+valid pinned trust. `FLAKY`, `CONSISTENT_FAILURE`, and source-promotion blocking remain decisive even
+when the statistical rate assessment is satisfied. Quarantine is a signed recommendation and never
+changes business outcomes.
+
+## 8. Assumptions and claim limits
+
+Every v4 assessment signs these disclosures:
 
 - `ATTEMPTS_EXCHANGEABLE_WITHIN_ANALYSIS_WINDOW`;
-- `OUTCOME_EVENT_DETECTION_BY_SEMANTIC_FINGERPRINT`;
 - `EXECUTION_REGIME_STATIONARY_WITHIN_ANALYSIS_WINDOW`;
-- `NO_UNOBSERVED_COMMON_CAUSE_CLAIM`.
+- `NO_UNOBSERVED_COMMON_CAUSE_CLAIM`;
+- `OUTCOME_EVENT_DETECTION_BY_SEMANTIC_FINGERPRINT`;
+- `BASELINE_IS_FIRST_VERIFIED_ATTEMPT`;
+- `RATE_IS_CONDITIONAL_ON_OBSERVED_BASELINE`.
 
-The last code is intentionally negative: Resource Gateway does not claim to have ruled out a shared
-dependency, scheduler, cache, or environment state that correlates attempts.
+Distinct durable run identities prevent literal duplicate counting; they do not prove independence.
+The negative common-cause code is deliberate: a shared dependency, cache, scheduler, test fixture,
+or environment epoch may correlate attempts.
 
-## 5. Protocol generations
+## 9. Bounded execution and independent verification
 
-The additive generation is:
+Statistical requests allow 3..1000 executions and at most 10,000 attempt-by-case observations.
+Confidence is bounded to 5000..9999 basis points and the rate ceiling to 1..5000 basis points.
+Unreachable horizons, unsupported policy coordinates, mixed generations, suite drift, oversized
+metadata, or work-budget excess fail before execution.
 
-| Object | Statistical generation | Compatibility rule |
-| --- | --- | --- |
-| request | `bloge.testSuiteStabilityExecutionRequest.v2` | v1 remains deterministic-only |
-| evidence | `bloge.testSuiteStabilityEvidence.v3` | v1/v2 remain readable |
-| attestation | `bloge.testSuiteStabilityAttestation.v3` | generation must match evidence |
-| response | `bloge.testSuiteStabilityExecutionResponse.v3` | generation must match evidence and attestation |
+The independent test kit does not trust producer labels. It reconstructs attempt vectors and source
+promotion closure, recomputes exact integer CDFs and upper bounds, re-derives deterministic and
+statistical verdicts, checks strict Schema, and verifies the v4 Ed25519 signature against an
+externally pinned key set. Payload-free JUnit and CLI output include model, comparison count, event
+count, upper bound, promotion, quarantine, and trust verdicts.
 
-Request v2 requires `statisticalPolicy`; request v1 forbids it. Evidence v3 requires one
-`statisticalAssessment`; v1/v2 forbid it. The v3 assessment binds the frozen policy, derived minimum
-horizon, observed/verified/censored attempt counts, observed instability-event count, conservative
-achieved confidence, derived assessment status, fixed stopping reason, and fixed assumption codes.
-
-The signed attestation already binds the canonical request fingerprint, evidence fingerprint, and
-ordered source promotion closure. Moving the new assessment into canonical v3 evidence therefore
-binds the statistical model without duplicating mutable labels in signature material.
-
-## 6. Derived verdicts
-
-The statistical assessment has exactly three terminal statuses:
-
-| Status | Derivation |
-| --- | --- |
-| `SATISFIED` | horizon sufficient, every attempt verified, and zero suite-level instability events |
-| `REJECTED` | at least one verified suite-level instability event, including when other attempts are censored |
-| `INCONCLUSIVE` | one or more requested attempts are censored and no instability event was proven |
-
-Deterministic case and aggregate statuses remain unchanged. A suite can be statistically repeatable
-but consistently wrong. Consequently v3 promotion is eligible only when all existing conditions are
-true and the statistical assessment is `SATISFIED`:
-
-- aggregate status is `STABLE`;
-- every attempt and child closure is verified;
-- every source suite promotion is `ELIGIBLE`;
-- the statistical assessment is `SATISFIED`.
-
-`CONSISTENT_FAILURE` remains promotion-blocked even when its repeated failure is statistically
-repeatable. Source-promotion blocking remains orthogonal. Quarantine remains a recommendation and is
-not used to hide confidence or correctness failures.
-
-## 7. Bounded execution and admission
-
-Statistical request v2 permits 3..1000 attempts. The server additionally limits
-`attempts * suiteCaseCount` to 10,000 case observations before execution. These are protocol and
-generation-one resource bounds, not capacity claims. Existing request v1 remains limited to 3..20.
-
-The service admits only confidence values `5000..9999` basis points and instability thresholds
-`1..5000` basis points. It rejects an unreachable horizon, unsupported model/scope/rules, nested or
-oversized metadata, unsupported suites, and exact suite drift before executing attempt one.
-
-## 8. Independent consumer and CI semantics
-
-The test kit must not trust producer counts or labels. It independently:
-
-1. reconstructs every suite-attempt outcome vector from the signed case closure;
-2. re-derives verified, censored, and instability-event counts;
-3. recomputes the exact minimum horizon and achieved confidence with integer arithmetic;
-4. re-derives assessment, aggregate, promotion, and quarantine verdicts;
-5. verifies the v3 signature against the externally pinned key set.
-
-The existing deterministic v2 assertion remains available and must not be renamed as statistical.
-A new statistical assertion and CLI gate require v3, `SATISFIED`, eligible promotion, and pinned
-trust. JUnit output remains payload-free and includes only bounded model coordinates and verdicts.
-
-## 9. Test obligations
-
-Implementation is incomplete until tests prove at least:
-
-1. exact 95%/10%, 95%/5%, 95%/1%, and 99%/1% horizon boundaries;
-2. one fewer attempt is rejected while the exact minimum is admitted;
-3. stable pass reaches confidence and may be eligible;
-4. consistent failure reaches repeatability confidence but remains promotion-blocked;
-5. a semantic variant rejects confidence and requires quarantine;
-6. one censored source/child/plan observation makes confidence inconclusive without denominator repair;
-7. source-promotion blocking cannot be laundered by a satisfied statistical assessment;
-8. forged producer counts, status, assumptions, achieved confidence, or horizon are rejected;
-9. v1/v2 canonical fingerprints remain unchanged and cannot be projected as v3;
-10. strict Schema, capabilities, persistence, HTTP, CLI, JUnit, JavaDoc, and full builds stay green.
+Required regression anchors include 30/0, 30/1, and 60/1 samples; censoring; consistent failure;
+source-promotion blocking; forged counts, bounds, assumptions, model/version pairs, fingerprints,
+and signatures; historical v1-v3 canonical compatibility; persistence round trips; capability
+truth; CLI/JUnit behavior; JavaDoc; and both full Maven gates.
 
 ## 10. Deliberately unclaimed
 
-The synchronous parent execution is now protected by a database-authoritative, cross-replica
-lease. One live owner may coordinate a stability run for an exact scope and request fingerprint;
-expired ownership may be taken over with a higher fence epoch, and terminal persistence consumes
-the exact lease atomically. The implementation and verification boundary is documented in
-[Stage 5 suite-stability execution lease verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md).
-
 This generation does not claim:
 
-- historical drift detection across code, fixture, dependency, or environment epochs;
-- a confidence interval for non-zero event rates;
-- sequential/adaptive stopping or alpha spending;
-- proof of independence, stationarity, or absence of common causes;
-- automatic quarantine mutation, owner workflow, or expiry;
-- asynchronous parent queues, tenant fairness, distributed attempt-worker scheduling, or physically
-  separate runtime isolation;
+- sequential/adaptive stopping or alpha-spending correctness;
+- historical drift or correlated common-cause detection across environment epochs;
+- proof of independence, stationarity, or baseline representativeness;
+- automatic quarantine mutation, remediation ownership, approval, or expiry;
+- distributed attempt-level scheduling or physically isolated runtime certification;
 - long-duration soak, capacity, chaos, or non-H2 database certification.
 
-Those are separate lifecycle and infrastructure problems. Keeping them visible is part of the
-statistical contract, not an implementation disclaimer to be removed later.
+Sequential sampling requires a new protocol generation with a precommitted spending schedule and an
+independent verifier. It must not be introduced as a runtime optimization under this fixed-horizon
+contract.

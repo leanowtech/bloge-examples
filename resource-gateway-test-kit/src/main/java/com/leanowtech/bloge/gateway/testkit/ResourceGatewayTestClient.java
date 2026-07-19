@@ -416,10 +416,10 @@ public final class ResourceGatewayTestClient {
     /**
      * Executes a precommitted fixed-horizon statistical analysis of one immutable suite revision.
      *
-     * <p>The test-kit rejects an insufficient horizon before network I/O. The returned v3 response
-     * is schema-validated, independently reconstructed from its attempt-by-case closure, and bound
-     * to the exact request and policy. Cryptographic verification is still required before the
-     * result can enter a release gate.</p>
+     * <p>The test-kit rejects an insufficient horizon before network I/O. It selects the exact
+     * request and response generation from the policy model, independently reconstructs the
+     * attempt-by-case closure, and binds the result to the request. Cryptographic verification is
+     * still required before the result can enter a release gate.</p>
      *
      * @param suiteId exact suite id
      * @param revision exact immutable revision
@@ -450,10 +450,17 @@ public final class ResourceGatewayTestClient {
                     "statistical stability attempts must satisfy the precommitted horizon; minimum="
                             + minimum);
         }
+        boolean baselineConditional = policy.model()
+                == TestSuiteStabilityStatisticalPolicy.Model
+                .BASELINE_CONDITIONAL_EXACT_BINOMIAL;
         return executeSuiteStabilityRequest(suiteId, revision, fingerprint, clientRequestId,
                 attempts, policy, metadata,
-                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2,
-                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3);
+                baselineConditional
+                        ? TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3
+                        : TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2,
+                baselineConditional
+                        ? TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4
+                        : TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3);
     }
 
     private TestSuiteStabilityRun executeSuiteStabilityRequest(

@@ -324,12 +324,16 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest
                             .SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest
+                            .SCHEMA_VERSION_V2,
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest
                             .SCHEMA_VERSION));
             objects.put("testSuiteStabilityEvidence", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence
                             .SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence
                             .SCHEMA_VERSION_V2,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence
+                            .SCHEMA_VERSION_V3,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence
                             .SCHEMA_VERSION));
             objects.put("testSuiteStabilityAttestation", List.of(
@@ -338,12 +342,16 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation
                             .SCHEMA_VERSION_V2,
                     com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation
+                            .SCHEMA_VERSION_V3,
+                    com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation
                             .SCHEMA_VERSION));
             objects.put("testSuiteStabilityExecutionResponse", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse
                             .SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse
                             .SCHEMA_VERSION_V2,
+                    com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse
+                            .SCHEMA_VERSION_V3,
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionResponse
                             .SCHEMA_VERSION));
             objects.put("testSuiteStabilityProgress", List.of(
@@ -617,6 +625,11 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled && signer.available());
         features.put("exactBinomialSuiteStabilityConfidence",
                 testExecutionEndpointEnabled && signer.available());
+        features.put("baselineConditionalSuiteStabilityRateBound",
+                testExecutionEndpointEnabled && signer.available());
+        features.put("nonZeroSuiteStabilityRateInterval",
+                testExecutionEndpointEnabled && signer.available());
+        features.put("sequentialSuiteStabilityAlphaSpending", false);
         features.put("crossReplicaSuiteStabilityExecutionLease",
                 testExecutionEndpointEnabled && signer.available());
         features.put("durableSuiteStabilityParentProgress",

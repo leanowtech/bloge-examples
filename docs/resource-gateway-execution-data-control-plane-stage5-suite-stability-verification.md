@@ -13,11 +13,13 @@ The claim is intentionally bounded:
 1. V1 structural, V2 semantic, and V4 property suites are supported because they produce executable
    child evidence. V3 schema-admission and V5 mutation suites are rejected.
 2. Attempts are fixed before execution and use `COLLECT_ALL`. Request v1 is limited to 3..20;
-   statistical request v2 is limited to 3..1000 and `attempts * caseCount <= 10000`.
-3. Deterministic stability means invariant observed behavior. Statistical v3 additionally proves an
-   exact zero-event bound under its signed assumptions; neither is proof about all future executions.
+   statistical requests v2/v3 are limited to 3..1000 and `attempts * caseCount <= 10000`.
+3. Deterministic stability means invariant observed behavior. Current statistical v4 proves an
+   exact baseline-conditional rate bound, including non-zero event samples, under its signed
+   assumptions; neither is proof about all future executions.
 4. Stability is necessary but not sufficient for promotion. Every verified source suite must also
-   carry an `ELIGIBLE` promotion verdict in v2/v3 evidence; v3 must also satisfy confidence.
+   carry an `ELIGIBLE` promotion verdict in v2/v3/v4 evidence; statistical evidence must also
+   satisfy its generation-specific exact assessment.
 5. Quarantine is a signed recommendation only. This increment does not mutate suite state, waive a
    failure, authorize publication, or call an external governance system.
 6. Every verified source reference is durably checkpointed before the next attempt. A successor
@@ -26,7 +28,7 @@ The claim is intentionally bounded:
 ## 2. Exact request and idempotency boundary
 
 `POST /api/testing/suites/{suiteId}/stability-executions` accepts deterministic
-`bloge.testSuiteStabilityExecutionRequest.v1` and statistical request v2 under `TEST_EXECUTION` or,
+`bloge.testSuiteStabilityExecutionRequest.v1` and statistical requests v2/v3 under `TEST_EXECUTION` or,
 for governed replay fixtures, `TEST_REPLAY`. Both requests bind:
 
 - exact suite id, revision, and fingerprint;
@@ -34,9 +36,11 @@ for governed replay fixtures, `TEST_REPLAY`. Both requests bind:
 - exact attempt count;
 - bounded scalar provenance metadata.
 
-Request v2 additionally requires `ZERO_INSTABILITY_EXACT_BINOMIAL`,
-`SUITE_ATTEMPT_ANY_CASE`, `PRECOMMITTED_FIXED_HORIZON`, `FAIL_CLOSED`, confidence basis points, and
-an admitted instability-rate ceiling. The exact horizon inequality is evaluated before attempt one.
+Historical request v2 requires `ZERO_INSTABILITY_EXACT_BINOMIAL`. Current request v3 requires
+`BASELINE_CONDITIONAL_EXACT_BINOMIAL`. Both bind `SUITE_ATTEMPT_ANY_CASE`,
+`PRECOMMITTED_FIXED_HORIZON`, `FAIL_CLOSED`, confidence basis points, and an admitted
+instability-rate ceiling. The exact generation-specific horizon inequality is evaluated before
+attempt one, and mixed request/model generations are rejected.
 
 The service rejects an unsupported suite generation, stale suite fingerprint, purpose or clearance
 mismatch, production identity, nested/oversized metadata, version-specific attempt/work bounds, an
@@ -104,11 +108,13 @@ Source reuse, child reuse, signature/fingerprint mismatch, missing evidence, and
 produce bounded diagnostic codes and block promotion. A producer cannot turn missing proof into a
 stable result by omitting an attempt or returning only aggregate pass counts.
 
-For statistical v3, one trial is the ordered outcome vector of every case in one complete attempt.
-Any verified vector that differs from the first verified vector is one suite-level instability
-event. One or more events produce `REJECTED`; otherwise one censored attempt produces
-`INCONCLUSIVE`; only a complete zero-event horizon produces `SATISFIED`. Proven instability takes
-precedence over censoring so missing evidence cannot erase a negative proof.
+For current statistical v4, the first verified ordered suite vector is a baseline, not a Bernoulli
+trial. Each later verified vector contributes one comparison and one event when it differs in any
+case. A complete uncensored sample is `SATISFIED` when its upward-rounded one-sided exact
+Clopper-Pearson upper rate bound is no greater than the configured ceiling, and `REJECTED`
+otherwise. Any censoring is `INCONCLUSIVE`, forces achieved confidence to zero, and withholds the
+upper bound. Historical v3 preserves its original zero-event and censor-precedence semantics so old
+signatures remain reproducible; it is never projected into v4.
 
 ## 5. Signed evidence, retention, and query
 
@@ -116,17 +122,18 @@ The public generations are:
 
 | Object | Version |
 | --- | --- |
-| request | deterministic v1; statistical v2 |
-| evidence | audit v1; deterministic source-closed v2; statistical v3 |
-| attestation | v1/v2/v3 matching the evidence generation |
-| response | v1/v2/v3 matching evidence and attestation |
+| request | deterministic v1; legacy statistical v2; current statistical v3 |
+| evidence | audit v1; deterministic source-closed v2; legacy statistical v3; current statistical v4 |
+| attestation | v1/v2/v3/v4 matching the evidence generation |
+| response | v1/v2/v3/v4 matching evidence and attestation |
 
 The stability-specific signing domain binds the canonical parent request fingerprint, canonical
 evidence fingerprint, and exact ordered `(attempt, suiteRunId, aggregateEvidenceFingerprint,
 sourcePromotionStatus, sourcePromotionReasons)` source closure. Only a complete verified terminal
-signature may enter the immutable stability store. V3 canonical evidence additionally binds the
-policy, derived minimum/observed/verified/censored counts, instability events, conservative achieved
-confidence, status, fixed stop reason, and four explicit assumptions.
+signature may enter the immutable stability store. Statistical evidence binds the policy, derived
+minimum/observed/verified/censored counts, instability events, conservative achieved confidence,
+status, fixed stop reason, and explicit assumptions. V4 additionally binds the post-baseline
+comparison count and conservative exact upper rate bound; censored v4 evidence must omit that bound.
 `GET /api/testing/stability-executions/{stabilityRunId}` verifies stored fingerprints and signature
 again before returning the result.
 
@@ -147,11 +154,14 @@ limitation.
 The authoritative Draft 2020-12 testing Schema has strict N/N-1 branches and rejects unknown fields,
 invalid or mixed generations, malformed fingerprints, incomplete case/source closures, invalid
 status/confidence combinations, and unsigned terminal responses. Capability discovery advertises
-request v1/v2 and response-side v1/v2/v3, both HTTP endpoints, and three independent feature flags:
+request v1/v2/v3 and response-side v1/v2/v3/v4, both HTTP endpoints, and independent feature flags:
 
 - `signedSuiteStabilityAnalysis`
 - `idempotentSuiteStabilityRerun`
 - `exactBinomialSuiteStabilityConfidence`
+- `baselineConditionalSuiteStabilityRateBound`
+- `nonZeroSuiteStabilityRateInterval`
+- `sequentialSuiteStabilityAlphaSpending` (`false` in this generation)
 - `crossReplicaSuiteStabilityExecutionLease`
 - `durableSuiteStabilityParentProgress`
 
@@ -165,8 +175,10 @@ Production profile omission remains the security boundary; a feature flag is not
 server. `TestSuiteStabilityRun` independently re-derives case classification, aggregate status,
 counts, source-promotion closure, promotion/quarantine verdicts, diagnostics, timestamps, canonical
 evidence fingerprint, and the ordered source-reference closure embedded in the signed analysis. For
-v3 it also reconstructs every suite-attempt vector, exact integer horizon, censor count, event count,
-achieved confidence, assumptions, assessment and statistical promotion. A producer-supplied label
+v3/v4 it also reconstructs every suite-attempt vector, exact integer horizon, censor count, event
+count, achieved confidence, assumptions, assessment, and statistical promotion. For v4 it
+independently recomputes `verifiedAttempts - 1`, the exact binomial CDF, and the upward-rounded upper
+rate bound. A producer-supplied label
 that disagrees with those facts is rejected during projection.
 
 `TestSuiteStabilityEvidenceVerifier` then recomputes signature material, applies signing-time key
@@ -179,7 +191,7 @@ evidence-admission responsibility.
 
 The shaded CLI exposes explicit `--mode STABILITY` and requires an external key-set pin. Without
 statistical options it retains deterministic 3..20 behavior. Supplying both `--confidence-bps` and
-`--max-instability-rate-bps` selects request v2; omitted `--attempts` defaults to the exact minimum
+`--max-instability-rate-bps` selects current request v3; omitted `--attempts` defaults to the exact minimum
 horizon. The CLI rejects partial policy configuration, insufficient horizons, `--strategy`, and
 `--allow-non-eligible`. It emits one payload-free JUnit row per case, one pinned-trust attestation
 row, and one aggregate gate row. Exit semantics are:
@@ -203,12 +215,12 @@ TestSuiteStabilityLeaseRetentionSchedulerTest,TestSuiteStabilityStatisticalPolic
 TestRuntimeApplicationIntegrationTest test
 ```
 
-Result on 2026-07-18: **65 tests, 0 failures, 0 errors, 0 skips**. The set covers stable, flaky,
-consistent-failure and inconclusive outcomes; plan/source/child drift; signature failure; exact
-idempotency; source-promotion blocking; exact-binomial horizons and boundaries; fixed-horizon
-censoring; v1 canonical compatibility; active-owner exclusion; database-clock takeover; stale-fence
-rejection; bounded orphan cleanup; coordinator shutdown; persistence conflicts; strict Schema; and
-capability/endpoint/Spring-wiring gating.
+The focused stability set covers stable, flaky, consistent-failure, and inconclusive outcomes;
+30/0, 30/1, and 60/1 exact interval anchors; plan/source/child drift; signature failure; exact
+idempotency; model/version mismatch; source-promotion blocking; fixed-horizon censoring; forged
+comparison counts and rate bounds; v1-v3 canonical compatibility; active-owner exclusion;
+database-clock takeover; stale-fence rejection; persistence round trips; strict Schema; and
+capability/endpoint/Spring-wiring truth.
 
 Full Resource Gateway command:
 
@@ -216,8 +228,8 @@ Full Resource Gateway command:
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-Result on 2026-07-18: **2494 tests, 0 failures, 0 errors, 2 conditional skips**, including 34
-configured browser tests, followed by successful Spring Boot executable-JAR packaging.
+Result on 2026-07-19: **2766 tests, 0 failures, 0 errors, 2 conditional skips**, followed by
+successful configured browser regression and Spring Boot executable-JAR packaging.
 
 Full independent test-kit command:
 
@@ -225,17 +237,17 @@ Full independent test-kit command:
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-Result on 2026-07-18: **150 tests, 0 failures, 0 errors, 0 skips**, followed by authoritative Schema
+Result on 2026-07-19: **175 tests, 0 failures, 0 errors, 0 skips**, followed by authoritative Schema
 packaging, normal JAR, shaded CLI JAR, and strict public JavaDoc verification. Stability coverage
 includes typed re-derivation, exact statistical policy arithmetic, source-promotion laundering
-rejection, v1 audit-only compatibility, v3 policy and achieved-confidence forgery rejection,
-censored and consistent-failure semantics, invalid closures, wrong/missing key-set pins, attempt and
-work bounds, assertions, payload-free JUnit cardinality, and `0/1/2` CLI behavior.
+rejection, v1 audit-only compatibility, v3/v4 model and confidence forgery rejection, v4 comparison
+count and upper-bound reconstruction, censored and consistent-failure semantics, invalid closures,
+wrong/missing key-set pins, attempt/work bounds, assertions, payload-free JUnit cardinality, and
+`0/1/2` CLI behavior.
 
 ## 9. Deliberately unclaimed work
 
-1. Non-zero-event confidence intervals, adaptive/alpha-spending stopping, or historical trend
-   analysis.
+1. Adaptive/alpha-spending stopping or historical/correlated common-cause trend analysis.
 2. Automatic quarantine state mutation, expiry, owner approval, remediation, or ANEKE gate feedback.
 3. Cross-replica parent ownership and prefix recovery are closed, but asynchronous submission,
    distributed attempt scheduling, durable queueing, fairness, backpressure, cancellation, or

@@ -34,6 +34,12 @@ final class TestSuiteStabilityTestFixtures {
         return fixture(response, trust.evidence());
     }
 
+    static Fixture rateFixture() {
+        EvidenceTrustTestFixtures.Fixture trust = EvidenceTrustTestFixtures.fixture();
+        ObjectNode response = rateResponse(fingerprint('1'), trust.evidence());
+        return fixture(response, trust.evidence());
+    }
+
     private static Fixture fixture(ObjectNode response, KeyPair keyPair) {
         EvidenceVerificationKey key = new EvidenceVerificationKey(
                 TestingProtocol.EVIDENCE_VERIFICATION_KEY_V1, "evidence-key-a", "Ed25519",
@@ -192,6 +198,109 @@ final class TestSuiteStabilityTestFixtures {
         evidence.put("completedAt", SIGNED_AT.minusSeconds(1).toString());
         ((ObjectNode) response.path("attestation")).put("schemaVersion",
                 TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V3);
+        seal(response, signingKey, true);
+        return response;
+    }
+
+    static ObjectNode rateResponse(String requestFingerprint, KeyPair signingKey) {
+        return rateResponse(requestFingerprint, signingKey, 60, 2);
+    }
+
+    static ObjectNode rateStableResponse(String requestFingerprint, KeyPair signingKey) {
+        return rateResponse(requestFingerprint, signingKey, 30, 0);
+    }
+
+    private static ObjectNode rateResponse(
+            String requestFingerprint,
+            KeyPair signingKey,
+            int attemptCount,
+            int variantAttempt) {
+        ObjectNode response = response(requestFingerprint, signingKey);
+        response.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4);
+        ObjectNode evidence = (ObjectNode) response.path("evidence");
+        evidence.put("schemaVersion", TestingProtocol.TEST_SUITE_STABILITY_EVIDENCE_V4);
+        evidence.put("requestedAttempts", attemptCount);
+        evidence.put("status", variantAttempt == 0 ? "STABLE" : "FLAKY");
+        ArrayNode attempts = evidence.putArray("attempts");
+        ObjectNode result = (ObjectNode) evidence.path("caseResults").get(0);
+        ArrayNode observations = result.putArray("observations");
+        for (int attempt = 1; attempt <= attemptCount; attempt++) {
+            Instant startedAt = SIGNED_AT.minusSeconds((attemptCount + 1L - attempt) * 2L);
+            ObjectNode source = attempts.addObject();
+            source.put("attempt", attempt);
+            source.put("status", "VERIFIED");
+            source.put("suiteRunId", "suite-run-rate-" + attempt);
+            source.put("aggregateEvidenceFingerprint", attemptFingerprint(attempt));
+            source.put("suiteStatus", "PASSED");
+            source.put("sourcePromotionStatus", "ELIGIBLE");
+            source.put("startedAt", startedAt.toString());
+            source.put("completedAt", startedAt.plusSeconds(1).toString());
+            source.put("diagnosticCode", "");
+
+            ObjectNode observation = observations.addObject();
+            observation.put("attempt", attempt);
+            observation.put("status", "VERIFIED");
+            observation.put("runId", "child-run-rate-" + attempt);
+            observation.put("evidenceFingerprint", fingerprint('f'));
+            observation.put("evidenceStatus", "PASSED");
+            observation.put("evidenceClass", "CERTIFIABLE");
+            observation.put("fixtureBundleFingerprint", fingerprint('c'));
+            observation.put("planFingerprint", fingerprint('d'));
+            observation.put("semanticResultFingerprint",
+                    attempt == variantAttempt ? fingerprint('9') : fingerprint('e'));
+            observation.put("diagnosticCode", "");
+        }
+        result.put("status", variantAttempt == 0 ? "STABLE_PASS" : "FLAKY");
+        result.put("distinctVerifiedOutcomes", variantAttempt == 0 ? 1 : 2);
+        ObjectNode promotion = (ObjectNode) evidence.path("promotion");
+        promotion.put("status", variantAttempt == 0 ? "ELIGIBLE" : "BLOCKED");
+        ArrayNode reasons = promotion.putArray("reasons");
+        if (variantAttempt != 0) {
+            reasons.add("FLAKY_CASE_OBSERVED");
+        }
+        promotion.put("stableCases", variantAttempt == 0 ? 1 : 0);
+        promotion.put("flakyCases", variantAttempt == 0 ? 0 : 1);
+        promotion.put("statisticalConfidenceSatisfied", true);
+        ObjectNode quarantine = (ObjectNode) evidence.path("quarantine");
+        quarantine.put("status", variantAttempt == 0 ? "NOT_REQUIRED" : "REQUIRED");
+        ArrayNode caseIds = quarantine.putArray("caseIds");
+        if (variantAttempt != 0) {
+            caseIds.add("golden");
+        }
+        quarantine.put("reason", variantAttempt == 0 ? "" : "FLAKY_CASE_OBSERVED");
+
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.baselineConditionalExactBinomial(
+                        9_500, 1_000);
+        ObjectNode assessment = evidence.putObject("statisticalAssessment");
+        ObjectNode policyNode = assessment.putObject("policy");
+        policyNode.put("model", policy.model().name());
+        policyNode.put("claimScope", policy.claimScope().name());
+        policyNode.put("stoppingRule", policy.stoppingRule().name());
+        policyNode.put("censoringPolicy", policy.censoringPolicy().name());
+        policyNode.put("confidenceLevelBps", policy.confidenceLevelBps());
+        policyNode.put("maximumInstabilityRateBps", policy.maximumInstabilityRateBps());
+        assessment.put("requiredAttempts", 30);
+        int comparisons = attemptCount - 1;
+        int observedEvents = variantAttempt == 0 ? 0 : 1;
+        assessment.put("observedAttempts", attemptCount);
+        assessment.put("verifiedAttempts", attemptCount);
+        assessment.put("censoredAttempts", 0);
+        assessment.put("observedInstabilityEvents", observedEvents);
+        assessment.put("achievedConfidenceBps",
+                policy.achievedConfidenceBps(comparisons, observedEvents));
+        assessment.put("comparisonAttempts", comparisons);
+        assessment.put("upperInstabilityRateBps",
+                policy.upperInstabilityRateBps(comparisons, observedEvents));
+        assessment.put("status", "SATISFIED");
+        assessment.put("stopReason", "FIXED_HORIZON_REACHED");
+        ArrayNode assumptions = assessment.putArray("assumptions");
+        TestSuiteStabilityRun.BASELINE_CONDITIONAL_MODEL_ASSUMPTIONS
+                .forEach(assumptions::add);
+        evidence.put("startedAt", SIGNED_AT.minusSeconds(attemptCount * 2L).toString());
+        evidence.put("completedAt", SIGNED_AT.minusSeconds(1).toString());
+        ((ObjectNode) response.path("attestation")).put("schemaVersion",
+                TestingProtocol.TEST_SUITE_STABILITY_ATTESTATION_V4);
         seal(response, signingKey, true);
         return response;
     }

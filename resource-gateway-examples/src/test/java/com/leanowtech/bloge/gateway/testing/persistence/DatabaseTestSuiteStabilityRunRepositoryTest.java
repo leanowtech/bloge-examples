@@ -187,6 +187,26 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     }
 
     @Test
+    void baselineConditionalV4RoundTripsWithoutLosingItsExactRateBound() {
+        TestSuiteStabilityEvidence evidence =
+                TestSuiteStabilityProtocolFixtures.rateStableEvidence();
+        TestSuiteStabilityRunRecord record = record(evidence, "tenant-a", "test",
+                "stability-request", Instant.now().plusSeconds(30));
+
+        repository.complete(record, checkpointed(record, acquired(record, "owner-a")));
+
+        assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
+                .get().satisfies(value -> {
+                    assertThat(value.evidence().schemaVersion())
+                            .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+                    assertThat(value.evidence().statisticalAssessment()
+                            .comparisonAttempts()).isEqualTo(29);
+                    assertThat(value.evidence().statisticalAssessment()
+                            .upperInstabilityRateBps()).isEqualTo(982);
+                });
+    }
+
+    @Test
     void scopedIdempotencyKeyCannotBeReboundAfterTerminalPublication() {
         TestSuiteStabilityRunRecord record = record("tenant-a", "test",
                 "stability-request", Instant.now().plusSeconds(30));

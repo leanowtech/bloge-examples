@@ -2755,21 +2755,21 @@ Content-Type: application/json
 }
 ```
 
-Deterministic request v1 accepts 3 through 20 attempts. To precommit an exact probability claim, use
-request v2:
+Deterministic request v1 accepts 3 through 20 attempts. To precommit the current exact probability
+claim, use request v3:
 
 ```json
 {
-  "schemaVersion": "bloge.testSuiteStabilityExecutionRequest.v2",
+  "schemaVersion": "bloge.testSuiteStabilityExecutionRequest.v3",
   "suiteRef": {
     "suiteId": "loan-decision-regression",
     "revision": 1,
     "fingerprint": "sha256:<returned-by-suite-registration>"
   },
   "clientRequestId": "risk-ci-1842-statistical-stability",
-  "attempts": 29,
+  "attempts": 30,
   "statisticalPolicy": {
-    "model": "ZERO_INSTABILITY_EXACT_BINOMIAL",
+    "model": "BASELINE_CONDITIONAL_EXACT_BINOMIAL",
     "claimScope": "SUITE_ATTEMPT_ANY_CASE",
     "stoppingRule": "PRECOMMITTED_FIXED_HORIZON",
     "censoringPolicy": "FAIL_CLOSED",
@@ -2780,9 +2780,12 @@ request v2:
 }
 ```
 
-Statistical request v2 accepts 3 through 1000 attempts, requires an exact sufficient horizon, and
+Statistical request v3 accepts 3 through 1000 attempts, requires an exact sufficient horizon, and
 caps `attempts * suiteCaseCount` at 10,000. The example's 95% confidence/10% instability ceiling
-requires exactly 29 clean attempts. Every attempt uses `COLLECT_ALL`; the service derives a
+requires 30 executions: the first verified vector establishes the baseline and the remaining 29 are
+comparison trials. Historical request v2 with `ZERO_INSTABILITY_EXACT_BINOMIAL` remains accepted for
+verification compatibility and returns historical v3 evidence; model/version cross-pairs are
+rejected. Every attempt uses `COLLECT_ALL`; the service derives a
 stable child idempotency key for each attempt and delegates to the ordinary durable suite runner.
 Repeating the parent request therefore reuses the same retained terminal analysis, while reusing its
 `clientRequestId` with different suite, attempt count, or metadata returns
@@ -2808,8 +2811,9 @@ resumable single-owner call. The durable non-blocking job protocol below uses th
 semantics behind database-authoritative admission; neither path claims distributed attempt-level
 scheduling.
 
-Request v1 returns complete terminal response/evidence/attestation v2. Request v2 returns matching
-v3 objects containing the signed statistical assessment. Retained v1 responses remain queryable for
+Request v1 returns complete terminal response/evidence/attestation v2. Historical request v2 returns
+matching v3 objects. Current request v3 returns response/evidence/attestation v4 containing the
+signed baseline-conditional exact-rate assessment. Retained v1 responses remain queryable for
 audit. For each exact case and attempt, v2+ evidence binds the source
 suite promotion status/reasons plus child run/evidence, fixture, effective-plan, evidence-class, and
 semantic-result fingerprints without copying payload values. Classification uses the complete
@@ -2828,16 +2832,20 @@ necessary but not sufficient for promotion: every verified source suite must als
 `BLOCKED` with `SOURCE_SUITE_PROMOTION_BLOCKED`. `FLAKY` produces a quarantine recommendation; it does not change suite
 state, suppress a failure, or authorize publication. `INCONCLUSIVE` remains fail closed.
 
-V3 treats one complete ordered suite-attempt outcome vector as a trial. Any verified vector that
-differs from the first verified vector is one instability event. The test-kit independently evaluates
-`(10000-Q)^n * 10000 <= (10000-C) * 10000^n` with integer arithmetic. Zero events plus complete
-closure yields `SATISFIED`; any event yields `REJECTED`; censoring with no proven event yields
-`INCONCLUSIVE`. This is a conditional zero-event bound under signed exchangeability/stationarity
-assumptions, not a correctness proof, non-zero-event confidence interval, adaptive stopping policy,
-or guarantee that future runs cannot vary.
+V4 treats the first verified ordered suite-attempt vector as the observed baseline and only the
+remaining `verifiedAttempts - 1` vectors as Bernoulli comparisons. It signs that comparison count,
+the number of vectors differing from baseline, a conservative confidence floor, and the
+upward-rounded one-sided exact Clopper-Pearson upper instability-rate bound. A complete sample is
+`SATISFIED` when that bound is no greater than the configured ceiling and `REJECTED` otherwise; any
+censoring yields `INCONCLUSIVE`, confidence zero, and no upper bound. Thus a complete 60-execution,
+one-event sample at 95% confidence has 59 comparisons and a 7.79% upper bound, but its deterministic
+aggregate is still `FLAKY`, promotion-blocked, and quarantine-required. This is a conditional rate
+bound under signed exchangeability/stationarity and observed-baseline assumptions, not a correctness
+proof, adaptive stopping policy, or guarantee that future runs cannot vary.
 
-The v2/v3 attestation signs the canonical parent request fingerprint, evidence fingerprint, and exact
-ordered source-suite closure including source promotion status and reasons. A source suite run or child run reused across attempts, an omitted
+The v2/v3/v4 attestation signs the canonical parent request fingerprint, evidence fingerprint, and
+exact ordered source-suite closure including source promotion status and reasons. A source suite run
+or child run reused across attempts, an omitted
 source, an invalid source/child signature, or plan drift can never produce `STABLE`. Retention uses
 `gateway.testing.store.retention-days` (default 30, bounded to 1..3650) and is capped from the earliest
 source start; analysis creation fails when the source retention window is already exhausted.
@@ -2868,13 +2876,15 @@ the authoritative Schema and semantic count/time relationships.
 
 The independent test-kit re-derives case/aggregate classification, source promotion closure,
 promotion and quarantine verdicts, request/evidence/source-closure fingerprints, source suite
-evidence, child evidence, and the detached Ed25519 signature. For v3 it also reconstructs the exact
-horizon, attempt vectors, censor/event counts, achieved confidence, assumptions, assessment and
-promotion flag. A valid v1 signature can be verified
+evidence, child evidence, and the detached Ed25519 signature. For v3/v4 it also reconstructs the
+exact horizon, attempt vectors, censor/event counts, achieved confidence, assumptions, assessment,
+and promotion flag; v4 additionally recomputes the post-baseline comparison count and exact upper
+rate bound. A valid v1 signature can be verified
 for audit, but v1 fails every release gate because source promotion closure is unavailable. Its CI
 `STABILITY` mode additionally requires an externally supplied
 atomic-key-set fingerprint pin; accepting a key set only because the producer returned it is not a
-trust decision. CLI options `--confidence-bps` and `--max-instability-rate-bps` select the v3 gate;
+trust decision. CLI options `--confidence-bps` and `--max-instability-rate-bps` select the current
+request v3/response v4 gate;
 when `--attempts` is omitted, the exact minimum horizon is used. See
 [Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)
 for the implementation boundary and negative proofs.

@@ -84,23 +84,27 @@ class TestingControlProtocolSchemaTest {
                 "/$defs/testSuiteStabilityExecutionRequest/properties/schemaVersion/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V1,
+                        TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V2,
                         TestSuiteStabilityExecutionRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/testSuiteStabilityEvidence/properties/schemaVersion/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityEvidence.SCHEMA_VERSION_V1,
                         TestSuiteStabilityEvidence.SCHEMA_VERSION_V2,
+                        TestSuiteStabilityEvidence.SCHEMA_VERSION_V3,
                         TestSuiteStabilityEvidence.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityAttestation/properties/schemaVersion/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityAttestation.SCHEMA_VERSION_V1,
                         TestSuiteStabilityAttestation.SCHEMA_VERSION_V2,
+                        TestSuiteStabilityAttestation.SCHEMA_VERSION_V3,
                         TestSuiteStabilityAttestation.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityExecutionResponse/properties/schemaVersion/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V1,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V2,
+                        TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V3,
                         TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityProgress/properties/schemaVersion/const").asText())
@@ -1029,9 +1033,9 @@ class TestingControlProtocolSchemaTest {
                 "/testSuiteStabilityEvidence/properties/attempts/maxItems").asInt())
                 .isEqualTo(TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS);
         assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/0/oneOf")).hasSize(4);
-        assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/1/oneOf")).hasSize(3);
+        assertThat(definitions.at("/testSuiteStabilityEvidence/allOf/1/oneOf")).hasSize(4);
         assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/0/oneOf")).hasSize(3);
-        assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/1/oneOf")).hasSize(3);
+        assertThat(definitions.at("/testSuiteStabilityAttestation/allOf/1/oneOf")).hasSize(4);
         assertThat(definitions.at(
                 "/testSuiteStabilityPromotionVerdict/properties"
                         + "/allSourceSuitesPromotionEligible/type").asText())
@@ -1041,13 +1045,27 @@ class TestingControlProtocolSchemaTest {
                         + "/statisticalConfidenceSatisfied/type").asText())
                 .isEqualTo("boolean");
         assertThat(definitions.at(
-                "/testSuiteStabilityStatisticalPolicy/properties/model/const").asText())
-                .isEqualTo("ZERO_INSTABILITY_EXACT_BINOMIAL");
+                "/testSuiteStabilityStatisticalPolicy/properties/model/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("ZERO_INSTABILITY_EXACT_BINOMIAL",
+                        "BASELINE_CONDITIONAL_EXACT_BINOMIAL");
         assertThat(definitions.at(
-                "/testSuiteStabilityStatisticalAssessment/properties/assumptions"
+                "/testSuiteStabilityStatisticalAssessment/oneOf/0/properties/assumptions"
                         + "/prefixItems"))
                 .extracting(node -> node.path("const").asText())
                 .containsExactlyElementsOf(TestSuiteStabilityEvidence.STATISTICAL_MODEL_ASSUMPTIONS);
+        assertThat(definitions.at(
+                "/testSuiteStabilityStatisticalAssessment/oneOf/1/properties/assumptions"
+                        + "/prefixItems"))
+                .extracting(node -> node.path("const").asText())
+                .containsExactlyElementsOf(
+                        TestSuiteStabilityEvidence.BASELINE_CONDITIONAL_MODEL_ASSUMPTIONS);
+        assertThat(definitions.at(
+                "/testSuiteStabilityStatisticalAssessment/properties/comparisonAttempts/maximum")
+                .asInt()).isEqualTo(999);
+        assertThat(definitions.at(
+                "/testSuiteStabilityStatisticalAssessment/properties"
+                        + "/upperInstabilityRateBps/maximum").asInt()).isEqualTo(10_000);
         assertThat(definitions.at(
                 "/testSuiteStabilityAttemptResult/properties/sourcePromotionReasons/items/pattern")
                 .asText()).isEqualTo("^[A-Z][A-Z0-9_]{0,127}$");

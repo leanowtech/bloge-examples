@@ -162,11 +162,18 @@ public final class ResourceGatewaySuiteCli {
         }
         TestSuiteStabilityRun.StatisticalAssessment value = run.statisticalAssessment();
         return "; statisticalStatus=" + value.status()
+                + "; statisticalModel=" + value.policy().model()
                 + "; requiredAttempts=" + value.requiredAttempts()
+                + "; comparisonAttempts="
+                + (value.comparisonAttempts() == null
+                ? "LEGACY_UNAVAILABLE" : value.comparisonAttempts())
                 + "; confidenceLevelBps=" + value.policy().confidenceLevelBps()
                 + "; maximumInstabilityRateBps="
                 + value.policy().maximumInstabilityRateBps()
-                + "; achievedConfidenceBps=" + value.achievedConfidenceBps();
+                + "; achievedConfidenceBps=" + value.achievedConfidenceBps()
+                + "; upperInstabilityRateBps="
+                + (value.upperInstabilityRateBps() == null
+                ? "INCONCLUSIVE" : value.upperInstabilityRateBps());
     }
 
     private enum RunMode {
@@ -272,7 +279,8 @@ public final class ResourceGatewaySuiteCli {
                             "confidence-bps and max-instability-rate-bps must be configured together");
                 }
                 if (!confidenceBps.isBlank()) {
-                    statisticalPolicy = TestSuiteStabilityStatisticalPolicy.exactBinomial(
+                    statisticalPolicy = TestSuiteStabilityStatisticalPolicy
+                            .baselineConditionalExactBinomial(
                             boundedInteger(confidenceBps, "confidence-bps",
                                     TestSuiteStabilityStatisticalPolicy.MIN_CONFIDENCE_BPS,
                                     TestSuiteStabilityStatisticalPolicy.MAX_CONFIDENCE_BPS),

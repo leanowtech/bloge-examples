@@ -620,17 +620,26 @@ public final class TestSuiteStabilityExecutionService {
         }
         boolean deterministic = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V1.equals(
                 request.schemaVersion());
-        boolean statistical = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION.equals(
+        boolean legacyStatistical = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V2.equals(
                 request.schemaVersion());
+        boolean rateStatistical = TestSuiteStabilityExecutionRequest.SCHEMA_VERSION.equals(
+                request.schemaVersion());
+        boolean statistical = legacyStatistical || rateStatistical;
+        boolean modelMatchesGeneration = request.statisticalPolicy() != null
+                && (legacyStatistical && request.statisticalPolicy().model()
+                == TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL
+                || rateStatistical && request.statisticalPolicy().model()
+                == TestSuiteStabilityStatisticalPolicy.Model
+                .BASELINE_CONDITIONAL_EXACT_BINOMIAL);
         if (!deterministic && !statistical
                 || deterministic && (request.statisticalPolicy() != null
                 || request.attempts() < TestSuiteStabilityEvidence.MIN_ATTEMPTS
                 || request.attempts() > TestSuiteStabilityEvidence.MAX_ATTEMPTS)
-                || statistical && (request.statisticalPolicy() == null
+                || statistical && (!modelMatchesGeneration
                 || request.attempts() < TestSuiteStabilityStatisticalPolicy.MIN_ATTEMPTS
                 || request.attempts() > TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS)) {
             throw badRequest(identity, "RG.TEST.STABILITY_REQUEST_INVALID",
-                    "Request v1 requires 3..20 deterministic attempts; v2 requires a 3..1000 statistical horizon.");
+                    "Request v1 requires 3..20 deterministic attempts; v2/v3 require their exact 3..1000 statistical model generation.");
         }
         if (statistical) {
             try {
@@ -759,6 +768,9 @@ public final class TestSuiteStabilityExecutionService {
         } else if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V2.equals(
                 record.evidence().schemaVersion())) {
             version = TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V2;
+        } else if (TestSuiteStabilityEvidence.SCHEMA_VERSION_V3.equals(
+                record.evidence().schemaVersion())) {
+            version = TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V3;
         } else {
             version = TestSuiteStabilityExecutionResponse.SCHEMA_VERSION;
         }

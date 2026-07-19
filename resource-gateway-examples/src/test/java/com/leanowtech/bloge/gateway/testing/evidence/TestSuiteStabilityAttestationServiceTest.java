@@ -62,8 +62,24 @@ class TestSuiteStabilityAttestationServiceTest {
 
         assertThat(result.verified()).isTrue();
         assertThat(result.attestation().schemaVersion())
-                .isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+                .isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION_V3);
         assertThat(result.attestation().sourceSuiteEvidenceRefs()).hasSize(29);
+        assertThat(service.verify(evidence, result.attestation()))
+                .isEqualTo(TestSuiteStabilityAttestationService.Verification.VERIFIED);
+    }
+
+    @Test
+    void signsAndVerifiesV4RateEvidenceUnderItsOwnDomainVersion() {
+        TestSuiteStabilityEvidence evidence =
+                TestSuiteStabilityProtocolFixtures.rateStableEvidence();
+
+        TestSuiteStabilityAttestationService.SealResult result =
+                service.seal(evidence, REQUEST_FINGERPRINT);
+
+        assertThat(result.verified()).isTrue();
+        assertThat(result.attestation().schemaVersion())
+                .isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+        assertThat(result.attestation().sourceSuiteEvidenceRefs()).hasSize(30);
         assertThat(service.verify(evidence, result.attestation()))
                 .isEqualTo(TestSuiteStabilityAttestationService.Verification.VERIFIED);
     }

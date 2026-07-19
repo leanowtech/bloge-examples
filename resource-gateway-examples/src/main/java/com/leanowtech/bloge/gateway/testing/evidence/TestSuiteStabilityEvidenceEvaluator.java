@@ -95,8 +95,8 @@ public final class TestSuiteStabilityEvidenceEvaluator {
      * @param requestedAttempts complete precommitted fixed horizon
      * @param attemptObservations exact source suite and child closure
      * @param metadata bounded caller provenance copied without payloads
-     * @param policy exact request-v2 probability model
-     * @return immutable v3 evidence with a server-derived statistical assessment
+     * @param policy exact request-v2/v3 probability model
+     * @return immutable generation-matched evidence with a server-derived assessment
      */
     public TestSuiteStabilityEvidence evaluateStatistical(
             TestSuiteProtocol suite,
@@ -107,10 +107,16 @@ public final class TestSuiteStabilityEvidenceEvaluator {
             List<AttemptObservation> attemptObservations,
             Map<String, Object> metadata,
             TestSuiteStabilityStatisticalPolicy policy) {
+        TestSuiteStabilityStatisticalPolicy exactPolicy =
+                Objects.requireNonNull(policy, "policy");
+        String evidenceVersion = exactPolicy.model()
+                == TestSuiteStabilityStatisticalPolicy.Model.ZERO_INSTABILITY_EXACT_BINOMIAL
+                ? TestSuiteStabilityEvidence.SCHEMA_VERSION_V3
+                : TestSuiteStabilityEvidence.SCHEMA_VERSION;
         return evaluateInternal(suite, suiteRef, stabilityRunId, clientRequestId,
                 requestedAttempts, attemptObservations, metadata,
-                Objects.requireNonNull(policy, "policy"),
-                TestSuiteStabilityEvidence.SCHEMA_VERSION,
+                exactPolicy,
+                evidenceVersion,
                 TestSuiteStabilityStatisticalPolicy.MAX_ATTEMPTS);
     }
 

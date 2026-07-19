@@ -266,7 +266,7 @@ For an exact probability claim, precommit the model and let the policy derive th
 
 ```java
 TestSuiteStabilityStatisticalPolicy policy =
-        TestSuiteStabilityStatisticalPolicy.exactBinomial(9_500, 1_000);
+        TestSuiteStabilityStatisticalPolicy.baselineConditionalExactBinomial(9_500, 1_000);
 TestSuiteStabilityRun statistical = client.executeStatisticalSuiteStability(
         storedSuite.suiteId(), storedSuite.revision(), storedSuite.fingerprint(),
         "stability-ci-983", policy.minimumRequiredAttempts(), policy,
@@ -280,8 +280,9 @@ JUnitXmlReportWriter.writeStability(
         statistical, verified, true);
 ```
 
-Deterministic stability always runs `COLLECT_ALL` exactly 3..20 times. Statistical request v2 uses a
-precommitted 3..1000 horizon, exact integer arithmetic, and a 10,000 attempt-by-case work bound. A
+Deterministic stability always runs `COLLECT_ALL` exactly 3..20 times. Current statistical request v3
+uses a precommitted 3..1000 horizon, exact integer arithmetic, and a 10,000 attempt-by-case work
+bound. A
 case is compared by
 `evidenceStatus + semanticResultFingerprint`, not only by pass/fail status. The aggregate is
 `STABLE`, `FLAKY`, `CONSISTENT_FAILURE`, or `INCONCLUSIVE`; plan drift, reused source/child run ids,
@@ -291,8 +292,10 @@ may therefore be `STABLE + BLOCKED`: its behavior is invariant, but at least one
 certifiable. Signed v1 responses remain verifiable for audit, while
 `sourcePromotionClosureAvailable()` is false and every release assertion fails closed. A `FLAKY`
 result carries a quarantine recommendation, but the API does not mutate suite state or bypass a
-business failure. V3 confidence is a conditional zero-instability-event bound, not a correctness
-proof, non-zero-event confidence interval, adaptive stopping policy, or historical flake-rate trend.
+business failure. V4 excludes the first verified baseline from its comparison count and independently
+reconstructs the upward-rounded one-sided exact rate bound for complete zero- or non-zero-event
+samples. Historical v3 keeps its original zero-event meaning. Neither generation is a correctness
+proof, adaptive stopping policy, or historical flake-rate trend.
 `findSuiteStabilityProgress` is an operational poll, not a release gate. Its strict
 `bloge.testSuiteStabilityProgress.v1` projection returns only lifecycle, exact suite identity,
 planned/completed counts, and timestamps; owner, epoch, source ids, fixtures, and payloads are absent.
@@ -327,7 +330,8 @@ TestSuiteStabilityAssertions.assertReleaseEligible(
         client.findSuiteStability(terminal.stabilityRunId()), verified);
 ```
 
-`TestSuiteStabilityJobRequest.statistical(...)` creates the request-v2 form and rejects a horizon
+`TestSuiteStabilityJobRequest.statistical(...)` creates the request generation required by the
+policy (v2 legacy or v3 current) and rejects a horizon
 that cannot support its exact-binomial policy before network I/O. Submission requires `202` and the
 canonical relative `Location`; the test-kit recalculates the nested execution fingerprint and binds
 suite revision, client request id, priority, and deadline to the response. Query and cancellation
@@ -657,8 +661,9 @@ java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0
   --report target/test-results/resource-gateway-stability.xml
 ```
 
-Add both statistical coordinates to select request v2 and the v3 confidence gate. When
-`--attempts` is omitted, the CLI uses the exact minimum horizon; this example derives 29 attempts:
+Add both statistical coordinates to select current request v3 and the v4 exact-rate gate. When
+`--attempts` is omitted, the CLI uses the exact minimum horizon; this example derives 30 executions
+for 29 post-baseline comparisons:
 
 ```bash
 java -jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \

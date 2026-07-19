@@ -114,12 +114,13 @@ public final class JUnitXmlReportWriter {
     }
 
     /**
-     * Writes payload-free stability evidence with an optional v3 statistical-confidence gate.
+     * Writes payload-free stability evidence with an optional v3/v4 statistical-confidence gate.
      *
      * @param output destination XML file
      * @param run immutable stability analysis projection
      * @param verification offline signature and key-policy verification result
      * @param requireStatisticalConfidence whether deterministic v1/v2 evidence must fail closed
+     *                                     instead of satisfying a statistical release gate
      * @return emitted report counters
      * @throws IOException when directories or XML cannot be written
      */
@@ -467,10 +468,16 @@ public final class JUnitXmlReportWriter {
                 + "; verifiedAttempts=" + value.verifiedAttempts()
                 + "; censoredAttempts=" + value.censoredAttempts()
                 + "; instabilityEvents=" + value.observedInstabilityEvents()
+                + "; comparisonAttempts="
+                + (value.comparisonAttempts() == null
+                ? "LEGACY_UNAVAILABLE" : value.comparisonAttempts())
                 + "; confidenceLevelBps=" + value.policy().confidenceLevelBps()
                 + "; maximumInstabilityRateBps="
                 + value.policy().maximumInstabilityRateBps()
-                + "; achievedConfidenceBps=" + value.achievedConfidenceBps();
+                + "; achievedConfidenceBps=" + value.achievedConfidenceBps()
+                + "; upperInstabilityRateBps="
+                + (value.upperInstabilityRateBps() == null
+                ? "INCONCLUSIVE" : value.upperInstabilityRateBps());
     }
 
     private static String bounded(String value, int maximum) {

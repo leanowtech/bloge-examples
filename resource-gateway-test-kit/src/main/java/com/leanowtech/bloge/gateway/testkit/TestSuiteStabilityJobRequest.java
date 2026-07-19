@@ -165,8 +165,13 @@ public final class TestSuiteStabilityJobRequest {
             throw new IllegalArgumentException(
                     "Statistical attempts must satisfy the bounded precommitted horizon");
         }
+        String requestVersion = policy.model()
+                == TestSuiteStabilityStatisticalPolicy.Model
+                .BASELINE_CONDITIONAL_EXACT_BINOMIAL
+                ? TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3
+                : TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2;
         return new TestSuiteStabilityJobRequest(
-                TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2,
+                requestVersion,
                 suiteId, revision, fingerprint, clientRequestId, attempts, policy,
                 metadata, priority, deadlineAt);
     }

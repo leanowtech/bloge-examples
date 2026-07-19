@@ -110,6 +110,9 @@ public final class TestingProtocol {
     /** Statistical fixed-horizon suite-stability request wire version. */
     public static final String TEST_SUITE_STABILITY_EXECUTION_REQUEST_V2 =
             "bloge.testSuiteStabilityExecutionRequest.v2";
+    /** Baseline-conditional exact-rate suite-stability request wire version. */
+    public static final String TEST_SUITE_STABILITY_EXECUTION_REQUEST_V3 =
+            "bloge.testSuiteStabilityExecutionRequest.v3";
     /** Payload-free bounded suite-stability evidence wire version. */
     public static final String TEST_SUITE_STABILITY_EVIDENCE_V1 =
             "bloge.testSuiteStabilityEvidence.v1";
@@ -119,6 +122,9 @@ public final class TestingProtocol {
     /** Exact-binomial statistical suite-stability evidence wire version. */
     public static final String TEST_SUITE_STABILITY_EVIDENCE_V3 =
             "bloge.testSuiteStabilityEvidence.v3";
+    /** Baseline-conditional exact-rate suite-stability evidence wire version. */
+    public static final String TEST_SUITE_STABILITY_EVIDENCE_V4 =
+            "bloge.testSuiteStabilityEvidence.v4";
     /** Domain-separated detached suite-stability attestation wire version. */
     public static final String TEST_SUITE_STABILITY_ATTESTATION_V1 =
             "bloge.testSuiteStabilityAttestation.v1";
@@ -128,6 +134,9 @@ public final class TestingProtocol {
     /** Exact-binomial statistical suite-stability attestation wire version. */
     public static final String TEST_SUITE_STABILITY_ATTESTATION_V3 =
             "bloge.testSuiteStabilityAttestation.v3";
+    /** Baseline-conditional exact-rate suite-stability attestation wire version. */
+    public static final String TEST_SUITE_STABILITY_ATTESTATION_V4 =
+            "bloge.testSuiteStabilityAttestation.v4";
     /** Signed terminal suite-stability execution response wire version. */
     public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V1 =
             "bloge.testSuiteStabilityExecutionResponse.v1";
@@ -137,6 +146,9 @@ public final class TestingProtocol {
     /** Signed terminal statistical suite-stability response wire version. */
     public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V3 =
             "bloge.testSuiteStabilityExecutionResponse.v3";
+    /** Signed terminal baseline-conditional exact-rate stability response wire version. */
+    public static final String TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4 =
+            "bloge.testSuiteStabilityExecutionResponse.v4";
     /** Payload-free active, recoverable, or completed stability parent progress. */
     public static final String TEST_SUITE_STABILITY_PROGRESS_V1 =
             "bloge.testSuiteStabilityProgress.v1";

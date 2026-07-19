@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -66,7 +67,7 @@ class TestSuiteStabilityExecutionServiceTest {
         suite = suite();
         sourceById = new LinkedHashMap<>();
         childById = new LinkedHashMap<>();
-        for (int attempt = 1; attempt <= 29; attempt++) {
+        for (int attempt = 1; attempt <= 30; attempt++) {
             TestSuiteExecutionResponse source = source(attempt);
             sourceById.put(source.suiteRunId(), source);
         }
@@ -139,15 +140,58 @@ class TestSuiteStabilityExecutionServiceTest {
                 suite.suiteId(), statisticalRequest(29), identity);
 
         assertThat(response.schemaVersion())
-                .isEqualTo(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
+                .isEqualTo(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION_V3);
         assertThat(response.evidence().schemaVersion())
-                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION_V3);
         assertThat(response.evidence().statisticalAssessment().status())
                 .isEqualTo(TestSuiteStabilityEvidence.StatisticalStatus.SATISFIED);
         assertThat(response.evidence().statisticalAssessment().requiredAttempts()).isEqualTo(29);
         assertThat(response.evidence().promotion().status())
                 .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.ELIGIBLE);
         verify(suiteExecutions, times(29)).execute(eq(suite.suiteId()), any(), eq(identity));
+    }
+
+    @Test
+    void executesTheBaselineConditionalHorizonAndReturnsV4RateEvidence() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+
+        TestSuiteStabilityExecutionResponse response = service.execute(
+                suite.suiteId(), correctedStatisticalRequest(30), identity);
+
+        assertThat(response.schemaVersion())
+                .isEqualTo(TestSuiteStabilityExecutionResponse.SCHEMA_VERSION);
+        assertThat(response.evidence().schemaVersion())
+                .isEqualTo(TestSuiteStabilityEvidence.SCHEMA_VERSION);
+        assertThat(response.attestation().schemaVersion())
+                .isEqualTo(TestSuiteStabilityAttestation.SCHEMA_VERSION);
+        assertThat(response.evidence().statisticalAssessment())
+                .extracting(TestSuiteStabilityEvidence.StatisticalAssessment::requiredAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::comparisonAttempts,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::upperInstabilityRateBps,
+                        TestSuiteStabilityEvidence.StatisticalAssessment::status)
+                .containsExactly(30, 29, 982,
+                        TestSuiteStabilityEvidence.StatisticalStatus.SATISFIED);
+        assertThat(response.evidence().promotion().status())
+                .isEqualTo(TestSuiteStabilityEvidence.PromotionStatus.ELIGIBLE);
+        verify(suiteExecutions, times(30)).execute(eq(suite.suiteId()), any(), eq(identity));
+    }
+
+    @Test
+    void rejectsAStatisticalModelPresentedUnderTheWrongRequestGeneration() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner());
+        TestSuiteStabilityExecutionRequest valid = correctedStatisticalRequest(30);
+        TestSuiteStabilityExecutionRequest mismatched = new TestSuiteStabilityExecutionRequest(
+                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V2,
+                valid.suiteRef(), valid.clientRequestId(), valid.attempts(),
+                valid.statisticalPolicy(), valid.metadata());
+
+        assertThatThrownBy(() -> service.execute(suite.suiteId(), mismatched, identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.STABILITY_REQUEST_INVALID"));
+        verify(suites, times(0)).find(any(), anyLong(), eq(identity));
     }
 
     @Test
@@ -573,10 +617,22 @@ class TestSuiteStabilityExecutionServiceTest {
                 TestSuiteStabilityStatisticalPolicy.CensoringPolicy.FAIL_CLOSED,
                 9_500, 1_000);
         return new TestSuiteStabilityExecutionRequest(
-                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION,
+                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION_V2,
                 new TestSuiteExecutionRequest.SuiteRef(
                         suite.suiteId(), suite.revision(), SUITE_FINGERPRINT),
                 "stability-statistical-ci-42", attempts, policy,
+                Map.of("pipeline", "nightly"));
+    }
+
+    private TestSuiteStabilityExecutionRequest correctedStatisticalRequest(int attempts) {
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.baselineConditionalExactBinomial(
+                        9_500, 1_000);
+        return new TestSuiteStabilityExecutionRequest(
+                TestSuiteStabilityExecutionRequest.SCHEMA_VERSION,
+                new TestSuiteExecutionRequest.SuiteRef(
+                        suite.suiteId(), suite.revision(), SUITE_FINGERPRINT),
+                "stability-rate-ci-42", attempts, policy,
                 Map.of("pipeline", "nightly"));
     }
 

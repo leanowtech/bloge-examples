@@ -34,6 +34,48 @@ class TestSuiteStabilityEvidenceVerifierTest {
     }
 
     @Test
+    void independentlyReconstructsV4NonZeroRateWithoutLaunderingFlakiness() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.rateFixture();
+        TestSuiteStabilityRun run = fixture.run();
+
+        TestSuiteStabilityEvidenceVerifier.VerificationResult result =
+                verifier().verify(run, fixture.key());
+
+        assertThat(result.verified()).isTrue();
+        assertThat(run.schemaVersion())
+                .isEqualTo(TestingProtocol.TEST_SUITE_STABILITY_EXECUTION_RESPONSE_V4);
+        assertThat(run.status()).isEqualTo(TestSuiteStabilityRun.Status.FLAKY);
+        assertThat(run.statisticalAssessment())
+                .extracting(TestSuiteStabilityRun.StatisticalAssessment::requiredAttempts,
+                        TestSuiteStabilityRun.StatisticalAssessment::observedAttempts,
+                        TestSuiteStabilityRun.StatisticalAssessment::comparisonAttempts,
+                        TestSuiteStabilityRun.StatisticalAssessment::observedInstabilityEvents,
+                        TestSuiteStabilityRun.StatisticalAssessment::upperInstabilityRateBps,
+                        TestSuiteStabilityRun.StatisticalAssessment::status)
+                .containsExactly(30, 60, 59, 1, 779,
+                        TestSuiteStabilityRun.StatisticalStatus.SATISFIED);
+        assertThat(run.statisticalConfidenceSatisfied()).isTrue();
+        assertThat(run.statisticalPromotionEligible()).isFalse();
+        assertThat(run.promotion().reasons()).containsExactly("FLAKY_CASE_OBSERVED");
+        assertThat(run.quarantineRequired()).isTrue();
+    }
+
+    @Test
+    void rejectsResignedProducerV4UpperRateArithmeticThatDoesNotReconstruct() {
+        TestSuiteStabilityTestFixtures.Fixture fixture =
+                TestSuiteStabilityTestFixtures.rateFixture();
+        ObjectNode response = fixture.copyResponse();
+        ((ObjectNode) response.at("/evidence/statisticalAssessment"))
+                .put("upperInstabilityRateBps", 1);
+        TestSuiteStabilityTestFixtures.seal(response, fixture.keyPair(), false);
+
+        assertThatThrownBy(() -> TestSuiteStabilityRun.from(response))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("aggregate");
+    }
+
+    @Test
     void rejectsResignedProducerStatisticalArithmeticThatDoesNotReconstruct() {
         TestSuiteStabilityTestFixtures.Fixture fixture =
                 TestSuiteStabilityTestFixtures.statisticalFixture();
