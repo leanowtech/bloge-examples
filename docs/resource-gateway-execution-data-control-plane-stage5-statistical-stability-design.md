@@ -210,3 +210,8 @@ This generation does not claim:
 Sequential sampling requires a new protocol generation with a precommitted spending schedule and an
 independent verifier. It must not be introduced as a runtime optimization under this fixed-horizon
 contract.
+
+The selected next-generation design uses an anytime-valid likelihood-ratio e-process instead of a
+finite alpha-spending look schedule. Its exact arithmetic foundation and required protocol/runtime
+invariants are specified in
+[Stage 5 anytime-valid suite-stability design](resource-gateway-execution-data-control-plane-stage5-anytime-valid-stability-design.md).

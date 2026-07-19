@@ -1,14 +1,17 @@
 package com.leanowtech.bloge.gateway.testkit;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.math.BigInteger;
 
 /**
  * Independently evaluated exact-binomial policy for statistical suite stability.
  *
  * <p>The test-kit deliberately owns this implementation instead of depending on server classes.
- * The legacy model counts complete attempts directly; the corrected model reserves the first
- * verified attempt as a baseline and counts only later comparisons. Exact integer arithmetic
- * prevents floating-point rounding from changing a CI decision.</p>
+ * The legacy model counts complete attempts directly; baseline-conditional models reserve the
+ * first verified attempt and count only later comparisons. The anytime-valid model independently
+ * reconstructs its likelihood-ratio e-process. Exact integer arithmetic prevents floating-point
+ * rounding from changing a CI decision.</p>
  *
  * @param model supported probability model
  * @param claimScope event-counting boundary
@@ -16,6 +19,7 @@ import java.math.BigInteger;
  * @param censoringPolicy treatment of incomplete source or child evidence
  * @param confidenceLevelBps requested one-sided confidence in basis points
  * @param maximumInstabilityRateBps largest instability probability admitted by the claim
+ * @param alternativeInstabilityRateBps precommitted anytime-valid alternative rate; otherwise null
  */
 public record TestSuiteStabilityStatisticalPolicy(
         Model model,
@@ -23,7 +27,9 @@ public record TestSuiteStabilityStatisticalPolicy(
         StoppingRule stoppingRule,
         CensoringPolicy censoringPolicy,
         int confidenceLevelBps,
-        int maximumInstabilityRateBps
+        int maximumInstabilityRateBps,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        Integer alternativeInstabilityRateBps
 ) {
     /** Minimum protocol horizon. */
     public static final int MIN_ATTEMPTS = 3;
@@ -47,7 +53,9 @@ public record TestSuiteStabilityStatisticalPolicy(
         /** Exact probability of zero events under a binomial event-rate threshold. */
         ZERO_INSTABILITY_EXACT_BINOMIAL,
         /** Exact one-sided rate bound conditional on the first verified attempt as baseline. */
-        BASELINE_CONDITIONAL_EXACT_BINOMIAL
+        BASELINE_CONDITIONAL_EXACT_BINOMIAL,
+        /** Anytime-valid likelihood-ratio e-process conditional on the first observed vector. */
+        BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS
     }
 
     /** Scope at which one instability event is counted. */
@@ -59,7 +67,9 @@ public record TestSuiteStabilityStatisticalPolicy(
     /** Sampling stop discipline. */
     public enum StoppingRule {
         /** The complete request horizon is frozen before execution and cannot stop early. */
-        PRECOMMITTED_FIXED_HORIZON
+        PRECOMMITTED_FIXED_HORIZON,
+        /** Stop at the first e-value boundary crossing or the precommitted maximum horizon. */
+        ANYTIME_VALID_E_PROCESS
     }
 
     /** Incomplete-observation treatment. */
@@ -68,19 +78,50 @@ public record TestSuiteStabilityStatisticalPolicy(
         FAIL_CLOSED
     }
 
-    /** Validates the supported bounded fixed-horizon models. */
+    /** Validates supported model/rule pairs and bounded probability coordinates. */
     public TestSuiteStabilityStatisticalPolicy {
+        boolean anytime = model == Model.BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS;
+        boolean stoppingMatches = anytime
+                ? stoppingRule == StoppingRule.ANYTIME_VALID_E_PROCESS
+                : stoppingRule == StoppingRule.PRECOMMITTED_FIXED_HORIZON;
+        boolean alternativeMatches = anytime
+                ? alternativeInstabilityRateBps != null
+                && alternativeInstabilityRateBps >= 0
+                && alternativeInstabilityRateBps < maximumInstabilityRateBps
+                : alternativeInstabilityRateBps == null;
         if (model == null
                 || claimScope != ClaimScope.SUITE_ATTEMPT_ANY_CASE
-                || stoppingRule != StoppingRule.PRECOMMITTED_FIXED_HORIZON
+                || !stoppingMatches
                 || censoringPolicy != CensoringPolicy.FAIL_CLOSED
                 || confidenceLevelBps < MIN_CONFIDENCE_BPS
                 || confidenceLevelBps > MAX_CONFIDENCE_BPS
                 || maximumInstabilityRateBps < MIN_INSTABILITY_RATE_BPS
-                || maximumInstabilityRateBps > MAX_INSTABILITY_RATE_BPS) {
+                || maximumInstabilityRateBps > MAX_INSTABILITY_RATE_BPS
+                || !alternativeMatches) {
             throw new IllegalArgumentException(
                     "A supported bounded statistical stability policy is required");
         }
+    }
+
+    /**
+     * Backward-compatible constructor for fixed-horizon policies.
+     *
+     * @param model fixed-horizon probability model
+     * @param claimScope suite-level event scope
+     * @param stoppingRule fixed-horizon stopping rule
+     * @param censoringPolicy fail-closed censoring policy
+     * @param confidenceLevelBps requested confidence in basis points
+     * @param maximumInstabilityRateBps admitted instability-rate ceiling
+     */
+    public TestSuiteStabilityStatisticalPolicy(
+            Model model,
+            ClaimScope claimScope,
+            StoppingRule stoppingRule,
+            CensoringPolicy censoringPolicy,
+            int confidenceLevelBps,
+            int maximumInstabilityRateBps) {
+        this(model, claimScope, stoppingRule, censoringPolicy, confidenceLevelBps,
+                maximumInstabilityRateBps, null);
     }
 
     /**
@@ -99,7 +140,8 @@ public record TestSuiteStabilityStatisticalPolicy(
                 StoppingRule.PRECOMMITTED_FIXED_HORIZON,
                 CensoringPolicy.FAIL_CLOSED,
                 confidenceLevelBps,
-                maximumInstabilityRateBps);
+                maximumInstabilityRateBps,
+                null);
     }
 
     /**
@@ -118,11 +160,34 @@ public record TestSuiteStabilityStatisticalPolicy(
                 StoppingRule.PRECOMMITTED_FIXED_HORIZON,
                 CensoringPolicy.FAIL_CLOSED,
                 confidenceLevelBps,
-                maximumInstabilityRateBps);
+                maximumInstabilityRateBps,
+                null);
     }
 
     /**
-     * Returns the first bounded horizon satisfying the exact one-sided zero-event inequality.
+     * Creates the independent anytime-valid e-process policy.
+     *
+     * @param confidenceLevelBps requested anytime-valid confidence in basis points
+     * @param maximumInstabilityRateBps composite-null instability-rate floor
+     * @param alternativeInstabilityRateBps precommitted lower event rate used by the test factor
+     * @return validated anytime-valid policy
+     */
+    public static TestSuiteStabilityStatisticalPolicy anytimeValidEProcess(
+            int confidenceLevelBps,
+            int maximumInstabilityRateBps,
+            int alternativeInstabilityRateBps) {
+        return new TestSuiteStabilityStatisticalPolicy(
+                Model.BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS,
+                ClaimScope.SUITE_ATTEMPT_ANY_CASE,
+                StoppingRule.ANYTIME_VALID_E_PROCESS,
+                CensoringPolicy.FAIL_CLOSED,
+                confidenceLevelBps,
+                maximumInstabilityRateBps,
+                alternativeInstabilityRateBps);
+    }
+
+    /**
+     * Returns the first clean-path horizon satisfying the model-specific exact boundary.
      *
      * @return minimum admitted clean-attempt horizon
      * @throws IllegalArgumentException when the coordinates need more than 1000 attempts
@@ -138,9 +203,9 @@ public record TestSuiteStabilityStatisticalPolicy(
     }
 
     /**
-     * Tests {@code (1-q)^n <= 1-C} with exact integer arithmetic.
+     * Tests the model-specific clean-path boundary with exact integer arithmetic.
      *
-     * @param attempts proposed fixed horizon
+     * @param attempts proposed maximum execution horizon
      * @return true when the horizon supports the requested confidence claim
      */
     public boolean horizonSufficient(int attempts) {
@@ -148,6 +213,9 @@ public record TestSuiteStabilityStatisticalPolicy(
             return false;
         }
         int comparisons = comparisonAttempts(attempts);
+        if (model == Model.BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS) {
+            return comparisons > 0 && sequentialAdmissionSatisfied(comparisons, 0);
+        }
         BigInteger noEventNumerator = BigInteger.valueOf(
                 10_000L - maximumInstabilityRateBps).pow(comparisons);
         BigInteger denominator = BASIS_POINTS.pow(comparisons);
@@ -166,7 +234,7 @@ public record TestSuiteStabilityStatisticalPolicy(
         if (executionAttempts < 0 || executionAttempts > MAX_ATTEMPTS) {
             throw new IllegalArgumentException("Execution attempt count is outside protocol bounds");
         }
-        return model == Model.BASELINE_CONDITIONAL_EXACT_BINOMIAL
+        return model != Model.ZERO_INSTABILITY_EXACT_BINOMIAL
                 ? Math.max(0, executionAttempts - 1) : executionAttempts;
     }
 
@@ -256,6 +324,36 @@ public record TestSuiteStabilityStatisticalPolicy(
         return lower;
     }
 
+    /**
+     * Independently tests one exact anytime-valid e-value boundary.
+     *
+     * @param comparisons verified post-baseline comparison count
+     * @param observedEvents comparisons differing from the observed baseline
+     * @return true only after the Ville-safe threshold is crossed
+     */
+    public boolean sequentialAdmissionSatisfied(int comparisons, int observedEvents) {
+        SequentialEvidenceRatio ratio = sequentialEvidenceRatio(comparisons, observedEvents);
+        return ratio.numerator().multiply(
+                BigInteger.valueOf(10_000L - confidenceLevelBps))
+                .compareTo(ratio.denominator().multiply(BASIS_POINTS)) >= 0;
+    }
+
+    /**
+     * Independently computes the conservative anytime-valid confidence floor.
+     *
+     * @param comparisons verified post-baseline comparison count
+     * @param observedEvents comparisons differing from the observed baseline
+     * @return floor of {@code 1 - 1/E} in basis points, or zero while {@code E <= 1}
+     */
+    public int sequentialAchievedConfidenceBps(int comparisons, int observedEvents) {
+        SequentialEvidenceRatio ratio = sequentialEvidenceRatio(comparisons, observedEvents);
+        if (ratio.numerator().compareTo(ratio.denominator()) <= 0) {
+            return 0;
+        }
+        return ratio.numerator().subtract(ratio.denominator()).multiply(BASIS_POINTS)
+                .divide(ratio.numerator()).intValueExact();
+    }
+
     private void requireRateCoordinates(int comparisons, int observedEvents) {
         if (model != Model.BASELINE_CONDITIONAL_EXACT_BINOMIAL
                 || comparisons < 1 || comparisons >= MAX_ATTEMPTS
@@ -263,6 +361,29 @@ public record TestSuiteStabilityStatisticalPolicy(
             throw new IllegalArgumentException(
                     "Complete baseline-conditional event coordinates are required");
         }
+    }
+
+    private SequentialEvidenceRatio sequentialEvidenceRatio(
+            int comparisons,
+            int observedEvents) {
+        if (model != Model.BASELINE_CONDITIONAL_ANYTIME_VALID_E_PROCESS
+                || comparisons < 1 || comparisons >= MAX_ATTEMPTS
+                || observedEvents < 0 || observedEvents > comparisons) {
+            throw new IllegalArgumentException(
+                    "Complete anytime-valid event coordinates are required");
+        }
+        BigInteger alternative = BigInteger.valueOf(alternativeInstabilityRateBps);
+        BigInteger ceiling = BigInteger.valueOf(maximumInstabilityRateBps);
+        BigInteger alternativeComplement = BASIS_POINTS.subtract(alternative);
+        BigInteger ceilingComplement = BASIS_POINTS.subtract(ceiling);
+        return new SequentialEvidenceRatio(
+                alternative.pow(observedEvents)
+                        .multiply(alternativeComplement.pow(comparisons - observedEvents)),
+                ceiling.pow(observedEvents)
+                        .multiply(ceilingComplement.pow(comparisons - observedEvents)));
+    }
+
+    private record SequentialEvidenceRatio(BigInteger numerator, BigInteger denominator) {
     }
 
     private static BigInteger cdfNumerator(int trials, int events, int rateBps) {

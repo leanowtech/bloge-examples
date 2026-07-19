@@ -599,6 +599,16 @@ capability、CLI/JUnit 和伪造上界反例同步闭合。设计与验证见
 该子步仍不声称 sequential/adaptive alpha spending、跨周期共同原因检测、自动 quarantine workflow 或
 物理 attempt runtime 隔离。
 
+第五十三增量第二十四子步第一阶段已冻结 optional-stopping 的根治模型，但尚未宣称运行期可用。方案拒绝
+把固定区间在每个 prefix 重算，也拒绝把有限 look schedule 和 alpha cursor 变成新的恢复状态；改用
+baseline-conditional anytime-valid likelihood-ratio e-process。policy 预提交 `q`、严格更小的 alternative
+rate `r`、confidence 与最大 horizon，服务端和独立 test-kit 以互不依赖的 `BigInteger` 有理数实现验证
+`E >= 1/alpha`。95%/10%/5% 策略的 clean path 在第 56 个比较首次越界，55/56 两侧置信度下界分别为
+94.88%/95.15%；一个事件时 59 比较不通过、99 比较通过。双方各 8 项聚焦测试全绿。当前 capability 仍
+必须保持关闭；只有 request v4、evidence/attestation/response v5、progress v2、first-crossing 重建、
+checkpoint-first 早停、Schema/CLI/异步 worker 与完整门禁闭合后才完成该子步。设计见
+[Stage 5 anytime-valid stability design](resource-gateway-execution-data-control-plane-stage5-anytime-valid-stability-design.md)。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

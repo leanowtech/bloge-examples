@@ -67,6 +67,32 @@ class TestSuiteStabilityStatisticalPolicyTest {
                 .hasMessageContaining("Legacy zero-event confidence");
     }
 
+    @Test
+    void independentlyDerivesTheAnytimeValidEProcessBoundary() {
+        TestSuiteStabilityStatisticalPolicy policy =
+                TestSuiteStabilityStatisticalPolicy.anytimeValidEProcess(9_500, 1_000, 500);
+
+        assertThat(policy.minimumRequiredAttempts()).isEqualTo(57);
+        assertThat(policy.horizonSufficient(56)).isFalse();
+        assertThat(policy.horizonSufficient(57)).isTrue();
+        assertThat(policy.sequentialAdmissionSatisfied(55, 0)).isFalse();
+        assertThat(policy.sequentialAchievedConfidenceBps(55, 0)).isEqualTo(9_488);
+        assertThat(policy.sequentialAdmissionSatisfied(56, 0)).isTrue();
+        assertThat(policy.sequentialAchievedConfidenceBps(56, 0)).isEqualTo(9_515);
+        assertThat(policy.sequentialAdmissionSatisfied(59, 1)).isFalse();
+        assertThat(policy.sequentialAdmissionSatisfied(99, 1)).isTrue();
+    }
+
+    @Test
+    void independentlyRejectsInvalidAnytimePoliciesAndCoordinates() {
+        assertThatThrownBy(() -> TestSuiteStabilityStatisticalPolicy
+                .anytimeValidEProcess(9_500, 1_000, 1_000))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> correctedPolicy(9_500, 1_000)
+                .sequentialAdmissionSatisfied(29, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static TestSuiteStabilityStatisticalPolicy policy(
             int confidenceBps,
             int maximumRateBps) {
