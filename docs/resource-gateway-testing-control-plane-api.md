@@ -3054,11 +3054,51 @@ fingerprint, every compact signature and signing-time key lifecycle decision, so
 derived trend labels, then the exact outer closure and signature. The authoritative Schema rejects
 unknown fields and bounds every page to 100 observations.
 
+After a signed retirement moves the active floor, the sequence-zero range request fails closed. Read
+and independently verify the separate retirement-generation lifecycle first:
+
+~~~http
+POST /api/testing/suites/loan-decision-regression/stability-observation-ledger-lifecycle-pages
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+~~~
+
+~~~json
+{
+  "schemaVersion": "bloge.testSuiteStabilityObservationLedgerLifecyclePageRequest.v1",
+  "suiteRef": {
+    "suiteId": "loan-decision-regression",
+    "revision": 1,
+    "fingerprint": "sha256:<returned-by-suite-registration>"
+  },
+  "afterRetirementGeneration": 0,
+  "maximumRetirements": 10,
+  "expectedCurrentFloorFingerprint": "",
+  "expectedHeadFingerprint": ""
+}
+~~~
+
+The first page always starts at generation zero with blank pins. It returns a starting floor, up to
+ten contiguous signed retirements, the floor derived after that page, and one snapshot-wide current
+floor/head pair. When hasMore is true, set afterRetirementGeneration to the verified terminal
+generation and copy both current-floor and head fingerprints into the continuation. A retirement or
+append race returns RG.TEST.STABILITY_LIFECYCLE_SNAPSHOT_CHANGED rather than combining snapshots.
+
+The independent test-kit must verify each page before constructing its continuation. It rederives
+all compact observation signatures and identities, archive and retirement fingerprints/signatures,
+successor floors, terminal/current closure, ordered outer signature, and a cross-page checkpoint.
+After the terminal page verifies, use currentFloor.floorSequence - 1 as the compact-range cursor and
+its verified head fingerprint as the range pin. See the
+[lifecycle protocol design](resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md)
+and [test-kit example](../resource-gateway-test-kit/README.md).
+
 This endpoint is absent in production and disabled by default. It is a development protocol, not an
-ANEKE/CI integration contract: signed floor retirement, archive/WORM, erasure/backup purge, recovery
-continuity, and external non-equivocation policy are still missing. Capability
+ANEKE/CI integration contract: local signed floor retirement and lifecycle verification now exist,
+but external WORM acknowledgement, legal hold/erasure, backup purge, recovery continuity, and
+external non-equivocation policy are still missing. Capability
 `crossRetentionSuiteStabilityTrend` therefore remains `false`; strict verification proves the returned
-range, not the existence of an unbroken long-term history outside that range.
+local lifecycle and range, not an unbroken or globally unique long-term history.
 
 #### Submit, inspect, and cancel a durable stability job
 

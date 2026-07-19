@@ -239,6 +239,24 @@ public interface TestSuiteStabilityRunRepository {
     }
 
     /**
+     * Reads one floor/head-pinned page of ordered signed floor retirements under the exact-suite
+     * ledger lock.
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param request exact immutable suite, generation cursor, page bound, and continuation pins
+     * @return complete lifecycle page, or empty before this scope has any observation
+     */
+    default Optional<TestSuiteStabilityObservationLedgerLifecyclePage>
+            observationLedgerLifecyclePage(
+                    String tenantId,
+                    String environmentId,
+                    TestSuiteStabilityObservationLedgerLifecyclePageRequest request) {
+        throw new UnsupportedOperationException(
+                "Stability observation ledger lifecycle pages are unavailable in this repository");
+    }
+
+    /**
      * Prepares a bounded exact floor-retirement intent under the exact-suite ledger lock.
      *
      * <p>The returned evidence is not authority to delete. A caller must sign and immediately verify

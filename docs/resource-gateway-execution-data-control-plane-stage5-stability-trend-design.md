@@ -1,10 +1,10 @@
 # Stage 5 retained-window stability trend design
 
 **Implementation status (2026-07-19): retained-window server/test-kit v1, signed cross-retention
-observation ledger, default-disabled range preview, strict Schema, typed independent verifier, and
-an internal database-authoritative signed floor-retirement/local-archive core are implemented;
-public floor lifecycle, external WORM, legal hold/erasure, disaster-recovery continuity, and
-witnessed non-equivocation remain incomplete.**
+observation ledger, strict default-disabled range and floor-lifecycle previews, typed independent
+verifiers, and a database-authoritative signed floor-retirement/local-archive core are implemented.
+External WORM, legal hold/erasure, disaster-recovery continuity, and witnessed non-equivocation
+remain incomplete.**
 
 ## 1. Root problem
 
@@ -52,12 +52,13 @@ cannot be treated as a stable observation. An incomplete window remains useful f
 its aggregate status is always `INCONCLUSIVE`.
 
 This v1 guarantee is intentionally limited to records still represented in the current stability
-store. The compact observation-ledger write path and default-disabled range preview described below
-now exist. The ledger also has an internal signed floor-retirement core, but the v1 endpoint does
-not discover a moved floor and `crossRetentionSuiteStabilityTrend` remains false. Public lifecycle
-policy, external archive durability, independent floor-chain verification, and externally witnessed
-non-equivocation are still required before the product may claim trend continuity beyond full
-evidence retention.
+store. The compact observation-ledger write path, default-disabled range preview, signed
+floor-retirement core, and separate floor-lifecycle proof described below now exist. A consumer can
+discover and independently verify a moved local floor before entering the range protocol. The
+advertised `crossRetentionSuiteStabilityTrend` capability nevertheless remains false: external
+archive durability, legal lifecycle policy, restore continuity, and externally witnessed
+non-equivocation are still required before the product may claim enterprise trend continuity beyond
+full evidence retention.
 
 ### 3.1 Cross-retention observation-ledger core
 
@@ -113,11 +114,11 @@ payload values, and is absent from production even if the flag is set. The autho
 freezes every request, observation, entry, head, range, evidence, closure, and signature field. The
 test-kit rederives request and deterministic identities, verifies every compact signature and
 signing-time key policy, reconstructs trend labels with the shared pure projection, and verifies the
-outer closure/signature without fetching full source runs. The preview contract still assumes the
-rollout floor: its first page requires `afterSequence=0`, so it intentionally fails closed after an
-internal floor retirement instead of hiding an undiscoverable history gap. Therefore
-`crossRetentionSuiteStabilityTrend` remains false and the retained v1 source-closed path remains the
-only advertised trend capability.
+outer closure/signature without fetching full source runs. The range contract still assumes the
+rollout floor: its first page requires `afterSequence=0`, so it never hides an unproved history gap.
+A separate lifecycle proof now verifies a moved floor and hands its current floor/head pins to this
+range protocol. The capability still remains false because local discoverability is only one of the
+external durability and non-equivocation gates.
 
 ### 3.3 Internal signed floor-retirement core
 
@@ -136,11 +137,30 @@ then deletes exactly the archived active prefix. Stale head/floor pins, changed 
 duplicate generations, CAS misses, incomplete deletes, and storage tampering fail closed or roll the
 whole transaction back. Exact replay returns the same historical successor floor.
 
-This is a local correctness primitive, not a complete lifecycle claim. The archive shares the
-database fault domain, there is no public floor/retirement Schema or independent consumer verifier,
-and legal hold, erasure, backup purge, restore continuity, external WORM acknowledgement, and
-witnessed non-equivocation remain absent. Detailed invariants and failure proofs are recorded in
+This is a local correctness primitive, not a complete enterprise lifecycle claim. A strict
+floor/retirement/lifecycle Schema and independent consumer verifier now expose the local transition,
+but the archive still shares the database fault domain. Legal hold, erasure, backup purge, restore
+continuity, external WORM acknowledgement, and witnessed non-equivocation remain absent. Detailed
+write-side invariants and failure proofs are recorded in
 [Stage 5 compact-observation floor retirement design](resource-gateway-execution-data-control-plane-stage5-observation-floor-retirement-design.md).
+
+### 3.4 Default-disabled floor-lifecycle proof
+
+`bloge.testSuiteStabilityObservationLedgerLifecyclePageRequest.v1` pages by exclusive retirement
+generation, not active-entry sequence. Generation zero with blank pins is the only first page;
+continuations must carry the exact current-floor and head fingerprints frozen by the first page.
+Each response carries the starting floor, up to ten contiguous signed retirements, derived terminal
+floor, snapshot current floor/head, database observation time, and a separate ordered page signature.
+
+Under the exact-suite lock, the repository verifies generation cardinality, latest-retirement
+closure, the exact cursor predecessor, and every transition in one bounded page. The service
+re-verifies page structure and every retirement signature before sealing. Starting at generation
+zero, the independent test-kit carries a verified checkpoint across pages and rederives every
+compact observation, archive, retirement, successor floor, page identity/signature, and cross-page
+relation without server classes or full retained stability runs. A terminal verified lifecycle page
+provides the safe active-range cursor `currentFloor.floorSequence - 1` and current head pin. The full
+protocol and residual trust analysis are in
+[Stage 5 observation-floor lifecycle protocol](resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md).
 
 ## 4. Comparable execution regime
 
@@ -237,13 +257,18 @@ Completion requires tests proving rejection or fail-closed projection for:
   generation, floor/head CAS miss, or partial deletion leaving a committed local archive;
 - concurrent legacy-floor backfill creating multiple generation-zero floors, and a floor without a
   committed head being treated as an empty ledger.
+- missing/reordered retirement generation, invalid cursor, stale current-floor/head continuation
+  pin, forged successor or terminal floor, bad inner/outer signature, mixed-page checkpoint, and a
+  lifecycle route or bean present in production;
+- a positive two-retirement/two-page chain and real HTTP integer serialization preserving canonical
+  transition equality.
 
 ## 10. Deliberately unclaimed
 
-V1 and the range preview do not provide cross-suite common-cause confirmation, cross-revision
-semantic lineage, advertised cross-retention continuity, public floor lifecycle, externally durable
-WORM archive, legal-hold/backup erasure proof, disaster-recovery continuity, externally witnessed
-ledger non-equivocation, automatic quarantine mutation, change-point statistics, seasonal baselines,
+V1 plus the range and lifecycle previews do not provide cross-suite common-cause confirmation,
+cross-revision semantic lineage, advertised cross-retention continuity, externally durable WORM
+archive, legal-hold/backup erasure proof, disaster-recovery continuity, externally witnessed ledger
+non-equivocation, automatic quarantine mutation, change-point statistics, seasonal baselines,
 production-path comparison, distributed attempt execution, or physical test-runtime isolation.
 Those controls remain separate because collapsing them into a read projection would make the
 evidence easier to display and harder to trust.

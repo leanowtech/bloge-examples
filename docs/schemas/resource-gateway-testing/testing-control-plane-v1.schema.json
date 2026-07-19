@@ -3596,6 +3596,280 @@
         "headFingerprint": {"$ref": "#/$defs/fingerprint"}
       }
     },
+    "testSuiteStabilityObservationLedgerFloor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "scopeFingerprint", "suiteRef", "floorSequence",
+        "previousObservationId", "previousEntryFingerprint", "floorObservationId",
+        "floorEntryFingerprint", "coverageFrom", "retirementGeneration",
+        "latestRetirementId", "latestRetirementFingerprint", "updatedAt",
+        "floorFingerprint"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationLedgerFloor.v1"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "floorSequence": {"type": "integer", "minimum": 1,
+          "maximum": 9223372036854775807},
+        "previousObservationId": {"type": "string", "maxLength": 86},
+        "previousEntryFingerprint": {"type": "string", "maxLength": 71},
+        "floorObservationId": {"type": "string",
+          "pattern": "^stability-observation-[a-f0-9]{64}$"},
+        "floorEntryFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "coverageFrom": {"type": "string", "format": "date-time"},
+        "retirementGeneration": {"type": "integer", "minimum": 0,
+          "maximum": 9223372036854775807},
+        "latestRetirementId": {"type": "string", "maxLength": 97},
+        "latestRetirementFingerprint": {"type": "string", "maxLength": 71},
+        "updatedAt": {"type": "string", "format": "date-time"},
+        "floorFingerprint": {"$ref": "#/$defs/fingerprint"}
+      },
+      "oneOf": [
+        {"properties": {
+          "floorSequence": {"const": 1},
+          "retirementGeneration": {"const": 0},
+          "previousObservationId": {"type": "string", "maxLength": 0},
+          "previousEntryFingerprint": {"type": "string", "maxLength": 0},
+          "latestRetirementId": {"type": "string", "maxLength": 0},
+          "latestRetirementFingerprint": {"type": "string", "maxLength": 0}
+        }},
+        {"properties": {
+          "floorSequence": {"type": "integer", "minimum": 2},
+          "retirementGeneration": {"type": "integer", "minimum": 1},
+          "previousObservationId": {"type": "string",
+            "pattern": "^stability-observation-[a-f0-9]{64}$"},
+          "previousEntryFingerprint": {"$ref": "#/$defs/fingerprint"},
+          "latestRetirementId": {"type": "string",
+            "pattern": "^stability-observation-retirement-[a-f0-9]{64}$"},
+          "latestRetirementFingerprint": {"$ref": "#/$defs/fingerprint"}
+        }}
+      ]
+    },
+    "testSuiteStabilityObservationArchiveSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "segmentId", "scopeFingerprint", "suiteRef",
+        "retirementGeneration", "previousObservationId", "previousEntryFingerprint",
+        "retiredEntries", "successorEntry", "archivedAt", "segmentFingerprint"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationArchiveSegment.v1"},
+        "segmentId": {"type": "string",
+          "pattern": "^stability-observation-archive-[a-f0-9]{64}$"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "retirementGeneration": {"type": "integer", "minimum": 1,
+          "maximum": 9223372036854775807},
+        "previousObservationId": {"type": "string", "maxLength": 86},
+        "previousEntryFingerprint": {"type": "string", "maxLength": 71},
+        "retiredEntries": {"type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerEntry"}},
+        "successorEntry": {
+          "$ref": "#/$defs/testSuiteStabilityObservationLedgerEntry"},
+        "archivedAt": {"type": "string", "format": "date-time"},
+        "segmentFingerprint": {"$ref": "#/$defs/fingerprint"}
+      },
+      "oneOf": [
+        {"properties": {
+          "retirementGeneration": {"const": 1},
+          "previousObservationId": {"type": "string", "maxLength": 0},
+          "previousEntryFingerprint": {"type": "string", "maxLength": 0}
+        }},
+        {"properties": {
+          "retirementGeneration": {"type": "integer", "minimum": 2},
+          "previousObservationId": {"type": "string",
+            "pattern": "^stability-observation-[a-f0-9]{64}$"},
+          "previousEntryFingerprint": {"$ref": "#/$defs/fingerprint"}
+        }}
+      ]
+    },
+    "testSuiteStabilityObservationFloorRetirementEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "retirementId", "scopeFingerprint", "suiteRef",
+        "retirementGeneration", "previousFloor", "pinnedHead", "archiveSegment",
+        "cutoffExclusive", "minimumRetainedEntries", "maximumRetiredEntries",
+        "retentionPolicyFingerprint", "reason", "retiredAt"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationFloorRetirementEvidence.v1"},
+        "retirementId": {"type": "string",
+          "pattern": "^stability-observation-retirement-[a-f0-9]{64}$"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "retirementGeneration": {"type": "integer", "minimum": 1,
+          "maximum": 9223372036854775807},
+        "previousFloor": {
+          "$ref": "#/$defs/testSuiteStabilityObservationLedgerFloor"},
+        "pinnedHead": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerHead"},
+        "archiveSegment": {
+          "$ref": "#/$defs/testSuiteStabilityObservationArchiveSegment"},
+        "cutoffExclusive": {"type": "string", "format": "date-time"},
+        "minimumRetainedEntries": {"type": "integer", "minimum": 1,
+          "maximum": 1000000},
+        "maximumRetiredEntries": {"type": "integer", "minimum": 1, "maximum": 100},
+        "retentionPolicyFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "reason": {"const": "RETENTION_POLICY"},
+        "retiredAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "testSuiteStabilityObservationFloorRetirementAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "signatureStatus", "retirementId",
+        "evidenceFingerprint", "archiveSegmentFingerprint", "previousFloorFingerprint",
+        "pinnedHeadFingerprint", "signedAt", "keyId", "algorithm", "signature",
+        "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationFloorRetirementAttestation.v1"},
+        "signatureStatus": {"const": "VERIFIED"},
+        "retirementId": {"type": "string",
+          "pattern": "^stability-observation-retirement-[a-f0-9]{64}$"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "archiveSegmentFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "previousFloorFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "pinnedHeadFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "algorithm": {"const": "Ed25519"},
+        "signature": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "independentlyVerifiable": {"const": true}
+      }
+    },
+    "testSuiteStabilityObservationFloorRetirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceFingerprint", "evidence", "attestationFingerprint",
+        "attestation", "retirementFingerprint"],
+      "properties": {
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidence": {
+          "$ref": "#/$defs/testSuiteStabilityObservationFloorRetirementEvidence"},
+        "attestationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "attestation": {
+          "$ref": "#/$defs/testSuiteStabilityObservationFloorRetirementAttestation"},
+        "retirementFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteStabilityObservationLedgerLifecyclePageRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRef", "afterRetirementGeneration",
+        "maximumRetirements", "expectedCurrentFloorFingerprint",
+        "expectedHeadFingerprint"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationLedgerLifecyclePageRequest.v1"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "afterRetirementGeneration": {"type": "integer", "minimum": 0,
+          "maximum": 9223372036854775807},
+        "maximumRetirements": {"type": "integer", "minimum": 1, "maximum": 10},
+        "expectedCurrentFloorFingerprint": {"oneOf": [
+          {"type": "string", "maxLength": 0},
+          {"$ref": "#/$defs/fingerprint"}
+        ]},
+        "expectedHeadFingerprint": {"oneOf": [
+          {"type": "string", "maxLength": 0},
+          {"$ref": "#/$defs/fingerprint"}
+        ]}
+      },
+      "oneOf": [
+        {"properties": {
+          "afterRetirementGeneration": {"const": 0},
+          "expectedCurrentFloorFingerprint": {"type": "string", "maxLength": 0},
+          "expectedHeadFingerprint": {"type": "string", "maxLength": 0}
+        }},
+        {"properties": {
+          "afterRetirementGeneration": {"type": "integer", "minimum": 1},
+          "expectedCurrentFloorFingerprint": {"$ref": "#/$defs/fingerprint"},
+          "expectedHeadFingerprint": {"$ref": "#/$defs/fingerprint"}
+        }}
+      ]
+    },
+    "testSuiteStabilityObservationLedgerLifecyclePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "requestFingerprint", "request", "scopeFingerprint",
+        "startingFloor", "retirements", "terminalFloor", "currentFloor", "head",
+        "hasMore", "observedAt", "pageFingerprint"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationLedgerLifecyclePage.v1"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "request": {
+          "$ref": "#/$defs/testSuiteStabilityObservationLedgerLifecyclePageRequest"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "startingFloor": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerFloor"},
+        "retirements": {"type": "array", "maxItems": 10,
+          "items": {"$ref": "#/$defs/testSuiteStabilityObservationFloorRetirement"}},
+        "terminalFloor": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerFloor"},
+        "currentFloor": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerFloor"},
+        "head": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerHead"},
+        "hasMore": {"type": "boolean"},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "pageFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteStabilityObservationLedgerLifecycleRetirementRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retirementGeneration", "retirementId", "retirementFingerprint"],
+      "properties": {
+        "retirementGeneration": {"type": "integer", "minimum": 1,
+          "maximum": 9223372036854775807},
+        "retirementId": {"type": "string",
+          "pattern": "^stability-observation-retirement-[a-f0-9]{64}$"},
+        "retirementFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteStabilityObservationLedgerLifecycleAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "signatureStatus", "lifecyclePageId",
+        "requestFingerprint", "pageFingerprint", "scopeFingerprint",
+        "startingFloorFingerprint", "terminalFloorFingerprint",
+        "currentFloorFingerprint", "headFingerprint", "retirementRefs", "signedAt",
+        "keyId", "algorithm", "signature", "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationLedgerLifecycleAttestation.v1"},
+        "signatureStatus": {"const": "VERIFIED"},
+        "lifecyclePageId": {"type": "string",
+          "pattern": "^stability-observation-lifecycle-page-[a-f0-9]{64}$"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "pageFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "startingFloorFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "terminalFloorFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "currentFloorFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "headFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "retirementRefs": {"type": "array", "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/testSuiteStabilityObservationLedgerLifecycleRetirementRef"}},
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "algorithm": {"const": "Ed25519"},
+        "signature": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "independentlyVerifiable": {"const": true}
+      }
+    },
+    "testSuiteStabilityObservationLedgerLifecyclePageResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "lifecyclePageId", "pageFingerprint", "page",
+        "attestation"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityObservationLedgerLifecyclePageResponse.v1"},
+        "lifecyclePageId": {"type": "string",
+          "pattern": "^stability-observation-lifecycle-page-[a-f0-9]{64}$"},
+        "pageFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "page": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerLifecyclePage"},
+        "attestation": {
+          "$ref": "#/$defs/testSuiteStabilityObservationLedgerLifecycleAttestation"}
+      }
+    },
     "testSuiteStabilityObservationLedgerRange": {
       "type": "object",
       "additionalProperties": false,

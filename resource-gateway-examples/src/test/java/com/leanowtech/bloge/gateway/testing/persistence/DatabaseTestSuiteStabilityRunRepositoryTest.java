@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationFloorRetirement;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationFloorRetirementService;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerLifecyclePageRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRecord;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
@@ -23,6 +24,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservati
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementIntegrity;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerLifecyclePageIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerRangeIntegrity;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -873,6 +876,146 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     }
 
     @Test
+    void rolloutLifecyclePageIsEmptyAndClosesAtGenerationZero() {
+        Instant now = Instant.now();
+        completeTrend(trendRecord('a', now.minusSeconds(10), now.plusSeconds(3_600)));
+        var request = new TestSuiteStabilityObservationLedgerLifecyclePageRequest(
+                TestSuiteStabilityObservationLedgerLifecyclePageRequest.SCHEMA_VERSION,
+                TestSuiteStabilityProtocolFixtures.SUITE_REF, 0, 2, "", "");
+
+        var page = repository.observationLedgerLifecyclePage(
+                "tenant-a", "test", request).orElseThrow();
+
+        assertThat(TestSuiteStabilityObservationLedgerLifecyclePageIntegrity.valid(
+                mapper, page)).isTrue();
+        assertThat(page.retirements()).isEmpty();
+        assertThat(page.hasMore()).isFalse();
+        assertThat(page.startingFloor()).isEqualTo(page.currentFloor());
+        assertThat(page.terminalFloor()).isEqualTo(page.currentFloor());
+        assertThat(page.currentFloor().retirementGeneration()).isZero();
+    }
+
+    @Test
+    void lifecyclePagesPreservePinnedContinuityAcrossMultipleRetirements() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'1', '2', '3', '4'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(60 - identity),
+                    now.plusSeconds(3_600)));
+        }
+        var suite = TestSuiteStabilityProtocolFixtures.SUITE_REF;
+        var rollout = repository.observationLedgerFloor(
+                "tenant-a", "test", suite).orElseThrow();
+        String policy = TestSuiteStabilityProtocolFixtures.fingerprint('e');
+        var firstRetirement = retirementService.retire(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1, policy);
+        var secondRetirement = retirementService.retire(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1, policy);
+        var firstRequest = new TestSuiteStabilityObservationLedgerLifecyclePageRequest(
+                TestSuiteStabilityObservationLedgerLifecyclePageRequest.SCHEMA_VERSION,
+                suite, 0, 1, "", "");
+
+        var firstPage = repository.observationLedgerLifecyclePage(
+                "tenant-a", "test", firstRequest).orElseThrow();
+
+        assertThat(TestSuiteStabilityObservationLedgerLifecyclePageIntegrity.valid(
+                mapper, firstPage)).isTrue();
+        assertThat(firstPage.startingFloor()).isEqualTo(rollout);
+        assertThat(firstPage.retirements()).containsExactly(firstRetirement.retirement());
+        assertThat(firstPage.terminalFloor()).isEqualTo(firstRetirement.successorFloor());
+        assertThat(firstPage.currentFloor()).isEqualTo(secondRetirement.successorFloor());
+        assertThat(firstPage.hasMore()).isTrue();
+
+        var continuation = new TestSuiteStabilityObservationLedgerLifecyclePageRequest(
+                TestSuiteStabilityObservationLedgerLifecyclePageRequest.SCHEMA_VERSION,
+                suite, firstPage.terminalFloor().retirementGeneration(), 1,
+                firstPage.currentFloor().floorFingerprint(),
+                firstPage.head().headFingerprint());
+        var finalPage = repository.observationLedgerLifecyclePage(
+                "tenant-a", "test", continuation).orElseThrow();
+
+        assertThat(TestSuiteStabilityObservationLedgerLifecyclePageIntegrity.valid(
+                mapper, finalPage)).isTrue();
+        assertThat(finalPage.startingFloor()).isEqualTo(firstPage.terminalFloor());
+        assertThat(finalPage.retirements()).containsExactly(secondRetirement.retirement());
+        assertThat(finalPage.terminalFloor()).isEqualTo(firstPage.currentFloor());
+        assertThat(finalPage.currentFloor()).isEqualTo(firstPage.currentFloor());
+        assertThat(finalPage.head()).isEqualTo(firstPage.head());
+        assertThat(finalPage.hasMore()).isFalse();
+    }
+
+    @Test
+    void lifecycleReadFailsClosedWhenARetirementGenerationIsMissing() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'1', '2', '3', '4'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(60 - identity),
+                    now.plusSeconds(3_600)));
+        }
+        var suite = TestSuiteStabilityProtocolFixtures.SUITE_REF;
+        String policy = TestSuiteStabilityProtocolFixtures.fingerprint('f');
+        retirementService.retire(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1, policy);
+        retirementService.retire(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1, policy);
+        jdbc.update("""
+                DELETE FROM rg_test_suite_stability_observation_retirements
+                WHERE retirement_generation = 1
+                """);
+        var request = new TestSuiteStabilityObservationLedgerLifecyclePageRequest(
+                TestSuiteStabilityObservationLedgerLifecyclePageRequest.SCHEMA_VERSION,
+                suite, 0, 1, "", "");
+
+        assertThatThrownBy(() -> repository.observationLedgerLifecyclePage(
+                "tenant-a", "test", request))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("generations are incomplete");
+    }
+
+    @Test
+    void lifecycleContinuationRejectsAValidButDisconnectedPredecessor() throws Exception {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'1', '2', '3', '4'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(60 - identity),
+                    now.plusSeconds(3_600)));
+        }
+        var suite = TestSuiteStabilityProtocolFixtures.SUITE_REF;
+        String policy = TestSuiteStabilityProtocolFixtures.fingerprint('a');
+        var first = retirementService.retire(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1, policy);
+        retirementService.retire(
+                "tenant-a", "test", suite, repository.currentTime(), 1, 1, policy);
+        var firstPage = repository.observationLedgerLifecyclePage(
+                "tenant-a", "test",
+                new TestSuiteStabilityObservationLedgerLifecyclePageRequest(
+                        TestSuiteStabilityObservationLedgerLifecyclePageRequest.SCHEMA_VERSION,
+                        suite, 0, 1, "", "")).orElseThrow();
+        TestSuiteStabilityObservationFloorRetirement disconnected = retirementWithPolicy(
+                first.retirement(), TestSuiteStabilityProtocolFixtures.fingerprint('b'));
+        assertThat(TestSuiteStabilityObservationFloorRetirementIntegrity.successorFloor(
+                mapper, disconnected)).isNotEqualTo(first.successorFloor());
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_retirements
+                SET retirement_id = ?, evidence_fingerprint = ?,
+                    attestation_fingerprint = ?, retirement_fingerprint = ?,
+                    retired_at = ?, retirement_json = ?
+                WHERE scope_fingerprint = ? AND retirement_generation = 1
+                """, disconnected.evidence().retirementId(),
+                disconnected.evidenceFingerprint(), disconnected.attestationFingerprint(),
+                disconnected.retirementFingerprint(),
+                Timestamp.from(disconnected.evidence().retiredAt()),
+                mapper.writeValueAsString(disconnected),
+                disconnected.evidence().scopeFingerprint());
+        var continuation = new TestSuiteStabilityObservationLedgerLifecyclePageRequest(
+                TestSuiteStabilityObservationLedgerLifecyclePageRequest.SCHEMA_VERSION,
+                suite, 1, 1, firstPage.currentFloor().floorFingerprint(),
+                firstPage.head().headFingerprint());
+
+        assertThatThrownBy(() -> repository.observationLedgerLifecyclePage(
+                "tenant-a", "test", continuation))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("predecessor does not close on its floor");
+    }
+
+    @Test
     void exactRetirementReplayIsStableAcrossALaterFloorGeneration() {
         Instant now = Instant.now();
         for (char identity : new char[] {'6', '7', '8', '9'}) {
@@ -1349,5 +1492,26 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 unsigned.attestationFingerprint(), unsigned.attestation(),
                 TestSuiteStabilityObservationFloorRetirementIntegrity.retirementFingerprint(
                         mapper, unsigned));
+    }
+
+    private TestSuiteStabilityObservationFloorRetirement retirementWithPolicy(
+            TestSuiteStabilityObservationFloorRetirement retirement,
+            String retentionPolicyFingerprint) {
+        TestSuiteStabilityObservationFloorRetirementEvidence source = retirement.evidence();
+        TestSuiteStabilityObservationFloorRetirementEvidence placeholder =
+                new TestSuiteStabilityObservationFloorRetirementEvidence(
+                        source.schemaVersion(), source.retirementId(), source.scopeFingerprint(),
+                        source.suiteRef(), source.retirementGeneration(), source.previousFloor(),
+                        source.pinnedHead(), source.archiveSegment(), source.cutoffExclusive(),
+                        source.minimumRetainedEntries(), source.maximumRetiredEntries(),
+                        retentionPolicyFingerprint, source.reason(), source.retiredAt());
+        String retirementId = TestSuiteStabilityObservationFloorRetirementIntegrity.retirementId(
+                mapper, placeholder);
+        return signedRetirement(new TestSuiteStabilityObservationFloorRetirementEvidence(
+                source.schemaVersion(), retirementId, source.scopeFingerprint(), source.suiteRef(),
+                source.retirementGeneration(), source.previousFloor(), source.pinnedHead(),
+                source.archiveSegment(), source.cutoffExclusive(), source.minimumRetainedEntries(),
+                source.maximumRetiredEntries(), retentionPolicyFingerprint, source.reason(),
+                source.retiredAt()));
     }
 }

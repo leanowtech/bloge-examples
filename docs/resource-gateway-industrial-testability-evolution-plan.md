@@ -24,6 +24,10 @@
 | Stage 4 | In progress | BLOGE run-scoped services、checkpoint/resume primitives 与 RG deterministic provider、组合 checkpoint、同库事务、数据库时钟 fence、幂等命令和 staged 四 store aggregate 已落地；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal suspended-or-terminal recovery step、有界同步 multi-suspension recovery sequence、兼容 terminal-only recovery 和进程内 lease coordinator 已闭合；recovery sequence 外层及派生 step/claim/automatic-heartbeat 已具备数据库租约化有界 retention、独立 HMAC tombstone、密钥轮换启动自检、固定基数 telemetry 和数据库时钟 backlog SLO/readiness；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；隔离 list/claim/release、数据库权威 maker/checker approved discard、token-free receipt/history、审批 SLO observation、claim-command replay token AES-GCM envelope/旧行迁移/轮换重包、active-control HMAC fence/旧行迁移/轮换重键、命令/审批/历史的数据库租约化有界保留、独立 keyed-HMAC request-index tombstone/在线轮换/旧行惰性迁移、N/N-1 三阶段 write/readiness/capability、challenge-bound 逐副本签名 proof、独立 test-kit exact-inventory fleet gate、外部 Ed25519 M-of-N quarantine change authorization 的 HTTP v2/Schema/config/readiness/capability/数据库唯一消费与四维即时 admission 已落地。其他 durable command family 的统一有界 lifecycle、跨平台 serving-inventory 完整性证明、外部工单全生命周期与动态撤销刷新、法律保留/备份擦除、外部 WORM、runtime-state dispatch、排队/公平/优先级调度、异步/无界多 suspension 调度、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint、identity/flag/secret fixture authority、streaming 恢复与确定性并发待完成 |
 | Stage 5 | In progress（bounded mutation、deterministic/fixed-horizon 与 anytime-valid stability 端到端协议已闭环） | 已落地 graph/operator schema boundary planning/admission、seeded bounded property plan/materialization/execution/evidence、recoverable AST mutation planning/exact regeneration、immutable V5 mutation suite、baseline-first 隔离执行、V5 signed evidence/abandoned reconciliation，以及 deterministic 3..20 次重跑、统计 request v2-v4、evidence v3-v5、首基线 `n-1` 比较口径、零/非零事件精确单侧区间、anytime-valid e-process、fail-closed censoring、签名模型假设、独立同步/异步 test-kit、pinned CI/CLI/JUnit gate、数据库权威的跨副本 stability parent lease、tenant-fair SQL queue、parent-first terminal、签名 success proof、执行围栏、bounded worker/scheduler、database-clock aggregate telemetry/readiness、防 request resurrection 的 HMAC tombstone 与租约化 retention scheduler/SLO、公开异步 submit/query/cancel、strict Schema/capability truth、transaction-bound cancellation semantic audit、credential-free challenge-bound HTTPS current-authority PDP、原子 Ed25519 JWKS refresh、exact cohort 的数据库租约/单 active generation/全成员 trust-generation 收敛，以及 deployment-signed serving inventory、稳定 scope revision floor、严格 HTTPS/ETag 动态 `ACTIVE/REVOKED` publication、独立 witness checkpoint、跨重启 durable publication/witness floor、全成员 publication-generation 收敛和 submit/worker 双门禁；运行密钥 restart-free 原子双根发布/刷新、数据库 durable floor、库存重验、外部 challenge-bound `3f+1 / 2f+1` 双流非等价锚、external-first 提交、Spring/staging 接线、cohort v4、health/capability 与 strict Schema 已落地；保留窗口历史趋势与独立 test-kit、跨 retention compact observation ledger、signed range proof、strict Schema、typed verifier，以及数据库权威的签名 floor-retirement/local-archive core 已落地；公开 floor lifecycle、外部 WORM/法务留置/备份擦除/灾备连续性与 witnessed non-equivocation 尚未开放；显式 alpha-spending、跨 suite 共同原因证明、分布式/物理隔离 attempt runtime 尚未落地 |
 
+> Stage 5 lifecycle 状态校正：表中“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
+> advertisement 仍关闭；严格 Schema、授权 test/staging preview、分页和独立 verifier 已在第二十六子步
+> 第五阶段落地。
+
 第三十九增量从 Stage 5 先切出一个可诚实交付的 schema-boundary tracer bullet。新的
 `bloge.testBoundaryCasePlan.v1` 对当前 exact GRAPH/OPERATOR target 生成完整输入候选；baseline 由样例
 生成器合成，但每个候选必须再由公共 `VisualSchemaValidator` 独立证明。拒绝候选还必须命中该变换对应
@@ -701,6 +705,31 @@ trusted core：repository commit 不是公开不可信入口，本地 archive �
 backup purge、DR restore continuity、witnessed non-equivocation、租约化 scheduler/readiness 尚未完成；因此能力位和
 production wiring 继续保持关闭。Resource Gateway 完整 `clean verify` 执行 2844 tests，0 failures、0 errors、
 2 个既有条件跳过，并完成 Spring Boot 可执行 JAR 重打包。
+
+第五十三增量第二十六子步第五阶段根治“floor 已经移动后，首个 cross-retention range 请求仍固定从
+sequence zero 开始，导致合法历史不可发现”的消费协议断点。新的 lifecycle page request 以 retirement
+generation 为游标：首屏只能从 generation zero 且不带 pin 开始，续页必须携带首屏冻结的
+current-floor/head fingerprint。repository 在 exact-suite 数据库锁内验证 generation 基数、latest-retirement
+尾闭包、游标精确前驱和最多 10 个页内连续转换，再返回 starting/terminal/current floor、head、hasMore
+和数据库时刻；缺失、重复、乱序 generation 或前驱/尾闭包不一致均 fail closed。完整前缀由 test-kit
+从 generation zero 开始跨页累计 checkpoint 证明，不要求服务端每页重放全部历史。
+授权服务先验证 immutable suite、classification 和 snapshot pin，再验证 page integrity 与每条 retirement
+签名，最后用独立 Ed25519 domain 签入完整 ordered retirement refs。authoritative Schema 全部
+additionalProperties=false 且无业务 payload；endpoint 与 range preview 共用 non-production test/staging
+opt-in，默认关闭且 production 不装配。
+
+独立 test-kit 不依赖服务端类，按层重算 request/page/floor/head、每条 compact observation、archive、
+retirement、successor floor、outer signature 和跨页 checkpoint；direct-key 与外部 pinned complete key-set
+两条路径均已闭合。真实 HTTP 回归还证明 JSON 整数在 Int/Long 内存宽度变化后仍按 canonical protocol
+equality 验证；两次 retirement/两页正向 fixture 证明 generation 0→1→2、current floor/head pin 与最终
+closure。设计与剩余信任边界见
+[Stage 5 observation-floor lifecycle protocol](resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md)。
+这一步关闭公共本地 floor discovery 和独立本地链验证，但同库 archive 仍不是外部 WORM，legal hold/
+erasure/backup purge、DR restore continuity、witnessed non-equivocation、租约化 scheduler/readiness 仍未完成；
+因此 crossRetentionSuiteStabilityTrend、production wiring 和 capability advertisement 继续保持关闭。
+本增量完整 Resource Gateway `clean verify` 执行 2862 tests，0 failures、0 errors、2 个既有条件跳过，
+并通过真实浏览器流程和 Spring Boot 可执行 JAR 打包；独立 test-kit `clean verify` 执行 219 tests，
+0 failures、0 errors、0 skips，并通过普通/shaded JAR、权威 Schema 打包与严格 public Javadoc 门禁。
 
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新

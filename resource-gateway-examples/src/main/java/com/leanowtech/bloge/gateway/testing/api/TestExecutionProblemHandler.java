@@ -15,6 +15,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
         TestSuiteStabilityController.class,
         TestSuiteStabilityTrendController.class,
         TestSuiteStabilityCrossRetentionTrendController.class,
+        TestSuiteStabilityObservationLedgerLifecycleController.class,
         TestSuiteStabilityJobController.class,
         DurableTestExecutionCreationController.class,
         DurableTestExecutionQueryController.class,

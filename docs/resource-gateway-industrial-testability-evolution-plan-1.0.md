@@ -4,6 +4,10 @@
 
 ### 实施状态（2026-07-19）
 
+> Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
+> advertisement 仍关闭；严格 Schema、授权 test/staging preview、分页和独立 verifier 已在第二十六子步
+> 第五阶段落地。
+
 | 阶段 | 状态 | 已落地证据 |
 | --- | --- | --- |
 | Stage 0 | 完成 | operator suite API/UI 显式 `SCHEMA_CONTRACT`；`testing/domain` 五个版本化 record；capability testability 描述；[ADR-001](adr/ADR-001-resource-gateway-test-runtime-isolation.md)、[ADR-002](adr/ADR-002-operator-composability-and-opaque-runtime.md)、[ADR-003](adr/ADR-003-semantic-coverage-protocol-versioning.md) 与 [BLOGE framework requirement](bloge-framework-execution-control-requirement.md) |
@@ -703,6 +707,31 @@ trusted core：repository commit 不是公开不可信入口，本地 archive �
 backup purge、DR restore continuity、witnessed non-equivocation、租约化 scheduler/readiness 尚未完成；因此能力位和
 production wiring 继续保持关闭。Resource Gateway 完整 `clean verify` 执行 2844 tests，0 failures、0 errors、
 2 个既有条件跳过，并完成 Spring Boot 可执行 JAR 重打包。
+
+第五十三增量第二十六子步第五阶段根治“floor 已经移动后，首个 cross-retention range 请求仍固定从
+sequence zero 开始，导致合法历史不可发现”的消费协议断点。新的 lifecycle page request 以 retirement
+generation 为游标：首屏只能从 generation zero 且不带 pin 开始，续页必须携带首屏冻结的
+current-floor/head fingerprint。repository 在 exact-suite 数据库锁内验证 generation 基数、latest-retirement
+尾闭包、游标精确前驱和最多 10 个页内连续转换，再返回 starting/terminal/current floor、head、hasMore
+和数据库时刻；缺失、重复、乱序 generation 或前驱/尾闭包不一致均 fail closed。完整前缀由 test-kit
+从 generation zero 开始跨页累计 checkpoint 证明，不要求服务端每页重放全部历史。
+授权服务先验证 immutable suite、classification 和 snapshot pin，再验证 page integrity 与每条 retirement
+签名，最后用独立 Ed25519 domain 签入完整 ordered retirement refs。authoritative Schema 全部
+additionalProperties=false 且无业务 payload；endpoint 与 range preview 共用 non-production test/staging
+opt-in，默认关闭且 production 不装配。
+
+独立 test-kit 不依赖服务端类，按层重算 request/page/floor/head、每条 compact observation、archive、
+retirement、successor floor、outer signature 和跨页 checkpoint；direct-key 与外部 pinned complete key-set
+两条路径均已闭合。真实 HTTP 回归还证明 JSON 整数在 Int/Long 内存宽度变化后仍按 canonical protocol
+equality 验证；两次 retirement/两页正向 fixture 证明 generation 0→1→2、current floor/head pin 与最终
+closure。设计与剩余信任边界见
+[Stage 5 observation-floor lifecycle protocol](resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md)。
+这一步关闭公共本地 floor discovery 和独立本地链验证，但同库 archive 仍不是外部 WORM，legal hold/
+erasure/backup purge、DR restore continuity、witnessed non-equivocation、租约化 scheduler/readiness 仍未完成；
+因此 crossRetentionSuiteStabilityTrend、production wiring 和 capability advertisement 继续保持关闭。
+本增量完整 Resource Gateway `clean verify` 执行 2862 tests，0 failures、0 errors、2 个既有条件跳过，
+并通过真实浏览器流程和 Spring Boot 可执行 JAR 打包；独立 test-kit `clean verify` 执行 219 tests，
+0 failures、0 errors、0 skips，并通过普通/shaded JAR、权威 Schema 打包与严格 public Javadoc 门禁。
 
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与

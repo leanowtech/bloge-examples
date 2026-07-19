@@ -33,6 +33,7 @@ class ResourceGatewayTestClientTest {
     private TestSuiteStabilityTestFixtures.Fixture stabilityFixture;
     private TestSuiteStabilityTrendTestFixtures.Fixture trendFixture;
     private TestSuiteStabilityCrossRetentionTrendTestFixtures.Fixture crossRetentionFixture;
+    private TestSuiteStabilityObservationLedgerLifecycleTestFixtures.Fixture lifecycleFixture;
 
     @BeforeEach
     void startServer() throws IOException {
@@ -40,6 +41,8 @@ class ResourceGatewayTestClientTest {
         trendFixture = TestSuiteStabilityTrendTestFixtures.stableFixture();
         crossRetentionFixture = TestSuiteStabilityCrossRetentionTrendTestFixtures
                 .stableFixture(trendFixture);
+        lifecycleFixture = TestSuiteStabilityObservationLedgerLifecycleTestFixtures
+                .stableFixture(crossRetentionFixture);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/testing", this::handle);
         server.createContext("/api/integration", this::handle);
@@ -329,8 +332,8 @@ class ResourceGatewayTestClientTest {
         var pinned = client.verifySuiteStabilityCrossRetentionTrend(
                 request, crossRetentionFixture.keySet().snapshotFingerprint());
 
-        assertThat(direct.verified()).isTrue();
-        assertThat(pinned.verified()).isTrue();
+        assertThat(direct.verified()).as(direct.reasonCode()).isTrue();
+        assertThat(pinned.verified()).as(pinned.reasonCode()).isTrue();
         assertThat(requests).hasSize(4);
         assertThat(requests.get(0)).satisfies(value -> {
             assertThat(value.method()).isEqualTo("POST");
@@ -343,6 +346,37 @@ class ResourceGatewayTestClientTest {
                 .endsWith("/evidence-keys/evidence-key-a");
         assertThat(requests.get(2).rawPath())
                 .endsWith("/stability-cross-retention-trend-analyses");
+        assertThat(requests.get(3).rawPath()).endsWith("/evidence-keys");
+        assertThat(requests).noneSatisfy(value ->
+                assertThat(value.rawPath()).contains("/stability-executions/"));
+    }
+
+    @Test
+    void verifiesObservationLifecycleWithoutFetchingRetiredSourceRuns() {
+        ResourceGatewayTestClient client = client();
+        TestSuiteStabilityObservationLedgerLifecycleRequest request =
+                lifecycleFixture.page().request();
+
+        var direct = client.verifySuiteStabilityObservationLedgerLifecyclePage(request);
+        var pinned = client.verifySuiteStabilityObservationLedgerLifecyclePage(
+                request, null, lifecycleFixture.keySet().snapshotFingerprint());
+
+        assertThat(direct.verified()).as(direct.reasonCode()).isTrue();
+        assertThat(pinned.verified()).as(pinned.reasonCode()).isTrue();
+        assertThat(direct.checkpoint().complete()).isTrue();
+        assertThat(requests).hasSize(4);
+        assertThat(requests.get(0)).satisfies(value -> {
+            assertThat(value.method()).isEqualTo("POST");
+            assertThat(value.purpose()).isEqualTo("TEST_EXECUTION");
+            assertThat(value.rawPath()).endsWith(
+                    "/suites/orders-suite/stability-observation-ledger-lifecycle-pages");
+            assertThat(EvidenceVerificationSupport.sha256(value.body()))
+                    .isEqualTo(request.requestFingerprint());
+        });
+        assertThat(requests.get(1).rawPath())
+                .endsWith("/evidence-keys/evidence-key-a");
+        assertThat(requests.get(2).rawPath())
+                .endsWith("/stability-observation-ledger-lifecycle-pages");
         assertThat(requests.get(3).rawPath()).endsWith("/evidence-keys");
         assertThat(requests).noneSatisfy(value ->
                 assertThat(value.rawPath()).contains("/stability-executions/"));
@@ -1001,6 +1035,9 @@ class ResourceGatewayTestClientTest {
         } else if ("POST".equals(exchange.getRequestMethod())
                 && path.endsWith("/stability-cross-retention-trend-analyses")) {
             respond(exchange, 200, crossRetentionFixture.response().toString());
+        } else if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith("/stability-observation-ledger-lifecycle-pages")) {
+            respond(exchange, 200, lifecycleFixture.response().toString());
         } else if ("POST".equals(exchange.getRequestMethod())
                 && path.endsWith("/stability-trend-analyses")) {
             respond(exchange, 200, trendFixture.response().toString());

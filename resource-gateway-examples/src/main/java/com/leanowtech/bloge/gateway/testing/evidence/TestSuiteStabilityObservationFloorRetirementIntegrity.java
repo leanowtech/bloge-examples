@@ -113,6 +113,49 @@ public final class TestSuiteStabilityObservationFloorRetirementIntegrity {
     }
 
     /**
+     * Deterministically derives the successor floor committed by one retirement.
+     *
+     * <p>This pure transition is shared by the mutation and lifecycle-read paths. It deliberately
+     * does not consult mutable database state: callers first validate the complete retirement and
+     * then compare the derived floor with the next signed transition or current floor.</p>
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param retirement complete retirement whose archive has an immediate surviving successor
+     * @return canonical successor floor
+     */
+    public static TestSuiteStabilityObservationLedgerFloor successorFloor(
+            ObjectMapper objectMapper,
+            TestSuiteStabilityObservationFloorRetirement retirement) {
+        Objects.requireNonNull(objectMapper, "objectMapper");
+        Objects.requireNonNull(retirement, "retirement");
+        TestSuiteStabilityObservationFloorRetirementEvidence evidence = retirement.evidence();
+        TestSuiteStabilityObservationArchiveSegment archive = evidence.archiveSegment();
+        TestSuiteStabilityObservationLedgerEntry retiredLast = archive.retiredEntries().getLast();
+        TestSuiteStabilityObservationLedgerEntry successorEntry = archive.successorEntry();
+        TestSuiteStabilityObservationLedgerFloor unsigned =
+                new TestSuiteStabilityObservationLedgerFloor(
+                        TestSuiteStabilityObservationLedgerFloor.SCHEMA_VERSION,
+                        evidence.scopeFingerprint(), evidence.suiteRef(),
+                        successorEntry.sequence(),
+                        retiredLast.observation().evidence().observationId(),
+                        retiredLast.entryFingerprint(),
+                        successorEntry.observation().evidence().observationId(),
+                        successorEntry.entryFingerprint(), successorEntry.appendedAt(),
+                        evidence.retirementGeneration(), evidence.retirementId(),
+                        retirement.retirementFingerprint(), evidence.retiredAt(),
+                        zeroFingerprint());
+        return new TestSuiteStabilityObservationLedgerFloor(
+                unsigned.schemaVersion(), unsigned.scopeFingerprint(), unsigned.suiteRef(),
+                unsigned.floorSequence(), unsigned.previousObservationId(),
+                unsigned.previousEntryFingerprint(), unsigned.floorObservationId(),
+                unsigned.floorEntryFingerprint(), unsigned.coverageFrom(),
+                unsigned.retirementGeneration(), unsigned.latestRetirementId(),
+                unsigned.latestRetirementFingerprint(), unsigned.updatedAt(),
+                TestSuiteStabilityObservationLedgerFloorIntegrity.fingerprint(
+                        objectMapper, unsigned));
+    }
+
+    /**
      * Validates every canonical fingerprint, deterministic id, and nested ledger record.
      *
      * @param objectMapper canonical protocol mapper
@@ -164,6 +207,10 @@ public final class TestSuiteStabilityObservationFloorRetirementIntegrity {
         Objects.requireNonNull(entry, "entry");
         return new EntryRef(entry.sequence(),
                 entry.observation().evidence().observationId(), entry.entryFingerprint());
+    }
+
+    private static String zeroFingerprint() {
+        return "sha256:" + "0".repeat(64);
     }
 
     private record EntryRef(long sequence, String observationId, String entryFingerprint) {

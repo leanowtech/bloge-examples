@@ -194,6 +194,30 @@ public final class TestingProtocol {
     /** Producer compact-observation ledger head wire version. */
     public static final String TEST_SUITE_STABILITY_OBSERVATION_HEAD_V1 =
             "bloge.testSuiteStabilityObservationLedgerHead.v1";
+    /** Producer observation-ledger floor wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_FLOOR_V1 =
+            "bloge.testSuiteStabilityObservationLedgerFloor.v1";
+    /** Producer bounded local observation archive segment wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_ARCHIVE_V1 =
+            "bloge.testSuiteStabilityObservationArchiveSegment.v1";
+    /** Producer signed floor-retirement evidence wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_RETIREMENT_EVIDENCE_V1 =
+            "bloge.testSuiteStabilityObservationFloorRetirementEvidence.v1";
+    /** Domain-separated floor-retirement signature wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_RETIREMENT_ATTESTATION_V1 =
+            "bloge.testSuiteStabilityObservationFloorRetirementAttestation.v1";
+    /** Exact observation-ledger lifecycle page request wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_REQUEST_V1 =
+            "bloge.testSuiteStabilityObservationLedgerLifecyclePageRequest.v1";
+    /** Producer observation-ledger lifecycle page wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_PAGE_V1 =
+            "bloge.testSuiteStabilityObservationLedgerLifecyclePage.v1";
+    /** Domain-separated observation-ledger lifecycle page signature wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_ATTESTATION_V1 =
+            "bloge.testSuiteStabilityObservationLedgerLifecycleAttestation.v1";
+    /** Signed observation-ledger lifecycle page response wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_RESPONSE_V1 =
+            "bloge.testSuiteStabilityObservationLedgerLifecyclePageResponse.v1";
     /** Producer floor/head/cursor-pinned observation range wire version. */
     public static final String TEST_SUITE_STABILITY_OBSERVATION_RANGE_V1 =
             "bloge.testSuiteStabilityObservationLedgerRange.v1";

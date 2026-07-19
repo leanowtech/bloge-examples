@@ -130,6 +130,47 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SUITE_STABILITY_TREND_ATTESTATION_V1);
             assertConstant(definitions, "testSuiteStabilityTrendAnalysisResponse",
                     TestingProtocol.TEST_SUITE_STABILITY_TREND_ANALYSIS_RESPONSE_V1);
+            assertConstant(definitions, "testSuiteStabilityCrossRetentionTrendAnalysisRequest",
+                    TestingProtocol.TEST_SUITE_STABILITY_CROSS_RETENTION_TREND_REQUEST_V1);
+            assertConstant(definitions, "testSuiteStabilityObservationEvidence",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_EVIDENCE_V1);
+            assertConstant(definitions, "testSuiteStabilityObservationAttestation",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_ATTESTATION_V1);
+            assertConstant(definitions, "testSuiteStabilityObservationLedgerEntry",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_ENTRY_V1);
+            assertConstant(definitions, "testSuiteStabilityObservationLedgerHead",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_HEAD_V1);
+            assertConstant(definitions, "testSuiteStabilityObservationLedgerFloor",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_FLOOR_V1);
+            assertConstant(definitions, "testSuiteStabilityObservationArchiveSegment",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_ARCHIVE_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationFloorRetirementEvidence",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_RETIREMENT_EVIDENCE_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationFloorRetirementAttestation",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_RETIREMENT_ATTESTATION_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationLedgerLifecyclePageRequest",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_REQUEST_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationLedgerLifecyclePage",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_PAGE_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationLedgerLifecycleAttestation",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_ATTESTATION_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationLedgerLifecyclePageResponse",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_RESPONSE_V1);
+            assertConstant(definitions, "testSuiteStabilityObservationLedgerRange",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_RANGE_V1);
+            assertConstant(definitions, "testSuiteStabilityCrossRetentionTrendEvidence",
+                    TestingProtocol.TEST_SUITE_STABILITY_CROSS_RETENTION_TREND_EVIDENCE_V1);
+            assertConstant(definitions, "testSuiteStabilityCrossRetentionTrendAttestation",
+                    TestingProtocol.TEST_SUITE_STABILITY_CROSS_RETENTION_TREND_ATTESTATION_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityCrossRetentionTrendAnalysisResponse",
+                    TestingProtocol.TEST_SUITE_STABILITY_CROSS_RETENTION_TREND_RESPONSE_V1);
             assertConstant(definitions, "testSuiteStabilityJobSubmitRequest",
                     TestingProtocol.TEST_SUITE_STABILITY_JOB_SUBMIT_REQUEST_V1);
             assertConstant(definitions, "testSuiteStabilityJobCancelRequest",

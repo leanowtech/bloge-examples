@@ -20,6 +20,8 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationServ
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityCrossRetentionTrendAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerLifecycleAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityTrendAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
@@ -1132,6 +1134,28 @@ public class TestRuntimeConfiguration {
                 evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
     }
 
+    /** Verifies signed floor retirements before exposing them in lifecycle pages. */
+    @Bean
+    TestSuiteStabilityObservationFloorRetirementAttestationService
+            testSuiteStabilityObservationFloorRetirementAttestationService(
+                    ObjectMapper objectMapper,
+                    ObjectProvider<VisualEvidenceSigner> evidenceSigner) {
+        return new TestSuiteStabilityObservationFloorRetirementAttestationService(
+                objectMapper,
+                evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
+    }
+
+    /** Signs floor lifecycle pages in a distinct public preview domain. */
+    @Bean
+    TestSuiteStabilityObservationLedgerLifecycleAttestationService
+            testSuiteStabilityObservationLedgerLifecycleAttestationService(
+                    ObjectMapper objectMapper,
+                    ObjectProvider<VisualEvidenceSigner> evidenceSigner) {
+        return new TestSuiteStabilityObservationLedgerLifecycleAttestationService(
+                objectMapper,
+                evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
+    }
+
     /** Reuses the evidence signer in the distinct retained-window trend signature domain. */
     @Bean
     TestSuiteStabilityTrendAttestationService testSuiteStabilityTrendAttestationService(
@@ -1369,6 +1393,25 @@ public class TestRuntimeConfiguration {
         return new TestSuiteStabilityCrossRetentionTrendAnalysisService(
                 suiteRegistry, repository, objectMapper,
                 observationAttestations, trendAttestations);
+    }
+
+    /** Assembles preview-only signed floor lifecycle pages over exact suite revisions. */
+    @Bean
+    @ConditionalOnProperty(
+            name = "gateway.testing.stability-cross-retention-preview-enabled",
+            havingValue = "true")
+    TestSuiteStabilityObservationLedgerLifecyclePageService
+            testSuiteStabilityObservationLedgerLifecyclePageService(
+                    TestSuiteRegistryService suiteRegistry,
+                    TestSuiteStabilityRunRepository repository,
+                    ObjectMapper objectMapper,
+                    TestSuiteStabilityObservationFloorRetirementAttestationService
+                            retirementAttestations,
+                    TestSuiteStabilityObservationLedgerLifecycleAttestationService
+                            lifecycleAttestations) {
+        return new TestSuiteStabilityObservationLedgerLifecyclePageService(
+                suiteRegistry, repository, objectMapper,
+                retirementAttestations, lifecycleAttestations);
     }
 
     /**

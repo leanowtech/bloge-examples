@@ -725,6 +725,111 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads one signed floor-retirement lifecycle page for an exact suite revision.
+     *
+     * <p>Parsing enforces strict Schema and response/request binding but does not establish
+     * cryptographic trust. Verify the page and its checkpoint before constructing a continuation
+     * or using the returned floor to seed a cross-retention range request.</p>
+     *
+     * @param request exact generation cursor, page bound, and snapshot pins
+     * @return strict payload-free lifecycle page
+     */
+    public TestSuiteStabilityObservationLedgerLifecyclePage
+            readSuiteStabilityObservationLedgerLifecyclePage(
+            TestSuiteStabilityObservationLedgerLifecycleRequest request) {
+        TestSuiteStabilityObservationLedgerLifecycleRequest exactRequest =
+                Objects.requireNonNull(request, "observation lifecycle request is required");
+        JsonNode response = exchange("POST", "/api/testing/suites/"
+                        + segment(exactRequest.suiteId())
+                        + "/stability-observation-ledger-lifecycle-pages", "",
+                "TEST_EXECUTION", exactRequest.toJson());
+        requireVersion(response,
+                TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_RESPONSE_V1);
+        TestSuiteStabilityObservationLedgerLifecyclePage page =
+                projectStabilityObservationLifecyclePage(response);
+        if (!exactRequest.equals(page.request())) {
+            throw responseContractInvalid(
+                    "The server returned a lifecycle page for a different suite or cursor.");
+        }
+        return page;
+    }
+
+    /**
+     * Independently verifies one first lifecycle page using exact public keys from Gateway.
+     *
+     * @param request exact generation-zero request
+     * @return bounded page and transition verification result
+     */
+    public TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier.VerificationResult
+            verifySuiteStabilityObservationLedgerLifecyclePage(
+            TestSuiteStabilityObservationLedgerLifecycleRequest request) {
+        return verifySuiteStabilityObservationLedgerLifecyclePage(request, null);
+    }
+
+    /**
+     * Independently verifies one continuation lifecycle page using an already verified checkpoint.
+     *
+     * @param request exact first or continuation request
+     * @param previous null for rollout; verified previous-page checkpoint otherwise
+     * @return bounded page and transition verification result
+     */
+    public TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier.VerificationResult
+            verifySuiteStabilityObservationLedgerLifecyclePage(
+            TestSuiteStabilityObservationLedgerLifecycleRequest request,
+            TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier.LifecycleCheckpoint
+                    previous) {
+        TestSuiteStabilityObservationLedgerLifecyclePage page =
+                readSuiteStabilityObservationLedgerLifecyclePage(request);
+        Map<String, EvidenceVerificationKey> keys = new LinkedHashMap<>();
+        for (String keyId : TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier
+                .requiredKeyIds(page)) {
+            try {
+                keys.put(keyId, findEvidenceVerificationKey(keyId));
+            } catch (ResourceGatewayTestException failure) {
+                if (!"RG.INTEGRATION.EVIDENCE_KEY_NOT_FOUND".equals(failure.code())
+                        && !"RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE"
+                        .equals(failure.code())) {
+                    throw failure;
+                }
+            }
+        }
+        return new TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier().verify(
+                page, previous, keys);
+    }
+
+    /**
+     * Performs release-grade lifecycle-page verification against an independently pinned key set.
+     *
+     * @param request exact first or continuation request
+     * @param previous null for rollout; verified previous-page checkpoint otherwise
+     * @param trustedKeySetFingerprint key-set fingerprint pinned outside Gateway output
+     * @return lifecycle-aware page verification result
+     */
+    public TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier.VerificationResult
+            verifySuiteStabilityObservationLedgerLifecyclePage(
+            TestSuiteStabilityObservationLedgerLifecycleRequest request,
+            TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier.LifecycleCheckpoint
+                    previous,
+            String trustedKeySetFingerprint) {
+        TestSuiteStabilityObservationLedgerLifecyclePage page =
+                readSuiteStabilityObservationLedgerLifecyclePage(request);
+        EvidenceVerificationKeySet keySet;
+        try {
+            keySet = findEvidenceVerificationKeySet();
+        } catch (ResourceGatewayTestException failure) {
+            if ("RG.INTEGRATION.EVIDENCE_KEY_SET_PROVIDER_UNAVAILABLE".equals(failure.code())
+                    || "RG.INTEGRATION.EVIDENCE_KEY_SET_ATTESTATION_UNAVAILABLE"
+                    .equals(failure.code())) {
+                keySet = null;
+            } else {
+                throw failure;
+            }
+        }
+        return new TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier().verify(
+                page, previous, keySet, trustedKeySetFingerprint);
+    }
+
+    /**
      * Submits one asynchronous suite-stability job without implicit retry.
      *
      * <p>The client requires {@code 202}, validates the response against the packaged Schema,
@@ -1691,6 +1796,16 @@ public final class ResourceGatewayTestClient {
         } catch (IllegalArgumentException failure) {
             throw responseContractInvalid(
                     "The server returned an invalid cross-retention stability trend projection.");
+        }
+    }
+
+    private static TestSuiteStabilityObservationLedgerLifecyclePage
+            projectStabilityObservationLifecyclePage(JsonNode response) {
+        try {
+            return TestSuiteStabilityObservationLedgerLifecyclePage.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid stability observation lifecycle page.");
         }
     }
 

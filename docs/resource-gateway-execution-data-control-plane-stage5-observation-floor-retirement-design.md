@@ -1,8 +1,9 @@
 # Stage 5 compact-observation floor retirement design
 
-**Implementation status (2026-07-19): internal database-authoritative signed floor-retirement
-core implemented and verified; public lifecycle protocol, external WORM, legal hold/erasure,
-backup purge, disaster-recovery continuity, and witnessed non-equivocation remain unavailable.**
+**Implementation status (2026-07-19): internal database-authoritative signed floor-retirement core,
+strict public lifecycle Schema, default-disabled authorized pagination, and an independent test-kit
+verifier are implemented and verified. External WORM, legal hold/erasure, backup purge,
+disaster-recovery continuity, and witnessed non-equivocation remain unavailable.**
 
 ## 1. Strongest judgment
 
@@ -17,8 +18,9 @@ a schedule. The hard problem is proving all of the following at the same time:
 5. lifecycle claims do not outrun the actual archive, legal-hold, erasure, backup, and external
    witness controls.
 
-The implemented increment therefore treats floor movement as a signed state transition. It does
-not treat a retention scheduler as deletion authority and does not expose a public endpoint yet.
+The retirement core therefore treats floor movement as a signed state transition rather than a
+retention-scheduler side effect. A later increment now exposes that transition through a separate,
+default-disabled lifecycle proof endpoint without weakening the range protocol's cursor rules.
 
 ## 2. Trust and ownership boundary
 
@@ -27,7 +29,7 @@ not treat a retention scheduler as deletion authority and does not expose a publ
 | Eligible prefix | Database repository under exact-suite lock | append-time cutoff, minimum suffix, maximum batch, exact policy fingerprint | enterprise policy registry and approval workflow |
 | Retirement intent | Retirement-specific Ed25519 signer | exact floor, head, archive, policy, generation, and database time are signed | external M-of-N authorization |
 | Atomic mutation | Local relational transaction | archive + retirement + floor/head CAS + active deletion commit together | cross-store distributed transaction |
-| Replay | Deterministic retirement id and exact stored record | identical retry returns the historical successor floor | public replay API and consumer checkpoint |
+| Replay | Deterministic retirement id and exact stored record | identical retry returns the historical successor floor | externally durable consumer checkpoint |
 | Archive durability | Same database, payload-free bounded segment | local transactional recovery and indexed/JSON integrity checks | independent WORM acknowledgement and geographic durability |
 | History consistency | Per-scope sequence, predecessor chain, signed retirement generations | local non-forking transition under one database authority | external witnessed non-equivocation and gossip |
 
@@ -175,11 +177,18 @@ Active reads reject a cursor before `floorSequence - 1`. The range predecessor i
 durable floor's archived predecessor coordinate, so the first retained entry remains verifiable.
 Current reads validate floor-to-active-row and head-to-latest-row closure before returning data.
 
-The existing public preview request still requires first-page `afterSequence=0`. After a floor moves
-beyond sequence one, that request cannot discover the new floor. This is intentional fail-closed
-behavior: the internal core is not wired into the v1 preview. A future lifecycle-aware v2 response
-must expose and independently verify the current floor and ordered retirement chain before the
-capability can become true.
+The existing compact-range request still requires first-page `afterSequence=0`; it does not silently
+accept an arbitrary moved floor. The separate
+`stability-observation-ledger-lifecycle-pages` preview now discovers and proves the ordered chain
+from generation zero to one snapshot-pinned current floor. Consumers independently verify every
+compact observation, archive, retirement, derived successor floor, page signature, and cross-page
+checkpoint. Only after the terminal lifecycle page verifies may its
+`currentFloor.floorSequence - 1` and current head fingerprint seed the range request. Detailed wire,
+pagination, and verifier invariants are in
+[Stage 5 observation-floor lifecycle protocol](resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md).
+
+This closes local floor discovery, not external historical permanence. The lifecycle route is
+default-disabled, absent in production, and the advertised cross-retention capability remains false.
 
 ## 9. Failure matrix
 
@@ -199,7 +208,7 @@ capability can become true.
 
 ## 10. Verification evidence
 
-The focused gate currently executes 44 tests with zero failures, errors, or skips:
+The floor-retirement focused gate executes 44 tests with zero failures, errors, or skips:
 
 - 4 attestation tests cover valid seal/verify, policy rebinding, detached-signature rebinding, and
   unavailable authority;
@@ -209,10 +218,9 @@ The focused gate currently executes 44 tests with zero failures, errors, or skip
   orphan-lifecycle rejection, future-cutoff rejection, cross-replica commit convergence, and
   duplicate-generation rollback.
 
-Resource Gateway `clean verify` executes 2844 tests with zero failures, zero errors, two existing
-conditional skips, and rebuilds the executable Spring Boot JAR. The repository-wide standalone
-Javadoc report remains blocked by 16 pre-existing diagnostics outside this increment; none names a
-new floor-retirement type. Public Javadoc remains a required gate for any future exported protocol.
+Lifecycle-specific repository, service, signer, controller, profile, Schema, independent verifier,
+HTTP, tamper, and two-page checkpoint tests are maintained with the lifecycle protocol design. Final
+whole-project counts are recorded in the parent industrial evolution plan after each complete gate.
 
 ## 11. Security and privacy properties
 
@@ -227,18 +235,17 @@ new floor-retirement type. Public Javadoc remains a required gate for any future
 
 ## 12. Remaining productization gates
 
-The capability must remain false until all mandatory gates are closed:
+The public lifecycle contract and independent verifier close the former first two gates. The
+advertised capability must remain false until the remaining mandatory gates are closed:
 
-1. publish strict floor/archive/retirement/lifecycle Schema and an independent test-kit verifier;
-2. define a v2 floor-discovery and pagination protocol that survives one or many retirements;
-3. obtain external WORM acknowledgement before local active deletion, with idempotent reconciliation;
-4. define legal hold precedence, hold release authorization, erasure proof, backup expiry, and purge
+1. obtain external WORM acknowledgement before local active deletion, with idempotent reconciliation;
+2. define legal hold precedence, hold release authorization, erasure proof, backup expiry, and purge
    evidence across replicas and disaster-recovery copies;
-5. anchor each retirement generation to externally witnessed non-equivocation checkpoints and prove
+3. anchor each retirement generation to externally witnessed non-equivocation checkpoints and prove
    rollback/fork/split-view resistance after restore;
-6. add a database-leased bounded scheduler, backlog/SLO telemetry, readiness, and capability truth;
-7. run restart, failover, backup/restore, key lifecycle, cross-version, and multi-region fault tests;
-8. add operational repair procedures for corrupted floor/head/archive state without fabricating a
+4. add a database-leased bounded scheduler, backlog/SLO telemetry, readiness, and capability truth;
+5. run restart, failover, backup/restore, key lifecycle, cross-version, and multi-region fault tests;
+6. add operational repair procedures for corrupted floor/head/archive state without fabricating a
    signed history.
 
 ## 13. Quality judgment
@@ -247,6 +254,7 @@ The internal deletion transition is now materially stronger than a scheduler-dri
 implementation: it has explicit authority material, bounded work, exact snapshot pins, deterministic
 replay, cross-replica serialization, atomic archive-before-delete, CAS state movement, conservative
 migration, and executable corruption proofs. The remaining gap is primarily outside the local
-transaction boundary. Until external durability, lifecycle governance, floor discovery, and
-non-equivocation are independently verifiable, Resource Gateway may describe this as a signed local
-floor-retirement core, not as industrial cross-retention continuity.
+transaction boundary. Floor discovery and local lifecycle verification are now independently
+verifiable, but external durability, lifecycle governance, restore continuity, and non-equivocation
+are not. Resource Gateway may describe this as a signed local floor-retirement lifecycle, not as
+industrial cross-retention continuity.

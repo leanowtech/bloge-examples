@@ -64,6 +64,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-executions` | Execute one exact V1/V2/V4 suite with deterministic request v1, fixed-horizon statistical request v2/v3, or anytime-valid maximum-horizon request v4, under a cross-replica parent lease, then retain signed payload-free evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-trend-analyses` | Derive and sign a bounded retained-history trend for one exact suite revision, with explicit retention/truncation gaps, execution-regime drift, case transitions, and non-causal correlation signals (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-cross-retention-trend-analyses` | Preview a signed floor/head/cursor-pinned compact-observation range; disabled unless `gateway.testing.stability-cross-retention-preview-enabled=true`, absent in production, and not advertised as a capability yet |
+| `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-observation-ledger-lifecycle-pages` | Discover and prove up to ten signed floor-retirement generations under one current-floor/head snapshot; shares the default-disabled cross-retention preview flag, is absent in production, and does not make the capability true |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}` | Read one retained stability analysis with its exact ordered source-run closure and detached signature (test/staging only) |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}/progress` | Poll payload-free `RUNNING`, `RECOVERABLE`, or `COMPLETED` durable parent progress; v2 distinguishes planned horizon, observed prefix, and terminal reason without exposing owner/epoch/source ids/payloads (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-jobs` | Submit an exact stability request without blocking; returns `202`, deterministic `jobId`, query `Location`, and payload-free lifecycle (test/staging only; fresh submission requires the opt-in worker) |
@@ -168,9 +169,13 @@ foundation for history beyond full-run retention. A bounded, signed range read p
 independent five-layer test-kit verification now exist as a default-disabled test/staging preview.
 An internal database-authoritative core can sign a bounded retirement intent, atomically retain its
 payload-free local archive, move the durable floor/head coverage, and delete only the exact active
-prefix. It is not wired as a public lifecycle: `crossRetentionSuiteStabilityTrend` intentionally
-remains disabled until floor discovery and independent verification, external WORM, legal-hold/
-erasure/backup and recovery controls, and witnessed non-equivocation are complete. The stability protocol's
+prefix. A separate default-disabled lifecycle endpoint and independent test-kit now prove the
+ordered local retirement chain from generation zero to one snapshot-pinned current floor/head,
+which can then seed the active compact-range request. `crossRetentionSuiteStabilityTrend`
+intentionally remains disabled until external WORM, legal-hold/erasure/backup and recovery controls,
+and witnessed non-equivocation are complete. See the
+[lifecycle protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md).
+The stability protocol's
 v2+ evidence keeps behavioral stability separate from release eligibility: every verified source
 suite promotion verdict is signed into the attempt closure, so `STABLE + BLOCKED` remains visible
 when behavior is repeatable but source certification is insufficient. Historical v1 evidence stays

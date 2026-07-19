@@ -25,6 +25,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   asynchronous stability-job submit/query/cancel with dual-bounded retry and polling, typed
   stability-evidence re-derivation, exact source-run closure verification, and offline Ed25519
   verification against a caller-owned key-set pin;
+- strict signed observation-floor lifecycle paging with independent compact-observation, archive,
+  retirement, successor-floor, outer-page, and cross-page checkpoint verification;
 - challenge-bound request-index replica proof collection plus an offline exact-inventory rollout
   gate that rejects missing, duplicate, unexpected, stale, mixed-scope/artifact/protocol/mode, or
   cryptographically invalid cohorts against an externally pinned key set;
@@ -376,8 +378,55 @@ The verifier recomputes the exact request, trend and observation identities, com
 entry/head/range fingerprints, source-time ordering, trend labels, outer closure, and outer signature.
 Use the pinned key-set overload for release-grade policy checks. Sequence zero requires a blank head
 pin; every continuation requires the exact first-page head. This preview remains absent in production
-and capability-disabled until floor retirement, archive/erasure/recovery, and external
-non-equivocation are complete.
+and capability-disabled until external archive/erasure/recovery and witnessed non-equivocation are
+complete.
+
+After the local floor has moved, verify its complete signed retirement lifecycle before constructing
+the active compact-range request:
+
+~~~java
+EvidenceVerificationKeySet keySet = client.findEvidenceVerificationKeySet();
+TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier lifecycleVerifier =
+        new TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier();
+TestSuiteStabilityObservationLedgerLifecycleRequest lifecycleRequest =
+        TestSuiteStabilityObservationLedgerLifecycleRequest.firstPage(
+                storedSuite.suiteId(), storedSuite.revision(), storedSuite.fingerprint(), 10);
+TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier.LifecycleCheckpoint checkpoint = null;
+TestSuiteStabilityObservationLedgerLifecyclePage lifecyclePage;
+
+while (true) {
+    lifecyclePage = client.readSuiteStabilityObservationLedgerLifecyclePage(lifecycleRequest);
+    var lifecycleVerification = lifecycleVerifier.verify(
+            lifecyclePage, checkpoint, keySet, trustedPin);
+    if (!lifecycleVerification.verified()) {
+        throw new IllegalStateException(lifecycleVerification.reasonCode());
+    }
+    checkpoint = lifecycleVerification.checkpoint();
+    if (checkpoint.complete()) {
+        break;
+    }
+    lifecycleRequest = lifecycleRequest.continueAfter(lifecyclePage);
+}
+
+TestSuiteStabilityCrossRetentionTrendRequest retainedRange =
+        new TestSuiteStabilityCrossRetentionTrendRequest(
+                storedSuite.suiteId(), storedSuite.revision(), storedSuite.fingerprint(),
+                lifecyclePage.currentFloor().floorSequence() - 1,
+                3, 20, lifecyclePage.head().headFingerprint());
+var rangeVerification = client.verifySuiteStabilityCrossRetentionTrend(
+        retainedRange, trustedPin);
+if (!rangeVerification.verified()) {
+    throw new IllegalStateException(rangeVerification.reasonCode());
+}
+~~~
+
+Construct continueAfter only after the prior page verifies. The checkpoint binds the exact suite,
+scope, current floor/head snapshot, terminal generation, and terminal floor; it rejects skipped or
+mixed pages. The lifecycle verifier independently rederives every compact observation, archive,
+retirement, successor floor, page identity, and signature without fetching retired full stability
+runs. This proves Resource Gateway's local signed chain. It does not prove external WORM durability,
+legal-hold/erasure handling, disaster-recovery continuity, or global non-equivocation, so the route
+shares the default-disabled test/staging preview flag and the advertised capability remains false.
 
 For a non-blocking parent job, create one exact request and submit it with explicit retry bounds:
 
