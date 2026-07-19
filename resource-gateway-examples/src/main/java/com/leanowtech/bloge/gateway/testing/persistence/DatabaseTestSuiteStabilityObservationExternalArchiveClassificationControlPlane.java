@@ -1161,8 +1161,8 @@ public final class
 
     private Instant monotonicDatabaseTime(Instant persistedLowerBound) {
         Instant transactionTime = databaseNow();
-        return transactionTime.isBefore(persistedLowerBound)
-                ? persistedLowerBound : transactionTime;
+        return transactionTime.isAfter(persistedLowerBound)
+                ? transactionTime : persistedLowerBound.plusNanos(1_000);
     }
 
     private static PlatformTransactionManager localTransactionManager(JdbcTemplate jdbc) {

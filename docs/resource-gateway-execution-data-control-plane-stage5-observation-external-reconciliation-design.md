@@ -192,9 +192,11 @@ or replica switch resumes the same frozen snapshots and cursor. The closed outco
 Comparison timestamps remain monotonic across lock waits. Because PostgreSQL/H2
 `CURRENT_TIMESTAMP` denotes transaction-start time, a transaction that started before waiting for
 the authority lock may otherwise publish time older than the row it eventually acquires. After the
-lock, the control plane therefore advances time to the maximum of transaction database time and the
-locked record's persisted `updated_at`. This database-derived Lamport lower bound prevents time
-regression without relying on a process clock or a second connection.
+lock, the control plane therefore uses database time when it is strictly newer; otherwise it advances
+the locked record's persisted `updated_at` by one database-portable microsecond. This
+database-derived Lamport successor prevents regression and timestamp ties without relying on a
+process clock or a second connection. The resulting strict per-authority order is the prerequisite
+for replaying finding transitions across completed comparisons.
 
 | Outcome | Deterministic meaning |
 | --- | --- |
@@ -249,7 +251,7 @@ strict keyset order and verifies each row again. The public boundary has no reme
 | valid-shaped source row is changed | constructor shape mistaken for integrity | canonical item and topology-bearing root replay |
 | classification row disappears | aggregate state trusted alone | terminal classification stream and exact union coverage |
 | classifier emits stable wrong outcome | self-hash is circular evidence | independent source-union semantic derivation |
-| transaction waits for authority lock and publishes older time | `CURRENT_TIMESTAMP` is fixed at transaction start | advance from the maximum of database time and locked persisted `updated_at` |
+| transaction waits for authority lock and publishes older or equal time | `CURRENT_TIMESTAMP` is fixed at transaction start | use newer database time or the locked persisted `updated_at` plus one microsecond |
 | partial comparison is exported | staged rows look authoritative | export requires fingerprint-verified `COMPLETED` state |
 
 ## 11. Executable evidence
@@ -293,7 +295,7 @@ local snapshot cuts, next-cycle visibility, cross-replica resume, expected/remot
 tamper rejection, missing historical classification rollback, semantic-oracle independence, active
 export denial, empty roots, outer-transaction isolation, current-cycle idempotency, and absence of a
 destructive public operation. A lock-wait regression test additionally proves that a transaction
-started before the authority lock cannot move persisted comparison time backward.
+started before the authority lock must move persisted comparison time strictly forward.
 
 The frozen Phase C source passed the complete Resource Gateway `clean verify`: 2938 tests, zero
 failures, zero errors, two existing browser-environment skips, and a successfully repackaged Spring

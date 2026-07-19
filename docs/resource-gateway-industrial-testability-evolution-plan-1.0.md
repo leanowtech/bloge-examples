@@ -870,11 +870,12 @@ health/readiness/capability 接线仍未完成，不能对外宣称 orphan recon
 classification 三组 count/root replay 和 exact union coverage 外，还从 source union 重新推演每条语义；即使
 错误 outcome、分类 hash、aggregate root/counter 与 comparison record fingerprint 被同步改成内部自洽，仍会
 回滚。只有 completed comparison 可按 object-id keyset 导出，公开 API 无 remediation/delete 权限。
-锁等待后的时间推进取事务数据库时间与已锁定记录 `updated_at` 的最大值，消除 PostgreSQL/H2
-`CURRENT_TIMESTAMP` 固定于事务起点造成的时间倒退，且不引入进程时钟或第二连接。
+锁等待后若事务数据库时间不严格晚于已锁定记录 `updated_at`，则以前值加一个数据库可移植微秒作为
+Lamport successor，消除 PostgreSQL/H2 `CURRENT_TIMESTAMP` 固定于事务起点造成的时间倒退与并列，
+且不引入进程时钟或第二连接；该严格 authority 全序是后续 finding transition replay 的前置条件。
 Phase C 13 项数据库测试和 A-C 联合 83 项聚焦门禁全部通过，覆盖六类结果、冻结 cut、next-cycle visibility、
 跨副本恢复、四层篡改、缺历史分类、独立 semantic oracle、active export denial、空集合、外层事务隔离和
-幂等 current，以及事务先启动后等待 authority lock 时持久时间仍单调。Phase C 冻结源码的 Resource Gateway
+幂等 current，以及事务先启动后等待 authority lock 时持久时间仍严格前进。Phase C 冻结源码的 Resource Gateway
 `clean verify` 执行 2938 tests，0 failures、0 errors、
 2 个既有浏览器条件跳过，并成功打包 Spring Boot 可执行 JAR。当前已完成 completed payload-free
 classification evidence；finding open/reopen/observe/resolve、

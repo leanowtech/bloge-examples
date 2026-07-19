@@ -446,7 +446,7 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlP
                     FROM rg_test_suite_stability_observation_external_comparison_authorities
                     WHERE authority_id = ?
                     """, Timestamp.class, AUTHORITY).toInstant();
-            assertThat(updatedAt).isAfterOrEqualTo(marker);
+            assertThat(updatedAt).isAfter(marker);
         } finally {
             release.countDown();
             pool.shutdownNow();
