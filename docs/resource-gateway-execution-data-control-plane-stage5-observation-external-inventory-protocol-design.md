@@ -217,4 +217,7 @@ The first prerequisite is now implemented: every accepted authority receipt is n
 payload-free expected inventory item in the exact retirement transaction, with bounded historical
 backfill and exact-replay repair. See
 [Stage 5 observation external reconciliation control plane](resource-gateway-execution-data-control-plane-stage5-observation-external-reconciliation-design.md).
-Remote cycle leases, page staging, final-root replay, comparison, and findings remain unimplemented.
+Per-authority database-clock leases, durable page/item staging, cross-replica continuation,
+snapshot-expiry closure, and terminal count/root/page-sequence replay are now implemented there as
+well. Ordered local/remote comparison, governed findings, scheduling, and capability wiring remain
+unimplemented.

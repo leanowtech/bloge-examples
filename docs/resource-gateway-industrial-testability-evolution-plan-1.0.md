@@ -843,8 +843,23 @@ receipt、expected object、archive、retirement 与删除任一失败全部回�
 完整 Resource Gateway `clean verify` 执行 2914 tests，0 failures、0 errors、2 个既有浏览器条件跳过，
 并成功打包 Spring Boot 可执行 JAR。
 设计见 [Stage 5 observation external reconciliation control plane](resource-gateway-execution-data-control-plane-stage5-observation-external-reconciliation-design.md)。
-该 Phase 只完成 durable local expectation index；database-clock authority lease、remote page staging、
-terminal root/count replay、双向分类和 governed finding lifecycle 仍是下一实现边界，capability 不得提前转真。
+该 Phase A 当时只完成 durable local expectation index；下述 Phase B 现已补齐 database-clock authority
+lease、remote page staging 和 terminal root/count replay。双向分类与 governed finding lifecycle 仍是下一
+实现边界，capability 不得提前转真。
+
+同一子步 Phase B 随后落地 `DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane`。
+每个 authority page 由 database-clock owner/token/epoch/revision/deadline fence 独占；远端 HTTPS 调用不持有
+数据库事务，返回页经 authority reverify 后，signed page JSON、normalized items、累计 count/root、exact
+snapshot cursor 和 lease release 在一个 `REQUIRES_NEW` 事务中提交。live lease 在远端 I/O 前返回 `BUSY`；
+过期 lease 可由另一副本接管同一 cycle，旧 worker commit 必败。`SNAPSHOT_EXPIRED` 先终结旧 cycle 再允许
+page zero。终页不信任 aggregate checkpoint，而以常量内存流式重建全部 item fingerprint root/count，并
+证明 page sequence 为无缺口 `0..N`；坏 item、少 page、root/count mismatch 均回滚新页和 cursor。
+11 项数据库聚焦测试全部通过，覆盖跨副本续页、数据库时钟接管、stale fence、invalid retry、snapshot
+restart、事务回滚、外层事务隔离、空快照、cursor 漂移、item 篡改和 page gap。Phase B 冻结源码的完整
+Resource Gateway `clean verify` 执行 2925 tests，0 failures、0 errors、2 个既有浏览器条件跳过，并成功
+打包 Spring Boot 可执行 JAR。当前已完成 verified inventory cycle staging；ordered local/remote
+classification、governed finding lifecycle、scheduler、
+health/readiness/capability 接线仍未完成，不能对外宣称 orphan reconciliation。
 
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与

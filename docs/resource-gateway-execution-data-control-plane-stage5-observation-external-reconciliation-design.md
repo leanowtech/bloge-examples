@@ -1,11 +1,13 @@
 # Stage 5 observation external reconciliation control-plane design
 
-**Phase A implemented (2026-07-20): every externally acknowledged WORM copy is now normalized into
-a payload-free expected-object index in the exact retirement transaction. Existing receipt sets are
-backfilled in bounded keyset pages, exact retirement replay repairs absence, and any material drift
-fails closed. Database-clock authority leases, durable remote page staging, final root replay,
-bidirectional classification, and governed findings remain subsequent phases; reconciliation is not
-yet advertised as complete.**
+**Phases A-B and the terminal completeness gate implemented (2026-07-20): every externally
+acknowledged WORM copy is normalized into a payload-free expected-object index in the exact
+retirement transaction. Per-authority database-clock owner/token/epoch leases now fence durable
+snapshot cycles; verified page envelopes and normalized items commit atomically with cursor/root
+progress, and a terminal page succeeds only after a constant-memory replay reproduces every staged
+item, page sequence, signed count, and signed root. Bidirectional classification, governed findings,
+scheduling, and capability wiring remain subsequent phases, so reconciliation is not yet advertised
+as complete.**
 
 ## 1. Root problem
 
@@ -30,7 +32,7 @@ The first durable reconciliation invariant is therefore:
 | --- | --- | --- |
 | Retirement repository | receipt-set persistence, expected-object normalization, local deletion transaction | remote inventory reads, findings, external deletion |
 | Expected-object index | exact local comparison material per authority and object | retired observations, credentials, provider addresses |
-| Reconciliation control plane, next phase | database lease, durable remote pages, root completion, merge comparison | WORM mutation |
+| Reconciliation control plane | database lease, durable remote pages, root completion; later merge comparison | WORM mutation |
 | ANEKE/governance | disposition, exception workflow, remediation approval | rewriting signed local or remote facts |
 | External authority | immutable object retention and signed inventory | local governance classification |
 
@@ -120,7 +122,59 @@ Malformed historical JSON, contradicted projection columns, invalid receipt-set 
 index uniqueness collision with different material fails startup. Availability is not preferred over
 silently omitting an acknowledged WORM object from reconciliation.
 
-## 7. Failure analysis
+## 7. Durable authority cycle
+
+`DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane` exposes one narrow
+operation: `stageNextPage(authorityId)`. Its settings freeze a stable replica owner, a whole-second
+1..3600 second lease, and a 1..500 item page size. Callers cannot supply lease tokens, epochs,
+snapshots, cursors, challenge material, or completion claims.
+
+Three durable layers preserve progress:
+
+| Table | Durable fact |
+| --- | --- |
+| `external_inventory_authorities` | current owner/token/epoch/deadline/revision, active cycle, last completed cycle |
+| `external_inventory_cycles` | pinned trust/archive/failure-domain topology, snapshot, next cursor/sequence, accumulated count/root, lifecycle |
+| `external_inventory_pages/items` | normalized page topology, signed page envelope, and payload-free item facts |
+
+Lease acquisition locks one authority row and uses database `CURRENT_TIMESTAMP`. A live lease returns
+`BUSY` before any remote call. An expired lease increments epoch and revision and resumes the exact
+active cycle; a new cycle is created only when no active cycle exists. Remote HTTPS I/O then happens
+outside the transaction. The old owner cannot commit after takeover because page commit rechecks
+authority, active cycle, owner, random token, epoch, revision, exact deadline, and the exclusive
+database-clock expiry boundary.
+
+Every successful or rejected page releases its lease with an exact fence. A verifier-level
+`INVALID_PAGE` or `UNAVAILABLE` preserves the cycle and cursor for a fresh challenge retry. Provider
+`SNAPSHOT_EXPIRED` atomically marks the old cycle terminal and clears the active-cycle pointer; only a
+later invocation can create a new page-zero cycle.
+
+## 8. Atomic page and completeness gate
+
+The adapter first verifies request binding, topology, key lifecycle, snapshot identity, freshness,
+item/page fingerprints, and Ed25519 signature. The control plane invokes that verifier again, then in
+one `REQUIRES_NEW`, `READ_COMMITTED` transaction:
+
+1. locks and verifies the exact live lease;
+2. locks and validates the active durable cycle;
+3. binds page authority, maximum size, request expiry, page expiry, snapshot, object cursor, and page
+   sequence to the durable cursor;
+4. advances the order-sensitive root and bounded object count;
+5. inserts the exact signed page JSON and normalized item rows;
+6. on terminal, streams every staged item in object-id order, reconstructs and fingerprints it,
+   replays the root/count, and proves page sequence `0..N` has no gap;
+7. advances or completes the cycle and releases the lease.
+
+Steps 1-7 share one transaction. A terminal root mismatch, missing prior page, corrupt staged item,
+cursor drift, duplicate identity, lease takeover, serialization failure, or final CAS failure rolls
+back the new page, items, cursor, and completion. The caller's surrounding transaction cannot undo a
+committed page because control-plane transactions are independently `REQUIRES_NEW`.
+
+The accumulated root is only a resumable checkpoint. It is never accepted as terminal proof without
+the independent streaming replay. This avoids O(snapshot size) heap use while refusing to derive a
+completeness claim from mutable aggregate columns alone.
+
+## 9. Failure analysis
 
 | Failure | Root cause | Control |
 | --- | --- | --- |
@@ -133,8 +187,17 @@ silently omitting an acknowledged WORM object from reconciliation.
 | compromised row changes one digest | unverified normalized columns | recompute expected item fingerprint on replay |
 | reconciliation table leaks evidence payload | copying archive JSON | fixed payload-free column vocabulary |
 | scanner parses all receipt JSON repeatedly | missing query projection | indexed normalized comparison rows |
+| two replicas read the same page | process-local lock | database-clock authority lease and random token |
+| old worker commits after takeover | owner-only lease | owner/token/epoch/revision/deadline fence |
+| remote I/O holds database locks | transaction wraps network call | acquire, remote read, and commit are separate transactions |
+| process dies between pages | in-memory cursor | active cycle and exact cursor persisted after every page |
+| process dies after remote response | response treated as checkpoint | no cursor advance before local page transaction commits |
+| provider expires continuation | implicit restart mixes snapshots | terminal `SNAPSHOT_EXPIRED` cycle before new page zero |
+| aggregate root is tampered | final proof trusts checkpoint | stream all staged item fingerprints at terminal |
+| historical page disappears | items alone hide envelope gap | terminal page-span proof requires exact `0..N` |
+| surrounding request rolls back | propagation joins caller | independent `REQUIRES_NEW` mutations |
 
-## 8. Executable evidence
+## 10. Executable evidence
 
 The focused gate executes 59 tests with zero failures, errors, or skips. New and extended cases prove:
 
@@ -148,23 +211,38 @@ The focused gate executes 59 tests with zero failures, errors, or skips. New and
 - corrupt historical receipt JSON blocks startup;
 - exact replay repairs absence and rejects valid-shaped commitment drift.
 
-The complete Resource Gateway `clean verify` executes 2914 tests with zero failures and errors, two
+The Phase A Resource Gateway `clean verify` executed 2914 tests with zero failures and errors, two
 existing browser-environment skips, and a successfully repackaged Spring Boot executable JAR.
 
-## 9. Remaining phases and acceptance
+The Phase B focused gate adds 11 green database tests proving:
 
-Phase B must add a per-authority database-clock owner/token/epoch lease and a durable cycle cursor.
-Every verified remote page must be stored before the same transaction advances the cursor. A process
-crash must resume the exact pinned snapshot; snapshot expiry must close the old cycle explicitly
-before a new page-zero request.
+- a two-page pinned snapshot starts on one replica and completes on another;
+- a live lease returns `BUSY` without remote I/O;
+- database-clock expiry permits takeover and rejects the stale worker fence;
+- invalid verification releases only the lease and preserves the exact cursor;
+- snapshot expiry closes the old cycle before a new page-zero cycle;
+- terminal count/root mismatch rolls back page, items, cursor, and completion;
+- terminal streaming replay detects a valid-shaped tampered staged item;
+- outer transaction rollback cannot erase a committed page checkpoint;
+- an empty signed snapshot completes on the domain-separated empty root;
+- corrupt durable cursor state fails before lease acquisition or remote I/O;
+- a missing historical page envelope blocks terminal completion.
 
-Phase C must replay all staged item fingerprints and require the terminal accumulated count/root to
-equal the signed snapshot values. Only a completed snapshot may enter an ordered bidirectional merge
-against this local expected-object index.
+The frozen Phase B source then passed the complete Resource Gateway `clean verify`: 2925 tests, zero
+failures, zero errors, two existing browser-environment skips, and a successfully repackaged Spring
+Boot executable JAR.
+
+## 11. Remaining phases and acceptance
+
+The lease, durable cycle, page staging, crash/takeover semantics, and terminal replay portions of
+Phases B-C are complete. The next phase must perform an ordered bidirectional merge of a completed
+remote cycle against the local expected-object index. No partial or active cycle may classify an
+object.
 
 Phase D must persist payload-free governed findings for at least `MISSING_REMOTE`, `UNEXPECTED_REMOTE`,
 `MATERIAL_CONFLICT`, `RETENTION_SHORTENED`, and `UNKNOWN`. Finding open/reopen/observe/resolve transitions
 must be fingerprinted, fenced, retained, exported, and separated from remediation authority.
 
-Until Phases B-D are implemented and wired behind readiness/capability truth, Resource Gateway may
-claim **durable local expectation indexing**, but not external orphan reconciliation.
+Until comparison, findings, scheduler, health/readiness, and capability truth are implemented,
+Resource Gateway may claim **durable local expectation indexing and verified inventory cycle
+staging**, but not external orphan reconciliation.
