@@ -5,9 +5,9 @@ authority can expose a challenge-bound, Ed25519-signed, immutable paged snapshot
 strict HTTPS trust topology used for WORM admission. Snapshot identity commits authority topology,
 snapshot time, complete object count, and an order-sensitive root. No delete or retention-mutation
 operation exists. The downstream control plane now provides durable multi-replica cursoring,
-six-outcome classification, and a payload-free governed finding lifecycle. Scheduling, bounded
-retention, operational readiness, and capability wiring remain incomplete, so orphan reconciliation
-is not yet claimed complete.**
+six-outcome classification, a payload-free governed finding lifecycle, and database-fenced bounded
+finding/event retention. Scheduling, source-cycle retention, operational readiness, and capability
+wiring remain incomplete, so orphan reconciliation is not yet claimed complete.**
 
 ## 1. Strongest judgment
 
@@ -216,6 +216,9 @@ durable, independently replayed six-outcome comparison. Completed comparisons ar
 strict per-authority order by a crash-resumable governed finding projection. It freezes finding
 pre-state, emits one fingerprinted `OPENED/OBSERVED/REOPENED/RESOLVED/CONFIRMED` event per
 classification, and publishes only after independent source, snapshot, event, coverage, and
-resulting-state replay. Bounded retention, scheduling, health/readiness, and capability wiring remain
-unimplemented. The repository and service still contain no external delete method; remediation
-remains an ANEKE/governance workflow with a separately controlled storage authority.
+resulting-state replay. A database-leased retention control plane now archives old resolved findings,
+purges their independent archive window, and retires completed finding events/snapshots by verified
+bounded pages while preserving projection summaries and permanent availability markers. Scheduling,
+source-cycle retention, health/readiness, and capability wiring remain unimplemented. The repository
+and service still contain no external WORM delete method; remediation remains an ANEKE/governance
+workflow with a separately controlled storage authority.

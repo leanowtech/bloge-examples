@@ -225,6 +225,28 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                     projection_id, page_sequence, object_id
                 )
                 """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS
+                    rg_test_suite_stability_observation_external_finding_evidence_retirements (
+                    projection_id VARCHAR(36) PRIMARY KEY,
+                    comparison_id VARCHAR(36) NOT NULL,
+                    authority_id VARCHAR(255) NOT NULL,
+                    retirement_status VARCHAR(32) NOT NULL,
+                    started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    completed_at TIMESTAMP WITH TIME ZONE,
+                    record_fingerprint VARCHAR(71) NOT NULL,
+                    CONSTRAINT
+                        uq_rg_test_suite_stability_observation_external_finding_retirement_source
+                        UNIQUE (comparison_id)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS
+                    idx_rg_test_suite_stability_observation_external_finding_retirement_authority
+                ON rg_test_suite_stability_observation_external_finding_evidence_retirements (
+                    authority_id, retirement_status, started_at, projection_id
+                )
+                """);
     }
 
     /**
@@ -294,8 +316,9 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
         String cursor = exportCursor(afterObjectId);
         int bounded = exportLimit(limit);
         List<FindingEvent> result = transactions.execute(status -> {
-            StoredProjection state = readProjection(projection, false);
+            StoredProjection state = readProjection(projection, true);
             state.requireCompleted();
+            requireEvidenceAvailable(state);
             SourceComparison source = readSourceComparison(state.comparisonId());
             if (!state.matches(source)) {
                 throw new IllegalStateException("External finding event source drifted");
@@ -429,7 +452,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                     current, classification, previous, now);
             applyFinding(previous, transition.resultingFinding());
             insertEvent(current, transition.event(), now);
-            root = appendEventRoot(root, transition.event());
+            root = appendEventRoot(objectMapper, root, transition.event());
             counts = counts.increment(transition.event().transition());
         }
         String cursor = page.getLast().objectId();
@@ -808,9 +831,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                         throw new IllegalStateException("External finding snapshot is corrupt");
                     }
                     previous[0] = finding.objectId();
-                    root[0] = ProtocolFingerprint.of(objectMapper, new FindingSnapshotRootLink(
-                            FindingSnapshotRootLink.SCHEMA_VERSION, root[0],
-                            finding.recordFingerprint()));
+                    root[0] = appendSnapshotRoot(objectMapper, root[0], finding);
                     count[0] = increment(count[0], "finding snapshot count");
                 }, projectionId);
         return new SnapshotReplay(count[0], root[0]);
@@ -838,7 +859,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                         throw new IllegalStateException("External finding event history is corrupt");
                     }
                     previous[0] = event.objectId();
-                    root[0] = appendEventRoot(root[0], event);
+                    root[0] = appendEventRoot(objectMapper, root[0], event);
                     count[0] = increment(count[0], "finding event count");
                     counts[0] = counts[0].increment(event.transition());
                 }, projection.projectionId());
@@ -1424,15 +1445,76 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
         }
     }
 
+    private void requireEvidenceAvailable(StoredProjection projection) {
+        List<EvidenceRetirement> rows = jdbc.query("""
+                SELECT projection_id, comparison_id, authority_id, retirement_status,
+                       started_at, completed_at, record_fingerprint
+                FROM
+                    rg_test_suite_stability_observation_external_finding_evidence_retirements
+                WHERE projection_id = ?
+                """, (result, row) -> new EvidenceRetirement(
+                result.getString("projection_id"), result.getString("comparison_id"),
+                result.getString("authority_id"), result.getString("retirement_status"),
+                instant(result, "started_at"), nullableInstant(result, "completed_at"),
+                result.getString("record_fingerprint")), projection.projectionId());
+        if (rows.size() > 1) {
+            throw new IllegalStateException("External finding evidence retirement is not unique");
+        }
+        if (!rows.isEmpty()) {
+            EvidenceRetirement retirement = rows.getFirst();
+            retirement.verify(objectMapper);
+            if (!retirement.projectionId().equals(projection.projectionId())
+                    || !retirement.comparisonId().equals(projection.comparisonId())
+                    || !retirement.authorityId().equals(projection.authorityId())) {
+                throw new IllegalStateException(
+                        "External finding evidence retirement source is corrupt");
+            }
+            throw new IllegalStateException("External finding event evidence is "
+                    + ("ACTIVE".equals(retirement.status())
+                    ? "being retired" : "retired"));
+        }
+    }
+
     private void requireSameFinding(Finding expected, Finding actual, String name) {
         if (!Objects.equals(expected, actual)) {
             throw new IllegalStateException("External " + name + " does not match");
         }
     }
 
-    private String appendEventRoot(String root, FindingEvent event) {
-        return ProtocolFingerprint.of(objectMapper, new FindingEventRootLink(
-                FindingEventRootLink.SCHEMA_VERSION, root, event.eventFingerprint()));
+    static String appendSnapshotRoot(ObjectMapper objectMapper, String root, Finding finding) {
+        return ProtocolFingerprint.of(Objects.requireNonNull(objectMapper, "objectMapper"),
+                new FindingSnapshotRootLink(FindingSnapshotRootLink.SCHEMA_VERSION,
+                        requiredFingerprint(root, "finding snapshot root"),
+                        Objects.requireNonNull(finding, "finding").recordFingerprint()));
+    }
+
+    static String appendEventRoot(ObjectMapper objectMapper, String root, FindingEvent event) {
+        return ProtocolFingerprint.of(Objects.requireNonNull(objectMapper, "objectMapper"),
+                new FindingEventRootLink(
+                        FindingEventRootLink.SCHEMA_VERSION,
+                        requiredFingerprint(root, "finding event root"),
+                        Objects.requireNonNull(event, "event").eventFingerprint()));
+    }
+
+    static String evidenceRetirementFingerprint(
+            ObjectMapper objectMapper,
+            String projectionId,
+            String comparisonId,
+            String authorityId,
+            String status,
+            Instant startedAt,
+            Instant completedAt) {
+        return ProtocolFingerprint.of(Objects.requireNonNull(objectMapper, "objectMapper"),
+                new EvidenceRetirementMaterial(EvidenceRetirementMaterial.SCHEMA_VERSION,
+                        projectionId, comparisonId, authorityId, status, startedAt, completedAt));
+    }
+
+    private static String requiredFingerprint(String value, String name) {
+        String normalized = normalized(value);
+        if (!FINGERPRINT.matcher(normalized).matches()) {
+            throw new IllegalArgumentException("Invalid external " + name);
+        }
+        return normalized;
     }
 
     private String topologyFingerprint(
@@ -2420,6 +2502,32 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                 "bloge.testSuiteStabilityObservationExternalArchiveFindingEvent.v1";
     }
 
+    private record EvidenceRetirement(
+            String projectionId,
+            String comparisonId,
+            String authorityId,
+            String status,
+            Instant startedAt,
+            Instant completedAt,
+            String recordFingerprint) {
+        private void verify(ObjectMapper objectMapper) {
+            boolean active = "ACTIVE".equals(status);
+            boolean completed = "COMPLETED".equals(status);
+            if (!isUuid(projectionId) || !isUuid(comparisonId)
+                    || !IDENTIFIER.matcher(normalized(authorityId)).matches()
+                    || (!active && !completed) || startedAt == null
+                    || (active != (completedAt == null))
+                    || (completedAt != null && completedAt.isBefore(startedAt))
+                    || !FINGERPRINT.matcher(normalized(recordFingerprint)).matches()
+                    || !recordFingerprint.equals(evidenceRetirementFingerprint(
+                    objectMapper, projectionId, comparisonId, authorityId, status,
+                    startedAt, completedAt))) {
+                throw new IllegalStateException(
+                        "External finding evidence retirement is corrupt");
+            }
+        }
+    }
+
     private record FindingSnapshotRootLink(
             String schemaVersion,
             String previousRoot,
@@ -2434,6 +2542,18 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
             String eventFingerprint) {
         private static final String SCHEMA_VERSION =
                 "bloge.testSuiteStabilityObservationExternalArchiveFindingEventRootLink.v1";
+    }
+
+    private record EvidenceRetirementMaterial(
+            String schemaVersion,
+            String projectionId,
+            String comparisonId,
+            String authorityId,
+            String status,
+            Instant startedAt,
+            Instant completedAt) {
+        private static final String SCHEMA_VERSION =
+                "bloge.testSuiteStabilityObservationExternalArchiveFindingEvidenceRetirement.v1";
     }
 
     private record FindingAuthorityMaterial(

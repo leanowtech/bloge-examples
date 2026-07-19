@@ -271,7 +271,52 @@ event root, transition counters, and projection fingerprint were all recomputed 
 refuses reads while a projection is partially applied. Neither boundary exposes remediation or a
 destructive operation.
 
-## 11. Failure analysis
+## 11. Bounded finding and evidence retention
+
+**Implemented Phase E (2026-07-20):**
+`DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane` owns this
+derived-data lifecycle. It uses `REQUIRES_NEW`, database time, owner/token/epoch/revision fencing,
+whole-record state fingerprints, exact source deletes, permanent evidence-availability markers, and
+independent 1..500 row bounds. `operationalSnapshot(...)` exposes only low-cardinality counters and
+backlogs; `archives(...)` exposes verified payload-free resolved lifecycle records.
+
+Retention is a protocol transition, not a periodic `DELETE`. A retention worker must never make a
+partially removed projection look exportable, remove the compact projection summary that prevents a
+completed comparison from being consumed again, or race an active finding projection. Phase E
+therefore separates three lifecycles:
+
+| Layer | Retention behavior | Durable fact that remains |
+| --- | --- | --- |
+| current findings | only resolved rows older than the active window are copied to a payload-free archive and exactly deleted | archive row until its independent window expires; cumulative archive/purge commitment afterward |
+| frozen snapshots and events | completed projections older than the evidence window enter `ACTIVE` retirement and are deleted by bounded object-id pages | completed projection summary plus permanent retirement marker and replayed roots/counts |
+| source comparison/classification | never deleted by the finding-retention authority | source protocol remains owned by its own later retention policy |
+
+One database-clock lease fences the retention job across replicas. Every tick may archive at most
+`N` resolved findings for one authority, purge at most `N` expired archive rows, and remove at most
+`N` event plus `N` snapshot rows from one evidence retirement. The job state, lease epoch, exact
+cumulative counters, compact purge root, and whole-record fingerprint commit in the same
+`REQUIRES_NEW` transaction as the row mutations. The page bound is 1..500; active retention is at
+least one hour, archive and evidence retention are at least one day, and every window is capped at
+ten years.
+
+Before archiving a resolved row, the worker locks and verifies the authority, proves that no finding
+projection is active, verifies the finding fingerprint, inserts a separately fingerprinted archive
+record, and deletes only the exact source version/fingerprint. Open findings are never archived.
+After archival, a later discrepancy starts a new operational finding lifecycle; the old lifecycle is
+still independently visible from the archive until that archive's governed expiry. This explicit
+window boundary avoids pretending that a compact operational queue is an eternal case-management
+registry.
+
+Evidence retirement first locks and verifies an old `COMPLETED` projection, then atomically creates
+an immutable availability marker and durable page progress. `events(...)` checks that marker while
+holding the projection lock and refuses both `ACTIVE` and `COMPLETED` retirement, so no reader can
+observe a partial deletion. Each retirement page verifies every event/snapshot fingerprint and
+extends the original ordered root before exact deletion. Completion is allowed only when the deleted
+counts and roots equal the frozen projection summary. The projection summary and retirement marker
+are never deleted; they prevent reprocessing and distinguish intentionally retired evidence from
+corruption.
+
+## 12. Failure analysis
 
 | Failure | Root cause | Control |
 | --- | --- | --- |
@@ -308,8 +353,15 @@ destructive operation.
 | source comparison hashes are consistently rewritten | downstream trusts upstream self-hash | re-derive classifications from frozen expected/observed union |
 | transition hashes are consistently rewritten | event/root/projection self-hash is circular | re-derive transition and full resulting finding table from frozen pre-state |
 | governance resolution gains storage authority | evidence workflow becomes an accidental delete path | finding API has no remediation or WORM mutation operation |
+| a timer deletes event rows directly | partial evidence looks like corruption or completeness depends on requested page | create an availability marker before bounded deletion and deny every export during/after retirement |
+| retired projection row is deleted | old comparison becomes unprojected again | preserve compact projection summary and permanent retirement marker |
+| retention races an active projection | frozen pre-state and resulting table diverge | lock verified authority first and archive only when `active_projection_id` is empty |
+| one replica resumes another replica's deletion with stale state | page is skipped or deleted twice | database-clock lease plus owner/token/epoch/revision and exact row fingerprint fences |
+| missing/tampered evidence is silently retired | deletion launders pre-existing corruption | verify each row and require terminal count/root equality with the frozen projection |
+| archive rows disappear out of band | retention counters still look healthy | verify whole-record archive fingerprints and exact `totalArchived-totalPurged` cardinality |
+| old resolved lifecycle remains forever in the active queue | current table grows without operational bound | copy exact resolved state to an independently retained archive before source deletion |
 
-## 12. Executable evidence
+## 13. Executable evidence
 
 The focused gate executes 59 tests with zero failures, errors, or skips. New and extended cases prove:
 
@@ -368,14 +420,29 @@ The frozen Phase D source passed the complete Resource Gateway `clean verify`: 2
 failures, zero errors, two existing browser-environment skips, and a successfully repackaged Spring
 Boot executable JAR.
 
-## 13. Remaining phases and acceptance
+The Phase E focused gate adds 14 green database tests and the joint A-E gate executes 111 tests with
+zero failures, errors, or skips. They prove bounded resolved archive/purge, open and recent finding
+preservation, active-projection exclusion, exact archive cardinality, database-clock policy bounds,
+live-lease rejection, cross-replica multi-page evidence retirement, empty and accumulated projection
+handling, retirement-time export denial, permanent compact summaries, outer-transaction isolation,
+source/progress/marker/archive corruption rejection, and both pre-start and mid-retirement missing
+history attacks. In the latter case, already committed pages remain quarantined behind an `ACTIVE`
+marker and can never be exported or mislabeled as a successful retirement.
+
+The frozen Phase E source passed the complete Resource Gateway `clean verify`: 2966 tests, zero
+failures, zero errors, two existing browser-environment skips, and a successfully repackaged Spring
+Boot executable JAR.
+
+## 14. Remaining phases and acceptance
 
 The local expectation, durable remote cycle, frozen comparison, bounded ordered merge, terminal
-semantic classification, and payload-free governed finding lifecycle portions of Phases A-D are
-complete. No partial comparison or finding projection can be exported as governance evidence.
+semantic classification, payload-free governed finding lifecycle, and derived finding/evidence
+retention portions of Phases A-E are complete. No partial comparison, finding projection, or evidence
+retirement can be exported as governance evidence.
 
-Until the scheduler, health/readiness, bounded active/event retention, and capability truth are
-implemented,
+Until the scheduler, health/readiness, source cycle/comparison/classification retention, and
+capability truth are implemented,
 Resource Gateway may claim **durable local expectation indexing, verified inventory cycle staging,
-completed payload-free classification evidence, and replay-verified governed finding evidence**, but
-not an autonomously operated external orphan-reconciliation service.
+completed payload-free classification evidence, replay-verified governed finding evidence, and
+database-fenced bounded derived-evidence retention**, but not an autonomously operated external
+orphan-reconciliation service.
