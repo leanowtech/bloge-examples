@@ -250,6 +250,41 @@ public final class
         }
     }
 
+    /**
+     * Returns the verified low-cardinality progress needed to sequence downstream comparison.
+     *
+     * <p>The snapshot deliberately omits cycle, snapshot, object, lease-owner, and lease-token
+     * identities. Callers use it only to decide whether an active inventory cycle must advance,
+     * whether the first cycle must start, or whether a completed cycle may flow downstream.</p>
+     *
+     * @param authorityId exact configured inventory authority
+     * @return database-clock authority and active-cycle progress
+     */
+    public OperationalSnapshot operationalSnapshot(String authorityId) {
+        String exactAuthority = configuredAuthority(authorityId);
+        OperationalSnapshot result = transactions.execute(status -> {
+            initializeAuthority(exactAuthority);
+            StoredAuthority state = lockAuthority(exactAuthority);
+            Instant now = databaseNow();
+            if (state.activeCycleId().isEmpty()) {
+                return new OperationalSnapshot(now, state.leaseLiveAt(now), false,
+                        state.lastSuccessAt() != null, 0, 0, null, null,
+                        state.lastSuccessAt());
+            }
+            StoredCycle cycle = lockCycle(state.activeCycleId());
+            cycle.requireActiveFor(exactAuthority);
+            return new OperationalSnapshot(now, state.leaseLiveAt(now), true,
+                    state.lastSuccessAt() != null, cycle.nextPageSequence(),
+                    cycle.accumulatedObjectCount(), cycle.startedAt(), cycle.updatedAt(),
+                    state.lastSuccessAt());
+        });
+        if (result == null) {
+            throw new IllegalStateException(
+                    "External inventory operational snapshot returned no result");
+        }
+        return result;
+    }
+
     private Optional<PageLease> acquireLease(String authorityId) {
         Optional<PageLease> result = transactions.execute(status -> {
             initializeAuthority(authorityId);
@@ -877,6 +912,46 @@ public final class
         COMPLETED,
         /** The provider expired the pinned snapshot and the old cycle was closed. */
         SNAPSHOT_EXPIRED
+    }
+
+    /**
+     * Identity-free database-clock progress for one configured inventory authority.
+     *
+     * @param observedAt database observation time
+     * @param leaseActive whether a replica currently owns a live inventory-page lease
+     * @param activeCycle whether an incomplete pinned snapshot cycle exists
+     * @param completedCycle whether at least one terminal verified cycle exists
+     * @param nextPageSequence next zero-based page sequence for the active cycle
+     * @param accumulatedObjectCount verified objects committed by the active cycle
+     * @param activeCycleStartedAt active cycle start, or {@code null}
+     * @param activeCycleUpdatedAt active cycle update time, or {@code null}
+     * @param lastCompletedAt latest completed cycle time, or {@code null}
+     */
+    public record OperationalSnapshot(
+            Instant observedAt,
+            boolean leaseActive,
+            boolean activeCycle,
+            boolean completedCycle,
+            long nextPageSequence,
+            long accumulatedObjectCount,
+            Instant activeCycleStartedAt,
+            Instant activeCycleUpdatedAt,
+            Instant lastCompletedAt) {
+        /** Rejects impossible lifecycle combinations before they drive orchestration. */
+        public OperationalSnapshot {
+            boolean activeTimes = activeCycleStartedAt != null && activeCycleUpdatedAt != null;
+            if (observedAt == null || leaseActive && !activeCycle
+                    || nextPageSequence < 0 || accumulatedObjectCount < 0
+                    || activeCycle != activeTimes
+                    || (!activeCycle && (nextPageSequence != 0 || accumulatedObjectCount != 0))
+                    || (activeCycle && (activeCycleUpdatedAt.isBefore(activeCycleStartedAt)
+                    || activeCycleUpdatedAt.isAfter(observedAt)))
+                    || completedCycle != (lastCompletedAt != null)
+                    || (lastCompletedAt != null && lastCompletedAt.isAfter(observedAt))) {
+                throw new IllegalArgumentException(
+                        "Invalid external inventory operational snapshot");
+            }
+        }
     }
 
     /**

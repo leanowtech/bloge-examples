@@ -126,6 +126,37 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlP
     }
 
     @Test
+    void operationalSnapshotTracksInitialActiveAndCompletedCycleWithoutIdentities() {
+        FixtureInventoryAuthority authority = new FixtureInventoryAuthority(items(2));
+        var controlPlane = controlPlane("replica-a", Duration.ofSeconds(30), 1, authority);
+
+        var initial = controlPlane.operationalSnapshot(AUTHORITY);
+        assertThat(initial.activeCycle()).isFalse();
+        assertThat(initial.completedCycle()).isFalse();
+        assertThat(initial.lastCompletedAt()).isNull();
+
+        controlPlane.stageNextPage(AUTHORITY);
+        var active = controlPlane.operationalSnapshot(AUTHORITY);
+        assertThat(active.activeCycle()).isTrue();
+        assertThat(active.completedCycle()).isFalse();
+        assertThat(active.nextPageSequence()).isEqualTo(1);
+        assertThat(active.accumulatedObjectCount()).isEqualTo(1);
+        assertThat(active.activeCycleStartedAt()).isNotNull();
+        assertThat(active.activeCycleUpdatedAt()).isNotNull();
+
+        controlPlane.stageNextPage(AUTHORITY);
+        var completed = controlPlane.operationalSnapshot(AUTHORITY);
+        assertThat(completed.activeCycle()).isFalse();
+        assertThat(completed.completedCycle()).isTrue();
+        assertThat(completed.nextPageSequence()).isZero();
+        assertThat(completed.lastCompletedAt()).isNotNull();
+        assertThat(completed.getClass().getRecordComponents())
+                .extracting(component -> component.getName().toLowerCase())
+                .noneMatch(name -> name.contains("id") || name.contains("token")
+                        || name.contains("owner"));
+    }
+
+    @Test
     void liveLeaseReturnsBusyWithoutRemoteIoAndExpiredFenceIsTakenOver() throws Exception {
         FixtureInventoryAuthority authority = new FixtureInventoryAuthority(items(1));
         authority.blockFirstCall();

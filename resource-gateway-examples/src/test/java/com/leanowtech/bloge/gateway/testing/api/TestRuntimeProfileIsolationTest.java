@@ -21,6 +21,10 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityServic
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.RecoverySequenceRequestKeyProtector;
@@ -422,6 +426,15 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityObservationExternalArchiveHealth.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationFloorRetirementService.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationService.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationScheduler.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler.class))
+                    .isEmpty();
         }
         try (AnnotationConfigApplicationContext context = context(
                 enabled, 0, "production", "test")) {
@@ -450,6 +463,107 @@ class TestRuntimeProfileIsolationTest {
                     .hasMessageContaining("requires HTTPS and two copies");
         } finally {
             staging.close();
+        }
+    }
+
+    @Test
+    void externalArchiveReconciliationRequiresCompleteExplicitNonProductionConfiguration()
+            throws Exception {
+        Map<String, Object> enabled = externalObservationArchiveReconciliationProperties();
+        try (AnnotationConfigApplicationContext context = context(enabled, 0, "test")) {
+            assertThat(context.getBeansOfType(
+                    DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane
+                            .class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
+                            .class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane.class))
+                    .hasSize(1);
+            assertThat(context.getBeansOfType(
+                    DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
+                            .class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationService.class))
+                    .hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationScheduler.class))
+                    .hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler.class))
+                    .hasSize(1);
+        }
+        try (AnnotationConfigApplicationContext context = context(
+                enabled, 0, "production", "test")) {
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationService.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationScheduler.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler.class))
+                    .isEmpty();
+        }
+
+        Map<String, Object> noAuthority = new LinkedHashMap<>();
+        noAuthority.put(reconciliationPrefix() + "enabled", "true");
+        noAuthority.put(reconciliationPrefix() + "instance-id", "profile-replica-a");
+        AnnotationConfigApplicationContext missingAuthority = unrefreshedContext(
+                noAuthority, 0, "test");
+        try {
+            assertThatThrownBy(missingAuthority::refresh)
+                    .rootCause()
+                    .hasMessageContaining(
+                            "TestSuiteStabilityObservationExternalArchiveInventoryAuthority");
+        } finally {
+            missingAuthority.close();
+        }
+
+        Map<String, Object> noInstance = new LinkedHashMap<>(
+                externalObservationArchiveProperties());
+        noInstance.put(reconciliationPrefix() + "enabled", "true");
+        AnnotationConfigApplicationContext missingInstance = unrefreshedContext(
+                noInstance, 0, "test");
+        try {
+            assertThatThrownBy(missingInstance::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("stable instance ID");
+        } finally {
+            missingInstance.close();
+        }
+    }
+
+    @Test
+    void externalArchiveReconciliationRejectsUnsafeScheduleAndPageConfiguration()
+            throws Exception {
+        Map<String, Object> unsafeSchedule =
+                externalObservationArchiveReconciliationProperties();
+        unsafeSchedule.put(reconciliationPrefix() + "interval-ms", "999");
+        AnnotationConfigApplicationContext scheduleContext = unrefreshedContext(
+                unsafeSchedule, 0, "test");
+        try {
+            assertThatThrownBy(scheduleContext::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("1 second..7 day interval");
+        } finally {
+            scheduleContext.close();
+        }
+
+        Map<String, Object> unboundedPage =
+                externalObservationArchiveReconciliationProperties();
+        unboundedPage.put(reconciliationPrefix() + "inventory-page-size", "501");
+        AnnotationConfigApplicationContext pageContext = unrefreshedContext(
+                unboundedPage, 0, "test");
+        try {
+            assertThatThrownBy(pageContext::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("1 through 500");
+        } finally {
+            pageContext.close();
         }
     }
 
@@ -1032,6 +1146,21 @@ class TestRuntimeProfileIsolationTest {
                         + "\"failureDomain\":\"region-b\","
                         + "\"uri\":\"https://archive-b.example/v1/objects\"}]");
         return properties;
+    }
+
+    private static Map<String, Object> externalObservationArchiveReconciliationProperties()
+            throws Exception {
+        Map<String, Object> properties = new LinkedHashMap<>(
+                externalObservationArchiveProperties());
+        properties.put(reconciliationPrefix() + "enabled", "true");
+        properties.put(reconciliationPrefix() + "instance-id", "profile-replica-a");
+        properties.put(reconciliationPrefix() + "initial-delay-ms", "300000");
+        properties.put(reconciliationPrefix() + "retention-initial-delay-ms", "300000");
+        return properties;
+    }
+
+    private static String reconciliationPrefix() {
+        return "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.";
     }
 
     private static String authorityJwks(KeyPair keyPair, String keyId) {

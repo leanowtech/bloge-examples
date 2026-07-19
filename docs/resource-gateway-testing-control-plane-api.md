@@ -3154,6 +3154,22 @@ gateway:
           allow-insecure-loopback: false
           authority-keys-json: '<public Ed25519 key array>'
           endpoints-json: '<authority/failureDomain/https URI array>'
+        reconciliation:
+          enabled: true
+          instance-id: rg-staging-0
+          lease-duration-seconds: 120
+          inventory-page-size: 100
+          comparison-page-size: 100
+          finding-page-size: 100
+          initial-delay-ms: 60000
+          interval-ms: 300000
+          retention-lease-duration-seconds: 120
+          resolved-retention-seconds: 2592000
+          archive-retention-seconds: 31536000
+          evidence-retention-seconds: 31536000
+          retention-page-size: 100
+          retention-initial-delay-ms: 300000
+          retention-interval-ms: 3600000
 ~~~
 
 The environment-variable equivalents are:
@@ -3171,6 +3187,35 @@ The environment-variable equivalents are:
 | `maximum-receipt-lifetime-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECEIPT_LIFETIME_SECONDS` |
 | `maximum-inventory-snapshot-age-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_INVENTORY_MAXIMUM_AGE_SECONDS` |
 | `allow-insecure-loopback` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_ALLOW_INSECURE_LOOPBACK` |
+
+The `reconciliation` block is separately disabled by default. Its environment-variable equivalents
+are:
+
+| Property | Environment variable |
+| --- | --- |
+| `enabled` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_ENABLED` |
+| `instance-id` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_INSTANCE_ID` |
+| `lease-duration-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_LEASE_SECONDS` |
+| `inventory-page-size` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_INVENTORY_PAGE_SIZE` |
+| `comparison-page-size` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_COMPARISON_PAGE_SIZE` |
+| `finding-page-size` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_FINDING_PAGE_SIZE` |
+| `initial-delay-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_INITIAL_DELAY_MS` |
+| `interval-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_INTERVAL_MS` |
+| `retention-lease-duration-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_LEASE_SECONDS` |
+| `resolved-retention-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RESOLVED_RETENTION_SECONDS` |
+| `archive-retention-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_ARCHIVE_RETENTION_SECONDS` |
+| `evidence-retention-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_EVIDENCE_RETENTION_SECONDS` |
+| `retention-page-size` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_PAGE_SIZE` |
+| `retention-initial-delay-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_INITIAL_DELAY_MS` |
+| `retention-interval-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_INTERVAL_MS` |
+
+Enabling reconciliation without the HTTP/custom inventory authority or a stable instance id fails
+startup. Inventory, comparison, finding, and retention pages are independently bounded to 1..500;
+fixed-delay intervals must be between one second and seven days. Every authority is advanced at most
+one stateful stage per tick. Existing finding projection drains first, then comparison; only a fully
+current downstream opens the next inventory cycle. One authority failure does not prevent later
+members from advancing. Any active `production` profile vetoes the complete control loop regardless
+of properties.
 
 Each key entry contains `authorityId`, `keyId`, X.509-encoded `publicKeyBase64`, `notBefore`,
 exclusive `expiresAt`, `enabled`, and `revoked`. Each endpoint entry contains exactly
@@ -3202,15 +3247,16 @@ id, and increasing page sequence. Every signed page repeats the complete object 
 item-fingerprint root, allowing a durable consumer to prove completeness only after the terminal
 page. Pages contain payload-free object/retirement/segment/policy fingerprints and retention times,
 are limited to 500 items and 2 MiB, and use the same strict JSON, timeout, topology, freshness, and
-Ed25519 trust controls. HTTP 410 is the closed `SNAPSHOT_EXPIRED` result. There is no controller,
-scheduler, delete, purge, overwrite, or retention-shortening API. See the
+Ed25519 trust controls. HTTP 410 is the closed `SNAPSHOT_EXPIRED` result. There is no public
+controller, delete, purge, overwrite, or retention-shortening API. The optional internal scheduler
+uses database leases and durable cursors; it does not grant remediation authority. See the
 [external inventory protocol design](resource-gateway-execution-data-control-plane-stage5-observation-external-inventory-protocol-design.md).
 
 Both lifecycle endpoints are absent in production and disabled by default. V2 proves that an
 approved authority signed the acknowledgement recorded before deletion, but production WORM
 provider certification/wiring, legal hold/erasure, backup purge, recovery continuity, historical
-authority publication, durable orphan-reconciliation cursor/findings, and external non-equivocation
-policy are still missing. Capability
+authority publication, reconciliation health/readiness and capability truth, source-history
+retention, and external non-equivocation policy are still missing. Capability
 `crossRetentionSuiteStabilityTrend` therefore remains `false`; strict verification proves the returned
 local lifecycle, external acknowledgement, and range, not physical persistence or a globally unique
 long-term history.

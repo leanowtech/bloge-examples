@@ -34,6 +34,10 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEven
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityAuthorityCohortRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityServingInventoryPublicationFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityServingInventoryTrustRootFloor;
@@ -1441,6 +1445,147 @@ public class TestRuntimeConfiguration {
                         allowInsecureLoopback));
     }
 
+    /**
+     * Creates the database-leased signed inventory-cycle control plane only when the complete
+     * reconciliation loop is explicitly enabled.
+     */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane
+            testSuiteStabilityObservationExternalArchiveReconciliationControlPlane(
+                    TestRuntimeDatabase database,
+                    ObjectMapper objectMapper,
+                    TestSuiteStabilityObservationExternalArchiveInventoryAuthority authority,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.instance-id:}")
+                    String instanceId,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.lease-duration-seconds:120}")
+                    long leaseDurationSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.inventory-page-size:100}")
+                    int pageSize) {
+        String owner = requiredExternalReconciliationInstance(instanceId);
+        return new DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper, authority,
+                new DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane
+                        .Settings(owner, Duration.ofSeconds(leaseDurationSeconds), pageSize));
+    }
+
+    /** Creates bounded frozen comparisons over completed external inventory cycles. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
+            testSuiteStabilityObservationExternalArchiveClassificationControlPlane(
+                    TestRuntimeDatabase database,
+                    ObjectMapper objectMapper,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.comparison-page-size:100}")
+                    int pageSize) {
+        return new DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper,
+                new DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
+                        .Settings(pageSize));
+    }
+
+    /** Creates replay-verified governed finding projection over completed comparisons. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane
+            testSuiteStabilityObservationExternalArchiveFindingControlPlane(
+                    TestRuntimeDatabase database,
+                    ObjectMapper objectMapper,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.finding-page-size:100}")
+                    int pageSize) {
+        return new DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper,
+                new DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane
+                        .Settings(pageSize));
+    }
+
+    /** Creates the database-clock bounded lifecycle authority for derived finding evidence. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
+            testSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane(
+                    TestRuntimeDatabase database,
+                    ObjectMapper objectMapper,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.instance-id:}")
+                    String instanceId,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.retention-lease-duration-seconds:120}")
+                    long leaseDurationSeconds) {
+        return new DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper,
+                requiredExternalReconciliationInstance(instanceId),
+                Duration.ofSeconds(leaseDurationSeconds));
+    }
+
+    /** Assembles downstream-first backpressure across inventory, comparison, and finding stages. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityObservationExternalArchiveReconciliationService
+            testSuiteStabilityObservationExternalArchiveReconciliationService(
+                    TestSuiteStabilityObservationExternalArchiveInventoryAuthority authority,
+                    DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane
+                            inventories,
+                    DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
+                            comparisons,
+                    DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane
+                            findings) {
+        return new TestSuiteStabilityObservationExternalArchiveReconciliationService(
+                authority, inventories, comparisons, findings);
+    }
+
+    /** Runs one isolated, complete, protocol-bounded authority pass per scheduled tick. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityObservationExternalArchiveReconciliationScheduler
+            testSuiteStabilityObservationExternalArchiveReconciliationScheduler(
+                    TestSuiteStabilityObservationExternalArchiveReconciliationService service,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.initial-delay-ms:60000}")
+                    long initialDelayMillis,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.interval-ms:300000}")
+                    long intervalMillis) {
+        validateExternalSchedule(initialDelayMillis, intervalMillis, "reconciliation");
+        return new TestSuiteStabilityObservationExternalArchiveReconciliationScheduler(service);
+    }
+
+    /** Runs independently bounded derived finding/evidence retention under a database lease. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler
+            testSuiteStabilityObservationExternalArchiveFindingRetentionScheduler(
+                    DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
+                            controlPlane,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.resolved-retention-seconds:2592000}")
+                    long resolvedRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.archive-retention-seconds:31536000}")
+                    long archiveRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.evidence-retention-seconds:31536000}")
+                    long evidenceRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.retention-page-size:100}")
+                    int pageSize,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.retention-initial-delay-ms:300000}")
+                    long initialDelayMillis,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.retention-interval-ms:3600000}")
+                    long intervalMillis) {
+        validateExternalSchedule(initialDelayMillis, intervalMillis, "retention");
+        return new TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler(
+                controlPlane, Duration.ofSeconds(resolvedRetentionSeconds),
+                Duration.ofSeconds(archiveRetentionSeconds),
+                Duration.ofSeconds(evidenceRetentionSeconds), pageSize);
+    }
+
     /** Exposes identity-free health for the configured external WORM copy set. */
     @Bean
     @ConditionalOnBean(TestSuiteStabilityObservationExternalArchiveAuthority.class)
@@ -1448,6 +1593,27 @@ public class TestRuntimeConfiguration {
             testSuiteStabilityObservationExternalArchiveHealth(
             TestSuiteStabilityObservationExternalArchiveAuthority authority) {
         return new TestSuiteStabilityObservationExternalArchiveHealth(authority);
+    }
+
+    private static String requiredExternalReconciliationInstance(String value) {
+        String exact = value == null ? "" : value.trim();
+        if (exact.isEmpty()) {
+            throw new IllegalStateException(
+                    "External archive reconciliation requires a stable instance ID");
+        }
+        return exact;
+    }
+
+    private static void validateExternalSchedule(
+            long initialDelayMillis,
+            long intervalMillis,
+            String name) {
+        long maximum = Duration.ofDays(7).toMillis();
+        if (initialDelayMillis < 0 || initialDelayMillis > maximum
+                || intervalMillis < 1000 || intervalMillis > maximum) {
+            throw new IllegalStateException("External archive " + name
+                    + " schedule must use a 0..7 day initial delay and 1 second..7 day interval");
+        }
     }
 
     /** Assembles the external-first retirement boundary only when WORM admission is configured. */

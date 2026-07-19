@@ -1,6 +1,6 @@
 # Stage 5 observation external reconciliation control-plane design
 
-**Phases A-D and all terminal completeness gates implemented (2026-07-20): every externally
+**Phases A-E and the Phase F autonomous scheduling increment implemented (2026-07-20): every externally
 acknowledged WORM copy is normalized into a payload-free expected-object index in the exact
 retirement transaction. Per-authority database-clock owner/token/epoch leases now fence durable
 snapshot cycles; verified page envelopes and normalized items commit atomically with cursor/root
@@ -8,9 +8,11 @@ progress, and a terminal page succeeds only after a constant-memory replay repro
 item, page sequence, signed count, and signed root. Each completed cycle is then compared with an
 atomically frozen local snapshot by a bounded ordered merge; only a second terminal replay may expose
 self-verifying classifications. Completed comparisons then drive a separately fenced, payload-free
-finding projection with immutable transition evidence. Scheduling, bounded retention,
-health/readiness, and capability wiring remain subsequent phases, so reconciliation is not yet
-advertised as complete.**
+finding projection with immutable transition evidence. Derived finding/evidence retention and a
+profile-gated downstream-first scheduler are now active only under explicit test/staging
+configuration. Health/readiness, capability truth, and source cycle/comparison/classification
+retention remain subsequent phases, so reconciliation is not yet advertised as operationally
+ready.**
 
 ## 1. Root problem
 
@@ -360,6 +362,11 @@ corruption.
 | missing/tampered evidence is silently retired | deletion launders pre-existing corruption | verify each row and require terminal count/root equality with the frozen projection |
 | archive rows disappear out of band | retention counters still look healthy | verify whole-record archive fingerprints and exact `totalArchived-totalPurged` cardinality |
 | old resolved lifecycle remains forever in the active queue | current table grows without operational bound | copy exact resolved state to an independently retained archive before source deletion |
+| scheduler opens inventory cycles faster than downstream stages can consume them | source-first periodic polling has no pipeline backpressure | drain finding, then comparison, and open inventory only when both report `CURRENT` |
+| one unavailable authority blocks all later authorities | whole-tick exception scope | visit the complete bounded authority set and isolate failure per authority |
+| two local scheduled invocations overlap | timer/runtime re-entry | process-local overlap gate plus database authority lease and transactional stage fences |
+| half-enabled reconciliation silently does nothing | optional bean composition hides missing authority or replica identity | explicit property requires inventory authority and stable instance id; startup fails closed |
+| production accidentally enables maintenance | property-only guard | entire composition root remains under `!production & (test | staging)` profile veto |
 
 ## 13. Executable evidence
 
@@ -433,6 +440,24 @@ The frozen Phase E source passed the complete Resource Gateway `clean verify`: 2
 failures, zero errors, two existing browser-environment skips, and a successfully repackaged Spring
 Boot executable JAR.
 
+The first Phase F increment adds a downstream-first
+`TestSuiteStabilityObservationExternalArchiveReconciliationService`, a fixed-delay scheduler, an
+independent finding-retention scheduler, and explicit Spring/YAML wiring. One authority invocation
+mutates at most one stage. Every scheduler tick visits the complete lexically stable authority set,
+which is bounded by the protocol to sixteen members; a failure is contained to one member and logs
+carry only aggregate stage counts. A new inventory cycle is opened only after finding projection and
+comparison both report `CURRENT`, preventing collection from outrunning governance projection.
+Reconciliation remains disabled by default, requires a stable replica instance id when enabled, and
+cannot assemble under any profile set containing `production`.
+
+The Phase F scheduling focused gate executes 41 tests with zero failures, errors, or skips. It covers
+the initial/active/completed cycle snapshot, downstream stage priority, inventory backpressure,
+membership order/duplicate/cardinality rejection, per-authority failure isolation, local overlap,
+failure recovery, bounded retention retry/policy, full test-profile wiring, incomplete configuration
+fail-fast behavior, schedule/page bounds, and production-profile physical absence. The resulting
+source passed the complete Resource Gateway `clean verify`: 2981 tests, zero failures, zero errors,
+two existing browser-environment skips, and a successfully repackaged Spring Boot executable JAR.
+
 ## 14. Remaining phases and acceptance
 
 The local expectation, durable remote cycle, frozen comparison, bounded ordered merge, terminal
@@ -440,9 +465,9 @@ semantic classification, payload-free governed finding lifecycle, and derived fi
 retention portions of Phases A-E are complete. No partial comparison, finding projection, or evidence
 retirement can be exported as governance evidence.
 
-Until the scheduler, health/readiness, source cycle/comparison/classification retention, and
-capability truth are implemented,
+Until health/readiness, source cycle/comparison/classification retention, and capability truth are
+implemented,
 Resource Gateway may claim **durable local expectation indexing, verified inventory cycle staging,
 completed payload-free classification evidence, replay-verified governed finding evidence, and
-database-fenced bounded derived-evidence retention**, but not an autonomously operated external
-orphan-reconciliation service.
+database-fenced bounded derived-evidence retention with explicitly enabled autonomous scheduling**,
+but not an operationally ready external orphan-reconciliation service.

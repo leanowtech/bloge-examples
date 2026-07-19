@@ -147,8 +147,13 @@ loopback HTTP and fewer than two copies; production never installs the adapter o
 The same endpoint now accepts a distinct signed, challenge-bound read-only inventory protocol for
 immutable snapshot paging. A provider may serve a pre-generated snapshot, but the client rejects
 future snapshots and snapshots older than the configured bound (300 seconds by default). There is
-no inventory controller, scheduler, or delete operation yet;
-durable reconciliation and governed findings remain disabled work in progress.
+no inventory controller or delete operation. Durable inventory, frozen comparison, governed
+findings, and bounded derived-evidence retention can now run autonomously when the separate
+`RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_ENABLED=true` flag and stable
+`RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_INSTANCE_ID` are supplied. The scheduler
+drains findings and comparisons before opening another inventory cycle, isolates one failed
+authority, and remains physically absent in production. Reconciliation health/readiness and
+capability truth are still intentionally unavailable.
 
 The start command becomes ready only after the integration capability probe
 succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;
@@ -188,12 +193,15 @@ which can then seed the active compact-range request. `crossRetentionSuiteStabil
 intentionally remains disabled. The strict multi-authority HTTPS adapter closes the test/staging
 write shape with concurrent bounded requests, signed conflict receipts, exact topology/key
 verification, and aggregate health. Its signed immutable-snapshot inventory protocol now closes the
-read transport shape, but durable lease/cursor/finding reconciliation is not yet wired. Certified
-providers, historical trust publication, legal-hold/erasure/backup and recovery controls, and
-witnessed non-equivocation are still required. See the
-[lifecycle protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md)
+read transport shape; the default-off test/staging control loop now wires durable lease/cursor,
+frozen classification, replay-verified finding projection, downstream backpressure, and bounded
+finding/evidence retention. Certified providers, reconciliation readiness/capability truth, source
+history retention, historical trust publication, legal-hold/erasure/backup and recovery controls,
+and witnessed non-equivocation are still required. See the
+[lifecycle protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md),
 the [HTTPS WORM adapter design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-http-worm-adapter-design.md),
-and the [external inventory protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-external-inventory-protocol-design.md).
+the [external inventory protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-external-inventory-protocol-design.md),
+and the [external reconciliation design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-external-reconciliation-design.md).
 The stability protocol's
 v2+ evidence keeps behavioral stability separate from release eligibility: every verified source
 suite promotion verdict is signed into the attempt closure, so `STABLE + BLOCKED` remains visible
