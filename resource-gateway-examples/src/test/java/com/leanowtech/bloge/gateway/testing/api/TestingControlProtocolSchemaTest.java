@@ -17,7 +17,11 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityCrossRetentionTrendAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityCrossRetentionTrendEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendEvidence;
@@ -129,6 +133,37 @@ class TestingControlProtocolSchemaTest {
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityTrendAnalysisResponse/properties/schemaVersion/const")
                 .asText()).isEqualTo(TestSuiteStabilityTrendAnalysisResponse.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityCrossRetentionTrendAnalysisRequest/properties"
+                        + "/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityCrossRetentionTrendAnalysisRequest.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityObservationEvidence/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityObservationEvidence.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityObservationAttestation/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityObservationAttestation.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityObservationLedgerEntry/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityObservationLedgerEntry.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityObservationLedgerHead/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityObservationLedgerHead.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityObservationLedgerRange/properties/schemaVersion/const")
+                .asText()).isEqualTo(TestSuiteStabilityObservationLedgerRange.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityCrossRetentionTrendEvidence/properties"
+                        + "/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityCrossRetentionTrendEvidence.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityCrossRetentionTrendAttestation/properties"
+                        + "/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityCrossRetentionTrendAttestation.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/testSuiteStabilityCrossRetentionTrendAnalysisResponse/properties"
+                        + "/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityCrossRetentionTrendAnalysisResponse.SCHEMA_VERSION);
         assertThat(schema.at(
                 "/$defs/testSuiteStabilityJobSubmitRequest/properties/schemaVersion/const")
                 .asText()).isEqualTo(TestSuiteStabilityJobSubmitRequest.SCHEMA_VERSION);
@@ -473,6 +508,21 @@ class TestingControlProtocolSchemaTest {
         assertThat(definitions.has("testSuiteStabilityAttestation")).isTrue();
         assertThat(definitions.has("testSuiteStabilityExecutionResponse")).isTrue();
         assertThat(definitions.has("testSuiteStabilityProgress")).isTrue();
+        assertThat(definitions.has(
+                "testSuiteStabilityCrossRetentionTrendAnalysisRequest")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityObservationEvidence")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityObservationAttestation")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityObservation")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityObservationLedgerEntry")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityObservationLedgerHead")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityObservationLedgerRange")).isTrue();
+        assertThat(definitions.has("testSuiteStabilityCrossRetentionTrendEvidence")).isTrue();
+        assertThat(definitions.has(
+                "testSuiteStabilityCrossRetentionObservationRef")).isTrue();
+        assertThat(definitions.has(
+                "testSuiteStabilityCrossRetentionTrendAttestation")).isTrue();
+        assertThat(definitions.has(
+                "testSuiteStabilityCrossRetentionTrendAnalysisResponse")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponse")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV1")).isTrue();
         assertThat(definitions.has("testSuiteExecutionResponseV2")).isTrue();
@@ -1175,6 +1225,43 @@ class TestingControlProtocolSchemaTest {
         assertThat(response.at(
                 "/properties/attestation/allOf/1/properties/signatureStatus/const").asText())
                 .isEqualTo("VERIFIED");
+        assertThat(java.util.List.of("tenantId", "environmentId", "actorId", "payload",
+                        "input", "output", "fixtureValue"))
+                .noneMatch(evidence.path("properties")::has);
+    }
+
+    @Test
+    void crossRetentionTrendSchemaFreezesHeadPinnedPayloadFreeTrustClosure() throws Exception {
+        JsonNode definitions = new ObjectMapper().readTree(Files.readString(Path.of("..", "docs",
+                "schemas", "resource-gateway-testing",
+                "testing-control-plane-v1.schema.json"))).path("$defs");
+
+        JsonNode request = definitions.path(
+                "testSuiteStabilityCrossRetentionTrendAnalysisRequest");
+        JsonNode observation = definitions.path("testSuiteStabilityObservation");
+        JsonNode entry = definitions.path("testSuiteStabilityObservationLedgerEntry");
+        JsonNode range = definitions.path("testSuiteStabilityObservationLedgerRange");
+        JsonNode evidence = definitions.path("testSuiteStabilityCrossRetentionTrendEvidence");
+        JsonNode attestation = definitions.path(
+                "testSuiteStabilityCrossRetentionTrendAttestation");
+        assertThat(request.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(request.path("oneOf")).hasSize(2);
+        assertThat(request.at("/properties/maximumRuns/maximum").asInt()).isEqualTo(100);
+        assertThat(observation.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(entry.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(range.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(range.at("/properties/entries/maxItems").asInt()).isEqualTo(100);
+        assertThat(evidence.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(evidence.at("/properties/request/$ref").asText()).isEqualTo(
+                "#/$defs/testSuiteStabilityCrossRetentionTrendAnalysisRequest");
+        assertThat(evidence.at("/properties/sourceOrder/const").asText())
+                .isEqualTo("SOURCE_CREATED_AT_THEN_STABILITY_RUN_ID");
+        assertThat(evidence.at("/properties/causalityStatus/const").asText())
+                .isEqualTo("NOT_PROVEN");
+        assertThat(attestation.at("/properties/signatureStatus/const").asText())
+                .isEqualTo("VERIFIED");
+        assertThat(attestation.at("/properties/independentlyVerifiable/const").asBoolean())
+                .isTrue();
         assertThat(java.util.List.of("tenantId", "environmentId", "actorId", "payload",
                         "input", "output", "fixtureValue"))
                 .noneMatch(evidence.path("properties")::has);

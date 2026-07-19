@@ -5,16 +5,16 @@ import java.util.regex.Pattern;
 /**
  * Exact bounded cursor request for a compact-observation stability trend.
  *
- * <p>A blank {@code expectedHeadFingerprint} asks the producer to establish a fresh snapshot.
- * Supplying the fingerprint returned by an earlier page pins subsequent pages to that exact head;
- * an append then produces a conflict instead of silently mixing snapshots.</p>
+ * <p>Sequence zero requires a blank {@code expectedHeadFingerprint} and establishes a fresh
+ * snapshot. Every nonzero continuation requires the fingerprint returned by the first page; an
+ * append then produces a conflict instead of silently mixing snapshots.</p>
  *
  * @param schemaVersion exact request wire generation
  * @param suiteRef exact immutable suite revision
  * @param afterSequence exclusive committed ledger cursor; zero starts at the retained floor
  * @param minimumRuns minimum observations required for a conclusive trend
  * @param maximumRuns hard response and verification budget
- * @param expectedHeadFingerprint optional exact snapshot head identity
+ * @param expectedHeadFingerprint blank for sequence zero; exact snapshot head for continuation
  */
 public record TestSuiteStabilityCrossRetentionTrendAnalysisRequest(
         String schemaVersion,
@@ -45,8 +45,10 @@ public record TestSuiteStabilityCrossRetentionTrendAnalysisRequest(
                 || minimumRuns < MINIMUM_RUNS || minimumRuns > MAXIMUM_RUNS
                 || maximumRuns < MINIMUM_RUNS || maximumRuns > MAXIMUM_RUNS
                 || minimumRuns > maximumRuns
-                || !expectedHeadFingerprint.isBlank()
-                && !FINGERPRINT.matcher(expectedHeadFingerprint).matches()) {
+                || (!expectedHeadFingerprint.isBlank()
+                && !FINGERPRINT.matcher(expectedHeadFingerprint).matches())
+                || (afterSequence == 0 && !expectedHeadFingerprint.isBlank())
+                || (afterSequence > 0 && expectedHeadFingerprint.isBlank())) {
             throw new IllegalArgumentException(
                     "Complete bounded cross-retention trend request is required");
         }

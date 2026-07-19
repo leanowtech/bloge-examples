@@ -46,7 +46,7 @@ class TestSuiteStabilityCrossRetentionTrendAttestationServiceTest {
                 .substring("sha256:".length());
         evidence = new TestSuiteStabilityCrossRetentionTrendEvidence(
                 TestSuiteStabilityCrossRetentionTrendEvidence.SCHEMA_VERSION,
-                trendId, requestFingerprint, request.suiteRef(), 2, 10, 2,
+                trendId, requestFingerprint, request, 2,
                 TestSuiteStabilityCrossRetentionTrendEvidence.SourceOrder
                         .SOURCE_CREATED_AT_THEN_STABILITY_RUN_ID,
                 fixture.range(), projection.status(), projection.caseTrends(),
@@ -128,8 +128,8 @@ class TestSuiteStabilityCrossRetentionTrendAttestationServiceTest {
             TestSuiteStabilityObservationLedgerRange range) {
         return new TestSuiteStabilityCrossRetentionTrendEvidence(
                 evidence.schemaVersion(), evidence.trendAnalysisId(),
-                evidence.requestFingerprint(), evidence.suiteRef(), evidence.minimumRuns(),
-                evidence.maximumRuns(), evidence.observedRuns(), evidence.sourceOrder(), range,
+                evidence.requestFingerprint(), evidence.request(), evidence.observedRuns(),
+                evidence.sourceOrder(), range,
                 evidence.status(), evidence.caseTrends(), evidence.correlationSignals(),
                 evidence.causalityStatus(), evidence.diagnostics(), evidence.evaluatedAt());
     }

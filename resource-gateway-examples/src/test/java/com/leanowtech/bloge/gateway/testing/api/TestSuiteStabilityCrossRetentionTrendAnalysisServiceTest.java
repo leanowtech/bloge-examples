@@ -67,6 +67,9 @@ class TestSuiteStabilityCrossRetentionTrendAnalysisServiceTest {
         when(repository.observationRange(
                 "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF, 0, 10))
                 .thenReturn(Optional.of(fixture.range()));
+        when(repository.observationRange(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF, 1, 10))
+                .thenReturn(Optional.of(fixture.range()));
     }
 
     @Test
@@ -106,6 +109,19 @@ class TestSuiteStabilityCrossRetentionTrendAnalysisServiceTest {
         assertCode(() -> service.analyze("suite-a", request(""),
                         identity("TEST_EXECUTION", "test", "PUBLIC")),
                 "RG.TEST.SUITE_CLEARANCE_FORBIDDEN");
+    }
+
+    @Test
+    void rejectsPinnedFirstPageAndUnpinnedContinuationBeforeLedgerAccess() {
+        assertThatThrownBy(() -> new TestSuiteStabilityCrossRetentionTrendAnalysisRequest(
+                TestSuiteStabilityCrossRetentionTrendAnalysisRequest.SCHEMA_VERSION,
+                TestSuiteStabilityProtocolFixtures.SUITE_REF, 0, 2, 10,
+                TestSuiteStabilityProtocolFixtures.fingerprint('f')))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TestSuiteStabilityCrossRetentionTrendAnalysisRequest(
+                TestSuiteStabilityCrossRetentionTrendAnalysisRequest.SCHEMA_VERSION,
+                TestSuiteStabilityProtocolFixtures.SUITE_REF, 1, 2, 10, ""))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -224,9 +240,11 @@ class TestSuiteStabilityCrossRetentionTrendAnalysisServiceTest {
 
     private static TestSuiteStabilityCrossRetentionTrendAnalysisRequest request(
             String expectedHeadFingerprint) {
+        long afterSequence = expectedHeadFingerprint == null
+                || expectedHeadFingerprint.isBlank() ? 0 : 1;
         return new TestSuiteStabilityCrossRetentionTrendAnalysisRequest(
                 TestSuiteStabilityCrossRetentionTrendAnalysisRequest.SCHEMA_VERSION,
-                TestSuiteStabilityProtocolFixtures.SUITE_REF, 0, 2, 10,
+                TestSuiteStabilityProtocolFixtures.SUITE_REF, afterSequence, 2, 10,
                 expectedHeadFingerprint);
     }
 

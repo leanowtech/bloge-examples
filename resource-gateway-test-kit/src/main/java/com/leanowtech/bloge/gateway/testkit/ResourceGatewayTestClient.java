@@ -627,6 +627,104 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Requests one signed trend over a head-pinned compact-observation ledger range.
+     *
+     * <p>The response embeds the exact request and contains no business payload. Parsing validates
+     * strict Schema and canonical closure but does not establish signature or derived-label trust;
+     * call one of the {@code verifySuiteStabilityCrossRetentionTrend} overloads before using the
+     * result as governance evidence.</p>
+     *
+     * @param request exact bounded cursor and head-pin intent
+     * @return strict payload-free compact-range projection
+     */
+    public TestSuiteStabilityCrossRetentionTrendAnalysis
+            analyzeSuiteStabilityCrossRetentionTrend(
+            TestSuiteStabilityCrossRetentionTrendRequest request) {
+        TestSuiteStabilityCrossRetentionTrendRequest exactRequest = Objects.requireNonNull(
+                request, "cross-retention trend request is required");
+        JsonNode response = exchange("POST", "/api/testing/suites/"
+                        + segment(exactRequest.suiteId())
+                        + "/stability-cross-retention-trend-analyses", "",
+                "TEST_EXECUTION", exactRequest.toJson());
+        requireVersion(response,
+                TestingProtocol.TEST_SUITE_STABILITY_CROSS_RETENTION_TREND_RESPONSE_V1);
+        TestSuiteStabilityCrossRetentionTrendAnalysis analysis =
+                projectStabilityCrossRetentionTrend(response);
+        if (!exactRequest.equals(analysis.request())) {
+            throw responseContractInvalid(
+                    "The server returned a compact trend for a different suite or cursor.");
+        }
+        return analysis;
+    }
+
+    /**
+     * Independently verifies compact observations without fetching retained source runs.
+     *
+     * <p>Every observation and outer public key is resolved by exact key id. Known authority
+     * absence becomes a bounded verification outcome; transport and unrelated protocol failures
+     * remain exceptions.</p>
+     *
+     * @param request exact bounded cursor and head-pin intent
+     * @return compact-range verification result
+     */
+    public TestSuiteStabilityCrossRetentionTrendEvidenceVerifier.VerificationResult
+            verifySuiteStabilityCrossRetentionTrend(
+            TestSuiteStabilityCrossRetentionTrendRequest request) {
+        TestSuiteStabilityCrossRetentionTrendAnalysis analysis =
+                analyzeSuiteStabilityCrossRetentionTrend(request);
+        Set<String> keyIds = new LinkedHashSet<>();
+        analysis.range().entries().forEach(entry ->
+                keyIds.add(entry.observation().attestation().keyId()));
+        keyIds.add(analysis.attestation().keyId());
+        Map<String, EvidenceVerificationKey> keys = new LinkedHashMap<>();
+        for (String keyId : keyIds) {
+            try {
+                keys.put(keyId, findEvidenceVerificationKey(keyId));
+            } catch (ResourceGatewayTestException failure) {
+                if (!"RG.INTEGRATION.EVIDENCE_KEY_NOT_FOUND".equals(failure.code())
+                        && !"RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE"
+                        .equals(failure.code())) {
+                    throw failure;
+                }
+            }
+        }
+        return new TestSuiteStabilityCrossRetentionTrendEvidenceVerifier().verify(
+                analysis, keys);
+    }
+
+    /**
+     * Performs release-grade compact-range verification against an independently pinned key set.
+     *
+     * <p>The verifier applies signing-time lifecycle policy to every compact observation and the
+     * outer range signature. It never depends on source stability records surviving retention.</p>
+     *
+     * @param request exact bounded cursor and head-pin intent
+     * @param trustedKeySetFingerprint key-set fingerprint pinned outside Gateway output
+     * @return lifecycle-aware compact-range verification result
+     */
+    public TestSuiteStabilityCrossRetentionTrendEvidenceVerifier.VerificationResult
+            verifySuiteStabilityCrossRetentionTrend(
+            TestSuiteStabilityCrossRetentionTrendRequest request,
+            String trustedKeySetFingerprint) {
+        TestSuiteStabilityCrossRetentionTrendAnalysis analysis =
+                analyzeSuiteStabilityCrossRetentionTrend(request);
+        EvidenceVerificationKeySet keySet;
+        try {
+            keySet = findEvidenceVerificationKeySet();
+        } catch (ResourceGatewayTestException failure) {
+            if ("RG.INTEGRATION.EVIDENCE_KEY_SET_PROVIDER_UNAVAILABLE".equals(failure.code())
+                    || "RG.INTEGRATION.EVIDENCE_KEY_SET_ATTESTATION_UNAVAILABLE"
+                    .equals(failure.code())) {
+                keySet = null;
+            } else {
+                throw failure;
+            }
+        }
+        return new TestSuiteStabilityCrossRetentionTrendEvidenceVerifier().verify(
+                analysis, keySet, trustedKeySetFingerprint);
+    }
+
+    /**
      * Submits one asynchronous suite-stability job without implicit retry.
      *
      * <p>The client requires {@code 202}, validates the response against the packaged Schema,
@@ -1583,6 +1681,16 @@ public final class ResourceGatewayTestClient {
         } catch (IllegalArgumentException failure) {
             throw responseContractInvalid(
                     "The server returned an invalid suite-stability trend projection.");
+        }
+    }
+
+    private static TestSuiteStabilityCrossRetentionTrendAnalysis
+            projectStabilityCrossRetentionTrend(JsonNode response) {
+        try {
+            return TestSuiteStabilityCrossRetentionTrendAnalysis.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid cross-retention stability trend projection.");
         }
     }
 

@@ -158,16 +158,16 @@ for the complete target-discovery, fixture-registration, execution, evidence,
 and production-isolation workflow. Java/JUnit/CI consumers can use the independent
 [Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) for fixture and immutable-suite
 builders, typed catalog materialization, exact suite execution, signed bounded stability analysis,
-signed retained-window trend reconstruction, pinned-key-set offline verification, payload-free
+signed retained-window and compact-range trend reconstruction, pinned-key-set offline verification, payload-free
 assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The stability protocol's
 terminal publication now also verifies and signs a payload-free compact observation, then commits
 that observation, its contiguous per-suite ledger coordinate, the full terminal record, progress
 consumption, and lease consumption in one database transaction. This is the durable write-side
-foundation for history beyond full-run retention. A bounded, signed range read now exists as a
-default-disabled test/staging preview, but it is not yet a public read contract:
-`crossRetentionSuiteStabilityTrend` intentionally remains disabled until lifecycle, strict Schema,
-and independent test-kit verification are complete. The stability protocol's
+foundation for history beyond full-run retention. A bounded, signed range read plus strict Schema and
+independent five-layer test-kit verification now exist as a default-disabled test/staging preview.
+`crossRetentionSuiteStabilityTrend` intentionally remains disabled until signed floor retirement,
+archive/erasure/recovery lifecycle and external non-equivocation are complete. The stability protocol's
 v2+ evidence keeps behavioral stability separate from release eligibility: every verified source
 suite promotion verdict is signed into the attempt closure, so `STABLE + BLOCKED` remains visible
 when behavior is repeatable but source certification is insufficient. Historical v1 evidence stays

@@ -143,8 +143,7 @@ public final class TestSuiteStabilityCrossRetentionTrendAnalysisService {
         TestSuiteStabilityCrossRetentionTrendEvidence evidence =
                 new TestSuiteStabilityCrossRetentionTrendEvidence(
                         TestSuiteStabilityCrossRetentionTrendEvidence.SCHEMA_VERSION,
-                        trendAnalysisId, requestFingerprint, request.suiteRef(),
-                        request.minimumRuns(), request.maximumRuns(), sources.size(),
+                        trendAnalysisId, requestFingerprint, request, sources.size(),
                         TestSuiteStabilityCrossRetentionTrendEvidence.SourceOrder
                                 .SOURCE_CREATED_AT_THEN_STABILITY_RUN_ID,
                         range,

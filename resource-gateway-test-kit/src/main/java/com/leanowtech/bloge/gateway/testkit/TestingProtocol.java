@@ -179,6 +179,33 @@ public final class TestingProtocol {
     /** Signed retained-window suite-stability trend response wire version. */
     public static final String TEST_SUITE_STABILITY_TREND_ANALYSIS_RESPONSE_V1 =
             "bloge.testSuiteStabilityTrendAnalysisResponse.v1";
+    /** Exact compact-observation range trend request wire version. */
+    public static final String TEST_SUITE_STABILITY_CROSS_RETENTION_TREND_REQUEST_V1 =
+            "bloge.testSuiteStabilityCrossRetentionTrendAnalysisRequest.v1";
+    /** Durable payload-free compact observation evidence wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_EVIDENCE_V1 =
+            "bloge.testSuiteStabilityObservationEvidence.v1";
+    /** Domain-separated compact observation attestation wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_ATTESTATION_V1 =
+            "bloge.testSuiteStabilityObservationAttestation.v1";
+    /** Producer compact-observation ledger entry wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_ENTRY_V1 =
+            "bloge.testSuiteStabilityObservationLedgerEntry.v1";
+    /** Producer compact-observation ledger head wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_HEAD_V1 =
+            "bloge.testSuiteStabilityObservationLedgerHead.v1";
+    /** Producer floor/head/cursor-pinned observation range wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_RANGE_V1 =
+            "bloge.testSuiteStabilityObservationLedgerRange.v1";
+    /** Signed cross-retention trend evidence wire version. */
+    public static final String TEST_SUITE_STABILITY_CROSS_RETENTION_TREND_EVIDENCE_V1 =
+            "bloge.testSuiteStabilityCrossRetentionTrendEvidence.v1";
+    /** Domain-separated cross-retention range attestation wire version. */
+    public static final String TEST_SUITE_STABILITY_CROSS_RETENTION_TREND_ATTESTATION_V1 =
+            "bloge.testSuiteStabilityCrossRetentionTrendAttestation.v1";
+    /** Signed compact-observation range trend response wire version. */
+    public static final String TEST_SUITE_STABILITY_CROSS_RETENTION_TREND_RESPONSE_V1 =
+            "bloge.testSuiteStabilityCrossRetentionTrendAnalysisResponse.v1";
     /** Asynchronous suite-stability job submission request wire version. */
     public static final String TEST_SUITE_STABILITY_JOB_SUBMIT_REQUEST_V1 =
             "bloge.testSuiteStabilityJobSubmitRequest.v1";

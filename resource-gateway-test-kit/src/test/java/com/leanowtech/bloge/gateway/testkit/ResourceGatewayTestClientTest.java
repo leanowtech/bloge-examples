@@ -32,11 +32,14 @@ class ResourceGatewayTestClientTest {
     private ObjectNode trustPublication;
     private TestSuiteStabilityTestFixtures.Fixture stabilityFixture;
     private TestSuiteStabilityTrendTestFixtures.Fixture trendFixture;
+    private TestSuiteStabilityCrossRetentionTrendTestFixtures.Fixture crossRetentionFixture;
 
     @BeforeEach
     void startServer() throws IOException {
         stabilityFixture = TestSuiteStabilityTestFixtures.fixture();
         trendFixture = TestSuiteStabilityTrendTestFixtures.stableFixture();
+        crossRetentionFixture = TestSuiteStabilityCrossRetentionTrendTestFixtures
+                .stableFixture(trendFixture);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/testing", this::handle);
         server.createContext("/api/integration", this::handle);
@@ -317,6 +320,35 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void verifiesCrossRetentionTrendWithoutFetchingExpiredSourceRuns() {
+        ResourceGatewayTestClient client = client();
+        TestSuiteStabilityCrossRetentionTrendRequest request =
+                crossRetentionFixture.analysis().request();
+
+        var direct = client.verifySuiteStabilityCrossRetentionTrend(request);
+        var pinned = client.verifySuiteStabilityCrossRetentionTrend(
+                request, crossRetentionFixture.keySet().snapshotFingerprint());
+
+        assertThat(direct.verified()).isTrue();
+        assertThat(pinned.verified()).isTrue();
+        assertThat(requests).hasSize(4);
+        assertThat(requests.get(0)).satisfies(value -> {
+            assertThat(value.method()).isEqualTo("POST");
+            assertThat(value.rawPath()).endsWith(
+                    "/suites/orders-suite/stability-cross-retention-trend-analyses");
+            assertThat(EvidenceVerificationSupport.sha256(value.body()))
+                    .isEqualTo(request.requestFingerprint());
+        });
+        assertThat(requests.get(1).rawPath())
+                .endsWith("/evidence-keys/evidence-key-a");
+        assertThat(requests.get(2).rawPath())
+                .endsWith("/stability-cross-retention-trend-analyses");
+        assertThat(requests.get(3).rawPath()).endsWith("/evidence-keys");
+        assertThat(requests).noneSatisfy(value ->
+                assertThat(value.rawPath()).contains("/stability-executions/"));
+    }
+
+    @Test
     void executesStatisticalStabilityWithAnExactPrecommittedPolicy() {
         ResourceGatewayTestClient client = client();
         TestSuiteStabilityStatisticalPolicy policy =
@@ -474,7 +506,7 @@ class ResourceGatewayTestClientTest {
         assertThat(bundle.attestation().keyId()).isEqualTo("test-key-1");
         assertThat(key.keyId()).isEqualTo("test-key-1");
         assertThat(key.verificationAllowed()).isTrue();
-        assertThat(keySet.activeKeyId()).isEqualTo("test-key-1");
+        assertThat(keySet.activeKeyId()).isEqualTo("evidence-key-a");
         assertThat(keySet.policyCompleteness())
                 .isEqualTo(EvidenceVerificationKeySet.PolicyCompleteness.COMPLETE);
         assertThat(requests).extracting(CapturedRequest::rawPath)
@@ -966,6 +998,9 @@ class ResourceGatewayTestClientTest {
                     .put("clientRequestId", body.path("clientRequestId").asText());
             TestSuiteStabilityTestFixtures.seal(response, stabilityFixture.keyPair(), false);
             respond(exchange, 200, response.toString());
+        } else if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith("/stability-cross-retention-trend-analyses")) {
+            respond(exchange, 200, crossRetentionFixture.response().toString());
         } else if ("POST".equals(exchange.getRequestMethod())
                 && path.endsWith("/stability-trend-analyses")) {
             respond(exchange, 200, trendFixture.response().toString());
@@ -1638,38 +1673,23 @@ class ResourceGatewayTestClientTest {
                 key.encodedPublicKey(), key.createdAt(), key.state(), key.provider());
     }
 
-    private static String evidenceKeySetResponse() {
-        return """
-                {"protocol":"ToolStudioResourceGatewayProtocol","protocolVersion":"1.0",
-                 "resourceGatewayVersion":"1.0.0",
-                 "schemaVersion":"toolStudio.resourceGateway.envelope.v1",
-                 "producedAt":"2026-07-15T10:15:31Z",
-                 "compatibility":{"minConsumerVersion":"1.0","backwardCompatible":true,
-                   "breakingChanges":[]},
-                 "payloadKind":"EVIDENCE_VERIFICATION_KEY_SET",
-                 "payloadSchemaVersion":"toolStudio.resourceGateway.evidenceVerificationKeySet.v1",
-                 "payloadFingerprint":"%1$s",
-                 "payload":{"schemaVersion":"toolStudio.resourceGateway.evidenceVerificationKeySet.v1",
-                   "snapshotFingerprint":"%1$s","provider":"test",
-                   "generatedAt":"2026-07-15T10:00:00Z","expiresAt":"2026-07-16T10:00:00Z",
-                   "activeKeyId":"test-key-1","policyCompleteness":"COMPLETE",
-                   "keys":[{"keyId":"test-key-1","algorithm":"Ed25519",
-                     "encodedPublicKey":"AA==","createdAt":"2026-07-15T10:00:00Z",
-                     "notBefore":"2026-07-15T10:00:00Z","notAfter":null,"state":"ACTIVE",
-                     "providerKeyVersion":"version/test-key-1"}],
-                   "events":[
-                     {"sequence":1,"eventId":"created:test-key-1","keyId":"test-key-1",
-                      "type":"CREATED","occurredAt":"2026-07-15T10:00:00Z",
-                      "effectiveAt":"2026-07-15T10:00:00Z","revocationMode":null,
-                      "invalidFrom":null,"reasonCode":"KEY_CREATED"},
-                     {"sequence":2,"eventId":"activated:test-key-1","keyId":"test-key-1",
-                      "type":"ACTIVATED","occurredAt":"2026-07-15T10:00:00Z",
-                      "effectiveAt":"2026-07-15T10:00:00Z","revocationMode":null,
-                      "invalidFrom":null,"reasonCode":"KEY_ACTIVATED"}],
-                   "attestation":{"schemaVersion":"bloge.visualRunEvidenceSeal.v1",
-                     "materialFingerprint":"%1$s","algorithm":"Ed25519","keyId":"test-key-1",
-                     "signedAt":"2026-07-15T10:00:01Z","signature":"AA=="}}}
-                """.formatted(FINGERPRINT);
+    private String evidenceKeySetResponse() {
+        ObjectNode envelope = JSON.createObjectNode();
+        envelope.put("protocol", "ToolStudioResourceGatewayProtocol");
+        envelope.put("protocolVersion", "1.0");
+        envelope.put("resourceGatewayVersion", "1.0.0");
+        envelope.put("schemaVersion", "toolStudio.resourceGateway.envelope.v1");
+        envelope.put("producedAt", EvidenceTrustTestFixtures.NOW.toString());
+        ObjectNode compatibility = envelope.putObject("compatibility");
+        compatibility.put("minConsumerVersion", "1.0");
+        compatibility.put("backwardCompatible", true);
+        compatibility.putArray("breakingChanges");
+        envelope.put("payloadKind", "EVIDENCE_VERIFICATION_KEY_SET");
+        envelope.put("payloadSchemaVersion",
+                TestingProtocol.EVIDENCE_VERIFICATION_KEY_SET_V1);
+        envelope.put("payloadFingerprint", FINGERPRINT);
+        envelope.set("payload", crossRetentionFixture.keySet().rawSnapshot());
+        return envelope.toString();
     }
 
     private static String catalogMaterializationResponse() {

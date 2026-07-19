@@ -666,6 +666,21 @@ Spring Boot 可执行 JAR 重打包。
 该阶段仍未发布 strict Schema、独立 test-kit verifier，也未实现 signed floor retirement/archive/erasure 与
 外部 non-equivocation；因此它不是公共集成合同，`crossRetentionSuiteStabilityTrend` 继续为 false。
 
+第五十三增量第二十六子步第三阶段冻结跨 retention preview 的消费合同，但不提前宣传生命周期能力。
+authoritative Schema 严格定义 request、compact observation/evidence/attestation、entry/head/range、trend evidence、
+ordered closure 与 response，全部 `additionalProperties=false`、最多 100 条且无业务 payload。首屏只允许
+`afterSequence=0 + blank head pin`，任何续页必须携带精确 committed head fingerprint。独立 test-kit 提供 typed
+request/analysis、direct-key 与 externally pinned complete key-set 两条验证路径，并按顺序重算 canonical request、
+deterministic trend/observation identity、observation evidence/signature、entry/head/range、按 signed source
+`createdAt + stabilityRunId` 的纯趋势投影、outer closure/signature；客户端验证不会回源读取可能已经到期的完整
+stability run。重签后的伪造 label/identity、坏签名、closure 缺失或重排、结构指纹篡改、缺 key、pin 不匹配和
+签名时刻 key lifecycle 违规均有精确失败测试。服务端与 test-kit 聚焦门禁分别执行 21 和 53 tests，均为
+0 failures、0 errors、0 skips。
+
+这一步关闭的是“wire contract 与离线可验证性”，不是“历史永续性”。signed floor retirement、archive/WORM、
+legal hold/erasure/backup purge、灾备恢复后连续性和外部 witnessed non-equivocation 仍未实现；endpoint 继续默认
+关闭且 production 不装配，`crossRetentionSuiteStabilityTrend` 必须保持 false。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制

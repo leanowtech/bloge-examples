@@ -1,6 +1,5 @@
 package com.leanowtech.bloge.gateway.testing.domain;
 
-import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityCrossRetentionTrendAnalysisRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerRange;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendEvidence.CaseTrend;
@@ -23,9 +22,7 @@ import java.util.regex.Pattern;
  * @param schemaVersion exact evidence wire generation
  * @param trendAnalysisId deterministic request-and-range identity
  * @param requestFingerprint canonical request identity
- * @param suiteRef exact immutable suite revision
- * @param minimumRuns precommitted minimum observation count
- * @param maximumRuns precommitted range budget
+ * @param request complete precommitted cursor, suite, budget, and head pin
  * @param observedRuns exact returned observation count
  * @param sourceOrder deterministic order used to derive adjacent-run signals
  * @param range complete fingerprinted floor/head/page snapshot
@@ -40,9 +37,7 @@ public record TestSuiteStabilityCrossRetentionTrendEvidence(
         String schemaVersion,
         String trendAnalysisId,
         String requestFingerprint,
-        TestSuiteExecutionRequest.SuiteRef suiteRef,
-        int minimumRuns,
-        int maximumRuns,
+        TestSuiteStabilityCrossRetentionTrendAnalysisRequest request,
         int observedRuns,
         SourceOrder sourceOrder,
         TestSuiteStabilityObservationLedgerRange range,
@@ -70,27 +65,30 @@ public record TestSuiteStabilityCrossRetentionTrendEvidence(
         correlationSignals = correlationSignals == null
                 ? List.of() : List.copyOf(correlationSignals);
         diagnostics = sorted(diagnostics);
-        boolean countsValid = minimumRuns
+        boolean countsValid = request != null && request.minimumRuns()
                 >= TestSuiteStabilityCrossRetentionTrendAnalysisRequest.MINIMUM_RUNS
-                && maximumRuns >= minimumRuns
-                && maximumRuns
+                && request.maximumRuns() >= request.minimumRuns()
+                && request.maximumRuns()
                 <= TestSuiteStabilityCrossRetentionTrendAnalysisRequest.MAXIMUM_RUNS
-                && observedRuns >= 0 && observedRuns <= maximumRuns
+                && observedRuns >= 0 && observedRuns <= request.maximumRuns()
                 && range != null && observedRuns == range.entries().size();
-        boolean resultValid = status != null
+        boolean resultValid = request != null && status != null
                 && sourceOrder == SourceOrder.SOURCE_CREATED_AT_THEN_STABILITY_RUN_ID
                 && causalityStatus == TestSuiteStabilityTrendEvidence.CausalityStatus.NOT_PROVEN
                 && diagnostics.stream().allMatch(value -> REASON.matcher(value).matches())
                 && caseTrends.stream().map(CaseTrend::caseId).distinct().count()
                 == caseTrends.size()
                 && (status == TestSuiteStabilityTrendEvidence.Status.INCONCLUSIVE
-                || observedRuns >= minimumRuns)
+                || observedRuns >= request.minimumRuns())
                 && (observedRuns > 0
                 || (caseTrends.isEmpty() && correlationSignals.isEmpty()));
         if (!SCHEMA_VERSION.equals(schemaVersion)
                 || !TREND_ID.matcher(trendAnalysisId).matches()
                 || !FINGERPRINT.matcher(requestFingerprint).matches()
-                || suiteRef == null || !countsValid || !suiteRef.equals(range.suiteRef())
+                || !countsValid || !request.suiteRef().equals(range.suiteRef())
+                || request.afterSequence() != range.afterSequence()
+                || !request.expectedHeadFingerprint().isBlank()
+                && !request.expectedHeadFingerprint().equals(range.head().headFingerprint())
                 || !resultValid || evaluatedAt == null
                 || !evaluatedAt.equals(range.observedAt())) {
             throw new IllegalArgumentException(

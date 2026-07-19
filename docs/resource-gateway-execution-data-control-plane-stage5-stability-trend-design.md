@@ -1,8 +1,9 @@
 # Stage 5 retained-window stability trend design
 
 **Implementation status (2026-07-19): retained-window server/test-kit v1 implemented; signed
-cross-retention observation-ledger core and default-disabled server range preview implemented, but
-strict public Schema, independent test-kit verification, and ledger lifecycle are not complete.**
+cross-retention observation-ledger core, default-disabled server range preview, strict Schema,
+typed client, and independent five-layer verifier implemented; ledger lifecycle and external
+non-equivocation remain incomplete.**
 
 ## 1. Root problem
 
@@ -52,8 +53,8 @@ its aggregate status is always `INCONCLUSIVE`.
 This v1 guarantee is intentionally limited to records still represented in the current stability
 store. The compact observation-ledger write path and default-disabled range preview described below
 now exist, but the v1 endpoint does not read them and `crossRetentionSuiteStabilityTrend` remains
-false. Strict public Schema, ledger lifecycle policy, and an independent consumer verifier are still
-required before the product may claim trend continuity beyond full evidence retention.
+false. Ledger lifecycle policy and externally witnessed non-equivocation are still required before
+the product may claim trend continuity beyond full evidence retention.
 
 ### 3.1 Cross-retention observation-ledger core
 
@@ -105,11 +106,14 @@ will sign, so a future caller cannot bypass the service's validation accidentall
 The HTTP adapter is present only in `test` or `staging` and only when
 `gateway.testing.stability-cross-retention-preview-enabled=true`. It reuses the dedicated stability
 trend read operation, applies exact-suite classification clearance before ledger access, emits no
-payload values, and is absent from production even if the flag is set. This is deliberately an
-unadvertised preview: there is no authoritative JSON Schema or independent test-kit range verifier,
-and the ledger floor is still the rollout floor because retirement/archive/erasure has no signed
-checkpoint protocol yet. Therefore `crossRetentionSuiteStabilityTrend` remains false and the retained
-v1 source-closed path remains the only advertised trend capability.
+payload values, and is absent from production even if the flag is set. The authoritative Schema now
+freezes every request, observation, entry, head, range, evidence, closure, and signature field. The
+test-kit rederives request and deterministic identities, verifies every compact signature and
+signing-time key policy, reconstructs trend labels with the shared pure projection, and verifies the
+outer closure/signature without fetching full source runs. The ledger floor is still the rollout
+floor because retirement/archive/erasure has no signed checkpoint protocol. Therefore
+`crossRetentionSuiteStabilityTrend` remains false and the retained v1 source-closed path remains the
+only advertised trend capability.
 
 ## 4. Comparable execution regime
 
@@ -207,8 +211,8 @@ Completion requires tests proving rejection or fail-closed projection for:
 
 V1 and the range preview do not provide cross-suite common-cause confirmation, cross-revision
 semantic lineage, advertised cross-retention continuity, compact-ledger retention/archive/erasure
-policy, externally witnessed
-ledger non-equivocation, automatic quarantine mutation, change-point statistics, seasonal baselines,
+policy, legal-hold/backup erasure proof, externally witnessed ledger non-equivocation, automatic
+quarantine mutation, change-point statistics, seasonal baselines,
 production-path comparison, distributed attempt execution, or physical test-runtime isolation.
 Those controls remain separate because collapsing them into a read projection would make the
 evidence easier to display and harder to trust.

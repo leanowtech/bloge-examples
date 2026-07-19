@@ -3030,13 +3030,35 @@ contiguous entries, and database observation time in one canonical range fingerp
 observation is reverified before projection; source trend order is signed
 `createdAt + stabilityRunId`, and a separate signature binds the range plus every exact observation,
 evidence, attestation, and entry identity. For pagination, copy the first response head fingerprint
-into `expectedHeadFingerprint`; a concurrent append then returns a conflict instead of mixing heads.
+into `expectedHeadFingerprint` and set `afterSequence` to the last consumed entry. Sequence zero must
+use a blank pin; every nonzero cursor must use an exact pin. A concurrent append then returns a
+conflict instead of mixing heads.
+
+The independent test-kit can parse and verify the preview without fetching full stability runs:
+
+```java
+TestSuiteStabilityCrossRetentionTrendRequest request =
+        TestSuiteStabilityCrossRetentionTrendRequest.firstPage(
+                storedSuite.suiteId(), storedSuite.revision(), storedSuite.fingerprint(),
+                3, 20);
+
+TestSuiteStabilityCrossRetentionTrendEvidenceVerifier.VerificationResult verified =
+        client.verifySuiteStabilityCrossRetentionTrend(request, trustedKeySetFingerprint);
+if (!verified.verified()) {
+    throw new IllegalStateException(verified.reasonCode());
+}
+```
+
+Verification recomputes the request and deterministic identities, every observation/entry/head/range
+fingerprint, every compact signature and signing-time key lifecycle decision, source ordering and
+derived trend labels, then the exact outer closure and signature. The authoritative Schema rejects
+unknown fields and bounds every page to 100 observations.
 
 This endpoint is absent in production and disabled by default. It is a development protocol, not an
-ANEKE/CI integration contract: authoritative JSON Schema, independent test-kit verification, signed
-floor retirement/archive/erasure, and external non-equivocation policy are still missing. Capability
-`crossRetentionSuiteStabilityTrend` therefore remains `false`; clients must not infer long-term
-continuity from this preview or from internal observation tables.
+ANEKE/CI integration contract: signed floor retirement, archive/WORM, erasure/backup purge, recovery
+continuity, and external non-equivocation policy are still missing. Capability
+`crossRetentionSuiteStabilityTrend` therefore remains `false`; strict verification proves the returned
+range, not the existence of an unbroken long-term history outside that range.
 
 #### Submit, inspect, and cancel a durable stability job
 

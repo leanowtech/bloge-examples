@@ -3475,6 +3475,261 @@
         ]}
       }
     },
+    "testSuiteStabilityCrossRetentionTrendAnalysisRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "suiteRef", "afterSequence", "minimumRuns",
+        "maximumRuns", "expectedHeadFingerprint"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityCrossRetentionTrendAnalysisRequest.v1"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "afterSequence": {"type": "integer", "minimum": 0,
+          "maximum": 9223372036854775807},
+        "minimumRuns": {"type": "integer", "minimum": 2, "maximum": 100},
+        "maximumRuns": {"type": "integer", "minimum": 2, "maximum": 100},
+        "expectedHeadFingerprint": {"oneOf": [
+          {"type": "string", "maxLength": 0},
+          {"$ref": "#/$defs/fingerprint"}
+        ]}
+      },
+      "oneOf": [
+        {"properties": {
+          "afterSequence": {"const": 0},
+          "expectedHeadFingerprint": {"type": "string", "maxLength": 0}
+        }},
+        {"properties": {
+          "afterSequence": {"type": "integer", "minimum": 1},
+          "expectedHeadFingerprint": {"$ref": "#/$defs/fingerprint"}
+        }}
+      ]
+    },
+    "testSuiteStabilityObservationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "observationId", "scopeFingerprint", "suiteRef",
+        "sourceRequestFingerprint", "source"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityObservationEvidence.v1"},
+        "observationId": {"type": "string",
+          "pattern": "^stability-observation-[a-f0-9]{64}$"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "sourceRequestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "source": {"$ref": "#/$defs/testSuiteStabilityTrendRunObservation"}
+      }
+    },
+    "testSuiteStabilityObservationAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "signatureStatus", "observationId",
+        "observationFingerprint", "sourceEvidenceFingerprint",
+        "sourceAttestationFingerprint", "signedAt", "keyId", "algorithm", "signature",
+        "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityObservationAttestation.v1"},
+        "signatureStatus": {"const": "VERIFIED"},
+        "observationId": {"type": "string",
+          "pattern": "^stability-observation-[a-f0-9]{64}$"},
+        "observationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sourceEvidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sourceAttestationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "algorithm": {"const": "Ed25519"},
+        "signature": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "independentlyVerifiable": {"const": true}
+      }
+    },
+    "testSuiteStabilityObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceFingerprint", "evidence", "attestationFingerprint",
+        "attestation"],
+      "properties": {
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidence": {"$ref": "#/$defs/testSuiteStabilityObservationEvidence"},
+        "attestationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "attestation": {"$ref": "#/$defs/testSuiteStabilityObservationAttestation"}
+      }
+    },
+    "testSuiteStabilityObservationLedgerEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "scopeFingerprint", "sequence",
+        "previousObservationId", "observation", "appendedAt", "entryFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityObservationLedgerEntry.v1"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sequence": {"type": "integer", "minimum": 1,
+          "maximum": 9223372036854775807},
+        "previousObservationId": {"type": "string", "maxLength": 86},
+        "observation": {"$ref": "#/$defs/testSuiteStabilityObservation"},
+        "appendedAt": {"type": "string", "format": "date-time"},
+        "entryFingerprint": {"$ref": "#/$defs/fingerprint"}
+      },
+      "oneOf": [
+        {"properties": {"sequence": {"const": 1},
+          "previousObservationId": {"type": "string", "maxLength": 0}}},
+        {"properties": {"sequence": {"type": "integer", "minimum": 2},
+          "previousObservationId": {"type": "string",
+            "pattern": "^stability-observation-[a-f0-9]{64}$"}}}
+      ]
+    },
+    "testSuiteStabilityObservationLedgerHead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "scopeFingerprint", "suiteRef", "coverageFrom",
+        "latestSequence", "latestObservationId", "latestEntryFingerprint", "updatedAt",
+        "headFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityObservationLedgerHead.v1"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "coverageFrom": {"type": "string", "format": "date-time"},
+        "latestSequence": {"type": "integer", "minimum": 1,
+          "maximum": 9223372036854775807},
+        "latestObservationId": {"type": "string",
+          "pattern": "^stability-observation-[a-f0-9]{64}$"},
+        "latestEntryFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "updatedAt": {"type": "string", "format": "date-time"},
+        "headFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteStabilityObservationLedgerRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "scopeFingerprint", "suiteRef", "floorSequence",
+        "floorPreviousObservationId", "floorPreviousEntryFingerprint", "floorObservationId",
+        "floorEntryFingerprint", "head", "afterSequence", "previousObservationId",
+        "previousEntryFingerprint", "entries", "hasMore", "observedAt",
+        "rangeFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityObservationLedgerRange.v1"},
+        "scopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "suiteRef": {"$ref": "#/$defs/testSuiteRef"},
+        "floorSequence": {"type": "integer", "minimum": 1,
+          "maximum": 9223372036854775807},
+        "floorPreviousObservationId": {"type": "string", "maxLength": 86},
+        "floorPreviousEntryFingerprint": {"type": "string", "maxLength": 71},
+        "floorObservationId": {"type": "string",
+          "pattern": "^stability-observation-[a-f0-9]{64}$"},
+        "floorEntryFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "head": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerHead"},
+        "afterSequence": {"type": "integer", "minimum": 0,
+          "maximum": 9223372036854775807},
+        "previousObservationId": {"type": "string", "maxLength": 86},
+        "previousEntryFingerprint": {"type": "string", "maxLength": 71},
+        "entries": {"type": "array", "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerEntry"}},
+        "hasMore": {"type": "boolean"},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "rangeFingerprint": {"$ref": "#/$defs/fingerprint"}
+      },
+      "allOf": [
+        {"oneOf": [
+          {"properties": {"floorSequence": {"const": 1},
+            "floorPreviousObservationId": {"type": "string", "maxLength": 0},
+            "floorPreviousEntryFingerprint": {"type": "string", "maxLength": 0}}},
+          {"properties": {"floorSequence": {"type": "integer", "minimum": 2},
+            "floorPreviousObservationId": {"type": "string",
+              "pattern": "^stability-observation-[a-f0-9]{64}$"},
+            "floorPreviousEntryFingerprint": {"$ref": "#/$defs/fingerprint"}}}
+        ]},
+        {"oneOf": [
+          {"properties": {"afterSequence": {"const": 0},
+            "previousObservationId": {"type": "string", "maxLength": 0},
+            "previousEntryFingerprint": {"type": "string", "maxLength": 0}}},
+          {"properties": {"afterSequence": {"type": "integer", "minimum": 1},
+            "previousObservationId": {"type": "string",
+              "pattern": "^stability-observation-[a-f0-9]{64}$"},
+            "previousEntryFingerprint": {"$ref": "#/$defs/fingerprint"}}}
+        ]}
+      ]
+    },
+    "testSuiteStabilityCrossRetentionTrendEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "trendAnalysisId", "requestFingerprint", "request",
+        "observedRuns", "sourceOrder", "range", "status", "caseTrends",
+        "correlationSignals", "causalityStatus", "diagnostics", "evaluatedAt"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testSuiteStabilityCrossRetentionTrendEvidence.v1"},
+        "trendAnalysisId": {"type": "string",
+          "pattern": "^stability-cross-retention-trend-[a-f0-9]{64}$"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "request": {"$ref": "#/$defs/testSuiteStabilityCrossRetentionTrendAnalysisRequest"},
+        "observedRuns": {"type": "integer", "minimum": 0, "maximum": 100},
+        "sourceOrder": {"const": "SOURCE_CREATED_AT_THEN_STABILITY_RUN_ID"},
+        "range": {"$ref": "#/$defs/testSuiteStabilityObservationLedgerRange"},
+        "status": {"enum": ["STABLE_PASS", "CONSISTENT_FAILURE_OBSERVED",
+          "INSTABILITY_OBSERVED", "REGIME_DRIFT_OBSERVED", "INCONCLUSIVE"]},
+        "caseTrends": {"type": "array", "maxItems": 1000,
+          "items": {"$ref": "#/$defs/testSuiteStabilityCaseTrend"}},
+        "correlationSignals": {"type": "array", "maxItems": 1000,
+          "items": {"$ref": "#/$defs/testSuiteStabilityCorrelationSignal"}},
+        "causalityStatus": {"const": "NOT_PROVEN"},
+        "diagnostics": {"type": "array", "maxItems": 20, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$"}},
+        "evaluatedAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "testSuiteStabilityCrossRetentionObservationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "observationId", "observationFingerprint",
+        "observationAttestationFingerprint", "entryFingerprint"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1,
+          "maximum": 9223372036854775807},
+        "observationId": {"type": "string",
+          "pattern": "^stability-observation-[a-f0-9]{64}$"},
+        "observationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "observationAttestationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "entryFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testSuiteStabilityCrossRetentionTrendAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "signatureStatus", "trendAnalysisId",
+        "requestFingerprint", "evidenceFingerprint", "rangeFingerprint",
+        "observationRefs", "signedAt", "keyId", "algorithm", "signature",
+        "independentlyVerifiable"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityCrossRetentionTrendAttestation.v1"},
+        "signatureStatus": {"const": "VERIFIED"},
+        "trendAnalysisId": {"type": "string",
+          "pattern": "^stability-cross-retention-trend-[a-f0-9]{64}$"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "rangeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "observationRefs": {"type": "array", "maxItems": 100,
+          "items": {"$ref": "#/$defs/testSuiteStabilityCrossRetentionObservationRef"}},
+        "signedAt": {"type": "string", "format": "date-time"},
+        "keyId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "algorithm": {"const": "Ed25519"},
+        "signature": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "independentlyVerifiable": {"const": true}
+      }
+    },
+    "testSuiteStabilityCrossRetentionTrendAnalysisResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "trendAnalysisId", "evidenceFingerprint",
+        "evidence", "attestation"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityCrossRetentionTrendAnalysisResponse.v1"},
+        "trendAnalysisId": {"type": "string",
+          "pattern": "^stability-cross-retention-trend-[a-f0-9]{64}$"},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidence": {"$ref": "#/$defs/testSuiteStabilityCrossRetentionTrendEvidence"},
+        "attestation": {
+          "$ref": "#/$defs/testSuiteStabilityCrossRetentionTrendAttestation"}
+      }
+    },
     "testSuiteCaseResult": {
       "type": "object",
       "additionalProperties": false,

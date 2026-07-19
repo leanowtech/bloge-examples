@@ -350,6 +350,35 @@ storage facts whose consistency is checked; an offline client cannot re-query th
 An incomplete retained window is diagnostic evidence and always `INCONCLUSIVE`, never a release
 proof. V1 intentionally does not claim cross-retention history or automatic quarantine.
 
+For the default-disabled compact-observation preview, verification does not fetch full source runs
+that may already have expired:
+
+```java
+TestSuiteStabilityCrossRetentionTrendRequest crossRetention =
+        TestSuiteStabilityCrossRetentionTrendRequest.firstPage(
+                storedSuite.suiteId(), storedSuite.revision(), storedSuite.fingerprint(),
+                3, 20);
+
+TestSuiteStabilityCrossRetentionTrendAnalysis page =
+        client.analyzeSuiteStabilityCrossRetentionTrend(crossRetention);
+TestSuiteStabilityCrossRetentionTrendEvidenceVerifier.VerificationResult verifiedPage =
+        client.verifySuiteStabilityCrossRetentionTrend(crossRetention, trustedPin);
+if (!verifiedPage.verified()) {
+    throw new IllegalStateException(verifiedPage.reasonCode());
+}
+
+long lastSequence = page.range().entries().getLast().sequence();
+TestSuiteStabilityCrossRetentionTrendRequest continuation = crossRetention.continueAfter(
+        lastSequence, page.range().head().headFingerprint());
+```
+
+The verifier recomputes the exact request, trend and observation identities, compact signatures,
+entry/head/range fingerprints, source-time ordering, trend labels, outer closure, and outer signature.
+Use the pinned key-set overload for release-grade policy checks. Sequence zero requires a blank head
+pin; every continuation requires the exact first-page head. This preview remains absent in production
+and capability-disabled until floor retirement, archive/erasure/recovery, and external
+non-equivocation are complete.
+
 For a non-blocking parent job, create one exact request and submit it with explicit retry bounds:
 
 ```java
