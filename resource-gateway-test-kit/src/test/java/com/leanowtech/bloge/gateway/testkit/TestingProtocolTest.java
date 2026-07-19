@@ -122,6 +122,14 @@ class TestingProtocolTest {
                     .extracting(JsonNode::asText).containsExactly(
                             TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V1,
                             TestingProtocol.TEST_SUITE_STABILITY_PROGRESS_V2);
+            assertConstant(definitions, "testSuiteStabilityTrendAnalysisRequest",
+                    TestingProtocol.TEST_SUITE_STABILITY_TREND_ANALYSIS_REQUEST_V1);
+            assertConstant(definitions, "testSuiteStabilityTrendEvidence",
+                    TestingProtocol.TEST_SUITE_STABILITY_TREND_EVIDENCE_V1);
+            assertConstant(definitions, "testSuiteStabilityTrendAttestation",
+                    TestingProtocol.TEST_SUITE_STABILITY_TREND_ATTESTATION_V1);
+            assertConstant(definitions, "testSuiteStabilityTrendAnalysisResponse",
+                    TestingProtocol.TEST_SUITE_STABILITY_TREND_ANALYSIS_RESPONSE_V1);
             assertConstant(definitions, "testSuiteStabilityJobSubmitRequest",
                     TestingProtocol.TEST_SUITE_STABILITY_JOB_SUBMIT_REQUEST_V1);
             assertConstant(definitions, "testSuiteStabilityJobCancelRequest",

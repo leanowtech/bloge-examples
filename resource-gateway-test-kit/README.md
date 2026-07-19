@@ -322,6 +322,34 @@ common causes.
 v1/v2 projection returns only lifecycle, exact suite identity, planned/completed counts, an optional
 v2 terminal reason, and timestamps; owner, epoch, source ids, fixtures, and payloads are absent.
 
+Analyze several retained terminal stability runs without confusing execution-regime drift with
+flakiness:
+
+```java
+TestSuiteStabilityTrendRequest trendRequest = new TestSuiteStabilityTrendRequest(
+        storedSuite.suiteId(), storedSuite.revision(), storedSuite.fingerprint(),
+        Instant.parse("2026-07-18T00:00:00Z"),
+        Instant.parse("2026-07-19T00:00:00Z"),
+        3, 20);
+
+TestSuiteStabilityTrendAnalysis trend =
+        client.analyzeSuiteStabilityTrend(trendRequest);
+TestSuiteStabilityTrendEvidenceVerifier.VerificationResult trendVerification =
+        client.verifySuiteStabilityTrend(trendRequest, trustedPin);
+if (!trendVerification.verified()) {
+    throw new IllegalStateException(trendVerification.reasonCode());
+}
+```
+
+Trend verification fetches the exact attested source closure, independently verifies each source,
+reconstructs outcome/fixture/plan sets, regime fingerprints, case transitions, correlation signals,
+diagnostics, and aggregate status, then verifies the trend signature. A plan or fixture change is
+`REGIME_DRIFT_OBSERVED`, not flakiness. Correlation signals always retain
+`causalityStatus=NOT_PROVEN`. Persistence timestamps, expired counts, and truncation are signed
+storage facts whose consistency is checked; an offline client cannot re-query the producer store.
+An incomplete retained window is diagnostic evidence and always `INCONCLUSIVE`, never a release
+proof. V1 intentionally does not claim cross-retention history or automatic quarantine.
+
 For a non-blocking parent job, create one exact request and submit it with explicit retry bounds:
 
 ```java

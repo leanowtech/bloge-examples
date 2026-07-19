@@ -614,6 +614,26 @@ client、CLI/JUnit projection 与最终双项目完整门禁已闭合；消费�
 `clean verify` 执行 187 tests，均为 0 failures、0 errors、0 skips，并通过权威 Schema、普通/shaded JAR
 与严格公开 JavaDoc 门禁。
 
+
+第五十三增量第二十五子步把单次稳定性结论推进为同一 immutable suite revision 的签名化保留窗口趋势。
+request v1 预提交闭开时间窗、最小样本和最多 100 条来源预算；数据库分别精确计数完整匹配集与过期集，
+再有界读取 retained records，任何 retention gap 或 truncation 都显式进入 `INCONCLUSIVE`。来源摘要按
+suite/target/case fixture set/effective-plan set 派生 execution regime，避免把配置漂移误报为 flakiness；
+aggregate/case trend 区分 stable pass、consistent failure、instability、regime drift 与 inconclusive。
+`MULTI_CASE_FLAKINESS` 和 `COINCIDENT_OUTCOME_SHIFT` 只提供 investigation candidate，协议永久签入
+`causalityStatus=NOT_PROVEN`，不会自动修改 quarantine。服务端逐条验签来源后，以独立签名域封闭 trend
+evidence 与 ordered source closure；独立 test-kit 再逐来源验签、重建 outcome/fixture/plan set、regime、
+case transition、signal、diagnostic 和 aggregate，并支持当前 key 与外部 pinned complete key-set 两条路径。
+数据库 `createdAt`、expired count 和 truncation 被诚实定义为 producer-authoritative signed facts，离线端只
+验证其闭包与一致性，不虚假宣称重查数据库。设计见
+[Stage 5 retained-window stability trend](resource-gateway-execution-data-control-plane-stage5-stability-trend-design.md)。
+服务端趋势协议聚焦门禁执行 49 tests，独立 test-kit 聚焦门禁执行 61 tests，均为 0 failures、0 errors、
+0 skips。完整 Resource Gateway `clean verify` 执行 2800 tests，0 failures、0 errors、2 个既有条件跳过，
+并重打包 Spring Boot 可执行 JAR；独立 test-kit `clean verify` 执行 200 tests，0 failures、0 errors、
+0 skips，并通过权威 Schema、普通/shaded JAR 与严格公开 JavaDoc 门禁。
+本子步仍不声称跨 retention 连续历史、跨 suite 共同原因证明、forecast/change-point、自动 quarantine、
+production-path comparison 或物理 runtime 隔离。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制
@@ -2389,8 +2409,9 @@ identity/feature-flag/test-secret authority 与断点前历史 evidence 恢复�
 - sandbox binding registry；
 - property/boundary/mutation test；
 - bounded deterministic stability evidence、fixed-horizon zero/non-zero-event exact conditional-rate
-  confidence 与 anytime-valid e-process 端到端早停闭环（已落地）；后续显式
-  alpha-spending、统计 flaky/共同原因趋势、生产路径对比和反熵任务。
+  confidence、anytime-valid e-process 端到端早停闭环与 exact-revision retained-window signed trend
+  （已落地）；后续显式 alpha-spending、跨 retention 压缩账本、跨 suite 共同原因证明、生产路径对比和
+  反熵任务。
 
 验收：完成渗透测试、故障注入、DR、容量、跨租户隔离和“test control 不可能进入 production data plane”的架构证明。
 

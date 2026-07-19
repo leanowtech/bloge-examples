@@ -31,10 +31,12 @@ class ResourceGatewayTestClientTest {
     private EvidenceTrustTestFixtures.Fixture trustFixture;
     private ObjectNode trustPublication;
     private TestSuiteStabilityTestFixtures.Fixture stabilityFixture;
+    private TestSuiteStabilityTrendTestFixtures.Fixture trendFixture;
 
     @BeforeEach
     void startServer() throws IOException {
         stabilityFixture = TestSuiteStabilityTestFixtures.fixture();
+        trendFixture = TestSuiteStabilityTrendTestFixtures.stableFixture();
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/testing", this::handle);
         server.createContext("/api/integration", this::handle);
@@ -285,6 +287,33 @@ class ResourceGatewayTestClientTest {
         assertThat(requests.get(2).rawPath()).endsWith(
                 "/stability-executions/" + TestSuiteStabilityTestFixtures.STABILITY_RUN_ID
                         + "/progress");
+    }
+
+    @Test
+    void analyzesAndIndependentlyVerifiesRetainedStabilityTrendClosure() {
+        ResourceGatewayTestClient client = client();
+        TestSuiteStabilityTrendRequest request = trendFixture.analysis().request();
+
+        TestSuiteStabilityTrendEvidenceVerifier.VerificationResult result =
+                client.verifySuiteStabilityTrend(request);
+
+        assertThat(result.verified()).isTrue();
+        assertThat(result.verifiedSources()).isEqualTo(2);
+        assertThat(requests).hasSize(4);
+        assertThat(requests.get(0)).satisfies(value -> {
+            assertThat(value.method()).isEqualTo("POST");
+            assertThat(value.purpose()).isEqualTo("TEST_EXECUTION");
+            assertThat(value.rawPath()).endsWith(
+                    "/suites/orders-suite/stability-trend-analyses");
+            assertThat(EvidenceVerificationSupport.sha256(value.body()))
+                    .isEqualTo(request.requestFingerprint());
+        });
+        assertThat(requests.subList(1, 3)).allSatisfy(value -> {
+            assertThat(value.method()).isEqualTo("GET");
+            assertThat(value.rawPath()).contains("/stability-executions/stability-");
+        });
+        assertThat(requests.get(3).rawPath())
+                .endsWith("/evidence-keys/evidence-key-a");
     }
 
     @Test
@@ -937,11 +966,18 @@ class ResourceGatewayTestClientTest {
                     .put("clientRequestId", body.path("clientRequestId").asText());
             TestSuiteStabilityTestFixtures.seal(response, stabilityFixture.keyPair(), false);
             respond(exchange, 200, response.toString());
+        } else if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith("/stability-trend-analyses")) {
+            respond(exchange, 200, trendFixture.response().toString());
         } else if ("GET".equals(exchange.getRequestMethod()) && path.endsWith("/progress")) {
             respond(exchange, 200, stabilityProgressResponse());
         } else if ("GET".equals(exchange.getRequestMethod())
                 && path.contains("/stability-executions/")) {
-            respond(exchange, 200, stabilityFixture.response().toString());
+            TestSuiteStabilityRun source = trendFixture.sources().stream()
+                    .filter(candidate -> path.endsWith(candidate.stabilityRunId()))
+                    .findFirst().orElse(null);
+            respond(exchange, 200, source == null ? stabilityFixture.response().toString()
+                    : source.rawResponse().toString());
         } else if (path.endsWith("suite-run%2Fmutation/evidence-bundle")) {
             respond(exchange, 200, mutationSuiteEvidenceBundleResponse());
         } else if (path.endsWith("suite-run%2Fmutation")) {
@@ -973,6 +1009,8 @@ class ResourceGatewayTestClientTest {
             respond(exchange, 200, evidenceTrustBundleResponse());
         } else if (path.endsWith("/evidence-keys")) {
             respond(exchange, 200, evidenceKeySetResponse());
+        } else if (path.endsWith("/evidence-keys/evidence-key-a")) {
+            respond(exchange, 200, evidenceKeyResponse(trendFixture.key()));
         } else if (path.contains("/evidence-keys/")) {
             respond(exchange, 200, evidenceKeyResponse());
         } else if (path.endsWith("/mutation-cases")) {
@@ -1580,6 +1618,24 @@ class ResourceGatewayTestClientTest {
                    "keyId":"test-key-1","algorithm":"Ed25519","encodedPublicKey":"AA==",
                    "createdAt":"2026-07-15T10:00:00Z","state":"ACTIVE","provider":"test"}}
                 """.formatted(FINGERPRINT);
+    }
+
+    private static String evidenceKeyResponse(EvidenceVerificationKey key) {
+        return """
+                {"protocol":"ToolStudioResourceGatewayProtocol","protocolVersion":"1.0",
+                 "resourceGatewayVersion":"1.0.0",
+                 "schemaVersion":"toolStudio.resourceGateway.envelope.v1",
+                 "producedAt":"2026-07-15T10:15:31Z",
+                 "compatibility":{"minConsumerVersion":"1.0","backwardCompatible":true,
+                   "breakingChanges":[]},
+                 "payloadKind":"EVIDENCE_VERIFICATION_KEY",
+                 "payloadSchemaVersion":"toolStudio.resourceGateway.evidenceVerificationKey.v1",
+                 "payloadFingerprint":"%1$s",
+                 "payload":{"schemaVersion":"%2$s","keyId":"%3$s","algorithm":"%4$s",
+                   "encodedPublicKey":"%5$s","createdAt":"%6$s","state":"%7$s",
+                   "provider":"%8$s"}}
+                """.formatted(FINGERPRINT, key.schemaVersion(), key.keyId(), key.algorithm(),
+                key.encodedPublicKey(), key.createdAt(), key.state(), key.provider());
     }
 
     private static String evidenceKeySetResponse() {

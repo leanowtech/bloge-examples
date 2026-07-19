@@ -167,6 +167,18 @@ public final class TestingProtocol {
     /** Payload-free progress exposing a fixed or sequential terminal reason. */
     public static final String TEST_SUITE_STABILITY_PROGRESS_V2 =
             "bloge.testSuiteStabilityProgress.v2";
+    /** Exact retained-window suite-stability trend request wire version. */
+    public static final String TEST_SUITE_STABILITY_TREND_ANALYSIS_REQUEST_V1 =
+            "bloge.testSuiteStabilityTrendAnalysisRequest.v1";
+    /** Payload-free derived retained-window trend evidence wire version. */
+    public static final String TEST_SUITE_STABILITY_TREND_EVIDENCE_V1 =
+            "bloge.testSuiteStabilityTrendEvidence.v1";
+    /** Domain-separated retained-window trend attestation wire version. */
+    public static final String TEST_SUITE_STABILITY_TREND_ATTESTATION_V1 =
+            "bloge.testSuiteStabilityTrendAttestation.v1";
+    /** Signed retained-window suite-stability trend response wire version. */
+    public static final String TEST_SUITE_STABILITY_TREND_ANALYSIS_RESPONSE_V1 =
+            "bloge.testSuiteStabilityTrendAnalysisResponse.v1";
     /** Asynchronous suite-stability job submission request wire version. */
     public static final String TEST_SUITE_STABILITY_JOB_SUBMIT_REQUEST_V1 =
             "bloge.testSuiteStabilityJobSubmitRequest.v1";

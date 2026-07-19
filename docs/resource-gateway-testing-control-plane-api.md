@@ -2931,6 +2931,71 @@ the exact minimum horizon is used. See
 [Stage 5 suite-stability verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-verification.md)
 for the implementation boundary and negative proofs.
 
+#### Analyze a signed retained stability trend
+
+One stability execution proves behavior only inside its precommitted attempt window. To compare
+several terminal analyses for the same immutable suite revision, submit a closed database-time
+window and a hard source budget:
+
+```http
+POST /api/testing/suites/loan-decision-regression/stability-trend-analyses
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+```
+
+```json
+{
+  "schemaVersion": "bloge.testSuiteStabilityTrendAnalysisRequest.v1",
+  "suiteRef": {
+    "suiteId": "loan-decision-regression",
+    "revision": 1,
+    "fingerprint": "sha256:<returned-by-suite-registration>"
+  },
+  "fromInclusive": "2026-07-18T00:00:00Z",
+  "toExclusive": "2026-07-19T00:00:00Z",
+  "minimumRuns": 3,
+  "maximumRuns": 20
+}
+```
+
+The endpoint accepts only the exact path-bound suite, `test` or `staging`, and `TEST_EXECUTION` or
+`TEST_REPLAY`. The end is exclusive, cannot be in the future, and the requested span cannot exceed
+configured stability evidence retention. `minimumRuns` and `maximumRuns` are 2..100 and the former
+cannot exceed the latter.
+
+The signed response distinguishes `STABLE_PASS`, `CONSISTENT_FAILURE_OBSERVED`,
+`INSTABILITY_OBSERVED`, `REGIME_DRIFT_OBSERVED`, and `INCONCLUSIVE`. Fixture or effective-plan
+changes create a new `regimeFingerprint`; they are not relabelled as flaky behavior. A retention gap,
+query-budget truncation, insufficient retained sources, or any inconclusive source forces the
+aggregate to `INCONCLUSIVE`. `MULTI_CASE_FLAKINESS` and `COINCIDENT_OUTCOME_SHIFT` are investigation
+signals only: `causalityStatus` is fixed to `NOT_PROVEN`, and this read API cannot mutate quarantine
+or publication state.
+
+Use the independent test-kit to fetch every attested source, replay each source verifier, reconstruct
+all source summaries and trend semantics, and verify every signature against a key set pinned outside
+the Gateway response:
+
+```java
+TestSuiteStabilityTrendRequest trendRequest = new TestSuiteStabilityTrendRequest(
+        "loan-decision-regression", 1, suiteFingerprint,
+        Instant.parse("2026-07-18T00:00:00Z"),
+        Instant.parse("2026-07-19T00:00:00Z"), 3, 20);
+
+String trustedPin = System.getenv("RESOURCE_GATEWAY_TRUSTED_KEY_SET_FINGERPRINT");
+TestSuiteStabilityTrendEvidenceVerifier.VerificationResult verified =
+        client.verifySuiteStabilityTrend(trendRequest, trustedPin);
+if (!verified.verified()) {
+    throw new IllegalStateException(verified.reasonCode());
+}
+```
+
+The verifier independently proves source signatures and derived semantics. Database persistence
+timestamps, expired-row count, and truncation are signed producer-authoritative facts: offline code
+checks their internal consistency but cannot claim to have independently re-queried the database.
+V1 covers one exact revision inside current evidence retention; it does not provide cross-retention
+continuity, cross-suite common-cause proof, forecasting, or automatic quarantine.
+
 #### Submit, inspect, and cancel a durable stability job
 
 The asynchronous protocol is a separate application boundary over the same exact execution request.

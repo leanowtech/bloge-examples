@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TestSuiteStabilityTrendEvidenceEvaluatorTest {
     private static final Instant FROM = Instant.parse("2026-07-18T00:00:00Z");
     private static final Instant TO = Instant.parse("2026-07-19T00:00:00Z");
+    private static final Instant OBSERVED_AT = TO.plusSeconds(30);
 
     private ObjectMapper mapper;
     private TestSuiteStabilityAttestationService sourceAttestations;
@@ -49,6 +50,7 @@ class TestSuiteStabilityTrendEvidenceEvaluatorTest {
         assertThat(evidence.status()).isEqualTo(
                 TestSuiteStabilityTrendEvidence.Status.STABLE_PASS);
         assertThat(evidence.completeWindow()).isTrue();
+        assertThat(evidence.evaluatedAt()).isEqualTo(OBSERVED_AT);
         assertThat(evidence.caseTrends()).allSatisfy(value ->
                 assertThat(value.status()).isEqualTo(CaseTrendStatus.STABLE_PASS));
         assertThat(evidence.correlationSignals()).isEmpty();
@@ -165,7 +167,8 @@ class TestSuiteStabilityTrendEvidenceEvaluatorTest {
         TestSuiteStabilityTrendAnalysisRequest request = request();
         return evaluator.evaluate("tenant-a", "test", request,
                 ProtocolFingerprint.of(mapper, request),
-                new TestSuiteStabilityHistoryWindow(records, expired, truncated, TO));
+                new TestSuiteStabilityHistoryWindow(
+                        records, expired, truncated, OBSERVED_AT));
     }
 
     private TestSuiteStabilityRunRecord source(

@@ -62,6 +62,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/executions` | Execute an exact immutable V1-V4 suite revision, including bounded property root/shrink closures, and emit signed aggregate evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/mutation-executions` | Execute an exact V5 suite baseline-first, classify every regenerated mutant, and emit signed mutation-score evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-executions` | Execute one exact V1/V2/V4 suite with deterministic request v1, fixed-horizon statistical request v2/v3, or anytime-valid maximum-horizon request v4, under a cross-replica parent lease, then retain signed payload-free evidence (test/staging only) |
+| `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-trend-analyses` | Derive and sign a bounded retained-history trend for one exact suite revision, with explicit retention/truncation gaps, execution-regime drift, case transitions, and non-causal correlation signals (test/staging only) |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}` | Read one retained stability analysis with its exact ordered source-run closure and detached signature (test/staging only) |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}/progress` | Poll payload-free `RUNNING`, `RECOVERABLE`, or `COMPLETED` durable parent progress; v2 distinguishes planned horizon, observed prefix, and terminal reason without exposing owner/epoch/source ids/payloads (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-jobs` | Submit an exact stability request without blocking; returns `202`, deterministic `jobId`, query `Location`, and payload-free lifecycle (test/staging only; fresh submission requires the opt-in worker) |
@@ -156,7 +157,8 @@ for the complete target-discovery, fixture-registration, execution, evidence,
 and production-isolation workflow. Java/JUnit/CI consumers can use the independent
 [Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) for fixture and immutable-suite
 builders, typed catalog materialization, exact suite execution, signed bounded stability analysis,
-pinned-key-set offline verification, payload-free assertions/XML, and the fail-closed CLI instead of
+signed retained-window trend reconstruction, pinned-key-set offline verification, payload-free
+assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The stability protocol's
 v2+ evidence keeps behavioral stability separate from release eligibility: every verified source
 suite promotion verdict is signed into the attempt closure, so `STABLE + BLOCKED` remains visible

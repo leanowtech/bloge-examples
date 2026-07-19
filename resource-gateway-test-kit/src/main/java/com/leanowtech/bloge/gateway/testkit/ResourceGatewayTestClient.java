@@ -20,9 +20,12 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -532,6 +535,95 @@ public final class ResourceGatewayTestClient {
                     "The server returned a mismatched stability execution identity.");
         }
         return run;
+    }
+
+    /**
+     * Requests one signed retained-window trend over an exact immutable suite revision.
+     *
+     * <p>The response is validated against the packaged protocol Schema and bound back to every
+     * request field. Parsing does not establish source or signature trust; call one of the
+     * {@code verifySuiteStabilityTrend} overloads for offline reconstruction.</p>
+     *
+     * @param request exact bounded trend intent
+     * @return strict payload-free trend projection
+     */
+    public TestSuiteStabilityTrendAnalysis analyzeSuiteStabilityTrend(
+            TestSuiteStabilityTrendRequest request) {
+        TestSuiteStabilityTrendRequest exactRequest = Objects.requireNonNull(
+                request, "suite-stability trend request is required");
+        JsonNode response = exchange("POST", "/api/testing/suites/"
+                        + segment(exactRequest.suiteId()) + "/stability-trend-analyses", "",
+                "TEST_EXECUTION", exactRequest.toJson());
+        requireVersion(response,
+                TestingProtocol.TEST_SUITE_STABILITY_TREND_ANALYSIS_RESPONSE_V1);
+        TestSuiteStabilityTrendAnalysis analysis = projectStabilityTrend(response);
+        if (!exactRequest.equals(analysis.request())) {
+            throw responseContractInvalid(
+                    "The server returned a trend for a different suite or window.");
+        }
+        return analysis;
+    }
+
+    /**
+     * Fetches all retained source evidence and independently verifies one new trend analysis.
+     *
+     * <p>Public keys are resolved by exact attestation key id. Known key-provider absence is
+     * returned as a bounded verification result; transport and unrelated protocol failures remain
+     * exceptions.</p>
+     *
+     * @param request exact bounded trend intent
+     * @return source-closed offline verification result
+     */
+    public TestSuiteStabilityTrendEvidenceVerifier.VerificationResult
+            verifySuiteStabilityTrend(TestSuiteStabilityTrendRequest request) {
+        TestSuiteStabilityTrendAnalysis analysis = analyzeSuiteStabilityTrend(request);
+        List<TestSuiteStabilityRun> sources = fetchTrendSources(analysis);
+        Map<String, EvidenceVerificationKey> keys = new LinkedHashMap<>();
+        Set<String> keyIds = new LinkedHashSet<>();
+        sources.forEach(source -> keyIds.add(source.attestation().keyId()));
+        keyIds.add(analysis.attestation().keyId());
+        for (String keyId : keyIds) {
+            try {
+                keys.put(keyId, findEvidenceVerificationKey(keyId));
+            } catch (ResourceGatewayTestException failure) {
+                if (!"RG.INTEGRATION.EVIDENCE_KEY_NOT_FOUND".equals(failure.code())
+                        && !"RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE"
+                        .equals(failure.code())) {
+                    throw failure;
+                }
+            }
+        }
+        return new TestSuiteStabilityTrendEvidenceVerifier().verify(
+                analysis, sources, keys);
+    }
+
+    /**
+     * Performs release-grade trend verification against an independently pinned key-set snapshot.
+     *
+     * @param request exact bounded trend intent
+     * @param trustedKeySetFingerprint key-set fingerprint pinned outside Gateway output
+     * @return lifecycle-aware source-closed verification result
+     */
+    public TestSuiteStabilityTrendEvidenceVerifier.VerificationResult
+            verifySuiteStabilityTrend(
+            TestSuiteStabilityTrendRequest request,
+            String trustedKeySetFingerprint) {
+        TestSuiteStabilityTrendAnalysis analysis = analyzeSuiteStabilityTrend(request);
+        List<TestSuiteStabilityRun> sources = fetchTrendSources(analysis);
+        EvidenceVerificationKeySet keySet;
+        try {
+            keySet = findEvidenceVerificationKeySet();
+        } catch (ResourceGatewayTestException failure) {
+            if ("RG.INTEGRATION.EVIDENCE_KEY_SET_PROVIDER_UNAVAILABLE".equals(failure.code())
+                    || "RG.INTEGRATION.EVIDENCE_KEY_SET_ATTESTATION_UNAVAILABLE"
+                    .equals(failure.code())) {
+                keySet = null;
+            } else {
+                throw failure;
+            }
+        }
+        return new TestSuiteStabilityTrendEvidenceVerifier().verify(
+                analysis, sources, keySet, trustedKeySetFingerprint);
     }
 
     /**
@@ -1483,6 +1575,23 @@ public final class ResourceGatewayTestClient {
             throw responseContractInvalid(
                     "The server returned an invalid suite-stability projection.");
         }
+    }
+
+    private static TestSuiteStabilityTrendAnalysis projectStabilityTrend(JsonNode response) {
+        try {
+            return TestSuiteStabilityTrendAnalysis.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid suite-stability trend projection.");
+        }
+    }
+
+    private List<TestSuiteStabilityRun> fetchTrendSources(
+            TestSuiteStabilityTrendAnalysis analysis) {
+        List<TestSuiteStabilityRun> sources = new ArrayList<>();
+        analysis.attestation().sourceEvidenceRefs().forEach(source ->
+                sources.add(findSuiteStability(source.stabilityRunId())));
+        return List.copyOf(sources);
     }
 
     private static TestSuiteStabilityProgress projectStabilityProgress(JsonNode response) {

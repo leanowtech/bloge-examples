@@ -616,6 +616,26 @@ parser、逐 prefix 精确重算、同步/异步 client、progress v2、CLI/JUni
 `clean verify` 执行 187 tests，均为 0 failures、0 errors、0 skips，并通过权威 Schema、普通/shaded JAR
 与严格公开 JavaDoc 门禁。
 
+
+第五十三增量第二十五子步把单次稳定性结论推进为同一 immutable suite revision 的签名化保留窗口趋势。
+request v1 预提交闭开时间窗、最小样本和最多 100 条来源预算；数据库分别精确计数完整匹配集与过期集，
+再有界读取 retained records，任何 retention gap 或 truncation 都显式进入 `INCONCLUSIVE`。来源摘要按
+suite/target/case fixture set/effective-plan set 派生 execution regime，避免把配置漂移误报为 flakiness；
+aggregate/case trend 区分 stable pass、consistent failure、instability、regime drift 与 inconclusive。
+`MULTI_CASE_FLAKINESS` 和 `COINCIDENT_OUTCOME_SHIFT` 只提供 investigation candidate，协议永久签入
+`causalityStatus=NOT_PROVEN`，不会自动修改 quarantine。服务端逐条验签来源后，以独立签名域封闭 trend
+evidence 与 ordered source closure；独立 test-kit 再逐来源验签、重建 outcome/fixture/plan set、regime、
+case transition、signal、diagnostic 和 aggregate，并支持当前 key 与外部 pinned complete key-set 两条路径。
+数据库 `createdAt`、expired count 和 truncation 被诚实定义为 producer-authoritative signed facts，离线端只
+验证其闭包与一致性，不虚假宣称重查数据库。设计见
+[Stage 5 retained-window stability trend](resource-gateway-execution-data-control-plane-stage5-stability-trend-design.md)。
+服务端趋势协议聚焦门禁执行 49 tests，独立 test-kit 聚焦门禁执行 61 tests，均为 0 failures、0 errors、
+0 skips。完整 Resource Gateway `clean verify` 执行 2800 tests，0 failures、0 errors、2 个既有条件跳过，
+并重打包 Spring Boot 可执行 JAR；独立 test-kit `clean verify` 执行 200 tests，0 failures、0 errors、
+0 skips，并通过权威 Schema、普通/shaded JAR 与严格公开 JavaDoc 门禁。
+本子步仍不声称跨 retention 连续历史、跨 suite 共同原因证明、forecast/change-point、自动 quarantine、
+production-path comparison 或物理 runtime 隔离。
+
 恢复控制面回归执行 146 tests，0 failures、0 errors、0 skips；完整 Resource Gateway
 `clean verify` 执行 2298 tests，0 failures、0 errors、28 个既有条件跳过，并通过真实浏览器流程与
 Spring Boot 可执行 JAR 打包。独立 test-kit `clean verify` 执行 77 tests，0 failures、0 errors、

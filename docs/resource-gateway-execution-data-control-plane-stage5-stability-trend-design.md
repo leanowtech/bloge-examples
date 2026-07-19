@@ -1,6 +1,6 @@
 # Stage 5 retained-window stability trend design
 
-**Implementation status (2026-07-19): design accepted for implementation.**
+**Implementation status (2026-07-19): server and independent test-kit v1 implemented.**
 
 ## 1. Root problem
 
@@ -27,8 +27,10 @@ and correlation signals. It does not infer causality or mutate quarantine state.
 - `maximumRuns` hard response and verification budget.
 
 The end instant must not be in the future. The window is bounded by the configured stability
-retention and contains at most 100 terminal analyses. Repository selection is chronological by
-`createdAt + stabilityRunId`; it reads one extra row so truncation is observable rather than silent.
+retention and contains at most 100 terminal analyses. The repository counts the complete matching
+window and expired subset before reading at most `maximumRuns` retained records in chronological
+`createdAt + stabilityRunId` order. Expired rows therefore do not consume the retained-response
+budget, while both retention loss and total-window truncation remain explicit.
 
 The query is exact-suite only. Cross-revision analysis is rejected because a reused case id does not
 prove that inputs, fixtures, target closure, or assertions retained the same meaning.
@@ -105,6 +107,12 @@ closure in a domain separate from a single stability run. The server verifies ev
 attestation before sealing. The independent test kit must fetch or receive each referenced source,
 verify it against an externally pinned key set, reconstruct every summary and transition, and then
 verify the trend signature. Trusting producer counters or labels is forbidden.
+
+Independent verification has three explicit trust layers. Source evidence and its semantic labels
+are independently reconstructed; trend regimes, transitions, signals, diagnostics, and aggregate
+status are independently reconstructed; database `createdAt`, expired-row count, and truncation are
+producer-authoritative storage observations whose signature and cross-field consistency are
+verified. An offline bundle cannot honestly claim that it re-queried the producer database.
 
 ## 8. Isolation and authorization
 

@@ -82,7 +82,7 @@ public final class TestSuiteStabilityTrendEvidenceEvaluator {
                 request.maximumRuns(), sources.size(), window.expiredMatchingRuns(), complete,
                 status, sources, caseTrends, signals,
                 TestSuiteStabilityTrendEvidence.CausalityStatus.NOT_PROVEN,
-                diagnostics, request.toExclusive());
+                diagnostics, window.observedAt());
     }
 
     private RunObservation source(TestSuiteStabilityRunRecord record) {

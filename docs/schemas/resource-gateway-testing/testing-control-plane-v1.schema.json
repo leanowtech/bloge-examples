@@ -3411,7 +3411,7 @@
         "minimumRuns": {"type": "integer", "minimum": 2, "maximum": 100},
         "maximumRuns": {"type": "integer", "minimum": 2, "maximum": 100},
         "observedRuns": {"type": "integer", "minimum": 0, "maximum": 100},
-        "expiredMatchingRuns": {"type": "integer", "minimum": 0},
+        "expiredMatchingRuns": {"type": "integer", "minimum": 0, "maximum": 2147483647},
         "completeWindow": {"type": "boolean"},
         "status": {"enum": ["STABLE_PASS", "CONSISTENT_FAILURE_OBSERVED",
           "INSTABILITY_OBSERVED", "REGIME_DRIFT_OBSERVED", "INCONCLUSIVE"]},

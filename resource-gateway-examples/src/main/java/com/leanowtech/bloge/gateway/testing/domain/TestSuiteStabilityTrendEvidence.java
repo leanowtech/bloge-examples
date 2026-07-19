@@ -255,7 +255,10 @@ public record TestSuiteStabilityTrendEvidence(
                 || fromInclusive == null || toExclusive == null
                 || !fromInclusive.isBefore(toExclusive) || !countsValid || !completeValid
                 || status == null || causalityStatus != CausalityStatus.NOT_PROVEN
-                || evaluatedAt == null || duplicateSource(sources) || !chronological(sources)
+                || evaluatedAt == null || evaluatedAt.isBefore(toExclusive)
+                || duplicateSource(sources) || !chronological(sources)
+                || sources.stream().anyMatch(value -> value.createdAt().isBefore(fromInclusive)
+                || !value.createdAt().isBefore(toExclusive))
                 || duplicateTrend(caseTrends)
                 || diagnostics.stream().anyMatch(value -> !REASON.matcher(value).matches())
                 || (status != Status.INCONCLUSIVE
