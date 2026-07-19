@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.TestSuiteStabilityJobRequestKeyProtector;
@@ -31,6 +32,7 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
     private DatabaseTestSuiteStabilityRunRepository runs;
     private DatabaseTestSuiteStabilityJobRepository jobs;
     private TestSuiteStabilityAttestationService attestations;
+    private TestSuiteStabilityObservationAttestationService observationAttestations;
     private RepositoryTestSuiteStabilityJobParentAuthority authority;
 
     @BeforeEach
@@ -42,8 +44,10 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
         jdbc = new JdbcTemplate(dataSource);
         runs = new DatabaseTestSuiteStabilityRunRepository(jdbc, mapper);
         runs.init();
-        attestations = new TestSuiteStabilityAttestationService(
-                mapper, new InMemoryVisualEvidenceSigner());
+        InMemoryVisualEvidenceSigner signer = new InMemoryVisualEvidenceSigner();
+        attestations = new TestSuiteStabilityAttestationService(mapper, signer);
+        observationAttestations = new TestSuiteStabilityObservationAttestationService(
+                mapper, signer, attestations);
         authority = new RepositoryTestSuiteStabilityJobParentAuthority(
                 runs, mapper, attestations);
         jobs = new DatabaseTestSuiteStabilityJobRepository(
@@ -203,7 +207,7 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
                 evidenceJson, TestSuiteStabilityEvidence.class);
         var seal = attestations.seal(evidence, execution.requestFingerprint());
         TestSuiteStabilityJobPrincipal principal = job.principal();
-        Instant createdAt = Instant.now();
+        Instant createdAt = runs.currentTime();
         TestSuiteStabilityRunRecord terminal = new TestSuiteStabilityRunRecord(
                 execution.stabilityRunId(), execution.clientRequestId(),
                 execution.requestFingerprint(), execution.tenantId(),
@@ -224,7 +228,11 @@ class RepositoryTestSuiteStabilityJobParentAuthorityTest {
                             attempt.aggregateEvidenceFingerprint()),
                     Duration.ofSeconds(30), Duration.ofDays(30)).lease();
         }
-        return runs.complete(terminal, lease);
+        var observation = observationAttestations.seal(terminal);
+        if (!observation.verified()) {
+            throw new IllegalStateException(observation.failureCode());
+        }
+        return runs.complete(terminal, observation.observation(), lease);
     }
 
     private static TestSuiteStabilityJobRecord job() {

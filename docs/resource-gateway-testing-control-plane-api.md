@@ -2996,6 +2996,13 @@ checks their internal consistency but cannot claim to have independently re-quer
 V1 covers one exact revision inside current evidence retention; it does not provide cross-retention
 continuity, cross-suite common-cause proof, forecasting, or automatic quarantine.
 
+New terminal stability publications also create an independently signed compact observation and
+append it to a database-ordered exact-suite ledger in the same transaction as terminal/progress/lease
+mutation. This write-side ledger is intentionally not read by the v1 endpoint. There is no public
+ledger request/response Schema or test-kit range verifier yet, and capability
+`crossRetentionSuiteStabilityTrend` therefore remains `false`; clients must not infer long-term
+continuity from the presence of internal observation tables.
+
 #### Submit, inspect, and cancel a durable stability job
 
 The asynchronous protocol is a separate application boundary over the same exact execution request.

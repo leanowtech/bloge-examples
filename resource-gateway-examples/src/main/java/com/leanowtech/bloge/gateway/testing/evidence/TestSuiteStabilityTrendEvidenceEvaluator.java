@@ -2,7 +2,6 @@ package com.leanowtech.bloge.gateway.testing.evidence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityHistoryWindow;
-import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityTrendAnalysisRequest;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendEvidence;
@@ -14,7 +13,6 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendEviden
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendEvidence.RunObservation;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -31,12 +29,14 @@ import java.util.Set;
  */
 public final class TestSuiteStabilityTrendEvidenceEvaluator {
     private final ObjectMapper objectMapper;
+    private final TestSuiteStabilityObservationProjector projector;
 
     /**
      * @param objectMapper canonical protocol mapper
      */
     public TestSuiteStabilityTrendEvidenceEvaluator(ObjectMapper objectMapper) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.projector = new TestSuiteStabilityObservationProjector(objectMapper);
     }
 
     /**
@@ -58,7 +58,7 @@ public final class TestSuiteStabilityTrendEvidenceEvaluator {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(window, "window");
         List<RunObservation> sources = window.records().stream()
-                .map(this::source)
+                .map(projector::project)
                 .toList();
         List<CaseTrend> caseTrends = caseTrends(sources);
         List<CorrelationSignal> signals = correlationSignals(sources);
@@ -83,51 +83,6 @@ public final class TestSuiteStabilityTrendEvidenceEvaluator {
                 status, sources, caseTrends, signals,
                 TestSuiteStabilityTrendEvidence.CausalityStatus.NOT_PROVEN,
                 diagnostics, window.observedAt());
-    }
-
-    private RunObservation source(TestSuiteStabilityRunRecord record) {
-        TestSuiteStabilityEvidence evidence = record.evidence();
-        List<CaseSnapshot> cases = evidence.caseResults().stream()
-                .map(this::caseSnapshot)
-                .sorted(Comparator.comparing(CaseSnapshot::caseId))
-                .toList();
-        String regimeFingerprint = ProtocolFingerprint.of(objectMapper,
-                new RegimeMaterial(evidence.suiteRef().fingerprint(),
-                        evidence.target().fingerprint(), cases.stream()
-                        .map(value -> new CaseRegime(value.caseId(),
-                                value.fixtureSetFingerprint(), value.planSetFingerprint()))
-                        .toList()));
-        return new RunObservation(
-                record.stabilityRunId(), record.evidenceFingerprint(),
-                ProtocolFingerprint.of(objectMapper, record.attestation()),
-                evidence.schemaVersion(), evidence.target().fingerprint(), evidence.status(),
-                evidence.promotion().status(), evidence.quarantine().status(),
-                evidence.statisticalAssessment() == null ? null
-                        : evidence.statisticalAssessment().status(),
-                regimeFingerprint, cases, evidence.startedAt(), evidence.completedAt(),
-                record.createdAt());
-    }
-
-    private CaseSnapshot caseSnapshot(TestSuiteStabilityEvidence.CaseStabilityResult value) {
-        List<String> outcomes = value.observations().stream()
-                .filter(observation -> observation.status()
-                        == TestSuiteStabilityEvidence.ObservationStatus.VERIFIED)
-                .map(TestSuiteStabilityEvidence.CaseObservation::outcomeIdentity)
-                .distinct().sorted().toList();
-        List<String> fixtures = value.observations().stream()
-                .filter(observation -> observation.status()
-                        == TestSuiteStabilityEvidence.ObservationStatus.VERIFIED)
-                .map(TestSuiteStabilityEvidence.CaseObservation::fixtureBundleFingerprint)
-                .distinct().sorted().toList();
-        List<String> plans = value.observations().stream()
-                .filter(observation -> observation.status()
-                        == TestSuiteStabilityEvidence.ObservationStatus.VERIFIED)
-                .map(TestSuiteStabilityEvidence.CaseObservation::planFingerprint)
-                .distinct().sorted().toList();
-        return new CaseSnapshot(value.caseId(), value.status(),
-                ProtocolFingerprint.of(objectMapper, outcomes),
-                ProtocolFingerprint.of(objectMapper, fixtures),
-                ProtocolFingerprint.of(objectMapper, plans));
     }
 
     private static List<CaseTrend> caseTrends(List<RunObservation> sources) {
@@ -284,18 +239,6 @@ public final class TestSuiteStabilityTrendEvidenceEvaluator {
     }
 
     private record CasePoint(String runId, String runRegime, CaseSnapshot snapshot) {
-    }
-
-    private record RegimeMaterial(
-            String suiteFingerprint,
-            String targetFingerprint,
-            List<CaseRegime> cases) {
-    }
-
-    private record CaseRegime(
-            String caseId,
-            String fixtureSetFingerprint,
-            String planSetFingerprint) {
     }
 
     private record SourceIdentity(

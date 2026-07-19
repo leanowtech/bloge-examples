@@ -11,10 +11,12 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStopRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRecord;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +42,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     private JdbcTemplate jdbc;
     private DatabaseTestSuiteStabilityRunRepository repository;
     private TestSuiteStabilityAttestationService attestations;
+    private TestSuiteStabilityObservationAttestationService observationAttestations;
 
     @BeforeEach
     void setUp() {
@@ -50,8 +53,10 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         jdbc = new JdbcTemplate(dataSource);
         repository = new DatabaseTestSuiteStabilityRunRepository(jdbc, mapper);
         repository.init();
-        attestations = new TestSuiteStabilityAttestationService(
-                mapper, new InMemoryVisualEvidenceSigner());
+        InMemoryVisualEvidenceSigner signer = new InMemoryVisualEvidenceSigner();
+        attestations = new TestSuiteStabilityAttestationService(mapper, signer);
+        observationAttestations = new TestSuiteStabilityObservationAttestationService(
+                mapper, signer, attestations);
     }
 
     @Test
@@ -61,7 +66,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         TestSuiteStabilityExecutionLease lease = checkpointed(
                 record, acquired(record, "owner-a"));
 
-        assertThat(repository.complete(record, lease)).isEqualTo(record);
+        assertThat(complete(record, lease)).isEqualTo(record);
         assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
                 .contains(record);
         assertThat(repository.findByClientRequestId(
@@ -150,7 +155,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
 
         TestSuiteStabilityExecutionLease completeLease = checkpointRemaining(
                 record, takeover.lease(), 1);
-        assertThat(repository.complete(record, completeLease)).isEqualTo(record);
+        assertThat(complete(record, completeLease)).isEqualTo(record);
     }
 
     @Test
@@ -162,7 +167,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 Duration.ofSeconds(30), Duration.ofDays(30)).lease();
         TestSuiteStabilityExecutionLease incomplete = lease;
 
-        assertThatThrownBy(() -> repository.complete(record, incomplete))
+        assertThatThrownBy(() -> complete(record, incomplete))
                 .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT));
@@ -182,7 +187,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         TestSuiteStabilityRunRecord record = record(evidence, "tenant-a", "test",
                 "stability-request", Instant.now().plusSeconds(30));
 
-        repository.complete(record, checkpointed(record, acquired(record, "owner-a")));
+        complete(record, checkpointed(record, acquired(record, "owner-a")));
 
         assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
                 .get().extracting(value -> value.evidence().statisticalAssessment().status())
@@ -196,7 +201,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         TestSuiteStabilityRunRecord record = record(evidence, "tenant-a", "test",
                 "stability-request", Instant.now().plusSeconds(30));
 
-        repository.complete(record, checkpointed(record, acquired(record, "owner-a")));
+        complete(record, checkpointed(record, acquired(record, "owner-a")));
 
         assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
                 .get().satisfies(value -> {
@@ -218,13 +223,13 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         TestSuiteStabilityExecutionLease lease = acquired(record, "owner-a");
         TestSuiteStabilityExecutionLease after56 = checkpointRemaining(record, lease, 0, 56);
 
-        assertThatThrownBy(() -> repository.complete(record, after56))
+        assertThatThrownBy(() -> complete(record, after56))
                 .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityRunConflictException.Reason.PROGRESS_CONFLICT));
 
         TestSuiteStabilityExecutionLease after57 = checkpointRemaining(record, after56, 56, 57);
-        assertThat(repository.complete(record, after57)).isEqualTo(record);
+        assertThat(complete(record, after57)).isEqualTo(record);
         assertThat(repository.find("tenant-a", "test", record.stabilityRunId()))
                 .get().satisfies(value -> {
                     assertThat(value.evidence().requestedAttempts()).isEqualTo(100);
@@ -266,17 +271,31 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     }
 
     @Test
-    void exactSuiteHistoryMakesRetentionLossAndBudgetTruncationExplicit() {
+    void exactSuiteHistoryMakesRetentionLossAndBudgetTruncationExplicit() throws Exception {
         Instant now = Instant.now();
-        TestSuiteStabilityRunRecord expired = trendRecord(
-                '1', now.minusSeconds(300), now.minusSeconds(100));
+        TestSuiteStabilityRunRecord initiallyLive = trendRecord(
+                '1', now.minusSeconds(300), now.plusSeconds(3_600));
         TestSuiteStabilityRunRecord retained = trendRecord(
                 '2', now.minusSeconds(200), now.plusSeconds(3_600));
         TestSuiteStabilityRunRecord overflow = trendRecord(
                 '3', now.minusSeconds(100), now.plusSeconds(3_600));
-        completeTrend(expired);
+        completeTrend(initiallyLive);
         completeTrend(retained);
         completeTrend(overflow);
+        TestSuiteStabilityRunRecord expired = new TestSuiteStabilityRunRecord(
+                initiallyLive.stabilityRunId(), initiallyLive.clientRequestId(),
+                initiallyLive.requestFingerprint(), initiallyLive.tenantId(),
+                initiallyLive.organizationId(), initiallyLive.projectId(),
+                initiallyLive.environmentId(), initiallyLive.actorId(),
+                initiallyLive.classification(), initiallyLive.evidenceFingerprint(),
+                initiallyLive.evidence(), initiallyLive.attestation(),
+                initiallyLive.createdAt(), now.minusSeconds(100));
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_records
+                SET expires_at = ?, record_json = ?
+                WHERE stability_run_id = ?
+                """, java.sql.Timestamp.from(expired.expiresAt()),
+                mapper.writeValueAsString(expired), expired.stabilityRunId());
 
         var history = repository.history("tenant-a", "test",
                 TestSuiteStabilityProtocolFixtures.SUITE_REF,
@@ -290,10 +309,171 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     }
 
     @Test
+    void terminalPublicationAtomicallyAppendsAContiguousSignedObservationLedger() {
+        Instant now = Instant.now();
+        TestSuiteStabilityRunRecord first = trendRecord(
+                'a', now.minusSeconds(20), now.plusSeconds(3_600));
+        TestSuiteStabilityRunRecord second = trendRecord(
+                'b', now.minusSeconds(10), now.plusSeconds(3_600));
+
+        completeTrend(first);
+        completeTrend(second);
+
+        var head = repository.observationLedgerHead(
+                "tenant-a", "test", first.evidence().suiteRef()).orElseThrow();
+        var entries = repository.observations(
+                "tenant-a", "test", first.evidence().suiteRef(), 0, 10);
+        assertThat(head.latestSequence()).isEqualTo(2);
+        assertThat(entries).hasSize(2);
+        assertThat(entries).extracting(value -> value.sequence())
+                .containsExactly(1L, 2L);
+        assertThat(entries.get(0).previousObservationId()).isBlank();
+        assertThat(entries.get(1).previousObservationId()).isEqualTo(
+                entries.get(0).observation().evidence().observationId());
+        assertThat(head.latestObservationId()).isEqualTo(
+                entries.get(1).observation().evidence().observationId());
+        assertThat(head.latestEntryFingerprint()).isEqualTo(
+                entries.get(1).entryFingerprint());
+        assertThat(repository.observations(
+                "tenant-a", "test", first.evidence().suiteRef(), 1, 10))
+                .containsExactly(entries.get(1));
+        assertThat(repository.observationLedgerHead(
+                "tenant-b", "test", first.evidence().suiteRef())).isEmpty();
+        assertThatThrownBy(() -> repository.observations(
+                "tenant-a", "test", first.evidence().suiteRef(), 3, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("beyond the committed head");
+    }
+
+    @Test
+    void ledgerReadRejectsIndexedProjectionTamperingAndSequenceGaps() {
+        Instant now = Instant.now();
+        TestSuiteStabilityRunRecord first = trendRecord(
+                '7', now.minusSeconds(20), now.plusSeconds(3_600));
+        TestSuiteStabilityRunRecord second = trendRecord(
+                '8', now.minusSeconds(10), now.plusSeconds(3_600));
+        completeTrend(first);
+        completeTrend(second);
+        var original = repository.observations(
+                "tenant-a", "test", first.evidence().suiteRef(), 0, 10);
+
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observations
+                SET observation_fingerprint = ?
+                WHERE ledger_sequence = 2
+                """, TestSuiteStabilityProtocolFixtures.fingerprint('f'));
+        assertThatThrownBy(() -> repository.observations(
+                "tenant-a", "test", first.evidence().suiteRef(), 0, 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("columns contradict");
+
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observations
+                SET observation_fingerprint = ?
+                WHERE ledger_sequence = 2
+                """, original.get(1).observation().evidenceFingerprint());
+        jdbc.update("""
+                DELETE FROM rg_test_suite_stability_observations
+                WHERE ledger_sequence = 2
+                """);
+        assertThatThrownBy(() -> repository.observations(
+                "tenant-a", "test", first.evidence().suiteRef(), 0, 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no latest ledger row");
+    }
+
+    @Test
+    void ledgerHeadReadRejectsIndexedScopeTamperingAndOrphanRows() {
+        Instant now = Instant.now();
+        TestSuiteStabilityRunRecord record = trendRecord(
+                '9', now.minusSeconds(10), now.plusSeconds(3_600));
+        completeTrend(record);
+        var originalHead = repository.observationLedgerHead(
+                "tenant-a", "test", record.evidence().suiteRef()).orElseThrow();
+
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observations
+                SET entry_fingerprint = ?
+                """, TestSuiteStabilityProtocolFixtures.fingerprint('f'));
+        assertThatThrownBy(() -> repository.observationLedgerHead(
+                "tenant-a", "test", record.evidence().suiteRef()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("latest ledger row");
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observations
+                SET entry_fingerprint = ?
+                """, originalHead.latestEntryFingerprint());
+
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_heads
+                SET tenant_id = 'tenant-b'
+                """);
+        assertThatThrownBy(() -> repository.observationLedgerHead(
+                "tenant-a", "test", record.evidence().suiteRef()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("indexed scope");
+
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_heads
+                SET tenant_id = 'tenant-a'
+                """);
+        jdbc.update("DELETE FROM rg_test_suite_stability_observation_heads");
+        assertThatThrownBy(() -> repository.observations(
+                "tenant-a", "test", record.evidence().suiteRef(), 0, 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("without a committed head");
+    }
+
+    @Test
+    void corruptedLedgerHeadRollsBackTerminalProgressAndLeaseMutation() {
+        Instant now = Instant.now();
+        TestSuiteStabilityRunRecord first = trendRecord(
+                'c', now.minusSeconds(20), now.plusSeconds(3_600));
+        TestSuiteStabilityRunRecord second = trendRecord(
+                'd', now.minusSeconds(10), now.plusSeconds(3_600));
+        completeTrend(first);
+        TestSuiteStabilityExecutionLease secondLease = checkpointed(
+                second, acquired(second, "owner-d"));
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_heads
+                SET head_fingerprint = ?
+                """, TestSuiteStabilityProtocolFixtures.fingerprint('f'));
+
+        assertThatThrownBy(() -> complete(second, secondLease))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("head fingerprint");
+
+        assertThat(repository.find("tenant-a", "test", second.stabilityRunId())).isEmpty();
+        assertThat(repository.findProgress(
+                "tenant-a", "test", second.stabilityRunId())).isPresent();
+        assertThat(repository.claim(leaseRequest(second, "owner-e")).state())
+                .isEqualTo(TestSuiteStabilityLeaseClaim.State.IN_PROGRESS);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_test_suite_stability_observations",
+                Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void observationFromAnotherSourceCannotBeAttachedToATerminalRecord() {
+        Instant now = Instant.now();
+        TestSuiteStabilityRunRecord first = trendRecord(
+                'e', now.minusSeconds(20), now.plusSeconds(3_600));
+        TestSuiteStabilityRunRecord second = trendRecord(
+                'f', now.minusSeconds(10), now.plusSeconds(3_600));
+        TestSuiteStabilityExecutionLease lease = checkpointed(
+                second, acquired(second, "owner-f"));
+
+        assertThatThrownBy(() -> repository.complete(second, observation(first), lease))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("source-consistent");
+        assertThat(repository.find("tenant-a", "test", second.stabilityRunId())).isEmpty();
+    }
+
+    @Test
     void scopedIdempotencyKeyCannotBeReboundAfterTerminalPublication() {
         TestSuiteStabilityRunRecord record = record("tenant-a", "test",
                 "stability-request", Instant.now().plusSeconds(30));
-        repository.complete(record, checkpointed(record, acquired(record, "owner-a")));
+        complete(record, checkpointed(record, acquired(record, "owner-a")));
         TestSuiteStabilityLeaseRequest changed = new TestSuiteStabilityLeaseRequest(
                 record.stabilityRunId(), record.tenantId(), record.environmentId(),
                 record.clientRequestId(), TestSuiteStabilityProtocolFixtures.fingerprint('8'),
@@ -319,7 +499,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 valid.attestation(), valid.createdAt(), valid.expiresAt());
         TestSuiteStabilityExecutionLease lease = acquired(valid, "owner-a");
 
-        assertThatThrownBy(() -> repository.complete(tampered, lease))
+        assertThatThrownBy(() -> repository.complete(tampered, observation(valid), lease))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("signed terminal stability record");
     }
@@ -363,12 +543,12 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 leaseRequest(record, "owner-b"));
         assertThat(takeover.state()).isEqualTo(TestSuiteStabilityLeaseClaim.State.ACQUIRED);
         assertThat(takeover.lease().epoch()).isEqualTo(1);
-        assertThatThrownBy(() -> repository.complete(record, old))
+        assertThatThrownBy(() -> complete(record, old))
                 .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityRunConflictException.Reason.LEASE_LOST));
         assertThat(repository.find("tenant-a", "test", record.stabilityRunId())).isEmpty();
-        assertThat(repository.complete(record, checkpointed(record, takeover.lease())))
+        assertThat(complete(record, checkpointed(record, takeover.lease())))
                 .isEqualTo(record);
     }
 
@@ -418,7 +598,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityRunConflictException.Reason.LEASE_LOST));
-        assertThatThrownBy(() -> repository.complete(record, stoppedOwner))
+        assertThatThrownBy(() -> complete(record, stoppedOwner))
                 .isInstanceOfSatisfying(TestSuiteStabilityRunConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(
                                 TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT));
@@ -450,7 +630,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     void signedTerminalEvidenceCannotBeReplacedByALateStop() {
         TestSuiteStabilityRunRecord record = record("tenant-a", "test",
                 "stability-request", Instant.now().plusSeconds(30));
-        repository.complete(record, checkpointed(record, acquired(record, "owner-a")));
+        complete(record, checkpointed(record, acquired(record, "owner-a")));
 
         assertThatThrownBy(() -> repository.stop(stopRequest(
                 record, TestSuiteStabilityExecutionStop.Reason.CANCELLED,
@@ -515,6 +695,50 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
             assertThat(List.of(left.get().state(), right.get().state()))
                     .containsExactlyInAnyOrder(TestSuiteStabilityLeaseClaim.State.ACQUIRED,
                             TestSuiteStabilityLeaseClaim.State.IN_PROGRESS);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentCrossReplicaTerminalsSerializeOneExactSuiteObservationChain()
+            throws Exception {
+        DatabaseTestSuiteStabilityRunRepository replica =
+                new DatabaseTestSuiteStabilityRunRepository(new JdbcTemplate(dataSource), mapper);
+        replica.init();
+        Instant now = Instant.now();
+        TestSuiteStabilityRunRecord first = trendRecord(
+                '5', now.minusSeconds(20), now.plusSeconds(3_600));
+        TestSuiteStabilityRunRecord second = trendRecord(
+                '6', now.minusSeconds(10), now.plusSeconds(3_600));
+        TestSuiteStabilityExecutionLease firstLease = checkpointed(
+                first, acquired(first, "owner-5"));
+        TestSuiteStabilityExecutionLease secondLease = checkpointed(
+                second, acquired(second, "owner-6"));
+        TestSuiteStabilityObservation firstObservation = observation(first);
+        TestSuiteStabilityObservation secondObservation = observation(second);
+        CountDownLatch start = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<TestSuiteStabilityRunRecord> left = pool.submit(() -> {
+                start.await();
+                return repository.complete(first, firstObservation, firstLease);
+            });
+            Future<TestSuiteStabilityRunRecord> right = pool.submit(() -> {
+                start.await();
+                return replica.complete(second, secondObservation, secondLease);
+            });
+            start.countDown();
+
+            assertThat(List.of(left.get(), right.get()))
+                    .containsExactlyInAnyOrder(first, second);
+            var entries = repository.observations(
+                    "tenant-a", "test", first.evidence().suiteRef(), 0, 10);
+            assertThat(entries).hasSize(2);
+            assertThat(entries).extracting(value -> value.sequence())
+                    .containsExactly(1L, 2L);
+            assertThat(entries.get(1).previousObservationId()).isEqualTo(
+                    entries.get(0).observation().evidence().observationId());
         } finally {
             pool.shutdownNow();
         }
@@ -590,6 +814,21 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                 attempt.aggregateEvidenceFingerprint());
     }
 
+    private TestSuiteStabilityRunRecord complete(
+            TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityExecutionLease lease) {
+        return repository.complete(record, observation(record), lease);
+    }
+
+    private TestSuiteStabilityObservation observation(TestSuiteStabilityRunRecord record) {
+        var sealed = observationAttestations.seal(record);
+        if (!sealed.verified()) {
+            throw new IllegalStateException(
+                    "Repository fixture observation signature failed: " + sealed.failureCode());
+        }
+        return sealed.observation();
+    }
+
     private TestSuiteStabilityRunRecord record(
             String tenantId,
             String environmentId,
@@ -625,7 +864,7 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
     }
 
     private void completeTrend(TestSuiteStabilityRunRecord record) {
-        repository.complete(record, checkpointed(record, acquired(record,
+        complete(record, checkpointed(record, acquired(record,
                 "owner-" + record.stabilityRunId().substring(record.stabilityRunId().length() - 1))));
     }
 }

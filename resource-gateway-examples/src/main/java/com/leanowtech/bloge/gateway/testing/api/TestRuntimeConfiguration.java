@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexM
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityTrendAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
@@ -1106,6 +1107,19 @@ public class TestRuntimeConfiguration {
                 evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
     }
 
+    /** Re-signs compact longitudinal observations in a source-independent signature domain. */
+    @Bean
+    TestSuiteStabilityObservationAttestationService
+            testSuiteStabilityObservationAttestationService(
+                    ObjectMapper objectMapper,
+                    ObjectProvider<VisualEvidenceSigner> evidenceSigner,
+                    TestSuiteStabilityAttestationService sourceAttestations) {
+        return new TestSuiteStabilityObservationAttestationService(
+                objectMapper,
+                evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable),
+                sourceAttestations);
+    }
+
     /** Reuses the evidence signer in the distinct retained-window trend signature domain. */
     @Bean
     TestSuiteStabilityTrendAttestationService testSuiteStabilityTrendAttestationService(
@@ -1305,11 +1319,12 @@ public class TestRuntimeConfiguration {
             TestSuiteStabilityRunRepository repository,
             ObjectMapper objectMapper,
             TestSuiteStabilityAttestationService attestations,
+            TestSuiteStabilityObservationAttestationService observationAttestations,
             TestSuiteStabilityLeaseCoordinator leaseCoordinator,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
         return new TestSuiteStabilityExecutionService(
                 suiteRegistry, suiteExecutions, childExecutions, repository, objectMapper,
-                attestations, leaseCoordinator,
+                attestations, observationAttestations, leaseCoordinator,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))));
     }
 

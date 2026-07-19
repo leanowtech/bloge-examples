@@ -11,6 +11,9 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityHistoryWindow;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservation;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerEntry;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerHead;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressCheckpoint;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityProgressSnapshot;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
@@ -20,6 +23,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityTrendAnalysisR
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationProjector;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,9 +48,11 @@ import java.util.regex.Pattern;
  * <p>Scope and idempotency columns are selected before JSON deserialization. The table contains no
  * child payload, fixture value, context, or output; source evidence remains in its governed stores.
  * A fixed-cardinality lock stripe serializes claim, renewal, stop, terminal publication, and
- * orphan cleanup for one scoped parent identity. Terminal insert and lease consumption share one
- * local transaction, while a retained payload-free stop atomically consumes resumable progress;
- * an expired, superseded, or stopped owner therefore cannot publish evidence.</p>
+ * orphan cleanup for one scoped parent identity. A separate exact-suite lock serializes compact
+ * observation sequence and predecessor assignment across replicas. Terminal insert, signed
+ * observation append, head advance, progress deletion, and lease consumption share one local
+ * transaction, while a retained payload-free stop atomically consumes resumable progress; an
+ * expired, superseded, or stopped owner therefore cannot publish evidence.</p>
  */
 public final class DatabaseTestSuiteStabilityRunRepository
         implements TestSuiteStabilityRunRepository {
@@ -59,6 +65,7 @@ public final class DatabaseTestSuiteStabilityRunRepository
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate mutations;
+    private final TestSuiteStabilityObservationProjector observationProjector;
 
     /**
      * @param jdbc isolated test-runtime JDBC adapter
@@ -81,6 +88,7 @@ public final class DatabaseTestSuiteStabilityRunRepository
             PlatformTransactionManager transactionManager) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.observationProjector = new TestSuiteStabilityObservationProjector(objectMapper);
         mutations = new TransactionTemplate(
                 Objects.requireNonNull(transactionManager, "transactionManager"));
         mutations.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -192,6 +200,58 @@ public final class DatabaseTestSuiteStabilityRunRepository
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_retention
                 ON rg_test_suite_stability_records (expires_at)
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_observation_locks (
+                    scope_fingerprint VARCHAR(71) PRIMARY KEY
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_observation_heads (
+                    scope_fingerprint VARCHAR(71) PRIMARY KEY,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(255) NOT NULL,
+                    suite_id VARCHAR(255) NOT NULL,
+                    suite_revision BIGINT NOT NULL,
+                    suite_fingerprint VARCHAR(71) NOT NULL,
+                    coverage_from TIMESTAMP WITH TIME ZONE NOT NULL,
+                    latest_sequence BIGINT NOT NULL,
+                    latest_observation_id VARCHAR(255) NOT NULL,
+                    latest_entry_fingerprint VARCHAR(71) NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    head_fingerprint VARCHAR(71) NOT NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_suite_stability_observations (
+                    observation_id VARCHAR(255) PRIMARY KEY,
+                    scope_fingerprint VARCHAR(71) NOT NULL,
+                    ledger_sequence BIGINT NOT NULL,
+                    previous_observation_id VARCHAR(255) NOT NULL,
+                    stability_run_id VARCHAR(255) NOT NULL,
+                    source_created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    appended_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    observation_fingerprint VARCHAR(71) NOT NULL,
+                    attestation_fingerprint VARCHAR(71) NOT NULL,
+                    entry_fingerprint VARCHAR(71) NOT NULL,
+                    entry_json CLOB NOT NULL,
+                    CONSTRAINT uq_rg_test_suite_stability_observation_run
+                        UNIQUE (stability_run_id),
+                    CONSTRAINT uq_rg_test_suite_stability_observation_sequence
+                        UNIQUE (scope_fingerprint, ledger_sequence)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_observation_scope
+                ON rg_test_suite_stability_observations (
+                    scope_fingerprint, ledger_sequence
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_observation_time
+                ON rg_test_suite_stability_observations (
+                    scope_fingerprint, appended_at, ledger_sequence
+                )
                 """);
     }
 
@@ -549,12 +609,20 @@ public final class DatabaseTestSuiteStabilityRunRepository
     @Override
     public TestSuiteStabilityRunRecord complete(
             TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityObservation observation,
             TestSuiteStabilityExecutionLease lease) {
         requireComplete(record);
+        requireObservation(record, observation);
         requireRecordMatchesLease(record, lease);
         TestSuiteStabilityRunRecord completed = mutations.execute(status -> {
             lock(lease.tenantId(), lease.environmentId(), lease.clientRequestId());
+            lockObservationScope(observation.evidence().scopeFingerprint());
             Instant observedAt = currentTime();
+            if (record.createdAt().isAfter(observedAt)
+                    || !record.expiresAt().isAfter(observedAt)) {
+                throw conflict(TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT,
+                        "Suite-stability terminal publication requires a live database-time record");
+            }
             if (stopByClientRequestId(lease.tenantId(), lease.environmentId(),
                     lease.clientRequestId()).isPresent()) {
                 throw conflict(TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT,
@@ -575,6 +643,7 @@ public final class DatabaseTestSuiteStabilityRunRepository
             requireProgressMatchesLease(progress, lease);
             requireTerminalMatchesProgress(record, progress);
             insertTerminal(record);
+            appendObservation(record, observation, observedAt);
             int progressDeleted = jdbc.update("""
                     DELETE FROM rg_test_suite_stability_progress
                     WHERE stability_run_id = ? AND tenant_id = ? AND environment_id = ?
@@ -791,6 +860,82 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 .toList();
         return new TestSuiteStabilityHistoryWindow(records,
                 Math.toIntExact(expiredMatchingRuns), truncated, observedAt);
+    }
+
+    @Override
+    public Optional<TestSuiteStabilityObservationLedgerHead> observationLedgerHead(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef) {
+        Objects.requireNonNull(suiteRef, "suiteRef");
+        String scopeFingerprint = observationScopeFingerprint(
+                tenantId, environmentId, suiteRef);
+        return observationHeadByScope(
+                scopeFingerprint, tenantId, environmentId, suiteRef);
+    }
+
+    @Override
+    public List<TestSuiteStabilityObservationLedgerEntry> observations(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            long afterSequence,
+            int limit) {
+        Objects.requireNonNull(suiteRef, "suiteRef");
+        if (afterSequence < 0 || limit < 1 || limit > 100) {
+            throw new IllegalArgumentException(
+                    "Stability observation ledger page is outside bounds");
+        }
+        String scopeFingerprint = observationScopeFingerprint(
+                tenantId, environmentId, suiteRef);
+        Optional<TestSuiteStabilityObservationLedgerHead> head = observationLedgerHead(
+                tenantId, environmentId, suiteRef);
+        if (head.isEmpty()) {
+            return List.of();
+        }
+        if (afterSequence > head.get().latestSequence()) {
+            throw new IllegalArgumentException(
+                    "Stability observation cursor is beyond the committed head");
+        }
+        List<TestSuiteStabilityObservationLedgerEntry> entries = jdbc.query("""
+                SELECT observation_id, scope_fingerprint, ledger_sequence,
+                       previous_observation_id, stability_run_id, source_created_at,
+                       appended_at, observation_fingerprint, attestation_fingerprint,
+                       entry_fingerprint, entry_json
+                FROM rg_test_suite_stability_observations
+                WHERE scope_fingerprint = ? AND ledger_sequence > ?
+                  AND ledger_sequence <= ?
+                ORDER BY ledger_sequence
+                FETCH FIRST ? ROWS ONLY
+                """, this::storedObservationEntry,
+                scopeFingerprint, afterSequence, head.get().latestSequence(), limit);
+        long expected = afterSequence + 1;
+        String predecessor = afterSequence == 0 ? "" : observationIdAt(
+                scopeFingerprint, afterSequence).orElseThrow(() ->
+                new IllegalStateException("Stability observation cursor has no predecessor"));
+        for (TestSuiteStabilityObservationLedgerEntry entry : entries) {
+            requireObservationEntry(entry, scopeFingerprint, expected, predecessor);
+            predecessor = entry.observation().evidence().observationId();
+            expected++;
+        }
+        if (entries.isEmpty() && afterSequence < head.get().latestSequence()) {
+            throw new IllegalStateException("Stability observation ledger has a sequence gap");
+        }
+        long lastSequence = expected - 1;
+        if (entries.size() < limit && lastSequence < head.get().latestSequence()) {
+            throw new IllegalStateException("Stability observation ledger has a tail gap");
+        }
+        if (lastSequence == head.get().latestSequence() && !entries.isEmpty()) {
+            TestSuiteStabilityObservationLedgerEntry last = entries.getLast();
+            if (!last.observation().evidence().observationId().equals(
+                    head.get().latestObservationId())
+                    || !last.entryFingerprint().equals(
+                    head.get().latestEntryFingerprint())) {
+                throw new IllegalStateException(
+                        "Stability observation ledger does not close at its head");
+            }
+        }
+        return List.copyOf(entries);
     }
 
     private Optional<TestSuiteStabilityRunRecord> query(String sql, Object... arguments) {
@@ -1023,6 +1168,257 @@ public final class DatabaseTestSuiteStabilityRunRepository
         }
     }
 
+    private void appendObservation(
+            TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityObservation observation,
+            Instant appendedAt) {
+        String scopeFingerprint = observationScopeFingerprint(
+                record.tenantId(), record.environmentId(), record.evidence().suiteRef());
+        Optional<TestSuiteStabilityObservationLedgerHead> current =
+                observationHeadByScope(scopeFingerprint, record.tenantId(),
+                        record.environmentId(), record.evidence().suiteRef());
+        long sequence = current.map(TestSuiteStabilityObservationLedgerHead::latestSequence)
+                .orElse(0L) + 1L;
+        String predecessor = current.map(
+                TestSuiteStabilityObservationLedgerHead::latestObservationId).orElse("");
+        LedgerEntryMaterial material = new LedgerEntryMaterial(
+                TestSuiteStabilityObservationLedgerEntry.SCHEMA_VERSION,
+                scopeFingerprint, sequence, predecessor, observation, appendedAt);
+        String entryFingerprint = ProtocolFingerprint.of(objectMapper, material);
+        TestSuiteStabilityObservationLedgerEntry entry =
+                new TestSuiteStabilityObservationLedgerEntry(
+                        TestSuiteStabilityObservationLedgerEntry.SCHEMA_VERSION,
+                        scopeFingerprint, sequence, predecessor, observation,
+                        appendedAt, entryFingerprint);
+        try {
+            int inserted = jdbc.update("""
+                    INSERT INTO rg_test_suite_stability_observations (
+                        observation_id, scope_fingerprint, ledger_sequence,
+                        previous_observation_id, stability_run_id, source_created_at,
+                        appended_at, observation_fingerprint, attestation_fingerprint,
+                        entry_fingerprint, entry_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, observation.evidence().observationId(), scopeFingerprint,
+                    sequence, predecessor, record.stabilityRunId(),
+                    Timestamp.from(record.createdAt()), Timestamp.from(appendedAt),
+                    observation.evidenceFingerprint(), observation.attestationFingerprint(),
+                    entryFingerprint, writeObservationEntry(entry));
+            if (inserted != 1) {
+                throw new IllegalStateException(
+                        "Stability observation append did not create exactly one row");
+            }
+        } catch (DuplicateKeyException duplicate) {
+            throw conflict(TestSuiteStabilityRunConflictException.Reason.TERMINAL_CONFLICT,
+                    "Stability observation identity or sequence already exists");
+        }
+
+        Instant coverageFrom = current.map(
+                TestSuiteStabilityObservationLedgerHead::coverageFrom).orElse(appendedAt);
+        LedgerHeadMaterial headMaterial = new LedgerHeadMaterial(
+                TestSuiteStabilityObservationLedgerHead.SCHEMA_VERSION,
+                scopeFingerprint, record.evidence().suiteRef(), coverageFrom,
+                sequence, observation.evidence().observationId(), entryFingerprint, appendedAt);
+        String headFingerprint = ProtocolFingerprint.of(objectMapper, headMaterial);
+        TestSuiteStabilityObservationLedgerHead successor =
+                new TestSuiteStabilityObservationLedgerHead(
+                        TestSuiteStabilityObservationLedgerHead.SCHEMA_VERSION,
+                        scopeFingerprint, record.evidence().suiteRef(), coverageFrom,
+                        sequence, observation.evidence().observationId(), entryFingerprint,
+                        appendedAt, headFingerprint);
+        if (current.isEmpty()) {
+            int inserted = jdbc.update("""
+                    INSERT INTO rg_test_suite_stability_observation_heads (
+                        scope_fingerprint, tenant_id, environment_id, suite_id,
+                        suite_revision, suite_fingerprint, coverage_from, latest_sequence,
+                        latest_observation_id, latest_entry_fingerprint, updated_at,
+                        head_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, scopeFingerprint, record.tenantId(), record.environmentId(),
+                    record.evidence().suiteRef().suiteId(),
+                    record.evidence().suiteRef().revision(),
+                    record.evidence().suiteRef().fingerprint(),
+                    Timestamp.from(successor.coverageFrom()), successor.latestSequence(),
+                    successor.latestObservationId(), successor.latestEntryFingerprint(),
+                    Timestamp.from(successor.updatedAt()), successor.headFingerprint());
+            if (inserted != 1) {
+                throw new IllegalStateException(
+                        "Stability observation rollout floor was not created");
+            }
+        } else {
+            TestSuiteStabilityObservationLedgerHead predecessorHead = current.get();
+            int updated = jdbc.update("""
+                    UPDATE rg_test_suite_stability_observation_heads
+                    SET latest_sequence = ?, latest_observation_id = ?,
+                        latest_entry_fingerprint = ?, updated_at = ?, head_fingerprint = ?
+                    WHERE scope_fingerprint = ? AND latest_sequence = ?
+                      AND latest_observation_id = ? AND latest_entry_fingerprint = ?
+                      AND head_fingerprint = ?
+                    """, successor.latestSequence(), successor.latestObservationId(),
+                    successor.latestEntryFingerprint(), Timestamp.from(successor.updatedAt()),
+                    successor.headFingerprint(), scopeFingerprint,
+                    predecessorHead.latestSequence(), predecessorHead.latestObservationId(),
+                    predecessorHead.latestEntryFingerprint(),
+                    predecessorHead.headFingerprint());
+            if (updated != 1) {
+                throw new IllegalStateException(
+                        "Stability observation head did not advance from its exact predecessor");
+            }
+        }
+    }
+
+    private void requireObservation(
+            TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityObservation observation) {
+        if (observation == null || observation.evidence() == null
+                || observation.attestation() == null
+                || !observation.evidenceFingerprint().equals(
+                ProtocolFingerprint.of(objectMapper, observation.evidence()))
+                || !observation.attestationFingerprint().equals(
+                ProtocolFingerprint.of(objectMapper, observation.attestation()))
+                || !observation.evidence().scopeFingerprint().equals(
+                observationScopeFingerprint(record.tenantId(), record.environmentId(),
+                        record.evidence().suiteRef()))
+                || !observation.evidence().suiteRef().equals(record.evidence().suiteRef())
+                || !observation.evidence().sourceRequestFingerprint().equals(
+                record.requestFingerprint())
+                || !observation.evidence().source().equals(
+                observationProjector.project(record))) {
+            throw new IllegalArgumentException(
+                    "Complete source-consistent stability observation is required");
+        }
+    }
+
+    private Optional<TestSuiteStabilityObservationLedgerHead> observationHeadByScope(
+            String scopeFingerprint,
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef) {
+        List<StoredObservationHead> heads = jdbc.query("""
+                SELECT tenant_id, environment_id, scope_fingerprint,
+                       suite_id, suite_revision, suite_fingerprint,
+                       coverage_from, latest_sequence, latest_observation_id,
+                       latest_entry_fingerprint, updated_at, head_fingerprint
+                FROM rg_test_suite_stability_observation_heads
+                WHERE scope_fingerprint = ?
+                """, (rs, row) -> new StoredObservationHead(
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                readObservationHead(rs)), scopeFingerprint);
+        if (heads.size() > 1) {
+            throw new IllegalStateException("Stability observation head is not unique");
+        }
+        if (heads.isEmpty()) {
+            if (observationRowsExist(scopeFingerprint)) {
+                throw new IllegalStateException(
+                        "Stability observation ledger rows exist without a committed head");
+            }
+            return Optional.empty();
+        }
+        StoredObservationHead stored = heads.getFirst();
+        TestSuiteStabilityObservationLedgerHead head = stored.head();
+        if (!tenantId.equals(stored.tenantId())
+                || !environmentId.equals(stored.environmentId())
+                || !scopeFingerprint.equals(head.scopeFingerprint())
+                || !suiteRef.equals(head.suiteRef())) {
+            throw new IllegalStateException(
+                    "Stability observation head contradicts its indexed scope");
+        }
+        requireObservationHead(head);
+        StoredObservationCoordinate latest = observationCoordinateAt(
+                scopeFingerprint, head.latestSequence()).orElseThrow(() ->
+                new IllegalStateException(
+                        "Stability observation head has no latest ledger row"));
+        if (!head.latestObservationId().equals(latest.observationId())
+                || !head.latestEntryFingerprint().equals(latest.entryFingerprint())) {
+            throw new IllegalStateException(
+                    "Stability observation head contradicts its latest ledger row");
+        }
+        return Optional.of(head);
+    }
+
+    private boolean observationRowsExist(String scopeFingerprint) {
+        Long count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_suite_stability_observations
+                WHERE scope_fingerprint = ?
+                """, Long.class, scopeFingerprint);
+        return count != null && count > 0;
+    }
+
+    private TestSuiteStabilityObservationLedgerHead readObservationHead(ResultSet rs)
+            throws SQLException {
+        return new TestSuiteStabilityObservationLedgerHead(
+                TestSuiteStabilityObservationLedgerHead.SCHEMA_VERSION,
+                rs.getString("scope_fingerprint"),
+                new TestSuiteExecutionRequest.SuiteRef(
+                        rs.getString("suite_id"), rs.getLong("suite_revision"),
+                        rs.getString("suite_fingerprint")),
+                rs.getTimestamp("coverage_from").toInstant(),
+                rs.getLong("latest_sequence"),
+                rs.getString("latest_observation_id"),
+                rs.getString("latest_entry_fingerprint"),
+                rs.getTimestamp("updated_at").toInstant(),
+                rs.getString("head_fingerprint"));
+    }
+
+    private void requireObservationHead(TestSuiteStabilityObservationLedgerHead head) {
+        String expected = ProtocolFingerprint.of(objectMapper, new LedgerHeadMaterial(
+                head.schemaVersion(), head.scopeFingerprint(), head.suiteRef(),
+                head.coverageFrom(), head.latestSequence(), head.latestObservationId(),
+                head.latestEntryFingerprint(), head.updatedAt()));
+        if (!expected.equals(head.headFingerprint())) {
+            throw new IllegalStateException("Stability observation head fingerprint is invalid");
+        }
+    }
+
+    private void requireObservationEntry(
+            TestSuiteStabilityObservationLedgerEntry entry,
+            String scopeFingerprint,
+            long expectedSequence,
+            String expectedPredecessor) {
+        String expectedFingerprint = ProtocolFingerprint.of(objectMapper,
+                new LedgerEntryMaterial(entry.schemaVersion(), entry.scopeFingerprint(),
+                        entry.sequence(), entry.previousObservationId(),
+                        entry.observation(), entry.appendedAt()));
+        requireObservationShape(entry.observation());
+        if (!entry.scopeFingerprint().equals(scopeFingerprint)
+                || !entry.observation().evidence().scopeFingerprint().equals(scopeFingerprint)
+                || entry.sequence() != expectedSequence
+                || !entry.previousObservationId().equals(expectedPredecessor)
+                || !entry.entryFingerprint().equals(expectedFingerprint)) {
+            throw new IllegalStateException("Stability observation ledger chain is invalid");
+        }
+    }
+
+    private void requireObservationShape(TestSuiteStabilityObservation observation) {
+        if (!observation.evidenceFingerprint().equals(
+                ProtocolFingerprint.of(objectMapper, observation.evidence()))
+                || !observation.attestationFingerprint().equals(
+                ProtocolFingerprint.of(objectMapper, observation.attestation()))) {
+            throw new IllegalStateException("Stability observation fingerprint is invalid");
+        }
+    }
+
+    private Optional<String> observationIdAt(String scopeFingerprint, long sequence) {
+        return observationCoordinateAt(scopeFingerprint, sequence)
+                .map(StoredObservationCoordinate::observationId);
+    }
+
+    private Optional<StoredObservationCoordinate> observationCoordinateAt(
+            String scopeFingerprint,
+            long sequence) {
+        List<StoredObservationCoordinate> values = jdbc.query("""
+                SELECT observation_id, entry_fingerprint
+                FROM rg_test_suite_stability_observations
+                WHERE scope_fingerprint = ? AND ledger_sequence = ?
+                """, (rs, row) -> new StoredObservationCoordinate(
+                rs.getString("observation_id"), rs.getString("entry_fingerprint")),
+                scopeFingerprint, sequence);
+        if (values.size() > 1) {
+            throw new IllegalStateException(
+                    "Stability observation ledger sequence is not unique");
+        }
+        return values.stream().findFirst();
+    }
+
     private void requireComplete(TestSuiteStabilityRunRecord record) {
         if (record == null || record.evidence() == null || record.attestation() == null
                 || record.createdAt() == null || record.expiresAt() == null
@@ -1193,6 +1589,21 @@ public final class DatabaseTestSuiteStabilityRunRepository
         lockKey(lockKey(tenantId, environmentId, clientRequestId));
     }
 
+    private void lockObservationScope(String scopeFingerprint) {
+        jdbc.update("""
+                MERGE INTO rg_test_suite_stability_observation_locks (scope_fingerprint)
+                KEY(scope_fingerprint) VALUES (?)
+                """, scopeFingerprint);
+        List<String> locked = jdbc.query("""
+                SELECT scope_fingerprint
+                FROM rg_test_suite_stability_observation_locks
+                WHERE scope_fingerprint = ? FOR UPDATE
+                """, (rs, row) -> rs.getString("scope_fingerprint"), scopeFingerprint);
+        if (locked.size() != 1) {
+            throw new IllegalStateException("Stability observation scope lock is unavailable");
+        }
+    }
+
     private void lockKey(String lockKey) {
         jdbc.update("""
                 MERGE INTO rg_test_suite_stability_execution_locks (lock_key)
@@ -1217,6 +1628,14 @@ public final class DatabaseTestSuiteStabilityRunRepository
         int stripe = Math.floorMod(identity.hashCode(), LOCK_STRIPES);
         return ProtocolFingerprint.ofText(
                 "bloge.testSuiteStabilityLeaseLockStripe.v1|" + stripe);
+    }
+
+    private String observationScopeFingerprint(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef) {
+        return ProtocolFingerprint.of(objectMapper,
+                new ObservationScopeIdentity(tenantId, environmentId, suiteRef));
     }
 
     private static Duration boundedLease(Duration value) {
@@ -1270,6 +1689,54 @@ public final class DatabaseTestSuiteStabilityRunRepository
         } catch (JsonProcessingException failure) {
             throw new IllegalStateException("Cannot serialize stability analysis", failure);
         }
+    }
+
+    private String writeObservationEntry(TestSuiteStabilityObservationLedgerEntry entry) {
+        try {
+            return objectMapper.writeValueAsString(entry);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot serialize suite-stability observation entry", failure);
+        }
+    }
+
+    private TestSuiteStabilityObservationLedgerEntry readObservationEntry(String value) {
+        try {
+            return objectMapper.readValue(
+                    value, TestSuiteStabilityObservationLedgerEntry.class);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    "Cannot deserialize suite-stability observation entry", failure);
+        }
+    }
+
+    private TestSuiteStabilityObservationLedgerEntry storedObservationEntry(
+            ResultSet result,
+            int row) throws SQLException {
+        TestSuiteStabilityObservationLedgerEntry entry = readObservationEntry(
+                result.getString("entry_json"));
+        if (!entry.observation().evidence().observationId().equals(
+                result.getString("observation_id"))
+                || !entry.scopeFingerprint().equals(result.getString("scope_fingerprint"))
+                || entry.sequence() != result.getLong("ledger_sequence")
+                || !entry.previousObservationId().equals(
+                result.getString("previous_observation_id"))
+                || !entry.observation().evidence().source().stabilityRunId().equals(
+                result.getString("stability_run_id"))
+                || !entry.observation().evidence().source().createdAt().equals(
+                result.getTimestamp("source_created_at").toInstant())
+                || !entry.appendedAt().equals(
+                result.getTimestamp("appended_at").toInstant())
+                || !entry.observation().evidenceFingerprint().equals(
+                result.getString("observation_fingerprint"))
+                || !entry.observation().attestationFingerprint().equals(
+                result.getString("attestation_fingerprint"))
+                || !entry.entryFingerprint().equals(
+                result.getString("entry_fingerprint"))) {
+            throw new IllegalStateException(
+                    "Stored suite-stability observation columns contradict its entry");
+        }
+        return entry;
     }
 
     private String writeStop(TestSuiteStabilityExecutionStop stop) {
@@ -1369,6 +1836,43 @@ public final class DatabaseTestSuiteStabilityRunRepository
             throw new IllegalArgumentException("Stability JDBC adapter requires a datasource");
         }
         return new DataSourceTransactionManager(jdbc.getDataSource());
+    }
+
+    private record ObservationScopeIdentity(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef) {
+    }
+
+    private record LedgerEntryMaterial(
+            String schemaVersion,
+            String scopeFingerprint,
+            long sequence,
+            String previousObservationId,
+            TestSuiteStabilityObservation observation,
+            Instant appendedAt) {
+    }
+
+    private record LedgerHeadMaterial(
+            String schemaVersion,
+            String scopeFingerprint,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            Instant coverageFrom,
+            long latestSequence,
+            String latestObservationId,
+            String latestEntryFingerprint,
+            Instant updatedAt) {
+    }
+
+    private record StoredObservationHead(
+            String tenantId,
+            String environmentId,
+            TestSuiteStabilityObservationLedgerHead head) {
+    }
+
+    private record StoredObservationCoordinate(
+            String observationId,
+            String entryFingerprint) {
     }
 
     private record LeaseCandidate(

@@ -160,6 +160,12 @@ builders, typed catalog materialization, exact suite execution, signed bounded s
 signed retained-window trend reconstruction, pinned-key-set offline verification, payload-free
 assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The stability protocol's
+terminal publication now also verifies and signs a payload-free compact observation, then commits
+that observation, its contiguous per-suite ledger coordinate, the full terminal record, progress
+consumption, and lease consumption in one database transaction. This is the durable write-side
+foundation for history beyond full-run retention; it is not yet a public read contract, and
+`crossRetentionSuiteStabilityTrend` intentionally remains disabled until range closure, lifecycle,
+strict Schema, and independent test-kit verification are complete. The stability protocol's
 v2+ evidence keeps behavioral stability separate from release eligibility: every verified source
 suite promotion verdict is signed into the attempt closure, so `STABLE + BLOCKED` remains visible
 when behavior is repeatable but source certification is insufficient. Historical v1 evidence stays

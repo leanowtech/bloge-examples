@@ -2,9 +2,13 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
-/** Database-authoritative progress, execution fence, and terminal store for stability analyses. */
+/**
+ * Database-authoritative progress, execution fence, terminal, and compact-observation store for
+ * stability analyses.
+ */
 public interface TestSuiteStabilityRunRepository {
     /**
      * Returns persistence-authoritative time for lease and retention decisions.
@@ -68,11 +72,14 @@ public interface TestSuiteStabilityRunRepository {
      * Atomically verifies a full journal/live fence, inserts terminal evidence, and consumes both.
      *
      * @param record complete signed terminal analysis
+     * @param observation independently signed compact longitudinal projection
      * @param lease exact live owner fence
      * @return stored immutable record
      */
     TestSuiteStabilityRunRecord complete(
-            TestSuiteStabilityRunRecord record, TestSuiteStabilityExecutionLease lease);
+            TestSuiteStabilityRunRecord record,
+            TestSuiteStabilityObservation observation,
+            TestSuiteStabilityExecutionLease lease);
 
     /**
      * Deletes a bounded oldest-first page of expired orphan leases.
@@ -157,5 +164,40 @@ public interface TestSuiteStabilityRunRepository {
             int maximumRuns) {
         throw new UnsupportedOperationException(
                 "Stability history windows are unavailable in this repository");
+    }
+
+    /**
+     * Resolves the payload-free rollout floor and latest compact-observation coordinate.
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param suiteRef exact immutable suite revision
+     * @return current durable ledger head, if this scope has any post-rollout observation
+     */
+    default Optional<TestSuiteStabilityObservationLedgerHead> observationLedgerHead(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef) {
+        return Optional.empty();
+    }
+
+    /**
+     * Reads a bounded contiguous compact-observation page after one committed sequence.
+     *
+     * @param tenantId verified tenant scope
+     * @param environmentId verified non-production environment
+     * @param suiteRef exact immutable suite revision
+     * @param afterSequence exclusive non-negative sequence cursor
+     * @param limit positive bounded page size
+     * @return ordered independently signed ledger entries
+     */
+    default List<TestSuiteStabilityObservationLedgerEntry> observations(
+            String tenantId,
+            String environmentId,
+            TestSuiteExecutionRequest.SuiteRef suiteRef,
+            long afterSequence,
+            int limit) {
+        throw new UnsupportedOperationException(
+                "Stability observation ledger is unavailable in this repository");
     }
 }

@@ -1,6 +1,7 @@
 # Stage 5 retained-window stability trend design
 
-**Implementation status (2026-07-19): server and independent test-kit v1 implemented.**
+**Implementation status (2026-07-19): retained-window server/test-kit v1 implemented; signed
+cross-retention observation-ledger core implemented but not yet exposed as a public capability.**
 
 ## 1. Root problem
 
@@ -48,8 +49,43 @@ cannot be treated as a stable observation. An incomplete window remains useful f
 its aggregate status is always `INCONCLUSIVE`.
 
 This v1 guarantee is intentionally limited to records still represented in the current stability
-store. A compact, longer-lived observation ledger with a rollout completeness floor is required
-before the product may claim trend continuity beyond full evidence retention.
+store. The compact observation-ledger write path described below now exists, but the v1 endpoint
+does not read it and `crossRetentionSuiteStabilityTrend` remains false. A public v2 range protocol,
+ledger lifecycle policy, and independent consumer verifier are still required before the product
+may claim trend continuity beyond full evidence retention.
+
+### 3.1 Cross-retention observation-ledger core
+
+Every newly published terminal stability run is now projected through the same pure
+`TestSuiteStabilityObservationProjector` used by retained-window trend evaluation. The compact
+`bloge.testSuiteStabilityObservationEvidence.v1` contains only scope fingerprint, exact suite ref,
+source request/evidence/attestation identities, source status, target/regime fingerprints, ordered
+case outcome/fixture/plan-set fingerprints, and source times. It contains no fixture value, input,
+output, credential, actor, tenant id, or diagnostic payload.
+
+The original stability attestation is verified before this projection is signed in the separate
+`bloge.testSuiteStabilityObservationAttestation.v1` domain. A missing or invalid second signature
+blocks terminal publication. The terminal record, compact observation entry, contiguous per-scope
+sequence, predecessor observation id, and mutable ledger head are then committed in one local
+transaction. A dedicated exact-scope database lock serializes concurrent replicas without placing
+a potentially remote KMS call inside the transaction.
+
+The first committed entry establishes an immutable `coverageFrom` rollout floor. The head records
+the latest sequence, observation id, entry fingerprint, and database append time; every update uses
+an exact predecessor CAS. Reads verify the whole-record head fingerprint, contiguous sequence and
+predecessor chain, head-to-latest-row and tail-to-head closure, canonical
+entry/observation/attestation fingerprints, and every indexed database column against the stored
+envelope. A page is capped at the head sequence observed before the query, so a concurrent append
+cannot leak into an older read snapshot; orphan rows and dangling heads fail closed. Corruption or
+a ledger write failure rolls back the terminal insert, progress deletion, and lease consumption
+together.
+
+This core deliberately does not make the ledger a public proof yet. Sequence, predecessor, rollout
+floor, and database append time are producer-authoritative ordering facts, while each compact
+observation is independently signed. The next protocol generation must sign the exact requested
+ledger range and head/floor closure, publish strict Schema, and let the test kit verify every
+observation signature and reconstruct the trend. Until then, the retained v1 source-closed path is
+the only advertised trend capability.
 
 ## 4. Comparable execution regime
 
@@ -133,11 +169,17 @@ Completion requires tests proving rejection or fail-closed projection for:
 - outcome shifts across a regime boundary incorrectly emitted as correlation;
 - producer-forged aggregate, case trend, correlation signal, or source ordering;
 - trend signature verification under an unpinned, unavailable, retired, or revoked key.
+- compact observation signing without a valid original source attestation;
+- terminal publication when the compact-observation signer is unavailable;
+- cross-replica concurrent append producing duplicate sequence or broken predecessor identity;
+- entry/index projection drift, missing tail, corrupt head, or ledger failure leaving a terminal
+  without its compact observation.
 
 ## 10. Deliberately unclaimed
 
-V1 does not provide cross-suite common-cause confirmation, cross-revision semantic lineage,
-cross-retention continuity, automatic quarantine mutation, change-point statistics, seasonal
-baselines, production-path comparison, distributed attempt execution, or physical test-runtime
-isolation. Those controls remain separate because collapsing them into a read projection would make
-the evidence easier to display and harder to trust.
+V1 does not provide cross-suite common-cause confirmation, cross-revision semantic lineage, public
+cross-retention continuity, compact-ledger retention/archive/erasure policy, externally witnessed
+ledger non-equivocation, automatic quarantine mutation, change-point statistics, seasonal baselines,
+production-path comparison, distributed attempt execution, or physical test-runtime isolation.
+Those controls remain separate because collapsing them into a read projection would make the
+evidence easier to display and harder to trust.

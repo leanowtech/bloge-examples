@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunEvidenceProtocolCodec;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
@@ -309,6 +310,23 @@ class TestSuiteStabilityExecutionServiceTest {
                             .isEqualTo("RG.TEST.STABILITY_ATTESTATION_UNAVAILABLE");
                 });
         assertThat(repository.records).isEmpty();
+    }
+
+    @Test
+    void unavailableObservationSignerNeverPublishesATerminalWithoutItsLedgerEntry() {
+        TestSuiteStabilityExecutionService service = service(
+                new InMemoryVisualEvidenceSigner(), VisualEvidenceSigner.unavailable(),
+                TestSuiteStabilityLeaseCoordinator.passive(
+                        repository, Duration.ofSeconds(30)));
+
+        assertThatThrownBy(() -> service.execute(suite.suiteId(), request(3), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().code()).isEqualTo(
+                            "RG.TEST.STABILITY_OBSERVATION_ATTESTATION_UNAVAILABLE");
+                });
+        assertThat(repository.records).isEmpty();
+        assertThat(repository.completions).isZero();
     }
 
     @Test
@@ -674,8 +692,19 @@ class TestSuiteStabilityExecutionServiceTest {
     private TestSuiteStabilityExecutionService service(
             VisualEvidenceSigner signer,
             TestSuiteStabilityLeaseCoordinator coordinator) {
+        return service(signer, signer, coordinator);
+    }
+
+    private TestSuiteStabilityExecutionService service(
+            VisualEvidenceSigner sourceSigner,
+            VisualEvidenceSigner observationSigner,
+            TestSuiteStabilityLeaseCoordinator coordinator) {
+        TestSuiteStabilityAttestationService sourceAttestations =
+                new TestSuiteStabilityAttestationService(mapper, sourceSigner);
         return new TestSuiteStabilityExecutionService(suites, suiteExecutions, childExecutions,
-                repository, mapper, new TestSuiteStabilityAttestationService(mapper, signer),
+                repository, mapper, sourceAttestations,
+                new TestSuiteStabilityObservationAttestationService(
+                        mapper, observationSigner, sourceAttestations),
                 coordinator, Duration.ofDays(30));
     }
 
@@ -940,7 +969,13 @@ class TestSuiteStabilityExecutionServiceTest {
         @Override
         public TestSuiteStabilityRunRecord complete(
                 TestSuiteStabilityRunRecord record,
+                TestSuiteStabilityObservation observation,
                 TestSuiteStabilityExecutionLease lease) {
+            if (observation == null
+                    || !observation.evidence().source().stabilityRunId()
+                    .equals(record.stabilityRunId())) {
+                throw new IllegalArgumentException("observation mismatch");
+            }
             TestSuiteStabilityExecutionLease stored = leases.get(lease.clientRequestId());
             if (!sameFence(stored, lease) || !stored.expiresAt().isAfter(Instant.now())) {
                 throw new TestSuiteStabilityRunConflictException(

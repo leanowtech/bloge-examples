@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV5;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityEvidenceEvaluator;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseCoordinator.LeaseGuard;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseCoordinator.LeaseLostException;
 
@@ -36,7 +37,8 @@ import java.util.regex.Pattern;
  * parent journal is checkpointed under the live owner/epoch fence before another attempt may be
  * scheduled. A successor refetches and verifies that exact prefix before deciding whether another
  * attempt is legal. Only a fully signed fixed-horizon or first-boundary sequential terminal
- * analysis consumes the journal and lease; concurrent creators converge on one stored winner.
+ * analysis with its separately signed compact observation consumes the journal and lease;
+ * concurrent creators converge on one stored winner and one exact-suite ledger append.
  * An optional payload-free cooperative controller can stop work at source boundaries and
  * linearize an external queue before parent terminal publication.</p>
  */
@@ -62,6 +64,7 @@ public final class TestSuiteStabilityExecutionService {
     private final ObjectMapper objectMapper;
     private final TestSuiteStabilityEvidenceEvaluator evaluator;
     private final TestSuiteStabilityAttestationService attestations;
+    private final TestSuiteStabilityObservationAttestationService observationAttestations;
     private final TestSuiteStabilityLeaseCoordinator leaseCoordinator;
     private final Duration retention;
 
@@ -72,6 +75,7 @@ public final class TestSuiteStabilityExecutionService {
      * @param repository immutable terminal stability store
      * @param objectMapper canonical protocol mapper
      * @param attestations stability-specific signing boundary
+     * @param observationAttestations compact longitudinal observation signing boundary
      * @param leaseCoordinator cross-replica parent execution ownership
      * @param retention maximum analysis retention, bounded by earliest source retention
      */
@@ -82,6 +86,7 @@ public final class TestSuiteStabilityExecutionService {
             TestSuiteStabilityRunRepository repository,
             ObjectMapper objectMapper,
             TestSuiteStabilityAttestationService attestations,
+            TestSuiteStabilityObservationAttestationService observationAttestations,
             TestSuiteStabilityLeaseCoordinator leaseCoordinator,
             Duration retention) {
         this.suiteRegistry = Objects.requireNonNull(suiteRegistry, "suiteRegistry");
@@ -91,6 +96,8 @@ public final class TestSuiteStabilityExecutionService {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.evaluator = new TestSuiteStabilityEvidenceEvaluator(objectMapper);
         this.attestations = Objects.requireNonNull(attestations, "attestations");
+        this.observationAttestations = Objects.requireNonNull(
+                observationAttestations, "observationAttestations");
         this.leaseCoordinator = Objects.requireNonNull(leaseCoordinator, "leaseCoordinator");
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
@@ -318,7 +325,13 @@ public final class TestSuiteStabilityExecutionService {
                     "Stability evidence cannot be retained because its terminal signature is unavailable.");
         }
         String evidenceFingerprint = seal.attestation().evidenceFingerprint();
-        Instant createdAt = Instant.now();
+        Instant createdAt;
+        try {
+            createdAt = repository.currentTime();
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.TEST.STABILITY_STORE_UNAVAILABLE",
+                    "The stability database clock is unavailable.");
+        }
         Instant expiresAt = evidence.startedAt().plus(retention);
         if (!expiresAt.isAfter(createdAt)) {
             throw conflict(identity, "RG.TEST.STABILITY_SOURCE_RETENTION_EXHAUSTED",
@@ -329,10 +342,17 @@ public final class TestSuiteStabilityExecutionService {
                 identity.tenantId(), identity.organizationId(), identity.projectId(),
                 identity.environmentId(), identity.actorId(), stored.suite().classification(),
                 evidenceFingerprint, evidence, seal.attestation(), createdAt, expiresAt);
+        TestSuiteStabilityObservationAttestationService.SealResult observationSeal =
+                observationAttestations.seal(record);
+        if (!observationSeal.verified()) {
+            throw unavailable(identity, "RG.TEST.STABILITY_OBSERVATION_ATTESTATION_UNAVAILABLE",
+                    "Compact stability observation evidence could not be produced.");
+        }
         control.prepareTerminal();
         try {
             TestSuiteStabilityExecutionLease terminalLease = requireLiveLease(lease, identity);
-            TestSuiteStabilityRunRecord completed = repository.complete(record, terminalLease);
+            TestSuiteStabilityRunRecord completed = repository.complete(
+                    record, observationSeal.observation(), terminalLease);
             lease.consumed();
             return response(completed);
         } catch (TestSuiteStabilityRunConflictException conflict) {
