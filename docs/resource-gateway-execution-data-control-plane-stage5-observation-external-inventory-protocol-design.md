@@ -212,3 +212,9 @@ page before cursor advance, resume exact snapshot progress after crash, verify f
 compare both remote-to-local and local-to-remote. Findings must be durable and payload-free. The
 repository and service still must not contain any external delete method; remediation remains an
 ANEKE/governance workflow with a separately controlled storage authority.
+
+The first prerequisite is now implemented: every accepted authority receipt is normalized into a
+payload-free expected inventory item in the exact retirement transaction, with bounded historical
+backfill and exact-replay repair. See
+[Stage 5 observation external reconciliation control plane](resource-gateway-execution-data-control-plane-stage5-observation-external-reconciliation-design.md).
+Remote cycle leases, page staging, final-root replay, comparison, and findings remain unimplemented.

@@ -44,6 +44,41 @@ class TestSuiteStabilityObservationExternalArchiveIntegrityTest {
     }
 
     @Test
+    void committedReceiptProjectsToCanonicalPayloadFreeExpectedInventoryItem() {
+        TestSuiteStabilityObservationExternalArchiveReceipt receipt =
+                receiptSet.receipts().getFirst();
+
+        var item = TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.expectedItem(
+                mapper, receiptSet, receipt);
+
+        assertThat(item.fingerprintVerified(mapper)).isTrue();
+        assertThat(item.objectId()).isEqualTo(receipt.objectId());
+        assertThat(item.objectCommitment()).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveIntegrity.objectCommitment(
+                        mapper, receiptSet.request().retirement(), receipt.retainUntil()));
+        assertThat(item.retirementFingerprint()).isEqualTo(receipt.retirementFingerprint());
+        assertThat(item.segmentFingerprint()).isEqualTo(receipt.segmentFingerprint());
+        assertThat(item.retentionPolicyFingerprint())
+                .isEqualTo(receipt.retentionPolicyFingerprint());
+        assertThat(item.retainUntil()).isEqualTo(receipt.retainUntil());
+        assertThat(item.storedAt()).isEqualTo(receipt.storedAt());
+    }
+
+    @Test
+    void expectedInventoryProjectionRejectsAReceiptOutsideTheCommittedSet() {
+        TestSuiteStabilityObservationExternalArchiveReceipt receipt =
+                receiptSet.receipts().getFirst();
+        TestSuiteStabilityObservationExternalArchiveReceipt outsider = copyReceipt(
+                receipt, "archive-b", "region-b");
+
+        assertThatThrownBy(() ->
+                TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.expectedItem(
+                        mapper, receiptSet, outsider))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("member");
+    }
+
+    @Test
     void malformedChallengeAndShortenedRetentionAreRejected() {
         TestSuiteStabilityObservationExternalArchiveRequest request = receiptSet.request();
         assertThatThrownBy(() -> new TestSuiteStabilityObservationExternalArchiveRequest(

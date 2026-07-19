@@ -15,6 +15,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityLeaseRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationArchiveSegment;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationFloorRetirement;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveInventoryItem;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReceiptSet;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerEntry;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationLedgerFloor;
@@ -33,6 +35,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationFloorRetirementEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationExternalArchiveIntegrity;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationExternalArchiveInventoryIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerFloorIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationProjector;
@@ -75,6 +78,7 @@ public final class DatabaseTestSuiteStabilityRunRepository
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final int LOCK_STRIPES = 4_096;
     private static final int MAXIMUM_PURGE_BATCH = 10_000;
+    private static final int EXTERNAL_ARCHIVE_INDEX_BACKFILL_PAGE = 500;
     private static final TypeReference<List<TestSuiteStabilityExecutionProgress.AttemptReference>>
             ATTEMPT_REFERENCES = new TypeReference<>() { };
 
@@ -321,6 +325,48 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 )
                 """);
         jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS
+                    rg_test_suite_stability_observation_external_archive_objects (
+                    authority_id VARCHAR(255) NOT NULL,
+                    object_id VARCHAR(255) NOT NULL,
+                    trust_domain VARCHAR(255) NOT NULL,
+                    archive_set_id VARCHAR(255) NOT NULL,
+                    failure_domain VARCHAR(255) NOT NULL,
+                    retirement_id VARCHAR(255) NOT NULL,
+                    retirement_fingerprint VARCHAR(71) NOT NULL,
+                    segment_id VARCHAR(255) NOT NULL,
+                    segment_fingerprint VARCHAR(71) NOT NULL,
+                    retention_policy_fingerprint VARCHAR(71) NOT NULL,
+                    retain_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                    stored_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    object_commitment VARCHAR(71) NOT NULL,
+                    expected_item_fingerprint VARCHAR(71) NOT NULL,
+                    receipt_fingerprint VARCHAR(71) NOT NULL,
+                    receipt_set_id VARCHAR(255) NOT NULL,
+                    receipt_set_fingerprint VARCHAR(71) NOT NULL,
+                    indexed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    PRIMARY KEY (authority_id, object_id),
+                    CONSTRAINT uq_rg_test_suite_stability_observation_external_object_retirement
+                        UNIQUE (authority_id, retirement_id),
+                    CONSTRAINT uq_rg_test_suite_stability_observation_external_object_receipt
+                        UNIQUE (receipt_fingerprint)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS
+                    idx_rg_test_suite_stability_observation_external_object_identity
+                ON rg_test_suite_stability_observation_external_archive_objects (
+                    object_id, authority_id
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS
+                    idx_rg_test_suite_stability_observation_external_object_retirement
+                ON rg_test_suite_stability_observation_external_archive_objects (
+                    retirement_id, authority_id
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_suite_stability_observation_archives (
                     segment_id VARCHAR(255) PRIMARY KEY,
                     scope_fingerprint VARCHAR(71) NOT NULL,
@@ -355,6 +401,33 @@ public final class DatabaseTestSuiteStabilityRunRepository
                 )
                 """);
         backfillObservationFloors();
+        backfillExternalArchiveObjectIndex();
+    }
+
+    private void backfillExternalArchiveObjectIndex() {
+        String afterReceiptSetId = "";
+        while (true) {
+            List<TestSuiteStabilityObservationExternalArchiveReceiptSet> page = jdbc.query("""
+                    SELECT receipt_set_id, retirement_id, scope_fingerprint,
+                           retirement_generation, segment_id, retirement_fingerprint,
+                           segment_fingerprint, retention_policy_fingerprint, retain_until,
+                           required_copies, receipt_count, confirmed_at,
+                           receipt_set_fingerprint, receipt_set_json
+                    FROM rg_test_suite_stability_observation_archive_receipts
+                    WHERE receipt_set_id > ?
+                    ORDER BY receipt_set_id
+                    LIMIT ?
+                    """, this::storedExternalArchiveReceiptSet, afterReceiptSetId,
+                    EXTERNAL_ARCHIVE_INDEX_BACKFILL_PAGE);
+            if (page.isEmpty()) {
+                return;
+            }
+            for (TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet : page) {
+                mutations.executeWithoutResult(status -> insertExternalArchiveObjects(
+                        receiptSet, currentTime()));
+            }
+            afterReceiptSetId = page.getLast().receiptSetId();
+        }
     }
 
     private void backfillObservationFloors() {
@@ -1494,6 +1567,7 @@ public final class DatabaseTestSuiteStabilityRunRepository
                     throw new IllegalStateException(
                             "Stability observation retirement replay has different archive receipts");
                 }
+                insertExternalArchiveObjects(storedReceiptSet, currentTime());
                 return successorFloor(retirement);
             }
             TestSuiteStabilityObservationLedgerFloor currentFloor = observationFloorByScope(
@@ -1515,6 +1589,7 @@ public final class DatabaseTestSuiteStabilityRunRepository
                         "Stability observation retirement is ahead of database time");
             }
             insertExternalArchiveReceiptSet(receiptSet);
+            insertExternalArchiveObjects(receiptSet, currentTime());
             insertArchive(archive);
             insertRetirement(retirement);
             TestSuiteStabilityObservationLedgerFloor successorFloor =
@@ -2112,6 +2187,89 @@ public final class DatabaseTestSuiteStabilityRunRepository
         } catch (DuplicateKeyException duplicate) {
             throw new IllegalStateException(
                     "External observation archive receipt generation already exists", duplicate);
+        }
+    }
+
+    private void insertExternalArchiveObjects(
+            TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet,
+            Instant indexedAt) {
+        for (TestSuiteStabilityObservationExternalArchiveReceipt receipt : receiptSet.receipts()) {
+            TestSuiteStabilityObservationExternalArchiveInventoryItem expected =
+                    TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.expectedItem(
+                            objectMapper, receiptSet, receipt);
+            try {
+                int inserted = jdbc.update("""
+                        INSERT INTO
+                            rg_test_suite_stability_observation_external_archive_objects (
+                            authority_id, object_id, trust_domain, archive_set_id,
+                            failure_domain, retirement_id, retirement_fingerprint,
+                            segment_id, segment_fingerprint, retention_policy_fingerprint,
+                            retain_until, stored_at, object_commitment,
+                            expected_item_fingerprint, receipt_fingerprint,
+                            receipt_set_id, receipt_set_fingerprint, indexed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, receipt.authorityId(), expected.objectId(), receipt.trustDomain(),
+                        receipt.archiveSetId(), receipt.failureDomain(), expected.retirementId(),
+                        expected.retirementFingerprint(), expected.segmentId(),
+                        expected.segmentFingerprint(), expected.retentionPolicyFingerprint(),
+                        Timestamp.from(expected.retainUntil()), Timestamp.from(expected.storedAt()),
+                        expected.objectCommitment(), expected.itemFingerprint(),
+                        receipt.receiptFingerprint(), receiptSet.receiptSetId(),
+                        receiptSet.receiptSetFingerprint(), Timestamp.from(indexedAt));
+                if (inserted != 1) {
+                    throw new IllegalStateException(
+                            "External observation archive object index insert was incomplete");
+                }
+            } catch (DuplicateKeyException duplicate) {
+                requireExactExternalArchiveObject(receiptSet, receipt, expected, duplicate);
+            }
+        }
+    }
+
+    private void requireExactExternalArchiveObject(
+            TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet,
+            TestSuiteStabilityObservationExternalArchiveReceipt receipt,
+            TestSuiteStabilityObservationExternalArchiveInventoryItem expected,
+            DuplicateKeyException duplicate) {
+        List<TestSuiteStabilityObservationExternalArchiveInventoryItem> rows = jdbc.query("""
+                SELECT object_id, object_commitment, retirement_id, retirement_fingerprint,
+                       segment_id, segment_fingerprint, retention_policy_fingerprint,
+                       retain_until, stored_at, expected_item_fingerprint,
+                       trust_domain, archive_set_id, failure_domain,
+                       receipt_fingerprint, receipt_set_id, receipt_set_fingerprint
+                FROM rg_test_suite_stability_observation_external_archive_objects
+                WHERE authority_id = ? AND object_id = ?
+                """, (result, row) -> {
+            TestSuiteStabilityObservationExternalArchiveInventoryItem item =
+                    new TestSuiteStabilityObservationExternalArchiveInventoryItem(
+                            TestSuiteStabilityObservationExternalArchiveInventoryItem.SCHEMA_VERSION,
+                            result.getString("expected_item_fingerprint"),
+                            result.getString("object_id"), result.getString("object_commitment"),
+                            result.getString("retirement_id"),
+                            result.getString("retirement_fingerprint"),
+                            result.getString("segment_id"),
+                            result.getString("segment_fingerprint"),
+                            result.getString("retention_policy_fingerprint"),
+                            result.getTimestamp("retain_until").toInstant(),
+                            result.getTimestamp("stored_at").toInstant());
+            if (!item.fingerprintVerified(objectMapper)
+                    || !receipt.trustDomain().equals(result.getString("trust_domain"))
+                    || !receipt.archiveSetId().equals(result.getString("archive_set_id"))
+                    || !receipt.failureDomain().equals(result.getString("failure_domain"))
+                    || !receipt.receiptFingerprint().equals(
+                    result.getString("receipt_fingerprint"))
+                    || !receiptSet.receiptSetId().equals(result.getString("receipt_set_id"))
+                    || !receiptSet.receiptSetFingerprint().equals(
+                    result.getString("receipt_set_fingerprint"))) {
+                throw new IllegalStateException(
+                        "Stored external observation archive object index is corrupt");
+            }
+            return item;
+        }, receipt.authorityId(), expected.objectId());
+        if (rows.size() != 1 || !rows.getFirst().equals(expected)) {
+            throw new IllegalStateException(
+                    "External observation archive object index identity has different material",
+                    duplicate);
         }
     }
 

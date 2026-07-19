@@ -831,6 +831,19 @@ destructive-API absence。该阶段只证明
 lease/epoch、逐页持久化与 crash resume、最终 root replay、双向 local/remote 比对和 governed finding
 lifecycle，且继续保持无外部删除权。
 
+第五十三增量第二十六子步第十阶段 Phase A 先关闭“receipt 已提交、后续核对却没有规范化本地预期”的
+原子性缺口。每份 authority receipt 现通过 `expectedItem` 重算 retention-bearing object commitment，并在
+退休事务中先写入 payload-free `external_archive_objects`，随后才推进 floor/head 和删除 active prefix；
+receipt、expected object、archive、retirement 与删除任一失败全部回滚。启动迁移以 receipt-set id 做
+500 行 keyset 分页，经既有 canonical row verifier 逐份回填；精确 retirement replay 可修复缺行，而合法
+形态但材料漂移的索引会 fail closed。表结构不保存 JSON、observation、签名、challenge、endpoint 或凭据。
+聚焦 59 tests 全绿，覆盖事务回滚、双实例收敛、重启回填、坏旧 JSON、缺行修复和 commitment 漂移拒绝。
+完整 Resource Gateway `clean verify` 执行 2914 tests，0 failures、0 errors、2 个既有浏览器条件跳过，
+并成功打包 Spring Boot 可执行 JAR。
+设计见 [Stage 5 observation external reconciliation control plane](resource-gateway-execution-data-control-plane-stage5-observation-external-reconciliation-design.md)。
+该 Phase 只完成 durable local expectation index；database-clock authority lease、remote page staging、
+terminal root/count replay、双向分类和 governed finding lifecycle 仍是下一实现边界，capability 不得提前转真。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制

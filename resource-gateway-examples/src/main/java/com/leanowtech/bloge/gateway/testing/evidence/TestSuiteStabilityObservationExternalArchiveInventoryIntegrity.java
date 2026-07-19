@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.testing.evidence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveInventoryItem;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveInventoryPage;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReceipt;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReceiptSet;
 
 import java.time.Instant;
 import java.util.List;
@@ -124,6 +126,48 @@ public final class TestSuiteStabilityObservationExternalArchiveInventoryIntegrit
             previousObjectId = item.objectId();
         }
         return root;
+    }
+
+    /**
+     * Projects one committed external receipt into the exact payload-free inventory item expected
+     * from that authority.
+     *
+     * <p>The object commitment is derived rather than trusted from a second stored value. This
+     * gives the durable reconciler one canonical local comparison record while retaining no retired
+     * observation payload or credential.</p>
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param receiptSet complete committed receipt set
+     * @param receipt exact member receipt to project
+     * @return canonical expected inventory item
+     */
+    public static TestSuiteStabilityObservationExternalArchiveInventoryItem expectedItem(
+            ObjectMapper objectMapper,
+            TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet,
+            TestSuiteStabilityObservationExternalArchiveReceipt receipt) {
+        Objects.requireNonNull(objectMapper, "objectMapper");
+        Objects.requireNonNull(receiptSet, "receiptSet");
+        Objects.requireNonNull(receipt, "receipt");
+        if (!TestSuiteStabilityObservationExternalArchiveIntegrity.valid(
+                objectMapper, receiptSet) || !receiptSet.receipts().contains(receipt)) {
+            throw new IllegalArgumentException(
+                    "Canonical member of an external archive receipt set is required");
+        }
+        String commitment = TestSuiteStabilityObservationExternalArchiveIntegrity.objectCommitment(
+                objectMapper, receiptSet.request().retirement(), receipt.retainUntil());
+        TestSuiteStabilityObservationExternalArchiveInventoryItem.Material material =
+                new TestSuiteStabilityObservationExternalArchiveInventoryItem.Material(
+                        TestSuiteStabilityObservationExternalArchiveInventoryItem.SCHEMA_VERSION,
+                        receipt.objectId(), commitment, receipt.retirementId(),
+                        receipt.retirementFingerprint(), receipt.segmentId(),
+                        receipt.segmentFingerprint(), receipt.retentionPolicyFingerprint(),
+                        receipt.retainUntil(), receipt.storedAt());
+        return new TestSuiteStabilityObservationExternalArchiveInventoryItem(
+                material.schemaVersion(), ProtocolFingerprint.of(objectMapper, material),
+                material.objectId(), material.objectCommitment(), material.retirementId(),
+                material.retirementFingerprint(), material.segmentId(),
+                material.segmentFingerprint(), material.retentionPolicyFingerprint(),
+                material.retainUntil(), material.storedAt());
     }
 
     /**

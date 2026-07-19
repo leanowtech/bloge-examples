@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservation
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationExternalArchiveInventoryIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementIntegrity;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerLifecyclePageIntegrity;
@@ -866,6 +867,44 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         assertThat(repository.findObservationExternalArchiveReceiptSet(
                 result.retirement().evidence().retirementId()))
                 .contains(result.archiveReceiptSet());
+        var receipt = result.archiveReceiptSet().receipts().getFirst();
+        var expectedItem = TestSuiteStabilityObservationExternalArchiveInventoryIntegrity
+                .expectedItem(mapper, result.archiveReceiptSet(), receipt);
+        assertThat(jdbc.queryForMap("""
+                SELECT authority_id, object_id, trust_domain, archive_set_id,
+                       failure_domain, retirement_id, retirement_fingerprint,
+                       segment_id, segment_fingerprint, retention_policy_fingerprint,
+                       object_commitment, expected_item_fingerprint,
+                       receipt_fingerprint, receipt_set_id, receipt_set_fingerprint
+                FROM rg_test_suite_stability_observation_external_archive_objects
+                """))
+                .containsEntry("AUTHORITY_ID", receipt.authorityId())
+                .containsEntry("OBJECT_ID", expectedItem.objectId())
+                .containsEntry("TRUST_DOMAIN", receipt.trustDomain())
+                .containsEntry("ARCHIVE_SET_ID", receipt.archiveSetId())
+                .containsEntry("FAILURE_DOMAIN", receipt.failureDomain())
+                .containsEntry("RETIREMENT_ID", expectedItem.retirementId())
+                .containsEntry("RETIREMENT_FINGERPRINT",
+                        expectedItem.retirementFingerprint())
+                .containsEntry("SEGMENT_ID", expectedItem.segmentId())
+                .containsEntry("SEGMENT_FINGERPRINT", expectedItem.segmentFingerprint())
+                .containsEntry("RETENTION_POLICY_FINGERPRINT",
+                        expectedItem.retentionPolicyFingerprint())
+                .containsEntry("OBJECT_COMMITMENT", expectedItem.objectCommitment())
+                .containsEntry("EXPECTED_ITEM_FINGERPRINT", expectedItem.itemFingerprint())
+                .containsEntry("RECEIPT_FINGERPRINT", receipt.receiptFingerprint())
+                .containsEntry("RECEIPT_SET_ID", result.archiveReceiptSet().receiptSetId())
+                .containsEntry("RECEIPT_SET_FINGERPRINT",
+                        result.archiveReceiptSet().receiptSetFingerprint());
+        assertThat(jdbc.queryForList("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name =
+                    'RG_TEST_SUITE_STABILITY_OBSERVATION_EXTERNAL_ARCHIVE_OBJECTS'
+                """, String.class))
+                .noneMatch(column -> column.toLowerCase().contains("json")
+                        || column.toLowerCase().contains("payload")
+                        || column.toLowerCase().contains("observation"));
 
         assertThatThrownBy(() -> repository.observations(
                 "tenant-a", "test", suite, 0, 10))
@@ -1095,6 +1134,10 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_test_suite_stability_observation_retirements",
                 Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_suite_stability_observation_external_archive_objects
+                """, Integer.class)).isZero();
         assertThat(repository.observationLedgerFloor("tenant-a", "test", suite))
                 .get().extracting(value -> value.retirementGeneration()).isEqualTo(0L);
         assertThat(jdbc.queryForObject(
@@ -1132,6 +1175,10 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_test_suite_stability_observation_retirements",
                 Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_suite_stability_observation_external_archive_objects
+                """, Integer.class)).isZero();
         assertThat(jdbc.queryForObject("""
                 SELECT retirement_generation
                 FROM rg_test_suite_stability_observation_floors
@@ -1456,6 +1503,10 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                     SELECT COUNT(*)
                     FROM rg_test_suite_stability_observation_archive_receipts
                     """, Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM rg_test_suite_stability_observation_external_archive_objects
+                    """, Integer.class)).isEqualTo(1);
             assertThat(repository.observationLedgerFloor("tenant-a", "test", suite))
                     .get().extracting(value -> value.retirementGeneration()).isEqualTo(1L);
         } finally {
@@ -1499,11 +1550,108 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_test_suite_stability_observation_archives", Integer.class))
                 .isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_suite_stability_observation_external_archive_objects
+                """, Integer.class)).isZero();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_test_suite_stability_observations", Integer.class))
                 .isEqualTo(3);
         assertThat(repository.observationLedgerFloor("tenant-a", "test", suite))
                 .get().extracting(value -> value.retirementGeneration()).isEqualTo(0L);
+    }
+
+    @Test
+    void startupBackfillsMissingExpectedExternalObjectsFromCanonicalReceiptSets() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'1', '2', '3'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        var result = retirementService.retire(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('4'), retainUntil());
+        jdbc.update("""
+                DELETE FROM rg_test_suite_stability_observation_external_archive_objects
+                """);
+
+        DatabaseTestSuiteStabilityRunRepository restarted =
+                new DatabaseTestSuiteStabilityRunRepository(new JdbcTemplate(dataSource), mapper);
+        restarted.init();
+
+        var receipt = result.archiveReceiptSet().receipts().getFirst();
+        var expected = TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.expectedItem(
+                mapper, result.archiveReceiptSet(), receipt);
+        assertThat(jdbc.queryForObject("""
+                SELECT expected_item_fingerprint
+                FROM rg_test_suite_stability_observation_external_archive_objects
+                WHERE authority_id = ? AND object_id = ?
+                """, String.class, receipt.authorityId(), receipt.objectId()))
+                .isEqualTo(expected.itemFingerprint());
+    }
+
+    @Test
+    void exactRetirementReplayRepairsAMissingExpectedObjectButRejectsMaterialDrift() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'7', '8', '9'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        var result = retirementService.retire(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('6'), retainUntil());
+        jdbc.update("""
+                DELETE FROM rg_test_suite_stability_observation_external_archive_objects
+                """);
+
+        assertThat(repository.commitObservationFloorRetirement(
+                result.retirement(), result.archiveReceiptSet()))
+                .isEqualTo(result.successorFloor());
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_suite_stability_observation_external_archive_objects
+                """, Integer.class)).isEqualTo(1);
+
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_external_archive_objects
+                SET object_commitment = ?
+                """, TestSuiteStabilityProtocolFixtures.fingerprint('f'));
+        assertThatThrownBy(() -> repository.commitObservationFloorRetirement(
+                result.retirement(), result.archiveReceiptSet()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("object index is corrupt");
+    }
+
+    @Test
+    void startupFailsClosedInsteadOfSkippingACorruptLegacyReceiptSet() {
+        Instant now = Instant.now();
+        for (char identity : new char[] {'4', '5', '6'}) {
+            completeTrend(trendRecord(identity, now.minusSeconds(30),
+                    now.plusSeconds(3_600)));
+        }
+        retirementService.retire(
+                "tenant-a", "test", TestSuiteStabilityProtocolFixtures.SUITE_REF,
+                repository.currentTime(), 1, 1,
+                TestSuiteStabilityProtocolFixtures.fingerprint('5'), retainUntil());
+        jdbc.update("""
+                DELETE FROM rg_test_suite_stability_observation_external_archive_objects
+                """);
+        jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_archive_receipts
+                SET receipt_set_json = '{}'
+                """);
+        DatabaseTestSuiteStabilityRunRepository restarted =
+                new DatabaseTestSuiteStabilityRunRepository(new JdbcTemplate(dataSource), mapper);
+
+        assertThatThrownBy(restarted::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("deserialize external observation archive receipt set");
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_suite_stability_observation_external_archive_objects
+                """, Integer.class)).isZero();
     }
 
     private TestSuiteStabilityExecutionLease acquired(
