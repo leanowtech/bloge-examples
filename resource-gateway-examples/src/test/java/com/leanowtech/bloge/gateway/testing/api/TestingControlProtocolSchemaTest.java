@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservation
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationFloorRetirementAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationFloorRetirementEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationLedgerLifecycleAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityObservationLedgerLifecycleArchiveAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityStatisticalPolicy;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendAttestation;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteStabilityTrendEvidence;
@@ -566,6 +567,14 @@ class TestingControlProtocolSchemaTest {
                 "testSuiteStabilityObservationLedgerLifecycleAttestation")).isTrue();
         assertThat(definitions.has(
                 "testSuiteStabilityObservationLedgerLifecyclePageResponse")).isTrue();
+        assertThat(definitions.has(
+                "testSuiteStabilityObservationLedgerLifecycleArchiveRef")).isTrue();
+        assertThat(definitions.has(
+                "testSuiteStabilityObservationLedgerLifecyclePageV2")).isTrue();
+        assertThat(definitions.has(
+                "testSuiteStabilityObservationLedgerLifecycleAttestationV2")).isTrue();
+        assertThat(definitions.has(
+                "testSuiteStabilityObservationLedgerLifecyclePageResponseV2")).isTrue();
         assertThat(definitions.has("testSuiteStabilityObservationLedgerRange")).isTrue();
         assertThat(definitions.has("testSuiteStabilityCrossRetentionTrendEvidence")).isTrue();
         assertThat(definitions.has(
@@ -1353,6 +1362,45 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo("VERIFIED");
         assertThat(attestation.at("/properties/independentlyVerifiable/const").asBoolean())
                 .isTrue();
+        assertThat(java.util.List.of("tenantId", "environmentId", "actorId", "payload",
+                        "input", "output", "fixtureValue"))
+                .noneMatch(page.path("properties")::has);
+    }
+
+    @Test
+    void lifecycleV2SchemaFreezesExactExternalArchiveProofClosure() throws Exception {
+        JsonNode definitions = new ObjectMapper().readTree(Files.readString(Path.of("..", "docs",
+                "schemas", "resource-gateway-testing",
+                "testing-control-plane-v1.schema.json"))).path("$defs");
+
+        JsonNode page = definitions.path(
+                "testSuiteStabilityObservationLedgerLifecyclePageV2");
+        JsonNode archiveRef = definitions.path(
+                "testSuiteStabilityObservationLedgerLifecycleArchiveRef");
+        JsonNode attestation = definitions.path(
+                "testSuiteStabilityObservationLedgerLifecycleAttestationV2");
+        JsonNode response = definitions.path(
+                "testSuiteStabilityObservationLedgerLifecyclePageResponseV2");
+        assertThat(page.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(page.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityObservationLedgerLifecycleArchivePage.SCHEMA_VERSION);
+        assertThat(page.at("/properties/retirements/maxItems").asInt()).isEqualTo(10);
+        assertThat(page.at("/properties/externalArchiveReceiptSets/maxItems").asInt())
+                .isEqualTo(10);
+        assertThat(page.at("/properties/externalArchiveReceiptSets/items/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteStabilityObservationExternalArchiveReceiptSet");
+        assertThat(archiveRef.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(archiveRef.at("/properties/receiptCount/maximum").asInt()).isEqualTo(16);
+        assertThat(attestation.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(attestation.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityObservationLedgerLifecycleArchiveAttestation
+                        .SCHEMA_VERSION);
+        assertThat(attestation.at("/properties/archiveRefs/maxItems").asInt()).isEqualTo(10);
+        assertThat(response.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityObservationLedgerLifecycleArchivePageResponse
+                        .SCHEMA_VERSION);
+        assertThat(response.at("/properties/page/$ref").asText())
+                .isEqualTo("#/$defs/testSuiteStabilityObservationLedgerLifecyclePageV2");
         assertThat(java.util.List.of("tenantId", "environmentId", "actorId", "payload",
                         "input", "output", "fixtureValue"))
                 .noneMatch(page.path("properties")::has);

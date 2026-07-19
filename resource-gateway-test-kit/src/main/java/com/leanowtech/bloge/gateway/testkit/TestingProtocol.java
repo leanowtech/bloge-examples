@@ -218,6 +218,24 @@ public final class TestingProtocol {
     /** Signed observation-ledger lifecycle page response wire version. */
     public static final String TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_RESPONSE_V1 =
             "bloge.testSuiteStabilityObservationLedgerLifecyclePageResponse.v1";
+    /** Producer challenge-bound external archive request wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_EXTERNAL_ARCHIVE_REQUEST_V1 =
+            "bloge.testSuiteStabilityObservationExternalArchiveRequest.v1";
+    /** External authority immutable-archive receipt wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_EXTERNAL_ARCHIVE_RECEIPT_V1 =
+            "bloge.testSuiteStabilityObservationExternalArchiveReceipt.v1";
+    /** Canonical multi-copy external archive receipt-set wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_EXTERNAL_ARCHIVE_RECEIPT_SET_V1 =
+            "bloge.testSuiteStabilityObservationExternalArchiveReceiptSet.v1";
+    /** Producer receipt-aware observation-ledger lifecycle page wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_PAGE_V2 =
+            "bloge.testSuiteStabilityObservationLedgerLifecyclePage.v2";
+    /** Domain-separated receipt-aware lifecycle page signature wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_ATTESTATION_V2 =
+            "bloge.testSuiteStabilityObservationLedgerLifecycleAttestation.v2";
+    /** Signed receipt-aware observation-ledger lifecycle response wire version. */
+    public static final String TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_RESPONSE_V2 =
+            "bloge.testSuiteStabilityObservationLedgerLifecyclePageResponse.v2";
     /** Producer floor/head/cursor-pinned observation range wire version. */
     public static final String TEST_SUITE_STABILITY_OBSERVATION_RANGE_V1 =
             "bloge.testSuiteStabilityObservationLedgerRange.v1";

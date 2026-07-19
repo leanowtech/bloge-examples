@@ -1,10 +1,11 @@
 # Stage 5 observation external-archive admission design
 
-**Implementation target (2026-07-20): make independently verified external WORM acknowledgement a
+**Implemented non-production core (2026-07-20): independently verified external WORM acknowledgement is a
 mandatory, persisted precondition for every future compact-observation floor retirement. This
-increment closes the write-side deletion-authority gap; HTTP authority transport, public receipt
-export, legal hold, backup purge, disaster-recovery certification, and witnessed lifecycle
-non-equivocation remain later gates.**
+increment closes the write-side deletion-authority gap, and lifecycle v2 now exports the exact
+receipts for caller-policy verification. Production HTTP authority transport, legal hold, backup
+purge, disaster-recovery certification, and witnessed lifecycle non-equivocation remain later
+gates.**
 
 ## 1. Strongest judgment
 
@@ -208,20 +209,28 @@ that authority outage, invalid verification, and authenticated immutable conflic
 archive, retirement, floor, head, and active-row surfaces unchanged; a post-acknowledgement append
 and any later transaction failure also leave no partial local receipt row.
 
+Receipt-aware lifecycle v2 now exports each exact persisted set next to its retirement and the
+independent test-kit verifies external signatures against caller-pinned topology and retention
+policy. This closes proof portability; it does not turn the in-memory preview authority into a
+production storage provider. The remaining root dependency is a certified HTTPS multi-authority
+WORM adapter with historical trust publication, orphan reconciliation, legal hold/erasure, backup
+purge, disaster-recovery continuity, and externally witnessed non-equivocation. See the
+[lifecycle v2 external-proof design](resource-gateway-execution-data-control-plane-stage5-observation-lifecycle-v2-external-proof-design.md).
+
 ## 10. Deliberately unclaimed and next stages
 
 This write-side core does not yet claim a deployable WORM integration. The next stages are ordered:
 
 1. strict HTTPS multi-authority adapter with bounded bodies/timeouts, no redirects, fresh challenge,
    configured Ed25519 keys, signing-time policy, health, and staging-required wiring;
-2. lifecycle v2 export containing exact receipt sets and an independent test-kit verifier;
-3. external orphan inventory/reconciliation without early deletion authority;
-4. legal-hold precedence and release authorization;
-5. backup/replica purge evidence and disaster-recovery continuity;
-6. externally witnessed retirement-generation non-equivocation and rollback detection;
-7. only then a database-leased bounded retirement scheduler, backlog SLO, readiness, and capability
+2. external orphan inventory/reconciliation without early deletion authority;
+3. legal-hold precedence and release authorization;
+4. backup/replica purge evidence and disaster-recovery continuity;
+5. externally witnessed retirement-generation non-equivocation and rollback detection;
+6. only then a database-leased bounded retirement scheduler, backlog SLO, readiness, and capability
    advertisement.
 
 The capability remains false throughout this core increment. The honest claim is narrower: the
-local deletion path can be made structurally incapable of committing without an exact, previously
-verified external immutable-archive receipt set.
+local deletion path is structurally incapable of committing without an exact, previously verified
+external immutable-archive receipt set, and v2 consumers can independently verify that recorded
+acknowledgement.

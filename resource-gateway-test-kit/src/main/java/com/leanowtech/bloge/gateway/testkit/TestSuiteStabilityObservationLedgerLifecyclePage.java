@@ -45,7 +45,7 @@ public record TestSuiteStabilityObservationLedgerLifecyclePage(
         Instant observedAt,
         Attestation attestation,
         JsonNode rawResponse
-) {
+) implements TestSuiteStabilityObservationLedgerLifecyclePageView {
     /**
      * Immutable exact suite coordinate repeated throughout lifecycle material.
      *
@@ -64,7 +64,7 @@ public record TestSuiteStabilityObservationLedgerLifecyclePage(
             }
         }
 
-        private boolean matches(TestSuiteStabilityObservationLedgerLifecycleRequest value) {
+        boolean matches(TestSuiteStabilityObservationLedgerLifecycleRequest value) {
             return suiteId.equals(value.suiteId()) && revision == value.revision()
                     && fingerprint.equals(value.fingerprint());
         }
@@ -590,7 +590,13 @@ public record TestSuiteStabilityObservationLedgerLifecyclePage(
                 attestation, response.deepCopy());
     }
 
-    private static Retirement retirement(JsonNode value) {
+    /** @return outer lifecycle-signing key identity used by the shared verifier */
+    @Override
+    public String outerKeyId() {
+        return attestation.keyId();
+    }
+
+    static Retirement retirement(JsonNode value) {
         JsonNode evidence = value.path("evidence");
         JsonNode archiveJson = evidence.path("archiveSegment");
         List<EntryRef> retiredEntries = new ArrayList<>();
@@ -652,7 +658,7 @@ public record TestSuiteStabilityObservationLedgerLifecyclePage(
                 value.path("algorithm").asText(), value.path("signature").asText());
     }
 
-    private static Floor floor(JsonNode value) {
+    static Floor floor(JsonNode value) {
         return new Floor(
                 value.path("schemaVersion").asText(), value.path("scopeFingerprint").asText(),
                 suiteRef(value.path("suiteRef")), value.path("floorSequence").asLong(),
@@ -666,7 +672,7 @@ public record TestSuiteStabilityObservationLedgerLifecyclePage(
                 instant(value, "updatedAt"), value.path("floorFingerprint").asText());
     }
 
-    private static Head head(JsonNode value) {
+    static Head head(JsonNode value) {
         return new Head(
                 value.path("schemaVersion").asText(), value.path("scopeFingerprint").asText(),
                 suiteRef(value.path("suiteRef")), instant(value, "coverageFrom"),
@@ -676,12 +682,12 @@ public record TestSuiteStabilityObservationLedgerLifecyclePage(
                 instant(value, "updatedAt"), value.path("headFingerprint").asText());
     }
 
-    private static SuiteRef suiteRef(JsonNode value) {
+    static SuiteRef suiteRef(JsonNode value) {
         return new SuiteRef(value.path("suiteId").asText(), value.path("revision").asLong(),
                 value.path("fingerprint").asText());
     }
 
-    private static EntryRef entry(JsonNode value) {
+    static EntryRef entry(JsonNode value) {
         return new EntryRef(
                 value.path("sequence").asLong(), value.path("scopeFingerprint").asText(),
                 value.path("previousObservationId").asText(),
@@ -712,7 +718,7 @@ public record TestSuiteStabilityObservationLedgerLifecyclePage(
                 && !successor.appendedAt().isAfter(archivedAt);
     }
 
-    private static boolean sameScope(
+    static boolean sameScope(
             String scope,
             Floor starting,
             Floor terminal,
@@ -724,7 +730,7 @@ public record TestSuiteStabilityObservationLedgerLifecyclePage(
                 && scope.equals(head.scopeFingerprint());
     }
 
-    private static Instant instant(JsonNode value, String field) {
+    static Instant instant(JsonNode value, String field) {
         try {
             return Instant.parse(value.path(field).asText());
         } catch (DateTimeParseException failure) {
@@ -732,23 +738,23 @@ public record TestSuiteStabilityObservationLedgerLifecyclePage(
         }
     }
 
-    private static boolean validObservationId(String value) {
+    static boolean validObservationId(String value) {
         return normalized(value).matches("stability-observation-[0-9a-f]{64}");
     }
 
-    private static boolean validRetirementId(String value) {
+    static boolean validRetirementId(String value) {
         return normalized(value).matches("stability-observation-retirement-[0-9a-f]{64}");
     }
 
-    private static boolean archiveId(String value) {
+    static boolean archiveId(String value) {
         return normalized(value).matches("stability-observation-archive-[0-9a-f]{64}");
     }
 
-    private static boolean pageId(String value) {
+    static boolean pageId(String value) {
         return normalized(value).matches("stability-observation-lifecycle-page-[0-9a-f]{64}");
     }
 
-    private static boolean validFingerprint(String value) {
+    static boolean validFingerprint(String value) {
         return normalized(value).matches("sha256:[0-9a-f]{64}");
     }
 

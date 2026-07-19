@@ -80,6 +80,46 @@ class TestSuiteStabilityObservationExternalArchiveIntegrityTest {
     }
 
     @Test
+    void confirmationMustRemainInsideEveryReceiptAdmissionWindow() {
+        TestSuiteStabilityObservationExternalArchiveReceipt receipt =
+                receiptSet.receipts().getFirst();
+
+        assertThatThrownBy(() -> new TestSuiteStabilityObservationExternalArchiveReceiptSet(
+                receiptSet.schemaVersion(), receiptSet.receiptSetId(), receiptSet.request(),
+                receiptSet.requiredCopies(), receiptSet.receipts(), receipt.expiresAt(),
+                receiptSet.receiptSetFingerprint()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid external observation-archive receipt set");
+    }
+
+    @Test
+    void requestExpiryIsExclusiveEvenWhenTheReceiptRemainsLive() {
+        TestSuiteStabilityObservationExternalArchiveReceipt receipt =
+                receiptSet.receipts().getFirst();
+        TestSuiteStabilityObservationExternalArchiveReceipt longerReceipt =
+                new TestSuiteStabilityObservationExternalArchiveReceipt(
+                        receipt.schemaVersion(), receipt.receiptFingerprint(),
+                        receipt.requestFingerprint(), receipt.trustDomain(),
+                        receipt.archiveSetId(), receipt.authorityId(), receipt.failureDomain(),
+                        receipt.keyId(), receipt.objectId(), receipt.retirementId(),
+                        receipt.retirementFingerprint(), receipt.segmentId(),
+                        receipt.segmentFingerprint(), receipt.retentionPolicyFingerprint(),
+                        receipt.retainUntil(), receipt.storedAt(), receipt.issuedAt(),
+                        receipt.expiresAt().plusSeconds(1), receipt.retentionMode(),
+                        receipt.externallyDurable(), receipt.writeOnce(),
+                        receipt.deleteBeforeRetentionDenied(), receipt.algorithm(),
+                        receipt.signature());
+
+        assertThat(longerReceipt.expiresAt()).isAfter(receiptSet.request().expiresAt());
+        assertThatThrownBy(() -> new TestSuiteStabilityObservationExternalArchiveReceiptSet(
+                receiptSet.schemaVersion(), receiptSet.receiptSetId(), receiptSet.request(),
+                receiptSet.requiredCopies(), List.of(longerReceipt),
+                receiptSet.request().expiresAt(), receiptSet.receiptSetFingerprint()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid external observation-archive receipt set");
+    }
+
+    @Test
     void canonicalIntegrityRejectsReceiptMaterialRebinding() {
         TestSuiteStabilityObservationExternalArchiveReceipt original =
                 receiptSet.receipts().getFirst();

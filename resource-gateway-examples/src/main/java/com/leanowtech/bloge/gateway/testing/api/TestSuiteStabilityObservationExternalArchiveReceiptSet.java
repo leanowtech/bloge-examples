@@ -78,8 +78,11 @@ public record TestSuiteStabilityObservationExternalArchiveReceiptSet(
                 || !RECEIPT_SET_ID.matcher(receiptSetId).matches()
                 || request == null || !topology || confirmedAt == null
                 || confirmedAt.isBefore(request.requestedAt())
-                || confirmedAt.isAfter(request.expiresAt())
-                || receipts.stream().anyMatch(receipt -> confirmedAt.isBefore(receipt.issuedAt()))
+                || !confirmedAt.isBefore(request.expiresAt())
+                || receipts.stream().anyMatch(receipt ->
+                receipt.issuedAt().isBefore(request.requestedAt())
+                        || confirmedAt.isBefore(receipt.issuedAt())
+                        || !confirmedAt.isBefore(receipt.expiresAt()))
                 || !FINGERPRINT.matcher(receiptSetFingerprint).matches()) {
             throw new IllegalArgumentException(
                     "Invalid external observation-archive receipt set");

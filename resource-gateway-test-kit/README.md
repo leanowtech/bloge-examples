@@ -424,9 +424,44 @@ Construct continueAfter only after the prior page verifies. The checkpoint binds
 scope, current floor/head snapshot, terminal generation, and terminal floor; it rejects skipped or
 mixed pages. The lifecycle verifier independently rederives every compact observation, archive,
 retirement, successor floor, page identity, and signature without fetching retired full stability
-runs. This proves Resource Gateway's local signed chain. It does not prove external WORM durability,
-legal-hold/erasure handling, disaster-recovery continuity, or global non-equivocation, so the route
-shares the default-disabled test/staging preview flag and the advertised capability remains false.
+runs. This proves Resource Gateway's local signed chain.
+
+Use lifecycle v2 when the gate must also verify the exact external acknowledgement that authorized
+each local deletion. Archive trust comes from caller-owned policy, never from the Gateway response:
+
+~~~java
+var authority = new TestSuiteStabilityObservationExternalArchiveTrustPolicy.TrustedAuthority(
+        "archive-a", "region-a", Map.of(archiveKey.keyId(), archiveKey));
+var archivePolicy = new TestSuiteStabilityObservationExternalArchiveTrustPolicy(
+        TestSuiteStabilityObservationExternalArchiveTrustPolicy.SCHEMA_VERSION,
+        "archive.example", "archive-set-a", Set.of(approvedRetentionFingerprint),
+        1, requiredRetainUntil, Map.of(authority.authorityId(), authority));
+
+TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier.LifecycleCheckpoint checkpoint = null;
+while (true) {
+    var page = client.readSuiteStabilityObservationLedgerLifecycleArchivePage(lifecycleRequest);
+    var verification = new TestSuiteStabilityObservationLedgerLifecycleArchiveEvidenceVerifier()
+            .verify(page, checkpoint, lifecycleKeySet, trustedPin, archivePolicy);
+    if (!verification.verified()) {
+        throw new IllegalStateException(verification.reasonCode());
+    }
+    checkpoint = verification.checkpoint();
+    if (checkpoint.complete()) {
+        break;
+    }
+    lifecycleRequest = lifecycleRequest.continueAfter(page);
+}
+~~~
+
+The verifier recomputes every request, receipt, receipt-set, immutable object, page, and nested
+lifecycle identity, verifies external and Gateway signatures in separate trust domains, and emits no
+checkpoint on policy rejection, missing keys, or cryptographic failure. Construct each continuation
+only from the page already verified in that iteration. The higher-level client verification methods
+provide the same direct-key and pinned-key-set flows when the caller does not also need the page.
+
+Neither v1 nor v2 proves physical WORM durability, legal-hold/erasure handling, disaster-recovery
+continuity, or global non-equivocation. Both routes share the default-disabled test/staging preview
+flag, remain absent in production, and leave the advertised capability false.
 
 For a non-blocking parent job, create one exact request and submit it with explicit retry bounds:
 

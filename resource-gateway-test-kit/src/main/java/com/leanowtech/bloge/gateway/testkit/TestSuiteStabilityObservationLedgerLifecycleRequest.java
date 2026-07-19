@@ -80,6 +80,22 @@ public record TestSuiteStabilityObservationLedgerLifecycleRequest(
      */
     public TestSuiteStabilityObservationLedgerLifecycleRequest continueAfter(
             TestSuiteStabilityObservationLedgerLifecyclePage page) {
+        return continueAfterView(page);
+    }
+
+    /**
+     * Creates the exact continuation for a verified receipt-aware v2 page.
+     *
+     * @param page verified v2 page with another retirement generation
+     * @return floor/head-pinned continuation accepted by both lifecycle endpoints
+     */
+    public TestSuiteStabilityObservationLedgerLifecycleRequest continueAfter(
+            TestSuiteStabilityObservationLedgerLifecycleArchivePage page) {
+        return continueAfterView(page);
+    }
+
+    private TestSuiteStabilityObservationLedgerLifecycleRequest continueAfterView(
+            TestSuiteStabilityObservationLedgerLifecyclePageView page) {
         if (page == null || !page.hasMore()
                 || !suiteId.equals(page.request().suiteId())
                 || revision != page.request().revision()

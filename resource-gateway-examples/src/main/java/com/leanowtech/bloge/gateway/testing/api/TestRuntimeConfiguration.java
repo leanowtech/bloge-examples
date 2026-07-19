@@ -21,6 +21,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityAttestati
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityCrossRetentionTrendAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationFloorRetirementAttestationService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerLifecycleArchiveAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerLifecycleAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityTrendAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
@@ -1156,6 +1157,17 @@ public class TestRuntimeConfiguration {
                 evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
     }
 
+    /** Signs receipt-aware lifecycle pages in a distinct v2 public preview domain. */
+    @Bean
+    TestSuiteStabilityObservationLedgerLifecycleArchiveAttestationService
+            testSuiteStabilityObservationLedgerLifecycleArchiveAttestationService(
+                    ObjectMapper objectMapper,
+                    ObjectProvider<VisualEvidenceSigner> evidenceSigner) {
+        return new TestSuiteStabilityObservationLedgerLifecycleArchiveAttestationService(
+                objectMapper,
+                evidenceSigner.getIfAvailable(VisualEvidenceSigner::unavailable));
+    }
+
     /** Reuses the evidence signer in the distinct retained-window trend signature domain. */
     @Bean
     TestSuiteStabilityTrendAttestationService testSuiteStabilityTrendAttestationService(
@@ -1412,6 +1424,22 @@ public class TestRuntimeConfiguration {
         return new TestSuiteStabilityObservationLedgerLifecyclePageService(
                 suiteRegistry, repository, objectMapper,
                 retirementAttestations, lifecycleAttestations);
+    }
+
+    /** Assembles preview-only lifecycle v2 pages carrying exact external archive receipt sets. */
+    @Bean
+    @ConditionalOnProperty(
+            name = "gateway.testing.stability-cross-retention-preview-enabled",
+            havingValue = "true")
+    TestSuiteStabilityObservationLedgerLifecycleArchivePageService
+            testSuiteStabilityObservationLedgerLifecycleArchivePageService(
+                    TestSuiteStabilityObservationLedgerLifecyclePageService lifecyclePages,
+                    TestSuiteStabilityRunRepository repository,
+                    ObjectMapper objectMapper,
+                    TestSuiteStabilityObservationLedgerLifecycleArchiveAttestationService
+                            archiveAttestations) {
+        return new TestSuiteStabilityObservationLedgerLifecycleArchivePageService(
+                lifecyclePages, repository, objectMapper, archiveAttestations);
     }
 
     /**

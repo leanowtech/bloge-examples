@@ -3,10 +3,11 @@
 **Implementation status (2026-07-20): strict lifecycle request/page/attestation Schema, an
 authorized default-disabled HTTP adapter, database-snapshot pagination, server-side retirement and
 page verification, an independent test-kit verifier, and write-side external archive-receipt
-admission are implemented. Lifecycle v1 does not export or independently verify those receipts. The
+admission are implemented. Lifecycle v1 intentionally remains local-chain-only; the dedicated v2
+endpoint now exports exact receipt sets and has an independent caller-policy verifier. The
 advertised `crossRetentionSuiteStabilityTrend` capability remains false because a production WORM
-adapter, receipt-aware lifecycle v2, legal hold and erasure, backup purge, disaster-recovery
-continuity, and witnessed non-equivocation are not closed.**
+adapter, historical archive trust publication, orphan reconciliation, legal hold and erasure,
+backup purge, disaster-recovery continuity, and witnessed non-equivocation are not closed.**
 
 ## 1. Strongest judgment
 
@@ -230,7 +231,7 @@ verification and range verification are separate evidence objects and both are r
 | Outer page re-signed over forged inner data | independent inner observation and retirement verification | trusted key compromise remains an external incident |
 | Database restore rolls floor backward | local fingerprints may still verify | external witness/checkpoint is required to detect rollback |
 | Producer serves two internally valid forks | one database authority prevents local concurrent fork | cross-authority split view needs witnessed non-equivocation |
-| Lifecycle v1 omits external receipt sets | write side still requires a persisted exact receipt set | lifecycle v2 and independent receipt verification remain required |
+| Lifecycle v1 omits external receipt sets | write side still requires a persisted exact receipt set | use the dedicated v2 endpoint and caller-pinned receipt verifier when the decision requires external proof |
 
 ## 9. Verification coverage
 
@@ -247,10 +248,12 @@ Executable tests cover:
 - HTTP serialization of integer coordinates without in-memory numeric-width false negatives;
 - default-disabled, test/staging-only composition and production bean/route isolation.
 
-Final gates: Resource Gateway `clean verify` executes 2,862 tests with zero failures, zero errors,
+Current full gates: Resource Gateway `clean verify` executes 2,885 tests with zero failures, zero errors,
 and two existing conditional skips, including real-browser flows and executable JAR repackaging.
-The independent test-kit `clean verify` executes 219 tests with zero failures, errors, or skips and
+The independent test-kit `clean verify` executes 228 tests with zero failures, errors, or skips and
 also passes ordinary/shaded JAR, authoritative-Schema packaging, and strict public Javadoc checks.
+Receipt-aware v2 specifics and its separate 42-test server gate are documented in the
+[external-proof design](resource-gateway-execution-data-control-plane-stage5-observation-lifecycle-v2-external-proof-design.md).
 
 ## 10. Deliberately unclaimed and next gates
 
@@ -259,8 +262,7 @@ not close the following industrial requirements:
 
 1. strict HTTPS multi-authority WORM adapter, certified failure-domain independence, and staging
    required wiring;
-2. lifecycle v2 receipt-set export plus independent signature, policy, threshold, and retention
-   verification;
+2. external orphan inventory and reconciliation without early-delete authority;
 3. legal-hold precedence, authorized hold release, erasure proof, and backup purge evidence;
 4. externally witnessed generation checkpoints, gossip, and rollback/fork/split-view detection;
 5. multi-region restore continuity and disaster-recovery conformance tests;
@@ -273,4 +275,5 @@ not close the following industrial requirements:
 Until those gates close, the endpoint remains a default-disabled test/staging preview, production
 wiring remains absent, and `crossRetentionSuiteStabilityTrend` remains false. The honest product
 claim is: Resource Gateway can export and independently verify its local signed floor-retirement
-lifecycle; it cannot yet prove enterprise-grade historical permanence or global non-equivocation.
+lifecycle and recorded external acknowledgements; it cannot yet prove physical enterprise-grade
+historical permanence or global non-equivocation.

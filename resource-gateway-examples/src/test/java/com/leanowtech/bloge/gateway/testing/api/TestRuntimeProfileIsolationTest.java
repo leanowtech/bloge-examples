@@ -66,6 +66,9 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityCrossRetentionTrendController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationLedgerLifecycleController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationLedgerLifecycleArchiveController.class))
+                    .isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobService.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -202,6 +205,12 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityObservationLedgerLifecycleController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationLedgerLifecyclePageService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationLedgerLifecycleArchiveController.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationLedgerLifecycleArchivePageService.class))
+                    .isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobController.class)).hasSize(1);
             assertThat(context.getBeansOfType(TestSuiteStabilityJobService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
@@ -369,6 +378,12 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityObservationLedgerLifecyclePageService.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationLedgerLifecycleController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationLedgerLifecycleArchivePageService.class))
+                    .hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationLedgerLifecycleArchiveController.class))
+                    .hasSize(1);
         }
         try (AnnotationConfigApplicationContext context = context(
                 enabled, 0, "production", "test")) {
@@ -380,6 +395,12 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityObservationLedgerLifecyclePageService.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationLedgerLifecycleController.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationLedgerLifecycleArchivePageService.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationLedgerLifecycleArchiveController.class))
+                    .isEmpty();
         }
     }
 
@@ -853,6 +874,7 @@ class TestRuntimeProfileIsolationTest {
                 TestSuiteStabilityController.class,
                 TestSuiteStabilityCrossRetentionTrendController.class,
                 TestSuiteStabilityObservationLedgerLifecycleController.class,
+                TestSuiteStabilityObservationLedgerLifecycleArchiveController.class,
                 TestSuiteStabilityJobController.class,
                 DurableTestExecutionQueryController.class,
                 DurableTestOwnerClaimController.class,

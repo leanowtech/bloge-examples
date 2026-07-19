@@ -3,7 +3,8 @@
 **Implementation status (2026-07-20): internal database-authoritative signed floor-retirement core,
 strict public lifecycle Schema, default-disabled authorized pagination, independent lifecycle
 verification, and mandatory external-first archive-receipt admission are implemented and verified.
-The production HTTPS WORM adapter, public receipt export and independent receipt verification, legal
+Receipt-aware lifecycle v2 now provides public proof export and caller-policy verification. The
+production HTTPS WORM adapter, historical trust publication, orphan reconciliation, legal
 hold/erasure, backup purge, disaster-recovery continuity, and witnessed non-equivocation remain
 unavailable.**
 
@@ -209,8 +210,16 @@ checkpoint. Only after the terminal lifecycle page verifies may its
 pagination, and verifier invariants are in
 [Stage 5 observation-floor lifecycle protocol](resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md).
 
-This closes local floor discovery, not external historical permanence. The lifecycle route is
-default-disabled, absent in production, and the advertised cross-retention capability remains false.
+Consumers that require proof of the external-first deletion precondition use the dedicated
+`stability-observation-ledger-lifecycle-archive-pages` v2 preview. It preserves the same request,
+cursor, and snapshot pins while exporting an exact receipt set parallel to every retirement and an
+outer signature over their joint closure. The independent verifier accepts archive authorities,
+failure domains, retention revisions, horizons, and keys only from caller-owned policy. See the
+[receipt-aware lifecycle v2 design](resource-gateway-execution-data-control-plane-stage5-observation-lifecycle-v2-external-proof-design.md).
+
+This closes portable proof of the recorded external acknowledgement, not physical historical
+permanence. Both lifecycle routes are default-disabled, absent in production, and the advertised
+cross-retention capability remains false.
 
 ## 9. Failure matrix
 
@@ -262,20 +271,19 @@ whole-project counts are recorded in the parent industrial evolution plan after 
 
 ## 12. Remaining productization gates
 
-The public lifecycle contract and independent verifier close the former first two gates. The
+The public lifecycle v1/v2 contracts and independent verifiers close local discovery and receipt
+proof portability. The
 advertised capability must remain false until the remaining mandatory gates are closed:
 
 1. implement and certify the strict HTTPS multi-authority WORM adapter, staging-required wiring,
    health/readiness, key lifecycle, timeout/body/redirect controls, and idempotent orphan reconciliation;
-2. export exact receipt sets in lifecycle v2 and independently verify every external signature,
-   signing-time policy, trust membership, copy threshold, and retention binding in test-kit;
-3. define legal hold precedence, hold release authorization, erasure proof, backup expiry, and purge
+2. define legal hold precedence, hold release authorization, erasure proof, backup expiry, and purge
    evidence across replicas and disaster-recovery copies;
-4. anchor each retirement generation to externally witnessed non-equivocation checkpoints and prove
+3. anchor each retirement generation to externally witnessed non-equivocation checkpoints and prove
    rollback/fork/split-view resistance after restore;
-5. add a database-leased bounded scheduler, backlog/SLO telemetry, readiness, and capability truth;
-6. run restart, failover, backup/restore, key lifecycle, cross-version, and multi-region fault tests;
-7. add operational repair procedures for corrupted floor/head/archive state without fabricating a
+4. add a database-leased bounded scheduler, backlog/SLO telemetry, readiness, and capability truth;
+5. run restart, failover, backup/restore, key lifecycle, cross-version, and multi-region fault tests;
+6. add operational repair procedures for corrupted floor/head/archive state without fabricating a
    signed history.
 
 ## 13. Quality judgment
@@ -284,7 +292,8 @@ The internal deletion transition is now structurally incapable of committing wit
 external acknowledgement object: it has explicit authority material, bounded work, exact snapshot
 pins, deterministic replay, cross-replica serialization, atomic receipt-and-archive-before-delete,
 CAS state movement, conservative migration, and executable corruption proofs. The remaining gap is
-deployment and independent consumption, not write-side protocol shape. Floor discovery and local
-lifecycle verification are independently verifiable, but the current lifecycle v1 omits receipt
-sets and no production WORM adapter is wired. Resource Gateway may describe this as an
-external-first receipt-gated local retirement core, not as industrial cross-retention continuity.
+physical deployment, lifecycle operations, and external non-equivocation, not proof portability or
+write-side protocol shape. Floor discovery, local lifecycle verification, and exact recorded
+receipt verification are independently verifiable through separate v1/v2 routes, but no production
+WORM adapter is wired. Resource Gateway may describe this as an external-first receipt-gated local
+retirement core with portable acknowledgement proof, not as industrial cross-retention continuity.

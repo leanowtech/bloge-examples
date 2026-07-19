@@ -164,6 +164,14 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
             TestSuiteStabilityObservationLedgerLifecyclePage page,
             LifecycleCheckpoint previous,
             Map<String, EvidenceVerificationKey> keys) {
+        return verifyView(page, previous, keys);
+    }
+
+    /** Shared direct-key verification core for strict lifecycle protocol generations. */
+    VerificationResult verifyView(
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
+            LifecycleCheckpoint previous,
+            Map<String, EvidenceVerificationKey> keys) {
         if (page == null) {
             return result(Outcome.INVALID, "LIFECYCLE_PAGE_MISSING", "", "", 0, 0);
         }
@@ -237,7 +245,7 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
                 page.terminalFloor().retirementGeneration(),
                 page.terminalFloor().floorFingerprint(), !page.hasMore());
         return new VerificationResult(Outcome.VERIFIED, "VERIFIED",
-                page.lifecyclePageId(), page.attestation().keyId(),
+                page.lifecyclePageId(), page.outerKeyId(),
                 verifiedRetirements, verifiedObservations, checkpoint);
     }
 
@@ -267,6 +275,15 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
      */
     public VerificationResult verify(
             TestSuiteStabilityObservationLedgerLifecyclePage page,
+            LifecycleCheckpoint previous,
+            EvidenceVerificationKeySet keySet,
+            String trustedSnapshotFingerprint) {
+        return verifyView(page, previous, keySet, trustedSnapshotFingerprint);
+    }
+
+    /** Shared pinned-key-set verification core for strict lifecycle protocol generations. */
+    VerificationResult verifyView(
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
             LifecycleCheckpoint previous,
             EvidenceVerificationKeySet keySet,
             String trustedSnapshotFingerprint) {
@@ -300,7 +317,7 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
                     policy.state() == EvidenceVerificationKeySet.KeyState.ACTIVE
                             ? "ACTIVE" : "RETIRED", keySet.provider()));
         }
-        return verify(page, previous, keys);
+        return verifyView(page, previous, keys);
     }
 
     /**
@@ -311,6 +328,12 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
      */
     public static Set<String> requiredKeyIds(
             TestSuiteStabilityObservationLedgerLifecyclePage page) {
+        return requiredKeyIdsView(page);
+    }
+
+    /** Returns lifecycle, retirement, and observation key ids for any strict page generation. */
+    static Set<String> requiredKeyIdsView(
+            TestSuiteStabilityObservationLedgerLifecyclePageView page) {
         LinkedHashSet<String> ids = new LinkedHashSet<>();
         if (page != null) {
             signingCoordinates(page).forEach(value -> ids.add(value.keyId()));
@@ -319,7 +342,7 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
     }
 
     private static VerificationResult verifyCheckpoint(
-            TestSuiteStabilityObservationLedgerLifecyclePage page,
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
             LifecycleCheckpoint previous) {
         if (previous == null) {
             if (page.request().afterRetirementGeneration() != 0
@@ -351,7 +374,7 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
     }
 
     private static VerificationResult verifyFloorAndHeadFingerprints(
-            TestSuiteStabilityObservationLedgerLifecyclePage page,
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
             JsonNode rawPage) {
         for (String name : List.of("startingFloor", "terminalFloor", "currentFloor")) {
             JsonNode floor = rawPage.path(name);
@@ -370,7 +393,7 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
     }
 
     private static VerificationProgress verifyRetirement(
-            TestSuiteStabilityObservationLedgerLifecyclePage page,
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
             JsonNode retirement,
             JsonNode cursorFloor,
             Map<String, EvidenceVerificationKey> keys,
@@ -455,7 +478,7 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
     }
 
     private static VerificationResult verifyObservation(
-            TestSuiteStabilityObservationLedgerLifecyclePage page,
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
             JsonNode entry,
             Map<String, EvidenceVerificationKey> keys,
             int verifiedRetirements,
@@ -497,7 +520,7 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
     }
 
     private static VerificationResult verifyOuterSignature(
-            TestSuiteStabilityObservationLedgerLifecyclePage page,
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
             Map<String, EvidenceVerificationKey> keys,
             int verifiedRetirements,
             int verifiedObservations) {
@@ -510,7 +533,7 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
     }
 
     private static VerificationResult verifyDetachedSignature(
-            TestSuiteStabilityObservationLedgerLifecyclePage page,
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
             JsonNode attestation,
             JsonNode material,
             Map<String, EvidenceVerificationKey> keys,
@@ -640,13 +663,17 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
         material.put("currentFloorFingerprint",
                 attestation.path("currentFloorFingerprint").asText());
         material.put("headFingerprint", attestation.path("headFingerprint").asText());
-        material.set("retirementRefs", attestation.path("retirementRefs").deepCopy());
+        if (attestation.has("archiveRefs")) {
+            material.set("archiveRefs", attestation.path("archiveRefs").deepCopy());
+        } else {
+            material.set("retirementRefs", attestation.path("retirementRefs").deepCopy());
+        }
         material.put("signedAt", attestation.path("signedAt").asText());
         return material;
     }
 
     private static List<SigningCoordinate> signingCoordinates(
-            TestSuiteStabilityObservationLedgerLifecyclePage page) {
+            TestSuiteStabilityObservationLedgerLifecyclePageView page) {
         List<SigningCoordinate> result = new ArrayList<>();
         JsonNode response = page.rawResponse();
         response.path("page").path("retirements").forEach(retirement -> {
@@ -697,7 +724,7 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
     }
 
     private static VerificationProgress failure(
-            TestSuiteStabilityObservationLedgerLifecyclePage page,
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
             String reason,
             int verifiedRetirements,
             int verifiedObservations) {
@@ -708,11 +735,11 @@ public final class TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier 
     private static VerificationResult result(
             Outcome outcome,
             String reason,
-            TestSuiteStabilityObservationLedgerLifecyclePage page,
+            TestSuiteStabilityObservationLedgerLifecyclePageView page,
             int verifiedRetirements,
             int verifiedObservations) {
         return result(outcome, reason, page.lifecyclePageId(),
-                page.attestation().keyId(), verifiedRetirements, verifiedObservations);
+                page.outerKeyId(), verifiedRetirements, verifiedObservations);
     }
 
     private static VerificationResult result(

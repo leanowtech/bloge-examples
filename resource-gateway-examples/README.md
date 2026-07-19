@@ -65,6 +65,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-trend-analyses` | Derive and sign a bounded retained-history trend for one exact suite revision, with explicit retention/truncation gaps, execution-regime drift, case transitions, and non-causal correlation signals (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-cross-retention-trend-analyses` | Preview a signed floor/head/cursor-pinned compact-observation range; disabled unless `gateway.testing.stability-cross-retention-preview-enabled=true`, absent in production, and not advertised as a capability yet |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-observation-ledger-lifecycle-pages` | Discover and prove up to ten signed floor-retirement generations under one current-floor/head snapshot; shares the default-disabled cross-retention preview flag, is absent in production, and does not make the capability true |
+| `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-observation-ledger-lifecycle-archive-pages` | Return lifecycle v2 with the exact external archive receipt set for every retirement; requires independent caller-pinned archive trust policy, shares the non-production preview flag, and cannot downgrade to v1 |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}` | Read one retained stability analysis with its exact ordered source-run closure and detached signature (test/staging only) |
 | `GET http://localhost:8080/api/testing/stability-executions/{stabilityRunId}/progress` | Poll payload-free `RUNNING`, `RECOVERABLE`, or `COMPLETED` durable parent progress; v2 distinguishes planned horizon, observed prefix, and terminal reason without exposing owner/epoch/source ids/payloads (test/staging only) |
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-jobs` | Submit an exact stability request without blocking; returns `202`, deterministic `jobId`, query `Location`, and payload-free lifecycle (test/staging only; fresh submission requires the opt-in worker) |
@@ -320,6 +321,7 @@ is `UNAVAILABLE`; only a verified signed revocation is definitive. Capacity resp
 [machine-readable managed trust-root publication Schema](../docs/schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json),
 [machine-readable external checkpoint Schema](../docs/schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json),
 [machine-readable compact-observation external archive Schema](../docs/schemas/resource-gateway-testing/suite-stability-observation-external-archive-v1.schema.json),
+the [receipt-aware lifecycle v2 design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-lifecycle-v2-external-proof-design.md),
 and [machine-readable authority Schema](../docs/schemas/resource-gateway-testing/suite-stability-authority-v1.schema.json).
 Actuator exposes separate stability-queue, dynamic-authority-trust, and managed inventory-root
 health contributors. The

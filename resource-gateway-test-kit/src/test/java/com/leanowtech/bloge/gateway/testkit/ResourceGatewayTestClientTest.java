@@ -34,6 +34,8 @@ class ResourceGatewayTestClientTest {
     private TestSuiteStabilityTrendTestFixtures.Fixture trendFixture;
     private TestSuiteStabilityCrossRetentionTrendTestFixtures.Fixture crossRetentionFixture;
     private TestSuiteStabilityObservationLedgerLifecycleTestFixtures.Fixture lifecycleFixture;
+    private TestSuiteStabilityObservationLedgerLifecycleArchiveTestFixtures.Fixture
+            lifecycleArchiveFixture;
 
     @BeforeEach
     void startServer() throws IOException {
@@ -43,6 +45,8 @@ class ResourceGatewayTestClientTest {
                 .stableFixture(trendFixture);
         lifecycleFixture = TestSuiteStabilityObservationLedgerLifecycleTestFixtures
                 .stableFixture(crossRetentionFixture);
+        lifecycleArchiveFixture = TestSuiteStabilityObservationLedgerLifecycleArchiveTestFixtures
+                .stableFixture(lifecycleFixture);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/testing", this::handle);
         server.createContext("/api/integration", this::handle);
@@ -380,6 +384,44 @@ class ResourceGatewayTestClientTest {
         assertThat(requests.get(3).rawPath()).endsWith("/evidence-keys");
         assertThat(requests).noneSatisfy(value ->
                 assertThat(value.rawPath()).contains("/stability-executions/"));
+    }
+
+    @Test
+    void verifiesReceiptAwareLifecycleWithoutTrustAnchorDiscoveryOrV1Downgrade() {
+        ResourceGatewayTestClient client = client();
+        TestSuiteStabilityObservationLedgerLifecycleRequest request =
+                lifecycleArchiveFixture.page().request();
+
+        var direct = client.verifySuiteStabilityObservationLedgerLifecycleArchivePage(
+                request, lifecycleArchiveFixture.archivePolicy());
+        var pinned = client.verifySuiteStabilityObservationLedgerLifecycleArchivePage(
+                request, null, lifecycleArchiveFixture.lifecycleKeySet().snapshotFingerprint(),
+                lifecycleArchiveFixture.archivePolicy());
+
+        assertThat(direct.verified()).as(direct.reasonCode()).isTrue();
+        assertThat(pinned.verified()).as(pinned.reasonCode()).isTrue();
+        assertThat(direct.verifiedReceiptSets()).isEqualTo(1);
+        assertThat(direct.verifiedReceipts()).isEqualTo(1);
+        assertThat(requests).hasSize(4);
+        assertThat(requests.get(0)).satisfies(value -> {
+            assertThat(value.method()).isEqualTo("POST");
+            assertThat(value.purpose()).isEqualTo("TEST_EXECUTION");
+            assertThat(value.rawPath()).endsWith(
+                    "/suites/orders-suite/"
+                            + "stability-observation-ledger-lifecycle-archive-pages");
+            assertThat(EvidenceVerificationSupport.sha256(value.body()))
+                    .isEqualTo(request.requestFingerprint());
+        });
+        assertThat(requests.get(1).rawPath())
+                .endsWith("/evidence-keys/evidence-key-a");
+        assertThat(requests.get(2).rawPath())
+                .endsWith("/stability-observation-ledger-lifecycle-archive-pages");
+        assertThat(requests.get(3).rawPath()).endsWith("/evidence-keys");
+        assertThat(requests).allSatisfy(value -> {
+            assertThat(value.rawPath())
+                    .doesNotEndWith("/stability-observation-ledger-lifecycle-pages");
+            assertThat(value.rawPath()).doesNotContain("/external-archive-authorities/");
+        });
     }
 
     @Test
@@ -1035,6 +1077,10 @@ class ResourceGatewayTestClientTest {
         } else if ("POST".equals(exchange.getRequestMethod())
                 && path.endsWith("/stability-cross-retention-trend-analyses")) {
             respond(exchange, 200, crossRetentionFixture.response().toString());
+        } else if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith(
+                "/stability-observation-ledger-lifecycle-archive-pages")) {
+            respond(exchange, 200, lifecycleArchiveFixture.response().toString());
         } else if ("POST".equals(exchange.getRequestMethod())
                 && path.endsWith("/stability-observation-ledger-lifecycle-pages")) {
             respond(exchange, 200, lifecycleFixture.response().toString());

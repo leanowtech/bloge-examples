@@ -3093,12 +3093,54 @@ its verified head fingerprint as the range pin. See the
 [lifecycle protocol design](resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md)
 and [test-kit example](../resource-gateway-test-kit/README.md).
 
-This endpoint is absent in production and disabled by default. It is a development protocol, not an
-ANEKE/CI integration contract: local signed floor retirement and lifecycle verification now exist,
-but external WORM acknowledgement, legal hold/erasure, backup purge, recovery continuity, and
-external non-equivocation policy are still missing. Capability
+When a governance decision must also prove the external-first deletion precondition, send the same
+request to the receipt-aware v2 endpoint:
+
+~~~http
+POST /api/testing/suites/loan-decision-regression/stability-observation-ledger-lifecycle-archive-pages
+Authorization: Bearer bloge-aneke-demo-token
+X-Purpose: TEST_EXECUTION
+Content-Type: application/json
+~~~
+
+V2 returns the same bounded transitions plus `externalArchiveReceiptSets` with exactly one complete
+challenge-bound set per retirement. Ordered `archiveRefs` bind each retirement and set into the v2
+outer signature. The client rejects a v1 response on this route. Release-grade verification needs
+two independently supplied trust inputs: a Gateway lifecycle key-set fingerprint pinned outside the
+response and `TestSuiteStabilityObservationExternalArchiveTrustPolicy` pinned by CI or governance.
+The latter fixes the archive trust domain/set, accepted historical retention-policy fingerprints,
+minimum copies, absolute retention horizon, authority-to-failure-domain mapping, and Ed25519 keys.
+It is deliberately never discovered from Resource Gateway.
+
+~~~java
+var archiveA = new TestSuiteStabilityObservationExternalArchiveTrustPolicy.TrustedAuthority(
+        "archive-a", "region-a", Map.of(archiveKey.keyId(), archiveKey));
+var archivePolicy = new TestSuiteStabilityObservationExternalArchiveTrustPolicy(
+        TestSuiteStabilityObservationExternalArchiveTrustPolicy.SCHEMA_VERSION,
+        "archive.example", "archive-set-a", Set.of(approvedRetentionFingerprint),
+        1, requiredRetainUntil, Map.of(archiveA.authorityId(), archiveA));
+
+var result = client.verifySuiteStabilityObservationLedgerLifecycleArchivePage(
+        lifecycleRequest, checkpoint, trustedKeySetFingerprint, archivePolicy);
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+checkpoint = result.checkpoint();
+~~~
+
+Only `VERIFIED` returns a checkpoint. Lifecycle tamper keeps existing reason codes; external proof
+uses distinct `INVALID`, `KEY_UNAVAILABLE`, and `POLICY_REJECTED` outcomes for fingerprint/signature
+failure, missing authority key, and caller-policy rejection. Missing or corrupt persisted proof uses
+bounded `RG.TEST.STABILITY_LIFECYCLE_ARCHIVE_*` transport codes and never returns a partial page.
+See the [lifecycle v2 external-proof design](resource-gateway-execution-data-control-plane-stage5-observation-lifecycle-v2-external-proof-design.md).
+
+Both lifecycle endpoints are absent in production and disabled by default. V2 proves that an
+approved authority signed the acknowledgement recorded before deletion, but production WORM
+deployment, legal hold/erasure, backup purge, recovery continuity, historical authority
+publication, orphan reconciliation, and external non-equivocation policy are still missing. Capability
 `crossRetentionSuiteStabilityTrend` therefore remains `false`; strict verification proves the returned
-local lifecycle and range, not an unbroken or globally unique long-term history.
+local lifecycle, external acknowledgement, and range, not physical persistence or a globally unique
+long-term history.
 
 #### Submit, inspect, and cancel a durable stability job
 

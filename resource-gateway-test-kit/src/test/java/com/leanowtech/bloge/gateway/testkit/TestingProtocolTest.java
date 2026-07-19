@@ -162,6 +162,25 @@ class TestingProtocolTest {
             assertConstant(definitions,
                     "testSuiteStabilityObservationLedgerLifecyclePageResponse",
                     TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_RESPONSE_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationExternalArchiveRequest",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_EXTERNAL_ARCHIVE_REQUEST_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationExternalArchiveReceipt",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_EXTERNAL_ARCHIVE_RECEIPT_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationExternalArchiveReceiptSet",
+                    TestingProtocol
+                            .TEST_SUITE_STABILITY_OBSERVATION_EXTERNAL_ARCHIVE_RECEIPT_SET_V1);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationLedgerLifecyclePageV2",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_PAGE_V2);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationLedgerLifecycleAttestationV2",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_ATTESTATION_V2);
+            assertConstant(definitions,
+                    "testSuiteStabilityObservationLedgerLifecyclePageResponseV2",
+                    TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_RESPONSE_V2);
             assertConstant(definitions, "testSuiteStabilityObservationLedgerRange",
                     TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_RANGE_V1);
             assertConstant(definitions, "testSuiteStabilityCrossRetentionTrendEvidence",

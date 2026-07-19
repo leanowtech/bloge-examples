@@ -830,6 +830,123 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads one receipt-aware lifecycle v2 page without accepting v1 downgrade.
+     *
+     * <p>The response contains exact external receipt sets parallel to its retirements. Parsing
+     * proves only strict protocol shape and request binding; callers must independently verify
+     * both Gateway lifecycle signatures and archive-authority signatures before using its
+     * checkpoint.</p>
+     *
+     * @param request exact generation cursor, page bound, and snapshot pins
+     * @return strict receipt-aware lifecycle page
+     */
+    public TestSuiteStabilityObservationLedgerLifecycleArchivePage
+            readSuiteStabilityObservationLedgerLifecycleArchivePage(
+            TestSuiteStabilityObservationLedgerLifecycleRequest request) {
+        TestSuiteStabilityObservationLedgerLifecycleRequest exactRequest =
+                Objects.requireNonNull(request, "observation lifecycle request is required");
+        JsonNode response = exchange("POST", "/api/testing/suites/"
+                        + segment(exactRequest.suiteId())
+                        + "/stability-observation-ledger-lifecycle-archive-pages", "",
+                "TEST_EXECUTION", exactRequest.toJson());
+        requireVersion(response,
+                TestingProtocol.TEST_SUITE_STABILITY_OBSERVATION_LIFECYCLE_RESPONSE_V2);
+        TestSuiteStabilityObservationLedgerLifecycleArchivePage page =
+                projectStabilityObservationLifecycleArchivePage(response);
+        if (!exactRequest.equals(page.request())) {
+            throw responseContractInvalid(
+                    "The server returned a receipt-aware lifecycle page for a different request.");
+        }
+        return page;
+    }
+
+    /**
+     * Verifies one first receipt-aware lifecycle page with discovered Gateway lifecycle keys.
+     *
+     * @param request exact generation-zero request
+     * @param archivePolicy caller-owned archive authorities, keys, and retention policy
+     * @return bounded two-domain verification result
+     */
+    public TestSuiteStabilityObservationLedgerLifecycleArchiveEvidenceVerifier.VerificationResult
+            verifySuiteStabilityObservationLedgerLifecycleArchivePage(
+            TestSuiteStabilityObservationLedgerLifecycleRequest request,
+            TestSuiteStabilityObservationExternalArchiveTrustPolicy archivePolicy) {
+        return verifySuiteStabilityObservationLedgerLifecycleArchivePage(
+                request, null, archivePolicy);
+    }
+
+    /**
+     * Verifies a first or continuation receipt-aware page with discovered Gateway lifecycle keys.
+     *
+     * <p>Only Gateway lifecycle keys are discovered over the Resource Gateway integration API.
+     * External archive keys are resolved exclusively from {@code archivePolicy} so the producer
+     * cannot supply both evidence and its trust anchor.</p>
+     *
+     * @param request exact first or continuation request
+     * @param previous null for rollout; verified prior checkpoint otherwise
+     * @param archivePolicy caller-owned archive authorities, keys, and retention policy
+     * @return bounded two-domain verification result
+     */
+    public TestSuiteStabilityObservationLedgerLifecycleArchiveEvidenceVerifier.VerificationResult
+            verifySuiteStabilityObservationLedgerLifecycleArchivePage(
+            TestSuiteStabilityObservationLedgerLifecycleRequest request,
+            TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier.LifecycleCheckpoint
+                    previous,
+            TestSuiteStabilityObservationExternalArchiveTrustPolicy archivePolicy) {
+        TestSuiteStabilityObservationLedgerLifecycleArchivePage page =
+                readSuiteStabilityObservationLedgerLifecycleArchivePage(request);
+        Map<String, EvidenceVerificationKey> keys = new LinkedHashMap<>();
+        for (String keyId : TestSuiteStabilityObservationLedgerLifecycleArchiveEvidenceVerifier
+                .requiredLifecycleKeyIds(page)) {
+            try {
+                keys.put(keyId, findEvidenceVerificationKey(keyId));
+            } catch (ResourceGatewayTestException failure) {
+                if (!"RG.INTEGRATION.EVIDENCE_KEY_NOT_FOUND".equals(failure.code())
+                        && !"RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE"
+                        .equals(failure.code())) {
+                    throw failure;
+                }
+            }
+        }
+        return new TestSuiteStabilityObservationLedgerLifecycleArchiveEvidenceVerifier().verify(
+                page, previous, keys, archivePolicy);
+    }
+
+    /**
+     * Performs release-grade receipt-aware verification with an independently pinned key set.
+     *
+     * @param request exact first or continuation request
+     * @param previous null for rollout; verified prior checkpoint otherwise
+     * @param trustedKeySetFingerprint Gateway key-set fingerprint pinned outside its response
+     * @param archivePolicy caller-owned archive authorities, keys, and retention policy
+     * @return bounded two-domain verification result
+     */
+    public TestSuiteStabilityObservationLedgerLifecycleArchiveEvidenceVerifier.VerificationResult
+            verifySuiteStabilityObservationLedgerLifecycleArchivePage(
+            TestSuiteStabilityObservationLedgerLifecycleRequest request,
+            TestSuiteStabilityObservationLedgerLifecycleEvidenceVerifier.LifecycleCheckpoint
+                    previous,
+            String trustedKeySetFingerprint,
+            TestSuiteStabilityObservationExternalArchiveTrustPolicy archivePolicy) {
+        TestSuiteStabilityObservationLedgerLifecycleArchivePage page =
+                readSuiteStabilityObservationLedgerLifecycleArchivePage(request);
+        EvidenceVerificationKeySet keySet;
+        try {
+            keySet = findEvidenceVerificationKeySet();
+        } catch (ResourceGatewayTestException failure) {
+            if ("RG.INTEGRATION.EVIDENCE_KEY_SET_PROVIDER_UNAVAILABLE".equals(failure.code())
+                    || "RG.INTEGRATION.EVIDENCE_KEY_SET_ATTESTATION_UNAVAILABLE"
+                    .equals(failure.code())) {
+                keySet = null;
+            } else {
+                throw failure;
+            }
+        }
+        return new TestSuiteStabilityObservationLedgerLifecycleArchiveEvidenceVerifier().verify(
+                page, previous, keySet, trustedKeySetFingerprint, archivePolicy);
+    }
+
+    /**
      * Submits one asynchronous suite-stability job without implicit retry.
      *
      * <p>The client requires {@code 202}, validates the response against the packaged Schema,
@@ -1806,6 +1923,16 @@ public final class ResourceGatewayTestClient {
         } catch (IllegalArgumentException failure) {
             throw responseContractInvalid(
                     "The server returned an invalid stability observation lifecycle page.");
+        }
+    }
+
+    private static TestSuiteStabilityObservationLedgerLifecycleArchivePage
+            projectStabilityObservationLifecycleArchivePage(JsonNode response) {
+        try {
+            return TestSuiteStabilityObservationLedgerLifecycleArchivePage.from(response);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid receipt-aware observation lifecycle page.");
         }
     }
 
