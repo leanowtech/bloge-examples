@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
@@ -222,6 +223,27 @@ class TestExecutionApiServiceTest {
                 .isInstanceOf(IntegrationProblemException.class)
                 .satisfies(failure -> assertThat(((IntegrationProblemException) failure).problem().status())
                         .isEqualTo(404));
+    }
+
+    @Test
+    void fixtureRegistrationRejectsMalformedReservedExecutionServiceMetadata() {
+        FixtureBundle malformed = new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
+                "malformed-services", 1, targetFingerprint, "INTERNAL", null, null,
+                List.of(), List.of(), Map.of(FixtureExecutionServices.METADATA_KEY, Map.of(
+                        "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION,
+                        "identityAttributes", Map.of(),
+                        "featureFlags", Map.of("pricing-v2", "raw-secret-47"))));
+
+        assertThatThrownBy(() -> service.registerFixture("malformed-services",
+                new FixtureBundleRegistrationRequest("", target(), malformed), identity("test")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.FIXTURE_EXECUTION_SERVICES_INVALID");
+                    assertThat(failure.problem().title())
+                            .contains("featureFlags values must be booleans")
+                            .doesNotContain("raw-secret-47", "pricing-v2");
+                });
+        assertThat(fixtures.values).isEmpty();
     }
 
     @Test

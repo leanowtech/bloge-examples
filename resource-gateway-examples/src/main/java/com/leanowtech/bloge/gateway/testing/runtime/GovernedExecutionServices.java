@@ -16,6 +16,7 @@ import com.leanowtech.bloge.core.spi.TimeSource;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 
@@ -46,8 +47,9 @@ import java.util.function.Supplier;
  * {@link com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl}; runtime code
  * never rebuilds it from a mutable fixture. A configured seed drives independent SHA-256 streams
  * for random values and identifiers. Its provider-state checkpoint is bound to one effective plan,
- * contains no seed or raw scope, and can be restored only against the same binding set. Identity,
- * feature flags, and secrets remain fail closed until corresponding governed authorities exist.</p>
+ * contains no seed or raw scope, and can be restored only against the same binding set. Identity
+ * and feature flags may be supplied by strict fixture maps; missing entries and secrets remain fail
+ * closed.</p>
  */
 public final class GovernedExecutionServices {
 
@@ -98,6 +100,7 @@ public final class GovernedExecutionServices {
         Objects.requireNonNull(objectMapper, "objectMapper");
         Objects.requireNonNull(fixtureBundle, "fixtureBundle");
         Objects.requireNonNull(inventory, "inventory");
+        FixtureExecutionServices fixtureServices = FixtureExecutionServices.from(fixtureBundle);
         StateCoordinator stateCoordinator = new StateCoordinator();
         UsageTracker tracker = new UsageTracker();
         AdvancingLogicalTimeSource logicalTime = fixtureBundle.logicalClock() == null
@@ -128,11 +131,20 @@ public final class GovernedExecutionServices {
         };
         IdentityProvider identityProvider = attribute -> stateCoordinator.mutate(() -> {
             tracker.recordProvider(ExecutionServiceKind.IDENTITY, attribute, true);
-            return IdentityProvider.NONE.resolve(attribute);
+            if (!fixtureServices.identityAttributes().containsKey(attribute)) {
+                throw new IllegalStateException(
+                        "No governed identity fixture value is configured for the requested attribute");
+            }
+            return fixtureServices.identityAttributes().get(attribute);
         });
         FeatureFlagProvider featureFlags = flag -> stateCoordinator.mutate(() -> {
             tracker.recordProvider(ExecutionServiceKind.FEATURE_FLAG, flag, true);
-            return FeatureFlagProvider.NONE.enabled(flag);
+            Boolean enabled = fixtureServices.featureFlags().get(flag);
+            if (enabled == null) {
+                throw new IllegalStateException(
+                        "No governed feature-flag fixture decision is configured for the requested flag");
+            }
+            return enabled;
         });
         SecretProvider secrets = name -> stateCoordinator.mutate(() -> {
             tracker.recordProvider(ExecutionServiceKind.SECRET, name, true);
@@ -151,8 +163,9 @@ public final class GovernedExecutionServices {
                 .build();
         Map<ExecutionServiceKind, List<String>> consumers = declaredConsumers(inventory);
         List<EffectiveExecutionPlan.ExecutionServiceBinding> bindings = Arrays.stream(
-                        ExecutionServiceKind.values())
-                .map(kind -> binding(objectMapper, kind, fixtureBundle, consumers.getOrDefault(kind, List.of())))
+                ExecutionServiceKind.values())
+                .map(kind -> binding(objectMapper, kind, fixtureBundle, fixtureServices,
+                        consumers.getOrDefault(kind, List.of())))
                 .toList();
         return new GovernedExecutionServices(objectMapper, services, bindings, tracker, logicalTime,
                 randomSequence, idSequence, stateCoordinator);
@@ -549,6 +562,7 @@ public final class GovernedExecutionServices {
 
     private static EffectiveExecutionPlan.ExecutionServiceBinding binding(
             ObjectMapper mapper, ExecutionServiceKind kind, FixtureBundle bundle,
+            FixtureExecutionServices fixtureServices,
             List<String> consumers) {
         String mode;
         boolean available;
@@ -580,7 +594,18 @@ public final class GovernedExecutionServices {
                 configuration = configured ? bundle.randomSeed() : "SYSTEM";
                 if (!configured) gaps.add("UUID requires fixtureBundle.randomSeed for certification.");
             }
-            case IDENTITY, FEATURE_FLAG, SECRET -> {
+            case IDENTITY, FEATURE_FLAG -> {
+                boolean configured = fixtureServices.configures(kind);
+                mode = configured ? "FIXTURE_MAP" : "FAIL_CLOSED";
+                available = configured;
+                deterministic = true;
+                configuration = configured ? Map.of("fixtureControlFingerprint",
+                        fixtureControlFingerprint(mapper, kind, fixtureServices)) : "UNCONFIGURED";
+                if (!configured) {
+                    gaps.add(kind.name() + " has no governed test authority configured.");
+                }
+            }
+            case SECRET -> {
                 mode = "FAIL_CLOSED";
                 available = false;
                 deterministic = true;
@@ -596,6 +621,14 @@ public final class GovernedExecutionServices {
                 "configuration", configuration));
         return new EffectiveExecutionPlan.ExecutionServiceBinding(kind.name(), mode,
                 available, deterministic, fingerprint, consumers, gaps);
+    }
+
+    private static String fixtureControlFingerprint(ObjectMapper mapper, ExecutionServiceKind kind,
+                                                    FixtureExecutionServices fixtureServices) {
+        return ProtocolFingerprint.of(mapper, Map.of(
+                "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION,
+                "service", kind.name(),
+                "values", fixtureServices.configuration(kind)));
     }
 
     private static boolean isInfrastructureIdScope(String scope) {

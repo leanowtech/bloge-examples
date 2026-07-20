@@ -368,6 +368,8 @@ public record OperatorExecutionTargetSnapshot(
                 .filter(service -> service != OperatorComposabilityManifest.ExecutionService.TIME)
                 .filter(service -> service != OperatorComposabilityManifest.ExecutionService.RANDOM)
                 .filter(service -> service != OperatorComposabilityManifest.ExecutionService.UUID)
+                .filter(service -> service != OperatorComposabilityManifest.ExecutionService.IDENTITY)
+                .filter(service -> service != OperatorComposabilityManifest.ExecutionService.FEATURE_FLAG)
                 .map(Enum::name)
                 .toList();
         if (!unsupportedServices.isEmpty()) {
@@ -396,6 +398,16 @@ public record OperatorExecutionTargetSnapshot(
                 service == OperatorComposabilityManifest.ExecutionService.RANDOM
                         || service == OperatorComposabilityManifest.ExecutionService.UUID)) {
             requirements.add("Fixture bundle must define randomSeed when the operator uses RANDOM or UUID.");
+        }
+        if (manifest.executionServices().contains(
+                OperatorComposabilityManifest.ExecutionService.IDENTITY)) {
+            requirements.add("Fixture bundle metadata.executionServices.identityAttributes must bind "
+                    + "every identity attribute used by the operator.");
+        }
+        if (manifest.executionServices().contains(
+                OperatorComposabilityManifest.ExecutionService.FEATURE_FLAG)) {
+            requirements.add("Fixture bundle metadata.executionServices.featureFlags must bind every "
+                    + "feature flag used by the operator.");
         }
         return List.copyOf(requirements);
     }

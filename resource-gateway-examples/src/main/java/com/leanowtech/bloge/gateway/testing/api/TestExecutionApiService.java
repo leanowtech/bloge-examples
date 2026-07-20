@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.A
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionSubjects;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.Kind;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
@@ -768,6 +769,12 @@ public final class TestExecutionApiService {
                     Map.of());
         }
         requireClearance(bundle.classification(), identity);
+        try {
+            FixtureExecutionServices.from(bundle);
+        } catch (IllegalArgumentException invalidExecutionServices) {
+            throw badRequest(identity, "RG.TEST.FIXTURE_EXECUTION_SERVICES_INVALID",
+                    invalidExecutionServices.getMessage(), Map.of());
+        }
         String targetFingerprint = currentTargetFingerprint(request.target(), identity);
         requireTargetFingerprint(request.target(), targetFingerprint, identity);
         if (!targetFingerprint.equals(bundle.targetFingerprint())) {

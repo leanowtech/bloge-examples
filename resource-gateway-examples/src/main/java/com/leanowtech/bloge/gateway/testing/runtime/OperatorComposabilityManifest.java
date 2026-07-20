@@ -13,8 +13,9 @@ import java.util.Map;
  * certification switch. Resource Gateway v1 can certify only a self-contained synchronous binding
  * whose declaration is tied to a fingerprinted conformance suite. Declared dependency ports and
  * unsupported execution services remain visible inventory until the runtime can control those
- * boundaries. Time, random, and UUID services are conditionally certifiable when the run fixture
- * supplies their required logical clock or seed.</p>
+ * boundaries. Time, random, UUID, identity, and feature-flag services are conditionally certifiable
+ * when the run fixture supplies their required deterministic controls. Secrets remain unsupported
+ * until an opaque-reference test authority exists.</p>
  *
  * @param schemaVersion manifest schema version
  * @param dependencyMode whether external dependencies are absent, declared, or opaque

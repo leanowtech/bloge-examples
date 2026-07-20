@@ -947,6 +947,60 @@ This mode verifies time-dependent business behavior and the graph's reaction to 
 not prove wall-clock watchdog accuracy, interruption of blocked operator code, or deterministic
 completion order between concurrent branches. Those remain engine/sandbox conformance concerns.
 
+### 4.2.1a Control identity and feature-flag built-ins
+
+Place deterministic ambient values in the reserved
+`fixtureBundle.metadata.executionServices` object. BLOGE operator providers and DSL built-ins use
+the same run-scoped authority: `identity("tenant")` resolves the exact `identityAttributes.tenant`
+value, while `featureFlag("pricing-v2")` resolves the exact boolean decision. A missing attribute or
+flag fails closed; it never falls back to the process identity, request principal, production flag
+service, or `GraphContext`.
+
+```json
+{
+  "metadata": {
+    "owner": "risk-quality",
+    "executionServices": {
+      "schemaVersion": "bloge.fixtureExecutionServices.v1",
+      "identityAttributes": {
+        "tenant": "acme-test",
+        "riskLevel": 7,
+        "authenticated": true
+      },
+      "featureFlags": {
+        "pricing-v2": true,
+        "legacy-fallback": false
+      }
+    }
+  }
+}
+```
+
+The nested object is strict and must contain all three properties. Each namespace accepts at most
+100 keys matching `[A-Za-z_][A-Za-z0-9._:/-]{0,127}`. Identity values are non-null strings of at
+most 4,096 characters, booleans, or integers; feature flags are booleans. The combined material is
+bounded to 65,536 UTF-8 bytes. Values are fixture payload and inherit fixture classification,
+clearance, immutable revision, retention, and access controls. Do not put credentials, bearer
+tokens, private keys, or production secrets in these maps.
+
+Use the typed test-kit builder instead of assembling reserved metadata manually:
+
+```java
+FixtureBundleBuilder fixture = FixtureBundleBuilder
+        .graph(target.graphId(), target.fingerprint())
+        .id("pricing-v2-golden")
+        .identityAttribute("tenant", "acme-test")
+        .identityAttribute("riskLevel", 7)
+        .featureFlag("pricing-v2", true);
+```
+
+The effective plan records `FIXTURE_MAP`, availability, determinism, and a service-specific
+configuration fingerprint. Evidence usage records function call sites and hashed provider scopes;
+neither projection contains raw configured values. The full node trace may still contain a value
+when it becomes business input or output, subject to the existing evidence classification and
+sanitization policy. `SECRET` deliberately remains `FAIL_CLOSED`: safe support requires opaque
+secret references and an independently governed test secret authority, not raw fixture values.
+
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 
 `attempts` and `occurrences` are active runtime selector coordinates. Both are one-based, bounded
@@ -1078,9 +1132,10 @@ environment-dependent time functions share one advancing zero-wall-clock provide
 drives domain-separated SHA-256 sequences for RANDOM and UUID. Calls with the same stable scope
 and occurrence sequence reproduce across runs; different scopes do not consume a global shared
 cursor. Missing TIME/RANDOM/UUID controls are allowed for exploratory runs but downgrade evidence
-when a declared or observed semantic consumer uses them. IDENTITY, FEATURE_FLAG and SECRET have
-no fixture authority in this increment and always fail closed. Evidence metadata records only
-payload-free usage counts, function call sites and hashed provider scopes.
+when a declared or observed semantic consumer uses them. IDENTITY and FEATURE_FLAG are deterministic
+only when the strict nested fixture authority is present; unknown keys fail closed. SECRET always
+fails closed. Evidence metadata records only payload-free usage counts, function call sites and
+hashed provider scopes.
 
 One run may resolve at most 1,000 distinct replay refs and 16 MiB of canonical frozen payloads.
 A replay captured from a non-executable draft or otherwise non-certifiable source makes the whole
@@ -4297,8 +4352,8 @@ Still intentionally outside this increment:
   database-authoritative immediate admission now enforces tenant/suite/operator/dependency capacity,
   while payload-free worker acquisition transfers only control ownership, not executable state;
 - dispatcher/polling, cross-process recovery supervision and multi-boundary recovery orchestration,
-  hard worker cancellation, typed identity/flag/secret
-  authorities, explicit
+  hard worker cancellation, richer externally sourced identity/flag authorities, an opaque-ref
+  secret authority, explicit
   streaming offset/checkpoint recovery, and deterministic concurrent scheduling;
 - a physically separate test-runtime deployment and network policy;
 - certification of streaming foreach/loop graphs until their invocation and edge evidence is

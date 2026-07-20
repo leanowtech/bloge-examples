@@ -196,7 +196,8 @@ See
 for the complete target-discovery, fixture-registration, execution, evidence,
 and production-isolation workflow. Java/JUnit/CI consumers can use the independent
 [Resource Gateway Test Kit](../resource-gateway-test-kit/README.md) for fixture and immutable-suite
-builders, typed catalog materialization, exact suite execution, signed bounded stability analysis,
+builders, bounded deterministic identity/feature-flag fixture controls, typed catalog materialization,
+exact suite execution, signed bounded stability analysis,
 signed retained-window and compact-range trend reconstruction, pinned-key-set offline verification, payload-free
 assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The stability protocol's

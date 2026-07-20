@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -29,6 +31,11 @@ public final class FixtureBundleBuilder {
     private static final int MAX_ERROR_MESSAGE_CHARACTERS = 4_096;
     private static final int MAX_SELECTOR_COORDINATES = 100;
     private static final int MAX_SELECTOR_COORDINATE = 100_000;
+    private static final int MAX_EXECUTION_SERVICE_ENTRIES = 100;
+    private static final int MAX_EXECUTION_SERVICE_BYTES = 65_536;
+    private static final int MAX_IDENTITY_STRING_CHARACTERS = 4_096;
+    private static final Pattern EXECUTION_SERVICE_KEY =
+            Pattern.compile("[A-Za-z_][A-Za-z0-9._:/-]{0,127}");
 
     /** Fixture payload governance classification. */
     public enum Classification {
@@ -46,6 +53,8 @@ public final class FixtureBundleBuilder {
     private final String targetId;
     private final String targetFingerprint;
     private final Map<String, JsonNode> metadata = new LinkedHashMap<>();
+    private final Map<String, Object> identityAttributes = new java.util.TreeMap<>();
+    private final Map<String, Boolean> featureFlags = new java.util.TreeMap<>();
     private final ArrayNode rules = JSON.createArrayNode();
     private final ArrayNode assertions = JSON.createArrayNode();
     private final Set<String> ruleIds = new LinkedHashSet<>();
@@ -143,10 +152,72 @@ public final class FixtureBundleBuilder {
      */
     public FixtureBundleBuilder metadata(String name, Object value) {
         String key = required(name, "metadata name", 128);
+        if ("executionServices".equals(key)) {
+            throw new IllegalArgumentException(
+                    "executionServices is reserved; use identityAttribute or featureFlag");
+        }
         if (!metadata.containsKey(key) && metadata.size() >= MAX_METADATA_ENTRIES) {
             throw new IllegalArgumentException("Fixture metadata may contain at most 100 entries");
         }
         metadata.put(key, JSON.valueToTree(value));
+        return this;
+    }
+
+    /**
+     * Binds one exact identity attribute for deterministic operator or built-in-function lookup.
+     *
+     * <p>Values are fixture payload and may be strings, booleans, or integral numbers. Unknown
+     * runtime attributes fail closed.</p>
+     *
+     * @param name exact identity attribute name
+     * @param value non-null bounded JSON scalar
+     * @return this builder
+     */
+    public FixtureBundleBuilder identityAttribute(String name, Object value) {
+        String key = executionServiceKey(name, "identity attribute");
+        if (value instanceof String text) {
+            if (text.length() > MAX_IDENTITY_STRING_CHARACTERS) {
+                throw new IllegalArgumentException(
+                        "identity attribute strings may contain at most 4096 characters");
+            }
+        } else if (!(value instanceof Boolean) && !isIntegral(value)) {
+            throw new IllegalArgumentException(
+                    "identity attribute values must be non-null strings, booleans, or integers");
+        }
+        if (!identityAttributes.containsKey(key)
+                && identityAttributes.size() >= MAX_EXECUTION_SERVICE_ENTRIES) {
+            throw new IllegalArgumentException("A fixture may bind at most 100 identity attributes");
+        }
+        Object previous = identityAttributes.put(key, value);
+        try {
+            requireExecutionServiceSize();
+        } catch (RuntimeException oversized) {
+            restore(identityAttributes, key, previous);
+            throw oversized;
+        }
+        return this;
+    }
+
+    /**
+     * Binds one exact deterministic feature-flag decision. Unknown runtime flags fail closed.
+     *
+     * @param name exact feature-flag name
+     * @param enabled fixture decision
+     * @return this builder
+     */
+    public FixtureBundleBuilder featureFlag(String name, boolean enabled) {
+        String key = executionServiceKey(name, "feature flag");
+        if (!featureFlags.containsKey(key)
+                && featureFlags.size() >= MAX_EXECUTION_SERVICE_ENTRIES) {
+            throw new IllegalArgumentException("A fixture may bind at most 100 feature flags");
+        }
+        Boolean previous = featureFlags.put(key, enabled);
+        try {
+            requireExecutionServiceSize();
+        } catch (RuntimeException oversized) {
+            restore(featureFlags, key, previous);
+            throw oversized;
+        }
         return this;
     }
 
@@ -223,6 +294,13 @@ public final class FixtureBundleBuilder {
         bundle.set("assertions", assertions.deepCopy());
         ObjectNode metadataNode = bundle.putObject("metadata");
         metadata.forEach((name, value) -> metadataNode.set(name, value.deepCopy()));
+        if (!identityAttributes.isEmpty() || !featureFlags.isEmpty()) {
+            if (metadata.size() >= MAX_METADATA_ENTRIES) {
+                throw new IllegalArgumentException(
+                        "Fixture metadata including executionServices may contain at most 100 entries");
+            }
+            metadataNode.set("executionServices", executionServicesNode());
+        }
         return bundle;
     }
 
@@ -416,6 +494,46 @@ public final class FixtureBundleBuilder {
             throw new IllegalArgumentException(field + " must be a canonical sha256 fingerprint");
         }
         return normalized;
+    }
+
+    private static String executionServiceKey(String value, String field) {
+        String normalized = normalized(value);
+        if (!EXECUTION_SERVICE_KEY.matcher(normalized).matches()) {
+            throw new IllegalArgumentException(field
+                    + " must match [A-Za-z_][A-Za-z0-9._:/-]{0,127}");
+        }
+        return normalized;
+    }
+
+    private static boolean isIntegral(Object value) {
+        return value instanceof Byte || value instanceof Short || value instanceof Integer
+                || value instanceof Long || value instanceof BigInteger;
+    }
+
+    private void requireExecutionServiceSize() {
+        int bytes = executionServicesNode().toString().getBytes(StandardCharsets.UTF_8).length;
+        if (bytes > MAX_EXECUTION_SERVICE_BYTES) {
+            throw new IllegalArgumentException(
+                    "Fixture executionServices exceeds the 65536-byte control-material bound");
+        }
+    }
+
+    private ObjectNode executionServicesNode() {
+        ObjectNode executionServices = JSON.createObjectNode();
+        executionServices.put("schemaVersion", TestingProtocol.FIXTURE_EXECUTION_SERVICES_V1);
+        ObjectNode identities = executionServices.putObject("identityAttributes");
+        identityAttributes.forEach((name, value) -> identities.set(name, JSON.valueToTree(value)));
+        ObjectNode flags = executionServices.putObject("featureFlags");
+        featureFlags.forEach(flags::put);
+        return executionServices;
+    }
+
+    private static <T> void restore(Map<String, T> values, String key, T previous) {
+        if (previous == null) {
+            values.remove(key);
+        } else {
+            values.put(key, previous);
+        }
     }
 
     private static String required(String value, String field, int maximum) {

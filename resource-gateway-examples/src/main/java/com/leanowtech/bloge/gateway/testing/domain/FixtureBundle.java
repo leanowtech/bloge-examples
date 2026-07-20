@@ -16,7 +16,7 @@ import java.util.Map;
  * @param randomSeed optional deterministic seed shared by random and UUID execution services
  * @param rules invocation control rules
  * @param assertions post-run assertions
- * @param metadata bounded ownership and provenance metadata
+ * @param metadata bounded ownership/provenance metadata and the reserved execution-service controls
  */
 public record FixtureBundle(
         String schemaVersion,

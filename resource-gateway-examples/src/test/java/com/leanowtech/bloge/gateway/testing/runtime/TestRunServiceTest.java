@@ -21,7 +21,9 @@ import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.spi.NestedGraphProvider;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.dsl.compiler.GraphLoader;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
@@ -91,7 +93,10 @@ class TestRunServiceTest {
 
         TestExecutionResult result = service.executeMutation(request, TARGET);
 
-        assertThat(result.passed()).isTrue();
+        assertThat(result.passed())
+                .withFailMessage("status=%s diagnostics=%s traces=%s", result.evidence().status(),
+                        result.evidence().diagnostics(), result.evidence().nodeTrace())
+                .isTrue();
         assertThat(result.plan().targetFingerprint()).isEqualTo(MUTANT_TARGET);
         assertThat(result.plan().authorizedPurpose()).isEqualTo("MUTATION_SUITE_EXECUTION");
         assertThat(result.evidence().targetFingerprint()).isEqualTo(MUTANT_TARGET);
@@ -177,6 +182,62 @@ class TestRunServiceTest {
         assertThat(exploratory.evidence().metadata().get(
                 "executionServiceCertificationGaps").toString())
                 .contains("logicalClock");
+    }
+
+    @Test
+    void dslIdentityAndFeatureFlagBuiltInsUseOnlyTheFixtureAuthority() throws Exception {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.register("capture", new Operator<Map<String, Object>, Map<String, Object>>() {
+            @Override
+            public Map<String, Object> execute(Map<String, Object> input, OperatorContext context) {
+                return input;
+            }
+
+            @Override
+            public SideEffectType sideEffectType() {
+                return SideEffectType.READ_ONLY;
+            }
+        });
+        Graph graph = new GraphLoader(registry).load("""
+                graph governedBuiltIns {
+                    node capture : capture {
+                        input {
+                            tenant = identity("tenant")
+                            pricingV2 = featureFlag("pricing-v2")
+                        }
+                    }
+                }
+                """);
+        FixtureBundle fixture = new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
+                "governed-built-ins", 1, TARGET, "INTERNAL", null, null,
+                List.of(), List.of(), Map.of(FixtureExecutionServices.METADATA_KEY, Map.of(
+                        "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION,
+                        "identityAttributes", Map.of("tenant", "tenant-sensitive-C-1001"),
+                        "featureFlags", Map.of("pricing-v2", true))));
+        ObjectMapper governedMapper = new ObjectMapper().findAndRegisterModules();
+        TestRunService governed = new TestRunService(registry, governedMapper, null);
+
+        TestExecutionResult result = governed.execute(new TestExecutionRequest(graph,
+                new GraphContext(), fixture, "GRAPH_CONTRACT_TEST", TARGET,
+                TestExecutionRequest.FixtureSource.STORED, Map.of(), true,
+                ResolvedReplayPayloads.empty()));
+
+        assertThat(result.passed())
+                .withFailMessage("status=%s diagnostics=%s traces=%s", result.evidence().status(),
+                        result.evidence().diagnostics(), result.evidence().nodeTrace())
+                .isTrue();
+        assertThat(result.graphResult().getOutput("capture", Map.class))
+                .containsEntry("tenant", "tenant-sensitive-C-1001")
+                .containsEntry("pricingV2", true);
+        assertThat(result.evidence().metadata().get("executionServiceUsages").toString())
+                .contains("IDENTITY", "FEATURE_FLAG", "functionCalls=1")
+                .doesNotContain("tenant-sensitive-C-1001", "pricing-v2");
+        assertThat(governedMapper.writeValueAsString(Map.of(
+                "bindings", result.evidence().metadata().get("executionServiceBindings"),
+                "usages", result.evidence().metadata().get("executionServiceUsages"),
+                "stateFingerprint", result.evidence().metadata().get(
+                        "executionServiceStateFingerprint"))))
+                .doesNotContain("tenant-sensitive-C-1001", "pricing-v2");
     }
 
     @Test
@@ -463,6 +524,32 @@ class TestRunServiceTest {
         assertThat(result.evidence().status())
                 .isEqualTo(TestRunEvidence.Status.CONTROL_PLAN_REJECTED);
         assertThat(result.evidence().diagnostics()).anyMatch(item -> item.contains("same-precedence"));
+    }
+
+    @Test
+    void malformedExecutionServiceFixtureIsRejectedBeforeAdmissionWithoutPayloadEcho() {
+        FixtureBundle malformed = new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
+                "malformed-services", 1, TARGET, "INTERNAL", null, null,
+                List.of(), List.of(), Map.of(FixtureExecutionServices.METADATA_KEY, Map.of(
+                        "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION,
+                        "identityAttributes", Map.of("subject", Map.of("raw-secret-47", true)),
+                        "featureFlags", Map.of())));
+        AtomicInteger admissionCalls = new AtomicInteger();
+
+        TestExecutionResult result = service.execute(
+                request(single(new PureOperator()), malformed), compiled -> {
+                    admissionCalls.incrementAndGet();
+                    throw new AssertionError("malformed fixtures must not be admitted");
+                });
+
+        assertThat(result.plan()).isNull();
+        assertThat(result.graphResult()).isNull();
+        assertThat(result.evidence().status())
+                .isEqualTo(TestRunEvidence.Status.CONTROL_PLAN_REJECTED);
+        assertThat(result.evidence().diagnostics()).singleElement()
+                .asString().contains("identityAttributes values")
+                .doesNotContain("raw-secret-47", "subject");
+        assertThat(admissionCalls).hasValue(0);
     }
 
     @Test

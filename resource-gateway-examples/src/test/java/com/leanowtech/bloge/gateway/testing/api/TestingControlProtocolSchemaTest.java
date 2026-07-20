@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoin
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureConsumptionStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
@@ -66,6 +67,8 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestExecutionBatchResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/fixtureBundleRegistrationRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(FixtureBundleRegistrationRequest.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/fixtureExecutionServices/properties/schemaVersion/const").asText())
+                .isEqualTo(FixtureExecutionServices.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/storedFixtureBundle/properties/schemaVersion/const").asText())
                 .isEqualTo(StoredFixtureBundle.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/replayPayloadCaptureRequest/properties/schemaVersion/const").asText())

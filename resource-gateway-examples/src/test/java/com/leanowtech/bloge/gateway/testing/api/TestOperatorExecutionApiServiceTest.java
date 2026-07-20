@@ -59,6 +59,11 @@ class TestOperatorExecutionApiServiceTest {
         operators.register("configured.oversized", new OversizedSnapshotOperator());
         operators.register("undeclared.read", new UndeclaredReadOperator());
         operators.register("clock.read", new ClockDependentReadOperator());
+        operators.register("ambient.read", new AmbientDependentReadOperator(List.of(
+                OperatorComposabilityManifest.ExecutionService.IDENTITY,
+                OperatorComposabilityManifest.ExecutionService.FEATURE_FLAG)));
+        operators.register("secret.read", new AmbientDependentReadOperator(List.of(
+                OperatorComposabilityManifest.ExecutionService.SECRET)));
         operators.register("invalid.contract", new InvalidBehaviorContractOperator());
         operators.registerRaw("customer.events", new EventStreamOperator());
         service = new TestExecutionApiService(mock(GatewayGraphService.class), operators, resources,
@@ -230,6 +235,26 @@ class TestOperatorExecutionApiServiceTest {
         assertThat(target.certificationRequirements())
                 .contains("Fixture bundle must define logicalClock when the operator uses TIME.");
         assertThat(target.certificationGaps()).isEmpty();
+    }
+
+    @Test
+    void identityAndFlagAreFixtureControllableWhileSecretRemainsUnsupported() {
+        TestOperatorTargetDescriptor ambient = service.describeOperatorTarget("ambient.read", identity());
+        TestOperatorTargetDescriptor secret = service.describeOperatorTarget("secret.read", identity());
+
+        assertThat(ambient.testabilityClass()).isEqualTo(OperatorExecutionTargetSnapshot.EXECUTABLE_UNIT);
+        assertThat(ambient.certificationEligible()).isTrue();
+        assertThat(ambient.certificationRequirements()).containsExactly(
+                "Fixture bundle metadata.executionServices.identityAttributes must bind every "
+                        + "identity attribute used by the operator.",
+                "Fixture bundle metadata.executionServices.featureFlags must bind every feature "
+                        + "flag used by the operator.");
+        assertThat(ambient.certificationGaps()).isEmpty();
+
+        assertThat(secret.certificationEligible()).isFalse();
+        assertThat(secret.certificationGaps())
+                .contains("Operator consumes execution services without a governed test authority: "
+                        + "[SECRET].");
     }
 
     @Test
@@ -479,6 +504,38 @@ class TestOperatorExecutionApiServiceTest {
                     OperatorComposabilityManifest.DependencyMode.NONE, List.of(),
                     List.of(OperatorComposabilityManifest.ExecutionService.TIME), true,
                     "test:clock-read", CONFORMANCE_FINGERPRINT);
+        }
+    }
+
+    private static final class AmbientDependentReadOperator implements Operator<Object, Object>,
+            OperatorComposabilityManifestProvider, OperatorRuntimeBindingSnapshotProvider {
+        private final List<OperatorComposabilityManifest.ExecutionService> services;
+
+        private AmbientDependentReadOperator(
+                List<OperatorComposabilityManifest.ExecutionService> services) {
+            this.services = List.copyOf(services);
+        }
+
+        @Override
+        public Object execute(Object input, OperatorContext context) {
+            return input;
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.READ_ONLY;
+        }
+
+        @Override
+        public Map<String, ?> runtimeBindingSnapshot() {
+            return Map.of("executionServices", services.stream().map(Enum::name).toList());
+        }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return new OperatorComposabilityManifest(OperatorComposabilityManifest.SCHEMA_VERSION,
+                    OperatorComposabilityManifest.DependencyMode.NONE, List.of(), services, true,
+                    "test:ambient-read", CONFORMANCE_FINGERPRINT);
         }
     }
 

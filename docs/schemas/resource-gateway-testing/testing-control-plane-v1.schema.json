@@ -1626,6 +1626,38 @@
         "numericTolerance": {"type": ["number", "null"], "minimum": 0}
       }
     },
+    "fixtureExecutionServices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "identityAttributes", "featureFlags"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.fixtureExecutionServices.v1"},
+        "identityAttributes": {
+          "type": "object",
+          "maxProperties": 100,
+          "propertyNames": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9._:/-]{0,127}$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {"type": "string", "maxLength": 4096},
+              {"type": "boolean"},
+              {"type": "integer"}
+            ]
+          }
+        },
+        "featureFlags": {
+          "type": "object",
+          "maxProperties": 100,
+          "propertyNames": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9._:/-]{0,127}$"
+          },
+          "additionalProperties": {"type": "boolean"}
+        }
+      }
+    },
     "fixtureBundle": {
       "type": "object",
       "additionalProperties": false,
@@ -1640,7 +1672,13 @@
         "randomSeed": {"type": ["integer", "null"]},
         "rules": {"type": "array", "items": {"$ref": "#/$defs/fixtureRule"}, "maxItems": 1000},
         "assertions": {"type": "array", "items": {"$ref": "#/$defs/assertion"}, "maxItems": 1000},
-        "metadata": {"type": "object", "maxProperties": 100}
+        "metadata": {
+          "type": "object",
+          "maxProperties": 100,
+          "properties": {
+            "executionServices": {"$ref": "#/$defs/fixtureExecutionServices"}
+          }
+        }
       }
     },
     "fixtureBundleRegistrationRequest": {

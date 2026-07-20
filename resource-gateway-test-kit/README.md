@@ -9,7 +9,7 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   planning/V5 materialization/V6 execution, built-in graph-catalog materialization,
   graph/operator execution, suite execution, and persisted child/aggregate-run lookup;
 - a fail-closed `FixtureBundleBuilder` for output-level and transport-level protocol fixtures,
-  including one-based attempt/occurrence selectors;
+  one-based attempt/occurrence selectors, and bounded deterministic identity/feature-flag controls;
 - a dependency-closed `TestSuiteBuilder` with exact target/fixture references and typed semantic
   branch, decision, retry, fallback, timeout, and compensation requirements;
 - runtime validation against the packaged Draft 2020-12 schema plus request/response identity binding;
@@ -71,6 +71,8 @@ FixtureBundleBuilder fixture = FixtureBundleBuilder
         .graph(target.graphId(), target.fingerprint())
         .id("loan-approved")
         .revision(1)
+        .identityAttribute("tenant", "acme-test")
+        .featureFlag("pricing-v2", true)
         .rule("credit-provider")
             .resource("credit-provider.primary")
             .protocolResponse(
@@ -112,6 +114,12 @@ JUnitXmlReportWriter.write(
         "loan-policy",
         List.of(run));
 ```
+
+`identityAttribute` accepts only non-null JSON string/boolean/integer scalars;
+`featureFlag` accepts exact boolean decisions. Both use the reserved, versioned
+`metadata.executionServices` wire object and enforce the server's entry, key, value, and 64 KiB
+aggregate bounds before sending. Unknown runtime keys fail closed. Raw secrets are intentionally not
+supported by this builder.
 
 Plan pure-DSL graph mutations without receiving mutated source, then freeze and execute the exact
 reviewed plan against a governed oracle:

@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.planning;
 
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.ReplayPayloadRef;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
@@ -70,6 +71,11 @@ public class SafetyPreflight {
             diagnostics.add("A server-authorized execution purpose is required.");
         } else if (authorizedPurpose.toUpperCase(java.util.Locale.ROOT).contains("PRODUCTION")) {
             diagnostics.add("Production execution purpose cannot carry a test control plan.");
+        }
+        try {
+            FixtureExecutionServices.from(bundle);
+        } catch (IllegalArgumentException invalidExecutionServices) {
+            diagnostics.add(invalidExecutionServices.getMessage());
         }
         Set<String> ruleIds = new HashSet<>();
         Set<String> replayRefs = new HashSet<>();

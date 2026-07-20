@@ -26,6 +26,9 @@ class FixtureBundleBuilderTest {
                 .logicalClock(Instant.parse("2026-07-15T10:15:30Z"))
                 .randomSeed(42)
                 .metadata("suiteRef", "loan-policy-regression")
+                .identityAttribute("tenant", "acme")
+                .identityAttribute("riskLevel", 7)
+                .featureFlag("pricing-v2", true)
                 .rule("credit-score")
                     .node("creditScore")
                     .attempts(2, 1)
@@ -51,6 +54,14 @@ class FixtureBundleBuilderTest {
         assertThat(bundle.path("logicalClock").asText()).isEqualTo("2026-07-15T10:15:30Z");
         assertThat(bundle.path("randomSeed").asLong()).isEqualTo(42);
         assertThat(bundle.path("rules")).hasSize(2);
+        JsonNode executionServices = bundle.path("metadata").path("executionServices");
+        assertThat(executionServices.path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.FIXTURE_EXECUTION_SERVICES_V1);
+        assertThat(executionServices.path("identityAttributes").path("tenant").asText())
+                .isEqualTo("acme");
+        assertThat(executionServices.path("identityAttributes").path("riskLevel").asInt())
+                .isEqualTo(7);
+        assertThat(executionServices.path("featureFlags").path("pricing-v2").asBoolean()).isTrue();
 
         JsonNode first = bundle.path("rules").get(0);
         assertThat(first.path("selector").path("graphPath").asText()).isEqualTo("/root");
@@ -91,6 +102,8 @@ class FixtureBundleBuilderTest {
         assertAllRequiredPropertiesPresent(first.path("selector"), schema().at("/$defs/selector"));
         assertAllRequiredPropertiesPresent(first.path("selector").path("match"), schema().at("/$defs/match"));
         assertAllRequiredPropertiesPresent(first.path("behavior"), schema().at("/$defs/behavior"));
+        assertAllRequiredPropertiesPresent(executionServices,
+                schema().at("/$defs/fixtureExecutionServices"));
     }
 
     @Test
@@ -136,6 +149,15 @@ class FixtureBundleBuilderTest {
                 .occurrences(2, 2))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("duplicates");
+        assertThatThrownBy(() -> builder.metadata("executionServices", Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("reserved");
+        assertThatThrownBy(() -> builder.identityAttribute("invalid key", "value"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must match");
+        assertThatThrownBy(() -> builder.identityAttribute("subject", Map.of("nested", true)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("strings, booleans, or integers");
 
         assertThat(builder.buildBundle().path("rules")).hasSize(1);
     }

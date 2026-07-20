@@ -4,7 +4,8 @@
 
 This increment connects Resource Gateway's governed fixture controls to BLOGE's run-scoped
 `ExecutionServices` and gives deterministic outcomes a stable semantic identity. It controls logical
-time, random values, generated UUIDs and environment-dependent DSL function resolution without
+time, random values, generated UUIDs, identity attributes, feature flags and environment-dependent
+DSL function resolution without
 placing control data in `GraphContext`. The current increment also defines and validates the
 payload-free provider-state checkpoint needed by a later durable/suspendable adapter.
 
@@ -19,7 +20,8 @@ suspend/resume adapter remains pending.
 - Each binding exposes service, provider mode, availability, determinism, a configuration
   fingerprint, declared consumers and certification gaps.
 - Plan bindings do not export raw logical-clock configuration, random seeds, provider scopes,
-  credentials or secret values. Evidence may expose governed logical timestamps and records only
+  identity/flag configuration, credentials or secret values. Evidence may expose governed logical
+  timestamps and records only
   provider-scope fingerprints and structural function call sites.
 - Capability discovery retains v1/v2 reader versions and advertises v3 as the producer version.
 - `bloge.executionServiceStateSnapshot.v1` binds logical time, hashed RANDOM/UUID scope cursors and
@@ -28,6 +30,9 @@ suspend/resume adapter remains pending.
   `restoreGaps` explains fail-closed non-restorability.
 - The snapshot excludes the random seed, raw scope, identity/flag/secret values and fixture
   payloads. Capability discovery advertises it as a supported object, not as a public endpoint.
+- `bloge.fixtureExecutionServices.v1` is a strict nested contract at
+  `fixtureBundle.metadata.executionServices`. It carries bounded scalar identity attributes and
+  boolean feature flags while preserving the existing top-level v1 fixture shape.
 - `bloge.testRunEvidence.v2` adds `semanticResultFingerprint`; the schema retains explicit v1 and v2
   definitions and a dual-read union. Execution response v1 references evidence v1, while current
   signed execution response v2 requires evidence v2.
@@ -58,7 +63,9 @@ oracle. The full evidence fingerprint remains different across run id, timing an
    scoped by stable invocation coordinates instead of one scheduler-sensitive global cursor.
 4. Missing logical clock or seed permits exploratory use, but declared or observed semantic use
    prevents certifiable evidence.
-5. IDENTITY, FEATURE_FLAG and SECRET have no fixture authority yet and fail closed on every call.
+5. IDENTITY and FEATURE_FLAG use exact immutable fixture maps. Missing keys fail closed and never
+   consult production identity/flag authorities; SECRET has no fixture authority and always fails
+   closed.
 6. A source-boundary test prevents `GovernedExecutionServices` references outside the testing
    subsystem.
 7. Every execution snapshots caller business context and creates a new root `GraphContext`; repeated
@@ -80,10 +87,14 @@ oracle. The full evidence fingerprint remains different across run id, timing an
 ## Automated Evidence
 
 `GovernedExecutionServicesTest` verifies reproducibility, seed isolation, payload-free plan
-projection, logical-clock advancement, usage audit, atomic concurrent capture, exact continuation,
-tamper/policy/cursor rejection, and fail-closed ambient authorities.
+projection, logical-clock advancement, exact identity/flag lookup, missing-key/secret rejection,
+usage audit, atomic concurrent capture, exact continuation, configuration drift, and
+tamper/policy/cursor rejection. `FixtureExecutionServicesTest` freezes strict shape, scalar, key,
+entry, aggregate-size, immutability, and payload-safe rejection semantics.
 `TestRunServiceTest.compiledLogicalClockReachesOperatorContextAndControlsCertification` executes a
 real BLOGE graph and proves the compiled clock reaches the operator and controls evidence class.
+`TestRunServiceTest.dslIdentityAndFeatureFlagBuiltInsUseOnlyTheFixtureAuthority` executes real DSL
+`identity` and `featureFlag` built-ins and proves their control-plane projections omit raw values.
 `ExecutionServicesBoundaryTest` is the production-path architecture guard. Planner, target
 classification, capability and JSON Schema tests freeze the wire and certification semantics.
 `TestSemanticResultFingerprintTest` proves stable ordering and the included/excluded material;
@@ -91,6 +102,12 @@ classification, capability and JSON Schema tests freeze the wire and certificati
 identity before signing and on verification. Main capability tests and test-kit protocol tests prove
 v1/v2 compatibility plus the checkpoint schema/version. `TestRunAssertions.assertSameSemanticResult`
 provides a payload-free CI regression assertion.
+
+The release gate completed `mvn -f resource-gateway-examples/pom.xml clean verify` with 3,026 tests,
+zero failures, zero errors and two conditional browser skips; all 34 configured browser tests and
+the executable Spring Boot JAR build completed. The independent test-kit `clean verify` completed
+228 tests with zero failures, errors or skips, then passed authoritative-schema packaging,
+ordinary/shaded JAR packaging and public JavaDoc validation.
 
 ## Honest Remaining Gaps
 
@@ -110,15 +127,15 @@ provides a payload-free CI regression assertion.
   assignment order; deterministic parallel scheduling or a stronger invocation coordinate is
   required before claiming byte-identical semantics there.
 - Streaming/suspendable execution does not yet have equivalent governed evidence.
-- Identity, feature flags and secrets require separate typed authorities; raw values must never be
-  added to fixture bundles.
+- Secret support still requires opaque references and an external typed test authority. Raw secret
+  values must never be added to fixture bundles.
 
 ## Reproduction
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=GovernedExecutionServicesTest,ExecutionControlCompilerTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest test
+  -Dtest=FixtureExecutionServicesTest,GovernedExecutionServicesTest,ExecutionControlCompilerTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
-  -Dtest=ResourceGatewayTestClientTest,TestRunAssertionsTest,TestingProtocolTest test
+  -Dtest=FixtureBundleBuilderTest,ResourceGatewayTestClientTest,TestRunAssertionsTest,TestingProtocolTest test
 ```

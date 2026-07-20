@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 import org.junit.jupiter.api.Test;
@@ -92,10 +93,10 @@ class GovernedExecutionServicesTest {
 
         assertThatThrownBy(() -> services.services().identityProvider().resolve("subject"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("No IdentityProvider configured");
+                .hasMessageContaining("No governed identity fixture value");
         assertThatThrownBy(() -> services.services().featureFlagProvider().enabled("new-price"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("No FeatureFlagProvider configured");
+                .hasMessageContaining("No governed feature-flag fixture decision");
         assertThatThrownBy(() -> services.services().secretProvider().resolve("payment-key"))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("No SecretProvider configured");
@@ -108,6 +109,62 @@ class GovernedExecutionServicesTest {
                         "IDENTITY has no governed test authority configured.",
                         "FEATURE_FLAG has no governed test authority configured.",
                         "SECRET has no governed test authority configured.");
+    }
+
+    @Test
+    void fixtureIdentityAndFlagsResolveExactlyWithoutLeakingValuesIntoPlanOrCheckpoint() throws Exception {
+        FixtureBundle fixture = controlledFixture("tenant-sensitive-C-1001", true);
+        GovernedExecutionServices services = GovernedExecutionServices.prepare(
+                mapper, fixture, inventory()).bindToPlan(PLAN);
+
+        assertThat(services.services().identityProvider().resolve("tenant"))
+                .isEqualTo("tenant-sensitive-C-1001");
+        assertThat(services.services().identityProvider().resolve("riskLevel")).isEqualTo(7);
+        assertThat(services.services().featureFlagProvider().enabled("pricing-v2")).isTrue();
+        assertThatThrownBy(() -> services.services().identityProvider().resolve("missing"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageNotContaining("missing");
+        assertThatThrownBy(() -> services.services().featureFlagProvider().enabled("missing"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageNotContaining("missing");
+        assertThatThrownBy(() -> services.services().secretProvider().resolve("payment-key"))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("No SecretProvider configured");
+
+        assertThat(services.bindings()).filteredOn(binding -> binding.service().equals("IDENTITY"))
+                .singleElement().satisfies(binding -> {
+                    assertThat(binding.mode()).isEqualTo("FIXTURE_MAP");
+                    assertThat(binding.available()).isTrue();
+                    assertThat(binding.deterministic()).isTrue();
+                    assertThat(binding.certificationGaps()).isEmpty();
+                });
+        assertThat(services.bindings()).filteredOn(
+                        binding -> binding.service().equals("FEATURE_FLAG"))
+                .singleElement().satisfies(binding -> {
+                    assertThat(binding.mode()).isEqualTo("FIXTURE_MAP");
+                    assertThat(binding.available()).isTrue();
+                    assertThat(binding.certificationGaps()).isEmpty();
+                });
+        assertThat(services.certificationGaps())
+                .containsExactly("SECRET has no governed test authority configured.");
+
+        ExecutionServiceStateSnapshot snapshot = services.snapshotState();
+        GovernedExecutionServices restored = GovernedExecutionServices.restore(
+                mapper, fixture, inventory(), PLAN, snapshot);
+        assertThat(restored.services().identityProvider().resolve("tenant"))
+                .isEqualTo("tenant-sensitive-C-1001");
+        assertThat(restored.services().featureFlagProvider().enabled("pricing-v2")).isTrue();
+
+        String projection = mapper.writeValueAsString(Map.of(
+                "bindings", services.bindings(), "snapshot", snapshot,
+                "usage", services.usageSnapshot()));
+        assertThat(projection)
+                .doesNotContain("tenant-sensitive-C-1001", "riskLevel", "pricing-v2", "payment-key")
+                .contains("configurationFingerprint", "providerScopeFingerprints");
+        assertThatThrownBy(() -> GovernedExecutionServices.restore(
+                mapper, controlledFixture("changed-tenant", true), inventory(), PLAN, snapshot))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("binding");
     }
 
     @Test
@@ -290,6 +347,15 @@ class GovernedExecutionServicesTest {
         return new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "fixture", 1,
                 TARGET, "INTERNAL", Instant.parse("2026-07-15T00:00:00Z"), seed,
                 List.of(), List.of(), Map.of());
+    }
+
+    private FixtureBundle controlledFixture(String tenant, boolean pricingV2) {
+        return new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "fixture", 1,
+                TARGET, "INTERNAL", Instant.parse("2026-07-15T00:00:00Z"), 42L,
+                List.of(), List.of(), Map.of(FixtureExecutionServices.METADATA_KEY, Map.of(
+                        "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION,
+                        "identityAttributes", Map.of("tenant", tenant, "riskLevel", 7),
+                        "featureFlags", Map.of("pricing-v2", pricingV2))));
     }
 
     private InvocationInventory inventory() {

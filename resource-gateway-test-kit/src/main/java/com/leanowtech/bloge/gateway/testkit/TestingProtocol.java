@@ -15,6 +15,9 @@ public final class TestingProtocol {
     public static final String TEST_EXECUTION_BATCH_RESPONSE_V1 = "bloge.testExecutionBatchResponse.v1";
     /** Fixture bundle wire version. */
     public static final String FIXTURE_BUNDLE_V1 = "bloge.fixtureBundle.v1";
+    /** Nested deterministic identity and feature-flag fixture wire version. */
+    public static final String FIXTURE_EXECUTION_SERVICES_V1 =
+            "bloge.fixtureExecutionServices.v1";
     /** Fixture rule wire version. */
     public static final String FIXTURE_RULE_V1 = "bloge.fixtureRule.v1";
     /** Fixture registration request wire version. */
