@@ -182,6 +182,8 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("demoIdentityMode", false)
                 .containsEntry("externalTestSecretAuthority", false)
                 .containsEntry("durableTestSecretReauthorization", false)
+                .containsEntry("dynamicTestSecretAuthorityTrust", false)
+                .containsEntry("testSecretAuthorityTrustRefreshSlo", false)
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
@@ -242,16 +244,46 @@ class ToolStudioIntegrationServiceTest {
                         List.of("bloge.testSecretAuthorityResponse.v1"))
                 .containsEntry("testSecretAuthorityTrustDescriptor",
                         List.of("bloge.testSecretAuthorityTrustDescriptor.v1"))
+                .containsEntry("testSecretAuthorityTrustRefreshSnapshot",
+                        List.of("bloge.testSecretAuthorityTrustRefreshSnapshot.v1"))
                 .containsEntry("testSecretAuthorityDescriptor",
                         List.of("bloge.testSecretAuthorityDescriptor.v1"));
         assertThat(available.features())
                 .containsEntry("externalTestSecretAuthority", true)
-                .containsEntry("durableTestSecretReauthorization", true);
+                .containsEntry("durableTestSecretReauthorization", true)
+                .containsEntry("dynamicTestSecretAuthorityTrust", false)
+                .containsEntry("testSecretAuthorityTrustRefreshSlo", false);
 
         ready.set(false);
         assertThat(service.capabilities().payload().features())
                 .containsEntry("externalTestSecretAuthority", false)
                 .containsEntry("durableTestSecretReauthorization", false);
+
+        when(authority.descriptor()).thenReturn(new TestSecretAuthority.Descriptor(
+                "", true, "HTTPS_SIGNED_TEST_SECRET_AUTHORITY", "authority-a",
+                Map.ofEntries(
+                        Map.entry("trustProviderType", "DYNAMIC_JWKS_ED25519"),
+                        Map.entry("trustAutomaticRefresh", true),
+                        Map.entry("trustRefreshIntervalSeconds", 30L),
+                        Map.entry("trustMaximumSnapshotAgeSeconds", 60L),
+                        Map.entry("trustConditionalRequests", true),
+                        Map.entry("trustFailClosedOnRefreshFailure", true))));
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("dynamicTestSecretAuthorityTrust", true)
+                .containsEntry("testSecretAuthorityTrustRefreshSlo", true);
+
+        when(authority.descriptor()).thenReturn(new TestSecretAuthority.Descriptor(
+                "", true, "HTTPS_SIGNED_TEST_SECRET_AUTHORITY", "authority-a",
+                Map.ofEntries(
+                        Map.entry("trustProviderType", "DYNAMIC_JWKS_ED25519"),
+                        Map.entry("trustAutomaticRefresh", true),
+                        Map.entry("trustRefreshIntervalSeconds", 30L),
+                        Map.entry("trustMaximumSnapshotAgeSeconds", 0L),
+                        Map.entry("trustConditionalRequests", true),
+                        Map.entry("trustFailClosedOnRefreshFailure", true))));
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("dynamicTestSecretAuthorityTrust", true)
+                .containsEntry("testSecretAuthorityTrustRefreshSlo", false);
     }
 
     @Test

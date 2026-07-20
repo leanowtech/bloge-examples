@@ -163,6 +163,14 @@ gateway:
           minimum-remaining-validity-ms: ${RG_TEST_SECRET_AUTHORITY_MIN_REMAINING_MS:100}
           allow-insecure-loopback: ${RG_TEST_SECRET_AUTHORITY_ALLOW_INSECURE_LOOPBACK:false}
           authority-keys-json: ${RG_TEST_SECRET_AUTHORITY_KEYS_JSON:[]}
+          jwks:
+            enabled: ${RG_TEST_SECRET_AUTHORITY_JWKS_ENABLED:false}
+            uri: ${RG_TEST_SECRET_AUTHORITY_JWKS_URI:}
+            refresh-interval-seconds: ${RG_TEST_SECRET_AUTHORITY_JWKS_REFRESH_SECONDS:30}
+            unknown-key-refresh-interval-seconds: ${RG_TEST_SECRET_AUTHORITY_JWKS_UNKNOWN_KEY_REFRESH_SECONDS:5}
+            request-timeout-ms: ${RG_TEST_SECRET_AUTHORITY_JWKS_TIMEOUT_MS:3000}
+            maximum-snapshot-age-seconds: ${RG_TEST_SECRET_AUTHORITY_JWKS_MAXIMUM_AGE_SECONDS:60}
+            allow-insecure-loopback: ${RG_TEST_SECRET_AUTHORITY_JWKS_ALLOW_INSECURE_LOOPBACK:false}
     stability-jobs:
       api:
         retry-after-seconds: ${RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS:5}

@@ -242,12 +242,31 @@ public class ToolStudioIntegrationService {
                         stabilitySubmissionReady,
                         currentAuthority,
                         archiveReconciliation);
-        boolean secretAuthorityReady = currentTestSecretAuthority().available();
+        TestSecretAuthority.Descriptor testSecretAuthority = currentTestSecretAuthority();
+        boolean secretAuthorityReady = testSecretAuthority.available();
         Map<String, Boolean> features = new LinkedHashMap<>(current.features());
         features.put("externalTestSecretAuthority",
                 testExecutionEndpointEnabled && secretAuthorityReady);
         features.put("durableTestSecretReauthorization",
                 testExecutionEndpointEnabled && secretAuthorityReady);
+        boolean dynamicSecretTrust = testExecutionEndpointEnabled
+                && "DYNAMIC_JWKS_ED25519".equals(
+                testSecretAuthority.properties().get("trustProviderType"))
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "trustAutomaticRefresh"));
+        Number secretRefreshInterval = testSecretAuthority.properties().get(
+                "trustRefreshIntervalSeconds") instanceof Number value ? value : null;
+        Number secretMaximumAge = testSecretAuthority.properties().get(
+                "trustMaximumSnapshotAgeSeconds") instanceof Number value ? value : null;
+        features.put("dynamicTestSecretAuthorityTrust", dynamicSecretTrust);
+        features.put("testSecretAuthorityTrustRefreshSlo", dynamicSecretTrust
+                && secretRefreshInterval != null && secretRefreshInterval.longValue() > 0
+                && secretMaximumAge != null
+                && secretMaximumAge.longValue() >= secretRefreshInterval.longValue()
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "trustConditionalRequests"))
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "trustFailClosedOnRefreshFailure")));
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),

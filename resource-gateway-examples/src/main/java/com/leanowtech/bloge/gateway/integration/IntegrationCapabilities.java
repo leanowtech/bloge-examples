@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustStore;
+import com.leanowtech.bloge.gateway.testing.api.DynamicJwksTestSecretAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityTrustStore;
@@ -479,6 +480,8 @@ public record IntegrationCapabilities(
                     TestSecretAuthorityResponse.SCHEMA_VERSION));
             objects.put("testSecretAuthorityTrustDescriptor", List.of(
                     TestSecretAuthorityTrustStore.Descriptor.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityTrustRefreshSnapshot", List.of(
+                    DynamicJwksTestSecretAuthorityTrustStore.RefreshSnapshot.SCHEMA_VERSION));
             objects.put("testSecretAuthorityDescriptor", List.of(
                     TestSecretAuthority.Descriptor.SCHEMA_VERSION));
             objects.put("effectiveExecutionPlan", List.of(
@@ -686,6 +689,8 @@ public record IntegrationCapabilities(
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
         features.put("externalTestSecretAuthority", false);
         features.put("durableTestSecretReauthorization", false);
+        features.put("dynamicTestSecretAuthorityTrust", false);
+        features.put("testSecretAuthorityTrustRefreshSlo", false);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);
         features.put("pureDslMutationPlanning", testExecutionEndpointEnabled);

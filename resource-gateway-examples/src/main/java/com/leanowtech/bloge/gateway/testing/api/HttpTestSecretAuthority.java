@@ -160,6 +160,12 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
                         trust.properties().getOrDefault("refreshState", "STATIC")),
                 Map.entry("trustAutomaticRefresh",
                         trust.properties().getOrDefault("automaticRefresh", false)),
+                Map.entry("trustRefreshIntervalSeconds",
+                        trust.properties().getOrDefault("refreshIntervalSeconds", 0L)),
+                Map.entry("trustMaximumSnapshotAgeSeconds",
+                        trust.properties().getOrDefault("maximumSnapshotAgeSeconds", 0L)),
+                Map.entry("trustConditionalRequests",
+                        trust.properties().getOrDefault("conditionalRequests", false)),
                 Map.entry("trustFailClosedOnRefreshFailure",
                         trust.properties().getOrDefault("failClosedOnRefreshFailure", true))));
     }

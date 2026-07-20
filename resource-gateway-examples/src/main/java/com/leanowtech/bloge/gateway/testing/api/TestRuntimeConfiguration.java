@@ -1206,6 +1206,8 @@ public class TestRuntimeConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "gateway.testing.test-secrets.authority.http",
             name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(prefix = "gateway.testing.test-secrets.authority.http.jwks",
+            name = "enabled", havingValue = "false", matchIfMissing = true)
     @ConditionalOnMissingBean(TestSecretAuthorityTrustStore.class)
     TestSecretAuthorityTrustStore testSecretAuthorityTrustStore(
             ObjectMapper objectMapper,
@@ -1224,6 +1226,70 @@ public class TestRuntimeConfiguration {
                 Duration.ofSeconds(maximumResponseLifetimeSeconds),
                 Duration.ofSeconds(clockSkewSeconds),
                 Duration.ofMillis(minimumRemainingValidityMillis), authorityKeysJson);
+    }
+
+    /**
+     * Bootstraps and continuously refreshes public test-secret authority keys from HTTPS JWKS.
+     *
+     * <p>Dynamic and static key sources are mutually exclusive. An enabled dynamic source must
+     * complete its first usable snapshot during startup; partial configuration and an unavailable
+     * authority therefore fail application assembly instead of silently selecting static keys.</p>
+     */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = "gateway.testing.test-secrets.authority.http",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(prefix = "gateway.testing.test-secrets.authority.http.jwks",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(TestSecretAuthorityTrustStore.class)
+    DynamicJwksTestSecretAuthorityTrustStore
+            dynamicJwksTestSecretAuthorityTrustStore(
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.test-secrets.authority.http.expected-authority-id:}")
+            String expectedAuthorityId,
+            @Value("${gateway.testing.test-secrets.authority.http.maximum-response-lifetime-seconds:60}")
+            long maximumResponseLifetimeSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.clock-skew-seconds:5}")
+            long clockSkewSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.minimum-remaining-validity-ms:100}")
+            long minimumRemainingValidityMillis,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.uri:}")
+            String jwksUri,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.refresh-interval-seconds:30}")
+            long refreshIntervalSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.unknown-key-refresh-interval-seconds:5}")
+            long unknownKeyRefreshIntervalSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.request-timeout-ms:3000}")
+            long requestTimeoutMillis,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.maximum-snapshot-age-seconds:60}")
+            long maximumSnapshotAgeSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.allow-insecure-loopback:false}")
+            boolean allowInsecureLoopback) {
+        URI uri;
+        try {
+            uri = URI.create(jwksUri == null ? "" : jwksUri.trim());
+        } catch (RuntimeException invalid) {
+            throw new IllegalArgumentException(
+                    "Test-secret authority JWKS URI is invalid", invalid);
+        }
+        return new DynamicJwksTestSecretAuthorityTrustStore(
+                objectMapper, expectedAuthorityId,
+                Duration.ofSeconds(maximumResponseLifetimeSeconds),
+                Duration.ofSeconds(clockSkewSeconds),
+                Duration.ofMillis(minimumRemainingValidityMillis),
+                new DynamicJwksTestSecretAuthorityTrustStore.Settings(
+                        uri, Duration.ofSeconds(refreshIntervalSeconds),
+                        Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
+                        Duration.ofMillis(requestTimeoutMillis),
+                        Duration.ofSeconds(maximumSnapshotAgeSeconds),
+                        allowInsecureLoopback));
+    }
+
+    /** Publishes payload-free Actuator health for dynamic test-secret authority trust. */
+    @Bean
+    @ConditionalOnBean(DynamicJwksTestSecretAuthorityTrustStore.class)
+    TestSecretAuthorityTrustHealth testSecretAuthorityTrustHealth(
+            DynamicJwksTestSecretAuthorityTrustStore trustStore) {
+        return new TestSecretAuthorityTrustHealth(trustStore);
     }
 
     /**

@@ -22,6 +22,8 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SECRET_AUTHORITY_REQUEST_V1);
             assertConstant(definitions, "response",
                     TestingProtocol.TEST_SECRET_AUTHORITY_RESPONSE_V1);
+            assertConstant(definitions, "trustRefreshSnapshot",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_TRUST_REFRESH_SNAPSHOT_V1);
         }
     }
 

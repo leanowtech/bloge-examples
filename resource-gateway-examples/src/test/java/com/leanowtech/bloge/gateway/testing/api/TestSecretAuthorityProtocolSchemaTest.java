@@ -26,6 +26,10 @@ class TestSecretAuthorityProtocolSchemaTest {
                 TestSecretAuthorityResponse.Decision.AUTHORIZED, "");
         TestSecretAuthorityTrustStore.Descriptor trust =
                 TestSecretAuthorityTrustStore.unavailable().descriptor();
+        DynamicJwksTestSecretAuthorityTrustStore.RefreshSnapshot refresh =
+                new DynamicJwksTestSecretAuthorityTrustStore.RefreshSnapshot(
+                        DynamicJwksTestSecretAuthorityTrustStore.RefreshSnapshot.SCHEMA_VERSION,
+                        true, "HEALTHY", 1, 1, NOW, 1, 0, "", 30, 60);
         TestSecretAuthority.Descriptor authority = new TestSecretAuthority.Descriptor(
                 "", true, "HTTPS_SIGNED_TEST_SECRET_AUTHORITY", AUTHORITY_ID,
                 Map.ofEntries(
@@ -52,6 +56,8 @@ class TestSecretAuthorityProtocolSchemaTest {
                 schema.at("/$defs/signature/properties"));
         assertProperties(objectMapper.valueToTree(trust),
                 schema.at("/$defs/trustDescriptor/properties"));
+        assertProperties(objectMapper.valueToTree(refresh),
+                schema.at("/$defs/trustRefreshSnapshot/properties"));
         assertProperties(objectMapper.valueToTree(authority),
                 schema.at("/$defs/authorityDescriptor/properties"));
 
@@ -59,13 +65,17 @@ class TestSecretAuthorityProtocolSchemaTest {
                 .isEqualTo(TestSecretAuthorityRequest.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/response/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSecretAuthorityResponse.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/trustRefreshSnapshot/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DynamicJwksTestSecretAuthorityTrustStore.RefreshSnapshot.SCHEMA_VERSION);
         assertThat(fieldNames(schema.at("/$defs/trustProperties/properties")))
                 .containsExactlyInAnyOrderElementsOf(
                         TestSecretAuthorityTrustStore.DESCRIPTOR_PROPERTIES);
         assertThat(fieldNames(schema.at("/$defs/authorityProperties/properties")))
                 .containsExactlyInAnyOrderElementsOf(TestSecretAuthority.DESCRIPTOR_PROPERTIES);
         assertThat(List.of("request", "response", "resolutionContext", "secretMaterial",
-                "signature", "trustDescriptor", "authorityDescriptor"))
+                "signature", "trustDescriptor", "trustRefreshSnapshot",
+                "authorityDescriptor"))
                 .allSatisfy(definition -> assertThat(schema.at("/$defs/" + definition
                         + "/additionalProperties").asBoolean()).isFalse());
     }

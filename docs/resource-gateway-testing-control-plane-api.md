@@ -130,6 +130,13 @@ Independent-store settings:
 | `gateway.testing.test-secrets.authority.http.minimum-remaining-validity-ms` | `RG_TEST_SECRET_AUTHORITY_MIN_REMAINING_MS` | `100`; less than response lifetime |
 | `gateway.testing.test-secrets.authority.http.allow-insecure-loopback` | `RG_TEST_SECRET_AUTHORITY_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
 | `gateway.testing.test-secrets.authority.http.authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_KEYS_JSON` | `[]`; strict public Ed25519 keys required when enabled |
+| `gateway.testing.test-secrets.authority.http.jwks.enabled` | `RG_TEST_SECRET_AUTHORITY_JWKS_ENABLED` | `false`; selects dynamic trust instead of static keys |
+| `gateway.testing.test-secrets.authority.http.jwks.uri` | `RG_TEST_SECRET_AUTHORITY_JWKS_URI` | empty; HTTPS required in dynamic mode |
+| `gateway.testing.test-secrets.authority.http.jwks.refresh-interval-seconds` | `RG_TEST_SECRET_AUTHORITY_JWKS_REFRESH_SECONDS` | `30`; 1..3600 |
+| `gateway.testing.test-secrets.authority.http.jwks.unknown-key-refresh-interval-seconds` | `RG_TEST_SECRET_AUTHORITY_JWKS_UNKNOWN_KEY_REFRESH_SECONDS` | `5`; 1..300 global cooldown |
+| `gateway.testing.test-secrets.authority.http.jwks.request-timeout-ms` | `RG_TEST_SECRET_AUTHORITY_JWKS_TIMEOUT_MS` | `3000`; 100..30000 |
+| `gateway.testing.test-secrets.authority.http.jwks.maximum-snapshot-age-seconds` | `RG_TEST_SECRET_AUTHORITY_JWKS_MAXIMUM_AGE_SECONDS` | `60`; hard fail-closed age, at least refresh plus timeout |
+| `gateway.testing.test-secrets.authority.http.jwks.allow-insecure-loopback` | `RG_TEST_SECRET_AUTHORITY_JWKS_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
 | `gateway.testing.stability-jobs.api.retry-after-seconds` | `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` | `5` |
 | `gateway.testing.stability-jobs.authority.http.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED` | `false` |
 | `gateway.testing.stability-jobs.authority.http.base-uri` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI` | empty; required when enabled |
@@ -1095,10 +1102,47 @@ fails closed. The standalone authority schema is
 
 Partial or malformed enabled configuration aborts startup; simultaneously enabling the built-in
 adapter and contributing a custom `TestSecretAuthority` is also rejected as ambiguous. Capability
-readiness is reevaluated from the key-free descriptor on every probe. The built-in trust source is
-currently static and therefore requires restart for rotation; dynamic JWKS/revocation propagation,
-cross-replica generation convergence, endpoint HA/chaos certification, and an authority SLO health
-monitor remain explicit follow-up work.
+readiness is reevaluated from the key-free descriptor on every probe. Static keys remain the
+default built-in trust mode.
+
+Set `RG_TEST_SECRET_AUTHORITY_JWKS_ENABLED=true` to select restart-free dynamic trust. In that mode
+`RG_TEST_SECRET_AUTHORITY_KEYS_JSON` is ignored and startup must complete one usable fetch from
+`RG_TEST_SECRET_AUTHORITY_JWKS_URI`. The endpoint returns a strict RFC 8037-style public Ed25519
+JWKS; only `OKP` / `Ed25519` / `EdDSA`, optional `use=sig`, exact `key_ops=["verify"]`, bounded
+`nbf`/`exp`, and boolean `enabled`/`revoked` are accepted. Any private key member, duplicate or
+unknown field, unsupported algorithm, empty or oversized set, invalid lifecycle, non-JSON response,
+redirect, timeout, or body above 256 KiB makes the complete local snapshot unavailable.
+
+```json
+{
+  "keys": [
+    {
+      "kid": "secret-authority-key-2026-08",
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "alg": "EdDSA",
+      "use": "sig",
+      "key_ops": ["verify"],
+      "x": "<32-byte base64url public coordinate>",
+      "nbf": 1785542400,
+      "exp": 1790812800,
+      "enabled": true,
+      "revoked": false
+    }
+  ]
+}
+```
+
+Refresh publishes one immutable generation under a single lock and uses `If-None-Match` when an
+ETag exists. Concurrent unknown-`kid` responses share one cooldown-bounded synchronous refresh.
+An unsuccessful refresh immediately blocks secret resolution instead of trusting an ambiguous
+stale generation; successful 304 or full refresh restores service. Even without an observed
+failure, `maximum-snapshot-age-seconds` is a hard local expiry fence. The payload-free Actuator
+indicator exposes only state, counts, last success, failure family, interval, and maximum age.
+Capability flags `dynamicTestSecretAuthorityTrust` and `testSecretAuthorityTrustRefreshSlo` prove
+automatic refresh, conditional requests, bounded age, and fail-closed semantics without exposing
+URI, ETag, key ids or material. Cross-replica trust-generation convergence, signed JWKS witness,
+endpoint/mTLS/KMS HA and external chaos/alert certification remain explicit follow-up work.
 
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 

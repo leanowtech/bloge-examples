@@ -738,6 +738,105 @@ class TestRuntimeProfileIsolationTest {
     }
 
     @Test
+    void dynamicTestSecretJwksBootstrapsAndPublishesRefreshTruth() throws Exception {
+        KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        byte[] document = authorityJwks(keyPair, "secret-key-dynamic")
+                .getBytes(StandardCharsets.UTF_8);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/jwks", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/jwk-set+json");
+            exchange.getResponseHeaders().add("ETag", "secret-generation-1");
+            exchange.sendResponseHeaders(200, document.length);
+            try (var body = exchange.getResponseBody()) {
+                body.write(document);
+            }
+        });
+        server.start();
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("gateway.testing.test-secrets.authority.http.enabled", "true");
+        properties.put("gateway.testing.test-secrets.authority.http.base-uri",
+                "http://127.0.0.1:18082");
+        properties.put("gateway.testing.test-secrets.authority.http.allow-insecure-loopback",
+                "true");
+        properties.put("gateway.testing.test-secrets.authority.http.expected-authority-id",
+                "secret-authority.example");
+        properties.put("gateway.testing.test-secrets.authority.http.jwks.enabled", "true");
+        properties.put("gateway.testing.test-secrets.authority.http.jwks.uri",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/jwks");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.allow-insecure-loopback",
+                "true");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.refresh-interval-seconds",
+                "3600");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.maximum-snapshot-age-seconds",
+                "3610");
+        try {
+            try (AnnotationConfigApplicationContext context = context(properties, 0, "test")) {
+                assertThat(context.getBeansOfType(TestSecretAuthorityTrustStore.class))
+                        .hasSize(1).allSatisfy((name, trust) -> {
+                            assertThat(trust).isInstanceOf(
+                                    DynamicJwksTestSecretAuthorityTrustStore.class);
+                            assertThat(trust.descriptor()).satisfies(descriptor -> {
+                                assertThat(descriptor.available()).isTrue();
+                                assertThat(descriptor.providerType())
+                                        .isEqualTo("DYNAMIC_JWKS_ED25519");
+                                assertThat(descriptor.properties())
+                                        .containsEntry("refreshState", "HEALTHY")
+                                        .containsEntry("automaticRefresh", true)
+                                        .containsEntry("conditionalRequests", true)
+                                        .containsEntry("failClosedOnRefreshFailure", true);
+                            });
+                        });
+                assertThat(context.getBean(TestSecretAuthority.class).descriptor())
+                        .satisfies(descriptor -> {
+                            assertThat(descriptor.available()).isTrue();
+                            assertThat(descriptor.properties())
+                                    .containsEntry("trustProviderType",
+                                            "DYNAMIC_JWKS_ED25519")
+                                    .containsEntry("trustRefreshState", "HEALTHY")
+                                    .containsEntry("trustAutomaticRefresh", true)
+                                    .containsEntry("trustRefreshIntervalSeconds", 3600L)
+                                    .containsEntry("trustMaximumSnapshotAgeSeconds", 3610L)
+                                    .containsEntry("trustConditionalRequests", true)
+                                    .containsEntry("trustFailClosedOnRefreshFailure", true)
+                                    .doesNotContainKeys("jwksUri", "baseUri", "etag",
+                                            "keyId", "publicKey", "privateKey");
+                        });
+                assertThat(context.getBean(TestSecretAuthorityTrustHealth.class)
+                        .health().getStatus()).isEqualTo(Status.UP);
+                assertThat(context.getBeansOfType(
+                        ConfiguredTestSecretAuthorityTrustStore.class)).isEmpty();
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void enabledDynamicTestSecretJwksRejectsMissingRemoteConfiguration() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("gateway.testing.test-secrets.authority.http.enabled", "true");
+        properties.put("gateway.testing.test-secrets.authority.http.base-uri",
+                "http://127.0.0.1:18082");
+        properties.put("gateway.testing.test-secrets.authority.http.allow-insecure-loopback",
+                "true");
+        properties.put("gateway.testing.test-secrets.authority.http.expected-authority-id",
+                "secret-authority.example");
+        properties.put("gateway.testing.test-secrets.authority.http.jwks.enabled", "true");
+        AnnotationConfigApplicationContext context =
+                unrefreshedContext(properties, 0, "test");
+        try {
+            assertThatThrownBy(context::refresh).rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("JWKS URI");
+        } finally {
+            context.close();
+        }
+    }
+
+    @Test
     void builtInSignedHttpAuthorityAssemblesWithoutADeploymentAuthorizer() throws Exception {
         Map<String, Object> properties = builtInAuthorityProperties();
         try (AnnotationConfigApplicationContext context = context(properties, 0, "test")) {

@@ -21,7 +21,8 @@ public interface TestSecretAuthority {
             "challengeBound", "credentialFree", "redirectsFollowed", "automaticRetries",
             "privateMaterialPresent", "requestTimeoutMillis", "trustProviderType",
             "trustAvailable", "trustRefreshState", "trustAutomaticRefresh",
-            "trustFailClosedOnRefreshFailure");
+            "trustRefreshIntervalSeconds", "trustMaximumSnapshotAgeSeconds",
+            "trustConditionalRequests", "trustFailClosedOnRefreshFailure");
 
     /**
      * Resolves the exact requested closure or fails closed.

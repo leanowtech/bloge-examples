@@ -297,13 +297,17 @@ and [durable-progress verification](../docs/resource-gateway-execution-data-cont
 
 Fixture `executionServices` v2 can resolve opaque test-secret references without storing plaintext.
 The default authority is unavailable. Set `RG_TEST_SECRET_AUTHORITY_HTTP_ENABLED=true`, the HTTPS
-base URI, exact authority id, and a strict public Ed25519 key array to enable the built-in adapter in
-`test`/`staging`. It calls `/v1/test-secret-resolutions` once per fresh or recovered run with a new
+base URI, exact authority id, and either a strict public Ed25519 key array or the opt-in dynamic JWKS
+settings to enable the built-in adapter in `test`/`staging`. It calls
+`/v1/test-secret-resolutions` once per fresh or recovered run with a new
 256-bit challenge and accepts only an exact short-lived signed `AUTHORIZED` or `DENIED` response.
 Unsigned HTTP denial, redirect, timeout, malformed/oversized response, stale or revoked key, closure
 drift, and signature failure all fail closed; values remain run-scoped and never enter a checkpoint.
-The current built-in trust source is static, so rotation needs restart until dynamic JWKS and
-cross-replica trust convergence land. See the
+Set `RG_TEST_SECRET_AUTHORITY_JWKS_ENABLED=true` and its HTTPS URI to get atomic ETag refresh,
+unknown-key rotation, explicit `enabled`/`revoked` propagation, a hard maximum snapshot age, and
+payload-free Actuator health without restart. Static and dynamic key modes are mutually exclusive;
+dynamic bootstrap or any ambiguous refresh fails closed. Cross-replica generation convergence and
+authority HA/chaos certification remain open. See the
 [testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#421a-control-identity-feature-flag-and-secret-built-ins).
 
 The durable stability queue and authenticated asynchronous submit/query/cancel protocol are present

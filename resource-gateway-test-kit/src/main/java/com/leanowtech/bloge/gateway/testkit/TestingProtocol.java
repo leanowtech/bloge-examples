@@ -27,6 +27,9 @@ public final class TestingProtocol {
     /** Secret-bearing signed test-secret authority response wire version. */
     public static final String TEST_SECRET_AUTHORITY_RESPONSE_V1 =
             "bloge.testSecretAuthorityResponse.v1";
+    /** Payload-free dynamic test-secret authority trust refresh snapshot version. */
+    public static final String TEST_SECRET_AUTHORITY_TRUST_REFRESH_SNAPSHOT_V1 =
+            "bloge.testSecretAuthorityTrustRefreshSnapshot.v1";
     /** Fixture rule wire version. */
     public static final String FIXTURE_RULE_V1 = "bloge.fixtureRule.v1";
     /** Fixture registration request wire version. */
