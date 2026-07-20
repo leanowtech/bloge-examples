@@ -266,6 +266,14 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
                 ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim
                         .SCHEMA_VERSION,
                 request.ceremonyId(), "worker-a", 1L, now.plusSeconds(30), proposal);
+        var heartbeat = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatCommand(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatCommand
+                        .SCHEMA_VERSION,
+                "heartbeat-a", claim, 30);
+        var successorClaim = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim
+                        .SCHEMA_VERSION,
+                request.ceremonyId(), "worker-a", 2L, now.plusSeconds(60), proposal);
         var snapshot = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonySnapshot(
                 ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonySnapshot
                         .SCHEMA_VERSION,
@@ -274,8 +282,26 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
                 approval.approvalRequestId(),
                 "sha256:" + "e".repeat(64), approval.checkerId(), now,
                 now.plusSeconds(300), claim.workerId(), claim.claimVersion(),
-                claim.claimUntil(), 1L, null, null, null, "", null, now,
+                claim.claimUntil(), "", "", null, 0L,
+                1L, null, null, null, "", null, now,
                 "sha256:" + "f".repeat(64));
+        var renewedSnapshot = new ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                .CeremonySnapshot(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonySnapshot
+                        .SCHEMA_VERSION,
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.EXECUTING,
+                proposal, "sha256:" + "d".repeat(64), now, now.plusSeconds(300),
+                approval.approvalRequestId(),
+                "sha256:" + "e".repeat(64), approval.checkerId(), now,
+                now.plusSeconds(300), successorClaim.workerId(),
+                successorClaim.claimVersion(), successorClaim.claimUntil(),
+                heartbeat.heartbeatRequestId(), "sha256:" + "1".repeat(64), now,
+                1L, 1L, null, null, null, "", null, now,
+                "sha256:" + "2".repeat(64));
+        var heartbeatResult = new ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                .HeartbeatResult(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatDisposition.RENEWED,
+                successorClaim, renewedSnapshot);
         var execution = new ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionResult(
                 ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus.BUSY,
                 snapshot, null);
@@ -289,12 +315,17 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
                 schema.at("/$defs/acquisitionCommand/properties"));
         assertProperties(objectMapper.valueToTree(claim),
                 schema.at("/$defs/executionClaim/properties"));
+        assertProperties(objectMapper.valueToTree(heartbeat),
+                schema.at("/$defs/heartbeatCommand/properties"));
         assertProperties(objectMapper.valueToTree(snapshot),
                 schema.at("/$defs/ceremonySnapshot/properties"));
+        assertProperties(objectMapper.valueToTree(heartbeatResult),
+                schema.at("/$defs/heartbeatResult/properties"));
         assertProperties(objectMapper.valueToTree(execution),
                 schema.at("/$defs/executionResult/properties"));
         assertThat(List.of("ceremonyProposal", "approvalCommand", "acquisitionCommand",
-                "executionClaim", "ceremonySnapshot", "executionResult"))
+                "executionClaim", "heartbeatCommand", "ceremonySnapshot",
+                "heartbeatResult", "executionResult"))
                 .allSatisfy(definition -> assertThat(schema.at(
                         "/$defs/" + definition + "/additionalProperties").asBoolean())
                         .isFalse());
@@ -304,11 +335,35 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
         assertThat(schema.at(
                 "/$defs/acquisitionCommand/properties/leaseDurationSeconds/maximum").asInt())
                 .isEqualTo(300);
+        assertThat(schema.at(
+                "/$defs/ceremonySnapshot/properties/heartbeatCount/maximum").asLong())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .MAXIMUM_HEARTBEATS_PER_ATTEMPT);
+        assertThat(schema.at(
+                "/$defs/ceremonySnapshot/properties/schemaVersion/const").asText())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonySnapshot
+                        .SCHEMA_VERSION);
+        assertThat(schema.path("$id").asText()).endsWith(
+                "external-sequence-anchor-bootstrap-root-ceremony-journal-v2.schema.json");
         for (String forbidden : List.of("privateKey", "credential", "secret", "endpoint",
                 "providerName", "errorMessage", "exception", "claimToken")) {
             assertThat(Files.readString(journalSchemaPath()))
                     .doesNotContain("\"" + forbidden + "\"");
         }
+    }
+
+    @Test
+    void legacyDurableCeremonySchemaRemainsAnUnmodifiedV1Contract() throws Exception {
+        JsonNode legacy = objectMapper.readTree(Files.readString(legacyJournalSchemaPath()));
+
+        assertThat(legacy.at(
+                "/$defs/ceremonySnapshot/properties/schemaVersion/const").asText())
+                .isEqualTo("bloge.externalSequenceAnchorBootstrapRootCeremonySnapshot.v1");
+        assertThat(legacy.at("/$defs/ceremonySnapshot/properties")
+                .has("heartbeatCount")).isFalse();
+        assertThat(legacy.at("/$defs").has("heartbeatCommand")).isFalse();
+        assertThat(legacy.path("$id").asText()).endsWith(
+                "external-sequence-anchor-bootstrap-root-ceremony-journal-v1.schema.json");
     }
 
     private static Path schemaPath() {
@@ -327,6 +382,11 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
     }
 
     private static Path journalSchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-ceremony-journal-v2.schema.json");
+    }
+
+    private static Path legacyJournalSchemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-ceremony-journal-v1.schema.json");
     }

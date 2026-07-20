@@ -8,6 +8,8 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.CompletionDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.FailureDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ProposalResult;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator.LeaseGuard;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator.LeaseLostException;
 
 import java.util.List;
 import java.util.Objects;
@@ -17,8 +19,9 @@ import java.util.Optional;
  * Crash-recoverable maker/checker coordinator around the pure bootstrap-root producer.
  *
  * <p>The service preflights before proposal persistence, calls opaque signers only after an
- * independent database approval and execution lease, and commits an outcome only under the exact
- * live fence. A crash after signer side effects but before outcome commit is recovered by lease
+ * independent database approval and automatically renewed execution lease, and commits an outcome
+ * only under the latest exact live fence. A crash after signer side effects but before outcome
+ * commit is recovered by lease
  * takeover and exact deterministic request replay. Signing adapters used here must therefore
  * implement the idempotency contract on
  * {@link ExternalSequenceAnchorBootstrapRootSigningAuthority#sign}.</p>
@@ -27,10 +30,11 @@ import java.util.Optional;
  * coordinator does not replace enterprise IAM, HSM/KMS custody, mTLS, publisher non-equivocation,
  * or externally retained audit evidence.</p>
  */
-public final class ExternalSequenceAnchorBootstrapRootCeremonyService {
+public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements AutoCloseable {
 
     private final ExternalSequenceAnchorBootstrapRootCeremonyProducer producer;
     private final ExternalSequenceAnchorBootstrapRootCeremonyJournal journal;
+    private final ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator leaseCoordinator;
 
     /**
      * Creates a coordinator that refuses non-durable journal implementations.
@@ -41,8 +45,17 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService {
     public ExternalSequenceAnchorBootstrapRootCeremonyService(
             ExternalSequenceAnchorBootstrapRootCeremonyProducer producer,
             ExternalSequenceAnchorBootstrapRootCeremonyJournal journal) {
+        this(producer, journal,
+                new ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator(journal));
+    }
+
+    ExternalSequenceAnchorBootstrapRootCeremonyService(
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer producer,
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal journal,
+            ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator leaseCoordinator) {
         this.producer = Objects.requireNonNull(producer, "producer");
         this.journal = Objects.requireNonNull(journal, "journal");
+        this.leaseCoordinator = Objects.requireNonNull(leaseCoordinator, "leaseCoordinator");
         if (!journal.durable()) {
             throw new IllegalArgumentException(
                     "Bootstrap-root ceremony service requires a durable journal");
@@ -112,7 +125,7 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService {
      *
      * @param ceremonyId exact durable proposal identity
      * @param workerId stable pre-authenticated worker identity
-     * @param leaseDurationSeconds database-clock lease from 1 through 300 seconds
+     * @param leaseDurationSeconds database-clock auto-renewed lease from 3 through 300 seconds
      * @param authorizingAuthorities runtime old-root authorities
      * @param incomingAuthorities runtime successor-root authorities
      * @return bounded execution disposition without provider diagnostics or partial artifacts
@@ -124,6 +137,10 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService {
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
                     authorizingAuthorities,
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
+        if (leaseDurationSeconds < 3L || leaseDurationSeconds > 300L) {
+            throw new IllegalArgumentException(
+                    "Ceremony auto-heartbeat lease must be from three through 300 seconds");
+        }
         var acquisition = journal.acquire(new AcquisitionCommand(
                 AcquisitionCommand.SCHEMA_VERSION, ceremonyId, workerId,
                 leaseDurationSeconds));
@@ -144,40 +161,57 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService {
             };
         }
 
-        var claim = acquisition.claim();
-        CeremonyProposal proposal = claim.proposal();
-        ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome outcome;
+        LeaseGuard guard;
         try {
-            var currentPreflight = proposal.currentBundle() == null
-                    ? producer.preflight(proposal.request(), authorizingAuthorities,
-                    incomingAuthorities)
-                    : producer.preflight(proposal.currentBundle(), proposal.request(),
-                    authorizingAuthorities, incomingAuthorities);
-            if (!proposal.preflight().equals(currentPreflight)) {
-                return failed(claim,
-                        ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
-                                .SIGNER_BINDING_INVALID);
-            }
-            outcome = proposal.currentBundle() == null
-                    ? producer.begin(proposal.request(), authorizingAuthorities,
-                    incomingAuthorities)
-                    : producer.append(proposal.currentBundle(), proposal.request(),
-                    authorizingAuthorities, incomingAuthorities);
-        } catch (ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyException failure) {
-            return failed(claim, failure.reason());
+            guard = leaseCoordinator.monitor(acquisition.claim(), acquisition.snapshot(),
+                    leaseDurationSeconds);
+        } catch (RuntimeException schedulingFailure) {
+            return new ExecutionResult(ExecutionStatus.FENCE_REJECTED,
+                    acquisition.snapshot(), null);
         }
 
-        var completion = journal.complete(claim, outcome);
-        return switch (completion.disposition()) {
-            case PRODUCED -> new ExecutionResult(ExecutionStatus.PRODUCED,
-                    completion.snapshot(), null);
-            case IDEMPOTENT_REPLAY -> new ExecutionResult(ExecutionStatus.IDEMPOTENT_REPLAY,
-                    completion.snapshot(), null);
-            case FENCE_REJECTED -> new ExecutionResult(ExecutionStatus.FENCE_REJECTED,
-                    completion.snapshot(), null);
-            case OUTCOME_CONFLICT -> throw new IllegalStateException(
-                    "Bootstrap-root ceremony terminal outcome conflicts with replay");
-        };
+        try (guard) {
+            CeremonyProposal proposal = acquisition.claim().proposal();
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome outcome;
+            try {
+                var currentPreflight = proposal.currentBundle() == null
+                        ? producer.preflight(proposal.request(), authorizingAuthorities,
+                        incomingAuthorities)
+                        : producer.preflight(proposal.currentBundle(), proposal.request(),
+                        authorizingAuthorities, incomingAuthorities);
+                if (!proposal.preflight().equals(currentPreflight)) {
+                    return failed(guard,
+                            ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
+                                    .SIGNER_BINDING_INVALID);
+                }
+                outcome = proposal.currentBundle() == null
+                        ? producer.begin(proposal.request(), authorizingAuthorities,
+                        incomingAuthorities)
+                        : producer.append(proposal.currentBundle(), proposal.request(),
+                        authorizingAuthorities, incomingAuthorities);
+            } catch (ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyException
+                     failure) {
+                return failed(guard, failure.reason());
+            }
+
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim terminalClaim;
+            try {
+                terminalClaim = guard.freeze();
+            } catch (LeaseLostException leaseLost) {
+                return fenceRejected(leaseLost);
+            }
+            var completion = journal.complete(terminalClaim, outcome);
+            return switch (completion.disposition()) {
+                case PRODUCED -> new ExecutionResult(ExecutionStatus.PRODUCED,
+                        completion.snapshot(), null);
+                case IDEMPOTENT_REPLAY -> new ExecutionResult(ExecutionStatus.IDEMPOTENT_REPLAY,
+                        completion.snapshot(), null);
+                case FENCE_REJECTED -> new ExecutionResult(ExecutionStatus.FENCE_REJECTED,
+                        completion.snapshot(), null);
+                case OUTCOME_CONFLICT -> throw new IllegalStateException(
+                        "Bootstrap-root ceremony terminal outcome conflicts with replay");
+            };
+        }
     }
 
     /**
@@ -190,10 +224,22 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService {
         return journal.snapshot(ceremonyId);
     }
 
+    /** Stops the owned heartbeat scheduler and invalidates any in-process guarded attempt. */
+    @Override
+    public void close() {
+        leaseCoordinator.close();
+    }
+
     private ExecutionResult failed(
-            ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim claim,
+            LeaseGuard guard,
             ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason reason) {
-        var release = journal.release(claim, reason);
+        ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim terminalClaim;
+        try {
+            terminalClaim = guard.freeze();
+        } catch (LeaseLostException leaseLost) {
+            return fenceRejected(leaseLost);
+        }
+        var release = journal.release(terminalClaim, reason);
         if (release.disposition() == FailureDisposition.FENCE_REJECTED) {
             return new ExecutionResult(ExecutionStatus.FENCE_REJECTED,
                     release.snapshot(), reason);
@@ -201,6 +247,11 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService {
         return new ExecutionResult(release.disposition() == FailureDisposition.EXPIRED
                 ? ExecutionStatus.EXPIRED : ExecutionStatus.FAILED,
                 release.snapshot(), reason);
+    }
+
+    private static ExecutionResult fenceRejected(LeaseLostException failure) {
+        return new ExecutionResult(ExecutionStatus.FENCE_REJECTED,
+                failure.lastVerifiedSnapshot(), null);
     }
 
     /** Bounded coordinator result status. */
@@ -235,7 +286,8 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService {
      *
      * @param status coordinator outcome
      * @param snapshot current integrity-verified projection, or {@code null} when not found
-     * @param failureReason bounded producer failure for failed or fence-lost attempts
+     * @param failureReason bounded producer failure for failed attempts, or an optional producer
+     *                      failure observed before a terminal journal fence rejection
      */
     public record ExecutionResult(
             ExecutionStatus status,

@@ -1,0 +1,356 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-ceremony-journal-v2.schema.json",
+  "title": "Resource Gateway Durable Bootstrap Root Ceremony Journal v2",
+  "$ref": "#/$defs/ceremonySnapshot",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "instant": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "emptyOrIdentifier": {
+      "oneOf": [
+        { "const": "" },
+        { "$ref": "#/$defs/identifier" }
+      ]
+    },
+    "emptyOrFingerprint": {
+      "oneOf": [
+        { "const": "" },
+        { "$ref": "#/$defs/fingerprint" }
+      ]
+    },
+    "nullableInstant": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/instant" }
+      ]
+    },
+    "failureReason": {
+      "type": "string",
+      "enum": [
+        "INVALID_CURRENT_CHAIN", "STALE_PREDECESSOR", "POLICY_NOT_ACCEPTED",
+        "CHAIN_LIMIT_REACHED", "CLOCK_OUT_OF_BOUNDS", "INVALID_SUCCESSOR_LIFECYCLE",
+        "SIGNER_BINDING_INVALID", "PREFLIGHT_QUORUM_UNAVAILABLE",
+        "SIGNING_QUORUM_UNAVAILABLE", "SELF_VERIFICATION_FAILED"
+      ]
+    },
+    "ceremonyProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "request", "currentBundle", "preflight", "makerId",
+        "proposalDurationSeconds"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootCeremonyProposal.v1"
+        },
+        "request": {
+          "$ref": "external-sequence-anchor-bootstrap-root-ceremony-v1.schema.json#/$defs/rotationRequest"
+        },
+        "currentBundle": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "$ref": "external-sequence-anchor-bootstrap-root-bundle-v1.schema.json#/$defs/bundle"
+            }
+          ]
+        },
+        "preflight": {
+          "$ref": "external-sequence-anchor-bootstrap-root-ceremony-v1.schema.json#/$defs/ceremonyPreflight"
+        },
+        "makerId": { "$ref": "#/$defs/identifier" },
+        "proposalDurationSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      }
+    },
+    "approvalCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "ceremonyId", "approvalRequestId", "checkerId",
+        "approvalDurationSeconds"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootCeremonyApprovalCommand.v1"
+        },
+        "ceremonyId": { "$ref": "#/$defs/identifier" },
+        "approvalRequestId": { "$ref": "#/$defs/identifier" },
+        "checkerId": { "$ref": "#/$defs/identifier" },
+        "approvalDurationSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      }
+    },
+    "acquisitionCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "ceremonyId", "workerId", "leaseDurationSeconds"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootCeremonyAcquisition.v1"
+        },
+        "ceremonyId": { "$ref": "#/$defs/identifier" },
+        "workerId": { "$ref": "#/$defs/identifier" },
+        "leaseDurationSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        }
+      }
+    },
+    "executionClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "ceremonyId", "workerId", "claimVersion", "claimUntil", "proposal"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootCeremonyClaim.v1"
+        },
+        "ceremonyId": { "$ref": "#/$defs/identifier" },
+        "workerId": { "$ref": "#/$defs/identifier" },
+        "claimVersion": { "type": "integer", "minimum": 1 },
+        "claimUntil": { "$ref": "#/$defs/instant" },
+        "proposal": { "$ref": "#/$defs/ceremonyProposal" }
+      }
+    },
+    "heartbeatCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "heartbeatRequestId", "claim", "leaseDurationSeconds"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootCeremonyHeartbeat.v1"
+        },
+        "heartbeatRequestId": { "$ref": "#/$defs/identifier" },
+        "claim": { "$ref": "#/$defs/executionClaim" },
+        "leaseDurationSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        }
+      }
+    },
+    "ceremonySnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "state", "proposal", "proposalFingerprint", "submittedAt",
+        "proposalUntil",
+        "approvalRequestId", "approvalFingerprint", "checkerId", "approvedAt",
+        "approvalUntil", "claimOwner", "claimVersion", "claimUntil",
+        "heartbeatRequestId", "heartbeatFingerprint", "heartbeatAt", "heartbeatCount",
+        "attemptCount",
+        "lastFailure", "lastFailedAt", "outcome", "outcomeFingerprint", "completedAt",
+        "updatedAt", "recordFingerprint"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootCeremonySnapshot.v2"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "PENDING_APPROVAL", "APPROVED", "EXECUTING", "PRODUCED",
+            "PROPOSAL_EXPIRED", "APPROVAL_EXPIRED"
+          ]
+        },
+        "proposal": { "$ref": "#/$defs/ceremonyProposal" },
+        "proposalFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "submittedAt": { "$ref": "#/$defs/instant" },
+        "proposalUntil": { "$ref": "#/$defs/instant" },
+        "approvalRequestId": { "$ref": "#/$defs/emptyOrIdentifier" },
+        "approvalFingerprint": { "$ref": "#/$defs/emptyOrFingerprint" },
+        "checkerId": { "$ref": "#/$defs/emptyOrIdentifier" },
+        "approvedAt": { "$ref": "#/$defs/nullableInstant" },
+        "approvalUntil": { "$ref": "#/$defs/nullableInstant" },
+        "claimOwner": { "$ref": "#/$defs/emptyOrIdentifier" },
+        "claimVersion": { "type": "integer", "minimum": 0 },
+        "claimUntil": { "$ref": "#/$defs/nullableInstant" },
+        "heartbeatRequestId": { "$ref": "#/$defs/emptyOrIdentifier" },
+        "heartbeatFingerprint": { "$ref": "#/$defs/emptyOrFingerprint" },
+        "heartbeatAt": { "$ref": "#/$defs/nullableInstant" },
+        "heartbeatCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "attemptCount": { "type": "integer", "minimum": 0 },
+        "lastFailure": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/failureReason" }
+          ]
+        },
+        "lastFailedAt": { "$ref": "#/$defs/nullableInstant" },
+        "outcome": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "$ref": "external-sequence-anchor-bootstrap-root-ceremony-v1.schema.json#/$defs/ceremonyOutcome"
+            }
+          ]
+        },
+        "outcomeFingerprint": { "$ref": "#/$defs/emptyOrFingerprint" },
+        "completedAt": { "$ref": "#/$defs/nullableInstant" },
+        "updatedAt": { "$ref": "#/$defs/instant" },
+        "recordFingerprint": { "$ref": "#/$defs/fingerprint" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": { "enum": ["PENDING_APPROVAL", "PROPOSAL_EXPIRED"] }
+            }
+          },
+          "then": {
+            "properties": {
+              "approvalRequestId": { "const": "" },
+              "approvalFingerprint": { "const": "" },
+              "checkerId": { "const": "" },
+              "approvedAt": { "type": "null" },
+              "approvalUntil": { "type": "null" }
+            }
+          },
+          "else": {
+            "properties": {
+              "approvalRequestId": { "$ref": "#/$defs/identifier" },
+              "approvalFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "checkerId": { "$ref": "#/$defs/identifier" },
+              "approvedAt": { "$ref": "#/$defs/instant" },
+              "approvalUntil": { "$ref": "#/$defs/instant" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "EXECUTING" } } },
+          "then": {
+            "properties": {
+              "claimOwner": { "$ref": "#/$defs/identifier" },
+              "claimVersion": { "type": "integer", "minimum": 1 },
+              "claimUntil": { "$ref": "#/$defs/instant" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "PRODUCED" } } },
+          "then": {
+            "properties": {
+              "outcome": {
+                "$ref": "external-sequence-anchor-bootstrap-root-ceremony-v1.schema.json#/$defs/ceremonyOutcome"
+              },
+              "outcomeFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "completedAt": { "$ref": "#/$defs/instant" }
+            }
+          },
+          "else": {
+            "properties": {
+              "outcome": { "type": "null" },
+              "outcomeFingerprint": { "const": "" },
+              "completedAt": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "heartbeatCount": { "const": 0 } } },
+          "then": {
+            "properties": {
+              "heartbeatRequestId": { "const": "" },
+              "heartbeatFingerprint": { "const": "" },
+              "heartbeatAt": { "type": "null" }
+            }
+          },
+          "else": {
+            "properties": {
+              "heartbeatRequestId": { "$ref": "#/$defs/identifier" },
+              "heartbeatFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "heartbeatAt": { "$ref": "#/$defs/instant" }
+            }
+          }
+        }
+      ]
+    },
+    "heartbeatResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disposition", "claim", "snapshot"],
+      "properties": {
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "RENEWED", "IDEMPOTENT_REPLAY", "IDEMPOTENCY_CONFLICT",
+            "FENCE_REJECTED", "NOT_EXTENDED", "EXPIRED", "PRODUCED",
+            "LIMIT_REACHED"
+          ]
+        },
+        "claim": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/executionClaim" }
+          ]
+        },
+        "snapshot": { "$ref": "#/$defs/ceremonySnapshot" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "disposition": { "enum": ["RENEWED", "IDEMPOTENT_REPLAY"] }
+            }
+          },
+          "then": {
+            "properties": { "claim": { "$ref": "#/$defs/executionClaim" } }
+          },
+          "else": {
+            "properties": { "claim": { "type": "null" } }
+          }
+        }
+      ]
+    },
+    "executionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "snapshot", "failureReason"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "PRODUCED", "IDEMPOTENT_REPLAY", "NOT_APPROVED", "BUSY", "EXPIRED",
+            "NOT_FOUND", "FAILED", "FENCE_REJECTED"
+          ]
+        },
+        "snapshot": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/ceremonySnapshot" }
+          ]
+        },
+        "failureReason": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/failureReason" }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -41,9 +41,20 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
     Acquisition acquire(AcquisitionCommand command);
 
     /**
+     * Replaces one exact live execution claim with a database-issued successor claim.
+     *
+     * <p>The most recently committed heartbeat is exactly replayable by request id. A new
+     * acquisition clears that bounded replay slot so a prior attempt cannot revive its claim.</p>
+     *
+     * @param command idempotent heartbeat bound to the complete predecessor claim
+     * @return renewal, replay, conflict, expiry, or fence disposition and current snapshot
+     */
+    HeartbeatResult heartbeat(HeartbeatCommand command);
+
+    /**
      * Atomically commits one complete producer outcome under the exact live execution fence.
      *
-     * @param claim exact claim returned by a successful acquisition
+     * @param claim latest exact claim returned by acquisition or a successful heartbeat
      * @param outcome complete locally verified producer outcome
      * @return terminal commit disposition and current snapshot
      */
@@ -57,7 +68,7 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
      * <p>When the exact claim observes that approval has already elapsed, the journal persists the
      * deterministic expiry but does not attribute a failure reported after the fence deadline.</p>
      *
-     * @param claim exact claim returned by a successful acquisition
+     * @param claim latest exact claim returned by acquisition or a successful heartbeat
      * @param reason bounded producer failure without provider diagnostics
      * @return release, expiry, or fence-rejection disposition and current snapshot
      */
@@ -159,6 +170,33 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
 
         /** Ceremony already has an immutable complete outcome. */
         PRODUCED
+    }
+
+    /** Execution heartbeat disposition. */
+    enum HeartbeatDisposition {
+        /** Database committed a monotonically newer successor claim. */
+        RENEWED,
+
+        /** Exact most-recent heartbeat command was already committed. */
+        IDEMPOTENT_REPLAY,
+
+        /** Heartbeat identity was reused with changed predecessor intent. */
+        IDEMPOTENCY_CONFLICT,
+
+        /** Predecessor claim is missing, stale, expired, or superseded. */
+        FENCE_REJECTED,
+
+        /** Database time has not advanced enough for the requested lease to extend the claim. */
+        NOT_EXTENDED,
+
+        /** Approval elapsed before the heartbeat could commit. */
+        EXPIRED,
+
+        /** Ceremony already has an immutable complete outcome. */
+        PRODUCED,
+
+        /** Per-attempt bounded heartbeat budget was exhausted. */
+        LIMIT_REACHED
     }
 
     /** Outcome commit disposition. */
@@ -351,6 +389,46 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
     }
 
     /**
+     * Idempotent database-clock execution heartbeat.
+     *
+     * @param schemaVersion heartbeat protocol generation
+     * @param heartbeatRequestId caller-stable identity for one predecessor claim
+     * @param claim complete exact predecessor claim
+     * @param leaseDurationSeconds requested successor lease from 1 through 300 seconds
+     */
+    record HeartbeatCommand(
+            String schemaVersion,
+            String heartbeatRequestId,
+            ExecutionClaim claim,
+            long leaseDurationSeconds) {
+
+        /** Current heartbeat command protocol. */
+        public static final String SCHEMA_VERSION =
+                "bloge.externalSequenceAnchorBootstrapRootCeremonyHeartbeat.v1";
+
+        /** Enforces bounded identity, complete predecessor claim, and lease duration. */
+        public HeartbeatCommand {
+            schemaVersion = normalized(schemaVersion);
+            heartbeatRequestId = identifier(heartbeatRequestId, "heartbeatRequestId");
+            claim = Objects.requireNonNull(claim, "claim");
+            if (!SCHEMA_VERSION.equals(schemaVersion)
+                    || leaseDurationSeconds < 1 || leaseDurationSeconds > 300) {
+                throw new IllegalArgumentException(
+                        "External bootstrap-root ceremony heartbeat is invalid");
+            }
+        }
+
+        /**
+         * Returns the exact ceremony identity from the predecessor claim.
+         *
+         * @return heartbeat ceremony identity
+         */
+        public String ceremonyId() {
+            return claim.ceremonyId();
+        }
+    }
+
+    /**
      * Integrity-verified durable workflow projection.
      *
      * @param schemaVersion snapshot protocol generation
@@ -367,6 +445,10 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
      * @param claimOwner latest worker owner, or empty before execution
      * @param claimVersion latest monotonically increasing execution fence
      * @param claimUntil latest exclusive execution deadline, or {@code null}
+     * @param heartbeatRequestId latest heartbeat request identity, or empty before renewal
+     * @param heartbeatFingerprint latest heartbeat intent identity, or empty before renewal
+     * @param heartbeatAt latest database-clock heartbeat commit time, or {@code null}
+     * @param heartbeatCount number of committed renewals in the current execution attempt
      * @param attemptCount number of acquired execution attempts
      * @param lastFailure latest bounded producer failure, or {@code null}
      * @param lastFailedAt latest failure observation time, or {@code null}
@@ -391,6 +473,10 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
             String claimOwner,
             long claimVersion,
             Instant claimUntil,
+            String heartbeatRequestId,
+            String heartbeatFingerprint,
+            Instant heartbeatAt,
+            long heartbeatCount,
             long attemptCount,
             ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason lastFailure,
             Instant lastFailedAt,
@@ -402,7 +488,7 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
 
         /** Current durable journal projection protocol. */
         public static final String SCHEMA_VERSION =
-                "bloge.externalSequenceAnchorBootstrapRootCeremonySnapshot.v1";
+                "bloge.externalSequenceAnchorBootstrapRootCeremonySnapshot.v2";
 
         /** Enforces canonical state-dependent projection shape. */
         public CeremonySnapshot {
@@ -416,6 +502,8 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
             approvalFingerprint = normalized(approvalFingerprint);
             checkerId = normalized(checkerId);
             claimOwner = normalized(claimOwner);
+            heartbeatRequestId = normalized(heartbeatRequestId);
+            heartbeatFingerprint = normalized(heartbeatFingerprint);
             outcomeFingerprint = normalized(outcomeFingerprint);
             updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
             recordFingerprint = fingerprint(recordFingerprint, "recordFingerprint");
@@ -425,6 +513,7 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
             boolean produced = state == State.PRODUCED;
             if (!SCHEMA_VERSION.equals(schemaVersion)
                     || attemptCount < 0 || claimVersion < 0
+                    || heartbeatCount < 0 || heartbeatCount > MAXIMUM_HEARTBEATS_PER_ATTEMPT
                     || !proposalUntil.isAfter(submittedAt)
                     || approved && (!validIdentifier(approvalRequestId)
                     || !validFingerprint(approvalFingerprint)
@@ -435,6 +524,10 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
                     || approvedAt != null || approvalUntil != null)
                     || executing && (!validIdentifier(claimOwner)
                     || claimVersion < 1 || claimUntil == null)
+                    || heartbeatCount == 0 && (!heartbeatRequestId.isEmpty()
+                    || !heartbeatFingerprint.isEmpty() || heartbeatAt != null)
+                    || heartbeatCount > 0 && (!validIdentifier(heartbeatRequestId)
+                    || !validFingerprint(heartbeatFingerprint) || heartbeatAt == null)
                     || produced && (outcome == null
                     || !validFingerprint(outcomeFingerprint) || completedAt == null)
                     || !produced && (outcome != null || !outcomeFingerprint.isEmpty()
@@ -509,6 +602,30 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
     }
 
     /**
+     * Immutable heartbeat result.
+     *
+     * @param disposition renewal, replay, conflict, fence, expiry, terminal, or limit status
+     * @param claim successor claim, present only for renewal or exact replay
+     * @param snapshot current integrity-verified durable projection
+     */
+    record HeartbeatResult(
+            HeartbeatDisposition disposition,
+            ExecutionClaim claim,
+            CeremonySnapshot snapshot) {
+
+        /** Enforces successor-claim presence and complete snapshot semantics. */
+        public HeartbeatResult {
+            disposition = Objects.requireNonNull(disposition, "disposition");
+            snapshot = Objects.requireNonNull(snapshot, "snapshot");
+            boolean returnsClaim = disposition == HeartbeatDisposition.RENEWED
+                    || disposition == HeartbeatDisposition.IDEMPOTENT_REPLAY;
+            if (returnsClaim != (claim != null)) {
+                throw new IllegalArgumentException("Ceremony heartbeat result is invalid");
+            }
+        }
+    }
+
+    /**
      * Immutable completion result.
      *
      * @param disposition terminal commit, replay, fence, or conflict classification
@@ -571,4 +688,7 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
 
     /** Shared lowercase SHA-256 protocol fingerprint grammar. */
     Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+
+    /** Hard per-attempt renewal bound preventing an unbounded journal control loop. */
+    long MAXIMUM_HEARTBEATS_PER_ATTEMPT = 10_000L;
 }

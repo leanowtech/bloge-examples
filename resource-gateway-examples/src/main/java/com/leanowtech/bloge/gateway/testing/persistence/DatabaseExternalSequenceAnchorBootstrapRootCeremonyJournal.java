@@ -17,6 +17,9 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.FailureDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.FailureResult;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatCommand;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatDisposition;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatResult;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ProposalDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ProposalResult;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.State;
@@ -41,8 +44,9 @@ import java.util.regex.Pattern;
  *
  * <p>A root-set lock serializes proposal creation across replicas and prevents parallel active
  * ceremonies under different ids. Every mutation locks and integrity-verifies the exact journal
- * row before applying an approval, lease takeover, failure release, or terminal outcome. External
- * signer calls never execute inside these transactions.</p>
+ * row before applying an approval, lease takeover, heartbeat successor, failure release, or
+ * terminal outcome. External signer calls never execute inside these transactions. Initialization
+ * migrates only an exact heartbeat-empty v1 fingerprint into the v2 record shape.</p>
  */
 public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
         implements ExternalSequenceAnchorBootstrapRootCeremonyJournal {
@@ -50,8 +54,10 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
-    private static final String RECORD_SCHEMA =
+    private static final String LEGACY_RECORD_SCHEMA =
             "bloge.externalSequenceAnchorBootstrapRootCeremonyJournalRecord.v1";
+    private static final String RECORD_SCHEMA =
+            "bloge.externalSequenceAnchorBootstrapRootCeremonyJournalRecord.v2";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -114,6 +120,10 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     claim_owner VARCHAR(255),
                     claim_version BIGINT NOT NULL,
                     claim_until TIMESTAMP WITH TIME ZONE,
+                    heartbeat_request_id VARCHAR(255),
+                    heartbeat_fingerprint VARCHAR(71),
+                    heartbeat_at TIMESTAMP WITH TIME ZONE,
+                    heartbeat_count BIGINT NOT NULL,
                     attempt_count BIGINT NOT NULL,
                     last_failure_reason VARCHAR(64),
                     last_failed_at TIMESTAMP WITH TIME ZONE,
@@ -125,6 +135,28 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     PRIMARY KEY (scope_id, root_set_id, ceremony_id)
                 )
                 """);
+        jdbc.execute("""
+                ALTER TABLE rg_external_sequence_anchor_bootstrap_root_ceremonies
+                ADD COLUMN IF NOT EXISTS heartbeat_request_id VARCHAR(255)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_external_sequence_anchor_bootstrap_root_ceremonies
+                ADD COLUMN IF NOT EXISTS heartbeat_fingerprint VARCHAR(71)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_external_sequence_anchor_bootstrap_root_ceremonies
+                ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMP WITH TIME ZONE
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_external_sequence_anchor_bootstrap_root_ceremonies
+                ADD COLUMN IF NOT EXISTS heartbeat_count BIGINT DEFAULT 0 NOT NULL
+                """);
+        Boolean migrated = transactions.execute(status -> {
+            lockRootSet();
+            migrateLegacyRecordFingerprints();
+            return Boolean.TRUE;
+        });
+        Objects.requireNonNull(migrated, "ceremony journal migration result");
     }
 
     /** {@inheritDoc} */
@@ -165,7 +197,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             StoredCeremony created = fingerprinted(new StoredCeremony(
                     scopeId, rootSetId, safeProposal.ceremonyId(), State.PENDING_APPROVAL,
                     safeProposal, proposalFingerprint, now, proposalUntil,
-                    "", "", "", null, null, "", 0L, null, 0L, null, null,
+                    "", "", "", null, null, "", 0L, null,
+                    "", "", null, 0L, 0L, null, null,
                     null, "", null, now, ""));
             insert(created);
             return new ProposalResult(ProposalDisposition.CREATED, snapshot(created));
@@ -215,6 +248,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     safeCommand.approvalRequestId(), approvalFingerprint,
                     safeCommand.checkerId(), now, approvalUntil,
                     current.claimOwner(), current.claimVersion(), current.claimUntil(),
+                    current.heartbeatRequestId(), current.heartbeatFingerprint(),
+                    current.heartbeatAt(), current.heartbeatCount(),
                     current.attemptCount(), current.lastFailure(), current.lastFailedAt(),
                     current.outcome(), current.outcomeFingerprint(), current.completedAt(), now));
             update(approved);
@@ -266,7 +301,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             StoredCeremony acquired = fingerprinted(copy(current, State.EXECUTING,
                     current.approvalRequestId(), current.approvalFingerprint(),
                     current.checkerId(), current.approvedAt(), current.approvalUntil(),
-                    safeCommand.workerId(), nextVersion, claimUntil, nextAttempt,
+                    safeCommand.workerId(), nextVersion, claimUntil,
+                    "", "", null, 0L, nextAttempt,
                     current.lastFailure(), current.lastFailedAt(), current.outcome(),
                     current.outcomeFingerprint(), current.completedAt(), now));
             update(acquired);
@@ -277,6 +313,69 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     snapshot(acquired));
         });
         return Objects.requireNonNull(result, "ceremony acquisition result");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public HeartbeatResult heartbeat(HeartbeatCommand command) {
+        HeartbeatCommand safeCommand = Objects.requireNonNull(command, "command");
+        String heartbeatFingerprint = ProtocolFingerprint.of(objectMapper, safeCommand);
+        HeartbeatResult result = transactions.execute(status -> {
+            StoredCeremony current = find(safeCommand.ceremonyId(), true).orElseThrow(() ->
+                    new IllegalStateException("Bootstrap-root ceremony journal row is missing"));
+            requireValid(current);
+            if (current.state() == State.PRODUCED) {
+                return new HeartbeatResult(HeartbeatDisposition.PRODUCED, null,
+                        snapshot(current));
+            }
+            Instant now = databaseNow();
+            current = expireIfRequired(current, now);
+            if (current.state() == State.PROPOSAL_EXPIRED
+                    || current.state() == State.APPROVAL_EXPIRED) {
+                return new HeartbeatResult(HeartbeatDisposition.EXPIRED, null,
+                        snapshot(current));
+            }
+            if (current.heartbeatRequestId().equals(safeCommand.heartbeatRequestId())) {
+                if (!current.heartbeatFingerprint().equals(heartbeatFingerprint)) {
+                    return new HeartbeatResult(HeartbeatDisposition.IDEMPOTENCY_CONFLICT,
+                            null, snapshot(current));
+                }
+                if (current.state() == State.EXECUTING) {
+                    return new HeartbeatResult(HeartbeatDisposition.IDEMPOTENT_REPLAY,
+                            currentClaim(current), snapshot(current));
+                }
+                return new HeartbeatResult(HeartbeatDisposition.FENCE_REJECTED, null,
+                        snapshot(current));
+            }
+            if (!matchesLiveFence(current, safeCommand.claim(), now)) {
+                return new HeartbeatResult(HeartbeatDisposition.FENCE_REJECTED, null,
+                        snapshot(current));
+            }
+            if (current.heartbeatCount() >= MAXIMUM_HEARTBEATS_PER_ATTEMPT) {
+                return new HeartbeatResult(HeartbeatDisposition.LIMIT_REACHED, null,
+                        snapshot(current));
+            }
+            Instant requestedUntil = now.plusSeconds(safeCommand.leaseDurationSeconds());
+            Instant claimUntil = earlier(requestedUntil, current.approvalUntil());
+            if (!claimUntil.isAfter(current.claimUntil())) {
+                return new HeartbeatResult(HeartbeatDisposition.NOT_EXTENDED, null,
+                        snapshot(current));
+            }
+            long nextVersion = Math.addExact(current.claimVersion(), 1L);
+            long nextHeartbeat = Math.addExact(current.heartbeatCount(), 1L);
+            StoredCeremony renewed = fingerprinted(copy(current, State.EXECUTING,
+                    current.approvalRequestId(), current.approvalFingerprint(),
+                    current.checkerId(), current.approvedAt(), current.approvalUntil(),
+                    current.claimOwner(), nextVersion, claimUntil,
+                    safeCommand.heartbeatRequestId(), heartbeatFingerprint, now,
+                    nextHeartbeat, current.attemptCount(), current.lastFailure(),
+                    current.lastFailedAt(), current.outcome(), current.outcomeFingerprint(),
+                    current.completedAt(), now));
+            update(renewed);
+            return new HeartbeatResult(HeartbeatDisposition.RENEWED,
+                    currentClaim(renewed), snapshot(renewed));
+        });
+        return Objects.requireNonNull(result, "ceremony heartbeat result");
     }
 
     /** {@inheritDoc} */
@@ -310,6 +409,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     current.approvalRequestId(), current.approvalFingerprint(),
                     current.checkerId(), current.approvedAt(), current.approvalUntil(),
                     current.claimOwner(), current.claimVersion(), current.claimUntil(),
+                    current.heartbeatRequestId(), current.heartbeatFingerprint(),
+                    current.heartbeatAt(), current.heartbeatCount(),
                     current.attemptCount(), current.lastFailure(), current.lastFailedAt(),
                     safeOutcome, outcomeFingerprint, now, now));
             update(produced);
@@ -348,6 +449,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     current.approvalRequestId(), current.approvalFingerprint(),
                     current.checkerId(), current.approvedAt(), current.approvalUntil(),
                     current.claimOwner(), current.claimVersion(), current.claimUntil(),
+                    current.heartbeatRequestId(), current.heartbeatFingerprint(),
+                    current.heartbeatAt(), current.heartbeatCount(),
                     current.attemptCount(), safeReason, now, current.outcome(),
                     current.outcomeFingerprint(), current.completedAt(), now));
             update(released);
@@ -452,6 +555,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 current.approvalRequestId(), current.approvalFingerprint(),
                 current.checkerId(), current.approvedAt(), current.approvalUntil(),
                 current.claimOwner(), current.claimVersion(), current.claimUntil(),
+                current.heartbeatRequestId(), current.heartbeatFingerprint(),
+                current.heartbeatAt(), current.heartbeatCount(),
                 current.attemptCount(), current.lastFailure(), current.lastFailedAt(),
                 current.outcome(), current.outcomeFingerprint(), current.completedAt(), now));
         update(expired);
@@ -473,6 +578,12 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 && current.claimVersion() == claim.claimVersion()
                 && current.claimUntil().equals(claim.claimUntil())
                 && current.proposal().equals(claim.proposal());
+    }
+
+    private static ExecutionClaim currentClaim(StoredCeremony current) {
+        return new ExecutionClaim(ExecutionClaim.SCHEMA_VERSION,
+                current.ceremonyId(), current.claimOwner(), current.claimVersion(),
+                current.claimUntil(), current.proposal());
     }
 
     private static void requireBoundOutcome(
@@ -522,10 +633,11 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     scope_id, root_set_id, ceremony_id, state, proposal_json,
                     proposal_fingerprint, submitted_at, proposal_until, approval_request_id,
                     approval_fingerprint, checker_id, approved_at, approval_until,
-                    claim_owner, claim_version, claim_until, attempt_count,
+                    claim_owner, claim_version, claim_until, heartbeat_request_id,
+                    heartbeat_fingerprint, heartbeat_at, heartbeat_count, attempt_count,
                     last_failure_reason, last_failed_at, outcome_json,
                     outcome_fingerprint, completed_at, updated_at, record_fingerprint
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, parameters(value));
     }
 
@@ -535,9 +647,11 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 SET state = ?, proposal_json = ?, proposal_fingerprint = ?, submitted_at = ?,
                     proposal_until = ?, approval_request_id = ?, approval_fingerprint = ?, checker_id = ?,
                     approved_at = ?, approval_until = ?, claim_owner = ?, claim_version = ?,
-                    claim_until = ?, attempt_count = ?, last_failure_reason = ?,
-                    last_failed_at = ?, outcome_json = ?, outcome_fingerprint = ?,
-                    completed_at = ?, updated_at = ?, record_fingerprint = ?
+                    claim_until = ?, heartbeat_request_id = ?, heartbeat_fingerprint = ?,
+                    heartbeat_at = ?, heartbeat_count = ?, attempt_count = ?,
+                    last_failure_reason = ?, last_failed_at = ?, outcome_json = ?,
+                    outcome_fingerprint = ?, completed_at = ?, updated_at = ?,
+                    record_fingerprint = ?
                 WHERE scope_id = ? AND root_set_id = ? AND ceremony_id = ?
                 """, value.state().name(), write(value.proposal()),
                 value.proposalFingerprint(), timestamp(value.submittedAt()),
@@ -545,7 +659,9 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 nullable(value.approvalRequestId()), nullable(value.approvalFingerprint()),
                 nullable(value.checkerId()), timestamp(value.approvedAt()),
                 timestamp(value.approvalUntil()), nullable(value.claimOwner()),
-                value.claimVersion(), timestamp(value.claimUntil()), value.attemptCount(),
+                value.claimVersion(), timestamp(value.claimUntil()),
+                nullable(value.heartbeatRequestId()), nullable(value.heartbeatFingerprint()),
+                timestamp(value.heartbeatAt()), value.heartbeatCount(), value.attemptCount(),
                 value.lastFailure() == null ? null : value.lastFailure().name(),
                 timestamp(value.lastFailedAt()), writeNullable(value.outcome()),
                 nullable(value.outcomeFingerprint()), timestamp(value.completedAt()),
@@ -564,7 +680,9 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 nullable(value.approvalFingerprint()), nullable(value.checkerId()),
                 timestamp(value.approvedAt()), timestamp(value.approvalUntil()),
                 nullable(value.claimOwner()), value.claimVersion(),
-                timestamp(value.claimUntil()), value.attemptCount(),
+                timestamp(value.claimUntil()), nullable(value.heartbeatRequestId()),
+                nullable(value.heartbeatFingerprint()), timestamp(value.heartbeatAt()),
+                value.heartbeatCount(), value.attemptCount(),
                 value.lastFailure() == null ? null : value.lastFailure().name(),
                 timestamp(value.lastFailedAt()), writeNullable(value.outcome()),
                 nullable(value.outcomeFingerprint()), timestamp(value.completedAt()),
@@ -584,6 +702,9 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 instant(result, "approval_until"),
                 normalized(result.getString("claim_owner")),
                 result.getLong("claim_version"), instant(result, "claim_until"),
+                normalized(result.getString("heartbeat_request_id")),
+                normalized(result.getString("heartbeat_fingerprint")),
+                instant(result, "heartbeat_at"), result.getLong("heartbeat_count"),
                 result.getLong("attempt_count"), failure(result.getString(
                 "last_failure_reason")), instant(result, "last_failed_at"),
                 readNullable(result.getString("outcome_json"),
@@ -596,13 +717,7 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
 
     private void requireValid(StoredCeremony value) {
         try {
-            if (!scopeId.equals(value.scopeId()) || !rootSetId.equals(value.rootSetId())
-                    || !value.ceremonyId().equals(value.proposal().ceremonyId())
-                    || !value.proposalFingerprint().equals(
-                    ProtocolFingerprint.of(objectMapper, value.proposal()))
-                    || value.outcome() == null && !value.outcomeFingerprint().isEmpty()
-                    || value.outcome() != null && !value.outcomeFingerprint().equals(
-                    ProtocolFingerprint.of(objectMapper, value.outcome()))
+            if (!contentFingerprintsValid(value)
                     || !FINGERPRINT.matcher(value.recordFingerprint()).matches()
                     || !value.recordFingerprint().equals(integrityFingerprint(value))) {
                 throw new IllegalStateException(
@@ -617,6 +732,42 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
         }
     }
 
+    private void migrateLegacyRecordFingerprints() {
+        List<StoredCeremony> rows = jdbc.query("""
+                SELECT *
+                FROM rg_external_sequence_anchor_bootstrap_root_ceremonies
+                WHERE scope_id = ? AND root_set_id = ?
+                ORDER BY submitted_at, ceremony_id
+                FOR UPDATE
+                """, this::row, scopeId, rootSetId);
+        for (StoredCeremony row : rows) {
+            if (row.recordFingerprint().equals(integrityFingerprint(row))) {
+                requireValid(row);
+                continue;
+            }
+            boolean emptyHeartbeat = row.heartbeatRequestId().isEmpty()
+                    && row.heartbeatFingerprint().isEmpty()
+                    && row.heartbeatAt() == null && row.heartbeatCount() == 0L;
+            if (!emptyHeartbeat || !contentFingerprintsValid(row)
+                    || !row.recordFingerprint().equals(legacyIntegrityFingerprint(row))) {
+                throw new IllegalStateException(
+                        "Bootstrap-root ceremony journal row is corrupt during migration");
+            }
+            snapshot(row);
+            update(fingerprinted(row));
+        }
+    }
+
+    private boolean contentFingerprintsValid(StoredCeremony value) {
+        return scopeId.equals(value.scopeId()) && rootSetId.equals(value.rootSetId())
+                && value.ceremonyId().equals(value.proposal().ceremonyId())
+                && value.proposalFingerprint().equals(
+                ProtocolFingerprint.of(objectMapper, value.proposal()))
+                && (value.outcome() == null && value.outcomeFingerprint().isEmpty()
+                || value.outcome() != null && value.outcomeFingerprint().equals(
+                ProtocolFingerprint.of(objectMapper, value.outcome())));
+    }
+
     private StoredCeremony fingerprinted(StoredCeremony value) {
         return new StoredCeremony(value.scopeId(), value.rootSetId(), value.ceremonyId(),
                 value.state(), value.proposal(), value.proposalFingerprint(),
@@ -624,6 +775,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 value.approvalFingerprint(),
                 value.checkerId(), value.approvedAt(), value.approvalUntil(),
                 value.claimOwner(), value.claimVersion(), value.claimUntil(),
+                value.heartbeatRequestId(), value.heartbeatFingerprint(),
+                value.heartbeatAt(), value.heartbeatCount(),
                 value.attemptCount(), value.lastFailure(), value.lastFailedAt(),
                 value.outcome(), value.outcomeFingerprint(), value.completedAt(),
                 value.updatedAt(), integrityFingerprint(value));
@@ -637,9 +790,23 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 value.approvalFingerprint(),
                 value.checkerId(), value.approvedAt(), value.approvalUntil(),
                 value.claimOwner(), value.claimVersion(), value.claimUntil(),
+                value.heartbeatRequestId(), value.heartbeatFingerprint(),
+                value.heartbeatAt(), value.heartbeatCount(),
                 value.attemptCount(), value.lastFailure(), value.lastFailedAt(),
                 value.outcome(), value.outcomeFingerprint(), value.completedAt(),
                 value.updatedAt()));
+    }
+
+    private String legacyIntegrityFingerprint(StoredCeremony value) {
+        return ProtocolFingerprint.of(objectMapper, new LegacyIntegrityMaterial(
+                LEGACY_RECORD_SCHEMA, value.scopeId(), value.rootSetId(), value.ceremonyId(),
+                value.state(), value.proposal(), value.proposalFingerprint(),
+                value.submittedAt(), value.proposalUntil(), value.approvalRequestId(),
+                value.approvalFingerprint(), value.checkerId(), value.approvedAt(),
+                value.approvalUntil(), value.claimOwner(), value.claimVersion(),
+                value.claimUntil(), value.attemptCount(), value.lastFailure(),
+                value.lastFailedAt(), value.outcome(), value.outcomeFingerprint(),
+                value.completedAt(), value.updatedAt()));
     }
 
     private CeremonySnapshot snapshot(StoredCeremony value) {
@@ -648,7 +815,9 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 value.proposalUntil(), value.approvalRequestId(),
                 value.approvalFingerprint(), value.checkerId(),
                 value.approvedAt(), value.approvalUntil(), value.claimOwner(),
-                value.claimVersion(), value.claimUntil(), value.attemptCount(),
+                value.claimVersion(), value.claimUntil(), value.heartbeatRequestId(),
+                value.heartbeatFingerprint(), value.heartbeatAt(), value.heartbeatCount(),
+                value.attemptCount(),
                 value.lastFailure(), value.lastFailedAt(), value.outcome(),
                 value.outcomeFingerprint(), value.completedAt(), value.updatedAt(),
                 value.recordFingerprint());
@@ -665,6 +834,10 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             String claimOwner,
             long claimVersion,
             Instant claimUntil,
+            String heartbeatRequestId,
+            String heartbeatFingerprint,
+            Instant heartbeatAt,
+            long heartbeatCount,
             long attemptCount,
             ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason lastFailure,
             Instant lastFailedAt,
@@ -676,7 +849,9 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 value.proposal(), value.proposalFingerprint(), value.submittedAt(),
                 value.proposalUntil(),
                 approvalRequestId, approvalFingerprint, checkerId, approvedAt, approvalUntil,
-                claimOwner, claimVersion, claimUntil, attemptCount, lastFailure, lastFailedAt,
+                claimOwner, claimVersion, claimUntil, heartbeatRequestId,
+                heartbeatFingerprint, heartbeatAt, heartbeatCount, attemptCount,
+                lastFailure, lastFailedAt,
                 outcome, outcomeFingerprint, completedAt, updatedAt, "");
     }
 
@@ -763,6 +938,10 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             String claimOwner,
             long claimVersion,
             Instant claimUntil,
+            String heartbeatRequestId,
+            String heartbeatFingerprint,
+            Instant heartbeatAt,
+            long heartbeatCount,
             long attemptCount,
             ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason lastFailure,
             Instant lastFailedAt,
@@ -774,6 +953,37 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
     }
 
     private record IntegrityMaterial(
+            String schemaVersion,
+            String scopeId,
+            String rootSetId,
+            String ceremonyId,
+            State state,
+            CeremonyProposal proposal,
+            String proposalFingerprint,
+            Instant submittedAt,
+            Instant proposalUntil,
+            String approvalRequestId,
+            String approvalFingerprint,
+            String checkerId,
+            Instant approvedAt,
+            Instant approvalUntil,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            String heartbeatRequestId,
+            String heartbeatFingerprint,
+            Instant heartbeatAt,
+            long heartbeatCount,
+            long attemptCount,
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason lastFailure,
+            Instant lastFailedAt,
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome outcome,
+            String outcomeFingerprint,
+            Instant completedAt,
+            Instant updatedAt) {
+    }
+
+    private record LegacyIntegrityMaterial(
             String schemaVersion,
             String scopeId,
             String rootSetId,

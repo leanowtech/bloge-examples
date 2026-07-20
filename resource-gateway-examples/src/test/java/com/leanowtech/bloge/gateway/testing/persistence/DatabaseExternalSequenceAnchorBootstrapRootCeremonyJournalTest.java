@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootSigningAuthority;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootTransition;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityServingInventory;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -160,6 +161,82 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     }
 
     @Test
+    void heartbeatIssuesSuccessorFenceAndOnlyExactlyReplaysItsLatestCommand() {
+        CeremonyProposalFixture fixture = approved("ceremony-heartbeat", 'a');
+        var acquisition = journal.acquire(acquisition(fixture.id(), "worker-a", 3));
+        var command = heartbeat("heartbeat-1", acquisition.claim(), 30);
+
+        var renewed = journal.heartbeat(command);
+
+        assertThat(renewed.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatDisposition.RENEWED);
+        assertThat(renewed.claim().claimVersion()).isEqualTo(2L);
+        assertThat(renewed.claim().claimUntil()).isAfter(acquisition.claim().claimUntil());
+        assertThat(renewed.snapshot().attemptCount()).isEqualTo(1L);
+        assertThat(renewed.snapshot().heartbeatCount()).isEqualTo(1L);
+        assertThat(renewed.snapshot().heartbeatRequestId()).isEqualTo("heartbeat-1");
+        assertThat(renewed.snapshot().heartbeatAt()).isNotNull();
+
+        var replay = repository().heartbeat(command);
+        assertThat(replay.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatDisposition
+                        .IDEMPOTENT_REPLAY);
+        assertThat(replay.claim()).isEqualTo(renewed.claim());
+        assertThat(journal.heartbeat(heartbeat(
+                "heartbeat-1", acquisition.claim(), 31)).disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatDisposition
+                        .IDEMPOTENCY_CONFLICT);
+        assertThat(journal.complete(acquisition.claim(), outcome(fixture.proposal()))
+                .disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.CompletionDisposition
+                        .FENCE_REJECTED);
+        assertThat(journal.complete(renewed.claim(), outcome(fixture.proposal()))
+                .disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.CompletionDisposition
+                        .PRODUCED);
+    }
+
+    @Test
+    void retryAttemptClearsHeartbeatReplaySlotAndStartsItsOwnBoundedCount() {
+        CeremonyProposalFixture fixture = approved("ceremony-heartbeat-retry", 'a');
+        var first = journal.acquire(acquisition(fixture.id(), "worker-a", 3));
+        var firstCommand = heartbeat("heartbeat-first", first.claim(), 30);
+        var renewed = journal.heartbeat(firstCommand);
+        journal.release(renewed.claim(),
+                ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
+                        .SIGNING_QUORUM_UNAVAILABLE);
+
+        var retry = journal.acquire(acquisition(fixture.id(), "worker-b", 30));
+
+        assertThat(retry.snapshot().attemptCount()).isEqualTo(2L);
+        assertThat(retry.snapshot().heartbeatCount()).isZero();
+        assertThat(retry.snapshot().heartbeatRequestId()).isEmpty();
+        assertThat(retry.snapshot().heartbeatFingerprint()).isEmpty();
+        assertThat(retry.snapshot().heartbeatAt()).isNull();
+        assertThat(journal.heartbeat(firstCommand).disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatDisposition
+                        .FENCE_REJECTED);
+    }
+
+    @Test
+    void heartbeatCannotExtendAnElapsedApprovalDeadline() throws Exception {
+        var proposal = proposal("ceremony-heartbeat-expired", "maker-a", 'a');
+        journal.propose(proposal);
+        journal.approve(approval(proposal.ceremonyId(), "approve-heartbeat-expired",
+                "checker-a", 1));
+        var claim = journal.acquire(acquisition(proposal.ceremonyId(), "worker-a", 1)).claim();
+
+        Thread.sleep(1_100L);
+        var expired = journal.heartbeat(heartbeat("heartbeat-expired", claim, 30));
+
+        assertThat(expired.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatDisposition.EXPIRED);
+        assertThat(expired.snapshot().state()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.APPROVAL_EXPIRED);
+        assertThat(expired.claim()).isNull();
+    }
+
+    @Test
     void boundedFailureReopensApprovalAndStaleWorkerCannotReleaseTheRetry() {
         CeremonyProposalFixture fixture = approved("ceremony-retry", 'b');
         var first = journal.acquire(acquisition(fixture.id(), "worker-a", 30));
@@ -265,6 +342,43 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
         assertThatThrownBy(() -> restarted.snapshot(fixture.id()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("corrupt");
+    }
+
+    @Test
+    void initializationMigratesOnlyAnExactlyValidLegacyRowFingerprint() {
+        CeremonyProposalFixture fixture = approved("ceremony-legacy-fingerprint", 'd');
+        var snapshot = journal.snapshot(fixture.id()).orElseThrow();
+        String currentFingerprint = snapshot.recordFingerprint();
+        String legacyFingerprint = ProtocolFingerprint.of(objectMapper,
+                new LegacyIntegrityMaterial(
+                        "bloge.externalSequenceAnchorBootstrapRootCeremonyJournalRecord.v1",
+                        SCOPE, ROOT_SET, fixture.id(), snapshot.state(), snapshot.proposal(),
+                        snapshot.proposalFingerprint(), snapshot.submittedAt(),
+                        snapshot.proposalUntil(), snapshot.approvalRequestId(),
+                        snapshot.approvalFingerprint(), snapshot.checkerId(),
+                        snapshot.approvedAt(), snapshot.approvalUntil(), snapshot.claimOwner(),
+                        snapshot.claimVersion(), snapshot.claimUntil(), snapshot.attemptCount(),
+                        snapshot.lastFailure(), snapshot.lastFailedAt(), snapshot.outcome(),
+                        snapshot.outcomeFingerprint(), snapshot.completedAt(),
+                        snapshot.updatedAt()));
+        database.jdbc().update("""
+                UPDATE rg_external_sequence_anchor_bootstrap_root_ceremonies
+                SET record_fingerprint = ?
+                WHERE scope_id = ? AND root_set_id = ? AND ceremony_id = ?
+                """, legacyFingerprint, SCOPE, ROOT_SET, fixture.id());
+        for (String column : List.of("heartbeat_request_id", "heartbeat_fingerprint",
+                "heartbeat_at", "heartbeat_count")) {
+            database.jdbc().execute("""
+                    ALTER TABLE rg_external_sequence_anchor_bootstrap_root_ceremonies
+                    DROP COLUMN %s
+                    """.formatted(column));
+        }
+
+        var migrated = repository().snapshot(fixture.id()).orElseThrow();
+
+        assertThat(migrated.recordFingerprint()).isEqualTo(currentFingerprint);
+        assertThat(migrated.heartbeatCount()).isZero();
+        assertThat(migrated.heartbeatRequestId()).isEmpty();
     }
 
     @Test
@@ -411,6 +525,16 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
                 ceremonyId, workerId, duration);
     }
 
+    private static ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatCommand heartbeat(
+            String requestId,
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim claim,
+            long duration) {
+        return new ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatCommand(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatCommand
+                        .SCHEMA_VERSION,
+                requestId, claim, duration);
+    }
+
     private DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal repository() {
         var result = new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
                 database.jdbc(), objectMapper, SCOPE, ROOT_SET,
@@ -436,5 +560,32 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     private record CeremonyProposalFixture(
             String id,
             ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal proposal) {
+    }
+
+    private record LegacyIntegrityMaterial(
+            String schemaVersion,
+            String scopeId,
+            String rootSetId,
+            String ceremonyId,
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal.State state,
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal proposal,
+            String proposalFingerprint,
+            Instant submittedAt,
+            Instant proposalUntil,
+            String approvalRequestId,
+            String approvalFingerprint,
+            String checkerId,
+            Instant approvedAt,
+            Instant approvalUntil,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            long attemptCount,
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason lastFailure,
+            Instant lastFailedAt,
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome outcome,
+            String outcomeFingerprint,
+            Instant completedAt,
+            Instant updatedAt) {
     }
 }

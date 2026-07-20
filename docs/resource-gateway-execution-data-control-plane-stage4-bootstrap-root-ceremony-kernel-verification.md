@@ -5,7 +5,8 @@
 本步建立 external sequence-anchor bootstrap-root 的 ceremony 协议、完整链重放验证内核、专用
 durable floor、动态远端刷新、managed notary 组合、Spring/staging 双域接线、不接触私钥的 producer，
 以及可嵌入的数据库权威 maker/checker workflow。新 workflow 已闭合不可变提案、独立审批、数据库
-时间、执行租约与单调围栏、崩溃接管、精确 signer request 重放、终态幂等和整行完整性校验；它仍不
+时间、自动续租与单调后继围栏、崩溃接管、精确 signer/heartbeat request 重放、终态幂等、N-1 指纹
+迁移和整行完整性校验；它仍不
 等于带企业 IAM、HSM/KMS、后台 worker、root publisher HA 和外部审计留存的生产 ceremony 产品。
 所有消费路径必须使用同一原子 root snapshot，不能另造一个只验证最新 root snapshot 的旁路。
 
@@ -132,9 +133,13 @@ producer command、opaque signer descriptor/request/response、payload-free sign
 
 `docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-ceremony-v1.schema.json`
 
-maker/checker proposal、approval、execution claim、durable snapshot 和 bounded execution result 使用：
+maker/checker proposal、approval、execution claim、heartbeat command/result、durable snapshot 和
+bounded execution result 使用：
 
-`docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-ceremony-journal-v1.schema.json`
+`docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-ceremony-journal-v2.schema.json`
+
+原 v1 Schema 保持原样归档；heartbeat 字段会改变 strict object shape，因此 snapshot 协议明确升为 v2，
+禁止在 v1 名义下追加必填字段。
 
 Schema 仅包含公钥、签名和治理元数据，拒绝 additional properties，并限制 transitions、keys、signatures
 和 attempts 基数；不包含私钥、credential、provider endpoint、claim token 或异常文本。journal Schema
@@ -181,20 +186,28 @@ first-head linearization。
   horizon，从而禁止密码学合法却必然中断服务的信任空窗；
 - outcome 不包含 private key、credential 或 provider endpoint。
 
-`DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest` 的 10 项真实数据库测试进一步覆盖：
+`DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest` 的 14 项真实数据库测试进一步覆盖：
 
 - 相同 proposal 精确重放、同 ceremony id 内容冲突和同 root-set 单 active workflow；
 - proposal timeout 与 approval timeout 的独立终态和后续 workflow 解锁；
 - maker/checker 分离、approval request 精确幂等与冲突；
 - live lease 排他、过期 takeover、claim version/attempt 单调递增和旧 fence 拒绝；
+- heartbeat 后继 fence、最近一次 command 精确重放、同 id 异 intent 冲突和旧 claim 立即失效；
+- approval hard deadline 不可续命、新 attempt 清空 heartbeat replay slot，并独立重置有界计数；
 - live failure 释放后重试，以及审批已过期时只落确定性 expiry、不接受 post-fence failure 归因；
 - terminal outcome 精确重放、changed outcome 冲突和 latest-produced-head 强制连续；
-- 进程重建、整行离线腐化 fail closed 和两个并发首提案线性化为一个 winner。
+- 精确 v1 row fingerprint 到 v2 的 N-1 迁移、整行离线腐化 fail closed，以及两个并发首提案线性化为
+  一个 winner。
 
-`ExternalSequenceAnchorBootstrapRootCeremonyServiceTest` 的 4 项端到端测试覆盖正常提交与重启重放、
+`ExternalSequenceAnchorBootstrapRootCeremonyServiceTest` 的 8 项端到端测试覆盖非法自动续租 lease
+在数据库写入前失败、正常提交与重启重放、
 远端实际签名后进程崩溃再接管、审批后 signer cohort 漂移零签名失败，以及临时 quorum outage 后按
-同一 approved cohort 重试。崩溃测试证明每个 content-addressed signer request id 只产生一次真实签名，
-恢复调用只取得签名端的精确幂等回放。
+同一 approved cohort 重试。慢 signer 测试证明超过原始 lease 后竞争 worker 仍为 `BUSY`，提交使用最新
+后继 fence；提交后心跳响应丢失只产生一次 durable renewal，畸形 successor 则丢弃已生成 outcome。
+崩溃测试证明每个 content-addressed signer request id 只产生一次真实签名，恢复调用只取得签名端的
+精确幂等回放。
+审批剩余时间短于配置 lease 时，初始 claim 会直接夹紧到 approval hard horizon；对应测试证明 guard
+不会发送必然无法延长的 heartbeat，截止前完成仍可提交，而截止后的终态 CAS 仍由数据库时钟拒绝。
 
 producer/Schema 聚焦门禁当前执行 18 tests 全绿；加入 consumer quorum-horizon 回归后，三类核心门禁
 执行 32 tests 全绿。此前 ceremony/Schema/database floor 共
@@ -208,6 +221,12 @@ producer/Schema 聚焦门禁当前执行 18 tests 全绿；加入 consumer quoru
 其中浏览器测试类共 34 项、32 项真实执行，并成功重打包 Spring Boot 可执行 JAR。本次新增及修改的
 5 个公共 ceremony 类型另以 `javadoc -Werror -Xdoclint:all` 独立验证，0 warnings、0 errors；全模块
 JavaDoc 仍受未触碰旧类型的 16 个既有 doclint errors 阻断，不能误报为全仓 JavaDoc 已清零。
+
+自动 heartbeat/freeze 子步把同组聚焦门禁扩展到 43 tests，0 failures、0 errors、0 skips；最终
+Resource Gateway `clean verify` 执行 3272 tests，0 failures、0 errors、2 skips，其中浏览器测试类
+共 34 项、32 项真实执行，并成功重打包 Spring Boot 可执行 JAR。本子步涉及的 journal、lease
+coordinator、service 与数据库 journal 4 个公共类型以 `javadoc -Werror -Xdoclint:all` 独立验证，
+0 warnings、0 errors；该结论仍不外推为全模块 JavaDoc 已清零。
 
 ## 11. 双域部署接线
 
@@ -254,22 +273,33 @@ var producer = new ExternalSequenceAnchorBootstrapRootCeremonyProducer(
 
 var journal = new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
         jdbcTemplate, objectMapper, scopeId, rootSetId, transactionManager);
-var ceremonies = new ExternalSequenceAnchorBootstrapRootCeremonyService(producer, journal);
-
-ceremonies.propose(rotationRequest, makerId, 300,
-        genesisAuthorities, incomingAuthorities);
-ceremonies.approve(new ApprovalCommand(
-        ApprovalCommand.SCHEMA_VERSION, ceremonyId, approvalRequestId,
-        checkerId, 300));
-var result = ceremonies.execute(
-        ceremonyId, workerId, 30, genesisAuthorities, incomingAuthorities);
+journal.init();
+try (var ceremonies = new ExternalSequenceAnchorBootstrapRootCeremonyService(
+        producer, journal)) {
+    ceremonies.propose(rotationRequest, makerId, 300,
+            genesisAuthorities, incomingAuthorities);
+    ceremonies.approve(new ApprovalCommand(
+            ApprovalCommand.SCHEMA_VERSION, ceremonyId, approvalRequestId,
+            checkerId, 300));
+    var result = ceremonies.execute(
+            ceremonyId, workerId, 30, genesisAuthorities, incomingAuthorities);
+}
 ```
 
 `propose` 只做 side-effect-free preflight，并冻结 material fingerprint、sequence、public-only signer cohort
 和 exclusive `executionDeadline`。数据库把 proposal/approval deadline 都夹紧到该截止时间；审批者必须
-与 maker 不同。`execute` 取得数据库时间租约后重算完整 preflight，任何 signer 集合或配置漂移都会在
-签名前失败。signer 调用发生在事务外，complete 必须提交 exact owner/version/until/proposal fence；失去
-fence 的调用方看不到刚生成但未提交的 artifact。
+与 maker 不同。`execute` 接受 3..300 秒 lease，取得数据库时间租约后重算完整 preflight，任何 signer
+集合或配置漂移都会在签名前失败。signer 调用发生在事务外；进程内 guard 以 lease 三分之一为间隔，
+用完整前驱 claim 换取数据库签发的后继 claim。complete/release 前必须 `freeze()` 调度、等待在途
+heartbeat 并提交最新 owner/version/until/proposal fence；失去 fence 的调用方看不到刚生成但未提交的
+artifact。service 拥有 daemon scheduler，嵌入方必须像示例一样关闭它。
+
+心跳不会推进 attempt count，也不会越过 checker approval 或 proposal `executionDeadline`。每个 attempt
+最多提交 10000 次 heartbeat；只保留最近一次 request id 的精确重放槽，以同 id 和不同 intent 重试会
+冲突。模糊数据库响应由 coordinator 用相同 command 重试一次；journal 若返回非连续版本、错误 worker、
+不匹配 snapshot 或未延长 lease，guard 立即永久失效。record fingerprint 从 v1 升为 v2 时，初始化只
+迁移 heartbeat 字段为空、业务内容指纹正确且 legacy fingerprint 精确匹配的旧行，不能借升级修复未知
+损坏。
 
 `RotationRequest.expectedPreviousMaterialFingerprint` 是显式 CAS；`issuedAt` 必须在本地 clock-skew 窗口
 的未来边界内，历史年龄则受显式 `maximumExecutionDelay` 限制。producer 在调用 signer 前验证 current
@@ -298,14 +328,15 @@ mvn -f resource-gateway-examples/pom.xml \
 - 企业 IAM/PDP 对 maker/checker/worker 的认证授权、职责分离策略、审批撤回和离线 break-glass；
 - HSM/KMS adapter、不可导出 private-key custody、mTLS、key attestation、provider HA 和 signer
   idempotency capability attestation；
-- 执行 heartbeat/lease extension、后台恢复调度、重试预算、cancel/reject；当前单次签名尝试必须在
-  1..300 秒 lease 内完成，长耗时或大 signer cohort 尚未认证；
+- signer/provider 强制 timeout、可证明 cancellation、后台恢复调度、跨进程 supervision、重试预算和
+  cancel/reject；自动 heartbeat 只能保持健康调用的 fence，approval 硬截止后无法取消的 provider
+  调用仍可占用调用线程，但不能提交 artifact；
 - `PRODUCED` 后 publisher 失败的对账/补发、显式 abandon 规则、journal retention 与 legal hold；
 - root bundle publisher 的 mTLS/pinning、跨区域 HA、独立 consistency witness 与 anti-equivocation；
 - transaction-bound security audit、外部 WORM/evidence；当前 whole-record SHA-256 用于发现偶发腐化，
   不是能抵抗拥有数据库写权限攻击者的 keyed 或外部 tamper evidence；
 - 本地数据库 floor 与 root publisher 同时回退时的外部不可回退证明；
-- 正式 migration 工具、PostgreSQL/MySQL 等目标数据库并发、备份恢复、跨区 DR 与长期 chaos/SLO
-  认证；当前 DDL/锁语义只由内嵌 H2 测试证明。
+- 超过 N-1 的正式 migration 编排、PostgreSQL/MySQL 等目标数据库并发、备份恢复、跨区 DR 与长期
+  chaos/SLO 认证；当前 DDL/锁语义只由内嵌 H2 测试证明。
 
 这些项目不能由本地 green tests 推导为已完成，仍是进入生产前的独立交付门禁。
