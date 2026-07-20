@@ -198,6 +198,66 @@ class HttpTestSuiteStabilityObservationExternalArchiveInventoryAuthorityTest {
     }
 
     @Test
+    void storedVerifierAcceptsExpiredCanonicalEvidenceButRejectsSignatureTampering() {
+        HttpTestSuiteStabilityObservationExternalArchiveAuthority writer = authority(NOW);
+        TestSuiteStabilityObservationExternalArchiveInventoryPage page =
+                writer.inventoryPage(AUTHORITY,
+                        TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Cursor
+                                .initial(), 2);
+        HttpTestSuiteStabilityObservationExternalArchiveAuthority historical =
+                authority(page.expiresAt());
+        TestSuiteStabilityObservationExternalArchiveInventoryPage tampered =
+                new TestSuiteStabilityObservationExternalArchiveInventoryPage(
+                        page.schemaVersion(), page.pageFingerprint(), page.request(),
+                        page.authorityId(), page.failureDomain(), page.keyId(), page.snapshotId(),
+                        page.snapshotAt(), page.snapshotObjectCount(), page.snapshotRoot(),
+                        page.items(), page.nextAfterObjectId(), page.complete(), page.issuedAt(),
+                        page.expiresAt(), page.algorithm(),
+                        Base64.getEncoder().encodeToString(new byte[64]));
+
+        assertThat(historical.verifyInventoryPage(page)).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Verification
+                        .INVALID);
+        assertThat(historical.verifyStoredInventoryPage(page)).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Verification
+                        .VERIFIED);
+        assertThat(historical.verifyStoredInventoryPage(tampered)).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Verification
+                        .INVALID);
+    }
+
+    @Test
+    void storedVerifierDefaultsToUnavailableWhenHistoricalTrustIsNotImplemented() {
+        TestSuiteStabilityObservationExternalArchiveInventoryAuthority liveOnly =
+                new TestSuiteStabilityObservationExternalArchiveInventoryAuthority() {
+                    @Override
+                    public List<String> inventoryAuthorities() {
+                        return List.of(AUTHORITY);
+                    }
+
+                    @Override
+                    public TestSuiteStabilityObservationExternalArchiveInventoryPage inventoryPage(
+                            String authorityId, Cursor cursor, int maximumItems) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public Verification verifyInventoryPage(
+                            TestSuiteStabilityObservationExternalArchiveInventoryPage page) {
+                        return Verification.VERIFIED;
+                    }
+                };
+        TestSuiteStabilityObservationExternalArchiveInventoryPage page = authority(NOW)
+                .inventoryPage(AUTHORITY,
+                        TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Cursor
+                                .initial(), 2);
+
+        assertThat(liveOnly.verifyStoredInventoryPage(page)).isEqualTo(
+                TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Verification
+                        .UNAVAILABLE);
+    }
+
+    @Test
     void boundedPreGeneratedSnapshotIsAcceptedButStaleSnapshotFailsClosed() {
         snapshotTime.set(NOW.minus(Duration.ofMinutes(5)));
         HttpTestSuiteStabilityObservationExternalArchiveAuthority authority = authority(NOW);

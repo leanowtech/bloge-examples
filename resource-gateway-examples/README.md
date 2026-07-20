@@ -206,7 +206,10 @@ which can then seed the active compact-range request. `crossRetentionSuiteStabil
 intentionally remains disabled. The strict multi-authority HTTPS adapter closes the test/staging
 write shape with concurrent bounded requests, signed conflict receipts, exact topology/key
 verification, and aggregate health. Its signed immutable-snapshot inventory protocol now closes the
-read transport shape; the default-off test/staging control loop now wires durable lease/cursor,
+read transport shape and exposes a fail-closed historical-page verifier that checks canonical
+material, configured topology, snapshot identity, and signing-time key validity without incorrectly
+reapplying the page's consumed live-admission deadline. The default-off test/staging control loop
+now wires durable lease/cursor,
 frozen classification, replay-verified finding projection, downstream backpressure, and bounded
 finding/evidence retention. Certified providers, source-history retention, historical trust
 publication, legal-hold/erasure/backup and recovery controls,

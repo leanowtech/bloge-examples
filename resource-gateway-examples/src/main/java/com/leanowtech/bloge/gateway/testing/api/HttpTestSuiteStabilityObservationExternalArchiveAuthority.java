@@ -351,6 +351,31 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
                 .Verification.INVALID;
     }
 
+    /**
+     * Re-verifies a stored page without applying its already-consumed live admission deadline.
+     *
+     * <p>The exact historical key must remain configured and must have been valid at the page's
+     * signing time. Administrative revocation and missing trust material fail closed.</p>
+     */
+    @Override
+    public TestSuiteStabilityObservationExternalArchiveInventoryAuthority.Verification
+            verifyStoredInventoryPage(
+                    TestSuiteStabilityObservationExternalArchiveInventoryPage page) {
+        Objects.requireNonNull(page, "page");
+        Endpoint endpoint = endpointsByAuthority.get(page.authorityId());
+        ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey key =
+                keys.get(page.authorityId() + '\u0000' + page.keyId());
+        if (endpoint == null || key == null || !key.activeAt(page.issuedAt())) {
+            return TestSuiteStabilityObservationExternalArchiveInventoryAuthority
+                    .Verification.UNAVAILABLE;
+        }
+        return storedInventoryPageValid(endpoint, page)
+                ? TestSuiteStabilityObservationExternalArchiveInventoryAuthority
+                .Verification.VERIFIED
+                : TestSuiteStabilityObservationExternalArchiveInventoryAuthority
+                .Verification.INVALID;
+    }
+
     private TestSuiteStabilityObservationExternalArchiveAuthority.Verification verifyAt(
             TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet,
             Instant observedAt) {
@@ -480,6 +505,32 @@ public final class HttpTestSuiteStabilityObservationExternalArchiveAuthority
         return signatureValid(page.authorityId(), page.keyId(), page.algorithm(),
                 page.issuedAt(), page.expiresAt(), page.pageFingerprint(), page.signature(),
                 observedAt, "External archive inventory page");
+    }
+
+    private boolean storedInventoryPageValid(
+            Endpoint endpoint,
+            TestSuiteStabilityObservationExternalArchiveInventoryPage page) {
+        TestSuiteStabilityObservationExternalArchiveInventoryRequest request = page.request();
+        String expectedSnapshotId =
+                TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.snapshotId(
+                        objectMapper, trustDomain, archiveSetId, endpoint.authorityId(),
+                        endpoint.failureDomain(), page.snapshotAt(),
+                        page.snapshotObjectCount(), page.snapshotRoot());
+        if (!page.fingerprintVerified(objectMapper)
+                || !trustDomain.equals(request.trustDomain())
+                || !archiveSetId.equals(request.archiveSetId())
+                || !endpoint.authorityId().equals(page.authorityId())
+                || !endpoint.failureDomain().equals(page.failureDomain())
+                || !expectedSnapshotId.equals(page.snapshotId())
+                || !request.snapshotId().isEmpty()
+                && !request.snapshotId().equals(page.snapshotId())
+                || Duration.between(page.issuedAt(), page.expiresAt()).compareTo(
+                settings.maximumReceiptLifetime()) > 0) {
+            return false;
+        }
+        return signatureValid(page.authorityId(), page.keyId(), page.algorithm(),
+                page.issuedAt(), page.expiresAt(), page.pageFingerprint(), page.signature(),
+                page.issuedAt(), "Stored external archive inventory page");
     }
 
     private Observation observe(

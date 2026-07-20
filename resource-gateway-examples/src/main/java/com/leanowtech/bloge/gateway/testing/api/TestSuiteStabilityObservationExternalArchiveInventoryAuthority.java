@@ -42,6 +42,28 @@ public interface TestSuiteStabilityObservationExternalArchiveInventoryAuthority 
     Verification verifyInventoryPage(
             TestSuiteStabilityObservationExternalArchiveInventoryPage page);
 
+    /**
+     * Re-verifies a previously admitted page as historical evidence.
+     *
+     * <p>Unlike {@link
+     * #verifyInventoryPage(TestSuiteStabilityObservationExternalArchiveInventoryPage)}, this
+     * operation must not reject an otherwise valid page merely because its short admission window
+     * or snapshot-freshness window has elapsed. Implementations must still verify canonical
+     * material, configured topology, snapshot identity, and a key that was valid at signing time.
+     * Revoked, missing, or unverifiable historical trust fails closed.</p>
+     *
+     * <p>The default is deliberately unavailable so an implementation cannot silently claim
+     * historical verification from its live-admission verifier.</p>
+     *
+     * @param page signed page already admitted into durable staging
+     * @return closed historical verification state
+     */
+    default Verification verifyStoredInventoryPage(
+            TestSuiteStabilityObservationExternalArchiveInventoryPage page) {
+        Objects.requireNonNull(page, "page");
+        return Verification.UNAVAILABLE;
+    }
+
     /** First-page or exact continuation cursor. */
     record Cursor(String snapshotId, String afterObjectId, long pageSequence) {
         private static final Pattern SNAPSHOT_ID = Pattern.compile(
