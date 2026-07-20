@@ -73,6 +73,22 @@ child evidence 存储链也已从“对一个对象签名、随后再序列化�
 `clean verify` 执行 3063 tests，0 failures、0 errors、2 个条件浏览器跳过，35 个配置的真实浏览器测试
 完成并成功重打包 Spring Boot 可执行 JAR。
 
+同一轮进一步关闭 suite checkpoint/terminal aggregate 的同类断点。v1-v5 evidence metadata 统一递归
+冻结，`TestSuiteRunAttestationService` 先做 exact-generation canonical round trip，再对该快照计算
+aggregate fingerprint、签名并把实际签名 evidence 返回。所有 execution、mutation 与 abandoned
+reconciliation 路径只持久化 seal result。`TestSuiteRunRecordIntegrity` 在 service/JDBC 写前读后回绑
+签名、代际、CHECKPOINT/TERMINAL scope、run/request/suite/time、六维 signed identity metadata、完整
+run/client/suite lookup key、write receipt 与十个独立索引列；回收候选还必须在数据库观察时刻满足
+RUNNING、retained、lease-expired。由此阻断伪造 `VERIFIED` 标签、任意 bean alias、JSON/索引漂移、
+跨 scope 替换和自定义 repository 合法对象替换，失败信息与 security event 均不回显业务 payload。
+历史 unsigned v1 只保留显式迁移读取，不能形成新 checkpoint；签名权威不可用只允许产生
+`EVIDENCE_INCOMPLETE + BLOCKED` terminal。该增量仍不宣称数据库自身不可篡改，也不替代外部 WORM、
+witness 或备份 rollback 证明。验证见
+[Stage 3 suite-run storage integrity verification](resource-gateway-execution-data-control-plane-stage3-suite-run-storage-integrity-verification.md)。
+本增量 65 项 attestation/persistence/service/reconciliation 聚焦测试全绿；完整 Resource Gateway
+`clean verify` 执行 3070 tests，0 failures、0 errors、2 个条件浏览器跳过，并成功重打包 Spring Boot
+可执行 JAR。
+
 > Stage 5 lifecycle 状态校正：表中“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

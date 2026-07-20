@@ -68,6 +68,19 @@ JSON/索引漂移和跨 scope 替换均 payload-free fail closed；API 在 proje
 `clean verify` 执行 3063 tests，0 failures、0 errors、2 个条件浏览器跳过，35 个配置的真实浏览器测试
 完成并成功重打包 Spring Boot 可执行 JAR。
 
+同一轮继续关闭 suite aggregate 的“签名 A、持久化 B”断点。v1-v5 evidence metadata 递归冻结；
+attestation service 对 exact-generation canonical snapshot 计算 fingerprint 和签名，并把该快照作为
+seal result 返回，execution/mutation/reconciliation 只能持久化该对象。新的
+`TestSuiteRunRecordIntegrity` 在 service 与 JDBC 双边界校验密码学签名、代际、scope、run/request/suite/
+time、六项 signed identity metadata、完整 lookup key、create/update receipt 和十个索引投影；abandoned
+候选还需在权威观察时刻同时满足 RUNNING、未过 retention、lease 已过期。伪 `VERIFIED`、可变 alias、
+JSON/索引漂移、跨租户或合法对象替换均 payload-free fail closed。unsigned v1 只读迁移；authority
+unavailable 只能写 `EVIDENCE_INCOMPLETE + BLOCKED` terminal。该边界不宣称能对抗可同时改写数据库与
+外部信任锚的权威，WORM/witness/backup rollback 证明仍是独立责任。验证见
+[Stage 3 suite-run storage integrity verification](resource-gateway-execution-data-control-plane-stage3-suite-run-storage-integrity-verification.md)。
+本增量 65 项聚焦测试全绿；完整 Resource Gateway `clean verify` 执行 3070 tests，0 failures、
+0 errors、2 个条件浏览器跳过，并成功重打包 Spring Boot 可执行 JAR。
+
 第三十五增量已新增 `RecoveryStepCommand/Result` 与数据库权威 command record：一个
 issued dispatch 可把一个 signal 原子推进到唯一新 `SUSPENDED` 或五类 `TERMINAL`；再次挂起时用
 数据库时钟释放 lease，四 store/控制 checkpoint/幂等结果/可选 receipt/audit 同事务，响应丢失重放

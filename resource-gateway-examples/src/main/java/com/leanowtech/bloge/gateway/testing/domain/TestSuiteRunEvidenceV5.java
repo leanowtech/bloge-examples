@@ -4,7 +4,6 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -117,8 +116,7 @@ public record TestSuiteRunEvidenceV5(
         mutantResults = mutantResults == null ? List.of() : List.copyOf(mutantResults);
         mutationScore = Objects.requireNonNull(mutationScore, "mutationScore");
         diagnostics = immutableDiagnostics(diagnostics);
-        metadata = metadata == null ? Map.of()
-                : Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        metadata = ProtocolJsonValue.freezeMap(metadata);
 
         boolean planShape = sourcePlanStatus == TestSuiteV5.SourcePlanStatus.GENERATED
                 ? planningGaps.isEmpty() && !planningGapsAccepted

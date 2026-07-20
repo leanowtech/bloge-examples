@@ -201,7 +201,7 @@ public final class TestMutationSuiteExecutionService {
         TestSuiteRunRecord initial = new TestSuiteRunRecord(suiteRunId,
                 request.clientRequestId(), requestFingerprint, identity.tenantId(),
                 identity.organizationId(), identity.projectId(), identity.environmentId(),
-                identity.actorId(), suite.classification(), "", running,
+                identity.actorId(), suite.classification(), "", initialSeal.evidence(),
                 initialSeal.attestation(), startedAt, startedAt.plus(retention));
 
         AdmissionSubjects subjects = executions.admissionSubjects(target(suite), identity);
@@ -249,13 +249,19 @@ public final class TestMutationSuiteExecutionService {
             TestSuiteEvidenceAggregator.TargetState targetState) {
         TestSuiteRunRecord record;
         try {
-            record = runRepository.create(initial, leaseCoordinator.newLease());
+            record = createVerified(initial);
         } catch (TestSuiteRunConflictException race) {
             TestSuiteRunRecord winner = findByClientRequestId(
                     request.clientRequestId(), identity).orElseThrow(() -> conflict(identity,
                     "RG.TEST.SUITE_RUN_IDEMPOTENCY_RETIRED",
                     "clientRequestId is already retired; use a new key.", Map.of()));
             return idempotentResponse(winner, initial.requestFingerprint(), identity);
+        } catch (TestSuiteRunIntegrityException invalid) {
+            securityEvent(identity, "TEST_SUITE_STORAGE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                    Map.of("verification", "CREATE_RECEIPT_INVALID"));
+            throw conflict(identity, "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                    "The mutation suite-run store returned an invalid aggregate receipt.", Map.of());
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.SUITE_RUN_STORE_UNAVAILABLE",
                     "The independent suite-run store is unavailable.");
@@ -503,7 +509,8 @@ public final class TestMutationSuiteExecutionService {
             if (!seal.verified()) {
                 return false;
             }
-            updateOwned(withEvidence(record, running, "", seal.attestation()), lease);
+            updateOwned(withEvidence(record, (TestSuiteRunEvidenceV5) seal.evidence(), "",
+                    seal.attestation()), lease);
             return true;
         } catch (RuntimeException unavailable) {
             return false;
@@ -574,6 +581,7 @@ public final class TestMutationSuiteExecutionService {
         metadata.put("projectId", identity.projectId());
         metadata.put("environmentId", identity.environmentId());
         metadata.put("actorId", identity.actorId());
+        metadata.put("classification", suite.classification());
         metadata.put("correlationId", identity.correlationId());
         metadata.put("strategy", request.strategy().name());
         metadata.put("suiteFingerprint", stored.fingerprint());
@@ -670,11 +678,13 @@ public final class TestMutationSuiteExecutionService {
         TestSuiteRunAttestationService.SealResult seal = attestations.seal(safe,
                 record.requestFingerprint(), children, TestSuiteRunAttestation.Scope.TERMINAL);
         if (!seal.verified()) {
-            safe = failClosed(safe, seal.failureCode());
+            safe = failClosed((TestSuiteRunEvidenceV5) seal.evidence(), seal.failureCode());
             seal = attestations.seal(safe, record.requestFingerprint(), children,
                     TestSuiteRunAttestation.Scope.TERMINAL);
         }
-        return withEvidence(record, safe, evidenceCodec.fingerprint(safe), seal.attestation());
+        safe = (TestSuiteRunEvidenceV5) seal.evidence();
+        return withEvidence(record, safe, seal.attestation().aggregateEvidenceFingerprint(),
+                seal.attestation());
     }
 
     private static TestSuiteRunEvidenceV5 failClosed(
@@ -872,7 +882,16 @@ public final class TestMutationSuiteExecutionService {
             IntegrationRequestContext identity) {
         try {
             return runRepository.findByClientRequestId(identity.tenantId(),
-                    identity.environmentId(), clientRequestId);
+                            identity.environmentId(), clientRequestId)
+                    .map(record -> TestSuiteRunRecordIntegrity.verifiedClientLookup(
+                            objectMapper, attestations, record, identity.tenantId(),
+                            identity.environmentId(), clientRequestId));
+        } catch (TestSuiteRunIntegrityException invalid) {
+            securityEvent(identity, "TEST_SUITE_STORAGE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                    Map.of("verification", "IDEMPOTENCY_LOOKUP_INVALID"));
+            throw conflict(identity, "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                    "Persisted mutation evidence failed storage integrity verification.", Map.of());
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.SUITE_RUN_STORE_UNAVAILABLE",
                     "The independent suite-run store is unavailable.");
@@ -927,7 +946,17 @@ public final class TestMutationSuiteExecutionService {
             TestSuiteRunRecord record,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         Instant observedAt = runRepository.currentTime();
-        return runRepository.update(record, lease.renewal(), observedAt);
+        TestSuiteRunRecord expected = TestSuiteRunRecordIntegrity.verifiedWriteSnapshot(
+                objectMapper, attestations, record);
+        return TestSuiteRunRecordIntegrity.verifiedWriteReceipt(objectMapper, attestations,
+                runRepository.update(expected, lease.renewal(), observedAt), expected);
+    }
+
+    private TestSuiteRunRecord createVerified(TestSuiteRunRecord record) {
+        TestSuiteRunRecord expected = TestSuiteRunRecordIntegrity.verifiedWriteSnapshot(
+                objectMapper, attestations, record);
+        return TestSuiteRunRecordIntegrity.verifiedWriteReceipt(objectMapper, attestations,
+                runRepository.create(expected, leaseCoordinator.newLease()), expected);
     }
 
     private static TestSuiteRunRecord withEvidence(

@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -77,6 +79,28 @@ class TestSuiteRunAttestationServiceTest {
                 .isEqualTo(TestSuiteRunAttestationService.Verification.INVALID);
         assertThat(service.verify(original, reordered))
                 .isEqualTo(TestSuiteRunAttestationService.Verification.INVALID);
+    }
+
+    @Test
+    void sealReturnsCanonicalEvidenceDetachedFromNestedMetadataAndArbitraryBeans() {
+        List<Object> labels = new ArrayList<>(List.of("reviewed"));
+        MutableValue decision = new MutableValue("approved");
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("labels", labels);
+        metadata.put("decision", decision);
+        TestSuiteRunEvidence supplied = evidence(TestSuiteRunEvidence.Status.PASSED, metadata);
+
+        var seal = service.seal(supplied, REQUEST_FINGERPRINT, children(),
+                TestSuiteRunAttestation.Scope.TERMINAL);
+        labels.add("mutated");
+        decision.status = "denied";
+
+        assertThat(seal.evidence()).isNotSameAs(supplied);
+        assertThat(seal.evidence().metadata().get("labels")).isEqualTo(List.of("reviewed"));
+        assertThat(seal.evidence().metadata().get("decision"))
+                .isEqualTo(Map.of("status", "approved"));
+        assertThat(service.verify(seal.evidence(), seal.attestation()))
+                .isEqualTo(TestSuiteRunAttestationService.Verification.VERIFIED);
     }
 
     @Test
@@ -245,5 +269,13 @@ class TestSuiteRunAttestationServiceTest {
                         TestSuiteRunEvidenceV3.AdmissionCoverageStatus.SATISFIED,
                         1, 1, 1, List.of(), List.of(), List.of(), true),
                 List.of(), Map.of());
+    }
+
+    private static final class MutableValue {
+        public String status;
+
+        private MutableValue(String status) {
+            this.status = status;
+        }
     }
 }

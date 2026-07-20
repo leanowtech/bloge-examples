@@ -435,9 +435,9 @@ class TestSuiteExecutionServiceTest {
         assertThatThrownBy(() -> service.find(run.suiteRunId(), identity))
                 .isInstanceOf(IntegrationProblemException.class)
                 .satisfies(error -> assertThat(((IntegrationProblemException) error).problem().code())
-                        .isEqualTo("RG.TEST.SUITE_ATTESTATION_INVALID"));
+                        .isEqualTo("RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID"));
         verify(securityEvents).append(org.mockito.ArgumentMatchers.argThat(event ->
-                event.eventType().equals("TEST_SUITE_ATTESTATION_INVALID")));
+                event.eventType().equals("TEST_SUITE_STORAGE_INTEGRITY_INVALID")));
     }
 
     @Test

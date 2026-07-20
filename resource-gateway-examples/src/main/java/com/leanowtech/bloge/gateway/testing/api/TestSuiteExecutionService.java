@@ -235,7 +235,8 @@ public final class TestSuiteExecutionService {
         }
         TestSuiteRunRecord record = new TestSuiteRunRecord(suiteRunId, request.clientRequestId(),
                 requestFingerprint, identity.tenantId(), identity.organizationId(), identity.projectId(),
-                identity.environmentId(), identity.actorId(), stored.suite().classification(), "", running,
+                identity.environmentId(), identity.actorId(), stored.suite().classification(), "",
+                initialSeal.evidence(),
                 initialSeal.attestation(),
                 startedAt, startedAt.plus(retention));
 
@@ -293,7 +294,7 @@ public final class TestSuiteExecutionService {
         TestSuiteRunRecord record = new TestSuiteRunRecord(suiteRunId, request.clientRequestId(),
                 requestFingerprint, identity.tenantId(), identity.organizationId(),
                 identity.projectId(), identity.environmentId(), identity.actorId(),
-                suite.classification(), "", running, initialSeal.attestation(),
+                suite.classification(), "", initialSeal.evidence(), initialSeal.attestation(),
                 startedAt, startedAt.plus(retention));
 
         Set<String> operatorRefs = "OPERATOR".equals(suite.target().kind())
@@ -328,7 +329,7 @@ public final class TestSuiteExecutionService {
             List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results) {
         TestSuiteRunRecord record;
         try {
-            record = runRepository.create(initial, leaseCoordinator.newLease());
+            record = createVerified(initial);
         } catch (TestSuiteRunConflictException race) {
             TestSuiteRunRecord winner = findByClientRequestId(request.clientRequestId(), identity)
                     .orElseThrow(() -> conflict(identity,
@@ -336,6 +337,8 @@ public final class TestSuiteExecutionService {
                             "clientRequestId is already reserved by expired or retired evidence; use a new key.",
                             Map.of()));
             return idempotentResponse(winner, initial.requestFingerprint(), identity);
+        } catch (TestSuiteRunIntegrityException invalid) {
+            throw invalidStoreReceipt(identity, "CREATE_RECEIPT_INVALID");
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.SUITE_RUN_STORE_UNAVAILABLE",
                     "The independent suite-run store is unavailable.");
@@ -407,13 +410,15 @@ public final class TestSuiteExecutionService {
             List<TestSuiteEvidenceAggregator.CaseObservation> observations) {
         TestSuiteRunRecord record = initial;
         try {
-            record = runRepository.create(record, leaseCoordinator.newLease());
+            record = createVerified(record);
         } catch (TestSuiteRunConflictException race) {
             TestSuiteRunRecord winner = findByClientRequestId(request.clientRequestId(), identity)
                     .orElseThrow(() -> conflict(identity, "RG.TEST.SUITE_RUN_IDEMPOTENCY_RETIRED",
                             "clientRequestId is already reserved by expired or retired evidence; use a new key.",
                             Map.of()));
             return idempotentResponse(winner, initial.requestFingerprint(), identity);
+        } catch (TestSuiteRunIntegrityException invalid) {
+            throw invalidStoreReceipt(identity, "CREATE_RECEIPT_INVALID");
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.SUITE_RUN_STORE_UNAVAILABLE",
                     "The independent suite-run store is unavailable.");
@@ -490,13 +495,22 @@ public final class TestSuiteExecutionService {
         }
         TestSuiteRunRecord record;
         try {
-            record = runRepository.find(identity.tenantId(), identity.environmentId(), normalized(suiteRunId))
+            String normalizedRunId = normalized(suiteRunId);
+            record = runRepository.find(identity.tenantId(), identity.environmentId(), normalizedRunId)
                     .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
                             "RG.TEST.SUITE_RUN_NOT_FOUND",
                             "Suite run was not found in the authorized scope.",
                             identity.correlationId(), Map.of())));
+            record = TestSuiteRunRecordIntegrity.verifiedRunLookup(objectMapper, attestations,
+                    record, identity.tenantId(), identity.environmentId(), normalizedRunId);
         } catch (IntegrationProblemException notFound) {
             throw notFound;
+        } catch (TestSuiteRunIntegrityException invalid) {
+            securityEvent(identity, "TEST_SUITE_STORAGE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                    Map.of("verification", "LOOKUP_ENVELOPE_INVALID"));
+            throw conflict(identity, "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                    "Persisted suite evidence failed storage integrity verification.", Map.of());
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.SUITE_RUN_STORE_UNAVAILABLE",
                     "The independent suite-run store is unavailable.");
@@ -679,7 +693,7 @@ public final class TestSuiteExecutionService {
         if (!seal.verified()) {
             throw new IllegalStateException(seal.failureCode());
         }
-        updateOwned(withEvidence(record, running, "", seal.attestation()), lease);
+        updateOwned(withEvidence(record, seal.evidence(), "", seal.attestation()), lease);
     }
 
     private TestSuiteRunEvidenceV3 admissionEvidence(
@@ -721,6 +735,7 @@ public final class TestSuiteExecutionService {
         metadata.put("projectId", identity.projectId());
         metadata.put("environmentId", identity.environmentId());
         metadata.put("actorId", identity.actorId());
+        metadata.put("classification", suite.classification());
         metadata.put("correlationId", identity.correlationId());
         metadata.put("strategy", request.strategy().name());
         metadata.put("requestMetadataFingerprint", ProtocolFingerprint.of(
@@ -833,13 +848,32 @@ public final class TestSuiteExecutionService {
         if (!seal.verified()) {
             throw new IllegalStateException(seal.failureCode());
         }
-        updateOwned(withEvidence(record, running, "", seal.attestation()), lease);
+        updateOwned(withEvidence(record, seal.evidence(), "", seal.attestation()), lease);
     }
 
     private TestSuiteRunRecord updateOwned(TestSuiteRunRecord record,
                                            TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         Instant observedAt = runRepository.currentTime();
-        return runRepository.update(record, lease.renewal(), observedAt);
+        TestSuiteRunRecord expected = TestSuiteRunRecordIntegrity.verifiedWriteSnapshot(
+                objectMapper, attestations, record);
+        return TestSuiteRunRecordIntegrity.verifiedWriteReceipt(objectMapper, attestations,
+                runRepository.update(expected, lease.renewal(), observedAt), expected);
+    }
+
+    private TestSuiteRunRecord createVerified(TestSuiteRunRecord record) {
+        TestSuiteRunRecord expected = TestSuiteRunRecordIntegrity.verifiedWriteSnapshot(
+                objectMapper, attestations, record);
+        return TestSuiteRunRecordIntegrity.verifiedWriteReceipt(objectMapper, attestations,
+                runRepository.create(expected, leaseCoordinator.newLease()), expected);
+    }
+
+    private IntegrationProblemException invalidStoreReceipt(
+            IntegrationRequestContext identity, String verification) {
+        securityEvent(identity, "TEST_SUITE_STORAGE_INTEGRITY_INVALID", "REJECTED",
+                "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                Map.of("verification", verification));
+        return conflict(identity, "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                "The suite-run store returned an invalid aggregate receipt.", Map.of());
     }
 
     private TestSuiteRunEvidenceProtocol evidence(
@@ -855,6 +889,7 @@ public final class TestSuiteExecutionService {
         metadata.put("projectId", identity.projectId());
         metadata.put("environmentId", identity.environmentId());
         metadata.put("actorId", identity.actorId());
+        metadata.put("classification", stored.suite().classification());
         metadata.put("correlationId", identity.correlationId());
         metadata.put("strategy", request.strategy().name());
         metadata.put("requestMetadataFingerprint", ProtocolFingerprint.of(objectMapper,
@@ -1006,7 +1041,16 @@ public final class TestSuiteExecutionService {
             String clientRequestId, IntegrationRequestContext identity) {
         try {
             return runRepository.findByClientRequestId(identity.tenantId(), identity.environmentId(),
-                    clientRequestId);
+                            clientRequestId)
+                    .map(record -> TestSuiteRunRecordIntegrity.verifiedClientLookup(
+                            objectMapper, attestations, record, identity.tenantId(),
+                            identity.environmentId(), clientRequestId));
+        } catch (TestSuiteRunIntegrityException invalid) {
+            securityEvent(identity, "TEST_SUITE_STORAGE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                    Map.of("verification", "IDEMPOTENCY_LOOKUP_INVALID"));
+            throw conflict(identity, "RG.TEST.SUITE_STORAGE_INTEGRITY_INVALID",
+                    "Persisted suite evidence failed storage integrity verification.", Map.of());
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.SUITE_RUN_STORE_UNAVAILABLE",
                     "The independent suite-run store is unavailable.");
@@ -1037,11 +1081,12 @@ public final class TestSuiteExecutionService {
         TestSuiteRunAttestationService.SealResult seal = attestations.seal(safeEvidence,
                 record.requestFingerprint(), children, TestSuiteRunAttestation.Scope.TERMINAL);
         if (!seal.verified()) {
-            safeEvidence = failClosed(safeEvidence, seal.failureCode());
+            safeEvidence = failClosed(seal.evidence(), seal.failureCode());
             seal = attestations.seal(safeEvidence, record.requestFingerprint(), children,
                     TestSuiteRunAttestation.Scope.TERMINAL);
         }
-        String fingerprint = evidenceCodec.fingerprint(safeEvidence);
+        safeEvidence = seal.evidence();
+        String fingerprint = seal.attestation().aggregateEvidenceFingerprint();
         return withEvidence(record, safeEvidence, fingerprint, seal.attestation());
     }
 

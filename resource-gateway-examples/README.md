@@ -1097,6 +1097,15 @@ real ANEKE N/N-1 conformance, independent witness gossip, and physical test-runt
 isolation remain in progress and are not advertised as complete. Configuration and consumer flow are
 documented in [Stage 3 evidence trust transparency verification](../docs/resource-gateway-execution-data-control-plane-stage3-evidence-trust-transparency-verification.md).
 
+Suite checkpoint and terminal persistence now uses the exact canonical v1-v5 aggregate returned by
+the signing boundary. The store and service independently bind its signature, aggregate fingerprint,
+tenant/organization/project/environment/actor/classification metadata, record envelope, lookup key,
+and indexed columns; create/update receipts and abandoned-run candidates from replaceable repository
+adapters are verified before use. Altered JSON, forged `VERIFIED` labels, cross-scope substitutions,
+and mutable caller aliases fail closed without echoing business payloads. The invariant and remaining
+database/WORM trust assumptions are documented in
+[Stage 3 suite-run storage integrity verification](../docs/resource-gateway-execution-data-control-plane-stage3-suite-run-storage-integrity-verification.md).
+
 Stage 4 now also provides a profile-gated, content-addressed durable-test checkpoint repository in
 the isolated test-runtime database. It binds the exact plan and fixture revision, fixture-consumption
 cursors, deterministic provider state, engine-state closure, and owner/lease/revision fence. Current

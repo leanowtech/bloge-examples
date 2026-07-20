@@ -40,6 +40,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -70,8 +71,8 @@ class TestRuntimePersistenceTest {
         runs = new DatabaseTestRunRepository(jdbc, mapper, evidenceIntegrity);
         securityEvents = new DatabaseTestSecurityEventRepository(jdbc, mapper);
         suites = new DatabaseTestSuiteRepository(jdbc, mapper);
-        suiteRuns = new DatabaseTestSuiteRunRepository(jdbc, mapper);
         suiteAttestations = new TestSuiteRunAttestationService(mapper, signer);
+        suiteRuns = new DatabaseTestSuiteRunRepository(jdbc, mapper, suiteAttestations);
         fixtures.init();
         runs.init();
         securityEvents.init();
@@ -293,7 +294,7 @@ class TestRuntimePersistenceTest {
                 TestSuiteRunEvidence.Status.RUNNING, "TEST_SUITE_EXECUTION", suiteRef, suite.target(),
                 now, null, List.of(), TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
                 SemanticCoverageVerdict.notEvaluated(List.of(retry)),
-                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), Map.of());
+                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), suiteRunMetadata());
         String requestFingerprint = "sha256:" + "d".repeat(64);
         var attestation = suiteAttestations.seal(evidence, requestFingerprint, List.of(),
                 com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.CHECKPOINT)
@@ -374,7 +375,7 @@ class TestRuntimePersistenceTest {
                 "boundary-cases-v1", TestSuiteRunEvidenceV3.VERIFICATION_MODE,
                 TestBoundaryCasePlan.Status.GENERATED, 0, false, List.of(pendingAdmission),
                 TestSuiteRunEvidenceV3.AdmissionCoverageVerdict.notEvaluated(1),
-                List.of(), Map.of());
+                List.of(), suiteRunMetadata());
         String requestFingerprint = "sha256:" + "e".repeat(64);
         var attestation = suiteAttestations.seal(evidence, requestFingerprint, List.of(),
                 com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.CHECKPOINT)
@@ -446,7 +447,7 @@ class TestRuntimePersistenceTest {
                         TestSuiteRunEvidenceV3.AdmissionCoverageStatus.INCOMPLETE,
                         1, 0, 0, List.of(), List.of(), List.of(pendingCase.caseId()), false),
                 List.of("ABANDONED_RUN_RECONCILED"),
-                Map.of("reconciliationMode", "LEASE_EXPIRY_TERMINALIZATION"));
+                suiteRunMetadata("reconciliationMode", "LEASE_EXPIRY_TERMINALIZATION"));
         var terminalAttestation = suiteAttestations.seal(terminalEvidence, requestFingerprint,
                 List.of(), TestSuiteRunAttestation.Scope.TERMINAL).attestation();
         TestSuiteRunRecord terminalRecord = new TestSuiteRunRecord(
@@ -592,7 +593,7 @@ class TestRuntimePersistenceTest {
         TestSuiteRunEvidence running = new TestSuiteRunEvidence("", "suite-run-1", "request-1",
                 TestSuiteRunEvidence.Status.RUNNING, "TEST_SUITE_EXECUTION", suiteRef, target,
                 now, null, List.of(), TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
-                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), Map.of());
+                TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(), suiteRunMetadata());
         String requestFingerprint = "sha256:" + "c".repeat(64);
         var runningAttestation = suiteAttestations.seal(running, requestFingerprint, List.of(),
                 com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.CHECKPOINT)
@@ -616,7 +617,7 @@ class TestRuntimePersistenceTest {
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), 0,
                 List.of(), List.of(), true), new TestSuiteRunEvidence.PromotionVerdict(
                 TestSuiteRunEvidence.PromotionStatus.ELIGIBLE, List.of(), true, 0, 0,
-                true, true, true), List.of(), Map.of());
+                true, true, true), List.of(), suiteRunMetadata());
         var terminalAttestation = suiteAttestations.seal(terminal, requestFingerprint, List.of(),
                 com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.TERMINAL)
                 .attestation();
@@ -665,6 +666,55 @@ class TestRuntimePersistenceTest {
                 new TestSuiteRunLease("instance-a", now.plusSeconds(30))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("signed attestation");
+    }
+
+    @Test
+    void forgedSuiteRunAttestationCannotCrossPersistenceBoundary() {
+        Instant now = suiteRuns.currentTime();
+        TestSuiteRunRecord signed = suiteRunRecord(
+                "suite-run-forged", "request-forged", now,
+                TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE);
+        TestSuiteRunEvidence original = (TestSuiteRunEvidence) signed.evidence();
+        TestSuiteRunEvidence changed = new TestSuiteRunEvidence(
+                original.schemaVersion(), original.suiteRunId(), original.clientRequestId(),
+                original.status(), original.executionPurpose(), original.suiteRef(), original.target(),
+                original.startedAt(), original.completedAt(), original.caseResults(), original.coverage(),
+                original.promotion(), original.diagnostics(),
+                Map.of("credential", "must-never-escape-suite-91"));
+        TestSuiteRunRecord forged = new TestSuiteRunRecord(
+                signed.suiteRunId(), signed.clientRequestId(), signed.requestFingerprint(),
+                signed.tenantId(), signed.organizationId(), signed.projectId(),
+                signed.environmentId(), signed.actorId(), signed.classification(),
+                signed.evidenceFingerprint(), changed, signed.attestation(), signed.createdAt(),
+                signed.expiresAt());
+
+        assertThatThrownBy(() -> suiteRuns.create(forged,
+                new TestSuiteRunLease("instance-a", now.plusSeconds(30))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageNotContaining("must-never-escape-suite-91")
+                .hasMessageNotContaining("suite-run-forged");
+    }
+
+    @Test
+    void suiteRunIndexedScopeAndSerializedRecordSubstitutionFailsClosed() throws Exception {
+        Instant now = suiteRuns.currentTime();
+        TestSuiteRunRecord signed = suiteRunRecord(
+                "suite-run-substituted", "request-substituted", now,
+                TestSuiteRunEvidence.Status.RUNNING);
+        suiteRuns.create(signed, new TestSuiteRunLease("instance-a", now.plusSeconds(30)));
+        TestSuiteRunRecord substituted = new TestSuiteRunRecord(
+                signed.suiteRunId(), signed.clientRequestId(), signed.requestFingerprint(),
+                "tenant-b", signed.organizationId(), signed.projectId(), signed.environmentId(),
+                signed.actorId(), signed.classification(), signed.evidenceFingerprint(),
+                signed.evidence(), signed.attestation(), signed.createdAt(), signed.expiresAt());
+        jdbc.update("UPDATE rg_test_suite_run_records SET record_json = ? WHERE suite_run_id = ?",
+                mapper.writeValueAsString(substituted), signed.suiteRunId());
+
+        assertThatThrownBy(() -> suiteRuns.find("tenant-a", "test", signed.suiteRunId()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageNotContaining("tenant-a")
+                .hasMessageNotContaining("tenant-b")
+                .hasMessageNotContaining("suite-run-substituted");
     }
 
     @Test
@@ -733,7 +783,7 @@ class TestRuntimePersistenceTest {
                         TestSuiteRunEvidence.PromotionStatus.BLOCKED,
                         List.of("EVIDENCE_INCOMPLETE"), false, 0, 0, false, false, false)
                         : TestSuiteRunEvidence.PromotionVerdict.notEvaluated(),
-                terminal ? List.of("ABANDONED_RUN_RECONCILED") : List.of(), Map.of());
+                terminal ? List.of("ABANDONED_RUN_RECONCILED") : List.of(), suiteRunMetadata());
         String requestFingerprint = "sha256:" + "c".repeat(64);
         var attestation = suiteAttestations.seal(evidence, requestFingerprint, List.of(), terminal
                 ? com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation.Scope.TERMINAL
@@ -743,6 +793,22 @@ class TestRuntimePersistenceTest {
                 "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL",
                 terminal ? attestation.aggregateEvidenceFingerprint() : "", evidence, attestation,
                 now, now.plusSeconds(3600));
+    }
+
+    private static Map<String, Object> suiteRunMetadata() {
+        return Map.of(
+                "tenantId", "tenant-a",
+                "organizationId", "org-a",
+                "projectId", "project-a",
+                "environmentId", "test",
+                "actorId", "runner",
+                "classification", "INTERNAL");
+    }
+
+    private static Map<String, Object> suiteRunMetadata(String key, Object value) {
+        Map<String, Object> metadata = new LinkedHashMap<>(suiteRunMetadata());
+        metadata.put(key, value);
+        return Map.copyOf(metadata);
     }
 
     @Test

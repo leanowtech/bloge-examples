@@ -106,8 +106,10 @@ public final class TestSuiteRunReconciliationService {
         int raced = 0;
         int failed = 0;
         List<String> reconciledIds = new ArrayList<>();
-        for (AbandonedTestSuiteRun candidate : candidates) {
+        for (AbandonedTestSuiteRun untrusted : candidates) {
             try {
+                AbandonedTestSuiteRun candidate = TestSuiteRunRecordIntegrity.verifiedAbandoned(
+                        objectMapper, attestations, untrusted, sweptAt);
                 TestSuiteRunRecord terminal = terminal(candidate, sweptAt);
                 if (repository.reconcileAbandoned(candidate, terminal, sweptAt)) {
                     reconciled++;
@@ -181,7 +183,8 @@ public final class TestSuiteRunReconciliationService {
         String fingerprint = seal.attestation().aggregateEvidenceFingerprint();
         return new TestSuiteRunRecord(record.suiteRunId(), record.clientRequestId(),
                 record.requestFingerprint(), record.tenantId(), record.organizationId(), record.projectId(),
-                record.environmentId(), record.actorId(), record.classification(), fingerprint, terminal,
+                record.environmentId(), record.actorId(), record.classification(), fingerprint,
+                seal.evidence(),
                 seal.attestation(),
                 record.createdAt(), record.expiresAt());
     }

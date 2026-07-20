@@ -4,22 +4,22 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunConflictException;
 import com.leanowtech.bloge.gateway.testing.api.AbandonedTestSuiteRun;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunIntegrityException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRecord;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRecordIntegrity;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRepository;
-import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
-import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
-import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
-import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
-import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV4;
-import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
+import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -33,11 +33,14 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final TestSuiteRunAttestationService attestations;
 
     /** Creates a repository over the isolated test-runtime JDBC store. */
-    public DatabaseTestSuiteRunRepository(JdbcTemplate jdbc, ObjectMapper objectMapper) {
-        this.jdbc = jdbc;
-        this.objectMapper = objectMapper;
+    public DatabaseTestSuiteRunRepository(JdbcTemplate jdbc, ObjectMapper objectMapper,
+                                          TestSuiteRunAttestationService attestations) {
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.attestations = Objects.requireNonNull(attestations, "attestations");
     }
 
     /** Creates the suite-run table and scoped lookup indexes when absent. */
@@ -110,7 +113,8 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
 
     @Override
     public TestSuiteRunRecord create(TestSuiteRunRecord record, TestSuiteRunLease lease) {
-        requireComplete(record);
+        TestSuiteRunRecord snapshot = TestSuiteRunRecordIntegrity.verifiedWriteSnapshot(
+                objectMapper, attestations, record);
         requireLeaseValue(lease);
         try {
             int rows = jdbc.update("""
@@ -120,16 +124,16 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
                         checkpoint_version, lease_owner, lease_expires_at, last_checkpoint_at,
                         created_at, expires_at, record_json
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
-                    """, record.suiteRunId(), record.tenantId(), record.environmentId(),
-                    record.clientRequestId(), record.evidence().suiteRef().suiteId(),
-                    record.evidence().suiteRef().revision(), record.evidence().status().name(),
-                    record.evidenceFingerprint(), lease.ownerId(), Timestamp.from(lease.expiresAt()),
-                    Timestamp.from(record.createdAt()), Timestamp.from(record.createdAt()),
-                    Timestamp.from(record.expiresAt()), write(record));
+                    """, snapshot.suiteRunId(), snapshot.tenantId(), snapshot.environmentId(),
+                    snapshot.clientRequestId(), snapshot.evidence().suiteRef().suiteId(),
+                    snapshot.evidence().suiteRef().revision(), snapshot.evidence().status().name(),
+                    snapshot.evidenceFingerprint(), lease.ownerId(), Timestamp.from(lease.expiresAt()),
+                    Timestamp.from(snapshot.createdAt()), Timestamp.from(snapshot.createdAt()),
+                    Timestamp.from(snapshot.expiresAt()), write(snapshot));
             if (rows != 1) {
                 throw new IllegalStateException("Suite-run insert did not create exactly one row");
             }
-            return record;
+            return snapshot;
         } catch (DuplicateKeyException duplicate) {
             throw new TestSuiteRunConflictException(
                     "Suite-run id or scoped clientRequestId already exists");
@@ -149,7 +153,8 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
     @Override
     public TestSuiteRunRecord update(TestSuiteRunRecord record, TestSuiteRunLease lease,
                                      Instant observedAt) {
-        requireComplete(record);
+        TestSuiteRunRecord snapshot = TestSuiteRunRecordIntegrity.verifiedWriteSnapshot(
+                objectMapper, attestations, record);
         requireLease(lease, observedAt);
         int rows = jdbc.update("""
                 UPDATE rg_test_suite_run_records
@@ -159,15 +164,16 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
                 WHERE suite_run_id = ? AND tenant_id = ? AND environment_id = ?
                   AND client_request_id = ? AND status = 'RUNNING'
                   AND lease_owner = ? AND lease_expires_at > ? AND expires_at > ?
-                """, record.evidence().status().name(), record.evidenceFingerprint(), write(record),
+                """, snapshot.evidence().status().name(), snapshot.evidenceFingerprint(), write(snapshot),
                 Timestamp.from(lease.expiresAt()), Timestamp.from(observedAt),
-                record.suiteRunId(), record.tenantId(), record.environmentId(), record.clientRequestId(),
+                snapshot.suiteRunId(), snapshot.tenantId(), snapshot.environmentId(),
+                snapshot.clientRequestId(),
                 lease.ownerId(), Timestamp.from(observedAt), Timestamp.from(observedAt));
 
         if (rows != 1) {
             throw new IllegalStateException("Suite-run lease was lost or checkpoint is already terminal");
         }
-        return record;
+        return snapshot;
     }
 
     @Override
@@ -192,25 +198,33 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
             throw new IllegalArgumentException("Abandoned-run observation time is required");
         }
         int boundedLimit = Math.max(1, Math.min(limit, 1000));
-        return jdbc.query("""
-                SELECT record_json, checkpoint_version, lease_owner, lease_expires_at
+        List<AbandonedRow> rows = jdbc.query("""
+                SELECT suite_run_id, tenant_id, environment_id, client_request_id,
+                       suite_id, suite_revision, status, evidence_fingerprint,
+                       created_at, expires_at, record_json,
+                       checkpoint_version, lease_owner, lease_expires_at
                 FROM rg_test_suite_run_records
                 WHERE status = 'RUNNING' AND lease_expires_at <= ? AND expires_at > ?
                 ORDER BY lease_expires_at, suite_run_id
                 LIMIT ?
-                """, (rs, row) -> new AbandonedTestSuiteRun(read(rs.getString("record_json")),
+                """, (rs, row) -> new AbandonedRow(storedRow(rs),
                         rs.getLong("checkpoint_version"), rs.getString("lease_owner"),
                         rs.getTimestamp("lease_expires_at").toInstant()),
                 Timestamp.from(observedAt), Timestamp.from(observedAt), boundedLimit);
+        return rows.stream().map(row -> new AbandonedTestSuiteRun(
+                verifyStoredRow(row.stored()), row.checkpointVersion(), row.leaseOwner(),
+                row.leaseExpiresAt())).toList();
     }
 
     @Override
     public boolean reconcileAbandoned(AbandonedTestSuiteRun abandoned, TestSuiteRunRecord terminal,
                                       Instant observedAt) {
-        requireComplete(terminal);
-        if (abandoned == null || observedAt == null
-                || !abandoned.record().suiteRunId().equals(terminal.suiteRunId())
-                || terminal.evidence().status() == com.leanowtech.bloge.gateway.testing.domain
+        TestSuiteRunRecord snapshot = TestSuiteRunRecordIntegrity.verifiedWriteSnapshot(
+                objectMapper, attestations, terminal);
+        AbandonedTestSuiteRun candidate = TestSuiteRunRecordIntegrity.verifiedAbandoned(
+                objectMapper, attestations, abandoned, observedAt);
+        if (!candidate.record().suiteRunId().equals(snapshot.suiteRunId())
+                || snapshot.evidence().status() == com.leanowtech.bloge.gateway.testing.domain
                 .TestSuiteRunEvidence.Status.RUNNING) {
             throw new IllegalArgumentException("Matching terminal abandoned-run evidence is required");
         }
@@ -221,29 +235,41 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
                 WHERE suite_run_id = ? AND tenant_id = ? AND environment_id = ?
                   AND status = 'RUNNING' AND checkpoint_version = ?
                   AND lease_owner = ? AND lease_expires_at <= ? AND expires_at > ?
-                """, terminal.evidence().status().name(), terminal.evidenceFingerprint(), write(terminal),
-                Timestamp.from(observedAt), terminal.suiteRunId(), terminal.tenantId(),
-                terminal.environmentId(), abandoned.checkpointVersion(), abandoned.leaseOwner(),
+                """, snapshot.evidence().status().name(), snapshot.evidenceFingerprint(), write(snapshot),
+                Timestamp.from(observedAt), snapshot.suiteRunId(), snapshot.tenantId(),
+                snapshot.environmentId(), candidate.checkpointVersion(), candidate.leaseOwner(),
                 Timestamp.from(observedAt), Timestamp.from(observedAt)) == 1;
     }
 
     @Override
     public Optional<TestSuiteRunRecord> find(String tenantId, String environmentId, String suiteRunId) {
-        return query("""
-                        SELECT record_json FROM rg_test_suite_run_records
+        return queryRows("""
+                        SELECT suite_run_id, tenant_id, environment_id, client_request_id,
+                               suite_id, suite_revision, status, evidence_fingerprint,
+                               created_at, expires_at, record_json
+                        FROM rg_test_suite_run_records
                         WHERE tenant_id = ? AND environment_id = ? AND suite_run_id = ?
                           AND expires_at > CURRENT_TIMESTAMP
-                        """, tenantId, environmentId, suiteRunId);
+                        """, tenantId, environmentId, suiteRunId).stream().findFirst()
+                .map(this::verifyStoredRow)
+                .map(record -> TestSuiteRunRecordIntegrity.verifiedRunLookup(
+                        objectMapper, attestations, record, tenantId, environmentId, suiteRunId));
     }
 
     @Override
     public Optional<TestSuiteRunRecord> findByClientRequestId(
             String tenantId, String environmentId, String clientRequestId) {
-        return query("""
-                        SELECT record_json FROM rg_test_suite_run_records
+        return queryRows("""
+                        SELECT suite_run_id, tenant_id, environment_id, client_request_id,
+                               suite_id, suite_revision, status, evidence_fingerprint,
+                               created_at, expires_at, record_json
+                        FROM rg_test_suite_run_records
                         WHERE tenant_id = ? AND environment_id = ? AND client_request_id = ?
                           AND expires_at > CURRENT_TIMESTAMP
-                """, tenantId, environmentId, clientRequestId);
+                """, tenantId, environmentId, clientRequestId).stream().findFirst()
+                .map(this::verifyStoredRow)
+                .map(record -> TestSuiteRunRecordIntegrity.verifiedClientLookup(
+                        objectMapper, attestations, record, tenantId, environmentId, clientRequestId));
     }
 
     /** {@inheritDoc} */
@@ -251,81 +277,63 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
     public List<TestSuiteRunRecord> findTerminalBySuite(
             String tenantId, String environmentId, String suiteId, long revision, int limit) {
         int boundedLimit = Math.max(1, Math.min(limit, 1001));
-        return jdbc.query("""
-                        SELECT record_json FROM rg_test_suite_run_records
+        return queryRows("""
+                        SELECT suite_run_id, tenant_id, environment_id, client_request_id,
+                               suite_id, suite_revision, status, evidence_fingerprint,
+                               created_at, expires_at, record_json
+                        FROM rg_test_suite_run_records
                         WHERE tenant_id = ? AND environment_id = ?
                           AND suite_id = ? AND suite_revision = ?
                           AND status <> 'RUNNING' AND expires_at > CURRENT_TIMESTAMP
                         ORDER BY created_at DESC, suite_run_id
                         LIMIT ?
-                        """, (rs, row) -> read(rs.getString("record_json")),
-                tenantId, environmentId, suiteId, revision, boundedLimit);
+                        """, tenantId, environmentId, suiteId, revision, boundedLimit).stream()
+                .map(this::verifyStoredRow)
+                .map(record -> TestSuiteRunRecordIntegrity.verifiedSuiteLookup(
+                        objectMapper, attestations, record, tenantId, environmentId,
+                        suiteId, revision))
+                .toList();
     }
 
-    private Optional<TestSuiteRunRecord> query(String sql, Object... arguments) {
-        List<TestSuiteRunRecord> records = jdbc.query(sql,
-                (rs, row) -> read(rs.getString("record_json")), arguments);
-        return records.stream().findFirst();
+    private List<StoredRow> queryRows(String sql, Object... arguments) {
+        return jdbc.query(sql, (rs, row) -> storedRow(rs), arguments);
     }
 
-    private static void requireComplete(TestSuiteRunRecord record) {
-        if (record == null || record.evidence() == null || record.suiteRunId() == null
-                || record.suiteRunId().isBlank() || record.clientRequestId() == null
-                || record.clientRequestId().isBlank() || record.createdAt() == null
-                || record.expiresAt() == null) {
-            throw new IllegalArgumentException("Complete suite-run checkpoint is required");
-        }
-        TestSuiteRunAttestation attestation = record.attestation();
-        boolean running = record.evidence().status() == TestSuiteRunEvidence.Status.RUNNING;
-        boolean verified = attestation.signatureStatus()
-                == TestSuiteRunAttestation.SignatureStatus.VERIFIED
-                && attestation.independentlyVerifiable();
-        boolean unavailableTerminal = !running
-                && attestation.signatureStatus()
-                == TestSuiteRunAttestation.SignatureStatus.VERIFICATION_UNAVAILABLE
-                && record.evidence().status() == TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE
-                && record.evidence().promotion().status()
-                == TestSuiteRunEvidence.PromotionStatus.BLOCKED;
-        boolean scopeMatches = attestation.scope() == (running
-                ? TestSuiteRunAttestation.Scope.CHECKPOINT
-                : TestSuiteRunAttestation.Scope.TERMINAL);
-        boolean identityMatches = record.suiteRunId().equals(attestation.suiteRunId())
-                && record.requestFingerprint().equals(attestation.requestFingerprint());
-        boolean fingerprintMatches = running
-                ? record.evidenceFingerprint().isBlank()
-                : record.evidenceFingerprint().equals(attestation.aggregateEvidenceFingerprint());
-        boolean generationMatches = generationMatches(record, attestation);
-        if ((!verified && !unavailableTerminal) || !scopeMatches
-                || !identityMatches || !fingerprintMatches || !generationMatches) {
-            throw new IllegalArgumentException(
-                    "Suite-run persistence requires a structurally valid signed attestation");
-        }
+    private StoredRow storedRow(ResultSet rs) throws SQLException {
+        return new StoredRow(read(rs.getString("record_json")), rs.getString("suite_run_id"),
+                rs.getString("tenant_id"), rs.getString("environment_id"),
+                rs.getString("client_request_id"), rs.getString("suite_id"),
+                rs.getLong("suite_revision"), rs.getString("status"),
+                rs.getString("evidence_fingerprint"), rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("expires_at").toInstant());
     }
 
-    private static boolean generationMatches(TestSuiteRunRecord record,
-                                             TestSuiteRunAttestation attestation) {
-        if (record.evidence() instanceof TestSuiteRunEvidenceV5 mutation) {
-            return TestSuiteRunEvidenceV5.SCHEMA_VERSION.equals(mutation.schemaVersion())
-                    && TestSuiteRunAttestation.SCHEMA_VERSION_V5.equals(
-                    attestation.schemaVersion());
+    private TestSuiteRunRecord verifyStoredRow(StoredRow stored) {
+        TestSuiteRunRecord snapshot = TestSuiteRunRecordIntegrity.verifiedSnapshot(
+                objectMapper, attestations, stored.record());
+        if (!Objects.equals(stored.suiteRunId(), snapshot.suiteRunId())
+                || !Objects.equals(stored.tenantId(), snapshot.tenantId())
+                || !Objects.equals(stored.environmentId(), snapshot.environmentId())
+                || !Objects.equals(stored.clientRequestId(), snapshot.clientRequestId())
+                || !Objects.equals(stored.suiteId(), snapshot.evidence().suiteRef().suiteId())
+                || stored.suiteRevision() != snapshot.evidence().suiteRef().revision()
+                || !Objects.equals(stored.status(), snapshot.evidence().status().name())
+                || !Objects.equals(stored.evidenceFingerprint(), snapshot.evidenceFingerprint())
+                || !Objects.equals(stored.createdAt(), snapshot.createdAt())
+                || !Objects.equals(stored.expiresAt(), snapshot.expiresAt())) {
+            throw new TestSuiteRunIntegrityException();
         }
-        if (record.evidence() instanceof TestSuiteRunEvidenceV4 property) {
-            return TestSuiteRunEvidenceV4.SCHEMA_VERSION.equals(property.schemaVersion())
-                    && TestSuiteRunAttestation.SCHEMA_VERSION_V4.equals(
-                    attestation.schemaVersion());
-        }
-        if (record.evidence() instanceof TestSuiteRunEvidenceV3 admission) {
-            return TestSuiteRunEvidenceV3.SCHEMA_VERSION.equals(admission.schemaVersion())
-                    && TestSuiteRunAttestation.SCHEMA_VERSION_V3.equals(attestation.schemaVersion())
-                    && attestation.childEvidenceRefs().isEmpty();
-        }
-        if (record.evidence() instanceof TestSuiteRunEvidenceV2 semantic) {
-            return TestSuiteRunEvidenceV2.SCHEMA_VERSION.equals(semantic.schemaVersion())
-                    && TestSuiteRunAttestation.SCHEMA_VERSION_V2.equals(attestation.schemaVersion());
-        }
-        return record.evidence() instanceof TestSuiteRunEvidence structural
-                && TestSuiteRunEvidence.SCHEMA_VERSION.equals(structural.schemaVersion())
-                && TestSuiteRunAttestation.SCHEMA_VERSION.equals(attestation.schemaVersion());
+        return snapshot;
+    }
+
+    private record StoredRow(TestSuiteRunRecord record, String suiteRunId, String tenantId,
+                             String environmentId, String clientRequestId, String suiteId,
+                             long suiteRevision, String status, String evidenceFingerprint,
+                             Instant createdAt, Instant expiresAt) {
+    }
+
+    private record AbandonedRow(StoredRow stored, long checkpointVersion, String leaseOwner,
+                                Instant leaseExpiresAt) {
     }
 
     private static void requireLease(TestSuiteRunLease lease, Instant observedAt) {
@@ -353,7 +361,7 @@ public final class DatabaseTestSuiteRunRepository implements TestSuiteRunReposit
         try {
             return objectMapper.readValue(value, TestSuiteRunRecord.class);
         } catch (JsonProcessingException failure) {
-            throw new IllegalStateException("Stored suite-run checkpoint is corrupt", failure);
+            throw new TestSuiteRunIntegrityException(failure);
         }
     }
 }

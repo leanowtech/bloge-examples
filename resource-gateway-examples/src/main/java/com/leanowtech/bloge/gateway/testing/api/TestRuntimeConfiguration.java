@@ -561,8 +561,11 @@ public class TestRuntimeConfiguration {
 
     /** @return recoverable aggregate suite-run store isolated from production run tables */
     @Bean
-    TestSuiteRunRepository testSuiteRunRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
-        return new DatabaseTestSuiteRunRepository(database.jdbc(), objectMapper);
+    TestSuiteRunRepository testSuiteRunRepository(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            TestSuiteRunAttestationService attestations) {
+        return new DatabaseTestSuiteRunRepository(database.jdbc(), objectMapper, attestations);
     }
 
     /** @return immutable terminal stability store isolated from production run tables */

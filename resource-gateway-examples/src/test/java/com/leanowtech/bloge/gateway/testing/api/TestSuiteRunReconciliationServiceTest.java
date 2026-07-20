@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -89,8 +90,9 @@ class TestSuiteRunReconciliationServiceTest {
         assertThat(terminal.evidence().diagnostics()).contains("ABANDONED_RUN_RECONCILED");
         assertThat(terminal.evidence().metadata())
                 .containsEntry("reconciliationMode", "LEASE_EXPIRY_TERMINALIZATION")
-                .containsKey("expiredLeaseOwnerFingerprint")
-                .containsEntry("expiredCheckpointVersion", 7L);
+                .containsKey("expiredLeaseOwnerFingerprint");
+        assertThat((Number) terminal.evidence().metadata().get("expiredCheckpointVersion"))
+                .extracting(Number::longValue).isEqualTo(7L);
         assertThat(terminal.evidence().metadata().get("expiredLeaseOwnerFingerprint").toString())
                 .startsWith("sha256:")
                 .doesNotContain("instance-dead");
@@ -159,8 +161,9 @@ class TestSuiteRunReconciliationServiceTest {
                             .isEqualTo("sha256:" + "5".repeat(64));
                     assertThat(evidence.metadata())
                             .containsEntry("businessTargetInvoked", false)
-                            .containsEntry("reconciliationMode", "LEASE_EXPIRY_TERMINALIZATION")
-                            .containsEntry("expiredCheckpointVersion", 11L);
+                            .containsEntry("reconciliationMode", "LEASE_EXPIRY_TERMINALIZATION");
+                    assertThat((Number) evidence.metadata().get("expiredCheckpointVersion"))
+                            .extracting(Number::longValue).isEqualTo(11L);
                 });
         assertThat(terminal.evidenceFingerprint()).startsWith("sha256:");
         assertThat(terminal.attestation().schemaVersion())
@@ -278,8 +281,9 @@ class TestSuiteRunReconciliationServiceTest {
                     assertThat(evidence.diagnostics())
                             .contains(TestSuiteRunReconciliationService.ABANDONED_RUN_RECONCILED);
                     assertThat(evidence.metadata())
-                            .containsEntry("reconciliationMode", "LEASE_EXPIRY_TERMINALIZATION")
-                            .containsEntry("expiredCheckpointVersion", 14L);
+                            .containsEntry("reconciliationMode", "LEASE_EXPIRY_TERMINALIZATION");
+                    assertThat((Number) evidence.metadata().get("expiredCheckpointVersion"))
+                            .extracting(Number::longValue).isEqualTo(14L);
                 });
         assertThat(terminal.attestation().schemaVersion())
                 .isEqualTo(TestSuiteRunAttestation.SCHEMA_VERSION_V5);
@@ -420,7 +424,7 @@ class TestSuiteRunReconciliationServiceTest {
                 TestSuiteRunEvidence.Status.RUNNING, "TEST_SUITE_EXECUTION", suiteRef, target,
                 started, null, cases, TestSuiteRunEvidence.CoverageVerdict.notEvaluated(),
                 TestSuiteRunEvidence.PromotionVerdict.notEvaluated(), List.of(),
-                Map.of("tenantId", "tenant-a"));
+                runMetadata());
         String requestFingerprint = "sha256:" + "d".repeat(64);
         List<TestSuiteRunAttestation.ChildEvidenceRef> children = List.of(
                 new TestSuiteRunAttestation.ChildEvidenceRef(
@@ -431,7 +435,7 @@ class TestSuiteRunReconciliationServiceTest {
                 children, TestSuiteRunAttestation.Scope.CHECKPOINT).attestation();
         return new TestSuiteRunRecord("suite-run-1", "request-1", requestFingerprint,
                 "tenant-a", "org-a", "project-a", "test", "runner", "INTERNAL", "",
-                evidence, attestation, started, started.plusSeconds(3600));
+                evidence, attestation, started, started.plusSeconds(7200));
     }
 
     private TestSuiteRunRecord runningAdmissionRecord() {
@@ -492,7 +496,7 @@ class TestSuiteRunReconciliationServiceTest {
                 "boundary-cases-v1", TestSuiteRunEvidenceV3.VERIFICATION_MODE,
                 TestBoundaryCasePlan.Status.GENERATED, 0, false,
                 admissionResults, admissionCoverage, List.of(),
-                Map.of("businessTargetInvoked", false, "childRunCount", 0));
+                runMetadata(Map.of("businessTargetInvoked", false, "childRunCount", 0)));
         String requestFingerprint = "sha256:" + "6".repeat(64);
         TestSuiteRunAttestation attestation = attestations.seal(evidence, requestFingerprint,
                 List.of(), TestSuiteRunAttestation.Scope.CHECKPOINT).attestation();
@@ -548,7 +552,7 @@ class TestSuiteRunReconciliationServiceTest {
                         "property-cases-v1", 42, 1, 1, 2, 32, 8, 32,
                         "DRAFT_2020_12_SHARED_VALIDATOR"),
                 TestSuiteV4.SourcePlanStatus.GENERATED, false, List.of(), trials,
-                TestSuiteRunEvidenceV4.coverage(trials), List.of(), Map.of());
+                TestSuiteRunEvidenceV4.coverage(trials), List.of(), runMetadata());
         String requestFingerprint = "sha256:" + "e".repeat(64);
         List<TestSuiteRunAttestation.ChildEvidenceRef> children = List.of(
                 new TestSuiteRunAttestation.ChildEvidenceRef(
@@ -617,7 +621,7 @@ class TestSuiteRunReconciliationServiceTest {
                 TestSuiteRunEvidenceV5.BaselineStatus.RUNNING, mutants,
                 TestSuiteRunEvidenceV5.score(
                         TestSuiteRunEvidenceV5.BaselineStatus.RUNNING, mutants, scorePolicy),
-                List.of(), Map.of("strategy", "COLLECT_ALL"));
+                List.of(), runMetadata(Map.of("strategy", "COLLECT_ALL")));
         String requestFingerprint = fingerprint('a');
         List<TestSuiteRunAttestation.ChildEvidenceRef> children = List.of(
                 new TestSuiteRunAttestation.ChildEvidenceRef(
@@ -658,6 +662,22 @@ class TestSuiteRunReconciliationServiceTest {
 
     private static String indexedFingerprint(int value) {
         return "sha256:" + "%064x".formatted(value);
+    }
+
+    private static Map<String, Object> runMetadata() {
+        return Map.of(
+                "tenantId", "tenant-a",
+                "organizationId", "org-a",
+                "projectId", "project-a",
+                "environmentId", "test",
+                "actorId", "runner",
+                "classification", "INTERNAL");
+    }
+
+    private static Map<String, Object> runMetadata(Map<String, Object> additions) {
+        Map<String, Object> metadata = new LinkedHashMap<>(runMetadata());
+        metadata.putAll(additions);
+        return Map.copyOf(metadata);
     }
 
     private TestSuiteRunRecord withId(TestSuiteRunRecord source, String runId, String requestId) {

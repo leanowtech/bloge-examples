@@ -3983,6 +3983,19 @@ verifies the abandoned checkpoint, preserves its closed child references, constr
 terminal aggregate, and signs that terminal result; altered or unsigned checkpoints are rejected
 instead of being recovered as trusted progress.
 
+The suite signing boundary first round-trips the exact v1-v5 aggregate through the protocol codec and
+returns that independently owned snapshot together with its attestation. Callers persist this returned
+object, never the original mutable object. The durable boundary recomputes the aggregate fingerprint,
+cryptographically verifies `VERIFIED` attestations, enforces generation and CHECKPOINT/TERMINAL scope,
+and binds `tenantId`, `organizationId`, `projectId`, `environmentId`, `actorId`, and `classification`
+from signed metadata to the storage envelope. JDBC reads additionally compare the serialized record
+with suite-run, scope, idempotency, suite revision, status, fingerprint, creation, and expiry columns.
+Service-level checks apply the same rules to custom repository create/update receipts and full lookup
+keys. Abandoned candidates must still be `RUNNING`, retained, and lease-expired at the authoritative
+sweep instant. Violations emit payload-free storage-integrity diagnostics and cannot reach clearance,
+idempotency, projection, or reconciliation decisions. See the
+[suite-run storage integrity verification](resource-gateway-execution-data-control-plane-stage3-suite-run-storage-integrity-verification.md).
+
 The verification key named by `integrity.keyId` remains available through
 `GET /api/integration/evidence-keys/{keyId}` for compatibility and diagnosis. Release consumers use
 `GET /api/integration/evidence-keys`, which returns one atomic

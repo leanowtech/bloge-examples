@@ -21,7 +21,7 @@ public interface TestSuiteRunRepository {
      *
      * @param record initial aggregate checkpoint
      * @param lease process ownership persisted atomically with the checkpoint
-     * @return created checkpoint
+     * @return the exact canonical checkpoint accepted by the repository; callers verify the receipt
      */
     TestSuiteRunRecord create(TestSuiteRunRecord record, TestSuiteRunLease lease);
 
@@ -32,7 +32,7 @@ public interface TestSuiteRunRepository {
      * @param record replacement aggregate checkpoint or terminal evidence
      * @param lease renewed same-owner claim
      * @param observedAt persistence-authoritative comparison time
-     * @return stored replacement record
+     * @return the exact canonical replacement accepted by the repository; callers verify the receipt
      */
     TestSuiteRunRecord update(TestSuiteRunRecord record, TestSuiteRunLease lease, Instant observedAt);
 

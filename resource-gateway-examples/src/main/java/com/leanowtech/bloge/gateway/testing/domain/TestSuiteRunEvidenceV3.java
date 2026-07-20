@@ -5,8 +5,6 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -106,8 +104,7 @@ public record TestSuiteRunEvidenceV3(
         admissionCoverage = admissionCoverage == null
                 ? AdmissionCoverageVerdict.notEvaluated(admissionResults.size()) : admissionCoverage;
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
-        metadata = metadata == null ? Map.of()
-                : Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        metadata = ProtocolJsonValue.freezeMap(metadata);
         boolean exactCaseClosure = caseResults.size() == admissionResults.size();
         for (int index = 0; exactCaseClosure && index < caseResults.size(); index++) {
             exactCaseClosure = caseResults.get(index).caseId()

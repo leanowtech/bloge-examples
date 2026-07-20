@@ -65,35 +65,36 @@ public final class TestSuiteRunAttestationService {
     public SealResult seal(TestSuiteRunEvidenceProtocol evidence, String requestFingerprint,
                            List<TestSuiteRunAttestation.ChildEvidenceRef> children,
                            TestSuiteRunAttestation.Scope scope) {
-        Objects.requireNonNull(evidence, "evidence");
+        TestSuiteRunEvidenceProtocol snapshot = evidenceCodec.canonicalSnapshot(
+                Objects.requireNonNull(evidence, "evidence"));
         Objects.requireNonNull(scope, "scope");
         List<TestSuiteRunAttestation.ChildEvidenceRef> safeChildren = immutable(children);
-        if (evidence instanceof TestSuiteRunEvidenceV3 && !safeChildren.isEmpty()) {
+        if (snapshot instanceof TestSuiteRunEvidenceV3 && !safeChildren.isEmpty()) {
             throw new IllegalArgumentException(
                     "Schema-admission evidence cannot bind business child evidence");
         }
-        String aggregateFingerprint = evidenceCodec.fingerprint(evidence);
+        String aggregateFingerprint = evidenceCodec.fingerprint(snapshot);
         if (!signer.available()) {
-            return SealResult.failed(TestSuiteRunAttestation.unavailable(scope, evidence,
+            return SealResult.failed(snapshot, TestSuiteRunAttestation.unavailable(scope, snapshot,
                     requestFingerprint, aggregateFingerprint, safeChildren), SIGNER_UNAVAILABLE);
         }
         try {
             Instant signedAt = clock.instant();
-            String schemaVersion = attestationVersion(evidence);
-            String materialFingerprint = materialFingerprint(schemaVersion, scope, evidence.suiteRunId(),
-                    evidence.suiteRef(), requestFingerprint, aggregateFingerprint, safeChildren, signedAt);
+            String schemaVersion = attestationVersion(snapshot);
+            String materialFingerprint = materialFingerprint(schemaVersion, scope, snapshot.suiteRunId(),
+                    snapshot.suiteRef(), requestFingerprint, aggregateFingerprint, safeChildren, signedAt);
             VisualRunEvidenceSeal seal = signer.seal(materialFingerprint);
             TestSuiteRunAttestation attestation = new TestSuiteRunAttestation(schemaVersion,
-                    TestSuiteRunAttestation.SignatureStatus.VERIFIED, scope, evidence.suiteRunId(),
-                    evidence.suiteRef(), requestFingerprint, aggregateFingerprint, safeChildren,
+                    TestSuiteRunAttestation.SignatureStatus.VERIFIED, scope, snapshot.suiteRunId(),
+                    snapshot.suiteRef(), requestFingerprint, aggregateFingerprint, safeChildren,
                     signedAt, seal.keyId(), seal.algorithm(), seal.signature(), true);
-            if (verify(evidence, attestation) != Verification.VERIFIED) {
-                return SealResult.failed(TestSuiteRunAttestation.unavailable(scope, evidence,
+            if (verify(snapshot, attestation) != Verification.VERIFIED) {
+                return SealResult.failed(snapshot, TestSuiteRunAttestation.unavailable(scope, snapshot,
                         requestFingerprint, aggregateFingerprint, safeChildren), SIGNATURE_INVALID);
             }
-            return SealResult.verified(attestation);
+            return SealResult.verified(snapshot, attestation);
         } catch (RuntimeException failure) {
-            return SealResult.failed(TestSuiteRunAttestation.unavailable(scope, evidence,
+            return SealResult.failed(snapshot, TestSuiteRunAttestation.unavailable(scope, snapshot,
                     requestFingerprint, aggregateFingerprint, safeChildren), SIGNER_UNAVAILABLE);
         }
     }
@@ -219,24 +220,31 @@ public final class TestSuiteRunAttestationService {
     /**
      * Result of signing one aggregate closure.
      *
+     * @param evidence canonical independently owned aggregate actually fingerprinted and signed
      * @param attestation verified or fail-closed attestation
      * @param failureCode bounded stable diagnostic; blank on success
      */
-    public record SealResult(TestSuiteRunAttestation attestation, String failureCode) {
+    public record SealResult(TestSuiteRunEvidenceProtocol evidence,
+                             TestSuiteRunAttestation attestation,
+                             String failureCode) {
         /** Normalizes result values. */
         public SealResult {
+            evidence = Objects.requireNonNull(evidence, "evidence");
             attestation = Objects.requireNonNull(attestation, "attestation");
             failureCode = failureCode == null ? "" : failureCode.trim();
         }
 
         /** @return successfully verified result */
-        public static SealResult verified(TestSuiteRunAttestation attestation) {
-            return new SealResult(attestation, "");
+        public static SealResult verified(TestSuiteRunEvidenceProtocol evidence,
+                                          TestSuiteRunAttestation attestation) {
+            return new SealResult(evidence, attestation, "");
         }
 
         /** @return fail-closed signing result */
-        public static SealResult failed(TestSuiteRunAttestation attestation, String failureCode) {
-            return new SealResult(attestation, failureCode);
+        public static SealResult failed(TestSuiteRunEvidenceProtocol evidence,
+                                        TestSuiteRunAttestation attestation,
+                                        String failureCode) {
+            return new SealResult(evidence, attestation, failureCode);
         }
 
         /** @return true only for a verified signature */

@@ -3,8 +3,6 @@ package com.leanowtech.bloge.gateway.testing.domain;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 
 import java.time.Instant;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -65,8 +63,7 @@ public record TestSuiteRunEvidenceV2(
         promotion = promotion == null
                 ? TestSuiteRunEvidence.PromotionVerdict.notEvaluated() : promotion;
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
-        metadata = metadata == null ? Map.of()
-                : Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        metadata = ProtocolJsonValue.freezeMap(metadata);
     }
 
     private static String defaulted(String value, String fallback) {

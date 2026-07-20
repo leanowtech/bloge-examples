@@ -5,7 +5,6 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -96,7 +95,7 @@ public record TestSuiteRunEvidence(
         coverage = coverage == null ? CoverageVerdict.notEvaluated() : coverage;
         promotion = promotion == null ? PromotionVerdict.notEvaluated() : promotion;
         diagnostics = immutableList(diagnostics);
-        metadata = immutableMap(metadata);
+        metadata = ProtocolJsonValue.freezeMap(metadata);
     }
 
     /**
@@ -271,11 +270,6 @@ public record TestSuiteRunEvidence(
 
     private static <T> List<T> immutableList(List<T> values) {
         return values == null ? List.of() : List.copyOf(values);
-    }
-
-    private static Map<String, Object> immutableMap(Map<String, Object> values) {
-        return values == null ? Map.of()
-                : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(values));
     }
 
     private static String defaulted(String value, String fallback) {

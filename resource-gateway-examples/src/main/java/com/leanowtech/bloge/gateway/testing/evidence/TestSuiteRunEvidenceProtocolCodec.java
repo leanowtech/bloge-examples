@@ -27,6 +27,19 @@ public final class TestSuiteRunEvidenceProtocolCodec {
         return ProtocolFingerprint.of(objectMapper, evidence);
     }
 
+    /**
+     * Returns an independently owned exact-generation JSON snapshot.
+     *
+     * <p>This converts arbitrary mutable Java values embedded in metadata to protocol JSON values
+     * before a fingerprint, signature, or persistence boundary can trust them.</p>
+     *
+     * @param evidence supplied concrete aggregate generation
+     * @return detached aggregate of the same exact generation
+     */
+    public TestSuiteRunEvidenceProtocol canonicalSnapshot(TestSuiteRunEvidenceProtocol evidence) {
+        return read(write(evidence));
+    }
+
     /** @return durable JSON retaining the supplied concrete evidence generation */
     public String write(TestSuiteRunEvidenceProtocol evidence) {
         requireGeneration(evidence);
