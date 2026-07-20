@@ -382,11 +382,23 @@ public final class DynamicTestSecretAuthorityServingInventoryAuthority
                         Map.entry("witnessSignatureThreshold",
                                 currentWitnessSignatureThreshold()),
                         Map.entry("durablePublicationFloor", true),
+                        Map.entry("externallyAnchoredPublicationFloor",
+                                publicationFloor.externallyAnchored()),
+                        Map.entry("byzantineQuorumPublicationFloor",
+                                publicationFloor.byzantineQuorumAnchored()),
                         Map.entry("managedTrustRootRefresh", managedTrustRoots != null),
                         Map.entry("atomicDualTrustRootPublication", managedTrustRoots != null),
                         Map.entry("durableTrustRootFloor", managedTrustRoots != null),
                         Map.entry("externallyAnchoredTrustRootFloor",
                                 managedTrustRoots != null
+                                        && managedTrustRoots.externallyAnchoredFloor()),
+                        Map.entry("byzantineQuorumTrustRootFloor",
+                                managedTrustRoots != null
+                                        && managedTrustRoots
+                                        .byzantineQuorumAnchoredFloor()),
+                        Map.entry("externalNonEquivocation",
+                                publicationFloor.externallyAnchored()
+                                        && managedTrustRoots != null
                                         && managedTrustRoots.externallyAnchoredFloor())));
     }
 

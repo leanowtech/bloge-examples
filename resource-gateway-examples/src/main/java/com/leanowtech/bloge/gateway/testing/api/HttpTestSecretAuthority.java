@@ -305,6 +305,12 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
                         inventory.properties().getOrDefault("witnessSignatureThreshold", 0)),
                 Map.entry("servingInventoryDurablePublicationFloor",
                         inventory.properties().getOrDefault("durablePublicationFloor", false)),
+                Map.entry("servingInventoryExternallyAnchoredPublicationFloor",
+                        inventory.properties().getOrDefault(
+                                "externallyAnchoredPublicationFloor", false)),
+                Map.entry("servingInventoryByzantineQuorumPublicationFloor",
+                        inventory.properties().getOrDefault(
+                                "byzantineQuorumPublicationFloor", false)),
                 Map.entry("servingInventoryManagedTrustRootRefresh",
                         inventory.properties().getOrDefault("managedTrustRootRefresh", false)),
                 Map.entry("servingInventoryAtomicDualTrustRootPublication",
@@ -314,7 +320,13 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
                         inventory.properties().getOrDefault("durableTrustRootFloor", false)),
                 Map.entry("servingInventoryExternallyAnchoredTrustRootFloor",
                         inventory.properties().getOrDefault(
-                                "externallyAnchoredTrustRootFloor", false))));
+                                "externallyAnchoredTrustRootFloor", false)),
+                Map.entry("servingInventoryByzantineQuorumTrustRootFloor",
+                        inventory.properties().getOrDefault(
+                                "byzantineQuorumTrustRootFloor", false)),
+                Map.entry("servingInventoryExternalNonEquivocation",
+                        inventory.properties().getOrDefault(
+                                "externalNonEquivocation", false))));
     }
 
     private void requireReady() {

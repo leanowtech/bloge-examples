@@ -302,11 +302,17 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("testSecretAuthoritySignedInventoryRevocation", false)
                 .containsEntry("testSecretAuthorityWitnessedInventoryPublication", false)
                 .containsEntry("testSecretAuthorityDurableInventoryPublicationFloor", false)
+                .containsEntry(
+                        "testSecretAuthorityExternallyAnchoredInventoryPublicationFloor", false)
+                .containsEntry(
+                        "testSecretAuthorityByzantineQuorumInventoryPublicationFloor", false)
                 .containsEntry("testSecretAuthorityManagedServingInventoryTrustRoots", false)
                 .containsEntry(
                         "testSecretAuthorityAtomicDualServingInventoryTrustRoots", false)
                 .containsEntry("testSecretAuthorityDurableTrustRootFloor", false)
                 .containsEntry("testSecretAuthorityExternallyAnchoredTrustRootFloor", false)
+                .containsEntry("testSecretAuthorityByzantineQuorumTrustRootFloor", false)
+                .containsEntry("testSecretAuthorityExternalNonEquivocationReady", false)
                 .containsEntry("testSecretAuthorityManagedTrustRootsReady", false)
                 .containsEntry("testSecretAuthorityDynamicServingInventoryReady", false);
 
@@ -385,10 +391,14 @@ class ToolStudioIntegrationServiceTest {
                         Map.entry("servingInventoryWitnessedPublications", true),
                         Map.entry("servingInventoryWitnessSignatureThreshold", 2),
                         Map.entry("servingInventoryDurablePublicationFloor", true),
+                        Map.entry("servingInventoryExternallyAnchoredPublicationFloor", true),
+                        Map.entry("servingInventoryByzantineQuorumPublicationFloor", true),
                         Map.entry("servingInventoryManagedTrustRootRefresh", true),
                         Map.entry("servingInventoryAtomicDualTrustRootPublication", true),
                         Map.entry("servingInventoryDurableTrustRootFloor", true),
-                        Map.entry("servingInventoryExternallyAnchoredTrustRootFloor", false))));
+                        Map.entry("servingInventoryExternallyAnchoredTrustRootFloor", true),
+                        Map.entry("servingInventoryByzantineQuorumTrustRootFloor", true),
+                        Map.entry("servingInventoryExternalNonEquivocation", true))));
         assertThat(service.capabilities().payload().features())
                 .containsEntry("testSecretAuthorityDeploymentSignedInventory", true)
                 .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", true)
@@ -396,11 +406,17 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("testSecretAuthoritySignedInventoryRevocation", true)
                 .containsEntry("testSecretAuthorityWitnessedInventoryPublication", true)
                 .containsEntry("testSecretAuthorityDurableInventoryPublicationFloor", true)
+                .containsEntry(
+                        "testSecretAuthorityExternallyAnchoredInventoryPublicationFloor", true)
+                .containsEntry(
+                        "testSecretAuthorityByzantineQuorumInventoryPublicationFloor", true)
                 .containsEntry("testSecretAuthorityManagedServingInventoryTrustRoots", true)
                 .containsEntry(
                         "testSecretAuthorityAtomicDualServingInventoryTrustRoots", true)
                 .containsEntry("testSecretAuthorityDurableTrustRootFloor", true)
-                .containsEntry("testSecretAuthorityExternallyAnchoredTrustRootFloor", false)
+                .containsEntry("testSecretAuthorityExternallyAnchoredTrustRootFloor", true)
+                .containsEntry("testSecretAuthorityByzantineQuorumTrustRootFloor", true)
+                .containsEntry("testSecretAuthorityExternalNonEquivocationReady", true)
                 .containsEntry("testSecretAuthorityManagedTrustRootsReady", true)
                 .containsEntry("testSecretAuthorityDynamicServingInventoryReady", true);
 

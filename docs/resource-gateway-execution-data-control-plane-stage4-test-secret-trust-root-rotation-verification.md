@@ -13,8 +13,9 @@ deployment key 与 witness key 仍来自进程启动配置。一次日常运行�
 2. 两组 bootstrap quorum 共同签署一个原子的 deployment/witness runtime-key publication。Resource
    Gateway 严格刷新该 publication，再用同一代 runtime keys 验证 inventory、publication 和 witness。
 
-因此闭合的是日常运行验签 key 的无重启轮换，不宣称 bootstrap roots 自身能无锚热轮换，也不宣称
-本地数据库 floor 能对抗已完全控制数据库与备份系统的攻击者。
+因此闭合的是日常运行验签 key 的无重启轮换，不宣称 bootstrap roots 自身能无锚热轮换。
+本记录交付时的“仅本地数据库 floor”边界已由后续 external-first 双流非等价锚增量闭合；
+见 [test-secret external non-equivocation verification](resource-gateway-execution-data-control-plane-stage4-test-secret-external-non-equivocation-verification.md)。
 
 ## 2. 版本化协议
 
@@ -146,7 +147,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-- Resource Gateway：3,171 tests，0 failures，0 errors，2 skipped，共 344 份 Surefire reports；
+- Resource Gateway：3,188 tests，0 failures，0 errors，2 skipped，共 347 份 Surefire reports；
   真实浏览器回归与 Spring Boot 可执行 JAR 打包成功。
 - Resource Gateway test-kit：230 tests，0 failures，0 errors，0 skipped，共 24 份
   Surefire reports；权威 Schema、普通/shaded JAR 与 public JavaDoc 打包成功。
@@ -154,13 +155,13 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 ## 7. 明确未完成
 
 - bootstrap-root 自身的轮换 ceremony、KMS/HSM custody、双人审批和离线恢复 runbook。
-- test-secret root/inventory stream 的外部 compare-and-append、Byzantine quorum、跨区域 witness gossip
-  与 split-view 检测；当前本地 database floor 不构成 external non-equivocation。
+- external notary public-key 的无重启轮换、跨区域 gossip 和外部服务产品化认证；
+  root/inventory 双流 external-first Byzantine quorum core 已由后续增量闭合。
 - mTLS workload identity、证书 pinning 或签名 endpoint discovery。
 - PostgreSQL 等非 H2 方言、数据库备份回退、跨区域 DR、根发布服务 HA 与网络分区 chaos 认证。
 - 对外部告警、SLO burn-rate、轮换演练、失陷 key 应急响应和审计工单的产品化闭环。
 - 中性的通用 signed-sequence/dual-root kernel；当前 persistence 复用成熟 stability substrate，但 wire、
   scope、Schema 与 capability 已完全隔离。
 
-这些缺口不会被当前 capability 冒充为已完成。下一步应优先把 test-secret 两条可变顺序流接到独立
-external-first non-equivocation anchor，并补齐 production-grade PKI/DR 认证。
+这些缺口不会被当前 capability 冒充为已完成。下一步应优先建立 bootstrap-root
+rotation ceremony，并补齐 external notary 的 production-grade PKI/HA/DR 认证。

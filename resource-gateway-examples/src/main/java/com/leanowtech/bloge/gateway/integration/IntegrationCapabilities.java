@@ -755,10 +755,14 @@ public record IntegrationCapabilities(
         features.put("testSecretAuthoritySignedInventoryRevocation", false);
         features.put("testSecretAuthorityWitnessedInventoryPublication", false);
         features.put("testSecretAuthorityDurableInventoryPublicationFloor", false);
+        features.put("testSecretAuthorityExternallyAnchoredInventoryPublicationFloor", false);
+        features.put("testSecretAuthorityByzantineQuorumInventoryPublicationFloor", false);
         features.put("testSecretAuthorityManagedServingInventoryTrustRoots", false);
         features.put("testSecretAuthorityAtomicDualServingInventoryTrustRoots", false);
         features.put("testSecretAuthorityDurableTrustRootFloor", false);
         features.put("testSecretAuthorityExternallyAnchoredTrustRootFloor", false);
+        features.put("testSecretAuthorityByzantineQuorumTrustRootFloor", false);
+        features.put("testSecretAuthorityExternalNonEquivocationReady", false);
         features.put("testSecretAuthorityManagedTrustRootsReady", false);
         features.put("testSecretAuthorityDynamicServingInventoryReady", false);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);

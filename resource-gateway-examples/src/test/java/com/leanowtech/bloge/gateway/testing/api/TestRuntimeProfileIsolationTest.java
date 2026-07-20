@@ -1005,12 +1005,23 @@ class TestRuntimeProfileIsolationTest {
                                     .containsEntry("servingInventoryWitnessedPublications", true)
                                     .containsEntry("servingInventoryDurablePublicationFloor",
                                             true)
+                                    .containsEntry(
+                                            "servingInventoryExternallyAnchoredPublicationFloor",
+                                            false)
+                                    .containsEntry(
+                                            "servingInventoryByzantineQuorumPublicationFloor",
+                                            false)
                                     .containsEntry("servingInventoryManagedTrustRootRefresh", true)
                                     .containsEntry("servingInventoryAtomicDualTrustRootPublication",
                                             true)
                                     .containsEntry("servingInventoryDurableTrustRootFloor", true)
                                     .containsEntry(
                                             "servingInventoryExternallyAnchoredTrustRootFloor",
+                                            false)
+                                    .containsEntry(
+                                            "servingInventoryByzantineQuorumTrustRootFloor",
+                                            false)
+                                    .containsEntry("servingInventoryExternalNonEquivocation",
                                             false);
                         });
             }
@@ -1091,6 +1102,62 @@ class TestRuntimeProfileIsolationTest {
                     .hasMessageContaining(
                             "Managed test-secret inventory trust roots require remote inventory");
             assertThat(rootCalls).hasValue(0);
+        } finally {
+            context.close();
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void requiredTestSecretExternalAnchorFailsBeforeInventoryOrNotaryIo() throws Exception {
+        KeyPair trustKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        byte[] document = authorityJwks(trustKey, "secret-key-dynamic")
+                .getBytes(StandardCharsets.UTF_8);
+        AtomicInteger inventoryCalls = new AtomicInteger();
+        AtomicInteger notaryCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/jwks", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/jwk-set+json");
+            exchange.sendResponseHeaders(200, document.length);
+            try (var body = exchange.getResponseBody()) {
+                body.write(document);
+            }
+        });
+        server.createContext("/inventory", exchange -> {
+            inventoryCalls.incrementAndGet();
+            exchange.sendResponseHeaders(500, -1);
+            exchange.close();
+        });
+        server.createContext("/notary", exchange -> {
+            notaryCalls.incrementAndGet();
+            exchange.sendResponseHeaders(500, -1);
+            exchange.close();
+        });
+        server.start();
+        Map<String, Object> properties = dynamicTestSecretAuthorityProperties(server);
+        String prefix =
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.";
+        properties.put(prefix + "enabled", "true");
+        properties.put(prefix + "required", "true");
+        properties.put(prefix + "remote.enabled", "true");
+        properties.put(prefix + "remote.uri",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/inventory");
+        properties.put(prefix + "remote.external-anchor.enabled", "false");
+        properties.put(prefix + "remote.external-anchor.required", "true");
+        properties.put(prefix + "remote.external-anchor.endpoints-json",
+                "[{\"authorityId\":\"notary-a\",\"failureDomain\":\"region-a\","
+                        + "\"uri\":\"http://127.0.0.1:"
+                        + server.getAddress().getPort() + "/notary\"}]");
+        properties.put("gateway.testing.store.jdbc-url",
+                "jdbc:h2:mem:profile-required-test-secret-anchor;DB_CLOSE_DELAY=-1");
+        AnnotationConfigApplicationContext context = unrefreshedContext(properties, 0, "test");
+        try {
+            assertThatThrownBy(context::refresh).rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining(
+                            "requires external test-secret inventory non-equivocation");
+            assertThat(inventoryCalls).hasValue(0);
+            assertThat(notaryCalls).hasValue(0);
         } finally {
             context.close();
             server.stop(0);

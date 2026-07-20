@@ -18,6 +18,16 @@ public interface TestSecretAuthorityServingInventoryPublicationFloor {
     /** @return true only when the floor survives process and complete fleet restart */
     boolean durable();
 
+    /** @return true only when every accepted head is first committed outside the local database */
+    default boolean externallyAnchored() {
+        return false;
+    }
+
+    /** @return true only when the external anchor declares an intersecting Byzantine quorum */
+    default boolean byzantineQuorumAnchored() {
+        return false;
+    }
+
     /**
      * Private publication and witness chain identity.
      *

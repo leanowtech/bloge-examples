@@ -325,12 +325,19 @@ additionally requires managed roots: independent deployment and witness bootstra
 one atomic deployment/witness runtime-key publication, whose strict HTTPS/ETag refresh and database
 floor permit routine key rotation without restarting Resource Gateway. A root generation change
 closes resolution until the inventory is reverified, including after an inventory `304`; managed and
-legacy static runtime keys cannot be mixed. Bootstrap-root ceremony, external non-equivocation,
-mTLS/pinning, authority HA/chaos and DR certification remain open. A changed member topology still
+legacy static runtime keys cannot be mixed. Staging also requires an external `3f+1 / 2f+1`
+challenge-bound notary quorum for both the composite publication/witness stream and the atomic
+runtime-root stream. External compare-and-append completes before each local database floor; a
+signed conflict is fatal, while an external success followed by local failure is exact-retry safe.
+The smallest staging topology is four independent notaries with three accepted receipts. The demo
+startup script validates this configuration before build or Java startup. Bootstrap-root ceremony,
+external-anchor key hot rotation, mTLS/pinning, authority HA/chaos and DR certification remain open.
+A changed member topology still
 requires a coordinated new cohort generation.
 See the
-[testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#421a-control-identity-feature-flag-and-secret-built-ins)
-and [managed test-secret trust-root verification](../docs/resource-gateway-execution-data-control-plane-stage4-test-secret-trust-root-rotation-verification.md).
+[testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#421a-control-identity-feature-flag-and-secret-built-ins),
+the [managed test-secret trust-root verification](../docs/resource-gateway-execution-data-control-plane-stage4-test-secret-trust-root-rotation-verification.md),
+and the [test-secret external non-equivocation verification](../docs/resource-gateway-execution-data-control-plane-stage4-test-secret-external-non-equivocation-verification.md).
 
 The durable stability queue and authenticated asynchronous submit/query/cancel protocol are present
 in the isolated `test`/`staging` datastore. Query and cancellation remain available while the worker

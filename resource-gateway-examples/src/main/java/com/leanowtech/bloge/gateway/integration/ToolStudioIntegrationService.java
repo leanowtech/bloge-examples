@@ -330,6 +330,12 @@ public class ToolStudioIntegrationService {
         boolean durableSecretInventoryFloor = dynamicSecretInventory
                 && Boolean.TRUE.equals(testSecretAuthority.properties().get(
                 "servingInventoryDurablePublicationFloor"));
+        boolean externallyAnchoredSecretInventoryFloor = dynamicSecretInventory
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryExternallyAnchoredPublicationFloor"));
+        boolean byzantineSecretInventoryFloor = externallyAnchoredSecretInventoryFloor
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryByzantineQuorumPublicationFloor"));
         boolean managedSecretInventoryRoots = dynamicSecretInventory
                 && Boolean.TRUE.equals(testSecretAuthority.properties().get(
                 "servingInventoryManagedTrustRootRefresh"));
@@ -342,6 +348,10 @@ public class ToolStudioIntegrationService {
         boolean externallyAnchoredSecretInventoryRootFloor = managedSecretInventoryRoots
                 && Boolean.TRUE.equals(testSecretAuthority.properties().get(
                 "servingInventoryExternallyAnchoredTrustRootFloor"));
+        boolean byzantineSecretInventoryRootFloor =
+                externallyAnchoredSecretInventoryRootFloor
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryByzantineQuorumTrustRootFloor"));
         boolean dynamicSecretInventoryReady = dynamicSecretInventory
                 && signedSecretInventoryRevocation && witnessedSecretInventory
                 && durableSecretInventoryFloor && secretCohortReady
@@ -356,6 +366,10 @@ public class ToolStudioIntegrationService {
                 witnessedSecretInventory);
         features.put("testSecretAuthorityDurableInventoryPublicationFloor",
                 durableSecretInventoryFloor);
+        features.put("testSecretAuthorityExternallyAnchoredInventoryPublicationFloor",
+                externallyAnchoredSecretInventoryFloor);
+        features.put("testSecretAuthorityByzantineQuorumInventoryPublicationFloor",
+                byzantineSecretInventoryFloor);
         features.put("testSecretAuthorityManagedServingInventoryTrustRoots",
                 managedSecretInventoryRoots);
         features.put("testSecretAuthorityAtomicDualServingInventoryTrustRoots",
@@ -364,6 +378,16 @@ public class ToolStudioIntegrationService {
                 durableSecretInventoryRootFloor);
         features.put("testSecretAuthorityExternallyAnchoredTrustRootFloor",
                 externallyAnchoredSecretInventoryRootFloor);
+        features.put("testSecretAuthorityByzantineQuorumTrustRootFloor",
+                byzantineSecretInventoryRootFloor);
+        features.put("testSecretAuthorityExternalNonEquivocationReady",
+                dynamicSecretInventoryReady
+                        && externallyAnchoredSecretInventoryFloor
+                        && byzantineSecretInventoryFloor
+                        && externallyAnchoredSecretInventoryRootFloor
+                        && byzantineSecretInventoryRootFloor
+                        && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                        "servingInventoryExternalNonEquivocation")));
         features.put("testSecretAuthorityManagedTrustRootsReady",
                 managedSecretInventoryRoots && atomicSecretInventoryRoots
                         && durableSecretInventoryRootFloor && dynamicSecretInventoryReady);

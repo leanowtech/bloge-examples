@@ -1326,6 +1326,10 @@ public class TestRuntimeConfiguration {
             boolean managedTrustRootsEnabled,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.required:false}")
             boolean managedTrustRootsRequired,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.enabled:false}")
+            boolean externalAnchorEnabled,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.required:false}")
+            boolean externalAnchorRequired,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.uri:}")
             String remoteUri,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.refresh-interval-seconds:30}")
@@ -1363,6 +1367,14 @@ public class TestRuntimeConfiguration {
         if (managedTrustRootsEnabled && !remoteEnabled) {
             throw new IllegalStateException(
                     "Managed test-secret inventory trust roots require remote inventory refresh");
+        }
+        if (externalAnchorRequired && !externalAnchorEnabled) {
+            throw new IllegalStateException(
+                    "This profile requires external test-secret inventory non-equivocation");
+        }
+        if (externalAnchorEnabled && !remoteEnabled) {
+            throw new IllegalStateException(
+                    "External test-secret inventory non-equivocation requires remote refresh");
         }
         if (remoteEnabled && inventoryJson != null && !inventoryJson.isBlank()) {
             throw new IllegalStateException(
@@ -1422,7 +1434,68 @@ public class TestRuntimeConfiguration {
                 authorityKeysJson, inventoryJson, binding);
     }
 
-    /** Persists the dynamic test-secret publication and witness head before publication. */
+    /** Configures the test-secret-specific external signed non-equivocation quorum. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor",
+            name = "enabled", havingValue = "true")
+    TestSecretAuthorityExternalSequenceAnchor testSecretAuthorityExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            Environment environment,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.trust-domain:}")
+            String trustDomain,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.anchor-set-id:}")
+            String anchorSetId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.signature-threshold:0}")
+            int signatureThreshold,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-faults:0}")
+            int maximumFaults,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.minimum-faults:0}")
+            int minimumFaults,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.authority-keys-json:[]}")
+            String authorityKeysJson,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.endpoints-json:[]}")
+            String endpointsJson,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.request-timeout-ms:3000}")
+            long requestTimeoutMillis,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.clock-skew-seconds:5}")
+            long clockSkewSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-receipt-lifetime-seconds:15}")
+            long maximumReceiptLifetimeSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.allow-insecure-loopback:false}")
+            boolean allowInsecureLoopback) {
+        int profileMinimumFaults = Arrays.asList(environment.getActiveProfiles())
+                .contains("staging") ? 1 : 0;
+        int effectiveMinimumFaults = Math.max(minimumFaults, profileMinimumFaults);
+        if (minimumFaults < 0 || minimumFaults > 10
+                || maximumFaults < effectiveMinimumFaults) {
+            throw new IllegalStateException(
+                    "External test-secret sequence anchor does not meet deployment fault policy");
+        }
+        return TestSecretAuthorityExternalSequenceAnchor.adapt(
+                HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
+                        objectMapper, trustDomain, anchorSetId, signatureThreshold,
+                        maximumFaults, authorityKeysJson, endpointsJson,
+                        new HttpTestSuiteStabilityExternalSequenceAnchor.Settings(
+                                Duration.ofMillis(requestTimeoutMillis),
+                                Duration.ofSeconds(clockSkewSeconds),
+                                Duration.ofSeconds(maximumReceiptLifetimeSeconds),
+                                allowInsecureLoopback)));
+    }
+
+    /** Exposes endpoint- and key-free health for test-secret external non-equivocation. */
+    @Bean
+    @ConditionalOnBean(TestSecretAuthorityExternalSequenceAnchor.class)
+    TestSecretAuthorityExternalSequenceAnchorHealth
+            testSecretAuthorityExternalSequenceAnchorHealth(
+            TestSecretAuthorityExternalSequenceAnchor anchor) {
+        return new TestSecretAuthorityExternalSequenceAnchorHealth(anchor);
+    }
+
+    /** Persists and externally anchors the dynamic publication/witness head before use. */
     @Bean
     @ConditionalOnProperty(
             prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote",
@@ -1431,13 +1504,24 @@ public class TestRuntimeConfiguration {
             testSecretAuthorityServingInventoryPublicationFloor(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
+            ObjectProvider<TestSecretAuthorityExternalSequenceAnchor> externalAnchors,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id:}")
-            String scopeId) {
-        return new DatabaseTestSecretAuthorityServingInventoryPublicationFloor(
+            String scopeId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.enabled:false}")
+            boolean externalAnchorEnabled,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.required:false}")
+            boolean externalAnchorRequired) {
+        TestSecretAuthorityExternalSequenceAnchor externalAnchor = testSecretExternalAnchor(
+                externalAnchors, externalAnchorEnabled, externalAnchorRequired);
+        TestSecretAuthorityServingInventoryPublicationFloor local =
+                new DatabaseTestSecretAuthorityServingInventoryPublicationFloor(
                 database.jdbc(), objectMapper, scopeId, database.transactionManager());
+        return externalAnchor == null ? local
+                : new ExternallyAnchoredTestSecretAuthorityServingInventoryPublicationFloor(
+                objectMapper, local, externalAnchor);
     }
 
-    /** Persists the managed test-secret dual runtime-key publication before local use. */
+    /** Persists and externally anchors the managed dual runtime-key publication. */
     @Bean
     @ConditionalOnProperty(
             prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote",
@@ -1449,13 +1533,24 @@ public class TestRuntimeConfiguration {
             testSecretAuthorityServingInventoryTrustRootFloor(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
+            ObjectProvider<TestSecretAuthorityExternalSequenceAnchor> externalAnchors,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id:}")
             String scopeId,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.trust-root-set-id:}")
-            String trustRootSetId) {
-        return new DatabaseTestSecretAuthorityServingInventoryTrustRootFloor(
+            String trustRootSetId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.enabled:false}")
+            boolean externalAnchorEnabled,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.required:false}")
+            boolean externalAnchorRequired) {
+        TestSecretAuthorityExternalSequenceAnchor externalAnchor = testSecretExternalAnchor(
+                externalAnchors, externalAnchorEnabled, externalAnchorRequired);
+        TestSecretAuthorityServingInventoryTrustRootFloor local =
+                new DatabaseTestSecretAuthorityServingInventoryTrustRootFloor(
                 database.jdbc(), objectMapper, scopeId, trustRootSetId,
                 database.transactionManager());
+        return externalAnchor == null ? local
+                : new ExternallyAnchoredTestSecretAuthorityServingInventoryTrustRootFloor(
+                local, externalAnchor);
     }
 
     /** Bootstraps and refreshes the atomic deployment/witness runtime-key set. */
@@ -3166,6 +3261,33 @@ public class TestRuntimeConfiguration {
                 || !descriptor.challengeBound()) {
             throw new IllegalStateException(
                     "External serving-inventory non-equivocation anchor is unavailable");
+        }
+        return result;
+    }
+
+    private static TestSecretAuthorityExternalSequenceAnchor testSecretExternalAnchor(
+            ObjectProvider<TestSecretAuthorityExternalSequenceAnchor> anchors,
+            boolean enabled,
+            boolean required) {
+        if (required && !enabled) {
+            throw new IllegalStateException(
+                    "This profile requires external test-secret inventory non-equivocation");
+        }
+        List<TestSecretAuthorityExternalSequenceAnchor> configured =
+                anchors.orderedStream().toList();
+        if ((enabled && configured.size() != 1) || (!enabled && !configured.isEmpty())) {
+            throw new IllegalStateException(
+                    "External test-secret inventory non-equivocation requires exactly one anchor");
+        }
+        if (!enabled) {
+            return null;
+        }
+        TestSecretAuthorityExternalSequenceAnchor result = configured.getFirst();
+        TestSuiteStabilityExternalSequenceAnchor.Descriptor descriptor = result.descriptor();
+        if (!descriptor.available() || !descriptor.externallyDurable()
+                || !descriptor.challengeBound()) {
+            throw new IllegalStateException(
+                    "External test-secret inventory non-equivocation anchor is unavailable");
         }
         return result;
     }

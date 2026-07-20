@@ -1201,6 +1201,11 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 `RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD` 和
 `RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON`；最后一项只能包含 Ed25519 公钥，
 私钥必须留在外部治理系统。脚本会在启动 Spring 前检查这些值是否齐全及基本格式，应用再执行完整密钥、阈值和策略校验。
+若 staging 启用 `RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED`，脚本还会强制 dynamic JWKS、remote
+signed inventory、managed roots 和
+`RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED` 同时开启，并预检外部
+notary trust/set、非空公钥与 endpoint、HTTPS、`3f+1 / 2f+1` quorum 和 receipt timing。最小拓扑是
+四个独立 failure domain、三个有效回执；完整变量见脚本 `--help` 和 Testing Control Plane API。
 首次 request-index 跨版本升级应从 `LEGACY_READ_WRITE` 开始；完整配置和三阶段切换门禁见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 与
 [request-index rolling-upgrade verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md)。

@@ -124,7 +124,7 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 
 Latest full verification on 2026-07-20:
 
-- Resource Gateway: 3,171 tests, 0 failures, 0 errors, 2 skipped across 344 Surefire reports.
+- Resource Gateway: 3,188 tests, 0 failures, 0 errors, 2 skipped across 347 Surefire reports.
 - Test kit: 230 tests, 0 failures, 0 errors, 0 skipped across 24 Surefire reports; shaded JAR and
   Javadoc packaging also completed.
 
@@ -132,8 +132,8 @@ Latest full verification on 2026-07-20:
 
 - Daily deployment and witness runtime keys now rotate without restart, but their offline bootstrap
   roots still require a governed deployment ceremony.
-- The local inventory and managed-root database floors are durable but not externally anchored against a fully compromised
-  database; there is no cross-region witness gossip or Byzantine non-equivocation proof.
+- The inventory and managed-root streams can now use an external-first Byzantine quorum; external
+  notary key hot rotation, cross-region gossip and production service certification remain open.
 - Publication transport has no built-in mTLS identity, certificate pinning or signed endpoint
   discovery.
 - Scheduler and endpoint behavior have deterministic tests, but production HA, partition, clock,

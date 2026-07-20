@@ -60,6 +60,18 @@ Environment:
   RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE  required for staging; staged rollout mode
   RG_RESOURCE_GATEWAY_INSTANCE_ID                  required for staging; exact serving replica id
   RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT         required for staging; sha256 image/JAR identity
+  RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED  optional; exact dynamic-JWKS test-secret replica gate
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED  required true for staging cohort
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN  required external trust domain
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID  required stable notary-set id
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD  required 2f+1 quorum
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS  required; 1..10
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MINIMUM_FAULTS  default: 1
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON  required public Ed25519 keys
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON  required HTTPS notary endpoints
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS  default: 3000; 100..30000
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS  default: 5; 0..30
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS  default: 15; 1..60
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ENABLED   optional; exact dynamic-JWKS replica gate
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID  required when cohort is enabled; stable fleet scope
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ID        required when cohort is enabled; deployment generation
@@ -126,6 +138,99 @@ truthy() {
     esac
 }
 
+validate_test_secret_external_anchor() {
+    if ! truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED:-false}"; then
+        return 0
+    fi
+    if ! truthy "${RG_TEST_SECRET_AUTHORITY_HTTP_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_SECRET_AUTHORITY_JWKS_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_SIGNED_INVENTORY_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED:-false}";
+        then
+        echo "Staging test-secret cohort requires HTTP, dynamic JWKS, remote signed inventory, managed roots, and external anchoring." >&2
+        return 1
+    fi
+    if [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN:-}" ] ||
+        [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID:-}" ] ||
+        [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD:-}" ] ||
+        [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS:-}" ] ||
+        [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON:-}" ] ||
+        [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON:-}" ]; then
+        echo "Test-secret external anchoring requires trust, quorum, public keys, and endpoints." >&2
+        return 1
+    fi
+    if truthy "${RG_TEST_SECRET_AUTHORITY_ALLOW_INSECURE_LOOPBACK:-false}" ||
+        truthy "${RG_TEST_SECRET_AUTHORITY_JWKS_ALLOW_INSECURE_LOOPBACK:-false}" ||
+        truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_ALLOW_INSECURE_LOOPBACK:-false}" ||
+        truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ALLOW_INSECURE_LOOPBACK:-false}" ||
+        truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ALLOW_INSECURE_LOOPBACK:-false}";
+        then
+        echo "Staging test-secret authority, inventory, roots, and notaries must use HTTPS." >&2
+        return 1
+    fi
+    if printf '%s\n%s\n' \
+        "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN}" \
+        "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID}" |
+        grep -Eqv '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+        echo "Invalid test-secret external anchor trust domain or set id." >&2
+        return 1
+    fi
+    case "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON}" in
+        \[*\]) ;;
+        *)
+            echo "Test-secret external anchor keys must be a JSON array." >&2
+            return 1
+            ;;
+    esac
+    case "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON}" in
+        \[*\]) ;;
+        *)
+            echo "Test-secret external anchor endpoints must be a JSON array." >&2
+            return 1
+            ;;
+    esac
+    if printf '%s' \
+        "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON}" |
+        grep -Eq '^\[[[:space:]]*\]$' ||
+        printf '%s' \
+        "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON}" |
+        grep -Eq '^\[[[:space:]]*\]$'; then
+        echo "Test-secret external anchor keys and endpoints must be non-empty." >&2
+        return 1
+    fi
+
+    local threshold="${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD}"
+    local maximum_faults="${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS}"
+    local minimum_faults="${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MINIMUM_FAULTS:-1}"
+    local timeout_ms="${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS:-3000}"
+    local clock_skew_seconds="${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS:-5}"
+    local lifetime_seconds="${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS:-15}"
+    if printf '%s\n%s\n%s\n%s\n%s\n' "${threshold}" "${maximum_faults}" \
+        "${minimum_faults}" "${timeout_ms}" "${lifetime_seconds}" |
+        grep -Eqv '^[1-9][0-9]*$' ||
+        ! printf '%s' "${clock_skew_seconds}" | grep -Eq '^(0|[1-9][0-9]*)$'; then
+        echo "Test-secret external anchor policy values must be canonical integers." >&2
+        return 1
+    fi
+    if [ "${threshold}" -gt 32 ] ||
+        [ "${maximum_faults}" -lt 1 ] || [ "${maximum_faults}" -gt 10 ] ||
+        [ "${minimum_faults}" -lt 1 ] || [ "${minimum_faults}" -gt 10 ] ||
+        [ "${maximum_faults}" -lt "${minimum_faults}" ] ||
+        [ "${threshold}" -lt $((maximum_faults * 2 + 1)) ]; then
+        echo "Test-secret external anchor quorum must satisfy f>=1 and threshold>=2f+1." >&2
+        return 1
+    fi
+    if [ "${timeout_ms}" -lt 100 ] || [ "${timeout_ms}" -gt 30000 ] ||
+        [ "${clock_skew_seconds}" -gt 30 ] ||
+        [ "${lifetime_seconds}" -gt 60 ] ||
+        [ "${timeout_ms}" -ge $((lifetime_seconds * 1000)) ]; then
+        echo "Test-secret external anchor timing bounds are invalid." >&2
+        return 1
+    fi
+}
+
 validate_profile_secrets() {
     if [ "${SPRING_PROFILE}" != "staging" ]; then
         return 0
@@ -145,6 +250,7 @@ validate_profile_secrets() {
         echo "Inject all eleven deployment-owned values before startup." >&2
         return 1
     fi
+    validate_test_secret_external_anchor
     case "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE}" in
         LEGACY_READ_WRITE|DUAL_READ_KEYED_WRITE|KEYED_ONLY) ;;
         *)

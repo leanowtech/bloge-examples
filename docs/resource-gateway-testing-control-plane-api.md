@@ -163,6 +163,19 @@ Independent-store settings:
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-domain` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_DOMAIN` | exact trust domain independent from deployment inventory trust |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD` | distinct witness M-of-N threshold, 1..32 |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON` | strict public Ed25519 witness keys; authorities and key material must not overlap deployment keys |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.enabled` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED` | `false`; required when a staging test-secret cohort is enabled |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.required` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_REQUIRED` | `false` in `test`, `true` in `staging` |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.trust-domain` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN` | independently governed external notary trust domain |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.anchor-set-id` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID` | stable notary-set identity |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD` | accepted receipts; at least `2f+1` |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-faults` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS` | declared Byzantine fault bound `f`; staging requires at least 1 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.minimum-faults` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MINIMUM_FAULTS` | deployment floor; `0` in `test`, `1` in `staging` |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON` | strict public-only Ed25519 notary keys |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.endpoints-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON` | one HTTPS endpoint and unique failure domain per authority |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.request-timeout-ms` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS` | `3000`; 100..30000 and below receipt lifetime |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.clock-skew-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS` | `5`; 0..30 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-receipt-lifetime-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS` | `15`; 1..60 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.allow-insecure-loopback` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only and rejected by staging preflight |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.enabled` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED` | `false`; selects one managed atomic deployment/witness runtime-key publication |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.required` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_REQUIRED` | `false` in `test`, `true` in `staging` |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.uri` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_URI` | strict trust-root publication v1 endpoint; HTTPS required outside explicit loopback tests |
@@ -1260,20 +1273,32 @@ rotation restart-free. Root generation changes immediately invalidate inventory 
 inventory `304` must reverify the cached publication with the new immutable key snapshot before
 readiness returns. Managed and legacy static runtime-key modes are mutually exclusive.
 
-Capabilities independently expose managed refresh, atomic dual publication, durable floor, external
-anchor and composite readiness. The current test-secret floor is database durable but not externally
-anchored, so `testSecretAuthorityExternallyAnchoredTrustRootFloor` remains false. Root health contains
-only aggregate status, sequence, timing, counters and thresholds. The authoritative publication
-Schema is
+Set `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED=true` to anchor both mutable
+ordering streams outside the rollbackable Resource Gateway database. The publication stream hashes
+the exact deployment publication and independent witness heads into one canonical checkpoint; the
+trust-root stream anchors the already atomic dual runtime-key material fingerprint. Both use the
+stable external sequence v1 protocol with test-secret-specific stream ids, so its closed enum is not
+silently extended. External compare-and-append completes before the local database floor. An
+external success followed by local failure is safe to retry exactly; unavailable quorum or any valid
+signed conflict prevents local advancement. Staging enforces `3f+1 / 2f+1`, `f>=1`, independent
+failure domains and HTTPS, making four notaries with three accepted receipts the minimum topology.
+
+Capabilities independently expose external publication anchoring, publication Byzantine quorum,
+external trust-root anchoring, trust-root Byzantine quorum and composite non-equivocation readiness.
+The `test` profile may intentionally leave these false; an enabled staging test-secret cohort may
+not. External-anchor health contains only aggregate status, timing, counters and quorum sizes. The
+authoritative publication Schema is
 [`test-secret-authority-serving-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/test-secret-authority-serving-inventory-trust-root-publication-v1.schema.json).
 
 The persistence adapters still project through stability-named internal cohort and floor kernels.
 These are not wire dependencies, but neutral kernel extraction remains a maintainability task.
-Bootstrap-root rotation ceremony, external non-equivocation, endpoint mTLS/pinning, KMS/HSM custody,
-non-H2 and backup-rollback certification, external alert routing, multi-site HA and chaos/DR
+Bootstrap-root rotation ceremony, external-anchor key hot rotation, endpoint mTLS/pinning,
+KMS/HSM custody, non-H2 and backup-rollback certification, external notary operational
+certification, alert routing, multi-site HA and chaos/DR
 qualification remain explicit follow-up work. Full invariants and tests are recorded in the
-[dynamic inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-dynamic-serving-inventory-verification.md)
-and [managed trust-root verification](resource-gateway-execution-data-control-plane-stage4-test-secret-trust-root-rotation-verification.md).
+[dynamic inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-dynamic-serving-inventory-verification.md),
+the [managed trust-root verification](resource-gateway-execution-data-control-plane-stage4-test-secret-trust-root-rotation-verification.md),
+and the [external non-equivocation verification](resource-gateway-execution-data-control-plane-stage4-test-secret-external-non-equivocation-verification.md).
 
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 

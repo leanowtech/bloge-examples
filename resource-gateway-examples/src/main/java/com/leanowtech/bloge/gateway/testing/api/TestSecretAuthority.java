@@ -41,10 +41,14 @@ public interface TestSecretAuthority {
             "servingInventorySignedRevocation", "servingInventoryWitnessedPublications",
             "servingInventoryWitnessSignatureThreshold",
             "servingInventoryDurablePublicationFloor",
+            "servingInventoryExternallyAnchoredPublicationFloor",
+            "servingInventoryByzantineQuorumPublicationFloor",
             "servingInventoryManagedTrustRootRefresh",
             "servingInventoryAtomicDualTrustRootPublication",
             "servingInventoryDurableTrustRootFloor",
-            "servingInventoryExternallyAnchoredTrustRootFloor");
+            "servingInventoryExternallyAnchoredTrustRootFloor",
+            "servingInventoryByzantineQuorumTrustRootFloor",
+            "servingInventoryExternalNonEquivocation");
 
     /**
      * Resolves the exact requested closure or fails closed.
