@@ -28,6 +28,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * remote conflict enters permanent quarantine and blocks later sequences. Control-store failures
  * never get rewritten as publisher failures, and all result/snapshot types remain payload-free
  * except for the already public outbox projection explicitly returned by the caller-owned store.</p>
+ *
+ * <p>The service owns only its call supervisor. The caller owns the publisher and must close it
+ * after this service has stopped accepting calls. This ownership line prevents a timed-out,
+ * interruption-ignoring adapter from racing a service-initiated transport close.</p>
  */
 public final class ExternalSequenceAnchorBootstrapRootPublicationService
         implements AutoCloseable {
@@ -41,7 +45,7 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationService
      * Creates a root-set publication service with the default fixed-capacity supervisor.
      *
      * @param outbox durable root-set-scoped publication authority
-     * @param publisher authenticated remote delivery adapter owned by this service
+     * @param publisher caller-owned authenticated remote delivery adapter
      */
     public ExternalSequenceAnchorBootstrapRootPublicationService(
             ExternalSequenceAnchorBootstrapRootPublicationOutbox outbox,
@@ -54,7 +58,7 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationService
      * Creates a service with an explicit publisher-call policy.
      *
      * @param outbox durable root-set-scoped publication authority
-     * @param publisher authenticated remote delivery adapter owned by this service
+     * @param publisher caller-owned authenticated remote delivery adapter
      * @param policy fixed-capacity local call limits
      */
     public ExternalSequenceAnchorBootstrapRootPublicationService(
@@ -158,7 +162,11 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationService
     }
 
     /**
-     * Rejects new work, requests local call cancellation, then closes the owned publisher.
+     * Rejects new work and requests local call cancellation.
+     *
+     * <p>The caller closes the publisher after this method. A lingering adapter that ignores
+     * interruption remains observable in the supervisor snapshot but is not concurrently closed
+     * by this service.</p>
      */
     @Override
     public void close() {
@@ -166,7 +174,6 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationService
             return;
         }
         supervisor.close();
-        publisher.close();
     }
 
     private ExecutionResult invocationFailure(

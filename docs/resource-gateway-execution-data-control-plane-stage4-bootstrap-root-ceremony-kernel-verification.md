@@ -10,8 +10,9 @@ durable floor、动态远端刷新、managed notary 组合、Spring/staging 双�
 lingering-call 观测；`PRODUCED` 与 content-addressed publication outbox 已在同一数据库事务提交，并具备
 顺序 claim、退避/attempt budget、旧行回填和 receipt fence；strict HTTPS + Ed25519 signed-response
 publisher adapter、固定容量调用监督、数据库驱动 publication service、单 lane scheduler 和冲突永久
-quarantine 亦已闭合。它仍不等于带企业 IAM、HSM/KMS、默认部署级 worker、root publisher HA 和外部
-审计留存的生产 ceremony 产品。
+quarantine 亦已闭合；test/staging 单 root-set 的严格 Spring publication composition、生命周期与
+aggregate-only health 也已接通。它仍不等于带企业 IAM、HSM/KMS、默认 recovery/cross-root worker、
+root publisher HA 和外部审计留存的生产 ceremony 产品。
 所有消费路径必须使用同一原子 root snapshot，不能另造一个只验证最新 root snapshot 的旁路。
 
 ## 2. 根因
@@ -312,7 +313,14 @@ bundle、legacy fallback、timing bounds、public-only shape 和跨域 alias。J
 
 producer、journal、service、可选 recovery scheduler、publication service/scheduler 都是可嵌入 Java
 组件，不新增 Resource Gateway HTTP endpoint 或独立进程；publisher adapter 调用外部 bundle service，
-因此现有 `scripts/visual-canvas-demo.sh start|stop` 无需增加本地 ceremony 进程。ceremony service 自有
+因此现有 `scripts/visual-canvas-demo.sh start|stop` 无需增加本地 ceremony 进程。publication 可在
+`test`/`staging` 通过 `RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENABLED=true` 启用单 root-set Spring lane；
+所需 identity、endpoint、静态 response key/lifecycle、timeout/lease、scheduler 与 retry 参数完整列在
+两个 profile YAML 中。`production` 出现在任意 active profile 时该组合根物理不存在；显式启用后的
+缺参、未知字段和不安全边界全部 fail startup。默认 bean 使用同一隔离 test-runtime database，关闭顺序
+由 Spring 依赖关系固定为 scheduler、service、caller-owned publisher、database；health 只公开固定状态、
+计数与容量，不执行会产生发布意图的远程探针，也不公开 scope/root/worker/endpoint/key/fingerprint。
+ceremony service 自有
 一个 daemon heartbeat scheduler 和一个固定容量 daemon signer pool；recovery scheduler 另有一条
 fixed-delay daemon lane。publication service 自有固定容量零队列 publisher pool，publication scheduler
 另有一条 fixed-delay lane。关闭顺序必须是各 scheduler 在前、对应 service 在后。durable 审批场景必须显式配置
@@ -360,13 +368,13 @@ var publisher = HttpExternalSequenceAnchorBootstrapRootPublisher.fromBase64(
                 Duration.ofSeconds(30), false));
 var publisherCalls = new ExternalSequenceAnchorBootstrapRootPublisherCallSupervisor.Policy(
         Duration.ofSeconds(15), 2);
-try (var publications = new ExternalSequenceAnchorBootstrapRootPublicationService(
-        journal, publisher, publisherCalls)) {
+try (publisher;
+     var publications = new ExternalSequenceAnchorBootstrapRootPublicationService(
+             journal, publisher, publisherCalls);
+     var delivery = new ExternalSequenceAnchorBootstrapRootPublicationScheduler(
+             publications, publisherWorkerId, 30)) {
     // 15 s deadline requires at least 17 s; use 30 s for operational margin.
-    try (var delivery = new ExternalSequenceAnchorBootstrapRootPublicationScheduler(
-            publications, publisherWorkerId, 30)) {
-        var firstDelivery = delivery.runOnce();
-    }
+    var firstDelivery = delivery.runOnce();
 }
 ```
 
@@ -449,7 +457,7 @@ Schema 不变，本地细分类只存在 supervisor snapshot。
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootPublisherCallSupervisorTest,HttpExternalSequenceAnchorBootstrapRootPublisherTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest \
+  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootPublisherCallSupervisorTest,HttpExternalSequenceAnchorBootstrapRootPublisherTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest,ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationHealthTest \
   test
 ```
 
@@ -464,11 +472,11 @@ mvn -f resource-gateway-examples/pom.xml \
   orphan/provider-side reconciliation 和 provider 级重试预算；当前本地 timeout 只中断 adapter，
   忽略 interrupt 的调用会占用一个固定槽位直到真实返回，但不能形成无界线程/队列，也不能提交过期
   artifact；
-- recovery scheduler 接入默认 Spring composition root、跨 root-set 发现/分片、fleet rollout jitter、
+- recovery scheduler 接入默认 Spring composition root、publication 跨 root-set 发现/分片与 fleet rollout jitter、
   policy 维护迁移、SLO/告警和目标数据库多副本认证；当前完成的是每 root-set 可嵌入的一条 daemon lane，
   不能被描述为部署级 worker platform；
-- publisher mTLS/client identity、certificate pinning、静态 response key 热轮换、默认 Spring lifecycle、
-  跨 root-set 发现/分片与 fleet SLO；当前 adapter 依赖 JVM HTTPS server trust 并额外验证 Ed25519 响应，
+- publisher mTLS/client identity、certificate pinning、静态 response key 热轮换、跨 root-set fleet SLO；
+  当前 adapter 依赖 JVM HTTPS server trust 并额外验证 Ed25519 响应，
   不等于双向 TLS 或证书 pinning；
 - publisher 侧 exact-idempotency conformance 认证、受治理 quarantine repair/abandon、跨区域 HA、独立
   consistency witness、anti-equivocation、journal/outbox retention 与 legal hold；

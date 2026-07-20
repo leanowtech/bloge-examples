@@ -39,6 +39,7 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationScheduler
     private final AtomicLong pollFailureCount = new AtomicLong();
 
     private volatile boolean active;
+    private volatile boolean lastPollFailed;
     private volatile ExecutionStatus lastStatus;
 
     /**
@@ -84,8 +85,10 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationScheduler
         this.executor = new ScheduledThreadPoolExecutor(1, runnable -> {
             Thread thread = Thread.ofPlatform().daemon(true)
                     .name("bootstrap-root-publication").unstarted(runnable);
-            thread.setUncaughtExceptionHandler((ignored, failure) ->
-                    pollFailureCount.incrementAndGet());
+            thread.setUncaughtExceptionHandler((ignored, failure) -> {
+                pollFailureCount.incrementAndGet();
+                lastPollFailed = true;
+            });
             return thread;
         });
         executor.setRemoveOnCancelPolicy(true);
@@ -110,6 +113,7 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationScheduler
         pollCount.incrementAndGet();
         try {
             ExecutionResult result = service.publishNext(workerId, leaseDurationSeconds);
+            lastPollFailed = false;
             lastStatus = result.status();
             switch (result.status()) {
                 case PUBLISHED, IDEMPOTENT_REPLAY -> completionCount.incrementAndGet();
@@ -122,6 +126,10 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationScheduler
                 }
             }
             return result;
+        } catch (RuntimeException failure) {
+            pollFailureCount.incrementAndGet();
+            lastPollFailed = true;
+            throw failure;
         } finally {
             active = false;
         }
@@ -133,9 +141,13 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationScheduler
      * @return immutable scheduler projection
      */
     public Snapshot snapshot() {
+        // Read the volatile publication flag first: true then observes its preceding count update.
+        boolean latestPollFailed = lastPollFailed;
+        long failures = pollFailureCount.get();
         return new Snapshot(Snapshot.SCHEMA_VERSION, closed.get(), active,
                 pollCount.get(), completionCount.get(), quarantineCount.get(),
-                boundedFailureCount.get(), pollFailureCount.get(), lastStatus);
+                boundedFailureCount.get(), failures, latestPollFailed,
+                lastStatus);
     }
 
     /** Stops new polls, waits for bounded drain, then interrupts the local daemon lane. */
@@ -164,7 +176,12 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationScheduler
         try {
             runOnce();
         } catch (RuntimeException failure) {
+            // runOnce already recorded the bounded aggregate failure.
+        } catch (Error fatal) {
+            // Scheduled futures capture Error before a thread uncaught-exception handler sees it.
             pollFailureCount.incrementAndGet();
+            lastPollFailed = true;
+            throw fatal;
         }
     }
 
@@ -212,6 +229,7 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationScheduler
      * @param quarantineCount conflict or already-quarantined observations
      * @param boundedFailureCount publisher, response, receipt, or control failures
      * @param pollFailureCount scheduler-level uncaught runtime failures
+     * @param lastPollFailed whether the latest synchronous or scheduled poll threw
      * @param lastStatus most recent completed status, absent before completion
      */
     public record Snapshot(
@@ -223,11 +241,12 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationScheduler
             long quarantineCount,
             long boundedFailureCount,
             long pollFailureCount,
+            boolean lastPollFailed,
             ExecutionStatus lastStatus) {
 
         /** Current publication scheduler snapshot generation. */
         public static final String SCHEMA_VERSION =
-                "bloge.externalSequenceAnchorBootstrapRootPublicationSchedulerSnapshot.v1";
+                "bloge.externalSequenceAnchorBootstrapRootPublicationSchedulerSnapshot.v2";
 
         /** Enforces monotonic non-negative aggregate counters. */
         public Snapshot {
@@ -235,6 +254,7 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationScheduler
             if (!SCHEMA_VERSION.equals(schemaVersion) || pollCount < 0L
                     || completionCount < 0L || quarantineCount < 0L
                     || boundedFailureCount < 0L || pollFailureCount < 0L
+                    || lastPollFailed && pollFailureCount == 0L
                     || completionCount + quarantineCount + boundedFailureCount
                     > pollCount) {
                 throw new IllegalArgumentException(

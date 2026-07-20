@@ -781,6 +781,7 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
                 assertThat(snapshot.pollCount()).isOne();
                 assertThat(snapshot.completionCount()).isOne();
                 assertThat(snapshot.pollFailureCount()).isZero();
+                assertThat(snapshot.lastPollFailed()).isFalse();
             });
             assertThat(service.publishNext("publisher-worker-b", 3).status()).isEqualTo(
                     ExternalSequenceAnchorBootstrapRootPublicationService.ExecutionStatus
@@ -790,6 +791,34 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
             assertThatThrownBy(scheduler::runOnce)
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("closed");
+        }
+    }
+
+    @Test
+    void publicationSchedulerRecordsTheLatestThrownPollWithoutDoubleCounting() {
+        var publisher = publisher(claimRequest -> {
+            throw new AssertionError("publisher must not run after service close");
+        });
+        var service = new ExternalSequenceAnchorBootstrapRootPublicationService(
+                journal, publisher,
+                new ExternalSequenceAnchorBootstrapRootPublisherCallSupervisor.Policy(
+                        Duration.ofMillis(100), 1));
+        try (service;
+             var scheduler = new ExternalSequenceAnchorBootstrapRootPublicationScheduler(
+                     service, "publisher-worker-failed", 3,
+                     new ExternalSequenceAnchorBootstrapRootPublicationScheduler.SchedulePolicy(
+                             Duration.ofDays(1), Duration.ofMillis(100),
+                             Duration.ofSeconds(1)))) {
+            service.close();
+
+            assertThatThrownBy(scheduler::runOnce)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("closed");
+            assertThat(scheduler.snapshot()).satisfies(snapshot -> {
+                assertThat(snapshot.pollCount()).isOne();
+                assertThat(snapshot.pollFailureCount()).isOne();
+                assertThat(snapshot.lastPollFailed()).isTrue();
+            });
         }
     }
 

@@ -443,10 +443,19 @@ all verify against one statically pinned public response key. A database-fenced 
 and one-lane scheduler perform automatic delivery through a fixed-capacity zero-queue call
 supervisor. Invalid or unsigned `409` responses enter ordinary retry backoff; only a meaningful
 signed conflict enters durable `QUARANTINED` and blocks every successor sequence. Close each
-recovery/publication scheduler before its owning service. This remains an embeddable Java kernel,
-not a new Resource Gateway endpoint or deployment-wide worker registry; default Spring composition,
-cross-root discovery, publisher mTLS/client identity and certificate pinning, response-key hot
-rotation, publisher HA/anti-equivocation, target-database/DR/chaos certification,
+recovery/publication scheduler before its owning service. A profile-gated Spring composition root
+can now run one publication lane in `test` or `staging`; it is physically absent whenever
+`production` is active, including mixed-profile startup, and remains disabled until
+`RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENABLED=true`. Enabling it requires scope, root-set, worker,
+endpoint, publisher/trust identity, static Ed25519 response key and whole-second key lifecycle
+values under the matching `RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_*` variables in the two profile YAML
+files. Unknown fields, partial identity, unsafe timeout/lease margins or invalid retry/scheduler
+policy fail startup. The default lane uses the isolated test-runtime database journal/outbox and
+exports aggregate-only Actuator health; deployments may supply an equivalent durable outbox or
+publisher bean. Close the caller-owned publisher after the service. This remains a single-root
+authoring runtime, not a new Resource Gateway endpoint or deployment-wide worker registry; default
+Spring recovery composition, cross-root discovery, publisher mTLS/client identity and certificate
+pinning, response-key hot rotation, publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
 bundle, and publication HTTP Schemas, failure matrix, runtime wiring, and remaining ceremony limits
 are documented in the

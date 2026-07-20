@@ -1620,7 +1620,9 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityJobAuthorizer.class,
                     TestRuntimeProfileIsolationTest::readyTestAuthorizer);
         }
-        context.register(TestRuntimeConfiguration.class, TestExecutionController.class,
+        context.register(TestRuntimeConfiguration.class,
+                ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration.class,
+                TestExecutionController.class,
                 TestSuiteStabilityController.class,
                 TestSuiteStabilityCrossRetentionTrendController.class,
                 TestSuiteStabilityObservationLedgerLifecycleController.class,
