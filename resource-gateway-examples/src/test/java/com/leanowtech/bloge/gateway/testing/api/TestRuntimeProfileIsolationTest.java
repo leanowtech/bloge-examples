@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabili
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeSloControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRuntimeAdmissionControl;
 import com.leanowtech.bloge.gateway.testing.persistence.RecoverySequenceRequestKeyProtector;
@@ -79,6 +80,12 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityObservationExternalArchiveHealth.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationFloorRetirementService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+                            .class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.class))
+                    .isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobController.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobService.class)).isEmpty();
             assertThat(context.getBeansOfType(
@@ -436,6 +443,9 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler.class))
                     .isEmpty();
             assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationExternalArchiveReconciliationHealth.class))
                     .isEmpty();
         }
@@ -487,6 +497,9 @@ class TestRuntimeProfileIsolationTest {
                     DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
                             .class)).hasSize(1);
             assertThat(context.getBeansOfType(
+                    DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+                            .class)).hasSize(1);
+            assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationExternalArchiveReconciliationService.class))
                     .hasSize(1);
             assertThat(context.getBeansOfType(
@@ -494,6 +507,9 @@ class TestRuntimeProfileIsolationTest {
                     .hasSize(1);
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler.class))
+                    .hasSize(1);
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.class))
                     .hasSize(1);
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationExternalArchiveReconciliationHealth.class))
@@ -509,6 +525,9 @@ class TestRuntimeProfileIsolationTest {
                     .isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationExternalArchiveFindingRetentionScheduler.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
+                    TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.class))
                     .isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityObservationExternalArchiveReconciliationHealth.class))
@@ -587,6 +606,36 @@ class TestRuntimeProfileIsolationTest {
                     .hasMessageContaining("startupGrace");
         } finally {
             healthContext.close();
+        }
+
+        Map<String, Object> unboundedSourcePage =
+                externalObservationArchiveReconciliationProperties();
+        unboundedSourcePage.put(reconciliationPrefix() + "source-retention-page-size", "501");
+        AnnotationConfigApplicationContext sourcePageContext = unrefreshedContext(
+                unboundedSourcePage, 0, "test");
+        try {
+            assertThatThrownBy(sourcePageContext::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("source retention page")
+                    .hasMessageContaining("1 through 500");
+        } finally {
+            sourcePageContext.close();
+        }
+
+        Map<String, Object> blindSourceHealth =
+                externalObservationArchiveReconciliationProperties();
+        blindSourceHealth.put(reconciliationPrefix()
+                + "health-maximum-source-retention-staleness-seconds", "3599");
+        AnnotationConfigApplicationContext sourceHealthContext = unrefreshedContext(
+                blindSourceHealth, 0, "test");
+        try {
+            assertThatThrownBy(sourceHealthContext::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("maximumSourceRetentionStaleness");
+        } finally {
+            sourceHealthContext.close();
         }
     }
 
@@ -1179,6 +1228,7 @@ class TestRuntimeProfileIsolationTest {
         properties.put(reconciliationPrefix() + "instance-id", "profile-replica-a");
         properties.put(reconciliationPrefix() + "initial-delay-ms", "300000");
         properties.put(reconciliationPrefix() + "retention-initial-delay-ms", "300000");
+        properties.put(reconciliationPrefix() + "source-retention-initial-delay-ms", "300000");
         return properties;
     }
 

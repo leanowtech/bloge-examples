@@ -1410,6 +1410,7 @@ public final class
             Instant observedAt,
             boolean activeRetirement,
             long activeMarkerCount,
+            Instant activeRetirementUpdatedAt,
             long processedBacklog,
             long expiredBacklog,
             long totalClassificationsDeleted,
@@ -1424,7 +1425,10 @@ public final class
                     || processedBacklog < 0 || expiredBacklog < 0
                     || totalClassificationsDeleted < 0 || totalExpectedDeleted < 0
                     || totalItemsDeleted < 0 || totalPagesDeleted < 0
-                    || totalSourcesRetired < 0 || activeRetirement != (activeMarkerCount == 1)) {
+                    || totalSourcesRetired < 0 || activeRetirement != (activeMarkerCount == 1)
+                    || activeRetirement != (activeRetirementUpdatedAt != null)
+                    || activeRetirementUpdatedAt != null
+                    && activeRetirementUpdatedAt.isAfter(observedAt)) {
                 throw new IllegalArgumentException("Invalid source-retention snapshot");
             }
         }
@@ -1668,6 +1672,7 @@ public final class
                 long processedBacklog,
                 long expiredBacklog) {
             return new OperationalSnapshot(observedAt, !activeCycleId.isEmpty(), activeMarkers,
+                    activeCycleId.isEmpty() ? null : updatedAt,
                     processedBacklog, expiredBacklog, classificationsDeleted, expectedDeleted,
                     itemsDeleted, pagesDeleted, sourcesRetired, lastSuccessAt);
         }

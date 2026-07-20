@@ -38,6 +38,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabili
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityJobRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityServingInventoryPublicationFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityServingInventoryTrustRootFloor;
@@ -1526,6 +1527,26 @@ public class TestRuntimeConfiguration {
                 Duration.ofSeconds(leaseDurationSeconds));
     }
 
+    /** Creates the independently leased bounded lifecycle for local reconciliation sources. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+            testSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane(
+                    TestRuntimeDatabase database,
+                    ObjectMapper objectMapper,
+                    TestSuiteStabilityObservationExternalArchiveInventoryAuthority authority,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.instance-id:}")
+                    String instanceId,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.source-retention-lease-duration-seconds:120}")
+                    long leaseDurationSeconds) {
+        return new DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane(
+                database.jdbc(), database.transactionManager(), objectMapper, authority,
+                requiredExternalReconciliationInstance(instanceId),
+                Duration.ofSeconds(leaseDurationSeconds));
+    }
+
     /** Assembles downstream-first backpressure across inventory, comparison, and finding stages. */
     @Bean
     @ConditionalOnProperty(
@@ -1588,6 +1609,31 @@ public class TestRuntimeConfiguration {
                 Duration.ofSeconds(evidenceRetentionSeconds), pageSize);
     }
 
+    /** Runs source-history retirement on a distinct lease, schedule, window, and failure lane. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.stability-observation-lifecycle.external-archive.reconciliation",
+            name = "enabled", havingValue = "true")
+    TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler
+            testSuiteStabilityObservationExternalArchiveSourceRetentionScheduler(
+                    DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+                            controlPlane,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.source-processed-retention-seconds:31536000}")
+                    long processedRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.source-expired-retention-seconds:2592000}")
+                    long expiredRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.source-retention-page-size:100}")
+                    int pageSize,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.source-retention-initial-delay-ms:300000}")
+                    long initialDelayMillis,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.source-retention-interval-ms:3600000}")
+                    long intervalMillis) {
+        validateExternalSchedule(initialDelayMillis, intervalMillis, "source retention");
+        return new TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler(
+                controlPlane, Duration.ofSeconds(processedRetentionSeconds),
+                Duration.ofSeconds(expiredRetentionSeconds), pageSize);
+    }
+
     /**
      * Exposes schedule-aware, database-verified reconciliation readiness and capability truth.
      *
@@ -1609,6 +1655,10 @@ public class TestRuntimeConfiguration {
                     DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane findings,
                     DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
                             retention,
+                    TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler
+                            sourceRetentionScheduler,
+                    DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+                            sourceRetention,
                     @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-observation-interval-ms:30000}")
                     long observationIntervalMillis,
                     @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-startup-grace-seconds:7200}")
@@ -1638,9 +1688,24 @@ public class TestRuntimeConfiguration {
                     @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-overdue-archives:0}")
                     long maximumOverdueArchives,
                     @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-overdue-evidence:0}")
-                    long maximumOverdueEvidence) {
+                    long maximumOverdueEvidence,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.source-retention-interval-ms:3600000}")
+                    long sourceRetentionIntervalMillis,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-source-retention-staleness-seconds:7200}")
+                    long maximumSourceRetentionStalenessSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-source-retirement-idle-seconds:7200}")
+                    long maximumSourceRetirementIdleSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.source-processed-retention-seconds:31536000}")
+                    long processedSourceRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.source-expired-retention-seconds:2592000}")
+                    long expiredSourceRetentionSeconds,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-processed-source-backlog:0}")
+                    long maximumProcessedSourceBacklog,
+                    @Value("${gateway.testing.stability-observation-lifecycle.external-archive.reconciliation.health-maximum-expired-source-backlog:0}")
+                    long maximumExpiredSourceBacklog) {
         return new TestSuiteStabilityObservationExternalArchiveReconciliationHealth(
                 service, scheduler, inventories, comparisons, findings, retention,
+                sourceRetentionScheduler, sourceRetention,
                 new TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Policy(
                         Duration.ofMillis(observationIntervalMillis),
                         Duration.ofSeconds(startupGraceSeconds),
@@ -1655,7 +1720,13 @@ public class TestRuntimeConfiguration {
                         Duration.ofSeconds(archiveRetentionSeconds),
                         Duration.ofSeconds(evidenceRetentionSeconds),
                         maximumOverdueResolvedFindings, maximumOverdueArchives,
-                        maximumOverdueEvidence));
+                        maximumOverdueEvidence,
+                        Duration.ofMillis(sourceRetentionIntervalMillis),
+                        Duration.ofSeconds(maximumSourceRetentionStalenessSeconds),
+                        Duration.ofSeconds(maximumSourceRetirementIdleSeconds),
+                        Duration.ofSeconds(processedSourceRetentionSeconds),
+                        Duration.ofSeconds(expiredSourceRetentionSeconds),
+                        maximumProcessedSourceBacklog, maximumExpiredSourceBacklog));
     }
 
     /** Exposes identity-free health for the configured external WORM copy set. */

@@ -82,6 +82,12 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControl
         assertThatThrownBy(() -> classifier.classifications(fixture.comparisonId(), "", 10))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("being retired");
+        var activeSnapshot = control.operationalSnapshot(
+                Duration.ofDays(1), Duration.ofDays(1));
+        assertThat(activeSnapshot.activeRetirement()).isTrue();
+        assertThat(activeSnapshot.activeMarkerCount()).isEqualTo(1);
+        assertThat(activeSnapshot.activeRetirementUpdatedAt()).isNotNull()
+                .isBeforeOrEqualTo(activeSnapshot.observedAt());
         List<DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
                 .RetentionResult> results = new ArrayList<>();
         results.add(first);

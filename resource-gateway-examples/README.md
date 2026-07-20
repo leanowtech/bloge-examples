@@ -148,16 +148,23 @@ The same endpoint now accepts a distinct signed, challenge-bound read-only inven
 immutable snapshot paging. A provider may serve a pre-generated snapshot, but the client rejects
 future snapshots and snapshots older than the configured bound (300 seconds by default). There is
 no inventory controller or delete operation. Durable inventory, frozen comparison, governed
-findings, and bounded derived-evidence retention can now run autonomously when the separate
+findings, bounded derived-evidence retention, and bounded source-history retirement can now run
+autonomously when the separate
 `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_ENABLED=true` flag and stable
 `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_INSTANCE_ID` are supplied. The scheduler
 drains findings and comparisons before opening another inventory cycle, isolates one failed
 authority, and remains physically absent in production. Its aggregate Actuator indicator now
 combines scheduler freshness, fingerprint-verified database progress for inventory/comparison/
 finding, completed-evidence age, and derived-evidence retention freshness/backlog. Startup grace,
-transient failure budget, stage-idle and lifecycle thresholds are bounded configuration; authority,
+transient failure budget, stage-idle and lifecycle thresholds are bounded configuration. A separate
+source-retention lane defaults to 365-day processed history, 30-day expired snapshots, one 100-row
+dependency segment per hour, and a 120-second database lease. Its database last-success, permanent
+active-marker age, and both eligible backlogs enter readiness; normal lease contention does not.
+Authority,
 object, cursor, lease and fingerprint identities never appear. `/api/integration/capabilities`
-separately reports `configured` and current `ready` truth. Open governance findings are reported as
+separately reports `configured` and current `ready` truth. Descriptor v2 embeds an independent
+`sourceRetention` state, and dedicated configured/readiness/health feature flags keep source
+lifecycle truth visible even if another stage is degraded. Open governance findings are reported as
 an aggregate business outcome and do not make the control loop unhealthy. Inventory authority and
 cycle rows now use the same versioned whole-record fingerprint in collection, comparison, and
 readiness paths. Signed inventory page JSON and its indexed columns, normalized item ownership,
@@ -213,8 +220,9 @@ now wires durable lease/cursor, frozen classification, replay-verified finding p
 downstream backpressure, and bounded
 finding/evidence retention. Its source-history retention core now separately fences processed and
 expired sources, verifies signing-time trust for stored pages, deletes one bounded dependency segment
-per transaction, and permanently gates classification export during and after retirement. Autonomous
-source-retention scheduling/health/capability wiring, certified providers, historical trust
+per transaction, and permanently gates classification export during and after retirement. It now
+runs on its own profile-gated fixed-delay scheduler and reports database-authoritative freshness,
+stalled progress, backlog, and nested capability truth. Certified providers, historical trust
 publication, legal-hold/erasure/backup and recovery controls,
 and witnessed non-equivocation are still required. See the
 [lifecycle protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md),

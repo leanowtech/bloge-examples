@@ -315,6 +315,7 @@ public record IntegrationCapabilities(
         objects.put("externalWriteContract", List.of(
                 com.leanowtech.bloge.gateway.resource.ResourceDescriptor.ExternalWriteContract.SCHEMA_VERSION));
         objects.put("externalArchiveReconciliationReadiness", List.of(
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.SCHEMA_VERSION_V1,
                 TestSuiteStabilityObservationExternalArchiveReconciliationHealth.SCHEMA_VERSION));
         if (testExecutionEndpointEnabled) {
             objects.put("testExecutionRequest", List.of(
@@ -895,6 +896,15 @@ public record IntegrationCapabilities(
                 testExecutionEndpointEnabled && reconciliation.ready());
         features.put("boundedExternalObservationArchiveReconciliationHealth",
                 testExecutionEndpointEnabled && reconciliation.configured());
+        features.put("externalObservationArchiveSourceRetentionConfigured",
+                testExecutionEndpointEnabled
+                        && reconciliation.sourceRetention().configured());
+        features.put("externalObservationArchiveSourceRetentionReadiness",
+                testExecutionEndpointEnabled
+                        && reconciliation.sourceRetention().ready());
+        features.put("boundedExternalObservationArchiveSourceRetentionHealth",
+                testExecutionEndpointEnabled
+                        && reconciliation.sourceRetention().configured());
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("signedTestSuiteRunAttestation",

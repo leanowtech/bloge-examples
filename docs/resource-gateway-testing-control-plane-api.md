@@ -3170,6 +3170,12 @@ gateway:
           retention-page-size: 100
           retention-initial-delay-ms: 300000
           retention-interval-ms: 3600000
+          source-retention-lease-duration-seconds: 120
+          source-processed-retention-seconds: 31536000
+          source-expired-retention-seconds: 2592000
+          source-retention-page-size: 100
+          source-retention-initial-delay-ms: 300000
+          source-retention-interval-ms: 3600000
           health-observation-interval-ms: 30000
           health-startup-grace-seconds: 7200
           health-maximum-scheduler-staleness-seconds: 900
@@ -3180,6 +3186,10 @@ gateway:
           health-maximum-overdue-resolved-findings: 0
           health-maximum-overdue-archives: 0
           health-maximum-overdue-evidence: 0
+          health-maximum-source-retention-staleness-seconds: 7200
+          health-maximum-source-retirement-idle-seconds: 7200
+          health-maximum-processed-source-backlog: 0
+          health-maximum-expired-source-backlog: 0
 ~~~
 
 The environment-variable equivalents are:
@@ -3218,6 +3228,12 @@ are:
 | `retention-page-size` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_PAGE_SIZE` |
 | `retention-initial-delay-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_INITIAL_DELAY_MS` |
 | `retention-interval-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_RETENTION_INTERVAL_MS` |
+| `source-retention-lease-duration-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_SOURCE_RETENTION_LEASE_SECONDS` |
+| `source-processed-retention-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_SOURCE_PROCESSED_RETENTION_SECONDS` |
+| `source-expired-retention-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_SOURCE_EXPIRED_RETENTION_SECONDS` |
+| `source-retention-page-size` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_SOURCE_RETENTION_PAGE_SIZE` |
+| `source-retention-initial-delay-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_SOURCE_RETENTION_INITIAL_DELAY_MS` |
+| `source-retention-interval-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_SOURCE_RETENTION_INTERVAL_MS` |
 | `health-observation-interval-ms` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_OBSERVATION_INTERVAL_MS` |
 | `health-startup-grace-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_STARTUP_GRACE_SECONDS` |
 | `health-maximum-scheduler-staleness-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_SCHEDULER_STALENESS_SECONDS` |
@@ -3228,14 +3244,27 @@ are:
 | `health-maximum-overdue-resolved-findings` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_OVERDUE_RESOLVED_FINDINGS` |
 | `health-maximum-overdue-archives` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_OVERDUE_ARCHIVES` |
 | `health-maximum-overdue-evidence` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_OVERDUE_EVIDENCE` |
+| `health-maximum-source-retention-staleness-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_SOURCE_RETENTION_STALENESS_SECONDS` |
+| `health-maximum-source-retirement-idle-seconds` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_SOURCE_RETIREMENT_IDLE_SECONDS` |
+| `health-maximum-processed-source-backlog` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_PROCESSED_SOURCE_BACKLOG` |
+| `health-maximum-expired-source-backlog` | `RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_EXPIRED_SOURCE_BACKLOG` |
 
 Enabling reconciliation without the HTTP/custom inventory authority or a stable instance id fails
-startup. Inventory, comparison, finding, and retention pages are independently bounded to 1..500;
+startup. Inventory, comparison, finding, derived-retention, and source-retention pages are
+independently bounded to 1..500;
 fixed-delay intervals must be between one second and seven days. Every authority is advanced at most
 one stateful stage per tick. Existing finding projection drains first, then comparison; only a fully
 current downstream opens the next inventory cycle. One authority failure does not prevent later
 members from advancing. Any active `production` profile vetoes the complete control loop regardless
 of properties.
+
+Source history runs on a third, independent fixed-delay lane. Its default processed window is 365
+days, expired-unprocessed snapshot window is 30 days, lease is 120 seconds, and one tick deletes at
+most 100 rows from one dependency segment. `LEASE_BUSY` is normal cross-replica ownership; local
+overlap or exceptions are contained for retry. The database snapshot, rather than a process-local
+success timestamp, governs freshness after restart or replica takeover. A permanent `ACTIVE` marker
+older than the configured source-idle SLO fails readiness instead of being mistaken for healthy
+long-running work.
 
 Inventory authority and cycle rows are whole-record fingerprinted across lease, cursor, snapshot,
 root, counter, lifecycle, and time columns. The collector verifies them before remote I/O and uses
@@ -3255,14 +3284,16 @@ controls or an external keyed/notarized commitment against an administrator who 
 
 The reconciliation Actuator indicator is not a timer-only probe. It returns `UNKNOWN` during the
 bounded first-pass grace, `UP` only when the latest all-authority scheduler pass, every active
-inventory/comparison/finding stage, completed finding evidence, and derived-evidence retention meet
-policy, `OUT_OF_SERVICE` for stable SLO violations, and `DOWN` when any aggregate durable snapshot
-cannot be verified. Stable violation codes distinguish scheduler never-success/staleness/failure
-budget, each of the three stalled stages, absent/stale completed evidence, retention never-success/
-staleness, and the three overdue lifecycle backlogs. Stage and evidence ages use each snapshot's
-database time; scheduler attempt age is explicitly process-local. `OPEN` finding count is diagnostic
-business output and never a health violation. Details contain only aggregate counts, ages, closed
-labels, and codes.
+inventory/comparison/finding stage, completed finding evidence, derived-evidence retention, and
+source-history retention meet policy, `OUT_OF_SERVICE` for stable SLO violations, and `DOWN` when
+any aggregate durable snapshot cannot be verified. Stable violation codes distinguish scheduler
+never-success/staleness/failure budget, each of the three stalled stages, absent/stale completed
+evidence, derived retention never-success/staleness and its three backlogs, plus source scheduler
+failure budget, source never-success/staleness, stalled permanent retirement, and processed/expired
+source backlogs. Stage, evidence, and lifecycle ages use each snapshot's database time; scheduler
+attempt age is explicitly process-local. Cross-replica source lease contention is normal and does
+not consume the failure budget. `OPEN` finding count is diagnostic business output and never a
+health violation. Details contain only aggregate counts, ages, closed labels, and codes.
 
 The unauthenticated integration probe exposes the same latest assessment under
 `testability.externalArchiveReconciliation`. `configured=false`, `ready=false`, `state=DISABLED`
@@ -3271,6 +3302,12 @@ means the profile did not assemble the loop. A configured loop advertises
 `externalObservationArchiveReconciliationReadiness=true`. The separate
 `boundedExternalObservationArchiveReconciliationHealth` feature reports monitor assembly, not
 current readiness, so automation cannot confuse a degraded configured service with an absent one.
+The v2 descriptor embeds `sourceRetention` with independent `configured`, `ready`, `state`, and
+source-only `violations`. The corresponding
+`externalObservationArchiveSourceRetentionConfigured`,
+`externalObservationArchiveSourceRetentionReadiness`, and
+`boundedExternalObservationArchiveSourceRetentionHealth` flags preserve that distinction even when
+another reconciliation stage is degraded.
 
 Each key entry contains `authorityId`, `keyId`, X.509-encoded `publicKeyBase64`, `notBefore`,
 exclusive `expiresAt`, `enabled`, and `revoked`. Each endpoint entry contains exactly
@@ -3310,8 +3347,8 @@ uses database leases and durable cursors; it does not grant remediation authorit
 Both lifecycle endpoints are absent in production and disabled by default. V2 proves that an
 approved authority signed the acknowledgement recorded before deletion, but production WORM
 provider certification/wiring, legal hold/erasure, backup purge, recovery continuity, historical
-authority publication, autonomous source-retention scheduling/health integration, and external
-non-equivocation policy are still missing. The internal source-retention core has no public
+authority publication, and external non-equivocation policy are still missing. The internal
+source-retention lifecycle has no public
 destructive API: it only bounds already-consumed local staging history after governance evidence
 retirement and keeps a permanent export-denial marker. Test/staging reconciliation health/readiness
 and capability truth do not prove those physical provider and lifecycle properties. Capability

@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabili
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.actuate.health.Status;
 
@@ -42,6 +43,8 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                 .containsEntry("state", "HEALTHY")
                 .containsEntry("configuredAuthorityCount", 2)
                 .containsEntry("openFindings", 7L)
+                .containsEntry("sourceRetentionState", "HEALTHY")
+                .containsEntry("processedSourceBacklog", 0L)
                 .containsEntry("authoritiesWithoutCompletedEvidence", 0)
                 .doesNotContainKeys("authorityId", "objectId", "fingerprint");
         assertThat(result.toString()).doesNotContain("archive-a", "archive-b");
@@ -50,6 +53,8 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
             assertThat(descriptor.ready()).isTrue();
             assertThat(descriptor.state()).isEqualTo("HEALTHY");
             assertThat(descriptor.authorityCount()).isEqualTo(2);
+            assertThat(descriptor.sourceRetention().configured()).isTrue();
+            assertThat(descriptor.sourceRetention().ready()).isTrue();
         });
     }
 
@@ -85,7 +90,8 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
         assertThat(violations(health)).containsExactly(
                 "SCHEDULER_NEVER_SUCCEEDED",
                 "COMPLETED_EVIDENCE_NEVER_PRODUCED",
-                "RETENTION_NEVER_SUCCEEDED");
+                "RETENTION_NEVER_SUCCEEDED",
+                "SOURCE_RETENTION_NEVER_SUCCEEDED");
     }
 
     @Test
@@ -105,6 +111,11 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                 DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane.class);
         var retention = mock(
                 DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
+                        .class);
+        var sourceScheduler = mock(
+                TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.class);
+        var sourceRetention = mock(
+                DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
                         .class);
         when(service.authorities()).thenReturn(List.of("archive-a"));
         Instant now = clock.instant();
@@ -129,8 +140,18 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                 Duration.ofDays(30), Duration.ofDays(365), Duration.ofDays(365)))
                 .thenReturn(retention(now, 11, 2, 3, 4,
                         now.minus(Duration.ofHours(3))));
+        when(sourceScheduler.latest()).thenReturn(sourceTick(
+                TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.TickStatus
+                        .FAILED,
+                now.minus(Duration.ofHours(2)), null, 3));
+        when(sourceRetention.operationalSnapshot(
+                Duration.ofDays(365), Duration.ofDays(30)))
+                .thenReturn(sourceRetention(now, true,
+                        now.minus(Duration.ofHours(4)), 5, 6,
+                        now.minus(Duration.ofHours(3))));
         var health = new TestSuiteStabilityObservationExternalArchiveReconciliationHealth(
                 service, scheduler, inventories, comparisons, findings, retention,
+                sourceScheduler, sourceRetention,
                 policy(), clock);
         clock.advance(Duration.ofHours(3));
 
@@ -147,10 +168,28 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                 "RETENTION_STALE",
                 "RESOLVED_FINDING_BACKLOG_EXCEEDED",
                 "FINDING_ARCHIVE_BACKLOG_EXCEEDED",
-                "FINDING_EVIDENCE_BACKLOG_EXCEEDED");
+                "FINDING_EVIDENCE_BACKLOG_EXCEEDED",
+                "SOURCE_RETENTION_SCHEDULER_FAILURE_BUDGET_EXCEEDED",
+                "SOURCE_RETENTION_STALE",
+                "SOURCE_RETIREMENT_STALLED",
+                "PROCESSED_SOURCE_BACKLOG_EXCEEDED",
+                "EXPIRED_SOURCE_BACKLOG_EXCEEDED");
         assertThat(health.health().getDetails())
                 .containsEntry("staleStages", 3)
-                .containsEntry("openFindings", 11L);
+                .containsEntry("openFindings", 11L)
+                .containsEntry("sourceRetentionState", "SLO_VIOLATED")
+                .containsEntry("activeSourceRetirements", 1L)
+                .containsEntry("processedSourceBacklog", 5L)
+                .containsEntry("expiredSourceBacklog", 6L);
+        assertThat(health.descriptor().sourceRetention()).satisfies(source -> {
+            assertThat(source.ready()).isFalse();
+            assertThat(source.state()).isEqualTo("SLO_VIOLATED");
+            assertThat(source.violations()).containsExactly(
+                    "SOURCE_RETENTION_SCHEDULER_FAILURE_BUDGET_EXCEEDED",
+                    "SOURCE_RETENTION_STALE", "SOURCE_RETIREMENT_STALLED",
+                    "PROCESSED_SOURCE_BACKLOG_EXCEEDED",
+                    "EXPIRED_SOURCE_BACKLOG_EXCEEDED");
+        });
     }
 
     @Test
@@ -168,7 +207,12 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                 .containsEntry("violations",
                         List.of("RECONCILIATION_STORE_UNAVAILABLE"));
         assertThat(result.toString()).doesNotContain("archive-a", "secret-fingerprint");
-        assertThat(health.descriptor().ready()).isFalse();
+        assertThat(health.descriptor()).satisfies(descriptor -> {
+            assertThat(descriptor.ready()).isFalse();
+            assertThat(descriptor.sourceRetention().configured()).isTrue();
+            assertThat(descriptor.sourceRetention().ready()).isFalse();
+            assertThat(descriptor.sourceRetention().state()).isEqualTo("STORE_UNAVAILABLE");
+        });
     }
 
     @Test
@@ -201,6 +245,11 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                 "", true, false, "SLO_VIOLATED", List.of("free-form-error"), START, 1))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown");
+        assertThatThrownBy(() -> new
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor(
+                "bloge.unknown.v1", true, true, "HEALTHY", List.of(), START, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("schema");
     }
 
     @SuppressWarnings("unchecked")
@@ -227,6 +276,14 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                 new DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane
                         .OperationalSnapshot(now, true, false, 0, 0, 0,
                         null, null, now.minus(Duration.ofHours(1))));
+        when(fixtures.sourceScheduler().latest()).thenReturn(sourceTick(
+                TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.TickStatus
+                        .COMPLETED,
+                now.minus(Duration.ofMinutes(1)), now.minus(Duration.ofMinutes(1)), 0));
+        when(fixtures.sourceRetention().operationalSnapshot(
+                Duration.ofDays(365), Duration.ofDays(30)))
+                .thenReturn(sourceRetention(now, false, null, 0, 0,
+                        now.minus(Duration.ofMinutes(30))));
         return fixtures;
     }
 
@@ -254,6 +311,13 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
         when(fixtures.retention().operationalSnapshot(
                 Duration.ofDays(30), Duration.ofDays(365), Duration.ofDays(365)))
                 .thenReturn(retention(now, 0, 0, 0, 0, null));
+        when(fixtures.sourceScheduler().latest()).thenReturn(sourceTick(
+                TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.TickStatus
+                        .NOT_RUN,
+                null, null, 0));
+        when(fixtures.sourceRetention().operationalSnapshot(
+                Duration.ofDays(365), Duration.ofDays(30)))
+                .thenReturn(sourceRetention(now, false, null, 0, 0, null));
         return fixtures;
     }
 
@@ -269,6 +333,9 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                         .class),
                 mock(DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane.class),
                 mock(DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
+                        .class),
+                mock(TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.class),
+                mock(DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
                         .class));
     }
 
@@ -304,6 +371,31 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                 overdueEvidence, lastSuccessAt);
     }
 
+    private static TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.TickResult
+            sourceTick(
+            TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.TickStatus status,
+            Instant attemptedAt,
+            Instant lastSuccessfulAt,
+            long failures) {
+        return new TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.TickResult(
+                status == TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler
+                        .TickStatus.NOT_RUN ? 0 : Math.max(1, failures),
+                status, attemptedAt, lastSuccessfulAt, failures);
+    }
+
+    private static DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+            .OperationalSnapshot sourceRetention(
+            Instant observedAt,
+            boolean active,
+            Instant activeUpdatedAt,
+            long processedBacklog,
+            long expiredBacklog,
+            Instant lastSuccessAt) {
+        return new DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+                .OperationalSnapshot(observedAt, active, active ? 1 : 0, activeUpdatedAt,
+                processedBacklog, expiredBacklog, 0, 0, 0, 0, 0, lastSuccessAt);
+    }
+
     private static TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Policy policy() {
         return new TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Policy(
                 Duration.ofSeconds(30), Duration.ofHours(2), Duration.ofMinutes(5),
@@ -321,13 +413,16 @@ class TestSuiteStabilityObservationExternalArchiveReconciliationHealthTest {
                     comparisons,
             DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane findings,
             DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
-                    retention) {
+                    retention,
+            TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler sourceScheduler,
+            DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+                    sourceRetention) {
         private TestSuiteStabilityObservationExternalArchiveReconciliationHealth health(
                 Clock clock,
                 TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Policy policy) {
             return new TestSuiteStabilityObservationExternalArchiveReconciliationHealth(
                     service, scheduler, inventories, comparisons, findings, retention,
-                    policy, clock);
+                    sourceScheduler, sourceRetention, policy, clock);
         }
     }
 

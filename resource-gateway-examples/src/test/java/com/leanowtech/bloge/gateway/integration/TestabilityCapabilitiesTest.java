@@ -90,30 +90,58 @@ class TestabilityCapabilitiesTest {
                 "", true, false, "SLO_VIOLATED",
                 java.util.List.of("SCHEDULER_STALE"),
                 java.time.Instant.parse("2026-07-20T00:01:00Z"), 2);
+        var sourceDegraded = new
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor(
+                "", true, false, "SLO_VIOLATED",
+                java.util.List.of("SOURCE_RETENTION_STALE"),
+                java.time.Instant.parse("2026-07-20T00:02:00Z"), 2,
+                new TestSuiteStabilityObservationExternalArchiveReconciliationHealth
+                        .SourceRetentionDescriptor(
+                        true, false, "SLO_VIOLATED",
+                        java.util.List.of("SOURCE_RETENTION_STALE"),
+                        java.time.Instant.parse("2026-07-20T00:02:00Z")));
         IntegrationCapabilities disabled = capabilitiesWithArchiveReconciliation(
                 TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
                         .unavailable());
         IntegrationCapabilities available = capabilitiesWithArchiveReconciliation(healthy);
         IntegrationCapabilities unavailable = capabilitiesWithArchiveReconciliation(degraded);
+        IntegrationCapabilities sourceUnavailable =
+                capabilitiesWithArchiveReconciliation(sourceDegraded);
 
         assertThat(disabled.features())
                 .containsEntry("externalObservationArchiveReconciliationConfigured", false)
                 .containsEntry("externalObservationArchiveReconciliationReadiness", false)
-                .containsEntry("boundedExternalObservationArchiveReconciliationHealth", false);
+                .containsEntry("boundedExternalObservationArchiveReconciliationHealth", false)
+                .containsEntry("externalObservationArchiveSourceRetentionConfigured", false)
+                .containsEntry("externalObservationArchiveSourceRetentionReadiness", false)
+                .containsEntry("boundedExternalObservationArchiveSourceRetentionHealth", false);
         assertThat(disabled.testability().externalArchiveReconciliation().state())
                 .isEqualTo("DISABLED");
         assertThat(available.features())
                 .containsEntry("externalObservationArchiveReconciliationConfigured", true)
                 .containsEntry("externalObservationArchiveReconciliationReadiness", true)
-                .containsEntry("boundedExternalObservationArchiveReconciliationHealth", true);
+                .containsEntry("boundedExternalObservationArchiveReconciliationHealth", true)
+                .containsEntry("externalObservationArchiveSourceRetentionConfigured", true)
+                .containsEntry("externalObservationArchiveSourceRetentionReadiness", true)
+                .containsEntry("boundedExternalObservationArchiveSourceRetentionHealth", true);
         assertThat(available.testability().externalArchiveReconciliation()).isEqualTo(healthy);
         assertThat(unavailable.features())
                 .containsEntry("externalObservationArchiveReconciliationConfigured", true)
                 .containsEntry("externalObservationArchiveReconciliationReadiness", false)
-                .containsEntry("boundedExternalObservationArchiveReconciliationHealth", true);
+                .containsEntry("boundedExternalObservationArchiveReconciliationHealth", true)
+                .containsEntry("externalObservationArchiveSourceRetentionConfigured", true)
+                .containsEntry("externalObservationArchiveSourceRetentionReadiness", true)
+                .containsEntry("boundedExternalObservationArchiveSourceRetentionHealth", true);
         assertThat(unavailable.testability().externalArchiveReconciliation()).isEqualTo(degraded);
+        assertThat(sourceUnavailable.features())
+                .containsEntry("externalObservationArchiveReconciliationReadiness", false)
+                .containsEntry("externalObservationArchiveSourceRetentionConfigured", true)
+                .containsEntry("externalObservationArchiveSourceRetentionReadiness", false)
+                .containsEntry("boundedExternalObservationArchiveSourceRetentionHealth", true);
         assertThat(available.supportedObjects())
                 .containsEntry("externalArchiveReconciliationReadiness", java.util.List.of(
+                        TestSuiteStabilityObservationExternalArchiveReconciliationHealth
+                                .SCHEMA_VERSION_V1,
                         TestSuiteStabilityObservationExternalArchiveReconciliationHealth
                                 .SCHEMA_VERSION));
     }

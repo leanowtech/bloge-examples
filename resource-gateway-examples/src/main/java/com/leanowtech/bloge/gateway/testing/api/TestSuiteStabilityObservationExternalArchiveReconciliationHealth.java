@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabili
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.actuate.health.Health;
@@ -25,9 +26,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>Liveness alone is insufficient: a timer may run while one durable stage is stalled or while
  * retained evidence silently exceeds policy. Each refresh therefore combines process-local
  * scheduler freshness with fingerprint-verified, database-clock inventory, comparison, finding,
- * and retention snapshots. The monitor emits only bounded aggregate counts, durations, closed
- * status labels, and violation codes. Authority, object, cursor, lease, topology, and fingerprint
- * identities never cross this boundary.</p>
+ * finding-retention, and source-retention snapshots. The monitor emits only bounded aggregate
+ * counts, durations, closed status labels, and violation codes. Authority, object, cursor, lease,
+ * topology, and fingerprint identities never cross this boundary.</p>
  *
  * <p>Open findings are business outcomes and do not veto readiness. Readiness fails only when the
  * control loop cannot produce trustworthy, fresh evidence or enforce its configured lifecycle.</p>
@@ -37,8 +38,12 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
 
     private static final Logger log = LoggerFactory.getLogger(
             TestSuiteStabilityObservationExternalArchiveReconciliationHealth.class);
-    public static final String SCHEMA_VERSION =
+    /** Historical aggregate-only capability descriptor. */
+    public static final String SCHEMA_VERSION_V1 =
             "bloge.testSuiteStabilityObservationExternalArchiveReconciliationHealth.v1";
+    /** Current descriptor with an independent source-retention readiness projection. */
+    public static final String SCHEMA_VERSION =
+            "bloge.testSuiteStabilityObservationExternalArchiveReconciliationHealth.v2";
 
     private final TestSuiteStabilityObservationExternalArchiveReconciliationService service;
     private final TestSuiteStabilityObservationExternalArchiveReconciliationScheduler scheduler;
@@ -49,6 +54,10 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
     private final DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane findings;
     private final DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
             retention;
+    private final TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler
+            sourceRetentionScheduler;
+    private final DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+            sourceRetention;
     private final Policy policy;
     private final Clock clock;
     private final Instant startedAt;
@@ -63,6 +72,8 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
      * @param comparisons durable frozen comparison progress
      * @param findings durable governed finding projection progress
      * @param retention database-fenced derived-evidence lifecycle
+     * @param sourceRetentionScheduler process-local source-history lifecycle driver
+     * @param sourceRetention database-fenced source-history lifecycle
      * @param policy finite freshness, stall, and backlog thresholds
      */
     public TestSuiteStabilityObservationExternalArchiveReconciliationHealth(
@@ -75,9 +86,13 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
             DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane findings,
             DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
                     retention,
+            TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler
+                    sourceRetentionScheduler,
+            DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+                    sourceRetention,
             Policy policy) {
-        this(service, scheduler, inventories, comparisons, findings, retention, policy,
-                Clock.systemUTC());
+        this(service, scheduler, inventories, comparisons, findings, retention,
+                sourceRetentionScheduler, sourceRetention, policy, Clock.systemUTC());
     }
 
     /** Package-visible clock seam keeps startup and process-liveness tests deterministic. */
@@ -91,6 +106,10 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
             DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlane findings,
             DatabaseTestSuiteStabilityObservationExternalArchiveFindingRetentionControlPlane
                     retention,
+            TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler
+                    sourceRetentionScheduler,
+            DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane
+                    sourceRetention,
             Policy policy,
             Clock clock) {
         this.service = Objects.requireNonNull(service, "service");
@@ -99,6 +118,9 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
         this.comparisons = Objects.requireNonNull(comparisons, "comparisons");
         this.findings = Objects.requireNonNull(findings, "findings");
         this.retention = Objects.requireNonNull(retention, "retention");
+        this.sourceRetentionScheduler = Objects.requireNonNull(
+                sourceRetentionScheduler, "sourceRetentionScheduler");
+        this.sourceRetention = Objects.requireNonNull(sourceRetention, "sourceRetention");
         this.policy = Objects.requireNonNull(policy, "policy");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.startedAt = clock.instant();
@@ -153,7 +175,27 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
                     .withDetail("overdueFindingEvidence",
                             assessment.overdueEvidence())
                     .withDetail("retentionLastSuccessAgeSeconds",
-                            secondsOrUnknown(assessment.retentionLastSuccessAge()));
+                            secondsOrUnknown(assessment.retentionLastSuccessAge()))
+                    .withDetail("sourceRetentionSchedulerStatus",
+                            assessment.sourceRetentionSchedulerStatus().name())
+                    .withDetail("sourceRetentionSchedulerSequence",
+                            assessment.sourceRetentionSchedulerSequence())
+                    .withDetail("sourceRetentionSchedulerConsecutiveFailures",
+                            assessment.sourceRetentionSchedulerConsecutiveFailures())
+                    .withDetail("sourceRetentionState",
+                            assessment.sourceRetentionState().name())
+                    .withDetail("sourceRetentionViolations",
+                            assessment.sourceRetentionViolations())
+                    .withDetail("activeSourceRetirements",
+                            assessment.activeSourceRetirements())
+                    .withDetail("activeSourceRetirementAgeSeconds",
+                            secondsOrUnknown(assessment.activeSourceRetirementAge()))
+                    .withDetail("processedSourceBacklog",
+                            assessment.processedSourceBacklog())
+                    .withDetail("expiredSourceBacklog",
+                            assessment.expiredSourceBacklog())
+                    .withDetail("sourceRetentionLastSuccessAgeSeconds",
+                            secondsOrUnknown(assessment.sourceRetentionLastSuccessAge()));
         }
         return builder.build();
     }
@@ -165,9 +207,16 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
      */
     public Descriptor descriptor() {
         Assessment assessment = current();
+        SourceRetentionDescriptor sourceDescriptor =
+                assessment.sourceRetentionState() == null
+                        ? SourceRetentionDescriptor.storeUnavailable(assessment.observedAt())
+                        : new SourceRetentionDescriptor(
+                        true, assessment.sourceRetentionState() == State.HEALTHY,
+                        assessment.sourceRetentionState().name(),
+                        assessment.sourceRetentionViolations(), assessment.observedAt());
         return new Descriptor("", true, assessment.state() == State.HEALTHY,
                 assessment.state().name(), assessment.violations(), assessment.observedAt(),
-                assessment.authorityCount());
+                assessment.authorityCount(), sourceDescriptor);
     }
 
     private Assessment current() {
@@ -285,6 +334,45 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
             violations.add(Violation.FINDING_EVIDENCE_BACKLOG_EXCEEDED);
         }
 
+        var sourceTick = sourceRetentionScheduler.latest();
+        LinkedHashSet<Violation> sourceViolations = new LinkedHashSet<>();
+        if (sourceTick.consecutiveFailures() > policy.maximumConsecutiveUnhealthyTicks()) {
+            sourceViolations.add(
+                    Violation.SOURCE_RETENTION_SCHEDULER_FAILURE_BUDGET_EXCEEDED);
+        }
+        var sourceSnapshot = sourceRetention.operationalSnapshot(
+                policy.processedSourceRetention(), policy.expiredSourceRetention());
+        Duration sourceSuccessAge = age(
+                sourceSnapshot.lastSuccessAt(), sourceSnapshot.observedAt());
+        if (sourceSuccessAge == null) {
+            if (startupAge.compareTo(policy.startupGrace()) <= 0) {
+                initializing = true;
+            } else {
+                sourceViolations.add(Violation.SOURCE_RETENTION_NEVER_SUCCEEDED);
+            }
+        } else if (sourceSuccessAge.compareTo(
+                policy.maximumSourceRetentionStaleness()) > 0) {
+            sourceViolations.add(Violation.SOURCE_RETENTION_STALE);
+        }
+        Duration activeSourceAge = age(sourceSnapshot.activeRetirementUpdatedAt(),
+                sourceSnapshot.observedAt());
+        if (activeSourceAge != null
+                && activeSourceAge.compareTo(policy.maximumSourceRetirementIdle()) > 0) {
+            sourceViolations.add(Violation.SOURCE_RETIREMENT_STALLED);
+        }
+        if (sourceSnapshot.processedBacklog() > policy.maximumProcessedSourceBacklog()) {
+            sourceViolations.add(Violation.PROCESSED_SOURCE_BACKLOG_EXCEEDED);
+        }
+        if (sourceSnapshot.expiredBacklog() > policy.maximumExpiredSourceBacklog()) {
+            sourceViolations.add(Violation.EXPIRED_SOURCE_BACKLOG_EXCEEDED);
+        }
+        boolean sourceInitializing = sourceSuccessAge == null
+                && startupAge.compareTo(policy.startupGrace()) <= 0;
+        State sourceState = !sourceViolations.isEmpty()
+                ? State.SLO_VIOLATED
+                : sourceInitializing ? State.INITIALIZING : State.HEALTHY;
+        violations.addAll(sourceViolations);
+
         State state = !violations.isEmpty()
                 ? State.SLO_VIOLATED : initializing ? State.INITIALIZING : State.HEALTHY;
         List<String> violationNames = violations.stream().map(Enum::name).toList();
@@ -293,7 +381,12 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
                 activeInventories, activeComparisons, activeProjections, staleStages,
                 withoutCompletedEvidence, oldestEvidenceAge, retentionSnapshot.openFindings(),
                 retentionSnapshot.overdueResolvedFindings(), retentionSnapshot.overdueArchives(),
-                retentionSnapshot.overdueEvidence(), retentionSuccessAge);
+                retentionSnapshot.overdueEvidence(), retentionSuccessAge, sourceTick.status(),
+                sourceTick.sequence(), sourceTick.consecutiveFailures(),
+                sourceState, sourceViolations.stream().map(Enum::name).toList(),
+                sourceSnapshot.activeMarkerCount(), activeSourceAge,
+                sourceSnapshot.processedBacklog(), sourceSnapshot.expiredBacklog(),
+                sourceSuccessAge);
     }
 
     private boolean stale(Instant updatedAt, Instant observedAt) {
@@ -365,6 +458,18 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
         FINDING_ARCHIVE_BACKLOG_EXCEEDED,
         /** Too many completed projections exceeded their evidence window. */
         FINDING_EVIDENCE_BACKLOG_EXCEEDED,
+        /** This replica repeatedly failed or overlapped source-retention invocations. */
+        SOURCE_RETENTION_SCHEDULER_FAILURE_BUDGET_EXCEEDED,
+        /** No source-history retention page committed before startup grace expired. */
+        SOURCE_RETENTION_NEVER_SUCCEEDED,
+        /** The latest database-authoritative source-retention success is too old. */
+        SOURCE_RETENTION_STALE,
+        /** An active permanent source-retirement marker stopped making bounded progress. */
+        SOURCE_RETIREMENT_STALLED,
+        /** Too many fully governed source histories exceeded their configured window. */
+        PROCESSED_SOURCE_BACKLOG_EXCEEDED,
+        /** Too many terminal unprocessed snapshots exceeded their configured window. */
+        EXPIRED_SOURCE_BACKLOG_EXCEEDED,
         /** A membership or durable aggregate read could not be verified. */
         RECONCILIATION_STORE_UNAVAILABLE
     }
@@ -387,6 +492,13 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
      * @param maximumOverdueResolvedFindings tolerated eligible resolved backlog
      * @param maximumOverdueArchives tolerated eligible archive backlog
      * @param maximumOverdueEvidence tolerated eligible evidence backlog
+     * @param sourceRetentionInterval configured source-history retention interval
+     * @param maximumSourceRetentionStaleness maximum age of a committed source-retention page
+     * @param maximumSourceRetirementIdle maximum age without active retirement progress
+     * @param processedSourceRetention fully governed source-history lifecycle window
+     * @param expiredSourceRetention terminal unprocessed snapshot lifecycle window
+     * @param maximumProcessedSourceBacklog tolerated eligible processed-source backlog
+     * @param maximumExpiredSourceBacklog tolerated eligible expired-snapshot backlog
      */
     public record Policy(
             Duration observationInterval,
@@ -403,7 +515,14 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
             Duration evidenceRetention,
             long maximumOverdueResolvedFindings,
             long maximumOverdueArchives,
-            long maximumOverdueEvidence) {
+            long maximumOverdueEvidence,
+            Duration sourceRetentionInterval,
+            Duration maximumSourceRetentionStaleness,
+            Duration maximumSourceRetirementIdle,
+            Duration processedSourceRetention,
+            Duration expiredSourceRetention,
+            long maximumProcessedSourceBacklog,
+            long maximumExpiredSourceBacklog) {
         /** Validates bounded schedules, lifecycle windows, and non-negative backlog limits. */
         public Policy {
             observationInterval = bounded(observationInterval, "observationInterval",
@@ -428,21 +547,69 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
                     Duration.ofDays(1), Duration.ofDays(3650));
             evidenceRetention = bounded(evidenceRetention, "evidenceRetention",
                     Duration.ofDays(1), Duration.ofDays(3650));
+            sourceRetentionInterval = bounded(sourceRetentionInterval,
+                    "sourceRetentionInterval", Duration.ofSeconds(1), Duration.ofDays(7));
+            maximumSourceRetentionStaleness = bounded(maximumSourceRetentionStaleness,
+                    "maximumSourceRetentionStaleness", sourceRetentionInterval,
+                    Duration.ofDays(30));
+            maximumSourceRetirementIdle = bounded(maximumSourceRetirementIdle,
+                    "maximumSourceRetirementIdle", sourceRetentionInterval,
+                    Duration.ofDays(30));
+            processedSourceRetention = bounded(processedSourceRetention,
+                    "processedSourceRetention", Duration.ofDays(1), Duration.ofDays(3650));
+            expiredSourceRetention = bounded(expiredSourceRetention,
+                    "expiredSourceRetention", Duration.ofDays(1), Duration.ofDays(3650));
             if (startupGrace.compareTo(schedulerInterval) < 0
-                    || startupGrace.compareTo(retentionInterval) < 0) {
+                    || startupGrace.compareTo(retentionInterval) < 0
+                    || startupGrace.compareTo(sourceRetentionInterval) < 0) {
                 throw new IllegalArgumentException(
-                        "startupGrace must cover both configured scheduler intervals");
+                        "startupGrace must cover all configured scheduler intervals");
             }
             if (maximumConsecutiveUnhealthyTicks < 0
                     || maximumConsecutiveUnhealthyTicks > 100
                     || maximumOverdueResolvedFindings < 0
                     || maximumOverdueArchives < 0 || maximumOverdueEvidence < 0
+                    || maximumProcessedSourceBacklog < 0
+                    || maximumExpiredSourceBacklog < 0
                     || maximumOverdueResolvedFindings > 1_000_000
                     || maximumOverdueArchives > 1_000_000
-                    || maximumOverdueEvidence > 1_000_000) {
+                    || maximumOverdueEvidence > 1_000_000
+                    || maximumProcessedSourceBacklog > 1_000_000
+                    || maximumExpiredSourceBacklog > 1_000_000) {
                 throw new IllegalArgumentException(
                         "External reconciliation health counts are outside bounded policy");
             }
+        }
+
+        /**
+         * Preserves the pre-source-retention policy constructor for isolated consumers.
+         *
+         * <p>The compatibility shape uses the same one-hour lifecycle lane and strict zero
+         * backlog defaults as the profile composition root.</p>
+         */
+        public Policy(
+                Duration observationInterval,
+                Duration startupGrace,
+                Duration schedulerInterval,
+                Duration maximumSchedulerStaleness,
+                long maximumConsecutiveUnhealthyTicks,
+                Duration maximumStageIdle,
+                Duration maximumCompletedEvidenceAge,
+                Duration retentionInterval,
+                Duration maximumRetentionStaleness,
+                Duration resolvedRetention,
+                Duration archiveRetention,
+                Duration evidenceRetention,
+                long maximumOverdueResolvedFindings,
+                long maximumOverdueArchives,
+                long maximumOverdueEvidence) {
+            this(observationInterval, startupGrace, schedulerInterval,
+                    maximumSchedulerStaleness, maximumConsecutiveUnhealthyTicks,
+                    maximumStageIdle, maximumCompletedEvidenceAge, retentionInterval,
+                    maximumRetentionStaleness, resolvedRetention, archiveRetention,
+                    evidenceRetention, maximumOverdueResolvedFindings, maximumOverdueArchives,
+                    maximumOverdueEvidence, Duration.ofHours(1), Duration.ofHours(2),
+                    Duration.ofHours(2), Duration.ofDays(365), Duration.ofDays(30), 0, 0);
         }
 
         private static Duration bounded(
@@ -465,6 +632,7 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
      * @param violations stable aggregate operational violations
      * @param observedAt latest local assessment time, or absent when disabled
      * @param authorityCount configured bounded authority count
+     * @param sourceRetention independently projected source-history lifecycle readiness
      */
     public record Descriptor(
             String schemaVersion,
@@ -473,11 +641,17 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
             String state,
             List<String> violations,
             Instant observedAt,
-            int authorityCount) {
+            int authorityCount,
+            SourceRetentionDescriptor sourceRetention) {
         /** Normalizes and validates public capability facts. */
         public Descriptor {
             schemaVersion = schemaVersion == null || schemaVersion.isBlank()
                     ? SCHEMA_VERSION : schemaVersion.trim();
+            if (!SCHEMA_VERSION_V1.equals(schemaVersion)
+                    && !SCHEMA_VERSION.equals(schemaVersion)) {
+                throw new IllegalArgumentException(
+                        "Unknown external reconciliation capability schema");
+            }
             state = Objects.requireNonNullElse(state, "").trim();
             violations = violations == null ? List.of() : List.copyOf(violations);
             boolean knownState = "DISABLED".equals(state);
@@ -499,6 +673,10 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
                 }
             }
             violations = List.copyOf(uniqueViolations);
+            sourceRetention = sourceRetention == null
+                    ? inferredSourceRetention(
+                    configured, state, violations, observedAt)
+                    : sourceRetention;
             boolean healthy = State.HEALTHY.name().equals(state);
             boolean initializing = State.INITIALIZING.name().equals(state);
             boolean sloViolated = State.SLO_VIOLATED.name().equals(state);
@@ -515,15 +693,134 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
                     || sloViolated && violations.isEmpty()
                     || storeUnavailable && !violations.equals(
                     List.of(Violation.RECONCILIATION_STORE_UNAVAILABLE.name()))
+                    || sourceRetention.configured() != configured
                     || healthy && authorityCount == 0) {
                 throw new IllegalArgumentException(
                         "Invalid external reconciliation capability descriptor");
             }
         }
 
+        /** Preserves the v1 aggregate-only constructor with a conservative source projection. */
+        public Descriptor(
+                String schemaVersion,
+                boolean configured,
+                boolean ready,
+                String state,
+                List<String> violations,
+                Instant observedAt,
+                int authorityCount) {
+            this(schemaVersion, configured, ready, state, violations, observedAt,
+                    authorityCount, null);
+        }
+
         /** @return capability truth when the profile or feature is not assembled */
         public static Descriptor unavailable() {
-            return new Descriptor("", false, false, "DISABLED", List.of(), null, 0);
+            return new Descriptor("", false, false, "DISABLED", List.of(), null, 0,
+                    SourceRetentionDescriptor.unavailable());
+        }
+
+        private static SourceRetentionDescriptor inferredSourceRetention(
+                boolean configured,
+                String state,
+                List<String> violations,
+                Instant observedAt) {
+            if (!configured) {
+                return SourceRetentionDescriptor.unavailable();
+            }
+            if (State.STORE_UNAVAILABLE.name().equals(state)) {
+                return SourceRetentionDescriptor.storeUnavailable(observedAt);
+            }
+            List<String> sourceViolations = violations.stream()
+                    .filter(Descriptor::sourceViolation)
+                    .toList();
+            if (!sourceViolations.isEmpty()) {
+                return new SourceRetentionDescriptor(true, false,
+                        State.SLO_VIOLATED.name(), sourceViolations, observedAt);
+            }
+            if (State.INITIALIZING.name().equals(state)) {
+                return new SourceRetentionDescriptor(true, false,
+                        State.INITIALIZING.name(), List.of(), observedAt);
+            }
+            return new SourceRetentionDescriptor(true, true,
+                    State.HEALTHY.name(), List.of(), observedAt);
+        }
+
+        private static boolean sourceViolation(String value) {
+            return switch (Violation.valueOf(value)) {
+                case SOURCE_RETENTION_SCHEDULER_FAILURE_BUDGET_EXCEEDED,
+                        SOURCE_RETENTION_NEVER_SUCCEEDED,
+                        SOURCE_RETENTION_STALE,
+                        SOURCE_RETIREMENT_STALLED,
+                        PROCESSED_SOURCE_BACKLOG_EXCEEDED,
+                        EXPIRED_SOURCE_BACKLOG_EXCEEDED -> true;
+                default -> false;
+            };
+        }
+    }
+
+    /**
+     * Narrow source-history lifecycle projection embedded in the aggregate v2 capability.
+     *
+     * @param configured whether this profile assembled source retirement
+     * @param ready whether source retirement alone currently satisfies policy
+     * @param state closed lifecycle state
+     * @param violations source-retention-only stable violations
+     * @param observedAt latest aggregate observation, absent only when disabled
+     */
+    public record SourceRetentionDescriptor(
+            boolean configured,
+            boolean ready,
+            String state,
+            List<String> violations,
+            Instant observedAt) {
+        /** Rejects unknown, duplicate, cross-domain, and inconsistent source readiness facts. */
+        public SourceRetentionDescriptor {
+            state = Objects.requireNonNullElse(state, "").trim();
+            violations = violations == null ? List.of() : List.copyOf(violations);
+            boolean knownState = "DISABLED".equals(state);
+            for (State candidate : State.values()) {
+                knownState |= candidate.name().equals(state);
+            }
+            LinkedHashSet<String> unique = new LinkedHashSet<>();
+            for (String violation : violations) {
+                String exact = Objects.requireNonNullElse(violation, "").trim();
+                if (!Violation.RECONCILIATION_STORE_UNAVAILABLE.name().equals(exact)
+                        && !Descriptor.sourceViolation(exact)) {
+                    throw new IllegalArgumentException(
+                            "Unknown external source-retention capability violation");
+                }
+                if (!unique.add(exact)) {
+                    throw new IllegalArgumentException(
+                            "Duplicate external source-retention capability violation");
+                }
+            }
+            violations = List.copyOf(unique);
+            boolean healthy = State.HEALTHY.name().equals(state);
+            boolean initializing = State.INITIALIZING.name().equals(state);
+            boolean sloViolated = State.SLO_VIOLATED.name().equals(state);
+            boolean storeUnavailable = State.STORE_UNAVAILABLE.name().equals(state);
+            if (!knownState
+                    || !configured && (ready || observedAt != null
+                    || !"DISABLED".equals(state) || !violations.isEmpty())
+                    || configured && ("DISABLED".equals(state) || observedAt == null)
+                    || configured && ready != healthy
+                    || (healthy || initializing) && !violations.isEmpty()
+                    || sloViolated && violations.isEmpty()
+                    || storeUnavailable && !violations.equals(
+                    List.of(Violation.RECONCILIATION_STORE_UNAVAILABLE.name()))) {
+                throw new IllegalArgumentException(
+                        "Invalid external source-retention capability descriptor");
+            }
+        }
+
+        /** @return disabled source-retention capability */
+        public static SourceRetentionDescriptor unavailable() {
+            return new SourceRetentionDescriptor(false, false, "DISABLED", List.of(), null);
+        }
+
+        private static SourceRetentionDescriptor storeUnavailable(Instant observedAt) {
+            return new SourceRetentionDescriptor(true, false, State.STORE_UNAVAILABLE.name(),
+                    List.of(Violation.RECONCILIATION_STORE_UNAVAILABLE.name()), observedAt);
         }
     }
 
@@ -548,18 +845,36 @@ public final class TestSuiteStabilityObservationExternalArchiveReconciliationHea
             long overdueResolvedFindings,
             long overdueArchives,
             long overdueEvidence,
-            Duration retentionLastSuccessAge) {
+            Duration retentionLastSuccessAge,
+            TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler.TickStatus
+                    sourceRetentionSchedulerStatus,
+            long sourceRetentionSchedulerSequence,
+            long sourceRetentionSchedulerConsecutiveFailures,
+            State sourceRetentionState,
+            List<String> sourceRetentionViolations,
+            long activeSourceRetirements,
+            Duration activeSourceRetirementAge,
+            long processedSourceBacklog,
+            long expiredSourceBacklog,
+            Duration sourceRetentionLastSuccessAge) {
         private Assessment {
             Objects.requireNonNull(state, "state");
             violations = List.copyOf(violations);
             Objects.requireNonNull(observedAt, "observedAt");
+            if (state != State.STORE_UNAVAILABLE) {
+                Objects.requireNonNull(sourceRetentionSchedulerStatus,
+                        "sourceRetentionSchedulerStatus");
+                Objects.requireNonNull(sourceRetentionState, "sourceRetentionState");
+                sourceRetentionViolations = List.copyOf(sourceRetentionViolations);
+            }
         }
 
         private static Assessment storeUnavailable(Instant observedAt) {
             return new Assessment(State.STORE_UNAVAILABLE,
                     List.of(Violation.RECONCILIATION_STORE_UNAVAILABLE.name()), observedAt,
                     0, null, 0, 0, null, null, 0, 0, 0, 0, 0, null,
-                    0, 0, 0, 0, null);
+                    0, 0, 0, 0, null, null, 0, 0, null, List.of(), 0, null,
+                    0, 0, null);
         }
     }
 }

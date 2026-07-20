@@ -1,7 +1,7 @@
 # Stage 5 observation external reconciliation control-plane design
 
-**Phases A-E, the Phase F autonomous scheduling/readiness increments, and the bounded source-history
-retention core implemented (2026-07-20): every externally
+**Phases A-E, Phase F autonomous scheduling/readiness, and the bounded source-history lifecycle
+implemented for explicit test/staging use (2026-07-20): every externally
 acknowledged WORM copy is normalized into a payload-free expected-object index in the exact
 retirement transaction. Per-authority database-clock owner/token/epoch leases now fence durable
 snapshot cycles; verified page envelopes and normalized items commit atomically with cursor/root
@@ -14,8 +14,9 @@ profile-gated downstream-first scheduler are now active only under explicit test
 configuration. Fingerprint-verified stage snapshots, schedule-aware Actuator readiness, and exact
 configured/ready capability truth now close the operational observation loop. Eligible source cycle,
 page, item, comparison, expected-snapshot, and classification history can now be retired through a
-separately fenced, replay-proven state machine; autonomous source-retention scheduling and health/
-capability integration remain the next increment. Production provider certification,
+separately fenced, replay-proven state machine driven by its own fixed-delay lane. Source-retention
+freshness, stalled permanent markers, eligible backlog, and process-local failures now enter
+aggregate health and a distinct nested capability projection. Production provider certification,
 legal hold/erasure, backup/recovery continuity, historical trust, and witnessed non-equivocation
 remain outside this preview.**
 
@@ -332,9 +333,9 @@ counts and roots equal the frozen projection summary. The projection summary and
 are never deleted; they prevent reprocessing and distinguish intentionally retired evidence from
 corruption.
 
-## 12. Bounded source-history retention core
+## 12. Bounded source-history retention lifecycle
 
-**Implemented core, not yet autonomously scheduled (2026-07-20):**
+**Implemented and autonomously scheduled when explicitly enabled (2026-07-20):**
 `DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane` owns the local
 reconciliation source lifecycle independently from finding retention. The distinction is not
 cosmetic: finding retention deletes derived event/snapshot detail while preserving its compact
@@ -395,12 +396,18 @@ lease loss, or parent drift rolls back the current page. If earlier pages alread
 marker remains permanently `ACTIVE`; that is an explicit quarantine, not a retry that can relabel
 damaged history as complete.
 
-`operationalSnapshot(...)` exposes identity-free active-marker count, processed/expired backlog,
-cumulative per-segment deletes, completed source count, and database last-success time. It verifies
-state fingerprints, aggregate progress counters, and marker/progress lifecycle cardinality. The
-core is not yet wired into the Phase F scheduler, health SLO, capability descriptor, or Spring
-configuration, so deployment currently requires an explicit caller and must not claim autonomous
-source lifecycle enforcement.
+`operationalSnapshot(...)` exposes identity-free active-marker count and last-progress time,
+processed/expired backlog, cumulative per-segment deletes, completed source count, and database
+last-success time. It verifies state fingerprints, aggregate progress counters, and marker/progress
+lifecycle cardinality.
+
+`TestSuiteStabilityObservationExternalArchiveSourceRetentionScheduler` drives one bounded call on a
+separate fixed-delay lane with its own lease duration, processed/expired windows, page size, and
+interval. A process-local overlap is rejected; an exception is contained for the next tick; normal
+`LEASE_BUSY` means another replica owns the database lease and does not consume the local failure
+budget. Scheduler logs expose only per-segment counts and completion booleans. The entire lane is
+created only with the explicit reconciliation property under `test` or `staging`; any active
+`production` profile physically removes its control plane, scheduler, health, and capability truth.
 
 ## 13. Failure analysis
 
@@ -461,6 +468,9 @@ source lifecycle enforcement.
 | two local scheduled invocations overlap | timer/runtime re-entry | process-local overlap gate plus database authority lease and transactional stage fences |
 | half-enabled reconciliation silently does nothing | optional bean composition hides missing authority or replica identity | explicit property requires inventory authority and stable instance id; startup fails closed |
 | production accidentally enables maintenance | property-only guard | entire composition root remains under `!production & (test | staging)` profile veto |
+| source-retention lease contention is reported as failure | per-replica timer is mistaken for global ownership | treat `LEASE_BUSY` as a normal non-failing outcome and use database last success for global freshness |
+| a permanent active marker never advances | marker presence alone is interpreted as normal work | expose anonymous active-progress time and fail readiness with `SOURCE_RETIREMENT_STALLED` |
+| source lifecycle is configured but invisible to integration automation | aggregate readiness hides which lifecycle failed | embed an independently ready/configured source-retention descriptor in capability v2 |
 
 The added fingerprints are unkeyed canonical integrity checks. They detect accidental drift,
 partial writes, stale updates, and an attacker who changes rows without also rebuilding every
@@ -484,6 +494,8 @@ truth as a join across process-local scheduling and database-authoritative stage
 | active comparison update and latest completion | fingerprint-verified database snapshot | detect frozen ordered-merge stall without exposing cursor/source identity |
 | active finding update and latest replay-verified completion | fingerprint-verified database snapshot | detect governance projection stall and evidence staleness |
 | last retention success and eligible resolved/archive/evidence backlog | database-clock retention snapshot | detect lifecycle enforcement failure independently of scheduler liveness |
+| source scheduler outcome and consecutive local failures | process-local scheduler clock | detect a broken replica lane without treating cross-replica lease contention as failure |
+| source last success, active progress, processed/expired backlog | fingerprint-verified database snapshot | detect global lifecycle staleness, quarantined progress, and overdue source history |
 
 `TestSuiteStabilityObservationExternalArchiveReconciliationHealth` has four closed states:
 
@@ -495,8 +507,10 @@ truth as a join across process-local scheduling and database-authoritative stage
 | `STORE_UNAVAILABLE` | `DOWN` | membership or any integrity-verified durable aggregate is ambiguous |
 
 Stable violations separate scheduler never-success, scheduler staleness, consecutive unhealthy tick
-budget, inventory/comparison/finding stage stalls, absent or stale completed evidence, retention
-never-success/staleness, and overdue resolved/archive/evidence backlogs. Stage/evidence ages are
+budget, inventory/comparison/finding stage stalls, absent or stale completed evidence, finding
+retention never-success/staleness, overdue resolved/archive/evidence backlogs, source scheduler
+failure budget, source never-success/staleness, stalled active retirement, and processed/expired
+source backlogs. Stage/evidence ages are
 calculated against each database snapshot's own clock. Only scheduler liveness uses process time;
 restart resets that local history and re-enters bounded `INITIALIZING`, never `HEALTHY` by default.
 An `OPEN` finding is a valid business/governance outcome and is reported only as an aggregate count;
@@ -505,13 +519,17 @@ it cannot turn infrastructure readiness red.
 Health details and logs contain no authority, object, comparison, projection, snapshot, cursor,
 lease, key, topology, or fingerprint identity. `/api/integration/capabilities` publishes the same
 assessment as `testability.externalArchiveReconciliation` and distinguishes `configured` from
-time-sensitive `ready`. The three feature flags separately state monitor assembly and current
-readiness, preventing both “bean exists therefore ready” and “degraded therefore absent” errors.
+time-sensitive `ready`. Its v2 descriptor embeds `sourceRetention` with independent configured,
+ready, state, and source-only violations; dedicated feature flags expose source lifecycle assembly
+and readiness even when another reconciliation stage is degraded. The feature flags separately
+state monitor assembly and current readiness, preventing both “bean exists therefore ready” and
+“degraded therefore absent” errors.
 When the profile or property is absent the descriptor is exactly `DISABLED`; any descriptor failure
 is projected as configured but `STORE_UNAVAILABLE`.
 
-Policy validation is schedule-aware: startup grace must cover both scheduler intervals; scheduler,
-stage, evidence, and retention staleness cannot be shorter than their driving interval; every
+Policy validation is schedule-aware: startup grace must cover reconciliation, finding-retention,
+and source-retention intervals; scheduler, stage, evidence, and lifecycle staleness cannot be
+shorter than their driving interval; every
 duration and backlog count has a hard upper bound. Invalid policy fails startup even before the
 first scheduled run.
 
@@ -635,9 +653,15 @@ exclusions, whole-authority/projection candidate verification, live database-lea
 cross-transaction durability, signed-page historical-trust failure, pre-start row corruption
 rollback, mid-retirement missing-tail quarantine, independent marker/progress/state tamper rejection,
 and identity-free aggregate totals. The joint source-retention, classification, and finding-control
-gate executes 44 tests with zero failures, errors, or skips. A complete Resource Gateway gate is
-required after scheduler/configuration integration and before this increment is described as
-deployment-operational.
+gate executes 44 tests with zero failures, errors, or skips. The following runtime increment adds
+an independent scheduler test suite for commit, lease contention, overlap, contained failure,
+recovery, and policy bounds; aggregate health tests cover source startup, freshness, active stall,
+both backlog families, store fail-closure, identity redaction, and nested capability truth; profile
+tests prove default-off assembly, complete test wiring, startup fail-fast, and production absence.
+The combined source core, scheduler, health, profile, capability, and integration projection gate
+executes 64 tests with zero failures, errors, or skips. The complete Resource Gateway
+`clean verify` executes 3016 tests with zero failures or errors and two conditional skips, including
+the real-browser regression suite, and produces the executable Spring Boot JAR.
 
 ## 16. Remaining phases and acceptance
 
@@ -648,8 +672,8 @@ retirement can be exported as governance evidence.
 
 Resource Gateway may claim **durable local expectation indexing, verified inventory cycle staging,
 completed payload-free classification evidence, replay-verified governed finding evidence, and
-database-fenced bounded derived-evidence and source-history retention cores with explicitly enabled
-reconciliation scheduling, aggregate readiness, and exact capability truth**. It may not yet claim
-that source-history retention is autonomously scheduled or represented in health/capability truth.
+database-fenced bounded derived-evidence and autonomously scheduled source-history retention with
+explicitly enabled reconciliation scheduling, aggregate readiness, and exact nested capability
+truth**.
 It may claim the explicitly configured test/staging reconciliation loop is operationally observable,
 but not that it is a certified production orphan-reconciliation service.
