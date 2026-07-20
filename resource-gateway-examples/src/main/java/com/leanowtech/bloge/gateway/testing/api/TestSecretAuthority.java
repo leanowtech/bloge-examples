@@ -26,8 +26,10 @@ public interface TestSecretAuthority {
             "trustCohortConfigured", "trustCohortAvailable", "trustCohortStatus",
             "trustCohortExpectedReplicaCount", "trustCohortLiveReplicaCount",
             "trustCohortHealthyReplicaCount", "trustCohortDistinctGenerationCount",
+            "trustCohortDistinctInventoryGenerationCount",
             "trustCohortLeaseDurationSeconds", "trustCohortDatabaseAuthority",
-            "trustCohortExactConfiguredInventory");
+            "trustCohortExactConfiguredInventory",
+            "trustCohortExternallyAttestedInventory");
 
     /**
      * Resolves the exact requested closure or fails closed.

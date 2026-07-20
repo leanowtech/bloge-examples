@@ -146,6 +146,13 @@ Independent-store settings:
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.heartbeat-interval-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_HEARTBEAT_SECONDS` | `10`; 1..300 |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.lease-duration-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_LEASE_SECONDS` | `30`; 3..900 and at least three heartbeats |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.record-retention-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_RETENTION_SECONDS` | `86400`; 3600..2592000 and at least the lease |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.enabled` | `RG_TEST_SECRET_AUTHORITY_COHORT_SIGNED_INVENTORY_ENABLED` | `false`; select deployment-signed exact membership |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.required` | `RG_TEST_SECRET_AUTHORITY_COHORT_SIGNED_INVENTORY_REQUIRED` | `false` in `test`, `true` in `staging` |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.trust-domain` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_DOMAIN` | exact independent inventory trust domain |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.accepted-policy-fingerprints` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_POLICY_FINGERPRINTS` | comma-separated accepted `sha256:` policy revisions |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD` | distinct Ed25519 authority quorum, 1..32 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_AUTHORITY_KEYS_JSON` | strict public-only authority/key lifecycle array |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.inventory-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON` | strict signed envelope; maximum lifetime 30 days |
 | `gateway.testing.stability-jobs.api.retry-after-seconds` | `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` | `5` |
 | `gateway.testing.stability-jobs.authority.http.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED` | `false` |
 | `gateway.testing.stability-jobs.authority.http.base-uri` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI` | empty; required when enabled |
@@ -1154,12 +1161,32 @@ URI, ETag, key ids or material.
 
 For a multi-replica deployment, also set `RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED=true` and provide
 one stable scope, immutable deployment cohort, exact instance slot, immutable artifact fingerprint,
-and the same complete expected-instance set to every replica. Each process publishes only local
+and enable the deployment-signed inventory in staging. The strict
+`bloge.testSecretAuthorityServingInventory.v1` material binds trust domain, monotonic revision,
+scope, cohort, artifact, response protocol, exact test-secret `authorityId`, a sorted unique
+1..256-slot member set, external policy fingerprint, and whole-second validity window. Distinct
+inventory authorities sign the canonical material fingerprint with an Ed25519 M-of-N quorum. The
+wire contract is
+[`test-secret-authority-serving-inventory-v1.schema.json`](schemas/resource-gateway-testing/test-secret-authority-serving-inventory-v1.schema.json).
+
+Resource Gateway accepts only public X.509 Ed25519 keys with explicit authority/key identity,
+lifecycle, enabled and revoked state. Duplicate/unknown/trailing/private fields, malformed or
+repeated authorities, insufficient quorum, bad signature, noncanonical member order, policy drift,
+authority substitution, missing local slot, future material, expiry, and a lifetime above 30 days
+all fail startup. The verified material is the expected-set authority. The optional
+`RG_TEST_SECRET_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS` becomes an equality assertion only; it can
+never add, remove or replace signed members.
+
+Each process publishes only local
 refresh state, active-key count and the SHA-256 identity of its complete public trust generation
-under a database-clock process-start lease. The gate remains closed for missing or unexpected
+plus signed-inventory source generation under a database-clock process-start lease. A stable-scope
+database revision floor rejects rollback and same-revision forks across restarts. The gate remains
+closed for missing or unexpected
 members, two live starts for one slot, artifact/policy/protocol/authority drift, unhealthy local
-trust, record corruption, two simultaneous deployment cohorts, or more than one JWKS generation.
-A local generation change closes that process immediately until its next successful heartbeat.
+trust, record corruption, two simultaneous deployment cohorts, more than one JWKS generation, or
+more than one signed-inventory generation. A local trust or inventory generation change closes that
+process immediately until its next successful heartbeat. Inventory expiry is rechecked on every
+heartbeat and descriptor read, so an already started process fails closed without restart.
 The HTTPS adapter checks convergence both before network I/O and after response signature
 verification, so a split that appears while a secret request is in flight cannot release plaintext
 into DAG execution.
@@ -1167,6 +1194,9 @@ into DAG execution.
 Actuator exposes aggregate counts and status only. Capability
 `testSecretAuthorityTrustCohortConvergence` means the exact database/configuration protocol is
 assembled; `testSecretAuthorityTrustCohortReady` additionally means it is currently converged.
+`testSecretAuthorityDeploymentSignedInventory` means an externally attested inventory is assembled;
+`testSecretAuthorityDeploymentSignedInventoryReady` additionally requires a currently converged
+single inventory generation.
 Neither projection contains member ids, startup ids, artifact/trust fingerprints, ETag, URI or key
 material. The database substrate is shared with stability authority cohorts under a dedicated
 `test-secret/` scope namespace, preserving one transaction/lease/corruption implementation without
@@ -1177,10 +1207,11 @@ repository. This is deliberately not a wire dependency, but it is a source-level
 extracting the exact-membership, database-clock lease and corruption rules into a neutral cohort
 kernel is the next maintainability step before adding a third cohort-backed security domain.
 
-The expected member set is still deployment configuration authority. It is not yet an independently
-signed serving inventory, and the JWKS sequence itself has no signed external witness. Signed
-inventory/witness, endpoint and mTLS/KMS HA, external alert routing, and chaos/DR certification
-remain explicit follow-up work.
+This increment implements a static deployment-signed startup source, not a remotely refreshable
+inventory publication chain. Runtime inventory revoke/refresh, independent signed JWKS/inventory
+witness, neutral cohort/crypto kernel extraction, endpoint and mTLS/KMS/HSM HA, non-H2 and backup
+rollback certification, external alert routing, and chaos/DR qualification remain explicit
+follow-up work.
 
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 

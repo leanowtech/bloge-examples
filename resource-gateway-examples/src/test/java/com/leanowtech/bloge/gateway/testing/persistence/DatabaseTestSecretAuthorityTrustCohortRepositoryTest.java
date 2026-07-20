@@ -3,15 +3,20 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.DynamicJwksTestSecretAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortPolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityCohortPolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityCohortRepository;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -171,6 +176,65 @@ class DatabaseTestSecretAuthorityTrustCohortRepositoryTest {
                 """, Integer.class, secretPolicy.cohortId())).isEqualTo(2);
     }
 
+    @Test
+    void signedInventoryRequiresOneGenerationAcrossEveryExactReplica() {
+        Set<String> expected = Set.of("replica-a", "replica-b");
+        String material = "sha256:" + "d".repeat(64);
+        TestSecretAuthorityTrustCohortPolicy policyA = attestedPolicy(
+                "deployment-a", "replica-a", expected, 17, material);
+        TestSecretAuthorityTrustCohortPolicy policyB = attestedPolicy(
+                "deployment-a", "replica-b", expected, 17, material);
+        var repositoryA = repository(policyA);
+        var repositoryB = repository(policyB);
+        var inventoryA = inventoryObservation(expected, 17, material, 17, material);
+
+        assertThat(repositoryA.heartbeat(observation(GENERATION_A, true), inventoryA)
+                .converged()).isFalse();
+        assertThat(repositoryB.heartbeat(observation(GENERATION_A, true), inventoryA))
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.converged()).isTrue();
+                    assertThat(snapshot.distinctServingInventoryGenerationCount()).isOne();
+                });
+
+        var republished = inventoryObservation(expected, 17, material, 18,
+                "sha256:" + "e".repeat(64));
+        assertThat(repositoryB.heartbeat(observation(GENERATION_A, true), republished))
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.converged()).isFalse();
+                    assertThat(snapshot.status())
+                            .isEqualTo("SERVING_INVENTORY_GENERATION_DIVERGED");
+                    assertThat(snapshot.distinctServingInventoryGenerationCount()).isEqualTo(2);
+                });
+        assertThat(repositoryB.heartbeat(observation(GENERATION_A, true), inventoryA)
+                .converged()).isTrue();
+    }
+
+    @Test
+    void signedInventoryRevisionFloorAllowsAdvanceButRejectsRollback() {
+        String materialOne = "sha256:" + "d".repeat(64);
+        String materialTwo = "sha256:" + "e".repeat(64);
+        Set<String> expected = Set.of("replica-a");
+        TestSecretAuthorityTrustCohortPolicy revisionOne = attestedPolicy(
+                "deployment-one", "replica-a", expected, 1, materialOne);
+        TestSecretAuthorityTrustCohortPolicy revisionTwo = attestedPolicy(
+                "deployment-two", "replica-a", expected, 2, materialTwo);
+        var first = repository(revisionOne);
+        var second = repository(revisionTwo);
+        assertThat(first.heartbeat(observation(GENERATION_A, true),
+                inventoryObservation(expected, 1, materialOne, 1, materialOne)).converged())
+                .isTrue();
+        expireActiveCohort(revisionOne);
+        assertThat(second.heartbeat(observation(GENERATION_A, true),
+                inventoryObservation(expected, 2, materialTwo, 2, materialTwo)).converged())
+                .isTrue();
+        expireActiveCohort(revisionTwo);
+
+        assertThatThrownBy(() -> first.heartbeat(observation(GENERATION_A, true),
+                inventoryObservation(expected, 1, materialOne, 1, materialOne)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("rolled back");
+    }
+
     private DatabaseTestSecretAuthorityTrustCohortRepository repository(
             TestSecretAuthorityTrustCohortPolicy policy) {
         var repository = new DatabaseTestSecretAuthorityTrustCohortRepository(
@@ -188,6 +252,24 @@ class DatabaseTestSecretAuthorityTrustCohortRepositoryTest {
                 Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1));
     }
 
+    private TestSecretAuthorityTrustCohortPolicy attestedPolicy(
+            String cohortId,
+            String instanceId,
+            Set<String> expected,
+            long revision,
+            String materialFingerprint) {
+        var attestation = new TestSecretAuthorityTrustCohortPolicy.ServingInventoryAttestation(
+                TestSecretAuthorityTrustCohortPolicy.ServingInventoryAttestation.SCHEMA_VERSION,
+                true, "STATIC_SIGNED_ED25519_M_OF_N", revision, materialFingerprint,
+                "sha256:" + "f".repeat(64), Instant.parse("2026-08-01T00:00:00Z"));
+        return new TestSecretAuthorityTrustCohortPolicy(
+                "test-secret-scope", cohortId, instanceId, UUID.randomUUID().toString(),
+                ARTIFACT, expected, "secret-authority.example",
+                TestSecretAuthorityResponse.SCHEMA_VERSION,
+                Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofHours(1),
+                attestation);
+    }
+
     private DynamicJwksTestSecretAuthorityTrustStore.CohortObservation observation(
             String generation, boolean available) {
         return new DynamicJwksTestSecretAuthorityTrustStore.CohortObservation(
@@ -195,6 +277,41 @@ class DatabaseTestSecretAuthorityTrustCohortRepositoryTest {
                 available, available ? "HEALTHY" : "UNAVAILABLE",
                 available ? generation : "", available ? 1 : 0,
                 available ? REFRESHED_AT : null);
+    }
+
+    private TestSecretAuthorityServingInventoryAuthority.Observation inventoryObservation(
+            Set<String> expected,
+            long revision,
+            String materialFingerprint,
+            long sourceSequence,
+            String sourceGenerationFingerprint) {
+        return new TestSecretAuthorityServingInventoryAuthority.Observation(
+                TestSecretAuthorityServingInventoryAuthority.Observation.SCHEMA_VERSION,
+                true, true, true, "VERIFIED", "STATIC_SIGNED_ED25519_M_OF_N",
+                sourceSequence, sourceGenerationFingerprint, revision, materialFingerprint,
+                "sha256:" + "f".repeat(64), expected.stream().sorted().toList(),
+                Instant.parse("2026-08-01T00:00:00Z"), 2, 2);
+    }
+
+    private void expireActiveCohort(TestSecretAuthorityTrustCohortPolicy policy) {
+        TestSuiteStabilityAuthorityCohortPolicy databasePolicy = policy.asDatabasePolicy();
+        Instant observedAt = Instant.parse("2026-07-18T00:00:00Z");
+        Instant leaseExpiresAt = observedAt.plusSeconds(3);
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_authority_active_cohorts
+                SET observed_at = ?, lease_expires_at = ?, record_fingerprint = ?
+                WHERE scope_id = ?
+                """, Timestamp.from(observedAt), Timestamp.from(leaseExpiresAt),
+                ProtocolFingerprint.of(objectMapper, Map.ofEntries(
+                        Map.entry("schemaVersion",
+                                "bloge.testSuiteStabilityAuthorityActiveCohort.v1"),
+                        Map.entry("scopeId", databasePolicy.scopeId()),
+                        Map.entry("cohortId", databasePolicy.cohortId()),
+                        Map.entry("policyFingerprint",
+                                databasePolicy.cohortFingerprint(objectMapper)),
+                        Map.entry("observedAt", observedAt.toString()),
+                        Map.entry("leaseExpiresAt", leaseExpiresAt.toString()))),
+                databasePolicy.scopeId());
     }
 
     private TestSuiteStabilityAuthorityCohortRepository.Member stabilityMember(

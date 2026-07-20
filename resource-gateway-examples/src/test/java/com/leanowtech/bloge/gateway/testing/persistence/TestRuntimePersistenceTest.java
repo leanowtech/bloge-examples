@@ -514,7 +514,7 @@ class TestRuntimePersistenceTest {
 
     @Test
     void indexedScopeAndSerializedRecordSubstitutionFailsClosedOnRead() throws Exception {
-        Instant now = Instant.parse("2026-07-20T08:00:00Z");
+        Instant now = Instant.now();
         TestRunEvidence evidence = persistedEvidence("run-substituted", now, "tenant-a", "approved");
         TestRunRecord record = persistedRecord(
                 evidence, evidenceIntegrity.seal(evidence).integrity(), now);

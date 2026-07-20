@@ -28,6 +28,20 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SECRET_AUTHORITY_TRUST_COHORT_SNAPSHOT_V1);
             assertConstant(definitions, "trustCohortDescriptor",
                     TestingProtocol.TEST_SECRET_AUTHORITY_TRUST_COHORT_DESCRIPTOR_V1);
+            assertConstant(definitions, "trustCohortSnapshotV2",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_TRUST_COHORT_SNAPSHOT_V2);
+            assertConstant(definitions, "trustCohortDescriptorV2",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_TRUST_COHORT_DESCRIPTOR_V2);
+        }
+        try (InputStream schema = TestingProtocol.class.getResourceAsStream(
+                "/schemas/resource-gateway-testing/"
+                        + "test-secret-authority-serving-inventory-v1.schema.json")) {
+            assertThat(schema).isNotNull();
+            JsonNode definitions = new ObjectMapper().readTree(schema).path("$defs");
+            assertConstant(definitions, "inventory",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_SERVING_INVENTORY_V1);
+            assertConstant(definitions, "material",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_SERVING_INVENTORY_MATERIAL_V1);
         }
     }
 

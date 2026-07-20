@@ -34,13 +34,13 @@ class TestSecretAuthorityProtocolSchemaTest {
                 new TestSecretAuthorityTrustCohortRepository.Snapshot(
                         TestSecretAuthorityTrustCohortRepository.Snapshot.SCHEMA_VERSION,
                         true, "CONVERGED", 1, 1, 1, 1,
-                        0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 0, 0,
                         NOW, NOW.plusSeconds(30), List.of());
         TestSecretAuthorityTrustCohortGate.Descriptor cohortDescriptor =
                 new TestSecretAuthorityTrustCohortGate.Descriptor(
                         TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION,
                         true, true, "CONVERGED", 1, 1, 1, 1,
-                        30, true, true);
+                        0, 30, true, true, false);
         TestSecretAuthority.Descriptor authority = new TestSecretAuthority.Descriptor(
                 "", true, "HTTPS_SIGNED_TEST_SECRET_AUTHORITY", AUTHORITY_ID,
                 Map.ofEntries(
@@ -70,9 +70,9 @@ class TestSecretAuthorityProtocolSchemaTest {
         assertProperties(objectMapper.valueToTree(refresh),
                 schema.at("/$defs/trustRefreshSnapshot/properties"));
         assertProperties(objectMapper.valueToTree(cohortSnapshot),
-                schema.at("/$defs/trustCohortSnapshot/properties"));
+                schema.at("/$defs/trustCohortSnapshotV2/properties"));
         assertProperties(objectMapper.valueToTree(cohortDescriptor),
-                schema.at("/$defs/trustCohortDescriptor/properties"));
+                schema.at("/$defs/trustCohortDescriptorV2/properties"));
         assertProperties(objectMapper.valueToTree(authority),
                 schema.at("/$defs/authorityDescriptor/properties"));
 
@@ -83,10 +83,10 @@ class TestSecretAuthorityProtocolSchemaTest {
         assertThat(schema.at("/$defs/trustRefreshSnapshot/properties/schemaVersion/const")
                 .asText()).isEqualTo(
                 DynamicJwksTestSecretAuthorityTrustStore.RefreshSnapshot.SCHEMA_VERSION);
-        assertThat(schema.at("/$defs/trustCohortSnapshot/properties/schemaVersion/const")
+        assertThat(schema.at("/$defs/trustCohortSnapshotV2/properties/schemaVersion/const")
                 .asText()).isEqualTo(
                 TestSecretAuthorityTrustCohortRepository.Snapshot.SCHEMA_VERSION);
-        assertThat(schema.at("/$defs/trustCohortDescriptor/properties/schemaVersion/const")
+        assertThat(schema.at("/$defs/trustCohortDescriptorV2/properties/schemaVersion/const")
                 .asText()).isEqualTo(
                 TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION);
         assertThat(fieldNames(schema.at("/$defs/trustProperties/properties")))
@@ -96,7 +96,8 @@ class TestSecretAuthorityProtocolSchemaTest {
                 .containsExactlyInAnyOrderElementsOf(TestSecretAuthority.DESCRIPTOR_PROPERTIES);
         assertThat(List.of("request", "response", "resolutionContext", "secretMaterial",
                 "signature", "trustDescriptor", "trustRefreshSnapshot",
-                "trustCohortSnapshot", "trustCohortDescriptor",
+                "trustCohortSnapshot", "trustCohortSnapshotV2",
+                "trustCohortDescriptor", "trustCohortDescriptorV2",
                 "authorityDescriptor"))
                 .allSatisfy(definition -> assertThat(schema.at("/$defs/" + definition
                         + "/additionalProperties").asBoolean()).isFalse());

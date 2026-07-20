@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -28,6 +29,7 @@ public final class TestSecretAuthorityTrustCohortMonitor
 
     private final TestSecretAuthorityTrustCohortRepository repository;
     private final DynamicJwksTestSecretAuthorityTrustStore trustStore;
+    private final TestSecretAuthorityServingInventoryAuthority inventoryAuthority;
     private final TestSecretAuthorityTrustCohortPolicy policy;
     private final ObjectMapper objectMapper;
     private final ScheduledThreadPoolExecutor scheduler;
@@ -49,7 +51,26 @@ public final class TestSecretAuthorityTrustCohortMonitor
             DynamicJwksTestSecretAuthorityTrustStore trustStore,
             TestSecretAuthorityTrustCohortPolicy policy,
             ObjectMapper objectMapper) {
-        this(repository, trustStore, policy, objectMapper, true);
+        this(repository, trustStore, TestSecretAuthorityServingInventoryAuthority.localOnly(),
+                policy, objectMapper, true);
+    }
+
+    /**
+     * Starts a cohort lane protected by a deployment-signed exact serving inventory.
+     *
+     * @param repository database-clock cohort authority
+     * @param trustStore local dynamic JWKS trust source
+     * @param inventoryAuthority current signed serving-inventory authority
+     * @param policy exact deployment cohort frozen from that inventory
+     * @param objectMapper canonical private observation fingerprint mapper
+     */
+    public TestSecretAuthorityTrustCohortMonitor(
+            TestSecretAuthorityTrustCohortRepository repository,
+            DynamicJwksTestSecretAuthorityTrustStore trustStore,
+            TestSecretAuthorityServingInventoryAuthority inventoryAuthority,
+            TestSecretAuthorityTrustCohortPolicy policy,
+            ObjectMapper objectMapper) {
+        this(repository, trustStore, inventoryAuthority, policy, objectMapper, true);
     }
 
     /** Package-visible deterministic constructor used by scheduler-independent tests. */
@@ -59,10 +80,25 @@ public final class TestSecretAuthorityTrustCohortMonitor
             TestSecretAuthorityTrustCohortPolicy policy,
             ObjectMapper objectMapper,
             boolean startScheduler) {
+        this(repository, trustStore, TestSecretAuthorityServingInventoryAuthority.localOnly(),
+                policy, objectMapper, startScheduler);
+    }
+
+    /** Package-visible complete constructor for scheduler-independent signed-inventory tests. */
+    TestSecretAuthorityTrustCohortMonitor(
+            TestSecretAuthorityTrustCohortRepository repository,
+            DynamicJwksTestSecretAuthorityTrustStore trustStore,
+            TestSecretAuthorityServingInventoryAuthority inventoryAuthority,
+            TestSecretAuthorityTrustCohortPolicy policy,
+            ObjectMapper objectMapper,
+            boolean startScheduler) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
+        this.inventoryAuthority = Objects.requireNonNull(
+                inventoryAuthority, "inventoryAuthority");
         this.policy = Objects.requireNonNull(policy, "policy");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        requireCurrentInventory();
         publishNow();
         this.scheduler = startScheduler ? scheduler() : null;
     }
@@ -77,13 +113,20 @@ public final class TestSecretAuthorityTrustCohortMonitor
         if (closed) {
             return unavailable("CLOSED");
         }
+        TestSecretAuthorityServingInventoryAuthority.Observation inventory;
+        try {
+            inventory = requireCurrentInventory();
+        } catch (IllegalStateException unavailable) {
+            return unavailable(inventoryStatus());
+        }
         DynamicJwksTestSecretAuthorityTrustStore.CohortObservation local;
         try {
             local = trustStore.cohortObservation();
         } catch (RuntimeException unavailable) {
             return unavailable("LOCAL_TRUST_UNAVAILABLE");
         }
-        if (!observationFingerprint(local).equals(publishedObservationFingerprint)) {
+        if (!observationFingerprint(local, inventory).equals(
+                publishedObservationFingerprint)) {
             return unavailable("LOCAL_OBSERVATION_UNPUBLISHED");
         }
         try {
@@ -92,10 +135,13 @@ public final class TestSecretAuthorityTrustCohortMonitor
                     snapshot.status(), snapshot.expectedReplicaCount(),
                     snapshot.liveReplicaCount(), snapshot.healthyReplicaCount(),
                     snapshot.distinctTrustGenerationCount(),
-                    policy.leaseDuration().toSeconds(), true, true);
+                    snapshot.distinctServingInventoryGenerationCount(),
+                    policy.leaseDuration().toSeconds(), true, true,
+                    policy.servingInventory().externallyAttested());
         } catch (RuntimeException storeUnavailable) {
             return Descriptor.unavailable(policy.expectedInstanceIds().size(),
-                    policy.leaseDuration().toSeconds());
+                    policy.leaseDuration().toSeconds(),
+                    policy.servingInventory().externallyAttested());
         }
     }
 
@@ -107,8 +153,10 @@ public final class TestSecretAuthorityTrustCohortMonitor
         try {
             DynamicJwksTestSecretAuthorityTrustStore.CohortObservation observation =
                     trustStore.cohortObservation();
-            repository.heartbeat(observation);
-            publishedObservationFingerprint = observationFingerprint(observation);
+            TestSecretAuthorityServingInventoryAuthority.Observation inventory =
+                    requireCurrentInventory();
+            repository.heartbeat(observation, inventory);
+            publishedObservationFingerprint = observationFingerprint(observation, inventory);
             failureLogged.set(false);
             return true;
         } catch (RuntimeException unavailable) {
@@ -145,7 +193,8 @@ public final class TestSecretAuthorityTrustCohortMonitor
     }
 
     private String observationFingerprint(
-            DynamicJwksTestSecretAuthorityTrustStore.CohortObservation observation) {
+            DynamicJwksTestSecretAuthorityTrustStore.CohortObservation observation,
+            TestSecretAuthorityServingInventoryAuthority.Observation inventory) {
         return ProtocolFingerprint.of(objectMapper, Map.ofEntries(
                 Map.entry("schemaVersion",
                         "bloge.testSecretAuthorityTrustLocalPublication.v1"),
@@ -153,6 +202,14 @@ public final class TestSecretAuthorityTrustCohortMonitor
                 Map.entry("refreshState", observation.refreshState()),
                 Map.entry("snapshotFingerprint", observation.snapshotFingerprint()),
                 Map.entry("activeKeyCount", observation.activeKeyCount()),
+                Map.entry("servingInventoryConfigured", inventory.configured()),
+                Map.entry("servingInventoryAvailable", inventory.available()),
+                Map.entry("servingInventoryRevision", inventory.revision()),
+                Map.entry("servingInventorySourceSequence", inventory.sourceSequence()),
+                Map.entry("servingInventorySourceGenerationFingerprint",
+                        inventory.sourceGenerationFingerprint()),
+                Map.entry("servingInventoryMaterialFingerprint",
+                        inventory.materialFingerprint()),
                 Map.entry("scopeId", policy.scopeId()),
                 Map.entry("cohortId", policy.cohortId()),
                 Map.entry("artifactFingerprint", policy.artifactFingerprint()),
@@ -162,10 +219,51 @@ public final class TestSecretAuthorityTrustCohortMonitor
                         policy.expectedInstanceIds().stream().sorted().toList())));
     }
 
+    private TestSecretAuthorityServingInventoryAuthority.Observation requireCurrentInventory() {
+        TestSecretAuthorityServingInventoryAuthority.Observation observed =
+                inventoryAuthority.observation();
+        TestSecretAuthorityTrustCohortPolicy.ServingInventoryAttestation expected =
+                policy.servingInventory();
+        if (!expected.externallyAttested()) {
+            if (observed.configured()) {
+                throw new IllegalStateException(
+                        "Local test-secret cohort cannot use an external inventory authority");
+            }
+            return observed;
+        }
+        if (!observed.configured() || !observed.externallyAttested()
+                || !observed.available()
+                || observed.revision() != expected.revision()
+                || !observed.sourceType().equals(expected.sourceType())
+                || !observed.materialFingerprint().equals(expected.materialFingerprint())
+                || !observed.policyFingerprint().equals(expected.policyFingerprint())
+                || !Objects.equals(observed.expiresAt(), expected.expiresAt())
+                || !Set.copyOf(observed.expectedInstanceIds()).equals(
+                policy.expectedInstanceIds())) {
+            throw new IllegalStateException(
+                    "Signed test-secret serving inventory no longer matches cohort policy");
+        }
+        return observed;
+    }
+
+    private String inventoryStatus() {
+        try {
+            TestSecretAuthorityServingInventoryAuthority.Observation observed =
+                    inventoryAuthority.observation();
+            if (!observed.available()) {
+                return "SERVING_INVENTORY_" + observed.status();
+            }
+            return "SERVING_INVENTORY_DIVERGED";
+        } catch (RuntimeException unavailable) {
+            return "SERVING_INVENTORY_UNAVAILABLE";
+        }
+    }
+
     private Descriptor unavailable(String status) {
         return new Descriptor(Descriptor.SCHEMA_VERSION, true, false, status,
-                policy.expectedInstanceIds().size(), 0, 0, 0,
-                policy.leaseDuration().toSeconds(), true, true);
+                policy.expectedInstanceIds().size(), 0, 0, 0, 0,
+                policy.leaseDuration().toSeconds(), true, true,
+                policy.servingInventory().externallyAttested());
     }
 
     private ScheduledThreadPoolExecutor scheduler() {

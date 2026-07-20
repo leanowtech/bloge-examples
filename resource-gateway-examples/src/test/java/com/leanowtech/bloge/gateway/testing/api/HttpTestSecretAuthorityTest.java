@@ -230,13 +230,15 @@ class HttpTestSecretAuthorityTest {
     private static TestSecretAuthorityTrustCohortGate.Descriptor convergedCohort() {
         return new TestSecretAuthorityTrustCohortGate.Descriptor(
                 TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION,
-                true, true, "CONVERGED", 1, 1, 1, 1, 30, true, true);
+                true, true, "CONVERGED", 1, 1, 1, 1, 0,
+                30, true, true, false);
     }
 
     private static TestSecretAuthorityTrustCohortGate.Descriptor divergentCohort() {
         return new TestSecretAuthorityTrustCohortGate.Descriptor(
                 TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION,
-                true, false, "SNAPSHOT_DIVERGED", 2, 2, 2, 2, 30, true, true);
+                true, false, "SNAPSHOT_DIVERGED", 2, 2, 2, 2, 0,
+                30, true, true, false);
     }
 
     private Reply signed(TestSecretAuthorityRequest request) {

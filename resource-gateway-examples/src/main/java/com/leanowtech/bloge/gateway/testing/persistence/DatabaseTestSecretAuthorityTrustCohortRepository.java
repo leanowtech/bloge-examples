@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.DynamicJwksTestSecretAuthorityTrustStore;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortPolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityCohortPolicy;
@@ -59,17 +60,22 @@ public final class DatabaseTestSecretAuthorityTrustCohortRepository
     /** Publishes one local generation under the namespaced exact deployment policy. */
     @Override
     public Snapshot heartbeat(
-            DynamicJwksTestSecretAuthorityTrustStore.CohortObservation observation) {
-        Objects.requireNonNull(observation, "observation");
+            DynamicJwksTestSecretAuthorityTrustStore.CohortObservation trustObservation,
+            TestSecretAuthorityServingInventoryAuthority.Observation inventoryObservation) {
+        Objects.requireNonNull(trustObservation, "trustObservation");
+        Objects.requireNonNull(inventoryObservation, "inventoryObservation");
         return snapshot(delegate.heartbeat(new TestSuiteStabilityAuthorityCohortRepository.Member(
                 TestSuiteStabilityAuthorityCohortRepository.Member.SCHEMA_VERSION,
                 databasePolicy.scopeId(), databasePolicy.cohortId(), databasePolicy.instanceId(),
                 databasePolicy.startupId(), databasePolicy.artifactFingerprint(),
                 policyFingerprint,
                 databasePolicy.protocolVersion(), databasePolicy.authorityId(),
-                "DYNAMIC_JWKS_ED25519", observation.available(), observation.refreshState(),
-                observation.snapshotFingerprint(), 0, "", observation.activeKeyCount(),
-                observation.lastSuccessfulRefreshAt())));
+                "DYNAMIC_JWKS_ED25519", trustObservation.available(),
+                trustObservation.refreshState(), trustObservation.snapshotFingerprint(),
+                inventoryObservation.sourceSequence(),
+                inventoryObservation.sourceGenerationFingerprint(),
+                trustObservation.activeKeyCount(),
+                trustObservation.lastSuccessfulRefreshAt())));
     }
 
     /** Returns the current database-authoritative aggregate projection. */
@@ -88,6 +94,7 @@ public final class DatabaseTestSecretAuthorityTrustCohortRepository
         return new Snapshot(Snapshot.SCHEMA_VERSION, value.converged(), value.status(),
                 value.expectedReplicaCount(), value.liveReplicaCount(),
                 value.healthyReplicaCount(), value.distinctSnapshotCount(),
+                value.distinctServingInventoryGenerationCount(),
                 value.missingReplicaCount(), value.unexpectedReplicaCount(),
                 value.duplicateReplicaCount(), value.divergentArtifactCount(),
                 value.divergentPolicyCount(), value.divergentProtocolCount(),

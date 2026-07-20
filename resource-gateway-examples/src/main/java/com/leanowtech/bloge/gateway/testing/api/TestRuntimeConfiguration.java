@@ -1293,13 +1293,51 @@ public class TestRuntimeConfiguration {
         return new TestSecretAuthorityTrustHealth(trustStore);
     }
 
-    /** Freezes one exact configured test-secret trust cohort and process-start identity. */
+    /** Verifies one static deployment-signed exact test-secret serving inventory. */
+    @Bean
+    @ConditionalOnBean(DynamicJwksTestSecretAuthorityTrustStore.class)
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory",
+            name = "enabled", havingValue = "true")
+    TestSecretAuthorityServingInventoryAuthority
+            testSecretAuthorityServingInventoryAuthority(
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.trust-domain:}")
+            String trustDomain,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.accepted-policy-fingerprints:}")
+            String acceptedPolicyFingerprints,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.signature-threshold:0}")
+            int signatureThreshold,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.authority-keys-json:[]}")
+            String authorityKeysJson,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.inventory-json:}")
+            String inventoryJson,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id:}")
+            String scopeId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.cohort-id:}")
+            String cohortId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.instance-id:}")
+            String instanceId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.artifact-fingerprint:}")
+            String artifactFingerprint,
+            @Value("${gateway.testing.test-secrets.authority.http.expected-authority-id:}")
+            String authorityId) {
+        var binding = new ConfiguredTestSecretAuthorityServingInventoryAuthority.ExpectedBinding(
+                scopeId, cohortId, artifactFingerprint,
+                TestSecretAuthorityResponse.SCHEMA_VERSION, authorityId, instanceId);
+        return ConfiguredTestSecretAuthorityServingInventoryAuthority.fromJson(
+                objectMapper, trustDomain, acceptedPolicyFingerprints, signatureThreshold,
+                authorityKeysJson, inventoryJson, binding);
+    }
+
+    /** Freezes one exact configured or deployment-signed test-secret trust cohort. */
     @Bean
     @ConditionalOnBean(DynamicJwksTestSecretAuthorityTrustStore.class)
     @ConditionalOnProperty(
             prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort",
             name = "enabled", havingValue = "true")
     TestSecretAuthorityTrustCohortPolicy testSecretAuthorityTrustCohortPolicy(
+            ObjectProvider<TestSecretAuthorityServingInventoryAuthority> inventoryAuthorities,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id:}")
             String scopeId,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.cohort-id:}")
@@ -1317,14 +1355,51 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.lease-duration-seconds:30}")
             long leaseDurationSeconds,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.record-retention-seconds:86400}")
-            long recordRetentionSeconds) {
+            long recordRetentionSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.enabled:false}")
+            boolean signedInventoryEnabled,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.required:false}")
+            boolean signedInventoryRequired) {
+        List<TestSecretAuthorityServingInventoryAuthority> authorities =
+                inventoryAuthorities.orderedStream().toList();
+        if (signedInventoryRequired && !signedInventoryEnabled) {
+            throw new IllegalStateException(
+                    "This profile requires deployment-signed test-secret serving inventory");
+        }
+        if (signedInventoryEnabled != (authorities.size() == 1)) {
+            throw new IllegalStateException(
+                    "Signed test-secret serving inventory requires exactly one authority");
+        }
+        Set<String> expected;
+        TestSecretAuthorityTrustCohortPolicy.ServingInventoryAttestation attestation;
+        if (signedInventoryEnabled) {
+            TestSecretAuthorityServingInventoryAuthority.Observation observed =
+                    authorities.getFirst().observation();
+            if (!observed.available() || !observed.externallyAttested()) {
+                throw new IllegalStateException(
+                        "Signed test-secret serving inventory must be current and verified");
+            }
+            expected = Set.copyOf(observed.expectedInstanceIds());
+            if (expectedInstanceIds != null && !expectedInstanceIds.isBlank()
+                    && !expected.equals(
+                    testSecretAuthorityExpectedInstances(expectedInstanceIds))) {
+                throw new IllegalStateException(
+                        "Configured and signed test-secret serving inventories disagree");
+            }
+            attestation = TestSecretAuthorityTrustCohortPolicy.ServingInventoryAttestation
+                    .external(observed);
+        } else {
+            expected = testSecretAuthorityExpectedInstances(expectedInstanceIds);
+            attestation = TestSecretAuthorityTrustCohortPolicy.ServingInventoryAttestation
+                    .localConfigured();
+        }
         return new TestSecretAuthorityTrustCohortPolicy(
                 scopeId, cohortId, instanceId, UUID.randomUUID().toString(),
-                artifactFingerprint, testSecretAuthorityExpectedInstances(expectedInstanceIds),
+                artifactFingerprint, expected,
                 authorityId, TestSecretAuthorityResponse.SCHEMA_VERSION,
                 Duration.ofSeconds(heartbeatIntervalSeconds),
                 Duration.ofSeconds(leaseDurationSeconds),
-                Duration.ofSeconds(recordRetentionSeconds));
+                Duration.ofSeconds(recordRetentionSeconds), attestation);
     }
 
     /** Creates the database-clock lease and exact trust-generation registry. */
@@ -1351,10 +1426,21 @@ public class TestRuntimeConfiguration {
     TestSecretAuthorityTrustCohortMonitor testSecretAuthorityTrustCohortMonitor(
             DatabaseTestSecretAuthorityTrustCohortRepository repository,
             DynamicJwksTestSecretAuthorityTrustStore trustStore,
+            ObjectProvider<TestSecretAuthorityServingInventoryAuthority> inventoryAuthorities,
             TestSecretAuthorityTrustCohortPolicy policy,
             ObjectMapper objectMapper) {
+        List<TestSecretAuthorityServingInventoryAuthority> authorities =
+                inventoryAuthorities.orderedStream().toList();
+        boolean external = policy.servingInventory().externallyAttested();
+        if (external != (authorities.size() == 1)) {
+            throw new IllegalStateException(
+                    "Test-secret cohort policy and serving-inventory authority disagree");
+        }
+        TestSecretAuthorityServingInventoryAuthority inventoryAuthority = external
+                ? authorities.getFirst()
+                : TestSecretAuthorityServingInventoryAuthority.localOnly();
         return new TestSecretAuthorityTrustCohortMonitor(
-                repository, trustStore, policy, objectMapper);
+                repository, trustStore, inventoryAuthority, policy, objectMapper);
     }
 
     /** Exposes aggregate-only exact trust-cohort convergence through Actuator. */

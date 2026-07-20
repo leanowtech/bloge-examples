@@ -308,12 +308,16 @@ unknown-key rotation, explicit `enabled`/`revoked` propagation, a hard maximum s
 payload-free Actuator health without restart. Static and dynamic key modes are mutually exclusive;
 dynamic bootstrap or any ambiguous refresh fails closed. Multi-replica deployments can additionally
 set `RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED=true` plus one stable fleet scope, immutable deployment
-cohort, exact instance slot, artifact fingerprint and complete expected-instance list. Database-clock
-process-start leases then block secret resolution until every exact slot is live, healthy and on one
-complete JWKS generation; duplicate starts, overlapping deployment cohorts and generation drift fail
-closed. The authority checks this gate before the request and again after signature verification.
-The configured inventory is not yet independently signed, and signed JWKS witness plus authority
-HA/chaos certification remain open. See the
+cohort, exact instance slot and artifact fingerprint. In staging, also enable the required
+deployment-signed inventory and supply its trust domain, accepted policy fingerprints, Ed25519
+M-of-N public authority keys, and strict signed JSON envelope. The signed material is authoritative
+for the complete serving-slot set and also binds the test-secret authority identity; an optional
+configured list is equality-only. Database-clock process-start leases then block secret resolution
+until every exact slot is live, healthy, on one complete JWKS generation and on one signed-inventory
+generation. Duplicate starts, overlapping deployments, inventory rollback/fork, runtime expiry and
+generation drift fail closed. Capability and health expose aggregate readiness only. Dynamic
+inventory refresh/revoke, independent witness, and authority HA/chaos certification remain open.
+See the
 [testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#421a-control-identity-feature-flag-and-secret-built-ins).
 
 The durable stability queue and authenticated asynchronous submit/query/cancel protocol are present

@@ -4,6 +4,9 @@ import com.leanowtech.bloge.gateway.testing.api.DynamicJwksTestSecretAuthorityTr
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventory;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortPolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortGate;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustStore;
@@ -488,6 +491,17 @@ public record IntegrationCapabilities(
                     TestSecretAuthorityTrustCohortRepository.Snapshot.SCHEMA_VERSION));
             objects.put("testSecretAuthorityTrustCohortDescriptor", List.of(
                     TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventory", List.of(
+                    TestSecretAuthorityServingInventory.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryMaterial", List.of(
+                    TestSecretAuthorityServingInventory.Material.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryObservation", List.of(
+                    TestSecretAuthorityServingInventoryAuthority.Observation.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryDescriptor", List.of(
+                    TestSecretAuthorityServingInventoryAuthority.Descriptor.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryAttestation", List.of(
+                    TestSecretAuthorityTrustCohortPolicy.ServingInventoryAttestation
+                            .SCHEMA_VERSION));
             objects.put("testSecretAuthorityDescriptor", List.of(
                     TestSecretAuthority.Descriptor.SCHEMA_VERSION));
             objects.put("effectiveExecutionPlan", List.of(
@@ -699,6 +713,8 @@ public record IntegrationCapabilities(
         features.put("testSecretAuthorityTrustRefreshSlo", false);
         features.put("testSecretAuthorityTrustCohortConvergence", false);
         features.put("testSecretAuthorityTrustCohortReady", false);
+        features.put("testSecretAuthorityDeploymentSignedInventory", false);
+        features.put("testSecretAuthorityDeploymentSignedInventoryReady", false);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);
         features.put("pureDslMutationPlanning", testExecutionEndpointEnabled);

@@ -215,11 +215,15 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
                 Map.entry("trustCohortHealthyReplicaCount", cohort.healthyReplicaCount()),
                 Map.entry("trustCohortDistinctGenerationCount",
                         cohort.distinctTrustGenerationCount()),
+                Map.entry("trustCohortDistinctInventoryGenerationCount",
+                        cohort.distinctServingInventoryGenerationCount()),
                 Map.entry("trustCohortLeaseDurationSeconds",
                         cohort.leaseDurationSeconds()),
                 Map.entry("trustCohortDatabaseAuthority", cohort.databaseAuthority()),
                 Map.entry("trustCohortExactConfiguredInventory",
-                        cohort.exactConfiguredInventory())));
+                        cohort.exactConfiguredInventory()),
+                Map.entry("trustCohortExternallyAttestedInventory",
+                        cohort.externallyAttestedInventory())));
     }
 
     private void requireReady() {

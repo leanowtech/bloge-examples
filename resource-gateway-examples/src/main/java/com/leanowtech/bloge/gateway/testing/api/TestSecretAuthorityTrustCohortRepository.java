@@ -6,8 +6,28 @@ import java.util.List;
 /** Database-clock authority for exact test-secret trust-cohort membership. */
 public interface TestSecretAuthorityTrustCohortRepository {
 
-    /** Publishes the current local trust generation and returns one coherent cohort snapshot. */
-    Snapshot heartbeat(DynamicJwksTestSecretAuthorityTrustStore.CohortObservation observation);
+    /**
+     * Publishes the current local trust generation in local-configured inventory mode.
+     *
+     * @param observation current local dynamic JWKS generation
+     * @return one coherent database-authoritative cohort snapshot
+     */
+    default Snapshot heartbeat(
+            DynamicJwksTestSecretAuthorityTrustStore.CohortObservation observation) {
+        return heartbeat(observation,
+                TestSecretAuthorityServingInventoryAuthority.Observation.localOnly());
+    }
+
+    /**
+     * Publishes local trust and deployment-inventory generations atomically.
+     *
+     * @param trustObservation current local dynamic JWKS generation
+     * @param inventoryObservation current verified deployment inventory generation
+     * @return one coherent database-authoritative cohort snapshot
+     */
+    Snapshot heartbeat(
+            DynamicJwksTestSecretAuthorityTrustStore.CohortObservation trustObservation,
+            TestSecretAuthorityServingInventoryAuthority.Observation inventoryObservation);
 
     /** Reads one bounded coherent cohort snapshot without mutating membership. */
     Snapshot snapshot();
@@ -25,6 +45,7 @@ public interface TestSecretAuthorityTrustCohortRepository {
      * @param liveReplicaCount unexpired process-start rows
      * @param healthyReplicaCount live rows satisfying local trust readiness
      * @param distinctTrustGenerationCount distinct complete trust-generation fingerprints
+     * @param distinctServingInventoryGenerationCount distinct signed-inventory generations
      * @param missingReplicaCount configured slots with no live process
      * @param unexpectedReplicaCount live slots absent from configured inventory
      * @param duplicateReplicaCount configured slots with multiple live process starts
@@ -44,6 +65,7 @@ public interface TestSecretAuthorityTrustCohortRepository {
             int liveReplicaCount,
             int healthyReplicaCount,
             int distinctTrustGenerationCount,
+            int distinctServingInventoryGenerationCount,
             int missingReplicaCount,
             int unexpectedReplicaCount,
             int duplicateReplicaCount,
@@ -57,7 +79,7 @@ public interface TestSecretAuthorityTrustCohortRepository {
 
         /** Current aggregate snapshot protocol version. */
         public static final String SCHEMA_VERSION =
-                "bloge.testSecretAuthorityTrustCohortSnapshot.v1";
+                "bloge.testSecretAuthorityTrustCohortSnapshot.v2";
 
         /** Validates bounded aggregate facts without admitting member identities or fingerprints. */
         public Snapshot {
@@ -72,6 +94,8 @@ public interface TestSecretAuthorityTrustCohortRepository {
                     && healthyReplicaCount >= 0 && healthyReplicaCount <= liveReplicaCount
                     && distinctTrustGenerationCount >= 0
                     && distinctTrustGenerationCount <= liveReplicaCount
+                    && distinctServingInventoryGenerationCount >= 0
+                    && distinctServingInventoryGenerationCount <= liveReplicaCount
                     && missingReplicaCount >= 0 && missingReplicaCount <= expectedReplicaCount
                     && unexpectedReplicaCount >= 0
                     && unexpectedReplicaCount <= liveReplicaCount
@@ -93,7 +117,8 @@ public interface TestSecretAuthorityTrustCohortRepository {
                     || converged && (!"CONVERGED".equals(status)
                     || liveReplicaCount != expectedReplicaCount
                     || healthyReplicaCount != expectedReplicaCount
-                    || distinctTrustGenerationCount != 1)) {
+                    || distinctTrustGenerationCount != 1
+                    || distinctServingInventoryGenerationCount > 1)) {
                 throw new IllegalArgumentException(
                         "Invalid test-secret authority trust cohort snapshot");
             }

@@ -37,10 +37,14 @@ public final class TestSecretAuthorityTrustCohortHealth implements HealthIndicat
                 .withDetail("healthyReplicaCount", descriptor.healthyReplicaCount())
                 .withDetail("distinctTrustGenerationCount",
                         descriptor.distinctTrustGenerationCount())
+                .withDetail("distinctServingInventoryGenerationCount",
+                        descriptor.distinctServingInventoryGenerationCount())
                 .withDetail("leaseDurationSeconds", descriptor.leaseDurationSeconds())
                 .withDetail("databaseAuthority", descriptor.databaseAuthority())
                 .withDetail("exactConfiguredInventory",
                         descriptor.exactConfiguredInventory())
+                .withDetail("externallyAttestedInventory",
+                        descriptor.externallyAttestedInventory())
                 .build();
     }
 }

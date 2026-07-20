@@ -275,6 +275,9 @@ public class ToolStudioIntegrationService {
                 "trustCohortHealthyReplicaCount") instanceof Number value ? value : null;
         Number secretDistinctGenerations = testSecretAuthority.properties().get(
                 "trustCohortDistinctGenerationCount") instanceof Number value ? value : null;
+        Number secretDistinctInventoryGenerations = testSecretAuthority.properties().get(
+                "trustCohortDistinctInventoryGenerationCount") instanceof Number value
+                ? value : null;
         Number secretCohortLease = testSecretAuthority.properties().get(
                 "trustCohortLeaseDurationSeconds") instanceof Number value ? value : null;
         boolean secretCohortSupported = dynamicSecretTrust
@@ -298,6 +301,14 @@ public class ToolStudioIntegrationService {
                 && secretDistinctGenerations.longValue() == 1;
         features.put("testSecretAuthorityTrustCohortConvergence", secretCohortSupported);
         features.put("testSecretAuthorityTrustCohortReady", secretCohortReady);
+        boolean signedSecretInventory = secretCohortSupported
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "trustCohortExternallyAttestedInventory"));
+        features.put("testSecretAuthorityDeploymentSignedInventory", signedSecretInventory);
+        features.put("testSecretAuthorityDeploymentSignedInventoryReady",
+                signedSecretInventory && secretCohortReady
+                        && secretDistinctInventoryGenerations != null
+                        && secretDistinctInventoryGenerations.longValue() == 1);
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),

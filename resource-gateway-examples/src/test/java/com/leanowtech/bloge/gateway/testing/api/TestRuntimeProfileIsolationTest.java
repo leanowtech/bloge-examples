@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionTeleme
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
@@ -49,7 +50,9 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.Signature;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -866,6 +869,86 @@ class TestRuntimeProfileIsolationTest {
     }
 
     @Test
+    void signedTestSecretInventoryBootstrapsExternalCohortAndPublishesReadiness()
+            throws Exception {
+        KeyPair trustKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        byte[] document = authorityJwks(trustKey, "secret-key-dynamic")
+                .getBytes(StandardCharsets.UTF_8);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/jwks", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/jwk-set+json");
+            exchange.sendResponseHeaders(200, document.length);
+            try (var body = exchange.getResponseBody()) {
+                body.write(document);
+            }
+        });
+        server.start();
+        KeyPair inventoryKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        Map<String, Object> properties = dynamicTestSecretAuthorityProperties(server);
+        properties.putAll(signedTestSecretInventoryProperties(inventoryKey));
+        properties.put("gateway.testing.store.jdbc-url",
+                "jdbc:h2:mem:profile-signed-test-secret;DB_CLOSE_DELAY=-1");
+        try {
+            try (AnnotationConfigApplicationContext context = context(properties, 0, "test")) {
+                assertThat(context.getBean(TestSecretAuthorityServingInventoryAuthority.class)
+                        .observation()).satisfies(observation -> {
+                            assertThat(observation.available()).isTrue();
+                            assertThat(observation.externallyAttested()).isTrue();
+                            assertThat(observation.expectedInstanceIds())
+                                    .containsExactly("replica-a");
+                        });
+                assertThat(context.getBean(TestSecretAuthorityTrustCohortPolicy.class)
+                        .servingInventory().externallyAttested()).isTrue();
+                assertThat(context.getBean(TestSecretAuthorityTrustCohortMonitor.class)
+                        .descriptor()).satisfies(descriptor -> {
+                            assertThat(descriptor.available()).isTrue();
+                            assertThat(descriptor.externallyAttestedInventory()).isTrue();
+                            assertThat(descriptor.distinctServingInventoryGenerationCount())
+                                    .isEqualTo(1);
+                        });
+                assertThat(context.getBean(TestSecretAuthority.class).descriptor().properties())
+                        .containsEntry("trustCohortExternallyAttestedInventory", true)
+                        .containsEntry("trustCohortDistinctInventoryGenerationCount", 1);
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void stagingCohortRejectsUnsignedTestSecretServingInventory() throws Exception {
+        KeyPair trustKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        byte[] document = authorityJwks(trustKey, "secret-key-dynamic")
+                .getBytes(StandardCharsets.UTF_8);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/jwks", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/jwk-set+json");
+            exchange.sendResponseHeaders(200, document.length);
+            try (var body = exchange.getResponseBody()) {
+                body.write(document);
+            }
+        });
+        server.start();
+        Map<String, Object> properties = dynamicTestSecretAuthorityProperties(server);
+        properties.put("gateway.testing.store.jdbc-url",
+                "jdbc:h2:mem:profile-staging-unsigned-test-secret;DB_CLOSE_DELAY=-1");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.required",
+                "true");
+        AnnotationConfigApplicationContext context =
+                unrefreshedContext(properties, 0, "staging");
+        try {
+            assertThatThrownBy(context::refresh).rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining(
+                            "requires deployment-signed test-secret serving inventory");
+        } finally {
+            context.close();
+            server.stop(0);
+        }
+    }
+
+    @Test
     void enabledDynamicTestSecretJwksRejectsMissingRemoteConfiguration() {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("gateway.testing.test-secrets.authority.http.enabled", "true");
@@ -1383,6 +1466,92 @@ class TestRuntimeProfileIsolationTest {
         properties.put("gateway.testing.test-secrets.authority.http.authority-keys-json",
                 "[{\"keyId\":\"secret-key-1\",\"algorithm\":\"Ed25519\","
                         + "\"publicKeyBase64\":\"" + publicKey + "\"}]");
+        return properties;
+    }
+
+    private static Map<String, Object> dynamicTestSecretAuthorityProperties(HttpServer server) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("gateway.testing.test-secrets.authority.http.enabled", "true");
+        properties.put("gateway.testing.test-secrets.authority.http.base-uri",
+                "http://127.0.0.1:18082");
+        properties.put("gateway.testing.test-secrets.authority.http.allow-insecure-loopback",
+                "true");
+        properties.put("gateway.testing.test-secrets.authority.http.expected-authority-id",
+                "secret-authority.example");
+        properties.put("gateway.testing.test-secrets.authority.http.jwks.enabled", "true");
+        properties.put("gateway.testing.test-secrets.authority.http.jwks.uri",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/jwks");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.allow-insecure-loopback",
+                "true");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.refresh-interval-seconds",
+                "3600");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.maximum-snapshot-age-seconds",
+                "3610");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.enabled", "true");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id",
+                "test-secret-scope");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.cohort-id",
+                "deployment-a");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.instance-id",
+                "replica-a");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.artifact-fingerprint",
+                "sha256:" + "a".repeat(64));
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.heartbeat-interval-seconds",
+                "1");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.lease-duration-seconds",
+                "3");
+        return properties;
+    }
+
+    private static Map<String, Object> signedTestSecretInventoryProperties(KeyPair keyPair)
+            throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        String policy = "sha256:" + "b".repeat(64);
+        var material = new TestSecretAuthorityServingInventory.Material(
+                TestSecretAuthorityServingInventory.Material.SCHEMA_VERSION,
+                "inventory.example", "inventory-profile-test", 1,
+                "test-secret-scope", "deployment-a", "sha256:" + "a".repeat(64),
+                TestSecretAuthorityResponse.SCHEMA_VERSION, "secret-authority.example",
+                List.of("replica-a"), policy, now.minusSeconds(30), now.minusSeconds(30),
+                now.plusSeconds(3600));
+        String fingerprint = ProtocolFingerprint.of(objectMapper, material);
+        Signature signer = Signature.getInstance("Ed25519");
+        signer.initSign(keyPair.getPrivate());
+        signer.update(fingerprint.getBytes(StandardCharsets.UTF_8));
+        var signature = new TestSecretAuthorityServingInventory.AuthoritySignature(
+                "deployment-inventory-a", "inventory-key-a", "Ed25519", now,
+                Base64.getEncoder().encodeToString(signer.sign()));
+        var inventory = new TestSecretAuthorityServingInventory(
+                TestSecretAuthorityServingInventory.SCHEMA_VERSION,
+                material, fingerprint, List.of(signature));
+        String publicKey = Base64.getEncoder().encodeToString(
+                keyPair.getPublic().getEncoded());
+        String keysJson = "[{\"authorityId\":\"deployment-inventory-a\"," +
+                "\"keyId\":\"inventory-key-a\",\"publicKeyBase64\":\"" + publicKey +
+                "\",\"notBefore\":\"" + now.minusSeconds(60) +
+                "\",\"expiresAt\":\"" + now.plusSeconds(7200) +
+                "\",\"enabled\":true,\"revoked\":false}]";
+        Map<String, Object> properties = new LinkedHashMap<>();
+        String prefix =
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.";
+        properties.put(prefix + "enabled", "true");
+        properties.put(prefix + "required", "true");
+        properties.put(prefix + "trust-domain", "inventory.example");
+        properties.put(prefix + "accepted-policy-fingerprints", policy);
+        properties.put(prefix + "signature-threshold", "1");
+        properties.put(prefix + "authority-keys-json", keysJson);
+        properties.put(prefix + "inventory-json", objectMapper.writeValueAsString(inventory));
         return properties;
     }
 

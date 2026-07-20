@@ -36,6 +36,18 @@ public final class TestingProtocol {
     /** Payload-free test-secret trust cohort gate descriptor version. */
     public static final String TEST_SECRET_AUTHORITY_TRUST_COHORT_DESCRIPTOR_V1 =
             "bloge.testSecretAuthorityTrustCohortDescriptor.v1";
+    /** Current aggregate cohort snapshot with signed-inventory generation convergence. */
+    public static final String TEST_SECRET_AUTHORITY_TRUST_COHORT_SNAPSHOT_V2 =
+            "bloge.testSecretAuthorityTrustCohortSnapshot.v2";
+    /** Current cohort descriptor exposing deployment-attested inventory mode. */
+    public static final String TEST_SECRET_AUTHORITY_TRUST_COHORT_DESCRIPTOR_V2 =
+            "bloge.testSecretAuthorityTrustCohortDescriptor.v2";
+    /** Deployment-signed exact test-secret serving-inventory envelope version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_V1 =
+            "bloge.testSecretAuthorityServingInventory.v1";
+    /** Canonical deployment-owned test-secret inventory material version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_MATERIAL_V1 =
+            "bloge.testSecretAuthorityServingInventoryMaterial.v1";
     /** Fixture rule wire version. */
     public static final String FIXTURE_RULE_V1 = "bloge.fixtureRule.v1";
     /** Fixture registration request wire version. */

@@ -115,6 +115,11 @@ oracle. The full evidence fingerprint remains different across run id, timing an
     policy/artifact/protocol equivalent and on one complete trust generation. Local generation
     changes close immediately until published; secret resolution checks the aggregate gate before
     network I/O and after signature verification. Member identities and fingerprints stay private.
+17. In signed-inventory mode the deployment-owned Ed25519 M-of-N material, rather than a local
+    member list, defines the exact slots and binds the test-secret authority identity. Runtime
+    expiry, revision rollback, same-revision fork and cross-replica inventory-generation divergence
+    fail closed. See the focused
+    [signed serving-inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-signed-serving-inventory-verification.md).
 
 ## Automated Evidence
 
@@ -130,13 +135,16 @@ security audit. `DurableTestRecoveryAuthorizerTest` proves recovery calls the au
 rejects exact secret-version drift.
 `TestSecretAuthorityProtocolTest`, `ConfiguredTestSecretAuthorityTrustStoreTest`,
 `HttpTestSecretAuthorityTest`, `DynamicJwksTestSecretAuthorityTrustStoreTest`,
+`ConfiguredTestSecretAuthorityServingInventoryAuthorityTest`,
 `TestSecretAuthorityTrustCohortMonitorTest`,
 `DatabaseTestSecretAuthorityTrustCohortRepositoryTest`,
-`TestSecretAuthorityProtocolSchemaTest`, and profile-isolation tests
+`TestSecretAuthorityProtocolSchemaTest`, `TestSecretAuthorityServingInventoryProtocolSchemaTest`,
+and profile-isolation tests
 freeze the credential-free request, secret-bearing signed response, challenge/replay binding,
-static and dynamic Ed25519 lifecycle, concurrent unknown-key rotation, revocation, ETag refresh,
-hard expiry, strict HTTPS/JSON/body bounds, signed denial semantics, startup fail-fast, payload-free
-health and capability projection. `ResolvedTestSecretsTest` independently enforces the 1 MiB
+static and dynamic Ed25519 lifecycle, inventory quorum, authority binding, revision floor,
+convergence, concurrent unknown-key rotation, revocation, ETag refresh, hard expiry, strict
+HTTPS/JSON/body bounds, signed denial semantics, startup fail-fast, payload-free health and
+capability projection. `ResolvedTestSecretsTest` independently enforces the 1 MiB
 aggregate plaintext ceiling for built-in and deployment-provided authorities.
 `TestRunServiceTest.compiledLogicalClockReachesOperatorContextAndControlsCertification` executes a
 real BLOGE graph and proves the compiled clock reaches the operator and controls evidence class.
