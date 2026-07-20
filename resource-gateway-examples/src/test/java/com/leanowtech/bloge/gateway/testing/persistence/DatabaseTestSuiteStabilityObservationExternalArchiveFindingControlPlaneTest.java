@@ -537,6 +537,32 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlaneTes
                 result.getTimestamp("observed_retain_until").toInstant()),
                 comparisonId, objectId);
         String classificationFingerprint = ProtocolFingerprint.of(objectMapper, classification);
+        var storedClassification = new
+                DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
+                .Classification(classification.comparisonId(), classification.cycleId(),
+                classification.authorityId(), classification.objectId(),
+                classification.outcome(), classification.expectedItemFingerprint(),
+                classification.observedItemFingerprint(),
+                classification.expectedObjectCommitment(),
+                classification.observedObjectCommitment(),
+                classification.expectedTopologyFingerprint(),
+                classification.observedTopologyFingerprint(),
+                classification.expectedRetainUntil(), classification.observedRetainUntil(),
+                classificationFingerprint);
+        Long pageSequence = database.jdbc().queryForObject("""
+                SELECT page_sequence
+                FROM rg_test_suite_stability_observation_external_classifications
+                WHERE comparison_id = ? AND object_id = ?
+                """, Long.class, comparisonId, objectId);
+        Timestamp committedAt = database.jdbc().queryForObject("""
+                SELECT committed_at
+                FROM rg_test_suite_stability_observation_external_classifications
+                WHERE comparison_id = ? AND object_id = ?
+                """, Timestamp.class, comparisonId, objectId);
+        String rowFingerprint =
+                ExternalArchiveComparisonStateIntegrity.classificationRowFingerprint(
+                        objectMapper, storedClassification, pageSequence,
+                        committedAt.toInstant());
         String root = ProtocolFingerprint.of(objectMapper, new ClassificationRootLinkFixture(
                 "bloge.testSuiteStabilityObservationExternalArchiveClassificationRootLink.v1",
                 DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
@@ -544,9 +570,10 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlaneTes
                 classificationFingerprint));
         database.jdbc().update("""
                 UPDATE rg_test_suite_stability_observation_external_classifications
-                SET outcome = 'MATERIAL_CONFLICT', classification_fingerprint = ?
+                SET outcome = 'MATERIAL_CONFLICT', classification_fingerprint = ?,
+                    record_fingerprint = ?
                 WHERE comparison_id = ? AND object_id = ?
-                """, classificationFingerprint, comparisonId, objectId);
+                """, classificationFingerprint, rowFingerprint, comparisonId, objectId);
         database.jdbc().update("""
                 UPDATE rg_test_suite_stability_observation_external_comparisons
                 SET matched_count = 0, material_conflict_count = 1, classification_root = ?
@@ -853,18 +880,22 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveFindingControlPlaneTes
                 lastObjectId, cycleRevision, Timestamp.from(snapshotAt), Timestamp.from(now),
                 Timestamp.from(now), cycleFingerprint);
         for (TestSuiteStabilityObservationExternalArchiveInventoryItem item : items) {
+            String recordFingerprint =
+                    ExternalArchiveInventoryStagingIntegrity.itemFingerprint(
+                            objectMapper, cycleId, 0, item, now);
             database.jdbc().update("""
                     INSERT INTO
                         rg_test_suite_stability_observation_external_inventory_items (
                         cycle_id, object_id, page_sequence, item_fingerprint, object_commitment,
                         retirement_id, retirement_fingerprint, segment_id, segment_fingerprint,
-                        retention_policy_fingerprint, retain_until, stored_at, committed_at
-                    ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        retention_policy_fingerprint, retain_until, stored_at, committed_at,
+                        record_fingerprint
+                    ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, cycleId, item.objectId(), item.itemFingerprint(), item.objectCommitment(),
                     item.retirementId(), item.retirementFingerprint(), item.segmentId(),
                     item.segmentFingerprint(), item.retentionPolicyFingerprint(),
                     Timestamp.from(item.retainUntil()), Timestamp.from(item.storedAt()),
-                    Timestamp.from(now));
+                    Timestamp.from(now), recordFingerprint);
         }
         return cycleId;
     }

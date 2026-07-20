@@ -741,7 +741,10 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                        classified.observed_topology_fingerprint AS c_observed_topology_fingerprint,
                        classified.expected_retain_until AS c_expected_retain_until,
                        classified.observed_retain_until AS c_observed_retain_until,
-                       classified.classification_fingerprint AS c_classification_fingerprint
+                       classified.classification_fingerprint AS c_classification_fingerprint,
+                       classified.page_sequence AS c_page_sequence,
+                       classified.committed_at AS c_committed_at,
+                       classified.record_fingerprint AS c_record_fingerprint
                 FROM (
                     SELECT object_id
                     FROM rg_test_suite_stability_observation_external_expected_snapshots
@@ -770,6 +773,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                         throw new IllegalStateException(
                                 "External finding source semantic classification is missing");
                     }
+                    actual.verify(source, objectMapper);
                     String expectedItem = normalized(result.getString("e_item_fingerprint"));
                     String observedItem = normalized(result.getString("o_item_fingerprint"));
                     String expectedCommitment = normalized(
@@ -850,12 +854,12 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
         String[] previous = {""};
         OutcomeCounts[] counts = {OutcomeCounts.empty()};
         jdbc.query("""
-                SELECT comparison_id, cycle_id, authority_id, object_id, outcome,
+                SELECT comparison_id, cycle_id, authority_id, object_id, page_sequence, outcome,
                        expected_item_fingerprint, observed_item_fingerprint,
                        expected_object_commitment, observed_object_commitment,
                        expected_topology_fingerprint, observed_topology_fingerprint,
                        expected_retain_until, observed_retain_until,
-                       classification_fingerprint
+                       classification_fingerprint, committed_at, record_fingerprint
                 FROM rg_test_suite_stability_observation_external_classifications
                 WHERE comparison_id = ?
                 ORDER BY object_id
@@ -971,6 +975,9 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                        c.expected_retain_until AS c_expected_retain_until,
                        c.observed_retain_until AS c_observed_retain_until,
                        c.classification_fingerprint AS c_classification_fingerprint,
+                       c.page_sequence AS c_page_sequence,
+                       c.committed_at AS c_committed_at,
+                       c.record_fingerprint AS c_record_fingerprint,
                        s.authority_id AS s_authority_id, s.object_id AS s_object_id,
                        s.finding_status AS s_finding_status, s.finding_kind AS s_finding_kind,
                        s.latest_comparison_id AS s_latest_comparison_id,
@@ -1160,12 +1167,12 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
 
     private List<SourceClassification> classificationPage(StoredProjection projection) {
         List<SourceClassification> rows = jdbc.query("""
-                SELECT comparison_id, cycle_id, authority_id, object_id, outcome,
+                SELECT comparison_id, cycle_id, authority_id, object_id, page_sequence, outcome,
                        expected_item_fingerprint, observed_item_fingerprint,
                        expected_object_commitment, observed_object_commitment,
                        expected_topology_fingerprint, observed_topology_fingerprint,
                        expected_retain_until, observed_retain_until,
-                       classification_fingerprint
+                       classification_fingerprint, committed_at, record_fingerprint
                 FROM rg_test_suite_stability_observation_external_classifications
                 WHERE comparison_id = ? AND object_id > ?
                 ORDER BY object_id
@@ -1229,7 +1236,10 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                     nullableInstant(result, prefix + "observed_retain_until"),
                     result.getString(prefix + "classification_fingerprint"));
             return new SourceClassification(value.objectId(), value.outcome(),
-                    value.classificationFingerprint(), value);
+                    value.classificationFingerprint(), value,
+                    result.getLong(prefix + "page_sequence"),
+                    instant(result, prefix + "committed_at"),
+                    result.getString(prefix + "record_fingerprint"));
         } catch (IllegalArgumentException corrupt) {
             throw new IllegalStateException(
                     "Stored external finding source classification is corrupt", corrupt);
@@ -2098,7 +2108,10 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                     .Outcome outcome,
             String fingerprint,
             DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
-                    .Classification value) {
+                    .Classification value,
+            long pageSequence,
+            Instant committedAt,
+            String recordFingerprint) {
         private void verify(SourceComparison source, ObjectMapper objectMapper) {
             if (!OBJECT_ID.matcher(objectId).matches() || outcome == null
                     || !FINGERPRINT.matcher(fingerprint).matches()
@@ -2106,7 +2119,12 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                     || !value.authorityId().equals(source.authorityId())
                     || !value.fingerprintVerified(objectMapper)
                     || !value.objectId().equals(objectId) || value.outcome() != outcome
-                    || !value.classificationFingerprint().equals(fingerprint)) {
+                    || !value.classificationFingerprint().equals(fingerprint)
+                    || pageSequence < 0 || committedAt == null
+                    || !FINGERPRINT.matcher(normalized(recordFingerprint)).matches()
+                    || !recordFingerprint.equals(
+                    ExternalArchiveComparisonStateIntegrity.classificationRowFingerprint(
+                            objectMapper, value, pageSequence, committedAt))) {
                 throw new IllegalStateException("External finding source classification is corrupt");
             }
         }

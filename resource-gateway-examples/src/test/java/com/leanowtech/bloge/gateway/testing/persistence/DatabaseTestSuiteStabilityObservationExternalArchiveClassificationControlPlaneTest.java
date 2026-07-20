@@ -328,7 +328,7 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlP
 
         assertThatThrownBy(() -> controlPlane.compareNextPage(AUTHORITY))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("remote inventory item");
+                .hasMessageContaining("staged item record fingerprint");
         assertProgressUnchanged(staged.comparisonId(), first.objectId(), 1);
     }
 
@@ -423,6 +423,43 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlP
     }
 
     @Test
+    void completedClassificationExportRejectsTamperedCommitMetadata() {
+        var item = item(1, "one", 3_600);
+        insertExpected(item, TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN);
+        installCompletedCycle(List.of(item), TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN);
+        var controlPlane = controlPlane(10);
+        var completed = controlPlane.compareNextPage(AUTHORITY);
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_observation_external_classifications
+                SET committed_at = DATEADD('MILLISECOND', 1, committed_at)
+                WHERE comparison_id = ?
+                """, completed.comparisonId());
+
+        assertThatThrownBy(() -> controlPlane.classifications(
+                completed.comparisonId(), "", 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("classification row fingerprint");
+    }
+
+    @Test
+    void operationalReadRejectsStructurallyValidComparisonAuthorityTamper() {
+        var item = item(1, "one", 3_600);
+        insertExpected(item, TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN);
+        installCompletedCycle(List.of(item), TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN);
+        var controlPlane = controlPlane(10);
+        controlPlane.compareNextPage(AUTHORITY);
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_observation_external_comparison_authorities
+                SET revision = revision + 1
+                WHERE authority_id = ?
+                """, AUTHORITY);
+
+        assertThatThrownBy(() -> controlPlane.operationalSnapshot(AUTHORITY))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("authority record fingerprint");
+    }
+
+    @Test
     void emptyExpectedAndRemoteSnapshotsCompleteOnDomainSeparatedEmptyRoots() {
         installCompletedCycle(List.of(), TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN);
         var controlPlane = controlPlane(5);
@@ -481,13 +518,18 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlP
         insertExpected(item, TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN);
         installCompletedCycle(List.of(item), TRUST_DOMAIN, ARCHIVE_SET, FAILURE_DOMAIN);
         var controlPlane = controlPlane(10);
+        Instant initialUpdatedAt = Instant.now().minusSeconds(10);
+        String initialAuthorityFingerprint =
+                ExternalArchiveComparisonStateIntegrity.authorityFingerprint(
+                        objectMapper, AUTHORITY, "", "", 0, initialUpdatedAt);
         database.jdbc().update("""
                 INSERT INTO
                     rg_test_suite_stability_observation_external_comparison_authorities (
                     authority_id, active_comparison_id, last_completed_comparison_id,
-                    revision, updated_at
-                ) VALUES (?, '', '', 0, ?)
-                """, AUTHORITY, Timestamp.from(Instant.now().minusSeconds(10)));
+                    revision, updated_at, record_fingerprint
+                ) VALUES (?, '', '', 0, ?, ?)
+                """, AUTHORITY, Timestamp.from(initialUpdatedAt),
+                initialAuthorityFingerprint);
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         var pool = Executors.newFixedThreadPool(2);
@@ -512,12 +554,15 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlP
                         throw new IllegalStateException("Authority lock wait interrupted", interrupted);
                     }
                     Instant marker = Instant.now();
+                    String markerFingerprint =
+                            ExternalArchiveComparisonStateIntegrity.authorityFingerprint(
+                                    objectMapper, AUTHORITY, "", "", 0, marker);
                     database.jdbc().update("""
                             UPDATE
                                 rg_test_suite_stability_observation_external_comparison_authorities
-                            SET updated_at = ?
+                            SET updated_at = ?, record_fingerprint = ?
                             WHERE authority_id = ?
-                            """, Timestamp.from(marker), AUTHORITY);
+                            """, Timestamp.from(marker), markerFingerprint, AUTHORITY);
                     return marker;
                 });
             });
@@ -636,6 +681,29 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlP
                 result.getTimestamp("observed_retain_until").toInstant()),
                 comparisonId, objectId);
         String classificationFingerprint = ProtocolFingerprint.of(objectMapper, material);
+        var classification = new
+                DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
+                .Classification(material.comparisonId(), material.cycleId(),
+                material.authorityId(), material.objectId(), material.outcome(),
+                material.expectedItemFingerprint(), material.observedItemFingerprint(),
+                material.expectedObjectCommitment(), material.observedObjectCommitment(),
+                material.expectedTopologyFingerprint(), material.observedTopologyFingerprint(),
+                material.expectedRetainUntil(), material.observedRetainUntil(),
+                classificationFingerprint);
+        Long pageSequence = database.jdbc().queryForObject("""
+                SELECT page_sequence
+                FROM rg_test_suite_stability_observation_external_classifications
+                WHERE comparison_id = ? AND object_id = ?
+                """, Long.class, comparisonId, objectId);
+        Timestamp committedAt = database.jdbc().queryForObject("""
+                SELECT committed_at
+                FROM rg_test_suite_stability_observation_external_classifications
+                WHERE comparison_id = ? AND object_id = ?
+                """, Timestamp.class, comparisonId, objectId);
+        String rowFingerprint =
+                ExternalArchiveComparisonStateIntegrity.classificationRowFingerprint(
+                        objectMapper, classification, pageSequence,
+                        committedAt.toInstant());
         String root = ProtocolFingerprint.of(objectMapper, new ClassificationRootLinkFixture(
                 "bloge.testSuiteStabilityObservationExternalArchiveClassificationRootLink.v1",
                 DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlPlane
@@ -643,9 +711,10 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlP
                 classificationFingerprint));
         database.jdbc().update("""
                 UPDATE rg_test_suite_stability_observation_external_classifications
-                SET outcome = 'MATERIAL_CONFLICT', classification_fingerprint = ?
+                SET outcome = 'MATERIAL_CONFLICT', classification_fingerprint = ?,
+                    record_fingerprint = ?
                 WHERE comparison_id = ? AND object_id = ?
-                """, classificationFingerprint, comparisonId, objectId);
+                """, classificationFingerprint, rowFingerprint, comparisonId, objectId);
         database.jdbc().update("""
                 UPDATE rg_test_suite_stability_observation_external_comparisons
                 SET matched_count = 0, material_conflict_count = 1, classification_root = ?
@@ -836,18 +905,22 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveClassificationControlP
                 lastObjectId, cycleRevision, Timestamp.from(snapshotAt), Timestamp.from(now),
                 Timestamp.from(now), cycleFingerprint);
         for (TestSuiteStabilityObservationExternalArchiveInventoryItem item : items) {
+            String recordFingerprint =
+                    ExternalArchiveInventoryStagingIntegrity.itemFingerprint(
+                            objectMapper, cycleId, 0, item, now);
             database.jdbc().update("""
                     INSERT INTO
                         rg_test_suite_stability_observation_external_inventory_items (
                         cycle_id, object_id, page_sequence, item_fingerprint, object_commitment,
                         retirement_id, retirement_fingerprint, segment_id, segment_fingerprint,
-                        retention_policy_fingerprint, retain_until, stored_at, committed_at
-                    ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        retention_policy_fingerprint, retain_until, stored_at, committed_at,
+                        record_fingerprint
+                    ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, cycleId, item.objectId(), item.itemFingerprint(), item.objectCommitment(),
                     item.retirementId(), item.retirementFingerprint(), item.segmentId(),
                     item.segmentFingerprint(), item.retentionPolicyFingerprint(),
                     Timestamp.from(item.retainUntil()), Timestamp.from(item.storedAt()),
-                    Timestamp.from(now));
+                    Timestamp.from(now), recordFingerprint);
         }
         return cycleId;
     }

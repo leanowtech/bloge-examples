@@ -3241,11 +3241,17 @@ Inventory authority and cycle rows are whole-record fingerprinted across lease, 
 root, counter, lifecycle, and time columns. The collector verifies them before remote I/O and uses
 the previous revision plus fingerprint as its mutation fence. Comparison repeats the same canonical
 verification before freezing expected state, so it cannot bypass the collector and consume a
-tampered source pointer. On the first upgraded test/staging startup, rows without these columns are
+tampered source pointer. Inventory page fingerprints additionally bind the exact persisted signed
+JSON and every duplicated indexed/control column; item fingerprints bind item material to its cycle,
+page, and commit time. Terminal collection parses and rebinds every stored page and verifies both row
+types before completion. Comparison-authority pointers and classification storage rows are likewise
+whole-record fingerprinted, and classification export plus finding projection reverify the source
+rows they consume. On the first upgraded test/staging startup, rows without these columns are
 fingerprinted from their current value exactly once and the columns become non-null; a row that
 already carries an invalid fingerprint fails startup/read closed. This local trust-baseline
 migration requires an all-replica maintenance upgrade and is not advertised as production N/N-1
-compatibility.
+compatibility. These unkeyed seals detect local drift but do not replace database audit/access
+controls or an external keyed/notarized commitment against an administrator who can recompute them.
 
 The reconciliation Actuator indicator is not a timer-only probe. It returns `UNKNOWN` during the
 bounded first-pass grace, `UP` only when the latest all-authority scheduler pass, every active

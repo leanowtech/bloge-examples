@@ -142,7 +142,7 @@ Three durable layers preserve progress:
 | --- | --- |
 | `external_inventory_authorities` | current owner/token/epoch/deadline/revision, active cycle, last completed cycle |
 | `external_inventory_cycles` | pinned trust/archive/failure-domain topology, snapshot, next cursor/sequence, accumulated count/root, lifecycle |
-| `external_inventory_pages/items` | normalized page topology, signed page envelope, and payload-free item facts |
+| `external_inventory_pages/items` | normalized page topology, exact signed page envelope, payload-free item facts, and whole-row fingerprints over staging control metadata |
 
 Lease acquisition locks one authority row and uses database `CURRENT_TIMESTAMP`. A live lease returns
 `BUSY` before any remote call. An expired lease increments epoch and revision and resumes the exact
@@ -167,12 +167,15 @@ one `REQUIRES_NEW`, `READ_COMMITTED` transaction:
 3. binds page authority, maximum size, request expiry, page expiry, snapshot, object cursor, and page
    sequence to the durable cursor;
 4. advances the order-sensitive root and bounded object count;
-5. inserts the exact signed page JSON and normalized item rows;
-6. on terminal, streams every staged item in object-id order, reconstructs and fingerprints it,
-   replays the root/count, and proves page sequence `0..N` has no gap;
-7. advances or completes the cycle and releases the lease.
+5. inserts the exact signed page JSON and normalized item rows, with a versioned whole-row
+   fingerprint for every page and item;
+6. on terminal, replays every page in sequence, parses the exact stored JSON, binds all duplicated
+   indexed columns back to that envelope, and verifies page sequence `0..N` has no gap;
+7. streams every staged item in object-id order, reconstructs both its protocol material and its
+   cycle/page/commit-time row fingerprint, then replays the root/count;
+8. advances or completes the cycle and releases the lease.
 
-Steps 1-7 share one transaction. A terminal root mismatch, missing prior page, corrupt staged item,
+Steps 1-8 share one transaction. A terminal root mismatch, missing prior page, corrupt staged item,
 cursor drift, duplicate identity, lease takeover, serialization failure, or final CAS failure rolls
 back the new page, items, cursor, and completion. The caller's surrounding transaction cannot undo a
 committed page because control-plane transactions are independently `REQUIRES_NEW`.
@@ -213,10 +216,14 @@ for replaying finding transitions across completed comparisons.
 | `MATERIAL_CONFLICT` | same topology and object id, other immutable material differs |
 | `UNKNOWN` | both object ids exist but topology drift makes material comparison unsafe |
 
-Every row binds comparison, cycle, authority, object, both optional item/commitment/retention facts,
-both topology facts, and outcome in a canonical fingerprint. The mutable comparison state has a
-whole-record fingerprint and exact outcome counters/root. These are checkpoints, not the completion
-oracle. Before changing `ACTIVE` to `COMPLETED`, the control plane independently:
+Every classification binds comparison, cycle, authority, object, both optional
+item/commitment/retention facts, both topology facts, and outcome in its semantic fingerprint. A
+separate storage-row fingerprint additionally binds page sequence and commit time, so valid business
+material cannot disguise staging metadata drift. The comparison authority row binds both pointers,
+revision, and update time; every pointer transition uses the previous revision plus record
+fingerprint as its CAS fence. The mutable comparison state has its own whole-record fingerprint and
+exact outcome counters/root. These are checkpoints, not the completion oracle. Before changing
+`ACTIVE` to `COMPLETED`, the control plane independently:
 
 1. streams and reproduces the frozen expected count/root;
 2. streams and reproduces the signed remote count/root;
@@ -227,7 +234,9 @@ oracle. Before changing `ACTIVE` to `COMPLETED`, the control plane independently
 The fifth gate deliberately rejects a stable but incorrect classifier even when an operator has
 recomputed every public SHA checkpoint consistently. Any failure rolls back the terminal page and
 cursor. `classifications(comparisonId, afterObjectId, limit)` exports only a completed comparison in
-strict keyset order and verifies each row again. The public boundary has no remediation operation.
+strict keyset order and verifies both semantic and storage-row fingerprints. Finding projection and
+terminal semantic replay perform the same source-row verification, preventing a downstream stage
+from laundering corrupt source control metadata. The public boundary has no remediation operation.
 
 ## 10. Governed finding lifecycle
 
@@ -341,6 +350,8 @@ corruption.
 | provider expires continuation | implicit restart mixes snapshots | terminal `SNAPSHOT_EXPIRED` cycle before new page zero |
 | aggregate root is tampered | final proof trusts checkpoint | stream all staged item fingerprints at terminal |
 | historical page disappears | items alone hide envelope gap | terminal page-span proof requires exact `0..N` |
+| signed page JSON or an indexed duplicate drifts | protocol fingerprint alone does not protect local staging columns | bind exact JSON digest and every page column in a whole-row fingerprint, then parse and rebind on replay |
+| item moves between cycle/page or its commit time changes | item business fingerprint omits storage ownership | verify a separate item-row fingerprint in collection, comparison, and terminal replay |
 | surrounding request rolls back | propagation joins caller | independent `REQUIRES_NEW` mutations |
 | local objects change between comparison pages | live-table merge has no stable left side | atomically frozen expected snapshot per remote cycle |
 | one side has a denser key range | equal offsets skip the sparse side | safe shared object-id upper bound over two keyset windows |
@@ -350,6 +361,8 @@ corruption.
 | classifier emits stable wrong outcome | self-hash is circular evidence | independent source-union semantic derivation |
 | transaction waits for authority lock and publishes older or equal time | `CURRENT_TIMESTAMP` is fixed at transaction start | use newer database time or the locked persisted `updated_at` plus one microsecond |
 | partial comparison is exported | staged rows look authoritative | export requires fingerprint-verified `COMPLETED` state |
+| comparison pointer changes without its revision changing | pointer table had no independent row seal | lock-time whole-record verification and revision-plus-fingerprint CAS |
+| classification commit metadata changes | semantic classifier fingerprint omits staging metadata | separate row fingerprint over classification, page sequence, and commit time on every consumer path |
 | two completed comparisons have equal or regressing time | UUID tie-break invents lifecycle order | strict Lamport successor and fail-closed chronology check |
 | process dies while findings are projected | current rows advance without a durable source cursor | authority, projection, cursor, event root, and frozen pre-state commit atomically per page |
 | active finding projection is queried | partially applied current table looks final | current finding export is denied while authority is active |
@@ -369,6 +382,14 @@ corruption.
 | two local scheduled invocations overlap | timer/runtime re-entry | process-local overlap gate plus database authority lease and transactional stage fences |
 | half-enabled reconciliation silently does nothing | optional bean composition hides missing authority or replica identity | explicit property requires inventory authority and stable instance id; startup fails closed |
 | production accidentally enables maintenance | property-only guard | entire composition root remains under `!production & (test | staging)` profile veto |
+
+The added fingerprints are unkeyed canonical integrity checks. They detect accidental drift,
+partial writes, stale updates, and an attacker who changes rows without also rebuilding every
+dependent digest. They are not a substitute for database access control, audit/WAL protection, or
+an external keyed/notarized commitment against a database administrator who can recompute all local
+hashes. Startup backfill trusts a legacy test/staging row once only when its fingerprint is absent;
+present-but-invalid values fail closed. This is deliberately not an N/N-1 production migration
+protocol.
 
 ## 13. Operational readiness and capability truth
 

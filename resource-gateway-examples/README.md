@@ -160,9 +160,13 @@ object, cursor, lease and fingerprint identities never appear. `/api/integration
 separately reports `configured` and current `ready` truth. Open governance findings are reported as
 an aggregate business outcome and do not make the control loop unhealthy. Inventory authority and
 cycle rows now use the same versioned whole-record fingerprint in collection, comparison, and
-readiness paths. The first upgraded test/staging startup establishes a one-time baseline for legacy
-rows and then requires non-null fingerprints; perform that upgrade with all replicas stopped because
-it is not an N/N-1 production migration protocol.
+readiness paths. Signed inventory page JSON and its indexed columns, normalized item ownership,
+comparison-authority pointers, and classification commit metadata also have separate whole-row
+fingerprints; collection, classification export, and finding projection verify them before use. The
+first upgraded test/staging startup establishes a one-time baseline for legacy rows and then requires
+non-null fingerprints; perform that upgrade with all replicas stopped because it is not an N/N-1
+production migration protocol. These local unkeyed seals expose drift but do not replace database
+access/audit controls or an externally witnessed integrity commitment.
 
 The start command becomes ready only after the integration capability probe
 succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;

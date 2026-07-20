@@ -105,7 +105,8 @@ public final class
                     active_comparison_id VARCHAR(36) NOT NULL,
                     last_completed_comparison_id VARCHAR(36) NOT NULL,
                     revision BIGINT NOT NULL,
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL
                 )
                 """);
         jdbc.execute("""
@@ -191,6 +192,7 @@ public final class
                     observed_retain_until TIMESTAMP WITH TIME ZONE,
                     classification_fingerprint VARCHAR(71) NOT NULL,
                     committed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL,
                     PRIMARY KEY (comparison_id, object_id),
                     CONSTRAINT uq_rg_test_suite_stability_observation_external_classification
                         UNIQUE (comparison_id, classification_fingerprint)
@@ -202,6 +204,98 @@ public final class
                 ON rg_test_suite_stability_observation_external_classifications (
                     comparison_id, page_sequence, object_id
                 )
+                """);
+        migrateStorageFingerprints();
+    }
+
+    /**
+     * Baselines legacy test/staging rows once, then rejects every subsequent whole-row drift.
+     *
+     * <p>This is deliberately not advertised as an online N/N-1 production migration. Existing
+     * nonblank fingerprints are verified and are never silently regenerated.</p>
+     */
+    private void migrateStorageFingerprints() {
+        jdbc.execute("""
+                ALTER TABLE
+                    rg_test_suite_stability_observation_external_comparison_authorities
+                ADD COLUMN IF NOT EXISTS record_fingerprint VARCHAR(71)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_observation_external_classifications
+                ADD COLUMN IF NOT EXISTS record_fingerprint VARCHAR(71)
+                """);
+        transactions.executeWithoutResult(status -> {
+            List<StoredComparisonAuthority> authorities = jdbc.query("""
+                    SELECT authority_id, active_comparison_id, last_completed_comparison_id,
+                           revision, updated_at, record_fingerprint
+                    FROM rg_test_suite_stability_observation_external_comparison_authorities
+                    ORDER BY authority_id
+                    FOR UPDATE
+                    """, (result, row) -> new StoredComparisonAuthority(
+                    result.getString("authority_id"),
+                    result.getString("active_comparison_id"),
+                    result.getString("last_completed_comparison_id"),
+                    result.getLong("revision"), instant(result, "updated_at"),
+                    result.getString("record_fingerprint")));
+            for (StoredComparisonAuthority authority : authorities) {
+                if (normalized(authority.recordFingerprint()).isEmpty()) {
+                    StoredComparisonAuthority migrated = fingerprintedAuthority(authority);
+                    int updated = jdbc.update("""
+                            UPDATE
+                                rg_test_suite_stability_observation_external_comparison_authorities
+                            SET record_fingerprint = ?
+                            WHERE authority_id = ? AND revision = ?
+                              AND (record_fingerprint IS NULL OR record_fingerprint = '')
+                            """, migrated.recordFingerprint(), migrated.authorityId(),
+                            migrated.revision());
+                    if (updated != 1) {
+                        throw new IllegalStateException(
+                                "External comparison authority fingerprint migration lost its fence");
+                    }
+                } else {
+                    authority.validate(objectMapper);
+                }
+            }
+            List<StoredClassificationRow> classifications = jdbc.query("""
+                    SELECT comparison_id, cycle_id, authority_id, object_id, page_sequence,
+                           outcome, expected_item_fingerprint, observed_item_fingerprint,
+                           expected_object_commitment, observed_object_commitment,
+                           expected_topology_fingerprint, observed_topology_fingerprint,
+                           expected_retain_until, observed_retain_until,
+                           classification_fingerprint, committed_at, record_fingerprint
+                    FROM rg_test_suite_stability_observation_external_classifications
+                    ORDER BY comparison_id, object_id
+                    FOR UPDATE
+                    """, this::storedClassificationRow);
+            for (StoredClassificationRow classification : classifications) {
+                String fingerprint = classification.expectedFingerprint(objectMapper);
+                if (normalized(classification.recordFingerprint()).isEmpty()) {
+                    int updated = jdbc.update("""
+                            UPDATE rg_test_suite_stability_observation_external_classifications
+                            SET record_fingerprint = ?
+                            WHERE comparison_id = ? AND object_id = ?
+                              AND classification_fingerprint = ?
+                              AND (record_fingerprint IS NULL OR record_fingerprint = '')
+                            """, fingerprint, classification.classification().comparisonId(),
+                            classification.classification().objectId(),
+                            classification.classification().classificationFingerprint());
+                    if (updated != 1) {
+                        throw new IllegalStateException(
+                                "External classification fingerprint migration lost its fence");
+                    }
+                } else {
+                    classification.verify(objectMapper);
+                }
+            }
+        });
+        jdbc.execute("""
+                ALTER TABLE
+                    rg_test_suite_stability_observation_external_comparison_authorities
+                ALTER COLUMN record_fingerprint SET NOT NULL
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_observation_external_classifications
+                ALTER COLUMN record_fingerprint SET NOT NULL
                 """);
     }
 
@@ -247,28 +341,30 @@ public final class
         List<Classification> result = transactions.execute(status -> {
             StoredComparison comparison = readComparison(exactComparison);
             comparison.requireCompleted();
-            List<Classification> rows = jdbc.query("""
+            List<StoredClassificationRow> rows = jdbc.query("""
                     SELECT comparison_id, cycle_id, authority_id, object_id, outcome,
+                           page_sequence,
                            expected_item_fingerprint, observed_item_fingerprint,
                            expected_object_commitment, observed_object_commitment,
                            expected_topology_fingerprint, observed_topology_fingerprint,
                            expected_retain_until, observed_retain_until,
-                           classification_fingerprint
+                           classification_fingerprint, committed_at, record_fingerprint
                     FROM rg_test_suite_stability_observation_external_classifications
                     WHERE comparison_id = ? AND object_id > ?
                     ORDER BY object_id
                     LIMIT ?
-                    """, this::classification, exactComparison, cursor, limit);
+                    """, this::storedClassificationRow, exactComparison, cursor, limit);
             String previous = cursor;
-            for (Classification row : rows) {
-                if (previous.compareTo(row.objectId()) >= 0
-                        || !row.fingerprintVerified(objectMapper)) {
+            for (StoredClassificationRow stored : rows) {
+                stored.verify(objectMapper);
+                Classification row = stored.classification();
+                if (previous.compareTo(row.objectId()) >= 0) {
                     throw new IllegalStateException(
                             "Stored external inventory classification is corrupt");
                 }
                 previous = row.objectId();
             }
-            return List.copyOf(rows);
+            return rows.stream().map(StoredClassificationRow::classification).toList();
         });
         if (result == null) {
             throw new IllegalStateException("Classification export returned no result");
@@ -489,17 +585,9 @@ public final class
         if (!state.activeComparisonId().equals(progressed.comparisonId())) {
             throw new IllegalStateException("External inventory comparison authority fence is stale");
         }
-        long nextRevision = increment(state.revision(), "comparison authority revision");
-        int updated = jdbc.update("""
-                UPDATE rg_test_suite_stability_observation_external_comparison_authorities
-                SET active_comparison_id = '', last_completed_comparison_id = ?,
-                    revision = ?, updated_at = ?
-                WHERE authority_id = ? AND active_comparison_id = ? AND revision = ?
-                """, progressed.comparisonId(), nextRevision, Timestamp.from(now),
-                progressed.authorityId(), progressed.comparisonId(), state.revision());
-        if (updated != 1) {
-            throw new IllegalStateException("External inventory comparison completion fence failed");
-        }
+        updateComparisonAuthority(state, fingerprintedAuthority(new StoredComparisonAuthority(
+                state.authorityId(), "", progressed.comparisonId(),
+                increment(state.revision(), "comparison authority revision"), now, "")));
         return new ComparisonPage(ComparisonStatus.COMPLETED, progressed.authorityId(),
                 progressed.comparisonId(), progressed.cycleId(), attemptedPageSequence,
                 page.size(), completed.classifiedObjectCount(), completed.findingObjectCount());
@@ -581,6 +669,9 @@ public final class
             StoredComparison comparison,
             Classification classification,
             Instant now) {
+        String recordFingerprint =
+                ExternalArchiveComparisonStateIntegrity.classificationRowFingerprint(
+                        objectMapper, classification, comparison.nextPageSequence(), now);
         try {
             int inserted = jdbc.update("""
                     INSERT INTO
@@ -590,8 +681,8 @@ public final class
                         expected_object_commitment, observed_object_commitment,
                         expected_topology_fingerprint, observed_topology_fingerprint,
                         expected_retain_until, observed_retain_until,
-                        classification_fingerprint, committed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        classification_fingerprint, committed_at, record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, comparison.comparisonId(), comparison.cycleId(),
                     comparison.authorityId(), classification.objectId(),
                     comparison.nextPageSequence(), classification.outcome().name(),
@@ -603,7 +694,8 @@ public final class
                     classification.observedTopologyFingerprint(),
                     timestamp(classification.expectedRetainUntil()),
                     timestamp(classification.observedRetainUntil()),
-                    classification.classificationFingerprint(), Timestamp.from(now));
+                    classification.classificationFingerprint(), Timestamp.from(now),
+                    recordFingerprint);
             if (inserted != 1) {
                 throw new IllegalStateException(
                         "External inventory classification insert was incomplete");
@@ -635,14 +727,17 @@ public final class
     private Batch<TestSuiteStabilityObservationExternalArchiveInventoryItem> observedPage(
             StoredComparison comparison) {
         List<TestSuiteStabilityObservationExternalArchiveInventoryItem> rows = jdbc.query("""
-                SELECT object_id, item_fingerprint, object_commitment, retirement_id,
+                SELECT cycle_id, object_id, page_sequence, item_fingerprint,
+                       object_commitment, retirement_id,
                        retirement_fingerprint, segment_id, segment_fingerprint,
-                       retention_policy_fingerprint, retain_until, stored_at
+                       retention_policy_fingerprint, retain_until, stored_at, committed_at,
+                       record_fingerprint
                 FROM rg_test_suite_stability_observation_external_inventory_items
                 WHERE cycle_id = ? AND object_id > ?
                 ORDER BY object_id
                 LIMIT ?
-                """, this::inventoryItem, comparison.cycleId(),
+                """, (result, row) -> storedInventoryItem(result, "",
+                        result.getString("object_id")), comparison.cycleId(),
                 comparison.nextAfterObjectId(), settings.maximumSourceItemsPerSide() + 1);
         for (TestSuiteStabilityObservationExternalArchiveInventoryItem row : rows) {
             requireCanonical(row, "remote inventory item");
@@ -679,6 +774,10 @@ public final class
                        observed.retention_policy_fingerprint AS o_retention_policy_fingerprint,
                        observed.retain_until AS o_retain_until,
                        observed.stored_at AS o_stored_at,
+                       observed.cycle_id AS o_cycle_id,
+                       observed.page_sequence AS o_page_sequence,
+                       observed.committed_at AS o_committed_at,
+                       observed.record_fingerprint AS o_record_fingerprint,
                        classified.comparison_id AS c_comparison_id,
                        classified.cycle_id AS c_cycle_id,
                        classified.authority_id AS c_authority_id,
@@ -691,7 +790,10 @@ public final class
                        classified.observed_topology_fingerprint AS c_observed_topology_fingerprint,
                        classified.expected_retain_until AS c_expected_retain_until,
                        classified.observed_retain_until AS c_observed_retain_until,
-                       classified.classification_fingerprint AS c_classification_fingerprint
+                       classified.classification_fingerprint AS c_classification_fingerprint,
+                       classified.page_sequence AS c_page_sequence,
+                       classified.committed_at AS c_committed_at,
+                       classified.record_fingerprint AS c_record_fingerprint
                 FROM (
                     SELECT object_id
                     FROM rg_test_suite_stability_observation_external_expected_snapshots
@@ -730,10 +832,15 @@ public final class
             }
             TestSuiteStabilityObservationExternalArchiveInventoryItem observed = null;
             if (result.getString("o_item_fingerprint") != null) {
-                observed = inventoryItem(result, "o_", objectId);
+                observed = storedInventoryItem(result, "o_", objectId);
                 requireCanonical(observed, "remote inventory item");
             }
-            Classification stored = classification(result, "c_", objectId);
+            StoredClassificationRow storedRow = new StoredClassificationRow(
+                    classification(result, "c_", objectId),
+                    result.getLong("c_page_sequence"), instant(result, "c_committed_at"),
+                    result.getString("c_record_fingerprint"));
+            storedRow.verify(objectMapper);
+            Classification stored = storedRow.classification();
             Classification derived = classify(
                     comparison, expected, observed, observedTopology);
             if (!stored.equals(derived)) {
@@ -807,15 +914,17 @@ public final class
                 TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.EMPTY_ROOT};
         String[] previous = {""};
         jdbc.query("""
-                SELECT object_id, item_fingerprint, object_commitment, retirement_id,
+                SELECT cycle_id, object_id, page_sequence, item_fingerprint,
+                       object_commitment, retirement_id,
                        retirement_fingerprint, segment_id, segment_fingerprint,
-                       retention_policy_fingerprint, retain_until, stored_at
+                       retention_policy_fingerprint, retain_until, stored_at, committed_at,
+                       record_fingerprint
                 FROM rg_test_suite_stability_observation_external_inventory_items
                 WHERE cycle_id = ?
                 ORDER BY object_id
                 """, (RowCallbackHandler) result -> {
             TestSuiteStabilityObservationExternalArchiveInventoryItem item =
-                    inventoryItem(result, 0);
+                    storedInventoryItem(result, "", result.getString("object_id"));
             if (previous[0].compareTo(item.objectId()) >= 0) {
                 throw new IllegalStateException("Completed external inventory order is corrupt");
             }
@@ -836,17 +945,19 @@ public final class
         String[] previous = {""};
         OutcomeCounts[] counts = {OutcomeCounts.empty()};
         jdbc.query("""
-                SELECT comparison_id, cycle_id, authority_id, object_id, outcome,
+                SELECT comparison_id, cycle_id, authority_id, object_id, page_sequence, outcome,
                        expected_item_fingerprint, observed_item_fingerprint,
                        expected_object_commitment, observed_object_commitment,
                        expected_topology_fingerprint, observed_topology_fingerprint,
                        expected_retain_until, observed_retain_until,
-                       classification_fingerprint
+                       classification_fingerprint, committed_at, record_fingerprint
                 FROM rg_test_suite_stability_observation_external_classifications
                 WHERE comparison_id = ?
                 ORDER BY object_id
                 """, (RowCallbackHandler) result -> {
-            Classification row = classification(result, 0);
+            StoredClassificationRow stored = storedClassificationRow(result, 0);
+            stored.verify(objectMapper);
+            Classification row = stored.classification();
             if (previous[0].compareTo(row.objectId()) >= 0
                     || !row.fingerprintVerified(objectMapper)) {
                 throw new IllegalStateException("Stored external classification is corrupt");
@@ -953,14 +1064,16 @@ public final class
         if (known == null || known != 1) {
             throw new IllegalArgumentException("External inventory authority is not initialized");
         }
+        StoredComparisonAuthority initial = fingerprintedAuthority(
+                new StoredComparisonAuthority(authorityId, "", "", 0, now, ""));
         try {
             jdbc.update("""
                     INSERT INTO
                         rg_test_suite_stability_observation_external_comparison_authorities (
                         authority_id, active_comparison_id, last_completed_comparison_id,
-                        revision, updated_at
-                    ) VALUES (?, '', '', 0, ?)
-                    """, authorityId, Timestamp.from(now));
+                        revision, updated_at, record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """, initial.sqlArguments());
         } catch (DuplicateKeyException ignored) {
             // Another replica already initialized the comparison authority row.
         }
@@ -970,34 +1083,54 @@ public final class
             StoredComparisonAuthority state,
             String comparisonId,
             Instant now) {
-        long revision = increment(state.revision(), "comparison authority revision");
-        int updated = jdbc.update("""
-                UPDATE rg_test_suite_stability_observation_external_comparison_authorities
-                SET active_comparison_id = ?, revision = ?, updated_at = ?
-                WHERE authority_id = ? AND active_comparison_id = '' AND revision = ?
-                """, comparisonId, revision, Timestamp.from(now), state.authorityId(),
-                state.revision());
-        if (updated != 1) {
-            throw new IllegalStateException("External inventory comparison activation failed");
-        }
+        updateComparisonAuthority(state, fingerprintedAuthority(new StoredComparisonAuthority(
+                state.authorityId(), requiredUuid(comparisonId, "comparison ID"),
+                state.lastCompletedComparisonId(),
+                increment(state.revision(), "comparison authority revision"), now, "")));
     }
 
     private StoredComparisonAuthority lockComparisonAuthority(String authorityId) {
         List<StoredComparisonAuthority> rows = jdbc.query("""
                 SELECT authority_id, active_comparison_id, last_completed_comparison_id,
-                       revision, updated_at
+                       revision, updated_at, record_fingerprint
                 FROM rg_test_suite_stability_observation_external_comparison_authorities
                 WHERE authority_id = ?
                 FOR UPDATE
                 """, (result, row) -> new StoredComparisonAuthority(
                 result.getString("authority_id"), result.getString("active_comparison_id"),
                 result.getString("last_completed_comparison_id"), result.getLong("revision"),
-                instant(result, "updated_at")), authorityId);
+                instant(result, "updated_at"), result.getString("record_fingerprint")),
+                authorityId);
         if (rows.size() != 1) {
             throw new IllegalStateException("External comparison authority state is missing");
         }
-        rows.getFirst().validate();
+        rows.getFirst().validate(objectMapper);
         return rows.getFirst();
+    }
+
+    private StoredComparisonAuthority fingerprintedAuthority(StoredComparisonAuthority state) {
+        state.validateShape();
+        return state.withFingerprint(
+                ExternalArchiveComparisonStateIntegrity.authorityFingerprint(objectMapper,
+                        state.authorityId(), state.activeComparisonId(),
+                        state.lastCompletedComparisonId(), state.revision(), state.updatedAt()));
+    }
+
+    private void updateComparisonAuthority(
+            StoredComparisonAuthority expected,
+            StoredComparisonAuthority successor) {
+        expected.validate(objectMapper);
+        successor.validate(objectMapper);
+        int updated = jdbc.update("""
+                UPDATE rg_test_suite_stability_observation_external_comparison_authorities
+                SET active_comparison_id = ?, last_completed_comparison_id = ?,
+                    revision = ?, updated_at = ?, record_fingerprint = ?
+                WHERE authority_id = ? AND revision = ? AND record_fingerprint = ?
+                """, successor.updateArguments(expected));
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "External inventory comparison authority fence was rejected");
+        }
     }
 
     private StoredInventoryAuthority lockInventoryAuthority(String authorityId) {
@@ -1169,6 +1302,24 @@ public final class
                 instant(result, prefix + "retain_until"), instant(result, prefix + "stored_at"));
     }
 
+    private TestSuiteStabilityObservationExternalArchiveInventoryItem storedInventoryItem(
+            ResultSet result,
+            String prefix,
+            String objectId) throws SQLException {
+        TestSuiteStabilityObservationExternalArchiveInventoryItem item =
+                inventoryItem(result, prefix, objectId);
+        String expected = ExternalArchiveInventoryStagingIntegrity.itemFingerprint(
+                objectMapper, result.getString(prefix + "cycle_id"),
+                result.getLong(prefix + "page_sequence"), item,
+                instant(result, prefix + "committed_at"));
+        if (!item.fingerprintVerified(objectMapper)
+                || !expected.equals(result.getString(prefix + "record_fingerprint"))) {
+            throw new IllegalStateException(
+                    "External inventory staged item record fingerprint is corrupt");
+        }
+        return item;
+    }
+
     private Classification classification(ResultSet result, int row) throws SQLException {
         return new Classification(result.getString("comparison_id"),
                 result.getString("cycle_id"), result.getString("authority_id"),
@@ -1182,6 +1333,13 @@ public final class
                 nullableInstant(result, "expected_retain_until"),
                 nullableInstant(result, "observed_retain_until"),
                 result.getString("classification_fingerprint"));
+    }
+
+    private StoredClassificationRow storedClassificationRow(ResultSet result, int row)
+            throws SQLException {
+        return new StoredClassificationRow(classification(result, row),
+                result.getLong("page_sequence"), instant(result, "committed_at"),
+                result.getString("record_fingerprint"));
     }
 
     private Classification classification(
@@ -1639,8 +1797,9 @@ public final class
             String activeComparisonId,
             String lastCompletedComparisonId,
             long revision,
-            Instant updatedAt) {
-        private void validate() {
+            Instant updatedAt,
+            String recordFingerprint) {
+        private void validateShape() {
             if (!IDENTIFIER.matcher(authorityId).matches()
                     || (!activeComparisonId.isEmpty() && !isUuid(activeComparisonId))
                     || (!lastCompletedComparisonId.isEmpty()
@@ -1649,6 +1808,58 @@ public final class
                     && activeComparisonId.equals(lastCompletedComparisonId))
                     || revision < 0 || updatedAt == null) {
                 throw new IllegalStateException("External comparison authority state is corrupt");
+            }
+        }
+
+        private void validate(ObjectMapper objectMapper) {
+            validateShape();
+            if (!FINGERPRINT.matcher(normalized(recordFingerprint)).matches()
+                    || !recordFingerprint.equals(
+                    ExternalArchiveComparisonStateIntegrity.authorityFingerprint(objectMapper,
+                            authorityId, activeComparisonId, lastCompletedComparisonId,
+                            revision, updatedAt))) {
+                throw new IllegalStateException(
+                        "External comparison authority record fingerprint is corrupt");
+            }
+        }
+
+        private StoredComparisonAuthority withFingerprint(String fingerprint) {
+            return new StoredComparisonAuthority(authorityId, activeComparisonId,
+                    lastCompletedComparisonId, revision, updatedAt, fingerprint);
+        }
+
+        private Object[] sqlArguments() {
+            return new Object[]{authorityId, activeComparisonId, lastCompletedComparisonId,
+                    revision, Timestamp.from(updatedAt), recordFingerprint};
+        }
+
+        private Object[] updateArguments(StoredComparisonAuthority expected) {
+            return new Object[]{activeComparisonId, lastCompletedComparisonId, revision,
+                    Timestamp.from(updatedAt), recordFingerprint, expected.authorityId,
+                    expected.revision, expected.recordFingerprint};
+        }
+    }
+
+    private record StoredClassificationRow(
+            Classification classification,
+            long pageSequence,
+            Instant committedAt,
+            String recordFingerprint) {
+        private String expectedFingerprint(ObjectMapper objectMapper) {
+            if (classification == null || !classification.fingerprintVerified(objectMapper)
+                    || pageSequence < 0 || committedAt == null) {
+                throw new IllegalStateException(
+                        "External inventory classification row shape is corrupt");
+            }
+            return ExternalArchiveComparisonStateIntegrity.classificationRowFingerprint(
+                    objectMapper, classification, pageSequence, committedAt);
+        }
+
+        private void verify(ObjectMapper objectMapper) {
+            if (!FINGERPRINT.matcher(normalized(recordFingerprint)).matches()
+                    || !recordFingerprint.equals(expectedFingerprint(objectMapper))) {
+                throw new IllegalStateException(
+                        "External inventory classification row fingerprint is corrupt");
             }
         }
     }

@@ -179,6 +179,7 @@ public final class
                     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     committed_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     page_json CLOB NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL,
                     PRIMARY KEY (cycle_id, page_sequence),
                     CONSTRAINT uq_rg_test_suite_stability_observation_external_inventory_request
                         UNIQUE (request_fingerprint),
@@ -202,6 +203,7 @@ public final class
                     retain_until TIMESTAMP WITH TIME ZONE NOT NULL,
                     stored_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     committed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL,
                     PRIMARY KEY (cycle_id, object_id),
                     CONSTRAINT uq_rg_test_suite_stability_observation_external_inventory_item
                         UNIQUE (cycle_id, item_fingerprint)
@@ -548,6 +550,14 @@ public final class
             String cycleId,
             TestSuiteStabilityObservationExternalArchiveInventoryPage page,
             Instant committedAt) {
+        String pageJson = writePage(page);
+        String recordFingerprint = ExternalArchiveInventoryStagingIntegrity.pageFingerprint(
+                objectMapper, cycleId, page.request().pageSequence(), page.authorityId(),
+                page.request().trustDomain(), page.request().archiveSetId(), page.failureDomain(),
+                page.request().requestFingerprint(), page.pageFingerprint(), page.snapshotId(),
+                page.snapshotAt(), page.snapshotObjectCount(), page.snapshotRoot(),
+                page.request().afterObjectId(), page.nextAfterObjectId(), page.items().size(),
+                page.complete(), page.issuedAt(), page.expiresAt(), committedAt, pageJson);
         try {
             int inserted = jdbc.update("""
                     INSERT INTO
@@ -556,8 +566,9 @@ public final class
                         archive_set_id, failure_domain, request_fingerprint,
                         page_fingerprint, snapshot_id, snapshot_at, snapshot_object_count,
                         snapshot_root, after_object_id, next_after_object_id, item_count,
-                        complete, issued_at, expires_at, committed_at, page_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        complete, issued_at, expires_at, committed_at, page_json,
+                        record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, cycleId, page.request().pageSequence(), page.authorityId(),
                     page.request().trustDomain(), page.request().archiveSetId(),
                     page.failureDomain(), page.request().requestFingerprint(),
@@ -565,7 +576,8 @@ public final class
                     Timestamp.from(page.snapshotAt()), page.snapshotObjectCount(),
                     page.snapshotRoot(), page.request().afterObjectId(), page.nextAfterObjectId(),
                     page.items().size(), page.complete(), Timestamp.from(page.issuedAt()),
-                    Timestamp.from(page.expiresAt()), Timestamp.from(committedAt), writePage(page));
+                    Timestamp.from(page.expiresAt()), Timestamp.from(committedAt), pageJson,
+                    recordFingerprint);
             if (inserted != 1) {
                 throw new IllegalStateException("External inventory page insert was incomplete");
             }
@@ -580,6 +592,10 @@ public final class
             TestSuiteStabilityObservationExternalArchiveInventoryPage page,
             Instant committedAt) {
         for (TestSuiteStabilityObservationExternalArchiveInventoryItem item : page.items()) {
+            String recordFingerprint =
+                    ExternalArchiveInventoryStagingIntegrity.itemFingerprint(
+                            objectMapper, cycleId, page.request().pageSequence(), item,
+                            committedAt);
             try {
                 int inserted = jdbc.update("""
                         INSERT INTO
@@ -587,13 +603,14 @@ public final class
                             cycle_id, object_id, page_sequence, item_fingerprint,
                             object_commitment, retirement_id, retirement_fingerprint,
                             segment_id, segment_fingerprint, retention_policy_fingerprint,
-                            retain_until, stored_at, committed_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            retain_until, stored_at, committed_at, record_fingerprint
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, cycleId, item.objectId(), page.request().pageSequence(),
                         item.itemFingerprint(), item.objectCommitment(), item.retirementId(),
                         item.retirementFingerprint(), item.segmentId(), item.segmentFingerprint(),
                         item.retentionPolicyFingerprint(), Timestamp.from(item.retainUntil()),
-                        Timestamp.from(item.storedAt()), Timestamp.from(committedAt));
+                        Timestamp.from(item.storedAt()), Timestamp.from(committedAt),
+                        recordFingerprint);
                 if (inserted != 1) {
                     throw new IllegalStateException(
                             "External inventory item insert was incomplete");
@@ -611,10 +628,10 @@ public final class
                 TestSuiteStabilityObservationExternalArchiveInventoryIntegrity.EMPTY_ROOT};
         String[] previousObjectId = {""};
         jdbc.query("""
-                SELECT object_id, item_fingerprint, object_commitment,
+                SELECT object_id, page_sequence, item_fingerprint, object_commitment,
                        retirement_id, retirement_fingerprint, segment_id,
                        segment_fingerprint, retention_policy_fingerprint,
-                       retain_until, stored_at
+                       retain_until, stored_at, committed_at, record_fingerprint
                 FROM rg_test_suite_stability_observation_external_inventory_items
                 WHERE cycle_id = ?
                 ORDER BY object_id
@@ -632,6 +649,10 @@ public final class
                             result.getTimestamp("retain_until").toInstant(),
                             result.getTimestamp("stored_at").toInstant());
             if (!item.fingerprintVerified(objectMapper)
+                    || !result.getString("record_fingerprint").equals(
+                    ExternalArchiveInventoryStagingIntegrity.itemFingerprint(
+                            objectMapper, cycleId, result.getLong("page_sequence"), item,
+                            instant(result, "committed_at")))
                     || previousObjectId[0].compareTo(item.objectId()) >= 0) {
                 throw new IllegalStateException(
                         "External inventory staged item material or order is corrupt");
@@ -645,22 +666,35 @@ public final class
     }
 
     private PageSpan stagedPageSpan(String cycleId) {
-        List<PageSpan> rows = jdbc.query("""
-                SELECT COUNT(*) AS page_count, MIN(page_sequence) AS minimum_sequence,
-                       MAX(page_sequence) AS maximum_sequence
+        List<StagedPageRow> rows = jdbc.query("""
+                SELECT cycle_id, page_sequence, authority_id, trust_domain,
+                       archive_set_id, failure_domain, request_fingerprint,
+                       page_fingerprint, snapshot_id, snapshot_at,
+                       snapshot_object_count, snapshot_root, after_object_id,
+                       next_after_object_id, item_count, complete, issued_at, expires_at,
+                       committed_at, page_json, record_fingerprint
                 FROM rg_test_suite_stability_observation_external_inventory_pages
                 WHERE cycle_id = ?
-                """, (result, row) -> new PageSpan(
-                result.getLong("page_count"), result.getLong("minimum_sequence"),
-                result.getLong("maximum_sequence")), cycleId);
-        if (rows.size() != 1 || rows.getFirst().pageCount() < 1) {
+                ORDER BY page_sequence
+                """, this::stagedPageRow, cycleId);
+        if (rows.isEmpty()) {
             throw new IllegalStateException("External inventory staged page sequence is missing");
         }
-        return rows.getFirst();
+        long expectedSequence = 0;
+        for (StagedPageRow row : rows) {
+            if (row.pageSequence() != expectedSequence
+                    || !row.recordFingerprint().equals(stagingPageFingerprint(row))) {
+                throw new IllegalStateException(
+                        "External inventory staged page record fingerprint or order is corrupt");
+            }
+            expectedSequence = increment(expectedSequence, "staged page replay sequence");
+        }
+        return new PageSpan(rows.size(), rows.getFirst().pageSequence(),
+                rows.getLast().pageSequence());
     }
 
     /**
-     * Establishes a fingerprint trust baseline for rows written before record fingerprints existed.
+     * Establishes a fingerprint trust baseline for rows written before whole-record fingerprints.
      *
      * <p>This migration is intentionally local to the test/staging-only reconciliation surface. It
      * trusts each legacy row exactly once, writes the derived fingerprint under its revision fence,
@@ -675,6 +709,14 @@ public final class
                 """);
         jdbc.execute("""
                 ALTER TABLE rg_test_suite_stability_observation_external_inventory_cycles
+                ADD COLUMN IF NOT EXISTS record_fingerprint VARCHAR(71)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_observation_external_inventory_pages
+                ADD COLUMN IF NOT EXISTS record_fingerprint VARCHAR(71)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_observation_external_inventory_items
                 ADD COLUMN IF NOT EXISTS record_fingerprint VARCHAR(71)
                 """);
         transactions.executeWithoutResult(status -> {
@@ -734,6 +776,62 @@ public final class
                     verify(cycle);
                 }
             }
+            List<StagedPageRow> pages = jdbc.query("""
+                    SELECT cycle_id, page_sequence, authority_id, trust_domain,
+                           archive_set_id, failure_domain, request_fingerprint,
+                           page_fingerprint, snapshot_id, snapshot_at,
+                           snapshot_object_count, snapshot_root, after_object_id,
+                           next_after_object_id, item_count, complete, issued_at, expires_at,
+                           committed_at, page_json, record_fingerprint
+                    FROM rg_test_suite_stability_observation_external_inventory_pages
+                    ORDER BY cycle_id, page_sequence
+                    FOR UPDATE
+                    """, this::stagedPageRow);
+            for (StagedPageRow page : pages) {
+                String fingerprint = stagingPageFingerprint(page);
+                if (normalized(page.recordFingerprint()).isEmpty()) {
+                    int updated = jdbc.update("""
+                            UPDATE rg_test_suite_stability_observation_external_inventory_pages
+                            SET record_fingerprint = ?
+                            WHERE cycle_id = ? AND page_sequence = ?
+                              AND (record_fingerprint IS NULL OR record_fingerprint = '')
+                            """, fingerprint, page.cycleId(), page.pageSequence());
+                    if (updated != 1) {
+                        throw new IllegalStateException(
+                                "External inventory page fingerprint migration lost its fence");
+                    }
+                } else if (!page.recordFingerprint().equals(fingerprint)) {
+                    throw new IllegalStateException(
+                            "External inventory page record fingerprint is corrupt");
+                }
+            }
+            List<StagedItemRow> items = jdbc.query("""
+                    SELECT cycle_id, object_id, page_sequence, item_fingerprint,
+                           object_commitment, retirement_id, retirement_fingerprint,
+                           segment_id, segment_fingerprint, retention_policy_fingerprint,
+                           retain_until, stored_at, committed_at, record_fingerprint
+                    FROM rg_test_suite_stability_observation_external_inventory_items
+                    ORDER BY cycle_id, object_id
+                    FOR UPDATE
+                    """, this::stagedItemRow);
+            for (StagedItemRow item : items) {
+                String fingerprint = stagingItemFingerprint(item);
+                if (normalized(item.recordFingerprint()).isEmpty()) {
+                    int updated = jdbc.update("""
+                            UPDATE rg_test_suite_stability_observation_external_inventory_items
+                            SET record_fingerprint = ?
+                            WHERE cycle_id = ? AND object_id = ?
+                              AND (record_fingerprint IS NULL OR record_fingerprint = '')
+                            """, fingerprint, item.cycleId(), item.item().objectId());
+                    if (updated != 1) {
+                        throw new IllegalStateException(
+                                "External inventory item fingerprint migration lost its fence");
+                    }
+                } else if (!item.recordFingerprint().equals(fingerprint)) {
+                    throw new IllegalStateException(
+                            "External inventory item record fingerprint is corrupt");
+                }
+            }
         });
         jdbc.execute("""
                 ALTER TABLE
@@ -744,6 +842,82 @@ public final class
                 ALTER TABLE rg_test_suite_stability_observation_external_inventory_cycles
                 ALTER COLUMN record_fingerprint SET NOT NULL
                 """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_observation_external_inventory_pages
+                ALTER COLUMN record_fingerprint SET NOT NULL
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_test_suite_stability_observation_external_inventory_items
+                ALTER COLUMN record_fingerprint SET NOT NULL
+                """);
+    }
+
+    private StagedPageRow stagedPageRow(ResultSet result, int row) throws SQLException {
+        return new StagedPageRow(result.getString("cycle_id"),
+                result.getLong("page_sequence"), result.getString("authority_id"),
+                result.getString("trust_domain"), result.getString("archive_set_id"),
+                result.getString("failure_domain"), result.getString("request_fingerprint"),
+                result.getString("page_fingerprint"), result.getString("snapshot_id"),
+                instant(result, "snapshot_at"), result.getLong("snapshot_object_count"),
+                result.getString("snapshot_root"), result.getString("after_object_id"),
+                result.getString("next_after_object_id"), result.getInt("item_count"),
+                result.getBoolean("complete"), instant(result, "issued_at"),
+                instant(result, "expires_at"), instant(result, "committed_at"),
+                result.getString("page_json"), result.getString("record_fingerprint"));
+    }
+
+    private String stagingPageFingerprint(StagedPageRow page) {
+        TestSuiteStabilityObservationExternalArchiveInventoryPage stored = readPage(page.pageJson());
+        if (!stored.fingerprintVerified(objectMapper)
+                || stored.request().pageSequence() != page.pageSequence()
+                || !stored.authorityId().equals(page.authorityId())
+                || !stored.request().trustDomain().equals(page.trustDomain())
+                || !stored.request().archiveSetId().equals(page.archiveSetId())
+                || !stored.failureDomain().equals(page.failureDomain())
+                || !stored.request().requestFingerprint().equals(page.requestFingerprint())
+                || !stored.pageFingerprint().equals(page.pageFingerprint())
+                || !stored.snapshotId().equals(page.snapshotId())
+                || !stored.snapshotAt().equals(page.snapshotAt())
+                || stored.snapshotObjectCount() != page.snapshotObjectCount()
+                || !stored.snapshotRoot().equals(page.snapshotRoot())
+                || !stored.request().afterObjectId().equals(page.afterObjectId())
+                || !stored.nextAfterObjectId().equals(page.nextAfterObjectId())
+                || stored.items().size() != page.itemCount()
+                || stored.complete() != page.complete()
+                || !stored.issuedAt().equals(page.issuedAt())
+                || !stored.expiresAt().equals(page.expiresAt())) {
+            throw new IllegalStateException("External inventory staged page material is corrupt");
+        }
+        return ExternalArchiveInventoryStagingIntegrity.pageFingerprint(objectMapper,
+                page.cycleId(), page.pageSequence(), page.authorityId(), page.trustDomain(),
+                page.archiveSetId(), page.failureDomain(), page.requestFingerprint(),
+                page.pageFingerprint(), page.snapshotId(), page.snapshotAt(),
+                page.snapshotObjectCount(), page.snapshotRoot(), page.afterObjectId(),
+                page.nextAfterObjectId(), page.itemCount(), page.complete(), page.issuedAt(),
+                page.expiresAt(), page.committedAt(), page.pageJson());
+    }
+
+    private StagedItemRow stagedItemRow(ResultSet result, int row) throws SQLException {
+        TestSuiteStabilityObservationExternalArchiveInventoryItem item =
+                new TestSuiteStabilityObservationExternalArchiveInventoryItem(
+                        TestSuiteStabilityObservationExternalArchiveInventoryItem.SCHEMA_VERSION,
+                        result.getString("item_fingerprint"), result.getString("object_id"),
+                        result.getString("object_commitment"), result.getString("retirement_id"),
+                        result.getString("retirement_fingerprint"), result.getString("segment_id"),
+                        result.getString("segment_fingerprint"),
+                        result.getString("retention_policy_fingerprint"),
+                        instant(result, "retain_until"), instant(result, "stored_at"));
+        if (!item.fingerprintVerified(objectMapper)) {
+            throw new IllegalStateException("External inventory staged item material is corrupt");
+        }
+        return new StagedItemRow(result.getString("cycle_id"),
+                result.getLong("page_sequence"), item, instant(result, "committed_at"),
+                result.getString("record_fingerprint"));
+    }
+
+    private String stagingItemFingerprint(StagedItemRow item) {
+        return ExternalArchiveInventoryStagingIntegrity.itemFingerprint(objectMapper,
+                item.cycleId(), item.pageSequence(), item.item(), item.committedAt());
     }
 
     private void updateAuthority(StoredAuthority expected, StoredAuthority successor) {
@@ -980,6 +1154,15 @@ public final class
         }
     }
 
+    private TestSuiteStabilityObservationExternalArchiveInventoryPage readPage(String pageJson) {
+        try {
+            return objectMapper.readValue(pageJson,
+                    TestSuiteStabilityObservationExternalArchiveInventoryPage.class);
+        } catch (JsonProcessingException | IllegalArgumentException failure) {
+            throw new IllegalStateException("Cannot read staged external inventory page", failure);
+        }
+    }
+
     private Instant databaseNow() {
         Timestamp timestamp = jdbc.queryForObject("SELECT CURRENT_TIMESTAMP", Timestamp.class);
         if (timestamp == null) {
@@ -1170,6 +1353,38 @@ public final class
     }
 
     private record PageSpan(long pageCount, long minimumSequence, long maximumSequence) {
+    }
+
+    private record StagedPageRow(
+            String cycleId,
+            long pageSequence,
+            String authorityId,
+            String trustDomain,
+            String archiveSetId,
+            String failureDomain,
+            String requestFingerprint,
+            String pageFingerprint,
+            String snapshotId,
+            Instant snapshotAt,
+            long snapshotObjectCount,
+            String snapshotRoot,
+            String afterObjectId,
+            String nextAfterObjectId,
+            int itemCount,
+            boolean complete,
+            Instant issuedAt,
+            Instant expiresAt,
+            Instant committedAt,
+            String pageJson,
+            String recordFingerprint) {
+    }
+
+    private record StagedItemRow(
+            String cycleId,
+            long pageSequence,
+            TestSuiteStabilityObservationExternalArchiveInventoryItem item,
+            Instant committedAt,
+            String recordFingerprint) {
     }
 
     private record StoredAuthority(

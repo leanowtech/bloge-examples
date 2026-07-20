@@ -471,6 +471,32 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlP
     }
 
     @Test
+    void terminalReplayRejectsTamperedPageControlMetadataBeforeCompletion() {
+        FixtureInventoryAuthority authority = new FixtureInventoryAuthority(items(3));
+        var controlPlane = controlPlane("replica-a", Duration.ofSeconds(30), 2, authority);
+        var first = controlPlane.stageNextPage(AUTHORITY);
+        database.jdbc().update("""
+                UPDATE rg_test_suite_stability_observation_external_inventory_pages
+                SET committed_at = DATEADD('MILLISECOND', 1, committed_at)
+                WHERE cycle_id = ? AND page_sequence = 0
+                """, first.cycleId());
+
+        assertThatThrownBy(() -> controlPlane.stageNextPage(AUTHORITY))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("staged page record fingerprint");
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_suite_stability_observation_external_inventory_pages
+                WHERE cycle_id = ?
+                """, Integer.class, first.cycleId())).isEqualTo(1);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT cycle_status
+                FROM rg_test_suite_stability_observation_external_inventory_cycles
+                WHERE cycle_id = ?
+                """, String.class, first.cycleId())).isEqualTo("ACTIVE");
+    }
+
+    @Test
     void committedPageSurvivesAnOuterCallerTransactionRollback() {
         FixtureInventoryAuthority authority = new FixtureInventoryAuthority(items(3));
         var controlPlane = controlPlane("replica-a", Duration.ofSeconds(30), 2, authority);
@@ -551,7 +577,7 @@ class DatabaseTestSuiteStabilityObservationExternalArchiveReconciliationControlP
 
         assertThatThrownBy(() -> controlPlane.stageNextPage(AUTHORITY))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("signed count, root, and page sequence");
+                .hasMessageContaining("staged page record fingerprint or order");
         assertThat(database.jdbc().queryForObject("""
                 SELECT COUNT(*)
                 FROM rg_test_suite_stability_observation_external_inventory_pages

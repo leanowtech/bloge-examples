@@ -951,6 +951,21 @@ source cycle/comparison/classification history 有界。
 本增量 63 项 inventory integrity 聚焦测试全绿；完整 Resource Gateway `clean verify` 执行 2996 tests，
 0 failures、0 errors、2 项既有浏览器环境跳过，并成功重打包 Spring Boot 可执行 JAR。
 
+同一子步 Phase F 第四增量继续关闭 source retention 的行级完整性缺口。inventory page 现把 exact
+`page_json` 摘要、签名页重复索引列、cycle/sequence/commit time 一并纳入 whole-row fingerprint，终页按
+序解析 JSON、回绑索引列并复核无缺口页链；inventory item 另以 cycle/page/commit time 和完整 item material
+形成 storage fingerprint。comparison authority 对 active/last-completed pointer、revision/time 建立整行
+fingerprint，所有 pointer 变更使用旧 revision + fingerprint CAS；classification 在业务 semantic fingerprint
+之外再绑定 page sequence 与 commit time。classification export、finding projection 和 terminal semantic replay
+都复核这些 source-row seal，不能把结构合法但控制元数据漂移的源行洗成下游证据。旧 test/staging 行仅在
+fingerprint 缺失时做一次性 trust baseline，已有错误值 fail closed，随后列收紧为 non-null。该无密钥摘要
+防 accidental/stale/partial drift，不抵御能重算全部本地 hash 的恶意数据库管理员；生产 N/N-1 migration、
+外部 keyed/notarized commitment 与 source retention 删除状态机仍待后续阶段闭合。49 项采集/分类/finding
+聚焦测试全绿，覆盖 page control metadata、classification commit metadata、comparison pointer 篡改以及
+自洽错误语义仍被独立 oracle 拒绝；A-D/retention/profile 联合门禁执行 80 项测试全绿。完整 Resource
+Gateway `clean verify` 执行 2999 tests，0 failures、0 errors、2 项既有浏览器环境跳过，并成功重打包
+Spring Boot 可执行 JAR。
+
 第三十五增量已把多 signal 图的恢复原语从“engine 能识别、应用层拒绝”推进为数据库权威的
 单步状态机。`RecoveryStepCommand` 只允许 live issued dispatch 消费一个 signal 并到达唯一新
 `SUSPENDED` 或五类 `TERMINAL` 边界；四类 BLOGE store mutation、fixture/provider cursor、下一控制
