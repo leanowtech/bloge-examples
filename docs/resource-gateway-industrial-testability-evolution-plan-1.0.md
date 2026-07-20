@@ -15,7 +15,7 @@
 | Stage 1' | 完成 | `testing/planning/runtime/evidence` 内核；独立 test engine；五行为；F2/F3 resource fixture；micro-graph runner；旧 graph suite adapter；37 个聚焦测试与 1653 个项目测试全绿 |
 | Stage 2' | 进行中 | 已落地 graph/operator target discovery、operator target v2 composability manifest、graph execution/batch/query、operator micro-graph execution、canvas executable operator suite（含四类 case intent、内容寻址 fixture 与一等 TestSuite 发布、聚合执行/coverage/promotion 回显）、immutable fixture/TestSuite registry、stored fixture、v1-v5 stored TestSuite 与 child TestRunRecord 的 canonical snapshot/envelope-content/完整 lookup-key 验证、幂等 TestSuite runner、独立 child/suite-run store、聚合结构 coverage 与 promotion eligibility、10 态 child evidence、profile/identity/生产协议隔离、独立 Java/JUnit/CI test-kit suite adapter、七图/14-case F3 dogfooding及其内容寻址 catalog materialization、numeric tolerance、run-scoped logical clock + DELAY/TIMEOUT、受治理 F4 replay payload 精确捕获/脱敏/retention/tombstone、vault canonical snapshot/index/receipt/tombstone commitment、exact-ref REPLAY 执行、payload-free effective plan v2 谱系与认证降级，以及同步 root/nested/foreach/loop/compensation 的结构寻址、控制传播、动态 attempt/occurrence selector 和 occurrence/attempt/node/edge evidence；streaming/suspendable control/evidence 与物理 network/runtime 隔离仍待完成 |
 | Stage 3 evidence chain | 进行中 | graph/operator child signature、suite checkpoint/terminal aggregate attestation、ordered child closure、payload-free portable bundle、suite/evidence/attestation 独立 v2 typed semantic coverage 已完成；signed atomic key-set、managed v1/v2 lifecycle、签名时刻 lifecycle policy、外部 M-of-N trust publication、bounded append-only consistency page、durable consumer checkpoint、rollback/fork/split-view/revoked-pin resurrection detection 与 test-kit independent verifier 已完成；exact-suite ANEKE semantic workbook seed、`GovernanceGateResult.v3` 可重建 basis、编译级 GraphDraft target 绑定与独立 schema consumer 已完成；真实 ANEKE N/N-1 conformance、独立 witness gossip/跨域一致性证明待完成 |
-| Stage 4 deterministic runtime | 进行中 | run-scoped TIME/RANDOM/UUID/IDENTITY/FEATURE_FLAG、opaque secret-ref v2、外部 test-secret authority SPI/精确上下文绑定/run-scoped provider/durable re-authorization、strict signed challenge-bound HTTPS adapter、static Ed25519 trust 与 atomic dynamic JWKS refresh/revocation、effective plan/provider state、组合 durable checkpoint、同库事务、数据库时钟 lease CAS、幂等命令与 staged 四 store aggregate 已完成；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal suspended-or-terminal recovery step、有界同步 multi-suspension recovery sequence、兼容 terminal-only recovery 和进程内 lease coordinator 已闭合；recovery sequence 外层及派生 step/claim/automatic-heartbeat 已具备数据库租约化有界 retention、独立 HMAC tombstone、密钥轮换启动自检、固定基数 telemetry 和数据库时钟 backlog SLO/readiness；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内以数据库时钟有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；隔离 list/claim/release、数据库权威 maker/checker approved discard、token-free receipt/history、审批 SLO observation、claim-command replay token AES-GCM envelope/旧行迁移/轮换重包、active-control HMAC fence/旧行迁移/轮换重键、命令/审批/历史的数据库租约化有界保留、独立 keyed-HMAC request-index tombstone/在线轮换/旧行惰性迁移、N/N-1 三阶段 write/readiness/capability、challenge-bound 逐副本签名 proof、独立 test-kit exact-inventory fleet gate 与四维即时 admission 已落地；外部 quarantine change authorization 的 Ed25519 M-of-N trust、canonical scope/subject binding、checker HTTP v2 强制、数据库时间窗复核、双重唯一预留、销毁事务一次性消费、精确幂等重放、严格 Schema、staging fail-fast 配置、readiness/capability 和 key-free v2 证据透传已闭合。test-secret 的原子动态 JWKS、撤销传播、硬本地过期、刷新健康、数据库时钟 exact configured cohort、单 active deployment、取密前后双门禁，以及 deployment-signed strict inventory、authorityId binding、M-of-N Ed25519、revision floor、全副本 inventory-generation 收敛、严格 HTTPS/ETag 动态 `ACTIVE/REVOKED` publication、独立 signed witness、durable publication/witness floor 与原子 refresh/recovery 已闭合；日常 runtime trust-root 的 restart-free 原子双根轮换，以及 publication/root 双流 external-first `3f+1 / 2f+1` Byzantine non-equivocation core 已闭合；bootstrap-root ceremony/热轮换与生产认证、HA/chaos/外部 SLO，以及其他 durable command family 的统一有界 lifecycle、跨平台 serving-inventory 完整性证明、外部工单全生命周期与动态撤销刷新、法律保留/备份擦除、外部 WORM、runtime-state dispatch、排队/公平/优先级调度、异步/无界多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint 和确定性并发待完成 |
+| Stage 4 deterministic runtime | 进行中 | run-scoped TIME/RANDOM/UUID/IDENTITY/FEATURE_FLAG、opaque secret-ref v2、外部 test-secret authority SPI/精确上下文绑定/run-scoped provider/durable re-authorization、strict signed challenge-bound HTTPS adapter、static Ed25519 trust 与 atomic dynamic JWKS refresh/revocation、effective plan/provider state、组合 durable checkpoint、同库事务、数据库时钟 lease CAS、幂等命令与 staged 四 store aggregate 已完成；公开 authenticated durable GRAPH/OPERATOR create、payload-free query、owner claim、heartbeat、one-signal suspended-or-terminal recovery step、有界同步 multi-suspension recovery sequence、兼容 terminal-only recovery 和进程内 lease coordinator 已闭合；recovery sequence 外层及派生 step/claim/automatic-heartbeat 已具备数据库租约化有界 retention、独立 HMAC tombstone、密钥轮换启动自检、固定基数 telemetry 和数据库时钟 backlog SLO/readiness；公开 non-blocking worker pull 已在认证 tenant/org/project/environment 内以数据库时钟有界扫描，逐候选重授权，并把 exact lease CAS、hidden dispatch、`ACQUIRED/NO_WORK` 幂等结果和审计原子提交，再以 scope 级持久化循环 keyset 游标避免稳定毒化前缀饥饿，对 exact checkpoint 的确定性失败做数据库时钟指数退避，并在连续失败阈值后转为永久 worker quarantine；隔离 list/claim/release、数据库权威 maker/checker approved discard、token-free receipt/history、审批 SLO observation、claim-command replay token AES-GCM envelope/旧行迁移/轮换重包、active-control HMAC fence/旧行迁移/轮换重键、命令/审批/历史的数据库租约化有界保留、独立 keyed-HMAC request-index tombstone/在线轮换/旧行惰性迁移、N/N-1 三阶段 write/readiness/capability、challenge-bound 逐副本签名 proof、独立 test-kit exact-inventory fleet gate 与四维即时 admission 已落地；外部 quarantine change authorization 的 Ed25519 M-of-N trust、canonical scope/subject binding、checker HTTP v2 强制、数据库时间窗复核、双重唯一预留、销毁事务一次性消费、精确幂等重放、严格 Schema、staging fail-fast 配置、readiness/capability 和 key-free v2 证据透传已闭合。test-secret 的原子动态 JWKS、撤销传播、硬本地过期、刷新健康、数据库时钟 exact configured cohort、单 active deployment、取密前后双门禁，以及 deployment-signed strict inventory、authorityId binding、M-of-N Ed25519、revision floor、全副本 inventory-generation 收敛、严格 HTTPS/ETag 动态 `ACTIVE/REVOKED` publication、独立 signed witness、durable publication/witness floor 与原子 refresh/recovery 已闭合；日常 runtime trust-root 的 restart-free 原子双根轮换，以及 publication/root 双流 external-first `3f+1 / 2f+1` Byzantine non-equivocation core 已闭合；消费端 bootstrap-root complete-chain 热轮换已闭合；ceremony producer、HSM/KMS custody、root publisher anti-equivocation/HA/chaos、外部 SLO 与生产认证，以及其他 durable command family 的统一有界 lifecycle、跨平台 serving-inventory 完整性证明、外部工单全生命周期与动态撤销刷新、法律保留/备份擦除、外部 WORM、runtime-state dispatch、排队/公平/优先级调度、异步/无界多 suspension 编排、跨进程 worker supervision、强制 worker 取消、完整历史 trace evidence、stream offset/checkpoint 和确定性并发待完成 |
 | Stage 5 scale and quality | 进行中（bounded mutation、deterministic/fixed-horizon 与 anytime-valid stability 端到端协议已闭环） | graph/operator boundary planning/admission、seeded bounded property plan/materialization/execution/evidence、recoverable AST mutation planning/exact regeneration、immutable V5 mutation suite、baseline-first 隔离执行、V5 signed evidence/abandoned reconciliation，以及 deterministic 3..20 次重跑、统计 request v2-v4、evidence v3-v5、首基线 `n-1` 比较口径、零/非零事件精确单侧区间、anytime-valid e-process、fail-closed censoring、签名模型假设、独立同步/异步 test-kit、pinned CI/CLI/JUnit gate、数据库权威的跨副本 stability parent lease、tenant-fair SQL queue、parent-first terminal、签名 success proof、执行围栏、bounded worker/scheduler、database-clock aggregate telemetry/readiness、防 request resurrection 的 HMAC tombstone 与租约化 retention scheduler/SLO、公开异步 submit/query/cancel、strict Schema/capability truth、transaction-bound cancellation semantic audit、credential-free challenge-bound HTTPS current-authority PDP、原子 Ed25519 JWKS refresh、exact cohort 的数据库租约/单 active generation/全成员 trust-generation 收敛，以及 deployment-signed serving inventory、稳定 scope revision floor、严格 HTTPS/ETag 动态 `ACTIVE/REVOKED` publication、独立 witness checkpoint、跨重启 durable publication/witness floor、全成员 publication-generation 收敛和 submit/worker 双门禁已落地；运行密钥 restart-free 原子双根发布/刷新、数据库 durable floor、库存重验、外部 challenge-bound `3f+1 / 2f+1` 双流非等价锚、external-first 提交、Spring/staging 接线、cohort v4、health/capability 与 strict Schema 已落地；保留窗口历史趋势及独立 test-kit、跨 retention compact observation ledger、signed range proof、strict Schema、typed client、五层独立 verifier、数据库权威签名 floor retirement、external-first 外部归档回执写侧准入 core、receipt-aware lifecycle v2 exact proof export/独立双信任域 verifier，以及 strict multi-authority HTTPS WORM adapter/test-staging fail-fast wiring 已落地；外部 inventory 的 local expectation、durable cycle、frozen classification、replay-verified governed finding、bounded derived finding/evidence retention Phase A-E，以及显式 test/staging 下游优先、逐 authority 故障隔离的自主调度 Phase F 首增量和 aggregate health/readiness/capability truth 第二增量已落地；source-history retention 的独立调度、数据库权威健康度与 capability v2 子视图已落地，floor lifecycle v1/v2 test/staging preview 已开放，certified production provider/historical trust publication、法务留置/备份擦除/灾备连续性、完整 production orphan reconciliation 与 witnessed non-equivocation 尚未开放；显式 alpha-spending、跨 suite 共同原因证明、分布式/物理隔离 attempt runtime 待完成 |
 
 本轮将 `bloge.fixtureExecutionServices.v1` 作为 `metadata.executionServices` 的严格保留子协议
@@ -34,7 +34,8 @@ unknown-key refresh、inventory `304` 代次重验、Spring/staging、health/cap
 闭合；publication/witness composite head 与 atomic runtime-root head 已接入 external-first
 `3f+1 / 2f+1` Byzantine quorum，并由 staging 强制 `f>=1`；receipt notary keys 已通过
 bootstrap-quorum-signed publication、strict HTTPS/ETag、unknown-key single-flight 与跨重启 durable
-floor 实现免重启轮换。bootstrap-root 轮换 ceremony 与生产认证、HA/chaos/外部 SLO 仍待完成。
+floor 实现免重启轮换。bootstrap-root 消费侧完整链热轮换现已闭合；ceremony producer、根源
+anti-equivocation 与生产认证、HA/chaos/外部 SLO 仍待完成。
 完整 Resource Gateway `clean verify` 执行 3202 tests，0 failures、0 errors、2 个条件浏览器跳过，
 两个真实浏览器套件的 35 个配置测试完成并成功生成 Spring Boot 可执行 JAR；独立 test-kit `clean verify`
 执行 230 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR 与 public
@@ -596,7 +597,8 @@ assertion；monitor 在每次 heartbeat/descriptor 重验，数据库 revision f
 全副本 inventory generation cardinality 为一。staging 缺失签名清单会 fail startup，capability/health
 只输出 aggregate truth。严格 HTTPS/ETag 动态 `ACTIVE/REVOKED` publication、独立 witness、跨重启
 database publication/witness floor、原子刷新、HTTP 取密前后门禁、日常 runtime trust-root 无重启轮换和
-external-first 双流 non-equivocation 现已闭合；neutral cohort/crypto kernel、bootstrap-root ceremony/热轮换、KMS/HSM/mTLS/HA 与跨数据库/DR 认证仍是后续工作。验证见
+external-first 双流 non-equivocation 与 bootstrap-root 消费侧热轮换现已闭合；neutral cohort/crypto
+kernel、ceremony producer/根源 anti-equivocation、KMS/HSM/mTLS/HA 与跨数据库/DR 认证仍是后续工作。验证见
 [Stage 4 test-secret signed serving-inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-signed-serving-inventory-verification.md)。
 
 Stage 4 的下一子步把 test-secret serving inventory 从 startup-only attestation 推进为运行期 freshness/
@@ -643,7 +645,7 @@ threshold 与跨重启 database durable floor 在 immutable snapshot 可见前�
 lifecycle、rollback/fork/gap 或 floor 歧义立即关闭 receipt verification，`304` 不延长 signed expiry。
 suite-stability 与 test-secret 共用协议内核但保持 Spring port、scope、floor、health/capability 域隔离；
 staging 强制 managed trust 并禁止 static keys，test 保留兼容模式。该能力关闭 routine notary key A/B
-免重启轮换，不宣称 bootstrap root ceremony/热轮换、HSM/KMS custody 或 notary HA/DR 已认证。验证见
+免重启轮换；该子步当时尚未覆盖 bootstrap root ceremony/热轮换、HSM/KMS custody 或 notary HA/DR 认证。验证见
 [managed external-notary trust verification](resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md)。
 
 Stage 4 下一增量第一子步冻结 bootstrap-root ceremony kernel，尚未宣称运行时接线完成。新的
@@ -653,8 +655,8 @@ incoming root quorum 对同一 canonical material 做 possession proof。完整�
 重放 sequence/predecessor、scope/root-set/domain、`3f+1 / 2f+1`、policy、lifecycle 与双 quorum，
 current head 可见前再推进专用 durable floor。空 floor 允许首次接纳已完整重放的 head N，新副本无需
 伪造 sequence 1 本地历史；非空后严格拒绝 rollback/fork/gap。strict Schema、public-only JavaDoc 和
-9 项真实 Ed25519/Schema 聚焦测试已闭合。动态 HTTPS/ETag source、数据库 floor 实现、notary verifier
-与双域 Spring/staging 接线仍是下一子步门禁。验证见
+9 项真实 Ed25519/Schema 聚焦测试已闭合。该子步当时尚未覆盖动态 HTTPS/ETag source、数据库 floor
+实现、notary verifier 与双域 Spring/staging 接线。验证见
 [bootstrap-root ceremony kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md)。
 
 Stage 4 该增量第二子步补齐动态完整链 source 与数据库 floor。`VerifiedChain` 让新副本首次接纳完整
@@ -663,8 +665,8 @@ rollback、same-sequence fork 与历史祖先分叉；数据库实现以 composi
 whole-record fingerprint 和 `REQUIRES_NEW` 线性化。动态 root store 使用 strict HTTPS/ETag、exact
 media/version、no-redirect、4 MiB/128 代双界、hard source age、unknown-key global cooldown single-flight
 和 refresh-failure immediate fail-closed；`304` 不延长 signed head expiry。真实 HTTP、12 并发轮换、
-fork/recovery、过期和数据库竞争在内的 17 项聚焦测试全绿。managed notary verifier 与双域
-Spring/staging/health/capability 接线仍是下一子步门禁。
+fork/recovery、过期和数据库竞争在内的 17 项聚焦测试全绿。该子步当时尚未覆盖 managed notary
+verifier 与双域 Spring/staging/health/capability 接线。
 
 Stage 4 该增量第三子步消除 managed notary verifier 内复制静态 bootstrap-root 密钥和密码实现的
 旁路。configured/dynamic receipt trust 统一依赖原子 `ExternalSequenceAnchorBootstrapRootTrustStore`；
@@ -672,9 +674,26 @@ notary publication 构造与每次 receipt 验证都会重检上游 root snapsho
 立即向下传播 `ROOT_UNAVAILABLE`。notary successor 遇到未知 root key 时会先通过 root store 的全局
 single-flight 路径完整重放新链，再采纳 notary successor；close ownership 同时关闭双层 refresh lane。
 静态 root adapter 仅保留旧 test 配置兼容，明确不具备完整链、durable floor 或免重启轮换语义。
-双层轮换/分叉组合与既有兼容回归合计 20 项聚焦测试全绿。双域 Spring/staging/health/capability/script
-接线和 downgrade/误注入门禁仍是下一子步。完整 Resource Gateway `clean verify` 执行 3220 tests，
+双层轮换/分叉组合与既有兼容回归合计 20 项聚焦测试全绿。该子步当时尚未覆盖双域
+Spring/staging/health/capability/script 接线和 downgrade/误注入门禁。完整 Resource Gateway
+`clean verify` 执行 3220 tests，
 0 failures、0 errors、2 个条件浏览器跳过，并成功重打包可执行 JAR。
+
+Stage 4 该增量第四子步把 bootstrap-root chain 接入实际双域部署路径。suite-stability 与 test-secret
+各自从 strict public-only genesis、complete HTTPS bundle 和专用 database floor 构造动态 root store，再由
+域专用 receipt store/anchor port 独占生命周期；staging 强制 managed roots、`f>=1`、禁用 legacy static
+root fallback，并在发起网络请求前拒绝 genesis/binding 不一致、notary/root trust-domain 重合，以及两个
+业务域复用 trust domain 或 `(scopeId, rootSetId)` floor identity。Actuator 新增 key-free root chain
+sequence/transition/authority/expiry/refresh 投影，Tool Studio 分域公开 managed chain、restart-free
+rotation、complete genesis replay、durable floor 与 current readiness，root failure 会同步关闭新增的
+notary trust-chain readiness，同时保留既有 notary-only feature 语义。demo script 在 build 前执行 pinned-genesis、public-only、HTTPS、timing、legacy downgrade
+和跨域 alias 预检，Java 仍是最终安全边界；standalone genesis Schema、真实 HTTP/Ed25519/H2 Spring
+组合测试、staging downgrade 与 capability/health 回归已同步。两组广域聚焦门禁执行 79 次测试调用
+（含共享测试类）全绿，跨角色 domain 隔离补强后再执行 17 次聚焦调用全绿；最终完整 Resource
+Gateway `clean verify` 执行 3231 tests，0 failures、0 errors、2 skips，并成功重打包可执行 JAR。该步
+不宣称 ceremony producer、HSM/KMS
+custody、root publisher anti-equivocation/HA 或跨数据库/DR 已认证。验证见
+[bootstrap-root ceremony and runtime wiring verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md)。
 
 第五十三增量第十八子步把 exact cohort 的 expected set 从 replica-local 配置提升为外部可验签事实。
 deployment governance 生成 strict `bloge.testSuiteStabilityServingInventory.v1`，以 canonical material 绑定
@@ -1854,6 +1873,9 @@ flowchart LR
 
 ### 十一、明确排除（v1 不做）
 
-流式时间行为（STREAM）、sandbox conformance 双验与反熵漂移检测（保真度 F5）、test-secret bootstrap-root ceremony/热轮换与生产 HA 认证、stream offset/checkpoint 协议、runtime-state dispatch、跨进程 worker supervision、异步/无界多 suspension 编排、断点前完整 trace evidence、真实 ANEKE cross-version conformance、独立 witness gossip/跨域一致性证明、确定性并发 scheduler、独立 test-runtime 部署、equivalent-mutant detection、显式 alpha-spending、长期 flaky/共同原因趋势与自动 quarantine workflow。F4 record-replay、动态 selector、签名证据链、run-scoped TIME/RANDOM/UUID/IDENTITY/FEATURE_FLAG、opaque test-secret ref/SPI/run-scoped provider/durable re-authorization、strict signed HTTPS transport、static/dynamic Ed25519 trust、撤销传播、数据库时钟 exact configured cohort generation convergence、authorityId-bound deployment inventory、witnessed runtime publication/revocation、durable publication floor、provider-state restore、受信组合 checkpoint 本地事务、payload-free durable graph/operator create/query、公开 bounded worker pull、数据库时钟 owner handoff、授权 dispatch、heartbeat successor、one-signal suspended-or-terminal recovery step、bounded recovery sequence、兼容 terminal-only recovery、promotion-blocking receipt、staged 四 store aggregate、bounded property、pure-DSL mutation 的 plan/materialization/execution/signed evidence、3..20 次 bounded deterministic suite-stability evidence、fixed-horizon zero/non-zero-event exact conditional-rate confidence，以及 anytime-valid e-process 早停闭环已经落地；其余能力均已在北极星文档 Stage 3-5 有宿主。
+下文的 bootstrap-root 排除项特指 ceremony producer、根源 anti-equivocation 与生产 HA 认证；
+Resource Gateway 消费侧的完整链重放、热轮换、durable floor 和双域部署接线已完成。
+
+流式时间行为（STREAM）、sandbox conformance 双验与反熵漂移检测（保真度 F5）、test-secret bootstrap-root ceremony producer、HSM/KMS custody 与 root publisher 生产 HA 认证、stream offset/checkpoint 协议、runtime-state dispatch、跨进程 worker supervision、异步/无界多 suspension 编排、断点前完整 trace evidence、真实 ANEKE cross-version conformance、独立 witness gossip/跨域一致性证明、确定性并发 scheduler、独立 test-runtime 部署、equivalent-mutant detection、显式 alpha-spending、长期 flaky/共同原因趋势与自动 quarantine workflow。F4 record-replay、动态 selector、签名证据链、run-scoped TIME/RANDOM/UUID/IDENTITY/FEATURE_FLAG、opaque test-secret ref/SPI/run-scoped provider/durable re-authorization、strict signed HTTPS transport、static/dynamic Ed25519 trust、撤销传播、数据库时钟 exact configured cohort generation convergence、authorityId-bound deployment inventory、witnessed runtime publication/revocation、durable publication floor、provider-state restore、受信组合 checkpoint 本地事务、payload-free durable graph/operator create/query、公开 bounded worker pull、数据库时钟 owner handoff、授权 dispatch、heartbeat successor、one-signal suspended-or-terminal recovery step、bounded recovery sequence、兼容 terminal-only recovery、promotion-blocking receipt、staged 四 store aggregate、bounded property、pure-DSL mutation 的 plan/materialization/execution/signed evidence、3..20 次 bounded deterministic suite-stability evidence、fixed-horizon zero/non-zero-event exact conditional-rate confidence，以及 anytime-valid e-process 早停闭环已经落地；其余能力均已在北极星文档 Stage 3-5 有宿主。
 
 ---

@@ -120,6 +120,10 @@ notary successor。保留的 `StaticExternalSequenceAnchorBootstrapRootTrustStor
 
 `docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-bundle-v1.schema.json`
 
+部署只注入 genesis 时使用独立入口：
+
+`docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-genesis-v1.schema.json`
+
 Schema 包含 bundle、transition、material、genesis 和 root-key definitions，仅包含公钥与治理元数据，
 拒绝 additional properties，并限制 transitions、keys 和 signatures 基数。
 
@@ -150,14 +154,52 @@ reconstruction idempotency、rollback/fork/forked ancestry、identity isolation�
 first-head linearization。
 
 `ExternalSequenceAnchorBootstrapRootProtocolSchemaTest` 锁定 Java record/Schema 字段同构、协议常量、
-128 代上限、`additionalProperties: false` 和 public-only 约束。ceremony/Schema/database floor 共执行
-18 tests；加上 managed-notary 兼容回归共 20 tests，0 failures、0 errors、0 skips。完整 Resource
-Gateway `clean verify` 执行 3220 tests，0 failures、0 errors、2 个条件浏览器跳过，并成功重打包可执行
-JAR。
+128 代上限、`additionalProperties: false` 和 public-only 约束。ceremony/Schema/database floor 当前共
+执行 20 tests；新增 Spring runtime composition 执行 4 tests。两组配置、capability、health、script 和
+兼容性聚焦门禁合计执行 79 次测试调用（包含共享测试类）；跨角色 domain 隔离补强后再执行 17 次
+聚焦调用，均为 0 failures、0 errors、0 skips。最终完整 Resource Gateway `clean verify` 执行 3231
+tests，0 failures、0 errors、2 skips，并成功重打包可执行
+JAR；本次环境还实际执行了可用的浏览器回归，而不是把全部浏览器用例条件跳过。
 
-## 11. 下一步硬门禁
+## 11. 双域部署接线
 
-内核组合已经证明 restart-free bootstrap-root rotation，但只有同时完成以下条件才可宣称可部署：
+Spring 组合根现已在 suite-stability 与 test-secret 两个域分别创建：
 
-- suite-stability/test-secret 双域隔离的 Spring/staging/health/capability/script 接线；
-- 配置 downgrade、跨域误注入、staging static-root fallback 测试。
+1. strict `genesis-json`；
+2. 独立 `DatabaseExternalSequenceAnchorBootstrapRootPublicationFloor`；
+3. 独立 `DynamicExternalSequenceAnchorBootstrapRootTrustStore`；
+4. 拥有该 root store 的 `DynamicExternalSequenceAnchorReceiptTrustStore`；
+5. 域专用 external-anchor port 与 Health contributor。
+
+staging 强制 `managed-trust.bootstrap-roots.enabled=true`，并拒绝 legacy
+`bootstrap-signature-threshold/bootstrap-authority-keys-json`。genesis 的 scope/root-set/domain 必须与
+notary publication binding 精确一致、root 与 notary trust domain 必须不同、root genesis 必须声明
+`f>=1`。两个产品域同时启用时，组合根会拒绝任意 notary/root trust domain 的同角色或跨角色复用，
+也拒绝相同 `(scopeId, rootSetId)` floor identity；因此不能因配置复制而共享信任命名空间或 rollback
+floor。
+
+`bootstrap-roots` 配置组还包括 accepted ceremony policies、strict bundle URI、refresh/timeout/
+unknown-key cooldown、hard source age、maximum root lifetime、clock skew、minimum remaining validity
+和 maximum transitions。`test` 可显式保留 static root adapter；staging 没有该降级路径。
+
+Actuator 只投影 root status、head sequence、transition/authority counts、head expiry 和 refresh
+counters，不投影 URI、ETag、domain、set/key id、public key、signature、policy 或 fingerprint。
+Tool Studio capability 对两个域分别公开 managed chain、restart-free rotation、complete genesis
+replay、durable floor 和 current readiness；root readiness 为 false 时，整体 notary trust readiness
+由新增的 `...ExternalNotaryTrustChainReady` 明确变为 false。既有 notary-only readiness 保留原语义，
+避免破坏 test 兼容消费者。所有读取均来自 immutable local snapshot，不触发远程请求。
+
+`scripts/visual-canvas-demo.sh` 在 build/Java startup 前检查 pinned genesis、accepted policies、HTTPS
+bundle、legacy fallback、timing bounds、public-only shape 和跨域 alias。Java 组合根再次执行完整严格
+解析、密码学、binding、quorum 与 floor 校验；shell 只是更早反馈，不是安全边界。
+
+## 12. 仍未宣称
+
+当前实现闭合的是 Resource Gateway 消费侧的 restart-free bootstrap-root chain，不等于以下部署认证：
+
+- ceremony producer、双人审批、离线恢复与 HSM/KMS private-key custody；
+- root bundle publisher 的 mTLS/pinning、跨区域 HA、独立 consistency witness 与 anti-equivocation；
+- 本地数据库 floor 与 root publisher 同时回退时的外部不可回退证明；
+- PostgreSQL/MySQL 等目标数据库并发、备份恢复、跨区 DR 与长期 chaos/SLO 认证。
+
+这些项目不能由本地 green tests 推导为已完成，仍是进入生产前的独立交付门禁。

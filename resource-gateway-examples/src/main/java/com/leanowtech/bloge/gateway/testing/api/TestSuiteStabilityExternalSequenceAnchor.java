@@ -40,6 +40,17 @@ public interface TestSuiteStabilityExternalSequenceAnchor extends AutoCloseable 
                 false, "UNAVAILABLE", 0, 0, 0, null, 0, 0);
     }
 
+    /** @return aggregate bootstrap-root capability without identities or key material */
+    default ExternalSequenceAnchorBootstrapRootTrustStore.Descriptor
+            bootstrapRootDescriptor() {
+        return ExternalSequenceAnchorBootstrapRootTrustStore.unavailableDescriptor();
+    }
+
+    /** @return aggregate bootstrap-root chain state without remote I/O */
+    default ExternalSequenceAnchorBootstrapRootTrustStore.Snapshot bootstrapRootSnapshot() {
+        return ExternalSequenceAnchorBootstrapRootTrustStore.unavailableSnapshot();
+    }
+
     /** Static or unavailable implementations own no refresh resources. */
     @Override
     default void close() {

@@ -233,6 +233,19 @@ public final class ConfiguredExternalSequenceAnchorReceiptTrustStore
                 active, null, 0, 0);
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public ExternalSequenceAnchorBootstrapRootTrustStore.Descriptor
+            bootstrapRootDescriptor() {
+        return rootTrustStore.descriptor();
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public ExternalSequenceAnchorBootstrapRootTrustStore.Snapshot bootstrapRootSnapshot() {
+        return rootTrustStore.snapshot();
+    }
+
     ExternalSequenceAnchorTrustPublication publication() {
         return publication;
     }

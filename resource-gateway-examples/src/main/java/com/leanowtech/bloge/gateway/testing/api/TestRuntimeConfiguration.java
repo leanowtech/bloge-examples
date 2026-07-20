@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservati
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityObservationLedgerLifecycleAttestationService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteStabilityTrendAttestationService;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseExternalSequenceAnchorBootstrapRootPublicationFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableTestExecutionCheckpointRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseFixtureBundleRepository;
@@ -88,6 +89,15 @@ import java.util.UUID;
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
 public class TestRuntimeConfiguration {
+
+    private static final String TEST_SECRET_EXTERNAL_ANCHOR_PREFIX =
+            "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor";
+    private static final String SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX =
+            "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor";
+    private static final String TEST_SECRET_SCOPE_PROPERTY =
+            "gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id";
+    private static final String SUITE_STABILITY_SCOPE_PROPERTY =
+            "gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id";
 
     /** Creates the profile-gated Spring composition root. */
     public TestRuntimeConfiguration() {
@@ -1480,7 +1490,7 @@ public class TestRuntimeConfiguration {
         }
         return TestSecretAuthorityExternalSequenceAnchor.adapt(buildExternalSequenceAnchor(
                 objectMapper, environment, database,
-                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor",
+                TEST_SECRET_EXTERNAL_ANCHOR_PREFIX,
                 "test-secret", scopeId, trustDomain, anchorSetId, signatureThreshold,
                 maximumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
                 clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback));
@@ -2751,7 +2761,7 @@ public class TestRuntimeConfiguration {
         }
         return buildExternalSequenceAnchor(
                 objectMapper, environment, database,
-                "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor",
+                SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX,
                 "suite-stability", scopeId, trustDomain, anchorSetId, signatureThreshold,
                 maximumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
                 clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback);
@@ -3261,6 +3271,11 @@ public class TestRuntimeConfiguration {
                 prefix + ".managed-trust.enabled", Boolean.class, false));
         boolean required = staging || Boolean.TRUE.equals(environment.getProperty(
                 prefix + ".managed-trust.required", Boolean.class, false));
+        boolean managedBootstrapRoots = Boolean.TRUE.equals(environment.getProperty(
+                prefix + ".managed-trust.bootstrap-roots.enabled", Boolean.class, false));
+        boolean managedBootstrapRootsRequired = staging || Boolean.TRUE.equals(
+                environment.getProperty(prefix
+                        + ".managed-trust.bootstrap-roots.required", Boolean.class, false));
         if (staging && allowInsecureLoopback) {
             throw new IllegalStateException("Staging " + domainLabel
                     + " external anchor requires HTTPS notaries");
@@ -3268,6 +3283,14 @@ public class TestRuntimeConfiguration {
         if (required && !managed) {
             throw new IllegalStateException("Staging " + domainLabel
                     + " external anchor requires managed notary trust");
+        }
+        if (managedBootstrapRoots && !managed) {
+            throw new IllegalStateException("Managed " + domainLabel
+                    + " bootstrap-root trust requires managed notary trust");
+        }
+        if (managedBootstrapRootsRequired && !managedBootstrapRoots) {
+            throw new IllegalStateException("Staging " + domainLabel
+                    + " external anchor requires managed bootstrap-root trust");
         }
         var anchorSettings = new HttpTestSuiteStabilityExternalSequenceAnchor.Settings(
                 Duration.ofMillis(requestTimeoutMillis), Duration.ofSeconds(clockSkewSeconds),
@@ -3320,6 +3343,12 @@ public class TestRuntimeConfiguration {
                 throw new IllegalStateException("Staging " + domainLabel
                         + " external anchor requires an HTTPS managed-trust publication");
             }
+            if (managedBootstrapRoots
+                    && (bootstrapThreshold != 0 || !emptyJsonArray(
+                    objectMapper, bootstrapKeysJson))) {
+                throw new IllegalStateException("Managed " + domainLabel
+                        + " bootstrap-root chain forbids legacy static bootstrap keys");
+            }
             DatabaseTestSuiteStabilityServingInventoryTrustRootFloor databaseFloor =
                     new DatabaseTestSuiteStabilityServingInventoryTrustRootFloor(
                             database.jdbc(), objectMapper, scopeId, trustRootSetId,
@@ -3333,20 +3362,36 @@ public class TestRuntimeConfiguration {
                     Duration.ofSeconds(maximumPublicationLifetimeSeconds),
                     Duration.ofSeconds(trustClockSkewSeconds),
                     Duration.ofSeconds(minimumRemainingValiditySeconds));
-            var trustStore = new DynamicExternalSequenceAnchorReceiptTrustStore(
-                    objectMapper, binding,
+            Set<String> notaryPolicies =
                     ConfiguredTestSuiteStabilityServingInventoryAuthority.parsePolicies(
-                            acceptedPolicies),
-                    bootstrapThreshold,
-                    ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
-                            objectMapper, bootstrapKeysJson),
-                    floor,
+                            acceptedPolicies);
+            DynamicExternalSequenceAnchorReceiptTrustStore.Settings trustSettings =
                     new DynamicExternalSequenceAnchorReceiptTrustStore.Settings(
                             publicationUri, Duration.ofMillis(trustRequestTimeoutMillis),
                             Duration.ofSeconds(refreshIntervalSeconds),
                             Duration.ofSeconds(maximumSnapshotAgeSeconds),
                             Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
-                            trustAllowInsecureLoopback));
+                            trustAllowInsecureLoopback);
+            DynamicExternalSequenceAnchorReceiptTrustStore trustStore;
+            if (managedBootstrapRoots) {
+                ExternalSequenceAnchorBootstrapRootTrustStore rootStore =
+                        buildBootstrapRootTrustStore(objectMapper, environment, database,
+                                prefix, domainLabel, staging, scopeId, trustRootSetId,
+                                bootstrapTrustDomain, trustDomain);
+                try {
+                    trustStore = new DynamicExternalSequenceAnchorReceiptTrustStore(
+                            objectMapper, binding, notaryPolicies, rootStore, floor,
+                            trustSettings);
+                } catch (RuntimeException invalid) {
+                    rootStore.close();
+                    throw invalid;
+                }
+            } else {
+                trustStore = new DynamicExternalSequenceAnchorReceiptTrustStore(
+                        objectMapper, binding, notaryPolicies, bootstrapThreshold,
+                        ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
+                                objectMapper, bootstrapKeysJson), floor, trustSettings);
+            }
             try {
                 return HttpTestSuiteStabilityExternalSequenceAnchor.fromTrustStore(
                         objectMapper, trustDomain, anchorSetId, signatureThreshold,
@@ -3360,6 +3405,138 @@ public class TestRuntimeConfiguration {
         } catch (Exception invalid) {
             throw new IllegalStateException("Managed " + domainLabel
                     + " external anchor configuration is invalid", invalid);
+        }
+    }
+
+    /**
+     * Builds one domain-owned, complete-chain bootstrap-root view and its dedicated durable floor.
+     *
+     * <p>The deployment pins only a strict public genesis document. Every usable root generation
+     * is replayed from that genesis before the floor advances. Identity, policy, lifecycle, source,
+     * and transport settings are validated before the store can be transferred to receipt trust.</p>
+     */
+    static ExternalSequenceAnchorBootstrapRootTrustStore buildBootstrapRootTrustStore(
+            ObjectMapper objectMapper,
+            Environment environment,
+            TestRuntimeDatabase database,
+            String externalAnchorPrefix,
+            String domainLabel,
+            boolean staging,
+            String scopeId,
+            String trustRootSetId,
+            String bootstrapTrustDomain,
+            String notaryTrustDomain) {
+        String prefix = externalAnchorPrefix + ".managed-trust.bootstrap-roots";
+        String genesisJson = environment.getProperty(prefix + ".genesis-json", "");
+        String acceptedPolicies = environment.getProperty(
+                prefix + ".accepted-policy-fingerprints", "");
+        URI bundleUri = URI.create(environment.getProperty(prefix + ".bundle-uri", ""));
+        long requestTimeoutMillis = environment.getProperty(
+                prefix + ".request-timeout-ms", Long.class, 3000L);
+        long refreshIntervalSeconds = environment.getProperty(
+                prefix + ".refresh-interval-seconds", Long.class, 30L);
+        long maximumSnapshotAgeSeconds = environment.getProperty(
+                prefix + ".maximum-snapshot-age-seconds", Long.class, 60L);
+        long unknownKeyRefreshIntervalSeconds = environment.getProperty(
+                prefix + ".unknown-key-refresh-interval-seconds", Long.class, 5L);
+        long maximumRootLifetimeSeconds = environment.getProperty(
+                prefix + ".maximum-root-lifetime-seconds", Long.class, 2_592_000L);
+        long rootClockSkewSeconds = environment.getProperty(
+                prefix + ".clock-skew-seconds", Long.class, 5L);
+        long minimumRemainingValiditySeconds = environment.getProperty(
+                prefix + ".minimum-remaining-validity-seconds", Long.class, 30L);
+        int maximumTransitions = environment.getProperty(
+                prefix + ".maximum-transitions", Integer.class, 128);
+        boolean allowInsecureLoopback = Boolean.TRUE.equals(environment.getProperty(
+                prefix + ".allow-insecure-loopback", Boolean.class, false));
+        if (staging && allowInsecureLoopback) {
+            throw new IllegalStateException("Staging " + domainLabel
+                    + " bootstrap-root bundle requires HTTPS");
+        }
+
+        ExternalSequenceAnchorBootstrapRootGenesis genesis =
+                ExternalSequenceAnchorBootstrapRootGenesis.fromJson(objectMapper, genesisJson);
+        if (!genesis.scopeId().equals(scopeId)
+                || !genesis.rootSetId().equals(trustRootSetId)
+                || !genesis.trustDomain().equals(bootstrapTrustDomain)
+                || genesis.trustDomain().equals(notaryTrustDomain)) {
+            throw new IllegalStateException("Managed " + domainLabel
+                    + " bootstrap-root genesis does not match the external-anchor binding");
+        }
+        if (staging && genesis.maximumFaults() < 1) {
+            throw new IllegalStateException("Staging " + domainLabel
+                    + " bootstrap-root genesis requires Byzantine fault tolerance");
+        }
+        requireBootstrapRootDomainIsolation(environment, externalAnchorPrefix,
+                scopeId, trustRootSetId, notaryTrustDomain, bootstrapTrustDomain);
+
+        var binding = new ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding(
+                scopeId, trustRootSetId, bootstrapTrustDomain,
+                genesis.signatureThreshold(), genesis.maximumFaults(),
+                Duration.ofSeconds(maximumRootLifetimeSeconds),
+                Duration.ofSeconds(rootClockSkewSeconds),
+                Duration.ofSeconds(minimumRemainingValiditySeconds), maximumTransitions);
+        var floor = new DatabaseExternalSequenceAnchorBootstrapRootPublicationFloor(
+                database.jdbc(), objectMapper, scopeId, trustRootSetId,
+                database.transactionManager());
+        floor.init();
+        return new DynamicExternalSequenceAnchorBootstrapRootTrustStore(
+                objectMapper, binding,
+                ConfiguredTestSuiteStabilityServingInventoryAuthority.parsePolicies(
+                        acceptedPolicies),
+                genesis, floor,
+                new DynamicExternalSequenceAnchorBootstrapRootTrustStore.Settings(
+                        bundleUri, Duration.ofMillis(requestTimeoutMillis),
+                        Duration.ofSeconds(refreshIntervalSeconds),
+                        Duration.ofSeconds(maximumSnapshotAgeSeconds),
+                        Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
+                        allowInsecureLoopback));
+    }
+
+    /** Rejects accidental trust-domain or durable-floor aliasing between product domains. */
+    private static void requireBootstrapRootDomainIsolation(
+            Environment environment,
+            String prefix,
+            String scopeId,
+            String rootSetId,
+            String notaryTrustDomain,
+            String bootstrapTrustDomain) {
+        String otherPrefix;
+        String otherScopeProperty;
+        if (TEST_SECRET_EXTERNAL_ANCHOR_PREFIX.equals(prefix)) {
+            otherPrefix = SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX;
+            otherScopeProperty = SUITE_STABILITY_SCOPE_PROPERTY;
+        } else if (SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX.equals(prefix)) {
+            otherPrefix = TEST_SECRET_EXTERNAL_ANCHOR_PREFIX;
+            otherScopeProperty = TEST_SECRET_SCOPE_PROPERTY;
+        } else {
+            throw new IllegalArgumentException("Unknown external-anchor product domain");
+        }
+        boolean otherEnabled = Boolean.TRUE.equals(environment.getProperty(
+                otherPrefix + ".enabled", Boolean.class, false));
+        boolean otherManaged = Boolean.TRUE.equals(environment.getProperty(
+                otherPrefix + ".managed-trust.enabled", Boolean.class, false));
+        boolean otherManagedRoots = Boolean.TRUE.equals(environment.getProperty(
+                otherPrefix + ".managed-trust.bootstrap-roots.enabled",
+                Boolean.class, false));
+        if (!otherEnabled || !otherManaged || !otherManagedRoots) {
+            return;
+        }
+        String otherScopeId = environment.getProperty(otherScopeProperty, "");
+        String otherRootSetId = environment.getProperty(
+                otherPrefix + ".managed-trust.trust-root-set-id", "");
+        String otherNotaryTrustDomain = environment.getProperty(
+                otherPrefix + ".trust-domain", "");
+        String otherBootstrapTrustDomain = environment.getProperty(
+                otherPrefix + ".managed-trust.bootstrap-trust-domain", "");
+        boolean sameFloor = scopeId.equals(otherScopeId) && rootSetId.equals(otherRootSetId);
+        boolean sharedTrustDomain = notaryTrustDomain.equals(otherNotaryTrustDomain)
+                || notaryTrustDomain.equals(otherBootstrapTrustDomain)
+                || bootstrapTrustDomain.equals(otherNotaryTrustDomain)
+                || bootstrapTrustDomain.equals(otherBootstrapTrustDomain);
+        if (sameFloor || sharedTrustDomain) {
+            throw new IllegalStateException(
+                    "External-anchor product domains must not share trust domains or root floors");
         }
     }
 

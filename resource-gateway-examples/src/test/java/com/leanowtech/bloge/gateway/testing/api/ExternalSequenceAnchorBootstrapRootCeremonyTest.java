@@ -250,6 +250,23 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
     }
 
     @Test
+    void deploymentGenesisParserRejectsDuplicateUnknownAndTrailingContent() throws Exception {
+        String json = objectMapper.writeValueAsString(genesis);
+
+        assertThat(ExternalSequenceAnchorBootstrapRootGenesis.fromJson(objectMapper, json))
+                .isEqualTo(genesis);
+        assertThatThrownBy(() -> ExternalSequenceAnchorBootstrapRootGenesis.fromJson(
+                objectMapper, json.replaceFirst("\\{", "{\"scopeId\":\"shadow\",")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ExternalSequenceAnchorBootstrapRootGenesis.fromJson(
+                objectMapper, json.replaceFirst("\\{", "{\"unexpected\":true,")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ExternalSequenceAnchorBootstrapRootGenesis.fromJson(
+                objectMapper, json + " {}"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void unknownRootKeyRotatesWithoutRestartAndConcurrentBurstFetchesOnce()
             throws Exception {
         InMemoryFloor floor = new InMemoryFloor();
@@ -487,12 +504,21 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
         assertThat(receiptStore.refreshNow()).isTrue();
         assertThat(rootStore.snapshot().headSequence()).isEqualTo(2);
         assertThat(receiptStore.snapshot().publicationSequence()).isEqualTo(2);
+        assertThat(receiptStore.bootstrapRootDescriptor()).satisfies(descriptor -> {
+            assertThat(descriptor.managedChain()).isTrue();
+            assertThat(descriptor.restartFreeRotation()).isTrue();
+            assertThat(descriptor.completeGenesisReplay()).isTrue();
+            assertThat(descriptor.durableFloor()).isTrue();
+        });
+        assertThat(receiptStore.bootstrapRootSnapshot().headSequence()).isEqualTo(2);
         assertThat(rootFetcher.fetchCount()).isEqualTo(2);
 
         assertThat(rootStore.refreshNow()).isFalse();
         assertThat(rootStore.snapshot().status()).isEqualTo("REFRESH_FAILED");
         assertThat(receiptStore.descriptor().available()).isFalse();
         assertThat(receiptStore.snapshot().status()).isEqualTo("ROOT_UNAVAILABLE");
+        assertThat(receiptStore.bootstrapRootSnapshot().status())
+                .isEqualTo("REFRESH_FAILED");
 
         receiptStore.close();
         assertThat(rootStore.snapshot().status()).isEqualTo("CLOSED");

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-genesis-v1.schema.json",
+  "title": "Resource Gateway External Sequence Anchor Bootstrap Root Genesis v1",
+  "$ref": "external-sequence-anchor-bootstrap-root-bundle-v1.schema.json#/$defs/genesis"
+}

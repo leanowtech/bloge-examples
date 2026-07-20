@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
+import org.springframework.mock.env.MockEnvironment;
 
 import java.time.Instant;
 import java.util.List;
@@ -162,6 +163,23 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
                 "[]", "[]", 3000, 5, 15, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("does not meet the deployment fault policy");
+    }
+
+    @Test
+    void stagingSuiteAnchorRequiresManagedBootstrapRootChain() {
+        String prefix =
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor";
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty(prefix + ".managed-trust.enabled", "true")
+                .withProperty(prefix + ".managed-trust.bootstrap-roots.enabled", "false");
+        environment.setActiveProfiles("staging");
+
+        assertThatThrownBy(() -> configuration.testSuiteStabilityExternalSequenceAnchor(
+                new ObjectMapper().findAndRegisterModules(), environment,
+                mock(TestRuntimeDatabase.class), "scope-a", "inventory-transparency",
+                "notary-set-a", 3, 1, 1, "[]", "[]", 3000, 5, 15, false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires managed bootstrap-root trust");
     }
 
     private TestSuiteStabilityAuthorityCohortPolicy policy(

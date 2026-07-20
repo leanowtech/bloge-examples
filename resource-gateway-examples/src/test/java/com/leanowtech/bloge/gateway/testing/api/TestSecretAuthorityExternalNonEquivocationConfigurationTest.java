@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
+import org.springframework.mock.env.MockEnvironment;
 
 import java.security.KeyPairGenerator;
 import java.util.ArrayList;
@@ -161,6 +162,66 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
                 "[]", "[]", 3000, 5, 15, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("requires managed notary trust");
+    }
+
+    @Test
+    void stagingRejectsManagedNotaryTrustWithoutManagedBootstrapRootChain() {
+        String prefix =
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor";
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty(prefix + ".managed-trust.enabled", "true")
+                .withProperty(prefix + ".managed-trust.bootstrap-roots.enabled", "false");
+        environment.setActiveProfiles("staging");
+
+        assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
+                objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
+                "secret-transparency", "notary-set-a", 3, 1, 1,
+                "[]", "[]", 3000, 5, 15, false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires managed bootstrap-root trust");
+    }
+
+    @Test
+    void managedBootstrapRootChainCannotRunWithoutManagedNotaryTrust() {
+        String prefix =
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor";
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty(prefix + ".managed-trust.enabled", "false")
+                .withProperty(prefix + ".managed-trust.bootstrap-roots.enabled", "true");
+        environment.setActiveProfiles("test");
+
+        assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
+                objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
+                "secret-transparency", "notary-set-a", 3, 1, 1,
+                "[]", "[]", 3000, 5, 15, false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires managed notary trust");
+    }
+
+    @Test
+    void managedBootstrapRootChainRejectsAmbiguousLegacyRootKeys() {
+        String prefix =
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor";
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty(prefix + ".managed-trust.enabled", "true")
+                .withProperty(prefix + ".managed-trust.trust-root-set-id", "secret-roots")
+                .withProperty(prefix + ".managed-trust.bootstrap-trust-domain",
+                        "secret-root.example")
+                .withProperty(prefix + ".managed-trust.accepted-policy-fingerprints",
+                        "sha256:" + "a".repeat(64))
+                .withProperty(prefix + ".managed-trust.publication-uri",
+                        "https://notary-trust.example/current")
+                .withProperty(prefix + ".managed-trust.bootstrap-signature-threshold", "1")
+                .withProperty(prefix + ".managed-trust.bootstrap-authority-keys-json", "[{}]")
+                .withProperty(prefix + ".managed-trust.bootstrap-roots.enabled", "true");
+        environment.setActiveProfiles("test");
+
+        assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
+                objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
+                "secret-transparency", "notary-set-a", 3, 1, 1,
+                "[]", "[]", 3000, 5, 15, false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("forbids legacy static bootstrap keys");
     }
 
     private static TestRuntimeDatabase database(String suffix) {

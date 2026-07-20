@@ -28,6 +28,18 @@ public interface ExternalSequenceAnchorBootstrapRootTrustStore extends AutoClose
     /** @return aggregate key-free chain and refresh state */
     Snapshot snapshot();
 
+    /** @return an unavailable capability value for trust paths without a root-chain projection */
+    static Descriptor unavailableDescriptor() {
+        return new Descriptor(Descriptor.SCHEMA_VERSION, false, false, false,
+                false, false, 0, 0, 0);
+    }
+
+    /** @return an unavailable state value for trust paths without a root-chain projection */
+    static Snapshot unavailableSnapshot() {
+        return new Snapshot(Snapshot.SCHEMA_VERSION, false, "UNAVAILABLE",
+                0, 0, 0, 0, null, null, 0, 0);
+    }
+
     /** Immutable configured stores have no owned resources. */
     @Override
     default void close() {

@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorReceiptTrustStore;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
@@ -275,6 +276,18 @@ public class ToolStudioIntegrationService {
                 testExecutionEndpointEnabled && suiteAnchorTrust.durableFloor());
         features.put("suiteStabilityExternalNotaryTrustReady",
                 testExecutionEndpointEnabled && suiteAnchorTrust.ready());
+        features.put("managedSuiteStabilityExternalNotaryBootstrapRoots",
+                testExecutionEndpointEnabled && suiteAnchorTrust.managedBootstrapRoots());
+        features.put("restartFreeSuiteStabilityExternalNotaryBootstrapRootRotation",
+                testExecutionEndpointEnabled && suiteAnchorTrust.restartFreeBootstrapRootRotation());
+        features.put("completeSuiteStabilityExternalNotaryBootstrapRootReplay",
+                testExecutionEndpointEnabled && suiteAnchorTrust.completeBootstrapRootReplay());
+        features.put("durableSuiteStabilityExternalNotaryBootstrapRootFloor",
+                testExecutionEndpointEnabled && suiteAnchorTrust.durableBootstrapRootFloor());
+        features.put("suiteStabilityExternalNotaryBootstrapRootsReady",
+                testExecutionEndpointEnabled && suiteAnchorTrust.bootstrapRootsReady());
+        features.put("suiteStabilityExternalNotaryTrustChainReady",
+                testExecutionEndpointEnabled && suiteAnchorTrust.trustChainReady());
         ExternalAnchorTrustState secretAnchorTrust = currentTestSecretAnchorTrust();
         features.put("managedTestSecretExternalNotaryTrust",
                 testExecutionEndpointEnabled && secretAnchorTrust.managed());
@@ -284,6 +297,18 @@ public class ToolStudioIntegrationService {
                 testExecutionEndpointEnabled && secretAnchorTrust.durableFloor());
         features.put("testSecretExternalNotaryTrustReady",
                 testExecutionEndpointEnabled && secretAnchorTrust.ready());
+        features.put("managedTestSecretExternalNotaryBootstrapRoots",
+                testExecutionEndpointEnabled && secretAnchorTrust.managedBootstrapRoots());
+        features.put("restartFreeTestSecretExternalNotaryBootstrapRootRotation",
+                testExecutionEndpointEnabled && secretAnchorTrust.restartFreeBootstrapRootRotation());
+        features.put("completeTestSecretExternalNotaryBootstrapRootReplay",
+                testExecutionEndpointEnabled && secretAnchorTrust.completeBootstrapRootReplay());
+        features.put("durableTestSecretExternalNotaryBootstrapRootFloor",
+                testExecutionEndpointEnabled && secretAnchorTrust.durableBootstrapRootFloor());
+        features.put("testSecretExternalNotaryBootstrapRootsReady",
+                testExecutionEndpointEnabled && secretAnchorTrust.bootstrapRootsReady());
+        features.put("testSecretExternalNotaryTrustChainReady",
+                testExecutionEndpointEnabled && secretAnchorTrust.trustChainReady());
         features.put("externalTestSecretAuthority",
                 testExecutionEndpointEnabled && secretAuthorityReady);
         features.put("durableTestSecretReauthorization",
@@ -465,7 +490,8 @@ public class ToolStudioIntegrationService {
                 return ExternalAnchorTrustState.unavailable();
             }
             TestSuiteStabilityExternalSequenceAnchor anchor = anchors.getFirst();
-            return ExternalAnchorTrustState.from(anchor.descriptor(), anchor.trustSnapshot());
+            return ExternalAnchorTrustState.from(anchor.descriptor(), anchor.trustSnapshot(),
+                    anchor.bootstrapRootDescriptor(), anchor.bootstrapRootSnapshot());
         } catch (RuntimeException unavailable) {
             return ExternalAnchorTrustState.unavailable();
         }
@@ -482,7 +508,8 @@ public class ToolStudioIntegrationService {
                 return ExternalAnchorTrustState.unavailable();
             }
             TestSecretAuthorityExternalSequenceAnchor anchor = anchors.getFirst();
-            return ExternalAnchorTrustState.from(anchor.descriptor(), anchor.trustSnapshot());
+            return ExternalAnchorTrustState.from(anchor.descriptor(), anchor.trustSnapshot(),
+                    anchor.bootstrapRootDescriptor(), anchor.bootstrapRootSnapshot());
         } catch (RuntimeException unavailable) {
             return ExternalAnchorTrustState.unavailable();
         }
@@ -492,24 +519,41 @@ public class ToolStudioIntegrationService {
             boolean managed,
             boolean restartFreeRotation,
             boolean durableFloor,
-            boolean ready) {
+            boolean ready,
+            boolean managedBootstrapRoots,
+            boolean restartFreeBootstrapRootRotation,
+            boolean completeBootstrapRootReplay,
+            boolean durableBootstrapRootFloor,
+            boolean bootstrapRootsReady,
+            boolean trustChainReady) {
 
         private static ExternalAnchorTrustState from(
                 TestSuiteStabilityExternalSequenceAnchor.Descriptor descriptor,
-                ExternalSequenceAnchorReceiptTrustStore.Snapshot snapshot) {
+                ExternalSequenceAnchorReceiptTrustStore.Snapshot snapshot,
+                ExternalSequenceAnchorBootstrapRootTrustStore.Descriptor rootDescriptor,
+                ExternalSequenceAnchorBootstrapRootTrustStore.Snapshot rootSnapshot) {
             boolean managed = Boolean.TRUE.equals(
                     descriptor.properties().get("managedTrustPublication"));
             boolean restartFree = Boolean.TRUE.equals(
                     descriptor.properties().get("restartFreeNotaryKeyRotation"));
             boolean durable = Boolean.TRUE.equals(
                     descriptor.properties().get("durableTrustPublicationFloor"));
-            return new ExternalAnchorTrustState(managed, restartFree, durable,
-                    managed && restartFree && durable && descriptor.available()
-                            && snapshot.available());
+            boolean managedRoots = rootDescriptor.managedChain();
+            boolean restartFreeRoots = rootDescriptor.restartFreeRotation();
+            boolean completeReplay = rootDescriptor.completeGenesisReplay();
+            boolean durableRootFloor = rootDescriptor.durableFloor();
+            boolean rootsReady = managedRoots && restartFreeRoots && completeReplay
+                    && durableRootFloor && rootDescriptor.available() && rootSnapshot.available();
+            boolean notaryReady = managed && restartFree && durable
+                    && descriptor.available() && snapshot.available();
+            return new ExternalAnchorTrustState(managed, restartFree, durable, notaryReady,
+                    managedRoots, restartFreeRoots, completeReplay, durableRootFloor, rootsReady,
+                    notaryReady && rootsReady);
         }
 
         private static ExternalAnchorTrustState unavailable() {
-            return new ExternalAnchorTrustState(false, false, false, false);
+            return new ExternalAnchorTrustState(false, false, false, false,
+                    false, false, false, false, false, false);
         }
     }
 

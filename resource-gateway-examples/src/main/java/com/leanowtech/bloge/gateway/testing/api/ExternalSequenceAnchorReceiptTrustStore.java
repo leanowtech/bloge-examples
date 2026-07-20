@@ -27,6 +27,21 @@ public interface ExternalSequenceAnchorReceiptTrustStore extends AutoCloseable {
     /** @return aggregate key-free refresh and lifecycle state */
     Snapshot snapshot();
 
+    /**
+     * Returns the aggregate bootstrap-root capability behind a managed notary publication.
+     *
+     * <p>Static receipt trust and legacy implementations return an unavailable projection rather
+     * than implying that bootstrap-root rotation is managed.</p>
+     */
+    default ExternalSequenceAnchorBootstrapRootTrustStore.Descriptor bootstrapRootDescriptor() {
+        return ExternalSequenceAnchorBootstrapRootTrustStore.unavailableDescriptor();
+    }
+
+    /** @return aggregate bootstrap-root chain state without identities or trust material */
+    default ExternalSequenceAnchorBootstrapRootTrustStore.Snapshot bootstrapRootSnapshot() {
+        return ExternalSequenceAnchorBootstrapRootTrustStore.unavailableSnapshot();
+    }
+
     /** Static stores have no owned resources. */
     @Override
     default void close() {

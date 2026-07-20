@@ -226,6 +226,19 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
                 observed.refreshSuccessCount(), observed.refreshFailureCount());
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public ExternalSequenceAnchorBootstrapRootTrustStore.Descriptor
+            bootstrapRootDescriptor() {
+        return rootTrustStore.descriptor();
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public ExternalSequenceAnchorBootstrapRootTrustStore.Snapshot bootstrapRootSnapshot() {
+        return rootTrustStore.snapshot();
+    }
+
     /** Stops background refresh and permanently closes this local trust view. */
     @Override
     public synchronized void close() {

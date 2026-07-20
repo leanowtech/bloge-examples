@@ -1206,10 +1206,14 @@ signed inventory、managed roots 和
 `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED` 同时开启，并预检外部
 notary trust/set、非空 endpoint、managed trust publication、bootstrap root quorum、HTTPS、
 `3f+1 / 2f+1` quorum 和 receipt timing。staging 禁止静态 notary key array；notary 验签公钥通过
-bootstrap-quorum-signed HTTPS/ETag publication 免重启轮换，publication rollback/fork/gap 或刷新失败
-立即关闭外部锚定。最小拓扑是四个独立 failure domain、三个有效回执；完整变量见脚本 `--help`、
-Testing Control Plane API 与
-[managed external-notary trust verification](resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md)。
+bootstrap-quorum-signed HTTPS/ETag publication 免重启轮换。bootstrap roots 也不再是 staging 静态
+key array：每个业务域必须提供 `...EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_GENESIS_JSON`、accepted root
+policy 和 strict HTTPS complete-chain bundle URI；应用从 pinned genesis 完整重放 successor chain，并在
+专用 durable floor 成功后才授权 notary publication。脚本和 Java 都拒绝 legacy root fallback、非
+Byzantine genesis、跨域 trust-domain/floor alias；root 或 publication rollback/fork/gap/刷新失败会立即
+关闭外部锚定。最小 notary 与 root 拓扑均为四个独立 authority、三个有效签名。完整变量见脚本
+`--help`、Testing Control Plane API 与
+[bootstrap-root ceremony and runtime wiring verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md)。
 首次 request-index 跨版本升级应从 `LEGACY_READ_WRITE` 开始；完整配置和三阶段切换门禁见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 与
 [request-index rolling-upgrade verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md)。

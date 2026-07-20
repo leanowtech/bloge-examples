@@ -329,9 +329,12 @@ legacy static runtime keys cannot be mixed. Staging also requires an external `3
 challenge-bound notary quorum for both the composite publication/witness stream and the atomic
 runtime-root stream. External compare-and-append completes before each local database floor; a
 signed conflict is fatal, while an external success followed by local failure is exact-retry safe.
-The smallest staging topology is four independent notaries with three accepted receipts. The demo
-startup script validates this configuration before build or Java startup. Bootstrap-root ceremony,
-bootstrap-root hot rotation, mTLS/pinning, authority HA/chaos and DR certification remain open.
+The smallest staging topology is four independent notaries with three accepted receipts. Notary
+bootstrap roots are themselves restart-free: staging pins one public genesis, replays a complete
+cross-signed root chain from a strict HTTPS bundle, and advances a dedicated durable floor before a
+root head becomes usable. The demo startup script validates this configuration before build or Java
+startup. Ceremony tooling, HSM/KMS custody, mTLS/pinning, authority HA/chaos and DR certification
+remain open.
 A changed member topology still
 requires a coordinated new cohort generation.
 See the
@@ -396,9 +399,14 @@ Staging additionally requires both mutable ordering streams to be anchored outsi
 Resource Gateway database. Set
 `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED=true` and configure one
 stable trust domain/set id and one HTTPS endpoint plus distinct failure domain per notary. Staging
-also requires `...EXTERNAL_ANCHOR_MANAGED_TRUST_ENABLED=true`: an independent bootstrap-root quorum
-signs a strict HTTPS/ETag publication containing the exact notary key lifecycle set, policy,
-quorum, validity window and monotonic predecessor chain. Static notary keys must be `[]`. Unknown
+also requires `...EXTERNAL_ANCHOR_MANAGED_TRUST_ENABLED=true` and
+`...EXTERNAL_ANCHOR_BOOTSTRAP_ROOTS_ENABLED=true`. Deployment pins the public-only
+`...EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_GENESIS_JSON`; a strict HTTPS
+`...EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_BUNDLE_URI` supplies the complete cross-signed successor chain.
+Only a full genesis replay accepted by its dedicated database floor can authorize the strict
+HTTPS/ETag notary publication containing the exact key lifecycle set, policy, quorum, validity
+window and monotonic predecessor chain. Legacy bootstrap thresholds/key arrays and static notary
+keys must be `0`/`[]`. Unknown
 receipt keys trigger one cooldown-bound refresh, so routine key rotation and revocation require no
 Resource Gateway restart; any refresh, signature, lifecycle, rollback, fork, gap or durable-floor
 ambiguity immediately fails receipt verification closed. The built-in policy uses `3f+1`
@@ -411,9 +419,10 @@ threshold remains. The external compare-and-append commits before the local data
 external success followed by local failure is safe to retry, while no local generation can become
 visible without an external checkpoint. This closes complete database-backup rollback only under
 the declared `<=f` Byzantine and independent-failure-domain assumptions; deploying, certifying,
-backing up, and monitoring the external notary service remains a deployment responsibility.
-The wire Schema, failure matrix and remaining bootstrap ceremony limits are documented in the
-[managed external-notary trust verification](../docs/resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md).
+backing up, and monitoring the external notary service remains a deployment responsibility. The
+genesis and complete bundle Schemas, failure matrix, runtime wiring, and remaining ceremony limits
+are documented in the
+[bootstrap-root ceremony verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md).
 
 Scope, cohort, inventory/witness trust, managed-root freshness, external-anchor quorum/timing, and
 lease settings are checked by

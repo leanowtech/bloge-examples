@@ -73,8 +73,12 @@ Environment:
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ROOT_SET_ID  required stable trust-root set id
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_TRUST_DOMAIN  required independent bootstrap domain
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_POLICY_FINGERPRINTS  required accepted policies
-  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_THRESHOLD  required; 1..32
-  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_KEYS_JSON  required public Ed25519 bootstrap keys
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOTS_ENABLED  required true
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_GENESIS_JSON  required public-only pinned genesis
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_POLICY_FINGERPRINTS  required accepted root policies
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_BUNDLE_URI  required HTTPS complete-chain bundle
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_THRESHOLD  legacy; must be 0
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_KEYS_JSON  legacy; must be []
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS  default: 3000; 100..30000
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS  default: 5; 0..30
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS  default: 15; 1..60
@@ -101,8 +105,12 @@ Environment:
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ROOT_SET_ID  required stable trust-root set id
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_TRUST_DOMAIN  required independent bootstrap domain
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_POLICY_FINGERPRINTS  required accepted policies
-  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_THRESHOLD  required; 1..32
-  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_KEYS_JSON  required public Ed25519 bootstrap keys
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOTS_ENABLED  required true
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_GENESIS_JSON  required public-only pinned genesis
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_POLICY_FINGERPRINTS  required accepted root policies
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_BUNDLE_URI  required HTTPS complete-chain bundle
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_THRESHOLD  legacy; must be 0
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_KEYS_JSON  legacy; must be []
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS  default: 3000; 100..30000
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS  default: 5; 0..30
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS  default: 15; 1..60
@@ -154,18 +162,27 @@ validate_managed_external_anchor_trust() {
     local prefix="$1"
     local label="$2"
     local managed_var="${prefix}_MANAGED_TRUST_ENABLED"
+    local managed_roots_var="${prefix}_BOOTSTRAP_ROOTS_ENABLED"
     local static_keys_var="${prefix}_AUTHORITY_KEYS_JSON"
     local notary_domain_var="${prefix}_TRUST_DOMAIN"
     local trust_uri_var="${prefix}_TRUST_URI"
     local root_set_var="${prefix}_TRUST_ROOT_SET_ID"
     local bootstrap_domain_var="${prefix}_BOOTSTRAP_TRUST_DOMAIN"
     local policy_var="${prefix}_TRUST_POLICY_FINGERPRINTS"
-    local threshold_var="${prefix}_BOOTSTRAP_THRESHOLD"
+    local legacy_threshold_var="${prefix}_BOOTSTRAP_THRESHOLD"
     local bootstrap_keys_var="${prefix}_BOOTSTRAP_KEYS_JSON"
     local allow_loopback_var="${prefix}_TRUST_ALLOW_INSECURE_LOOPBACK"
+    local root_genesis_var="${prefix}_BOOTSTRAP_ROOT_GENESIS_JSON"
+    local root_policy_var="${prefix}_BOOTSTRAP_ROOT_POLICY_FINGERPRINTS"
+    local root_bundle_var="${prefix}_BOOTSTRAP_ROOT_BUNDLE_URI"
+    local root_allow_loopback_var="${prefix}_BOOTSTRAP_ROOT_ALLOW_INSECURE_LOOPBACK"
 
     if ! truthy "${!managed_var:-true}"; then
         echo "Staging ${label} external anchor requires managed notary trust." >&2
+        return 1
+    fi
+    if ! truthy "${!managed_roots_var:-true}"; then
+        echo "Staging ${label} external anchor requires managed bootstrap-root trust." >&2
         return 1
     fi
     if ! printf '%s' "${!static_keys_var:-[]}" |
@@ -175,8 +192,9 @@ validate_managed_external_anchor_trust() {
     fi
     if [ -z "${!trust_uri_var:-}" ] || [ -z "${!root_set_var:-}" ] ||
         [ -z "${!bootstrap_domain_var:-}" ] || [ -z "${!policy_var:-}" ] ||
-        [ -z "${!threshold_var:-}" ] || [ -z "${!bootstrap_keys_var:-}" ]; then
-        echo "Managed ${label} external anchor requires a trust publication, policy, and bootstrap quorum." >&2
+        [ -z "${!root_genesis_var:-}" ] || [ -z "${!root_policy_var:-}" ] ||
+        [ -z "${!root_bundle_var:-}" ]; then
+        echo "Managed ${label} external anchor requires notary trust plus a pinned genesis and root bundle." >&2
         return 1
     fi
     case "${!trust_uri_var}" in
@@ -190,6 +208,17 @@ validate_managed_external_anchor_trust() {
         echo "Staging ${label} external-anchor trust publication must not allow insecure loopback." >&2
         return 1
     fi
+    case "${!root_bundle_var}" in
+        https://*) ;;
+        *)
+            echo "Managed ${label} bootstrap-root bundle must use HTTPS." >&2
+            return 1
+            ;;
+    esac
+    if truthy "${!root_allow_loopback_var:-false}"; then
+        echo "Staging ${label} bootstrap-root bundle must not allow insecure loopback." >&2
+        return 1
+    fi
     if ! printf '%s\n%s\n' "${!root_set_var}" "${!bootstrap_domain_var}" |
         grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
         [ "${!bootstrap_domain_var}" = "${!notary_domain_var:-}" ]; then
@@ -201,19 +230,33 @@ validate_managed_external_anchor_trust() {
         echo "Managed ${label} external-anchor trust policy fingerprints are invalid." >&2
         return 1
     fi
-    case "${!bootstrap_keys_var}" in
-        \[*\]) ;;
+    case "${!root_genesis_var}" in
+        \{*\}) ;;
         *)
-            echo "Managed ${label} external-anchor bootstrap keys must be a JSON array." >&2
+            echo "Managed ${label} bootstrap-root genesis must be a JSON object." >&2
             return 1
             ;;
     esac
-    if printf '%s' "${!bootstrap_keys_var}" | grep -Eq '^\[[[:space:]]*\]$'; then
-        echo "Managed ${label} external-anchor bootstrap keys must be non-empty." >&2
+    if printf '%s' "${!root_genesis_var}" |
+        grep -Eiq '"(privateKey|privateKeyBase64|secret|credential)"[[:space:]]*:'; then
+        echo "Managed ${label} bootstrap-root genesis must contain public material only." >&2
+        return 1
+    fi
+    if ! printf '%s' "${!root_policy_var}" |
+        grep -Eq '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31}$'; then
+        echo "Managed ${label} bootstrap-root policy fingerprints are invalid." >&2
+        return 1
+    fi
+    if ! printf '%s' "${!bootstrap_keys_var:-[]}" |
+        grep -Eq '^\[[[:space:]]*\]$'; then
+        echo "Managed ${label} bootstrap-root chain forbids legacy static bootstrap keys." >&2
+        return 1
+    fi
+    if [ -n "${!legacy_threshold_var:-}" ] && [ "${!legacy_threshold_var}" != "0" ]; then
+        echo "Managed ${label} bootstrap-root chain forbids legacy static bootstrap keys." >&2
         return 1
     fi
 
-    local bootstrap_threshold="${!threshold_var}"
     local refresh_var="${prefix}_TRUST_REFRESH_SECONDS"
     local timeout_var="${prefix}_TRUST_TIMEOUT_MS"
     local unknown_var="${prefix}_TRUST_UNKNOWN_KEY_REFRESH_SECONDS"
@@ -228,15 +271,14 @@ validate_managed_external_anchor_trust() {
     local lifetime_seconds="${!lifetime_var:-86400}"
     local skew_seconds="${!skew_var:-5}"
     local remaining_seconds="${!remaining_var:-30}"
-    if printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-        "${bootstrap_threshold}" "${refresh_seconds}" "${timeout_ms}" \
+    if printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+        "${refresh_seconds}" "${timeout_ms}" \
         "${unknown_seconds}" "${maximum_age_seconds}" "${lifetime_seconds}" \
         "${skew_seconds}" "${remaining_seconds}" | grep -Eqv '^(0|[1-9][0-9]*)$'; then
         echo "Managed ${label} external-anchor trust timing values must be canonical integers." >&2
         return 1
     fi
-    if [ "${bootstrap_threshold}" -lt 1 ] || [ "${bootstrap_threshold}" -gt 32 ] ||
-        [ "${refresh_seconds}" -lt 1 ] || [ "${refresh_seconds}" -gt 3600 ] ||
+    if [ "${refresh_seconds}" -lt 1 ] || [ "${refresh_seconds}" -gt 3600 ] ||
         [ "${timeout_ms}" -lt 100 ] || [ "${timeout_ms}" -gt 30000 ] ||
         [ "${unknown_seconds}" -lt 1 ] || [ "${unknown_seconds}" -gt 600 ] ||
         [ "${maximum_age_seconds}" -lt "${refresh_seconds}" ] ||
@@ -245,6 +287,41 @@ validate_managed_external_anchor_trust() {
         [ "${skew_seconds}" -gt 30 ] || [ "${remaining_seconds}" -gt 3600 ] ||
         [ "${remaining_seconds}" -ge "${lifetime_seconds}" ]; then
         echo "Managed ${label} external-anchor trust timing bounds are invalid." >&2
+        return 1
+    fi
+
+    local root_refresh_var="${prefix}_BOOTSTRAP_ROOT_REFRESH_SECONDS"
+    local root_timeout_var="${prefix}_BOOTSTRAP_ROOT_TIMEOUT_MS"
+    local root_unknown_var="${prefix}_BOOTSTRAP_ROOT_UNKNOWN_KEY_REFRESH_SECONDS"
+    local root_age_var="${prefix}_BOOTSTRAP_ROOT_MAXIMUM_AGE_SECONDS"
+    local root_lifetime_var="${prefix}_BOOTSTRAP_ROOT_MAXIMUM_LIFETIME_SECONDS"
+    local root_skew_var="${prefix}_BOOTSTRAP_ROOT_CLOCK_SKEW_SECONDS"
+    local root_remaining_var="${prefix}_BOOTSTRAP_ROOT_MINIMUM_REMAINING_VALIDITY_SECONDS"
+    local root_transitions_var="${prefix}_BOOTSTRAP_ROOT_MAXIMUM_TRANSITIONS"
+    local root_refresh="${!root_refresh_var:-30}"
+    local root_timeout="${!root_timeout_var:-3000}"
+    local root_unknown="${!root_unknown_var:-5}"
+    local root_age="${!root_age_var:-60}"
+    local root_lifetime="${!root_lifetime_var:-2592000}"
+    local root_skew="${!root_skew_var:-5}"
+    local root_remaining="${!root_remaining_var:-30}"
+    local root_transitions="${!root_transitions_var:-128}"
+    if printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+        "${root_refresh}" "${root_timeout}" "${root_unknown}" "${root_age}" \
+        "${root_lifetime}" "${root_skew}" "${root_remaining}" \
+        "${root_transitions}" | grep -Eqv '^(0|[1-9][0-9]*)$'; then
+        echo "Managed ${label} bootstrap-root timing values must be canonical integers." >&2
+        return 1
+    fi
+    if [ "${root_refresh}" -lt 1 ] || [ "${root_refresh}" -gt 3600 ] ||
+        [ "${root_timeout}" -lt 100 ] || [ "${root_timeout}" -gt 30000 ] ||
+        [ "${root_unknown}" -lt 1 ] || [ "${root_unknown}" -gt 600 ] ||
+        [ "${root_age}" -lt "${root_refresh}" ] || [ "${root_age}" -gt 86400 ] ||
+        [ "${root_lifetime}" -lt 3600 ] || [ "${root_lifetime}" -gt 31622400 ] ||
+        [ "${root_skew}" -gt 30 ] || [ "${root_remaining}" -gt 604800 ] ||
+        [ "${root_remaining}" -ge "${root_lifetime}" ] ||
+        [ "${root_transitions}" -lt 1 ] || [ "${root_transitions}" -gt 128 ]; then
+        echo "Managed ${label} bootstrap-root timing bounds are invalid." >&2
         return 1
     fi
 }
@@ -263,7 +340,8 @@ validate_test_secret_external_anchor() {
         echo "Staging test-secret cohort requires HTTP, dynamic JWKS, remote signed inventory, managed roots, and external anchoring." >&2
         return 1
     fi
-    if [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN:-}" ] ||
+    if [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_SCOPE_ID:-}" ] ||
+        [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN:-}" ] ||
         [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID:-}" ] ||
         [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD:-}" ] ||
         [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS:-}" ] ||
@@ -332,6 +410,30 @@ validate_test_secret_external_anchor() {
     fi
     validate_managed_external_anchor_trust \
         "RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR" "test-secret"
+}
+
+validate_external_anchor_domain_isolation() {
+    if ! truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_ENABLED:-false}"; then
+        return 0
+    fi
+    local secret_scope="${RG_TEST_SECRET_AUTHORITY_COHORT_SCOPE_ID:-}"
+    local suite_scope="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_SCOPE_ID:-}"
+    local secret_root_set="${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ROOT_SET_ID:-}"
+    local suite_root_set="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ROOT_SET_ID:-}"
+    local secret_notary_domain="${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN:-}"
+    local suite_notary_domain="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN:-}"
+    local secret_root_domain="${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_TRUST_DOMAIN:-}"
+    local suite_root_domain="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_TRUST_DOMAIN:-}"
+    if { [ "${secret_scope}" = "${suite_scope}" ] &&
+        [ "${secret_root_set}" = "${suite_root_set}" ]; } ||
+        [ "${secret_notary_domain}" = "${suite_notary_domain}" ] ||
+        [ "${secret_notary_domain}" = "${suite_root_domain}" ] ||
+        [ "${secret_root_domain}" = "${suite_notary_domain}" ] ||
+        [ "${secret_root_domain}" = "${suite_root_domain}" ]; then
+        echo "Test-secret and suite-stability external anchors must not share trust domains or root floors." >&2
+        return 1
+    fi
 }
 
 validate_profile_secrets() {
@@ -739,6 +841,7 @@ validate_profile_secrets() {
             return 1
         fi
     fi
+    validate_external_anchor_domain_isolation
 }
 
 pid_file() {

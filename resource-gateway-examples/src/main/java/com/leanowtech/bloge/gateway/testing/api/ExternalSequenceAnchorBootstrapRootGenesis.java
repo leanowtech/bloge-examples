@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
@@ -8,6 +10,7 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -71,6 +74,33 @@ public record ExternalSequenceAnchorBootstrapRootGenesis(
     /** @return canonical SHA-256 identity signed into the first transition predecessor */
     public String materialFingerprint(ObjectMapper objectMapper) {
         return ProtocolFingerprint.of(objectMapper, this);
+    }
+
+    /**
+     * Strictly parses one deployment-pinned public genesis document.
+     *
+     * <p>Duplicate fields, unknown fields, and trailing JSON are rejected so configuration cannot
+     * admit a document whose operational meaning differs across parsers.</p>
+     *
+     * @param objectMapper application JSON mapper used as the module baseline
+     * @param genesisJson exact genesis JSON document
+     * @return validated immutable genesis material
+     */
+    public static ExternalSequenceAnchorBootstrapRootGenesis fromJson(
+            ObjectMapper objectMapper, String genesisJson) {
+        try {
+            ObjectMapper strict = Objects.requireNonNull(objectMapper, "objectMapper").copy()
+                    .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                    .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+            return strict.readValue(normalized(genesisJson),
+                    ExternalSequenceAnchorBootstrapRootGenesis.class);
+        } catch (RuntimeException invalid) {
+            throw invalid;
+        } catch (Exception invalid) {
+            throw new IllegalArgumentException(
+                    "External sequence-anchor bootstrap-root genesis is invalid", invalid);
+        }
     }
 
     /**

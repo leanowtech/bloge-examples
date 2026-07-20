@@ -301,6 +301,19 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
         return trustStore.snapshot();
     }
 
+    /** Returns aggregate bootstrap-root capability without remote I/O. */
+    @Override
+    public ExternalSequenceAnchorBootstrapRootTrustStore.Descriptor
+            bootstrapRootDescriptor() {
+        return trustStore.bootstrapRootDescriptor();
+    }
+
+    /** Returns aggregate bootstrap-root chain state without remote I/O. */
+    @Override
+    public ExternalSequenceAnchorBootstrapRootTrustStore.Snapshot bootstrapRootSnapshot() {
+        return trustStore.bootstrapRootSnapshot();
+    }
+
     private CompletableFuture<Observation> observeAsync(
             Endpoint endpoint,
             TestSuiteStabilityExternalSequenceCheckpointRequest request,

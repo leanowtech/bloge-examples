@@ -50,6 +50,20 @@ public final class TestSecretAuthorityExternalSequenceAnchorHealth implements He
                             ? "" : trust.lastSuccessfulRefreshAt().toString());
             details.put("trustRefreshSuccessCount", trust.refreshSuccessCount());
             details.put("trustRefreshFailureCount", trust.refreshFailureCount());
+            ExternalSequenceAnchorBootstrapRootTrustStore.Snapshot roots =
+                    anchor.bootstrapRootSnapshot();
+            details.put("bootstrapRootStatus", roots.status());
+            details.put("bootstrapRootHeadSequence", roots.headSequence());
+            details.put("bootstrapRootTransitionCount", roots.transitionCount());
+            details.put("bootstrapRootAuthorityCount", roots.authorityCount());
+            details.put("bootstrapRootActiveAuthorityCount", roots.activeAuthorityCount());
+            details.put("bootstrapRootHeadExpiresAt", roots.headExpiresAt() == null
+                    ? "" : roots.headExpiresAt().toString());
+            details.put("bootstrapRootLastSuccessfulRefreshAt",
+                    roots.lastSuccessfulRefreshAt() == null
+                            ? "" : roots.lastSuccessfulRefreshAt().toString());
+            details.put("bootstrapRootRefreshSuccessCount", roots.refreshSuccessCount());
+            details.put("bootstrapRootRefreshFailureCount", roots.refreshFailureCount());
             return (snapshot.available() ? Health.up() : Health.down())
                     .withDetails(Map.copyOf(details)).build();
         } catch (RuntimeException unavailable) {

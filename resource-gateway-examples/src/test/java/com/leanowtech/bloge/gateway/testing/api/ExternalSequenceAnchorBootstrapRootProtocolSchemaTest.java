@@ -80,9 +80,24 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
         }
     }
 
+    @Test
+    void deploymentGenesisHasAStandaloneSchemaEntryPoint() throws Exception {
+        JsonNode schema = objectMapper.readTree(Files.readString(genesisSchemaPath()));
+
+        assertThat(schema.path("$ref").asText()).isEqualTo(
+                "external-sequence-anchor-bootstrap-root-bundle-v1.schema.json#/$defs/genesis");
+        assertThat(schema.path("$id").asText())
+                .endsWith("external-sequence-anchor-bootstrap-root-genesis-v1.schema.json");
+    }
+
     private static Path schemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-bundle-v1.schema.json");
+    }
+
+    private static Path genesisSchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-genesis-v1.schema.json");
     }
 
     private static void assertProperties(JsonNode value, JsonNode properties) {

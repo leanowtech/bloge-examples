@@ -199,7 +199,12 @@ class ExternallyAnchoredTestSecretAuthorityServingInventoryFloorTest {
                 "maximumFaults", "independentFailureDomainCount", "trustStatus",
                 "trustPublicationSequence", "trustAuthorityCount",
                 "trustActiveAuthorityCount", "trustLastSuccessfulRefreshAt",
-                "trustRefreshSuccessCount", "trustRefreshFailureCount");
+                "trustRefreshSuccessCount", "trustRefreshFailureCount",
+                "bootstrapRootStatus", "bootstrapRootHeadSequence",
+                "bootstrapRootTransitionCount", "bootstrapRootAuthorityCount",
+                "bootstrapRootActiveAuthorityCount", "bootstrapRootHeadExpiresAt",
+                "bootstrapRootLastSuccessfulRefreshAt",
+                "bootstrapRootRefreshSuccessCount", "bootstrapRootRefreshFailureCount");
         assertThat(health.getDetails())
                 .containsEntry("trustStatus", "UNAVAILABLE")
                 .containsEntry("trustPublicationSequence", 0L)
@@ -207,7 +212,16 @@ class ExternallyAnchoredTestSecretAuthorityServingInventoryFloorTest {
                 .containsEntry("trustActiveAuthorityCount", 0)
                 .containsEntry("trustLastSuccessfulRefreshAt", "")
                 .containsEntry("trustRefreshSuccessCount", 0L)
-                .containsEntry("trustRefreshFailureCount", 0L);
+                .containsEntry("trustRefreshFailureCount", 0L)
+                .containsEntry("bootstrapRootStatus", "UNAVAILABLE")
+                .containsEntry("bootstrapRootHeadSequence", 0L)
+                .containsEntry("bootstrapRootTransitionCount", 0)
+                .containsEntry("bootstrapRootAuthorityCount", 0)
+                .containsEntry("bootstrapRootActiveAuthorityCount", 0)
+                .containsEntry("bootstrapRootHeadExpiresAt", "")
+                .containsEntry("bootstrapRootLastSuccessfulRefreshAt", "")
+                .containsEntry("bootstrapRootRefreshSuccessCount", 0L)
+                .containsEntry("bootstrapRootRefreshFailureCount", 0L);
         assertThat(health.getDetails().toString())
                 .doesNotContain("endpoint", "stream", "fingerprint", "authorityId", "key");
 
