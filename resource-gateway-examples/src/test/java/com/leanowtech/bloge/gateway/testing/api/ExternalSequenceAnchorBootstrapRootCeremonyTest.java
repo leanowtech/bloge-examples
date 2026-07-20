@@ -147,6 +147,28 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
     }
 
     @Test
+    void rejectsSuccessorActivationAfterPrecedingRootQuorumHorizon() throws Exception {
+        Instant activation = NOW.plusSeconds(86_401);
+        Instant expiry = activation.plusSeconds(3600);
+        var material = new ExternalSequenceAnchorBootstrapRootTransition.Material(
+                ExternalSequenceAnchorBootstrapRootTransition.Material.SCHEMA_VERSION,
+                ROOT_SET, 1, genesis.materialFingerprint(objectMapper), SCOPE, ROOT_DOMAIN,
+                3, 1, rootMaterials(generationOneKeys, NOW.minusSeconds(60), expiry,
+                Set.of(), Set.of(), "one"), POLICY, NOW, activation, expiry);
+        String fingerprint = ProtocolFingerprint.of(objectMapper, material);
+        var transition = new ExternalSequenceAnchorBootstrapRootTransition(
+                ExternalSequenceAnchorBootstrapRootTransition.SCHEMA_VERSION,
+                material, fingerprint, signatures(genesisKeys, fingerprint, NOW),
+                signatures(generationOneKeys, fingerprint, NOW, "one"));
+
+        assertThatThrownBy(() -> new ConfiguredExternalSequenceAnchorBootstrapRootTrustStore(
+                objectMapper, Clock.fixed(activation, ZoneOffset.UTC), binding(),
+                Set.of(POLICY), genesis, new InMemoryFloor(), bundle(transition)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("identity or lifecycle");
+    }
+
+    @Test
     void rejectsExpiredHeadAndUnavailableActiveRootQuorum() throws Exception {
         ExternalSequenceAnchorBootstrapRootTransition expired = transition(
                 1, genesis.materialFingerprint(objectMapper), genesisKeys,

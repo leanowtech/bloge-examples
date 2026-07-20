@@ -35,6 +35,9 @@ public record ExternalSequenceAnchorBootstrapRootTransition(
     /** Current cross-signed root transition generation. */
     public static final String SCHEMA_VERSION =
             "bloge.externalSequenceAnchorBootstrapRootTransition.v1";
+    /** Maximum distinct-authority signatures carried by either ceremony role. */
+    public static final int MAXIMUM_SIGNATURES_PER_ROLE =
+            ExternalSequenceAnchorBootstrapRootGenesis.MAXIMUM_SIGNATURE_THRESHOLD;
 
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
@@ -119,6 +122,8 @@ public record ExternalSequenceAnchorBootstrapRootTransition(
                     || maximumFaults < 0 || maximumFaults > 10
                     || authorityCount < 3 * maximumFaults + 1
                     || signatureThreshold < 2 * maximumFaults + 1
+                    || signatureThreshold
+                    > ExternalSequenceAnchorBootstrapRootGenesis.MAXIMUM_SIGNATURE_THRESHOLD
                     || signatureThreshold > authorityCount
                     || !FINGERPRINT.matcher(policyFingerprint).matches()
                     || !ExternalSequenceAnchorBootstrapRootGenesis.wholeSecond(issuedAt)
@@ -143,7 +148,8 @@ public record ExternalSequenceAnchorBootstrapRootTransition(
                                 TestSuiteStabilityServingInventory.AuthoritySignature::keyId))
                 .toList();
         Set<String> authorities = new HashSet<>();
-        if (result.isEmpty() || result.size() > 32 || !result.equals(sorted)
+        if (result.isEmpty() || result.size() > MAXIMUM_SIGNATURES_PER_ROLE
+                || !result.equals(sorted)
                 || result.stream().anyMatch(signature ->
                 !authorities.add(signature.authorityId()))) {
             throw new IllegalArgumentException(

@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -101,9 +102,11 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootTrustStore
             ExternalSequenceAnchorBootstrapRootTransition transition =
                     bundle.transitions().get(index);
             long expectedSequence = index + 1L;
+            Instant precedingQuorumHorizon = quorumHorizon(
+                    precedingKeys, transition.material().issuedAt(), precedingMaterial);
             verifyTransitionIdentity(
                     canonical, policies, transition, expectedSequence,
-                    expectedPredecessor, precedingMaterial, now);
+                    expectedPredecessor, precedingMaterial, precedingQuorumHorizon, now);
             verifyCeremonySignatures(precedingKeys,
                     transition.authorizingRootSignatures(), transition,
                     now, "Bootstrap-root authorizing");
@@ -252,6 +255,7 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootTrustStore
             long expectedSequence,
             String expectedPredecessor,
             ExternalSequenceAnchorBootstrapRootTransition.Material preceding,
+            Instant precedingQuorumHorizon,
             Instant observedAt) {
         ExternalSequenceAnchorBootstrapRootTransition.Material material =
                 transition.material();
@@ -269,7 +273,8 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootTrustStore
                 || lifetime.compareTo(binding.maximumRootLifetime()) > 0
                 || material.issuedAt().isAfter(observedAt.plus(binding.clockSkew()))
                 || preceding != null && (material.issuedAt().isBefore(preceding.notBefore())
-                || !material.issuedAt().isBefore(preceding.expiresAt()))) {
+                || !material.issuedAt().isBefore(preceding.expiresAt()))
+                || material.notBefore().isAfter(precedingQuorumHorizon)) {
             throw new IllegalArgumentException(
                     "Bootstrap-root transition identity or lifecycle is invalid");
         }
@@ -311,6 +316,24 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootTrustStore
                 .map(ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey
                         ::authorityId)
                 .distinct().count();
+    }
+
+    private Instant quorumHorizon(
+            Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> keys,
+            Instant issuedAt,
+            ExternalSequenceAnchorBootstrapRootTransition.Material preceding) {
+        Map<String, Instant> authorityHorizons = new HashMap<>();
+        keys.values().stream().filter(key -> key.activeAt(issuedAt)).forEach(key ->
+                authorityHorizons.merge(key.authorityId(), key.expiresAt(),
+                        (left, right) -> left.isAfter(right) ? left : right));
+        List<Instant> horizons = authorityHorizons.values().stream()
+                .sorted(Comparator.reverseOrder()).toList();
+        if (horizons.size() < binding.signatureThreshold()) {
+            return Instant.MIN;
+        }
+        Instant keyHorizon = horizons.get(binding.signatureThreshold() - 1);
+        return preceding != null && preceding.expiresAt().isBefore(keyHorizon)
+                ? preceding.expiresAt() : keyHorizon;
     }
 
     private void verifySignatures(
@@ -467,6 +490,8 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootTrustStore
                     || !IDENTIFIER.matcher(rootSetId).matches()
                     || !IDENTIFIER.matcher(trustDomain).matches()
                     || signatureThreshold < 1
+                    || signatureThreshold
+                    > ExternalSequenceAnchorBootstrapRootGenesis.MAXIMUM_SIGNATURE_THRESHOLD
                     || maximumFaults < 0 || maximumFaults > 10
                     || signatureThreshold < 2 * maximumFaults + 1
                     || maximumRootLifetime == null
