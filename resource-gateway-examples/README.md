@@ -452,10 +452,25 @@ values under the matching `RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_*` variables in th
 files. Unknown fields, partial identity, unsafe timeout/lease margins or invalid retry/scheduler
 policy fail startup. The default lane uses the isolated test-runtime database journal/outbox and
 exports aggregate-only Actuator health; deployments may supply an equivalent durable outbox or
-publisher bean. Close the caller-owned publisher after the service. This remains a single-root
-authoring runtime, not a new Resource Gateway endpoint or deployment-wide worker registry; default
-Spring recovery composition, cross-root discovery, publisher mTLS/client identity and certificate
-pinning, response-key hot rotation, publisher HA/anti-equivocation, target-database/DR/chaos certification,
+publisher bean. Close the caller-owned publisher after the service.
+
+The same single-root journal can run unattended ceremony recovery by also setting
+`RG_TEST_BOOTSTRAP_ROOT_RECOVERY_ENABLED=true`. Recovery requires publication to remain enabled,
+one strict public-only genesis document, accepted ceremony policy fingerprints, a worker identity,
+bounded signer/scheduler policy, and exactly one application-provided
+`ExternalSequenceAnchorBootstrapRootAuthorityResolver` bean. The resolver maps the exact approved
+public cohort to opaque signer ports; private keys, HSM credentials, authority endpoints, and
+provider inventories must not be bound through recovery properties. Staging additionally rejects a
+genesis without Byzantine fault tolerance. The recovery scheduler and ceremony service close before
+the shared journal; the service close gate prevents a shutdown poll from consuming a new durable
+attempt. Its aggregate-only Actuator health treats no work, approval wait, competing lease, and
+retry delay as healthy workflow states, but fails on attempt exhaustion, latest scheduler/execution
+failure, fence loss, or fully lingering signer capacity.
+
+This remains a single-root authoring runtime, not a new Resource Gateway endpoint or
+deployment-wide worker registry; cross-root discovery, governed resolver inventory/rollout,
+publisher mTLS/client identity and certificate pinning, response-key hot rotation,
+publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
 bundle, and publication HTTP Schemas, failure matrix, runtime wiring, and remaining ceremony limits
 are documented in the

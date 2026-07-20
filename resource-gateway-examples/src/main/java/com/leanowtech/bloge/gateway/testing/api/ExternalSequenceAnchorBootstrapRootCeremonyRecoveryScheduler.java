@@ -38,7 +38,8 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler
     private final AtomicLong executedCount = new AtomicLong();
     private final AtomicLong pollFailureCount = new AtomicLong();
     private volatile boolean active;
-    private volatile RecoveryStatus lastStatus;
+    private volatile boolean lastPollFailed;
+    private volatile LatestResult latestResult = LatestResult.NONE;
 
     /**
      * Starts one fixed-delay daemon lane with the default schedule policy.
@@ -89,8 +90,10 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler
         this.executor = new ScheduledThreadPoolExecutor(1, runnable -> {
             Thread thread = Thread.ofPlatform().daemon(true)
                     .name("bootstrap-root-ceremony-recovery").unstarted(runnable);
-            thread.setUncaughtExceptionHandler((ignored, failure) ->
-                    pollFailureCount.incrementAndGet());
+            thread.setUncaughtExceptionHandler((ignored, failure) -> {
+                pollFailureCount.incrementAndGet();
+                lastPollFailed = true;
+            });
             return thread;
         });
         this.executor.setRemoveOnCancelPolicy(true);
@@ -118,11 +121,17 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler
         try {
             RecoveryExecutionResult result = service.recover(
                     workerId, leaseDurationSeconds, authorityResolver);
-            lastStatus = result.status();
+            lastPollFailed = false;
+            latestResult = new LatestResult(result.status(), result.execution() == null
+                    ? null : result.execution().status());
             if (result.status() == RecoveryStatus.EXECUTED) {
                 executedCount.incrementAndGet();
             }
             return result;
+        } catch (RuntimeException failure) {
+            pollFailureCount.incrementAndGet();
+            lastPollFailed = true;
+            throw failure;
         } finally {
             active = false;
         }
@@ -134,8 +143,13 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler
      * @return immutable counters and current lane state
      */
     public Snapshot snapshot() {
-        return new Snapshot(closed.get(), active, pollCount.get(), executedCount.get(),
-                pollFailureCount.get(), lastStatus);
+        // Read the volatile failure flag first so true observes its preceding count update.
+        boolean latestPollFailed = lastPollFailed;
+        long failures = pollFailureCount.get();
+        LatestResult latest = latestResult;
+        return new Snapshot(Snapshot.SCHEMA_VERSION, closed.get(), active, pollCount.get(),
+                executedCount.get(), failures, latestPollFailed, latest.status(),
+                latest.executionStatus());
     }
 
     /** Stops new polls, waits for a bounded drain, then interrupts the local daemon lane. */
@@ -164,7 +178,26 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler
         try {
             runOnce();
         } catch (RuntimeException failure) {
+            // runOnce already recorded the bounded aggregate failure.
+        } catch (Error fatal) {
             pollFailureCount.incrementAndGet();
+            lastPollFailed = true;
+            throw fatal;
+        }
+    }
+
+    private record LatestResult(
+            RecoveryStatus status,
+            ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus
+                    executionStatus) {
+
+        private static final LatestResult NONE = new LatestResult(null, null);
+
+        private LatestResult {
+            if ((status == RecoveryStatus.EXECUTED) != (executionStatus != null)) {
+                throw new IllegalArgumentException(
+                        "Bootstrap-root recovery latest result is invalid");
+            }
         }
     }
 
@@ -203,25 +236,41 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler
     /**
      * Payload-free scheduler snapshot.
      *
+     * @param schemaVersion snapshot protocol generation
      * @param closed whether this scheduler rejects new polls
      * @param active whether one local recovery call is in progress
      * @param pollCount started polls
      * @param executedCount polls that acquired and ran an attempt
      * @param pollFailureCount scheduler-level uncaught runtime failures
+     * @param lastPollFailed whether the latest synchronous or scheduled poll threw
      * @param lastStatus most recent completed service status, or {@code null} before completion
+     * @param lastExecutionStatus bounded execution result when the last status was executed
      */
     public record Snapshot(
+            String schemaVersion,
             boolean closed,
             boolean active,
             long pollCount,
             long executedCount,
             long pollFailureCount,
-            RecoveryStatus lastStatus) {
+            boolean lastPollFailed,
+            RecoveryStatus lastStatus,
+            ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus
+                    lastExecutionStatus) {
+
+        /** Current recovery scheduler snapshot generation. */
+        public static final String SCHEMA_VERSION =
+                "bloge.externalSequenceAnchorBootstrapRootRecoverySchedulerSnapshot.v2";
 
         /** Enforces monotonic non-negative aggregate counters. */
         public Snapshot {
-            if (pollCount < 0L || executedCount < 0L || pollFailureCount < 0L
-                    || executedCount > pollCount) {
+            schemaVersion = schemaVersion == null ? "" : schemaVersion.trim();
+            if (!SCHEMA_VERSION.equals(schemaVersion)
+                    || pollCount < 0L || executedCount < 0L || pollFailureCount < 0L
+                    || executedCount > pollCount
+                    || lastPollFailed && pollFailureCount == 0L
+                    || (lastStatus == RecoveryStatus.EXECUTED)
+                    != (lastExecutionStatus != null)) {
                 throw new IllegalArgumentException(
                         "Bootstrap-root recovery scheduler snapshot is invalid");
             }

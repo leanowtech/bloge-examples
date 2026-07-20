@@ -33,6 +33,24 @@ gateway:
         recovery-initial-retry-delay-seconds: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_INITIAL_RETRY_DELAY_SECONDS:5}
         recovery-maximum-retry-delay-seconds: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_MAX_RETRY_DELAY_SECONDS:300}
         recovery-maximum-automatic-attempts: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_MAX_AUTOMATIC_ATTEMPTS:20}
+      bootstrap-root-recovery:
+        enabled: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_ENABLED:false}
+        worker-id: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_WORKER_ID:}
+        genesis-json: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_GENESIS_JSON:}
+        accepted-policy-fingerprints: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_ACCEPTED_POLICY_FINGERPRINTS:}
+        maximum-root-lifetime-seconds: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_MAX_ROOT_LIFETIME_SECONDS:2592000}
+        clock-skew-seconds: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_CLOCK_SKEW_SECONDS:5}
+        minimum-remaining-validity-seconds: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_MIN_REMAINING_VALIDITY_SECONDS:30}
+        maximum-transition-count: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_MAX_TRANSITIONS:128}
+        maximum-execution-delay-seconds: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_MAX_EXECUTION_DELAY_SECONDS:300}
+        resolver-timeout-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_RESOLVER_TIMEOUT_MS:5000}
+        descriptor-timeout-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_DESCRIPTOR_TIMEOUT_MS:5000}
+        signature-timeout-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_SIGNATURE_TIMEOUT_MS:30000}
+        maximum-concurrent-signer-calls: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_MAX_CONCURRENT_SIGNER_CALLS:8}
+        lease-duration-seconds: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_LEASE_SECONDS:30}
+        initial-delay-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_INITIAL_DELAY_MS:5000}
+        poll-interval-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_POLL_INTERVAL_MS:5000}
+        drain-timeout-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_DRAIN_TIMEOUT_MS:5000}
     admission:
       policy-generation: ${RG_TEST_ADMISSION_POLICY_GENERATION:1}
       tenant-max-active: ${RG_TEST_ADMISSION_TENANT_MAX_ACTIVE:16}

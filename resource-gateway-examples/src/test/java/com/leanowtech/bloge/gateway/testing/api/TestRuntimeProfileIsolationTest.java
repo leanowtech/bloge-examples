@@ -1547,6 +1547,14 @@ class TestRuntimeProfileIsolationTest {
                     TestSuiteStabilityJobExecutionCoordinator.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobWorker.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityJobScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    ExternalSequenceAnchorBootstrapRootPublicationService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    ExternalSequenceAnchorBootstrapRootCeremonyService.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler.class)).isEmpty();
+            assertThat(context.getBeansOfType(
+                    ExternalSequenceAnchorBootstrapRootCeremonyRecoveryHealth.class)).isEmpty();
             assertThat(context.getBeansOfType(TestabilityAvailability.class)).isEmpty();
         }
     }
@@ -1622,6 +1630,7 @@ class TestRuntimeProfileIsolationTest {
         }
         context.register(TestRuntimeConfiguration.class,
                 ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration.class,
+                ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfiguration.class,
                 TestExecutionController.class,
                 TestSuiteStabilityController.class,
                 TestSuiteStabilityCrossRetentionTrendController.class,

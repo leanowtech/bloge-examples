@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.AcquisitionCommand;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.Acquisition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ApprovalCommand;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ApprovalResult;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal;
@@ -9,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.FailureDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ProposalResult;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryAcquisitionCommand;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryAcquisition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator.LeaseGuard;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator.LeaseLostException;
 
@@ -16,6 +18,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Crash-recoverable maker/checker coordinator around the pure bootstrap-root producer.
@@ -39,6 +42,8 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
     private final ExternalSequenceAnchorBootstrapRootCeremonyJournal journal;
     private final ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator leaseCoordinator;
     private final ExternalSequenceAnchorBootstrapRootSignerCallSupervisor signerCallSupervisor;
+    private final Object lifecycleLock = new Object();
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     /**
      * Creates a coordinator that refuses non-durable journal implementations.
@@ -115,10 +120,14 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
                     authorizingAuthorities,
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
+        requireOpen();
         var preflight = producer.preflight(request, supervised(authorizingAuthorities),
                 supervised(incomingAuthorities));
-        return journal.propose(new CeremonyProposal(CeremonyProposal.SCHEMA_VERSION,
-                request, null, preflight, makerId, proposalDurationSeconds));
+        synchronized (lifecycleLock) {
+            requireOpen();
+            return journal.propose(new CeremonyProposal(CeremonyProposal.SCHEMA_VERSION,
+                    request, null, preflight, makerId, proposalDurationSeconds));
+        }
     }
 
     /**
@@ -140,10 +149,14 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
                     authorizingAuthorities,
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
+        requireOpen();
         var preflight = producer.preflight(currentBundle, request,
                 supervised(authorizingAuthorities), supervised(incomingAuthorities));
-        return journal.propose(new CeremonyProposal(CeremonyProposal.SCHEMA_VERSION,
-                request, currentBundle, preflight, makerId, proposalDurationSeconds));
+        synchronized (lifecycleLock) {
+            requireOpen();
+            return journal.propose(new CeremonyProposal(CeremonyProposal.SCHEMA_VERSION,
+                    request, currentBundle, preflight, makerId, proposalDurationSeconds));
+        }
     }
 
     /**
@@ -153,7 +166,11 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
      * @return durable approval disposition and current projection
      */
     public ApprovalResult approve(ApprovalCommand command) {
-        return journal.approve(Objects.requireNonNull(command, "command"));
+        ApprovalCommand safeCommand = Objects.requireNonNull(command, "command");
+        synchronized (lifecycleLock) {
+            requireOpen();
+            return journal.approve(safeCommand);
+        }
     }
 
     /**
@@ -174,9 +191,13 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
                     authorizingAuthorities,
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
         requireLeaseDuration(leaseDurationSeconds);
-        var acquisition = journal.acquire(new AcquisitionCommand(
-                AcquisitionCommand.SCHEMA_VERSION, ceremonyId, workerId,
-                leaseDurationSeconds));
+        Acquisition acquisition;
+        synchronized (lifecycleLock) {
+            requireOpen();
+            acquisition = journal.acquire(new AcquisitionCommand(
+                    AcquisitionCommand.SCHEMA_VERSION, ceremonyId, workerId,
+                    leaseDurationSeconds));
+        }
         if (acquisition.disposition()
                 != ExternalSequenceAnchorBootstrapRootCeremonyJournal
                 .AcquisitionDisposition.ACQUIRED) {
@@ -220,8 +241,13 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
         requireLeaseDuration(leaseDurationSeconds);
         ExternalSequenceAnchorBootstrapRootAuthorityResolver safeResolver =
                 Objects.requireNonNull(authorityResolver, "authorityResolver");
-        var acquisition = journal.acquireRecovery(new RecoveryAcquisitionCommand(
-                RecoveryAcquisitionCommand.SCHEMA_VERSION, workerId, leaseDurationSeconds));
+        RecoveryAcquisition acquisition;
+        synchronized (lifecycleLock) {
+            requireOpen();
+            acquisition = journal.acquireRecovery(new RecoveryAcquisitionCommand(
+                    RecoveryAcquisitionCommand.SCHEMA_VERSION, workerId,
+                    leaseDurationSeconds));
+        }
         if (acquisition.disposition()
                 != ExternalSequenceAnchorBootstrapRootCeremonyJournal
                 .RecoveryAcquisitionDisposition.ACQUIRED) {
@@ -336,13 +362,42 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
         return signerCallSupervisor.snapshot();
     }
 
-    /** Stops heartbeat and signer supervisors without waiting for interrupt-ignoring adapters. */
+    /**
+     * Returns process-local lifecycle and signer-call capacity without ceremony identity or data.
+     *
+     * @return payload-free runtime projection
+     */
+    public RuntimeSnapshot runtimeSnapshot() {
+        synchronized (lifecycleLock) {
+            return new RuntimeSnapshot(RuntimeSnapshot.SCHEMA_VERSION, closed.get(),
+                    signerCallSupervisor.snapshot());
+        }
+    }
+
+    /**
+     * Closes the durable write gate, then stops heartbeat and signer supervisors.
+     *
+     * <p>Calls admitted before the gate closes retain their bounded fence semantics. Once the gate
+     * is closed, no new proposal, approval, execution acquisition, or recovery acquisition can
+     * enter the journal.</p>
+     */
     @Override
     public void close() {
-        try {
-            leaseCoordinator.close();
-        } finally {
-            signerCallSupervisor.close();
+        synchronized (lifecycleLock) {
+            if (!closed.compareAndSet(false, true)) {
+                return;
+            }
+            try {
+                leaseCoordinator.close();
+            } finally {
+                signerCallSupervisor.close();
+            }
+        }
+    }
+
+    private void requireOpen() {
+        if (closed.get()) {
+            throw new IllegalStateException("Bootstrap-root ceremony service is closed");
         }
     }
 
@@ -502,6 +557,34 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
                     || executed && !Objects.equals(snapshot, execution.snapshot())) {
                 throw new IllegalArgumentException(
                         "Bootstrap-root ceremony recovery result is invalid");
+            }
+        }
+    }
+
+    /**
+     * Payload-free ceremony service runtime projection.
+     *
+     * @param schemaVersion runtime snapshot protocol generation
+     * @param closed whether durable write and acquisition entry points reject new calls
+     * @param signerCalls fixed-capacity signer supervisor projection
+     */
+    public record RuntimeSnapshot(
+            String schemaVersion,
+            boolean closed,
+            ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Snapshot signerCalls) {
+
+        /** Current ceremony service runtime snapshot generation. */
+        public static final String SCHEMA_VERSION =
+                "bloge.externalSequenceAnchorBootstrapRootCeremonyRuntimeSnapshot.v1";
+
+        /** Enforces the exact snapshot generation and signer projection presence. */
+        public RuntimeSnapshot {
+            schemaVersion = schemaVersion == null ? "" : schemaVersion.trim();
+            signerCalls = Objects.requireNonNull(signerCalls, "signerCalls");
+            if (!SCHEMA_VERSION.equals(schemaVersion)
+                    || closed != signerCalls.closed()) {
+                throw new IllegalArgumentException(
+                        "Bootstrap-root ceremony runtime snapshot is invalid");
             }
         }
     }

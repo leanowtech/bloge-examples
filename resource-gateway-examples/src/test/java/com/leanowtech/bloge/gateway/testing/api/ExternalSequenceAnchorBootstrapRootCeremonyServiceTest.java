@@ -495,6 +495,43 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
     }
 
     @Test
+    void closedServiceRejectsRecoveryBeforeItCanConsumeADurableAttempt() {
+        List<IdempotentSigner> authorizers = signers(genesisKeys, "genesis", Set.of());
+        List<IdempotentSigner> incoming = signers(incomingKeys, "incoming", Set.of());
+        var request = request("ceremony-close-fence");
+        service.propose(request, "maker-a", 300, authorities(authorizers),
+                authorities(incoming));
+        approve(request.ceremonyId());
+
+        service.close();
+
+        assertThat(service.runtimeSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.schemaVersion()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootCeremonyService.RuntimeSnapshot
+                            .SCHEMA_VERSION);
+            assertThat(snapshot.closed()).isTrue();
+            assertThat(snapshot.signerCalls().closed()).isTrue();
+        });
+        assertThatThrownBy(() -> service.recover("worker-after-close", 30, proposal ->
+                new ExternalSequenceAnchorBootstrapRootAuthorityResolver.AuthoritySet(
+                        authorities(authorizers), authorities(incoming))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("closed");
+        assertThatThrownBy(() -> service.execute(request.ceremonyId(),
+                "worker-after-close", 30, authorities(authorizers), authorities(incoming)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("closed");
+        assertThat(journal.snapshot(request.ceremonyId())).isPresent().get()
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.state()).isEqualTo(
+                            ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.APPROVED);
+                    assertThat(snapshot.attemptCount()).isZero();
+                });
+        assertThat(authorizers).allSatisfy(signer -> assertThat(signer.callCount).isZero());
+        assertThat(incoming).allSatisfy(signer -> assertThat(signer.callCount).isZero());
+    }
+
+    @Test
     void resolverTimeoutReleasesTheFenceWithoutCallingAnySigner() {
         service.close();
         service = new ExternalSequenceAnchorBootstrapRootCeremonyService(
@@ -561,9 +598,16 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
                             .CeremonySnapshot::state)
                     .isEqualTo(ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.PRODUCED);
             assertThat(scheduler.snapshot()).satisfies(snapshot -> {
+                assertThat(snapshot.schemaVersion()).isEqualTo(
+                        ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler.Snapshot
+                                .SCHEMA_VERSION);
                 assertThat(snapshot.pollCount()).isGreaterThanOrEqualTo(1L);
                 assertThat(snapshot.executedCount()).isEqualTo(1L);
                 assertThat(snapshot.pollFailureCount()).isZero();
+                assertThat(snapshot.lastPollFailed()).isFalse();
+                assertThat(snapshot.lastExecutionStatus()).isEqualTo(
+                        ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus
+                                .PRODUCED);
             });
         } finally {
             scheduler.close();

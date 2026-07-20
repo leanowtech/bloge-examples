@@ -10,8 +10,8 @@ durable floor、动态远端刷新、managed notary 组合、Spring/staging 双�
 lingering-call 观测；`PRODUCED` 与 content-addressed publication outbox 已在同一数据库事务提交，并具备
 顺序 claim、退避/attempt budget、旧行回填和 receipt fence；strict HTTPS + Ed25519 signed-response
 publisher adapter、固定容量调用监督、数据库驱动 publication service、单 lane scheduler 和冲突永久
-quarantine 亦已闭合；test/staging 单 root-set 的严格 Spring publication composition、生命周期与
-aggregate-only health 也已接通。它仍不等于带企业 IAM、HSM/KMS、默认 recovery/cross-root worker、
+quarantine 亦已闭合；test/staging 单 root-set 的严格 Spring publication/recovery composition、生命周期与
+aggregate-only health 也已接通。它仍不等于带企业 IAM、HSM/KMS、cross-root worker/resolver inventory、
 root publisher HA 和外部审计留存的生产 ceremony 产品。
 所有消费路径必须使用同一原子 root snapshot，不能另造一个只验证最新 root snapshot 的旁路。
 
@@ -277,6 +277,17 @@ fence service、单 lane scheduler 和 durable `QUARANTINED`。本子步与既�
 重打包 Spring Boot 可执行 JAR。边界明确不包含 publisher mTLS/client identity、certificate pinning、
 response-key 热轮换、跨 root-set worker platform 或 publisher HA/anti-equivocation。
 
+单 root-set Spring publication composition 子步把同组聚焦门禁扩展到 98 tests，0 failures、0 errors、
+0 skips；完整 Resource Gateway `clean verify` 执行 3327 tests，0 failures、0 errors、2 skips，并完成
+32 项 Browser DOM 与 1 项 browser workflow 的真实执行及可执行 JAR 重打包。
+
+本 recovery composition 子步新增 17 项 service lifecycle、scheduler failure visibility、aggregate health、
+strict configuration/profile isolation 和真实数据库组合测试，把 ceremony/publication 联合聚焦门禁扩展到
+115 tests，0 failures、0 errors、0 skips。service、scheduler、recovery health 与 Spring composition root
+4 个公共类型通过 `javadoc -Werror -Xdoclint:all`，0 warnings、0 errors；完整 Resource Gateway
+`clean verify` 执行 3344 tests，0 failures、0 errors、2 skips，Browser DOM 34 项中 32 项及 browser
+workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
+
 ## 11. 双域部署接线
 
 Spring 组合根现已在 suite-stability 与 test-secret 两个域分别创建：
@@ -320,7 +331,14 @@ producer、journal、service、可选 recovery scheduler、publication service/s
 缺参、未知字段和不安全边界全部 fail startup。默认 bean 使用同一隔离 test-runtime database，关闭顺序
 由 Spring 依赖关系固定为 scheduler、service、caller-owned publisher、database；health 只公开固定状态、
 计数与容量，不执行会产生发布意图的远程探针，也不公开 scope/root/worker/endpoint/key/fingerprint。
-ceremony service 自有
+在 publication lane 之上再显式设置 `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_ENABLED=true`，可启用同一 root-set
+的 Spring recovery lane。它复用同一 journal/outbox，要求 strict public genesis、accepted ceremony
+policies、worker 与有界 signer/scheduler 参数，并要求业务提供唯一
+`ExternalSequenceAnchorBootstrapRootAuthorityResolver` bean；private key、HSM credential、provider endpoint
+和 authority inventory 不进入配置。staging genesis 必须满足 `f>=1`。recovery health 不访问数据库或
+signer；无任务、待审批、竞争 lease 和 retry backoff 保持 UP，attempt exhaustion、最近 scheduler/execution
+失败、fence loss 或全部 signer slot lingering 才 DOWN。ceremony service 的 close gate 在 journal acquire
+前拒绝新写入，避免停机轮询消耗 durable attempt。ceremony service 自有
 一个 daemon heartbeat scheduler 和一个固定容量 daemon signer pool；recovery scheduler 另有一条
 fixed-delay daemon lane。publication service 自有固定容量零队列 publisher pool，publication scheduler
 另有一条 fixed-delay lane。关闭顺序必须是各 scheduler 在前、对应 service 在后。durable 审批场景必须显式配置
@@ -457,7 +475,7 @@ Schema 不变，本地细分类只存在 supervisor snapshot。
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootPublisherCallSupervisorTest,HttpExternalSequenceAnchorBootstrapRootPublisherTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest,ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationHealthTest \
+  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootPublisherCallSupervisorTest,HttpExternalSequenceAnchorBootstrapRootPublisherTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoverySchedulerTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoveryHealthTest,ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationHealthTest \
   test
 ```
 
@@ -472,9 +490,9 @@ mvn -f resource-gateway-examples/pom.xml \
   orphan/provider-side reconciliation 和 provider 级重试预算；当前本地 timeout 只中断 adapter，
   忽略 interrupt 的调用会占用一个固定槽位直到真实返回，但不能形成无界线程/队列，也不能提交过期
   artifact；
-- recovery scheduler 接入默认 Spring composition root、publication 跨 root-set 发现/分片与 fleet rollout jitter、
-  policy 维护迁移、SLO/告警和目标数据库多副本认证；当前完成的是每 root-set 可嵌入的一条 daemon lane，
-  不能被描述为部署级 worker platform；
+- recovery/publication 跨 root-set 发现、分片、公平、fleet rollout jitter、resolver inventory
+  publication/revocation、policy 维护迁移、外部 SLO/告警和目标数据库多副本认证；当前 Spring 组合只闭合
+  一个显式 root-set lane，不能被描述为部署级 worker platform；
 - publisher mTLS/client identity、certificate pinning、静态 response key 热轮换、跨 root-set fleet SLO；
   当前 adapter 依赖 JVM HTTPS server trust 并额外验证 Ed25519 响应，
   不等于双向 TLS 或证书 pinning；
