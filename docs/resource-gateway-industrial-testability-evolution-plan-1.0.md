@@ -657,6 +657,15 @@ current head 可见前再推进专用 durable floor。空 floor 允许首次接�
 与双域 Spring/staging 接线仍是下一子步门禁。验证见
 [bootstrap-root ceremony kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md)。
 
+Stage 4 该增量第二子步补齐动态完整链 source 与数据库 floor。`VerifiedChain` 让新副本首次接纳完整
+重放后的 head N，并让离线副本在数据库 current head 是新链 exact ancestor 时一次追赶多代，拒绝
+rollback、same-sequence fork 与历史祖先分叉；数据库实现以 composite lock、数据库时钟、独立
+whole-record fingerprint 和 `REQUIRES_NEW` 线性化。动态 root store 使用 strict HTTPS/ETag、exact
+media/version、no-redirect、4 MiB/128 代双界、hard source age、unknown-key global cooldown single-flight
+和 refresh-failure immediate fail-closed；`304` 不延长 signed head expiry。真实 HTTP、12 并发轮换、
+fork/recovery、过期和数据库竞争在内的 17 项聚焦测试全绿。managed notary verifier 与双域
+Spring/staging/health/capability 接线仍是下一子步门禁。
+
 第五十三增量第十八子步把 exact cohort 的 expected set 从 replica-local 配置提升为外部可验签事实。
 deployment governance 生成 strict `bloge.testSuiteStabilityServingInventory.v1`，以 canonical material 绑定
 trust domain、inventory/revision、stable scope、immutable cohort、artifact/protocol、排序且唯一的 1..256

@@ -129,10 +129,7 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootTrustStore
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         this.activeAuthorityCount = activeAuthorityCount(now);
         verifyCurrentHead(now);
-        durable.accept(new ExternalSequenceAnchorBootstrapRootPublicationFloor.Generation(
-                ExternalSequenceAnchorBootstrapRootPublicationFloor.Generation.SCHEMA_VERSION,
-                head.scopeId(), head.rootSetId(), head.sequence(), headFingerprint,
-                head.sequence() == 1 ? "" : head.previousMaterialFingerprint()));
+        durable.accept(floorChain(bundle));
     }
 
     /** Strictly parses a bundle and constructs one fully verified root snapshot. */
@@ -405,6 +402,25 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootTrustStore
                     "One through 32 bootstrap-root ceremony policies are required");
         }
         return Set.copyOf(result);
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootPublicationFloor.VerifiedChain floorChain(
+            ExternalSequenceAnchorBootstrapRootBundle bundle) {
+        List<ExternalSequenceAnchorBootstrapRootPublicationFloor.Generation> generations =
+                new ArrayList<>();
+        for (ExternalSequenceAnchorBootstrapRootTransition transition : bundle.transitions()) {
+            generations.add(new ExternalSequenceAnchorBootstrapRootPublicationFloor.Generation(
+                    ExternalSequenceAnchorBootstrapRootPublicationFloor.Generation.SCHEMA_VERSION,
+                    transition.material().scopeId(), transition.material().rootSetId(),
+                    transition.material().sequence(), transition.materialFingerprint(),
+                    transition.material().sequence() == 1
+                            ? "" : transition.material().previousMaterialFingerprint()));
+        }
+        ExternalSequenceAnchorBootstrapRootTransition.Material head =
+                bundle.transitions().getLast().material();
+        return new ExternalSequenceAnchorBootstrapRootPublicationFloor.VerifiedChain(
+                ExternalSequenceAnchorBootstrapRootPublicationFloor.VerifiedChain.SCHEMA_VERSION,
+                head.scopeId(), head.rootSetId(), generations);
     }
 
     private static ObjectMapper strict(ObjectMapper source) {

@@ -2,10 +2,13 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
@@ -13,12 +16,20 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.ZoneId;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -238,11 +249,239 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
                 .hasMessageContaining("pinned genesis");
     }
 
+    @Test
+    void unknownRootKeyRotatesWithoutRestartAndConcurrentBurstFetchesOnce()
+            throws Exception {
+        InMemoryFloor floor = new InMemoryFloor();
+        ExternalSequenceAnchorBootstrapRootTransition first = transition(
+                1, genesis.materialFingerprint(objectMapper), genesisKeys,
+                generationOneKeys, NOW.minusSeconds(60), NOW.plusSeconds(7200));
+        ExternalSequenceAnchorBootstrapRootTransition second = transition(
+                2, first.materialFingerprint(), generationOneKeys, generationTwoKeys,
+                NOW.minusSeconds(10), NOW.plusSeconds(10_800));
+        QueueFetcher fetcher = new QueueFetcher(
+                document(bundle(first), "etag-a"),
+                document(bundle(first, second), "etag-b"));
+        var store = dynamic(floor, fetcher);
+        ExternalSequenceAnchorTrustPublication rotated =
+                notaryPublication(generationTwoKeys);
+
+        int callers = 12;
+        CountDownLatch ready = new CountDownLatch(callers);
+        CountDownLatch go = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(callers)) {
+            List<java.util.concurrent.Future<?>> results = new ArrayList<>();
+            for (int index = 0; index < callers; index++) {
+                results.add(executor.submit(() -> {
+                    ready.countDown();
+                    go.await(2, TimeUnit.SECONDS);
+                    store.verify(rotated, NOW);
+                    return null;
+                }));
+            }
+            assertThat(ready.await(2, TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+            for (var result : results) {
+                result.get(3, TimeUnit.SECONDS);
+            }
+        }
+
+        assertThat(fetcher.fetchCount()).isEqualTo(2);
+        assertThat(store.descriptor()).satisfies(descriptor -> {
+            assertThat(descriptor.available()).isTrue();
+            assertThat(descriptor.restartFreeRotation()).isTrue();
+            assertThat(descriptor.completeGenesisReplay()).isTrue();
+        });
+        assertThat(store.snapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.status()).isEqualTo("HEALTHY");
+            assertThat(snapshot.headSequence()).isEqualTo(2);
+            assertThat(snapshot.refreshSuccessCount()).isEqualTo(2);
+            assertThat(snapshot.refreshFailureCount()).isZero();
+        });
+        store.close();
+    }
+
+    @Test
+    void invalidSignatureDoesNotRefreshAndForkFailsClosedUntilExactRecovery()
+            throws Exception {
+        InMemoryFloor floor = new InMemoryFloor();
+        ExternalSequenceAnchorBootstrapRootTransition first = transition(
+                1, genesis.materialFingerprint(objectMapper), genesisKeys,
+                generationOneKeys, NOW.minusSeconds(60), NOW.plusSeconds(7200));
+        Map<String, KeyPair> forkKeys = keys("fork");
+        ExternalSequenceAnchorBootstrapRootTransition fork = transition(
+                1, genesis.materialFingerprint(objectMapper), genesisKeys,
+                forkKeys, NOW.minusSeconds(60), NOW.plusSeconds(7200));
+        ExternalSequenceAnchorBootstrapRootTransition second = transition(
+                2, first.materialFingerprint(), generationOneKeys, generationTwoKeys,
+                NOW.minusSeconds(10), NOW.plusSeconds(10_800));
+        QueueFetcher fetcher = new QueueFetcher(
+                document(bundle(first), "etag-a"),
+                document(bundle(fork), "etag-fork"),
+                document(bundle(first, second), "etag-b"));
+        var store = dynamic(floor, fetcher);
+
+        ExternalSequenceAnchorTrustPublication valid =
+                notaryPublication(generationOneKeys);
+        var invalid = new ExternalSequenceAnchorTrustPublication(
+                valid.schemaVersion(), valid.material(), valid.materialFingerprint(),
+                List.of(sign("root-1", "one-key-1", generationTwoKeys.get("root-1"),
+                                valid.materialFingerprint(), NOW),
+                        valid.bootstrapSignatures().get(1),
+                        valid.bootstrapSignatures().get(2)));
+        assertThatThrownBy(() -> store.verify(invalid, NOW))
+                .isInstanceOf(ExternalSequenceAnchorBootstrapRootTrustStore
+                        .TrustException.class)
+                .extracting(error -> ((ExternalSequenceAnchorBootstrapRootTrustStore
+                        .TrustException) error).reason())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootTrustStore
+                        .TrustException.Reason.INVALID_SIGNATURE);
+        assertThat(fetcher.fetchCount()).isOne();
+
+        assertThat(store.refreshNow()).isFalse();
+        assertThat(store.snapshot().status()).isEqualTo("REFRESH_FAILED");
+        assertThatThrownBy(() -> store.verify(valid, NOW))
+                .isInstanceOf(ExternalSequenceAnchorBootstrapRootTrustStore
+                        .TrustException.class)
+                .extracting(error -> ((ExternalSequenceAnchorBootstrapRootTrustStore
+                        .TrustException) error).reason())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootTrustStore
+                        .TrustException.Reason.UNAVAILABLE);
+
+        assertThat(store.refreshNow()).isTrue();
+        store.verify(notaryPublication(generationTwoKeys), NOW);
+        assertThat(store.snapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.status()).isEqualTo("HEALTHY");
+            assertThat(snapshot.headSequence()).isEqualTo(2);
+            assertThat(snapshot.refreshFailureCount()).isOne();
+        });
+        store.close();
+    }
+
+    @Test
+    void notModifiedCannotExtendExpiredSignedRootHead() throws Exception {
+        MutableClock mutableClock = new MutableClock(NOW);
+        clock = mutableClock;
+        ExternalSequenceAnchorBootstrapRootTransition first = transition(
+                1, genesis.materialFingerprint(objectMapper), genesisKeys,
+                generationOneKeys, NOW.minusSeconds(30), NOW.plusSeconds(60));
+        QueueFetcher fetcher = new QueueFetcher(
+                document(bundle(first), "etag-a"),
+                new DynamicExternalSequenceAnchorBootstrapRootTrustStore.FetchedDocument(
+                        true, new byte[0], "etag-a"));
+        var store = dynamic(new InMemoryFloor(), fetcher);
+
+        mutableClock.advance(Duration.ofSeconds(61));
+
+        assertThat(store.refreshNow()).isFalse();
+        assertThat(store.snapshot().status()).isEqualTo("REFRESH_FAILED");
+        assertThat(store.descriptor().available()).isFalse();
+        store.close();
+    }
+
+    @Test
+    void realHttpRequiresExactMediaVersionEtagAndNoRedirect() throws Exception {
+        ExternalSequenceAnchorBootstrapRootTransition first = transition(
+                1, genesis.materialFingerprint(objectMapper), genesisKeys,
+                generationOneKeys, NOW.minusSeconds(30), NOW.plusSeconds(3600));
+        byte[] body = objectMapper.writeValueAsBytes(bundle(first));
+        AtomicInteger validCalls = new AtomicInteger();
+        AtomicReference<String> accept = new AtomicReference<>();
+        AtomicReference<String> protocol = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/valid", exchange -> {
+            validCalls.incrementAndGet();
+            accept.set(exchange.getRequestHeaders().getFirst("Accept"));
+            protocol.set(exchange.getRequestHeaders().getFirst(
+                    DynamicExternalSequenceAnchorBootstrapRootTrustStore.PROTOCOL_HEADER));
+            if ("etag-a".equals(exchange.getRequestHeaders().getFirst("If-None-Match"))) {
+                exchange.sendResponseHeaders(304, -1);
+            } else {
+                exchange.getResponseHeaders().set("Content-Type",
+                        DynamicExternalSequenceAnchorBootstrapRootTrustStore.MEDIA_TYPE);
+                exchange.getResponseHeaders().set(
+                        DynamicExternalSequenceAnchorBootstrapRootTrustStore.PROTOCOL_HEADER,
+                        ExternalSequenceAnchorBootstrapRootBundle.SCHEMA_VERSION);
+                exchange.getResponseHeaders().set("ETag", "etag-a");
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+            }
+            exchange.close();
+        });
+        server.createContext("/redirect", exchange -> {
+            exchange.getResponseHeaders().set("Location", "/valid");
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
+        server.createContext("/generic", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.getResponseHeaders().set(
+                    DynamicExternalSequenceAnchorBootstrapRootTrustStore.PROTOCOL_HEADER,
+                    ExternalSequenceAnchorBootstrapRootBundle.SCHEMA_VERSION);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        URI base = URI.create("http://127.0.0.1:" + server.getAddress().getPort());
+        try {
+            var store = httpDynamic(base.resolve("/valid"), new InMemoryFloor());
+            assertThat(store.refreshNow()).isTrue();
+            assertThat(validCalls).hasValue(2);
+            assertThat(accept).hasValue(
+                    DynamicExternalSequenceAnchorBootstrapRootTrustStore.MEDIA_TYPE);
+            assertThat(protocol).hasValue(
+                    ExternalSequenceAnchorBootstrapRootBundle.SCHEMA_VERSION);
+            store.close();
+
+            assertThatThrownBy(() -> httpDynamic(
+                    base.resolve("/redirect"), new InMemoryFloor()))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("bootstrap is unavailable");
+            assertThat(validCalls).hasValue(2);
+            assertThatThrownBy(() -> httpDynamic(
+                    base.resolve("/generic"), new InMemoryFloor()))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("bootstrap is unavailable");
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private ConfiguredExternalSequenceAnchorBootstrapRootTrustStore configured(
             ExternalSequenceAnchorBootstrapRootBundle bundle,
             ExternalSequenceAnchorBootstrapRootPublicationFloor floor) {
         return new ConfiguredExternalSequenceAnchorBootstrapRootTrustStore(
                 objectMapper, clock, binding(), Set.of(POLICY), genesis, floor, bundle);
+    }
+
+    private DynamicExternalSequenceAnchorBootstrapRootTrustStore dynamic(
+            ExternalSequenceAnchorBootstrapRootPublicationFloor floor,
+            DynamicExternalSequenceAnchorBootstrapRootTrustStore.DocumentFetcher fetcher) {
+        return new DynamicExternalSequenceAnchorBootstrapRootTrustStore(
+                objectMapper, clock, binding(), Set.of(POLICY), genesis, floor,
+                new DynamicExternalSequenceAnchorBootstrapRootTrustStore.Settings(
+                        java.net.URI.create("http://127.0.0.1:8080/bootstrap-roots"),
+                        Duration.ofSeconds(2), Duration.ofSeconds(10),
+                        Duration.ofMinutes(2), Duration.ofSeconds(5), true),
+                fetcher, false);
+    }
+
+    private DynamicExternalSequenceAnchorBootstrapRootTrustStore httpDynamic(
+            URI bundleUri,
+            ExternalSequenceAnchorBootstrapRootPublicationFloor floor) {
+        return new DynamicExternalSequenceAnchorBootstrapRootTrustStore(
+                objectMapper, clock, binding(), Set.of(POLICY), genesis, floor,
+                new DynamicExternalSequenceAnchorBootstrapRootTrustStore.Settings(
+                        bundleUri, Duration.ofSeconds(2), Duration.ofSeconds(10),
+                        Duration.ofMinutes(2), Duration.ofSeconds(5), true),
+                null, false);
+    }
+
+    private DynamicExternalSequenceAnchorBootstrapRootTrustStore.FetchedDocument document(
+            ExternalSequenceAnchorBootstrapRootBundle bundle, String etag) throws Exception {
+        return new DynamicExternalSequenceAnchorBootstrapRootTrustStore.FetchedDocument(
+                false, objectMapper.writeValueAsBytes(bundle), etag);
     }
 
     private ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding binding() {
@@ -428,7 +667,8 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
         private Generation current;
 
         @Override
-        public synchronized void accept(Generation generation) {
+        public synchronized void accept(VerifiedChain chain) {
+            Generation generation = chain.head();
             if (current == null) {
                 current = generation;
                 return;
@@ -442,12 +682,9 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
                 }
                 return;
             }
-            if (generation.sequence() != current.sequence() + 1) {
-                throw new IllegalArgumentException("floor rejected gap");
-            }
-            if (!generation.previousMaterialFingerprint()
-                    .equals(current.materialFingerprint())) {
-                throw new IllegalArgumentException("floor rejected predecessor");
+            Generation ancestor = chain.generations().get((int) current.sequence() - 1);
+            if (!ancestor.materialFingerprint().equals(current.materialFingerprint())) {
+                throw new IllegalArgumentException("floor rejected forked ancestry");
             }
             current = generation;
         }
@@ -455,6 +692,63 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
         @Override
         public boolean durable() {
             return true;
+        }
+    }
+
+    private static final class QueueFetcher
+            implements DynamicExternalSequenceAnchorBootstrapRootTrustStore.DocumentFetcher {
+
+        private final ArrayDeque<
+                DynamicExternalSequenceAnchorBootstrapRootTrustStore.FetchedDocument> documents;
+        private final AtomicInteger fetches = new AtomicInteger();
+
+        private QueueFetcher(
+                DynamicExternalSequenceAnchorBootstrapRootTrustStore.FetchedDocument...
+                        documents) {
+            this.documents = new ArrayDeque<>(List.of(documents));
+        }
+
+        @Override
+        public synchronized DynamicExternalSequenceAnchorBootstrapRootTrustStore.FetchedDocument
+                fetch(java.net.URI uri, String etag, Duration timeout) {
+            fetches.incrementAndGet();
+            var result = documents.pollFirst();
+            if (result == null) {
+                throw new IllegalStateException("No queued bootstrap-root bundle");
+            }
+            return result;
+        }
+
+        private int fetchCount() {
+            return fetches.get();
+        }
+    }
+
+    private static final class MutableClock extends Clock {
+
+        private Instant current;
+
+        private MutableClock(Instant current) {
+            this.current = current;
+        }
+
+        private void advance(Duration duration) {
+            current = current.plus(duration);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return current;
         }
     }
 }
