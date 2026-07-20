@@ -14,12 +14,13 @@ import java.util.regex.Pattern;
  * must invoke it before their local durable floor, so an uncertain local commit can be retried
  * against an already anchored external head without creating an unanchored local generation.</p>
  */
-public interface TestSuiteStabilityExternalSequenceAnchor {
+public interface TestSuiteStabilityExternalSequenceAnchor extends AutoCloseable {
 
     /** Closed aggregate descriptor vocabulary; identities and chain material are forbidden. */
     Set<String> DESCRIPTOR_PROPERTIES = Set.of(
             "sourceType", "externalFirstCommit", "authenticatedConflictFatal",
-            "concurrentNotaryRequests");
+            "concurrentNotaryRequests", "managedTrustPublication",
+            "restartFreeNotaryKeyRotation", "durableTrustPublicationFloor");
 
     /** Anchors one exact stream head or throws before local durable state may advance. */
     void accept(Head head);
@@ -29,6 +30,20 @@ public interface TestSuiteStabilityExternalSequenceAnchor {
 
     /** @return aggregate runtime state; reading it must never perform remote I/O */
     Snapshot snapshot();
+
+    /**
+     * @return aggregate receipt-trust refresh state; reading it must never perform remote I/O
+     */
+    default ExternalSequenceAnchorReceiptTrustStore.Snapshot trustSnapshot() {
+        return new ExternalSequenceAnchorReceiptTrustStore.Snapshot(
+                ExternalSequenceAnchorReceiptTrustStore.Snapshot.SCHEMA_VERSION,
+                false, "UNAVAILABLE", 0, 0, 0, null, 0, 0);
+    }
+
+    /** Static or unavailable implementations own no refresh resources. */
+    @Override
+    default void close() {
+    }
 
     /** Streams whose ordering is independently anchored. */
     enum StreamKind {

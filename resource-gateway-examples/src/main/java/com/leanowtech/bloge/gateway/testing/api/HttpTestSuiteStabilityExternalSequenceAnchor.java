@@ -18,7 +18,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -69,9 +68,9 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
     private final String anchorSetId;
     private final int signatureThreshold;
     private final int maximumFaults;
-    private final Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
-            keys;
+    private final ExternalSequenceAnchorReceiptTrustStore trustStore;
     private final List<Endpoint> endpoints;
+    private final Set<String> endpointAuthorityIds;
     private final Settings settings;
     private final HttpClient httpClient;
     private volatile RuntimeState state = RuntimeState.initial();
@@ -127,6 +126,24 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
             List<Endpoint> endpoints,
             Settings settings,
             HttpClient httpClient) {
+        this(objectMapper, clock, secureRandom, trustDomain, anchorSetId,
+                signatureThreshold, maximumFaults,
+                new StaticExternalSequenceAnchorReceiptTrustStore(clock, authorityKeys),
+                endpoints, settings, httpClient);
+    }
+
+    HttpTestSuiteStabilityExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            Clock clock,
+            SecureRandom secureRandom,
+            String trustDomain,
+            String anchorSetId,
+            int signatureThreshold,
+            int maximumFaults,
+            ExternalSequenceAnchorReceiptTrustStore trustStore,
+            List<Endpoint> endpoints,
+            Settings settings,
+            HttpClient httpClient) {
         this.objectMapper = strict(Objects.requireNonNull(objectMapper, "objectMapper"));
         this.clock = Objects.requireNonNull(clock, "clock");
         this.secureRandom = Objects.requireNonNull(secureRandom, "secureRandom");
@@ -137,8 +154,56 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
         this.settings = Objects.requireNonNull(settings, "settings");
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
         this.endpoints = validateEndpoints(endpoints, this.settings.allowInsecureLoopback());
-        this.keys = indexedKeys(authorityKeys);
+        this.endpointAuthorityIds = this.endpoints.stream()
+                .map(Endpoint::authorityId).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
         validatePolicy();
+    }
+
+    /**
+     * Creates an anchor backed by an already bootstrapped atomic managed trust store.
+     *
+     * @param objectMapper canonical JSON baseline
+     * @param trustDomain exact receipt signer trust domain
+     * @param anchorSetId stable notary-set identity
+     * @param signatureThreshold required accepted receipt quorum
+     * @param maximumFaults declared Byzantine fault bound
+     * @param trustStore managed or static atomic receipt trust snapshot
+     * @param endpointsJson one endpoint and failure domain per authority
+     * @param settings transport and receipt freshness policy
+     * @return configured external sequence anchor
+     */
+    public static HttpTestSuiteStabilityExternalSequenceAnchor fromTrustStore(
+            ObjectMapper objectMapper,
+            String trustDomain,
+            String anchorSetId,
+            int signatureThreshold,
+            int maximumFaults,
+            ExternalSequenceAnchorReceiptTrustStore trustStore,
+            String endpointsJson,
+            Settings settings) {
+        try {
+            ObjectMapper strict = strict(Objects.requireNonNull(objectMapper, "objectMapper"));
+            return new HttpTestSuiteStabilityExternalSequenceAnchor(
+                    strict, Clock.systemUTC(), new SecureRandom(), trustDomain, anchorSetId,
+                    signatureThreshold, maximumFaults, trustStore,
+                    parseEndpoints(strict, endpointsJson), settings, defaultClient());
+        } catch (RuntimeException invalid) {
+            try {
+                Objects.requireNonNull(trustStore, "trustStore").close();
+            } catch (RuntimeException ignored) {
+                // Preserve the original bounded configuration failure.
+            }
+            throw invalid;
+        } catch (Exception invalid) {
+            try {
+                Objects.requireNonNull(trustStore, "trustStore").close();
+            } catch (RuntimeException ignored) {
+                // Preserve the original bounded configuration failure.
+            }
+            throw new IllegalArgumentException(
+                    "External sequence-anchor configuration is invalid", invalid);
+        }
     }
 
     /**
@@ -151,6 +216,12 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
     @Override
     public synchronized void accept(Head head) {
         Objects.requireNonNull(head, "head");
+        ExternalSequenceAnchorReceiptTrustStore.Descriptor trust = trustStore.descriptor();
+        if (!trust.available() || trust.activeAuthorityCount() < signatureThreshold
+                || !trustStore.coversAuthorities(endpointAuthorityIds)) {
+            state = state.failed();
+            throw new ExternalAnchorException(ExternalAnchorException.Reason.UNAVAILABLE);
+        }
         Instant requestedAt = clock.instant().truncatedTo(ChronoUnit.SECONDS);
         String challenge = challenge();
         TestSuiteStabilityExternalSequenceCheckpointRequest request =
@@ -193,23 +264,41 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
     /** Returns static aggregate capability facts without remote I/O. */
     @Override
     public Descriptor descriptor() {
-        return new Descriptor(Descriptor.SCHEMA_VERSION, true, true, true,
-                maximumFaults > 0, endpoints.size(), signatureThreshold, maximumFaults,
+        ExternalSequenceAnchorReceiptTrustStore.Descriptor trust = trustStore.descriptor();
+        boolean available = trust.available()
+                && trust.activeAuthorityCount() >= signatureThreshold
+                && trustStore.coversAuthorities(endpointAuthorityIds);
+        return new Descriptor(Descriptor.SCHEMA_VERSION, available, true, true,
+                available && maximumFaults > 0, endpoints.size(), signatureThreshold, maximumFaults,
                 endpoints.size(), Map.of(
-                "sourceType", "HTTPS_SIGNED_MULTI_NOTARY",
+                "sourceType", trust.managedPublication()
+                        ? "HTTPS_SIGNED_MULTI_NOTARY_MANAGED_TRUST"
+                        : "HTTPS_SIGNED_MULTI_NOTARY_STATIC_TRUST",
                 "externalFirstCommit", true,
                 "authenticatedConflictFatal", true,
-                "concurrentNotaryRequests", true));
+                "concurrentNotaryRequests", true,
+                "managedTrustPublication", trust.managedPublication(),
+                "restartFreeNotaryKeyRotation", trust.restartFreeRotation(),
+                "durableTrustPublicationFloor", trust.durableFloor()));
     }
 
     /** Returns aggregate process-local operation state without remote I/O. */
     @Override
     public Snapshot snapshot() {
         RuntimeState observed = state;
-        return new Snapshot(Snapshot.SCHEMA_VERSION, observed.available(), observed.status(),
+        boolean trustAvailable = trustStore.snapshot().available();
+        return new Snapshot(Snapshot.SCHEMA_VERSION,
+                observed.available() && trustAvailable,
+                trustAvailable ? observed.status() : "TRUST_UNAVAILABLE",
                 observed.lastSuccessfulAnchorAt(), observed.successCount(),
                 observed.failureCount(), observed.conflictCount(), endpoints.size(),
                 signatureThreshold, maximumFaults, endpoints.size());
+    }
+
+    /** Returns aggregate local receipt-trust refresh state without remote I/O. */
+    @Override
+    public ExternalSequenceAnchorReceiptTrustStore.Snapshot trustSnapshot() {
+        return trustStore.snapshot();
     }
 
     private CompletableFuture<Observation> observeAsync(
@@ -294,13 +383,7 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
             throw new IllegalArgumentException(
                     "External checkpoint receipt binding is invalid");
         }
-        var signed = new TestSuiteStabilityServingInventory.AuthoritySignature(
-                receipt.authorityId(), receipt.keyId(), receipt.algorithm(),
-                receipt.issuedAt(), receipt.signature());
-        ConfiguredTestSuiteStabilityServingInventoryAuthority.verifyDetachedSignatures(
-                keys, 1, List.of(signed), receipt.receiptFingerprint(),
-                receipt.issuedAt(), receipt.expiresAt(), now,
-                "External checkpoint receipt");
+        trustStore.verify(receipt, now);
     }
 
     private static boolean meaningfulConflict(
@@ -327,36 +410,16 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
             throw new IllegalArgumentException(
                     "External sequence-anchor quorum policy is invalid");
         }
-        Set<String> endpointAuthorities = new HashSet<>();
-        endpoints.forEach(endpoint -> endpointAuthorities.add(endpoint.authorityId()));
-        Set<String> keyAuthorities = new HashSet<>();
-        keys.values().forEach(key -> keyAuthorities.add(key.authorityId()));
-        if (!endpointAuthorities.equals(keyAuthorities)) {
+        if (!trustStore.coversAuthorities(endpointAuthorityIds)) {
             throw new IllegalArgumentException(
                     "Every external notary requires independently configured keys and endpoint");
         }
     }
 
-    private static Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
-            indexedKeys(
-            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> values) {
-        Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> result =
-                new HashMap<>();
-        for (ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey key
-                : values == null
-                ? List.<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>of()
-                : values) {
-            if (key == null || result.putIfAbsent(
-                    key.authorityId() + '\u0000' + key.keyId(), key) != null) {
-                throw new IllegalArgumentException(
-                        "External notary keys must be unique");
-            }
-        }
-        if (result.isEmpty() || result.size() > 64) {
-            throw new IllegalArgumentException(
-                    "External notary keys must be non-empty and bounded");
-        }
-        return Map.copyOf(result);
+    /** Stops any managed trust refresh lane owned by this anchor. */
+    @Override
+    public void close() {
+        trustStore.close();
     }
 
     private static List<Endpoint> validateEndpoints(

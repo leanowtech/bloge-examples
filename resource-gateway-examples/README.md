@@ -331,7 +331,7 @@ runtime-root stream. External compare-and-append completes before each local dat
 signed conflict is fatal, while an external success followed by local failure is exact-retry safe.
 The smallest staging topology is four independent notaries with three accepted receipts. The demo
 startup script validates this configuration before build or Java startup. Bootstrap-root ceremony,
-external-anchor key hot rotation, mTLS/pinning, authority HA/chaos and DR certification remain open.
+bootstrap-root hot rotation, mTLS/pinning, authority HA/chaos and DR certification remain open.
 A changed member topology still
 requires a coordinated new cohort generation.
 See the
@@ -395,8 +395,14 @@ boolean protocol facts.
 Staging additionally requires both mutable ordering streams to be anchored outside the rollbackable
 Resource Gateway database. Set
 `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED=true` and configure one
-stable trust domain/set id, public Ed25519 key array, and one HTTPS endpoint plus distinct failure
-domain per notary. The built-in policy uses `3f+1` authorities and a `2f+1` accepted-receipt
+stable trust domain/set id and one HTTPS endpoint plus distinct failure domain per notary. Staging
+also requires `...EXTERNAL_ANCHOR_MANAGED_TRUST_ENABLED=true`: an independent bootstrap-root quorum
+signs a strict HTTPS/ETag publication containing the exact notary key lifecycle set, policy,
+quorum, validity window and monotonic predecessor chain. Static notary keys must be `[]`. Unknown
+receipt keys trigger one cooldown-bound refresh, so routine key rotation and revocation require no
+Resource Gateway restart; any refresh, signature, lifecycle, rollback, fork, gap or durable-floor
+ambiguity immediately fails receipt verification closed. The built-in policy uses `3f+1`
+authorities and a `2f+1` accepted-receipt
 threshold; staging enforces `f>=1`, so the smallest deployment is four independently operated
 notaries with a three-signature quorum. Every request carries a fresh 256-bit challenge and exact
 publication or trust-root sequence head. A valid signed conflict is fatal even when another quorum
@@ -406,6 +412,8 @@ external success followed by local failure is safe to retry, while no local gene
 visible without an external checkpoint. This closes complete database-backup rollback only under
 the declared `<=f` Byzantine and independent-failure-domain assumptions; deploying, certifying,
 backing up, and monitoring the external notary service remains a deployment responsibility.
+The wire Schema, failure matrix and remaining bootstrap ceremony limits are documented in the
+[managed external-notary trust verification](../docs/resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md).
 
 Scope, cohort, inventory/witness trust, managed-root freshness, external-anchor quorum/timing, and
 lease settings are checked by

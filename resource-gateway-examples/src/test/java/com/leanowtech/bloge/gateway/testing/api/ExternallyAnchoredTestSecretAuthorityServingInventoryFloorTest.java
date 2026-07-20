@@ -196,7 +196,18 @@ class ExternallyAnchoredTestSecretAuthorityServingInventoryFloorTest {
         assertThat(health.getDetails()).containsOnlyKeys(
                 "schemaVersion", "status", "lastSuccessfulAnchorAt", "successCount",
                 "failureCount", "conflictCount", "authorityCount", "signatureThreshold",
-                "maximumFaults", "independentFailureDomainCount");
+                "maximumFaults", "independentFailureDomainCount", "trustStatus",
+                "trustPublicationSequence", "trustAuthorityCount",
+                "trustActiveAuthorityCount", "trustLastSuccessfulRefreshAt",
+                "trustRefreshSuccessCount", "trustRefreshFailureCount");
+        assertThat(health.getDetails())
+                .containsEntry("trustStatus", "UNAVAILABLE")
+                .containsEntry("trustPublicationSequence", 0L)
+                .containsEntry("trustAuthorityCount", 0)
+                .containsEntry("trustActiveAuthorityCount", 0)
+                .containsEntry("trustLastSuccessfulRefreshAt", "")
+                .containsEntry("trustRefreshSuccessCount", 0L)
+                .containsEntry("trustRefreshFailureCount", 0L);
         assertThat(health.getDetails().toString())
                 .doesNotContain("endpoint", "stream", "fingerprint", "authorityId", "key");
 

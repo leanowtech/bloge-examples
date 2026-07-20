@@ -105,7 +105,7 @@ gateway.testing.test-secrets.authority.http.jwks.cohort
 - 配置必须恰好产生一个 test-secret external anchor；零个、多个、unavailable、非 external durable 或
   非 challenge-bound 均拒绝启动。
 - `scripts/visual-canvas-demo.sh` 在构建和 Java 启动前检查必要 feature flags、HTTPS escape hatch、
-  非空 key/endpoint 数组、identifier、quorum 和 timing bounds。
+  非空 endpoint、managed trust publication/bootstrap quorum、identifier、quorum 和 timing bounds。
 
 ## 6. Capability 与 Health
 
@@ -116,6 +116,10 @@ gateway.testing.test-secrets.authority.http.jwks.cohort
 - `testSecretAuthorityExternallyAnchoredTrustRootFloor`
 - `testSecretAuthorityByzantineQuorumTrustRootFloor`
 - `testSecretAuthorityExternalNonEquivocationReady`
+- `managedTestSecretExternalNotaryTrust`
+- `restartFreeTestSecretExternalNotaryKeyRotation`
+- `durableTestSecretExternalNotaryTrustFloor`
+- `testSecretExternalNotaryTrustReady`
 
 最后一个只有在 dynamic inventory ready、publication/root 两条流都 external anchored、两条流都满足
 Byzantine quorum，且 authority descriptor 明确声明 composite non-equivocation 时才为 true。不会用
@@ -155,7 +159,7 @@ bash -n scripts/visual-canvas-demo.sh
 ## 8. 明确未完成
 
 - deployment/witness bootstrap-root 自身的轮换 ceremony、break-glass、KMS/HSM custody 与双人审批；
-- external notary public-key 的 restart-free rotation 和独立 trust publication；
+- bootstrap root 自身的 restart-free rotation ceremony 与独立 consistency witness；
 - endpoint mTLS、certificate pinning、egress identity 与远端 workload identity；
 - notary 服务的生产实现、跨区域部署、备份/恢复、WORM 介质、SLO、告警和审计导出；
 - 非 H2 数据库、真实 backup rollback、网络分区、clock fault、soak、chaos 与多站点 DR 认证；
@@ -163,3 +167,6 @@ bash -n scripts/visual-canvas-demo.sh
 
 因此当前可声明“test-secret 两条 mutable ordering stream 具备 external-first Byzantine
 non-equivocation core”；不能声明 bootstrap trust、外部 notary 产品或整套控制面的生产认证已经完成。
+Receipt notary public-key 的 managed trust publication 与 restart-free rotation 已由
+[external notary trust rotation verification](resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md)
+闭合。

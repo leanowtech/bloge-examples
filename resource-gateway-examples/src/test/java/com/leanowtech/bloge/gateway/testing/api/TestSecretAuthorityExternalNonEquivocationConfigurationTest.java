@@ -102,16 +102,17 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
         when(environment.getActiveProfiles()).thenReturn(new String[] {"staging"});
 
         assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
-                objectMapper, environment, "secret-transparency", "notary-set-a",
+                objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
+                "secret-transparency", "notary-set-a",
                 1, 0, 0, "[]", "[]", 3000, 5, 15, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("does not meet deployment fault policy");
     }
 
     @Test
-    void stagingAcceptsAnExplicitFourNotaryThreeSignatureConfiguration() throws Exception {
+    void testProfileRetainsExplicitStaticNotaryCompatibility() throws Exception {
         Environment environment = mock(Environment.class);
-        when(environment.getActiveProfiles()).thenReturn(new String[] {"staging"});
+        when(environment.getActiveProfiles()).thenReturn(new String[] {"test"});
         List<Map<String, Object>> keys = new ArrayList<>();
         List<Map<String, Object>> endpoints = new ArrayList<>();
         for (int index = 1; index <= 4; index++) {
@@ -134,7 +135,8 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
 
         TestSecretAuthorityExternalSequenceAnchor anchor = configuration
                 .testSecretAuthorityExternalSequenceAnchor(
-                        objectMapper, environment, "secret-transparency", "notary-set-a",
+                        objectMapper, environment, mock(TestRuntimeDatabase.class),
+                        "secret-fleet", "secret-transparency", "notary-set-a",
                         3, 1, 1, objectMapper.writeValueAsString(keys),
                         objectMapper.writeValueAsString(endpoints), 3000, 5, 15, false);
 
@@ -146,6 +148,19 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
                 .containsExactly(true, true, 4, 3);
         assertThat(configuration.testSecretAuthorityExternalSequenceAnchorHealth(anchor))
                 .isInstanceOf(TestSecretAuthorityExternalSequenceAnchorHealth.class);
+    }
+
+    @Test
+    void stagingRejectsStaticNotaryTrustEvenWhenQuorumMathIsStrongEnough() {
+        Environment environment = mock(Environment.class);
+        when(environment.getActiveProfiles()).thenReturn(new String[] {"staging"});
+
+        assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
+                objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
+                "secret-transparency", "notary-set-a", 3, 1, 1,
+                "[]", "[]", 3000, 5, 15, false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires managed notary trust");
     }
 
     private static TestRuntimeDatabase database(String suffix) {

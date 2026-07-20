@@ -26,6 +26,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -177,6 +178,29 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
                 .hasMessageContaining("must be unique");
     }
 
+    @Test
+    void refreshedTrustAuthoritySetMustStillExactlyMatchConfiguredEndpoints() {
+        MutableAuthorityTrustStore trustStore = new MutableAuthorityTrustStore(
+                Set.of("notary-1", "notary-2", "notary-3", "notary-4"));
+        HttpTestSuiteStabilityExternalSequenceAnchor anchor =
+                new HttpTestSuiteStabilityExternalSequenceAnchor(
+                        objectMapper, Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(),
+                        TRUST_DOMAIN, ANCHOR_SET, 3, 1, trustStore, endpoints,
+                        settings(), client());
+
+        trustStore.authorities = Set.of(
+                "notary-1", "notary-2", "notary-3", "replacement-notary");
+
+        assertThat(anchor.descriptor().available()).isFalse();
+        assertThatThrownBy(() -> anchor.accept(head()))
+                .isInstanceOf(
+                        TestSuiteStabilityExternalSequenceAnchor.ExternalAnchorException.class)
+                .extracting(error -> ((TestSuiteStabilityExternalSequenceAnchor
+                        .ExternalAnchorException) error).reason())
+                .isEqualTo(TestSuiteStabilityExternalSequenceAnchor.ExternalAnchorException
+                        .Reason.UNAVAILABLE);
+    }
+
     private HttpTestSuiteStabilityExternalSequenceAnchor anchor(
             int threshold, int maximumFaults) {
         return new HttpTestSuiteStabilityExternalSequenceAnchor(
@@ -294,5 +318,38 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
         INVALID_SIGNATURE,
         REPLAY,
         OUTLIVES_REQUEST
+    }
+
+    private static final class MutableAuthorityTrustStore
+            implements ExternalSequenceAnchorReceiptTrustStore {
+
+        private Set<String> authorities;
+
+        private MutableAuthorityTrustStore(Set<String> authorities) {
+            this.authorities = Set.copyOf(authorities);
+        }
+
+        @Override
+        public void verify(
+                TestSuiteStabilityExternalSequenceCheckpointReceipt receipt,
+                Instant observedAt) {
+        }
+
+        @Override
+        public boolean coversAuthorities(Set<String> expected) {
+            return authorities.equals(Set.copyOf(expected));
+        }
+
+        @Override
+        public Descriptor descriptor() {
+            return new Descriptor(Descriptor.SCHEMA_VERSION, true,
+                    true, true, true, authorities.size(), authorities.size());
+        }
+
+        @Override
+        public Snapshot snapshot() {
+            return new Snapshot(Snapshot.SCHEMA_VERSION, true, "HEALTHY",
+                    2, authorities.size(), authorities.size(), NOW, 2, 0);
+        }
     }
 }

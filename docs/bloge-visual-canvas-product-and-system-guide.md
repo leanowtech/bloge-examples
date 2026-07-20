@@ -1204,8 +1204,12 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 若 staging 启用 `RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED`，脚本还会强制 dynamic JWKS、remote
 signed inventory、managed roots 和
 `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED` 同时开启，并预检外部
-notary trust/set、非空公钥与 endpoint、HTTPS、`3f+1 / 2f+1` quorum 和 receipt timing。最小拓扑是
-四个独立 failure domain、三个有效回执；完整变量见脚本 `--help` 和 Testing Control Plane API。
+notary trust/set、非空 endpoint、managed trust publication、bootstrap root quorum、HTTPS、
+`3f+1 / 2f+1` quorum 和 receipt timing。staging 禁止静态 notary key array；notary 验签公钥通过
+bootstrap-quorum-signed HTTPS/ETag publication 免重启轮换，publication rollback/fork/gap 或刷新失败
+立即关闭外部锚定。最小拓扑是四个独立 failure domain、三个有效回执；完整变量见脚本 `--help`、
+Testing Control Plane API 与
+[managed external-notary trust verification](resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md)。
 首次 request-index 跨版本升级应从 `LEGACY_READ_WRITE` 开始；完整配置和三阶段切换门禁见
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 与
 [request-index rolling-upgrade verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md)。

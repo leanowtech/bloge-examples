@@ -40,6 +40,16 @@ public final class TestSecretAuthorityExternalSequenceAnchorHealth implements He
             details.put("maximumFaults", snapshot.maximumFaults());
             details.put("independentFailureDomainCount",
                     snapshot.independentFailureDomainCount());
+            ExternalSequenceAnchorReceiptTrustStore.Snapshot trust = anchor.trustSnapshot();
+            details.put("trustStatus", trust.status());
+            details.put("trustPublicationSequence", trust.publicationSequence());
+            details.put("trustAuthorityCount", trust.authorityCount());
+            details.put("trustActiveAuthorityCount", trust.activeAuthorityCount());
+            details.put("trustLastSuccessfulRefreshAt",
+                    trust.lastSuccessfulRefreshAt() == null
+                            ? "" : trust.lastSuccessfulRefreshAt().toString());
+            details.put("trustRefreshSuccessCount", trust.refreshSuccessCount());
+            details.put("trustRefreshFailureCount", trust.refreshFailureCount());
             return (snapshot.available() ? Health.up() : Health.down())
                     .withDetails(Map.copyOf(details)).build();
         } catch (RuntimeException unavailable) {

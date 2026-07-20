@@ -1435,7 +1435,7 @@ public class TestRuntimeConfiguration {
     }
 
     /** Configures the test-secret-specific external signed non-equivocation quorum. */
-    @Bean
+    @Bean(destroyMethod = "close")
     @ConditionalOnProperty(
             prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote",
             name = "enabled", havingValue = "true")
@@ -1445,6 +1445,9 @@ public class TestRuntimeConfiguration {
     TestSecretAuthorityExternalSequenceAnchor testSecretAuthorityExternalSequenceAnchor(
             ObjectMapper objectMapper,
             Environment environment,
+            TestRuntimeDatabase database,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id:}")
+            String scopeId,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.trust-domain:}")
             String trustDomain,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.anchor-set-id:}")
@@ -1475,15 +1478,12 @@ public class TestRuntimeConfiguration {
             throw new IllegalStateException(
                     "External test-secret sequence anchor does not meet deployment fault policy");
         }
-        return TestSecretAuthorityExternalSequenceAnchor.adapt(
-                HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
-                        objectMapper, trustDomain, anchorSetId, signatureThreshold,
-                        maximumFaults, authorityKeysJson, endpointsJson,
-                        new HttpTestSuiteStabilityExternalSequenceAnchor.Settings(
-                                Duration.ofMillis(requestTimeoutMillis),
-                                Duration.ofSeconds(clockSkewSeconds),
-                                Duration.ofSeconds(maximumReceiptLifetimeSeconds),
-                                allowInsecureLoopback)));
+        return TestSecretAuthorityExternalSequenceAnchor.adapt(buildExternalSequenceAnchor(
+                objectMapper, environment, database,
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor",
+                "test-secret", scopeId, trustDomain, anchorSetId, signatureThreshold,
+                maximumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
+                clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback));
     }
 
     /** Exposes endpoint- and key-free health for test-secret external non-equivocation. */
@@ -2706,7 +2706,7 @@ public class TestRuntimeConfiguration {
     }
 
     /** Configures the external signed quorum shared by both mutable inventory chains. */
-    @Bean
+    @Bean(destroyMethod = "close")
     @ConditionalOnProperty(
             prefix = "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote",
             name = "enabled", havingValue = "true")
@@ -2716,6 +2716,9 @@ public class TestRuntimeConfiguration {
     TestSuiteStabilityExternalSequenceAnchor testSuiteStabilityExternalSequenceAnchor(
             ObjectMapper objectMapper,
             Environment environment,
+            TestRuntimeDatabase database,
+            @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id:}")
+            String scopeId,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.trust-domain:}")
             String trustDomain,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.anchor-set-id:}")
@@ -2746,14 +2749,12 @@ public class TestRuntimeConfiguration {
             throw new IllegalStateException(
                     "External sequence anchor does not meet the deployment fault policy");
         }
-        return HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
-                objectMapper, trustDomain, anchorSetId, signatureThreshold, maximumFaults,
-                authorityKeysJson, endpointsJson,
-                new HttpTestSuiteStabilityExternalSequenceAnchor.Settings(
-                        Duration.ofMillis(requestTimeoutMillis),
-                        Duration.ofSeconds(clockSkewSeconds),
-                        Duration.ofSeconds(maximumReceiptLifetimeSeconds),
-                        allowInsecureLoopback));
+        return buildExternalSequenceAnchor(
+                objectMapper, environment, database,
+                "gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor",
+                "suite-stability", scopeId, trustDomain, anchorSetId, signatureThreshold,
+                maximumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
+                clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback);
     }
 
     /** Exposes endpoint- and key-free health for the external non-equivocation quorum. */
@@ -3235,6 +3236,130 @@ public class TestRuntimeConfiguration {
             return parsed != null && parsed.isArray() && parsed.isEmpty();
         } catch (java.io.IOException invalid) {
             return false;
+        }
+    }
+
+    private static HttpTestSuiteStabilityExternalSequenceAnchor buildExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            Environment environment,
+            TestRuntimeDatabase database,
+            String prefix,
+            String domainLabel,
+            String scopeId,
+            String trustDomain,
+            String anchorSetId,
+            int signatureThreshold,
+            int maximumFaults,
+            String authorityKeysJson,
+            String endpointsJson,
+            long requestTimeoutMillis,
+            long clockSkewSeconds,
+            long maximumReceiptLifetimeSeconds,
+            boolean allowInsecureLoopback) {
+        boolean staging = Arrays.asList(environment.getActiveProfiles()).contains("staging");
+        boolean managed = Boolean.TRUE.equals(environment.getProperty(
+                prefix + ".managed-trust.enabled", Boolean.class, false));
+        boolean required = staging || Boolean.TRUE.equals(environment.getProperty(
+                prefix + ".managed-trust.required", Boolean.class, false));
+        if (staging && allowInsecureLoopback) {
+            throw new IllegalStateException("Staging " + domainLabel
+                    + " external anchor requires HTTPS notaries");
+        }
+        if (required && !managed) {
+            throw new IllegalStateException("Staging " + domainLabel
+                    + " external anchor requires managed notary trust");
+        }
+        var anchorSettings = new HttpTestSuiteStabilityExternalSequenceAnchor.Settings(
+                Duration.ofMillis(requestTimeoutMillis), Duration.ofSeconds(clockSkewSeconds),
+                Duration.ofSeconds(maximumReceiptLifetimeSeconds), allowInsecureLoopback);
+        if (!managed) {
+            return HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
+                    objectMapper, trustDomain, anchorSetId, signatureThreshold, maximumFaults,
+                    authorityKeysJson, endpointsJson, anchorSettings);
+        }
+        if (!emptyJsonArray(objectMapper, authorityKeysJson)) {
+            throw new IllegalStateException("Managed " + domainLabel
+                    + " external anchor forbids static notary keys");
+        }
+        try {
+            String trustRootSetId = environment.getProperty(
+                    prefix + ".managed-trust.trust-root-set-id", "");
+            String bootstrapTrustDomain = environment.getProperty(
+                    prefix + ".managed-trust.bootstrap-trust-domain", "");
+            String acceptedPolicies = environment.getProperty(
+                    prefix + ".managed-trust.accepted-policy-fingerprints", "");
+            int bootstrapThreshold = environment.getProperty(
+                    prefix + ".managed-trust.bootstrap-signature-threshold",
+                    Integer.class, 0);
+            String bootstrapKeysJson = environment.getProperty(
+                    prefix + ".managed-trust.bootstrap-authority-keys-json", "[]");
+            URI publicationUri = URI.create(environment.getProperty(
+                    prefix + ".managed-trust.publication-uri", ""));
+            long trustRequestTimeoutMillis = environment.getProperty(
+                    prefix + ".managed-trust.request-timeout-ms", Long.class, 3000L);
+            long refreshIntervalSeconds = environment.getProperty(
+                    prefix + ".managed-trust.refresh-interval-seconds", Long.class, 30L);
+            long maximumSnapshotAgeSeconds = environment.getProperty(
+                    prefix + ".managed-trust.maximum-snapshot-age-seconds",
+                    Long.class, 60L);
+            long unknownKeyRefreshIntervalSeconds = environment.getProperty(
+                    prefix + ".managed-trust.unknown-key-refresh-interval-seconds",
+                    Long.class, 5L);
+            long maximumPublicationLifetimeSeconds = environment.getProperty(
+                    prefix + ".managed-trust.maximum-publication-lifetime-seconds",
+                    Long.class, 86_400L);
+            long trustClockSkewSeconds = environment.getProperty(
+                    prefix + ".managed-trust.clock-skew-seconds", Long.class, 5L);
+            long minimumRemainingValiditySeconds = environment.getProperty(
+                    prefix + ".managed-trust.minimum-remaining-validity-seconds",
+                    Long.class, 30L);
+            boolean trustAllowInsecureLoopback = Boolean.TRUE.equals(environment.getProperty(
+                    prefix + ".managed-trust.allow-insecure-loopback",
+                    Boolean.class, false));
+            if (staging && trustAllowInsecureLoopback) {
+                throw new IllegalStateException("Staging " + domainLabel
+                        + " external anchor requires an HTTPS managed-trust publication");
+            }
+            DatabaseTestSuiteStabilityServingInventoryTrustRootFloor databaseFloor =
+                    new DatabaseTestSuiteStabilityServingInventoryTrustRootFloor(
+                            database.jdbc(), objectMapper, scopeId, trustRootSetId,
+                            database.transactionManager());
+            databaseFloor.init();
+            ExternalSequenceAnchorTrustPublicationFloor floor =
+                    ExternalSequenceAnchorTrustPublicationFloor.adapt(databaseFloor);
+            var binding = new ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding(
+                    scopeId, trustRootSetId, anchorSetId, trustDomain, bootstrapTrustDomain,
+                    signatureThreshold, maximumFaults,
+                    Duration.ofSeconds(maximumPublicationLifetimeSeconds),
+                    Duration.ofSeconds(trustClockSkewSeconds),
+                    Duration.ofSeconds(minimumRemainingValiditySeconds));
+            var trustStore = new DynamicExternalSequenceAnchorReceiptTrustStore(
+                    objectMapper, binding,
+                    ConfiguredTestSuiteStabilityServingInventoryAuthority.parsePolicies(
+                            acceptedPolicies),
+                    bootstrapThreshold,
+                    ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
+                            objectMapper, bootstrapKeysJson),
+                    floor,
+                    new DynamicExternalSequenceAnchorReceiptTrustStore.Settings(
+                            publicationUri, Duration.ofMillis(trustRequestTimeoutMillis),
+                            Duration.ofSeconds(refreshIntervalSeconds),
+                            Duration.ofSeconds(maximumSnapshotAgeSeconds),
+                            Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
+                            trustAllowInsecureLoopback));
+            try {
+                return HttpTestSuiteStabilityExternalSequenceAnchor.fromTrustStore(
+                        objectMapper, trustDomain, anchorSetId, signatureThreshold,
+                        maximumFaults, trustStore, endpointsJson, anchorSettings);
+            } catch (RuntimeException invalid) {
+                trustStore.close();
+                throw invalid;
+            }
+        } catch (RuntimeException invalid) {
+            throw invalid;
+        } catch (Exception invalid) {
+            throw new IllegalStateException("Managed " + domainLabel
+                    + " external anchor configuration is invalid", invalid);
         }
     }
 

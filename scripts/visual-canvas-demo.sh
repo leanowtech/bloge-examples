@@ -67,8 +67,14 @@ Environment:
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD  required 2f+1 quorum
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS  required; 1..10
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MINIMUM_FAULTS  default: 1
-  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON  required public Ed25519 keys
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON  must be [] in staging
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON  required HTTPS notary endpoints
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_URI  required HTTPS managed-trust publication
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ROOT_SET_ID  required stable trust-root set id
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_TRUST_DOMAIN  required independent bootstrap domain
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_POLICY_FINGERPRINTS  required accepted policies
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_THRESHOLD  required; 1..32
+  RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_KEYS_JSON  required public Ed25519 bootstrap keys
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS  default: 3000; 100..30000
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS  default: 5; 0..30
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS  default: 15; 1..60
@@ -89,8 +95,14 @@ Environment:
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD  required 2f+1 quorum
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS  required; 1..10
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MINIMUM_FAULTS  default: 1
-  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON  required public Ed25519 keys
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON  must be [] in staging
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON  required HTTPS notary endpoints
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_URI  required HTTPS managed-trust publication
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ROOT_SET_ID  required stable trust-root set id
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_TRUST_DOMAIN  required independent bootstrap domain
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_POLICY_FINGERPRINTS  required accepted policies
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_THRESHOLD  required; 1..32
+  RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_KEYS_JSON  required public Ed25519 bootstrap keys
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS  default: 3000; 100..30000
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS  default: 5; 0..30
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS  default: 15; 1..60
@@ -138,6 +150,105 @@ truthy() {
     esac
 }
 
+validate_managed_external_anchor_trust() {
+    local prefix="$1"
+    local label="$2"
+    local managed_var="${prefix}_MANAGED_TRUST_ENABLED"
+    local static_keys_var="${prefix}_AUTHORITY_KEYS_JSON"
+    local notary_domain_var="${prefix}_TRUST_DOMAIN"
+    local trust_uri_var="${prefix}_TRUST_URI"
+    local root_set_var="${prefix}_TRUST_ROOT_SET_ID"
+    local bootstrap_domain_var="${prefix}_BOOTSTRAP_TRUST_DOMAIN"
+    local policy_var="${prefix}_TRUST_POLICY_FINGERPRINTS"
+    local threshold_var="${prefix}_BOOTSTRAP_THRESHOLD"
+    local bootstrap_keys_var="${prefix}_BOOTSTRAP_KEYS_JSON"
+    local allow_loopback_var="${prefix}_TRUST_ALLOW_INSECURE_LOOPBACK"
+
+    if ! truthy "${!managed_var:-true}"; then
+        echo "Staging ${label} external anchor requires managed notary trust." >&2
+        return 1
+    fi
+    if ! printf '%s' "${!static_keys_var:-[]}" |
+        grep -Eq '^\[[[:space:]]*\]$'; then
+        echo "Managed ${label} external anchor forbids static notary keys." >&2
+        return 1
+    fi
+    if [ -z "${!trust_uri_var:-}" ] || [ -z "${!root_set_var:-}" ] ||
+        [ -z "${!bootstrap_domain_var:-}" ] || [ -z "${!policy_var:-}" ] ||
+        [ -z "${!threshold_var:-}" ] || [ -z "${!bootstrap_keys_var:-}" ]; then
+        echo "Managed ${label} external anchor requires a trust publication, policy, and bootstrap quorum." >&2
+        return 1
+    fi
+    case "${!trust_uri_var}" in
+        https://*) ;;
+        *)
+            echo "Managed ${label} external-anchor trust publication must use HTTPS." >&2
+            return 1
+            ;;
+    esac
+    if truthy "${!allow_loopback_var:-false}"; then
+        echo "Staging ${label} external-anchor trust publication must not allow insecure loopback." >&2
+        return 1
+    fi
+    if ! printf '%s\n%s\n' "${!root_set_var}" "${!bootstrap_domain_var}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        [ "${!bootstrap_domain_var}" = "${!notary_domain_var:-}" ]; then
+        echo "Managed ${label} external-anchor root set or independent bootstrap domain is invalid." >&2
+        return 1
+    fi
+    if ! printf '%s' "${!policy_var}" |
+        grep -Eq '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31}$'; then
+        echo "Managed ${label} external-anchor trust policy fingerprints are invalid." >&2
+        return 1
+    fi
+    case "${!bootstrap_keys_var}" in
+        \[*\]) ;;
+        *)
+            echo "Managed ${label} external-anchor bootstrap keys must be a JSON array." >&2
+            return 1
+            ;;
+    esac
+    if printf '%s' "${!bootstrap_keys_var}" | grep -Eq '^\[[[:space:]]*\]$'; then
+        echo "Managed ${label} external-anchor bootstrap keys must be non-empty." >&2
+        return 1
+    fi
+
+    local bootstrap_threshold="${!threshold_var}"
+    local refresh_var="${prefix}_TRUST_REFRESH_SECONDS"
+    local timeout_var="${prefix}_TRUST_TIMEOUT_MS"
+    local unknown_var="${prefix}_TRUST_UNKNOWN_KEY_REFRESH_SECONDS"
+    local age_var="${prefix}_TRUST_MAXIMUM_AGE_SECONDS"
+    local lifetime_var="${prefix}_TRUST_MAXIMUM_PUBLICATION_LIFETIME_SECONDS"
+    local skew_var="${prefix}_TRUST_CLOCK_SKEW_SECONDS"
+    local remaining_var="${prefix}_TRUST_MINIMUM_REMAINING_VALIDITY_SECONDS"
+    local refresh_seconds="${!refresh_var:-30}"
+    local timeout_ms="${!timeout_var:-3000}"
+    local unknown_seconds="${!unknown_var:-5}"
+    local maximum_age_seconds="${!age_var:-60}"
+    local lifetime_seconds="${!lifetime_var:-86400}"
+    local skew_seconds="${!skew_var:-5}"
+    local remaining_seconds="${!remaining_var:-30}"
+    if printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+        "${bootstrap_threshold}" "${refresh_seconds}" "${timeout_ms}" \
+        "${unknown_seconds}" "${maximum_age_seconds}" "${lifetime_seconds}" \
+        "${skew_seconds}" "${remaining_seconds}" | grep -Eqv '^(0|[1-9][0-9]*)$'; then
+        echo "Managed ${label} external-anchor trust timing values must be canonical integers." >&2
+        return 1
+    fi
+    if [ "${bootstrap_threshold}" -lt 1 ] || [ "${bootstrap_threshold}" -gt 32 ] ||
+        [ "${refresh_seconds}" -lt 1 ] || [ "${refresh_seconds}" -gt 3600 ] ||
+        [ "${timeout_ms}" -lt 100 ] || [ "${timeout_ms}" -gt 30000 ] ||
+        [ "${unknown_seconds}" -lt 1 ] || [ "${unknown_seconds}" -gt 600 ] ||
+        [ "${maximum_age_seconds}" -lt "${refresh_seconds}" ] ||
+        [ "${maximum_age_seconds}" -gt 86400 ] ||
+        [ "${lifetime_seconds}" -lt 60 ] || [ "${lifetime_seconds}" -gt 604800 ] ||
+        [ "${skew_seconds}" -gt 30 ] || [ "${remaining_seconds}" -gt 3600 ] ||
+        [ "${remaining_seconds}" -ge "${lifetime_seconds}" ]; then
+        echo "Managed ${label} external-anchor trust timing bounds are invalid." >&2
+        return 1
+    fi
+}
+
 validate_test_secret_external_anchor() {
     if ! truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED:-false}"; then
         return 0
@@ -156,16 +267,16 @@ validate_test_secret_external_anchor() {
         [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID:-}" ] ||
         [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD:-}" ] ||
         [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS:-}" ] ||
-        [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON:-}" ] ||
         [ -z "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON:-}" ]; then
-        echo "Test-secret external anchoring requires trust, quorum, public keys, and endpoints." >&2
+        echo "Test-secret external anchoring requires trust, quorum, and endpoints." >&2
         return 1
     fi
     if truthy "${RG_TEST_SECRET_AUTHORITY_ALLOW_INSECURE_LOOPBACK:-false}" ||
         truthy "${RG_TEST_SECRET_AUTHORITY_JWKS_ALLOW_INSECURE_LOOPBACK:-false}" ||
         truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_ALLOW_INSECURE_LOOPBACK:-false}" ||
         truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ALLOW_INSECURE_LOOPBACK:-false}" ||
-        truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ALLOW_INSECURE_LOOPBACK:-false}";
+        truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ALLOW_INSECURE_LOOPBACK:-false}" ||
+        truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ALLOW_INSECURE_LOOPBACK:-false}";
         then
         echo "Staging test-secret authority, inventory, roots, and notaries must use HTTPS." >&2
         return 1
@@ -177,13 +288,6 @@ validate_test_secret_external_anchor() {
         echo "Invalid test-secret external anchor trust domain or set id." >&2
         return 1
     fi
-    case "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON}" in
-        \[*\]) ;;
-        *)
-            echo "Test-secret external anchor keys must be a JSON array." >&2
-            return 1
-            ;;
-    esac
     case "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON}" in
         \[*\]) ;;
         *)
@@ -192,12 +296,9 @@ validate_test_secret_external_anchor() {
             ;;
     esac
     if printf '%s' \
-        "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON}" |
-        grep -Eq '^\[[[:space:]]*\]$' ||
-        printf '%s' \
         "${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON}" |
         grep -Eq '^\[[[:space:]]*\]$'; then
-        echo "Test-secret external anchor keys and endpoints must be non-empty." >&2
+        echo "Test-secret external anchor endpoints must be non-empty." >&2
         return 1
     fi
 
@@ -229,6 +330,8 @@ validate_test_secret_external_anchor() {
         echo "Test-secret external anchor timing bounds are invalid." >&2
         return 1
     fi
+    validate_managed_external_anchor_trust \
+        "RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR" "test-secret"
 }
 
 validate_profile_secrets() {
@@ -504,12 +607,12 @@ validate_profile_secrets() {
             [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID:-}" ] ||
             [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD:-}" ] ||
             [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS:-}" ] ||
-            [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON:-}" ] ||
             [ -z "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON:-}" ]; then
-            echo "External inventory anchoring requires trust, quorum, public keys, and endpoints." >&2
+            echo "External inventory anchoring requires trust, quorum, and endpoints." >&2
             return 1
         fi
-        if truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ALLOW_INSECURE_LOOPBACK:-false}"; then
+        if truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ALLOW_INSECURE_LOOPBACK:-false}" ||
+            truthy "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ALLOW_INSECURE_LOOPBACK:-false}"; then
             echo "Staging external inventory anchors must use HTTPS." >&2
             return 1
         fi
@@ -520,13 +623,6 @@ validate_profile_secrets() {
             echo "Invalid external inventory anchor trust domain or set id." >&2
             return 1
         fi
-        case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON}" in
-            \[*\]) ;;
-            *)
-                echo "External inventory anchor keys must be a JSON array." >&2
-                return 1
-                ;;
-        esac
         case "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON}" in
             \[*\]) ;;
             *)
@@ -535,12 +631,9 @@ validate_profile_secrets() {
                 ;;
         esac
         if printf '%s' \
-            "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON}" |
-            grep -Eq '^\[[[:space:]]*\]$' ||
-            printf '%s' \
             "${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON}" |
             grep -Eq '^\[[[:space:]]*\]$'; then
-            echo "External inventory anchor keys and endpoints must be non-empty." >&2
+            echo "External inventory anchor endpoints must be non-empty." >&2
             return 1
         fi
 
@@ -576,6 +669,9 @@ validate_profile_secrets() {
             echo "External inventory anchor timing bounds are invalid." >&2
             return 1
         fi
+        validate_managed_external_anchor_trust \
+            "RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR" \
+            "suite-stability"
 
         local inventory_refresh_seconds="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_REFRESH_SECONDS:-30}"
         local inventory_timeout_ms="${RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_REMOTE_TIMEOUT_MS:-3000}"

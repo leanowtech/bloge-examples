@@ -157,7 +157,8 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
         when(environment.getActiveProfiles()).thenReturn(new String[] {"staging"});
         assertThatThrownBy(() -> configuration.testSuiteStabilityExternalSequenceAnchor(
                 new ObjectMapper().findAndRegisterModules(),
-                environment, "inventory-transparency", "notary-set-a", 1, 0, 0,
+                environment, mock(TestRuntimeDatabase.class), "scope-a",
+                "inventory-transparency", "notary-set-a", 1, 0, 0,
                 "[]", "[]", 3000, 5, 15, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("does not meet the deployment fault policy");

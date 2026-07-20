@@ -141,13 +141,14 @@ staging 要求：
 - dynamic witnessed inventory 与 managed dual trust roots 已启用；
 - `external-anchor.enabled=true` 且 `required=true`；
 - `minimum-faults=1`，因此至少 4 个独立 notary、threshold 至少 3；
-- non-empty trust domain、anchor set、public key array 和 endpoint array；
-- authority、failure domain 和 URI 一一唯一，key authority set 与 endpoint authority set 完全相等；
+- non-empty trust domain、anchor set 和 endpoint array；managed trust publication 提供完整 key set；
+- authority、failure domain 和 URI 一一唯一，endpoint authority set 必须被当前 trust generation 覆盖；
 - HTTPS only；insecure loopback 只允许显式本地测试；
 - timeout 100 ms..30 s、clock skew 0..30 s、receipt lifetime 1..60 s，timeout 小于 lifetime。
 
-`scripts/visual-canvas-demo.sh` 在启动前检查 required 开关、标识符、非空 JSON array、`f>=1`、
-`threshold>=2f+1` 和时间边界；Java composition root 再执行严格 JSON、key、endpoint、`3f+1` 和完整
+`scripts/visual-canvas-demo.sh` 在启动前检查 required 开关、标识符、managed trust/bootstrap quorum、
+非空 endpoint、`f>=1`、`threshold>=2f+1` 和时间边界；Java composition root 再执行严格 JSON、
+trust publication、endpoint、`3f+1` 和完整
 语义验证。两层检查目的不同：shell 提供即时可操作错误，Java 是不可绕过的权威门禁。
 
 同一个 external anchor bean 同时装饰 publication floor 与 trust-root floor。任一 floor 缺少 external
@@ -163,6 +164,10 @@ cohort descriptor v4、HTTP authorizer descriptor、authority Schema、Actuator 
 - `byzantineQuorumInventoryNonEquivocation`；
 - `externallyAnchoredSuiteStabilityServingInventoryOrdering`；
 - `byzantineQuorumSuiteStabilityServingInventoryNonEquivocation`。
+- `managedSuiteStabilityExternalNotaryTrust`；
+- `restartFreeSuiteStabilityExternalNotaryKeyRotation`；
+- `durableSuiteStabilityExternalNotaryTrustFloor`；
+- `suiteStabilityExternalNotaryTrustReady`。
 
 Byzantine capability 必须蕴含 external capability；managed mode 只有 publication 与 trust-root 两条流均满足
 时才为 true。health 只暴露 status、last success、success/failure/conflict count、authority count、threshold、

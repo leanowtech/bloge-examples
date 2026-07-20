@@ -170,12 +170,39 @@ Independent-store settings:
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD` | accepted receipts; at least `2f+1` |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-faults` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS` | declared Byzantine fault bound `f`; staging requires at least 1 |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.minimum-faults` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MINIMUM_FAULTS` | deployment floor; `0` in `test`, `1` in `staging` |
-| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON` | strict public-only Ed25519 notary keys |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON` | static compatibility keys for `test` only; must be `[]` with managed trust and in `staging` |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.endpoints-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON` | one HTTPS endpoint and unique failure domain per authority |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.request-timeout-ms` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TIMEOUT_MS` | `3000`; 100..30000 and below receipt lifetime |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.clock-skew-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS` | `5`; 0..30 |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-receipt-lifetime-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS` | `15`; 1..60 |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.allow-insecure-loopback` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only and rejected by staging preflight |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.enabled` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MANAGED_TRUST_ENABLED` | `false` in `test`, `true` in `staging`; selects restart-free signed notary-key publication |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.required` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MANAGED_TRUST_REQUIRED` | `false` in `test`, `true` in `staging`; Java composition root also enforces staging regardless of override |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.publication-uri` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_URI` | strict trust-publication v1 endpoint; HTTPS required outside explicit local tests |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.trust-root-set-id` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ROOT_SET_ID` | stable managed notary-key publication chain identity |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.bootstrap-trust-domain` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_TRUST_DOMAIN` | publication signer domain; must be independent from receipt notaries by id and key material |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.accepted-policy-fingerprints` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_POLICY_FINGERPRINTS` | comma-separated accepted `sha256:` key-rotation policies |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.bootstrap-signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_THRESHOLD` | distinct bootstrap-root M-of-N threshold, 1..32 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.bootstrap-authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_KEYS_JSON` | strict public-only Ed25519 bootstrap roots; private keys remain external |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.refresh-interval-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_REFRESH_SECONDS` | `30`; jittered refresh, 1..3600 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.request-timeout-ms` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_TIMEOUT_MS` | `3000`; 100..30000 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.unknown-key-refresh-interval-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_UNKNOWN_KEY_REFRESH_SECONDS` | `5`; global anti-stampede cooldown, 1..600 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.maximum-snapshot-age-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_MAXIMUM_AGE_SECONDS` | `60`; hard local source-age fence, at least refresh interval and at most 86400 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.maximum-publication-lifetime-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_MAXIMUM_PUBLICATION_LIFETIME_SECONDS` | `86400`; accepted signed lifetime, 60..604800 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.clock-skew-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_CLOCK_SKEW_SECONDS` | `5`; 0..30 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.minimum-remaining-validity-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_MINIMUM_REMAINING_VALIDITY_SECONDS` | `30`; 0..3600 and below maximum publication lifetime |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.managed-trust.allow-insecure-loopback` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ALLOW_INSECURE_LOOPBACK` | `false`; explicit local test escape hatch and rejected by staging shell plus Java gates |
+
+Suite-stability uses the same closed `external-anchor.managed-trust.*` suffix set under
+`gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote` and the
+corresponding `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_*` environment
+prefix. The publication Schema and verification order are identical, but the two Spring ports,
+scope ids, durable floors, health contributors, and capability facts remain domain-isolated.
+The capability probe publishes `managedTestSecretExternalNotaryTrust`,
+`restartFreeTestSecretExternalNotaryKeyRotation`, `durableTestSecretExternalNotaryTrustFloor` and
+`testSecretExternalNotaryTrustReady` for the test-secret chain; suite stability uses the four
+corresponding `SuiteStability` names. Readiness is recomputed from the local snapshot on every probe
+and performs no remote I/O.
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.enabled` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED` | `false`; selects one managed atomic deployment/witness runtime-key publication |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.required` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_REQUIRED` | `false` in `test`, `true` in `staging` |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.uri` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_URI` | strict trust-root publication v1 endpoint; HTTPS required outside explicit loopback tests |
@@ -1292,13 +1319,15 @@ authoritative publication Schema is
 
 The persistence adapters still project through stability-named internal cohort and floor kernels.
 These are not wire dependencies, but neutral kernel extraction remains a maintainability task.
-Bootstrap-root rotation ceremony, external-anchor key hot rotation, endpoint mTLS/pinning,
+Bootstrap-root rotation ceremony/hot rotation, endpoint mTLS/pinning,
 KMS/HSM custody, non-H2 and backup-rollback certification, external notary operational
 certification, alert routing, multi-site HA and chaos/DR
 qualification remain explicit follow-up work. Full invariants and tests are recorded in the
 [dynamic inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-dynamic-serving-inventory-verification.md),
 the [managed trust-root verification](resource-gateway-execution-data-control-plane-stage4-test-secret-trust-root-rotation-verification.md),
 and the [external non-equivocation verification](resource-gateway-execution-data-control-plane-stage4-test-secret-external-non-equivocation-verification.md).
+Managed external-notary receipt-key rotation is separately verified in
+[external notary trust rotation verification](resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md).
 
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 
@@ -3929,6 +3958,19 @@ the wire shape; Java validation owns cross-field equality, time ordering, thresh
 meaningful-conflict semantics. Health and capability reads never contact a notary and expose no
 endpoint, authority, key, stream, challenge, or fingerprint identity.
 
+In staging, receipt verification keys are no longer static process-start configuration. The
+bootstrap-root quorum signs one canonical
+`bloge.externalSequenceAnchorTrustPublication.v1` containing the exact scope, trust-root set,
+anchor set, receipt trust domain/quorum, key lifecycle set, rotation policy, validity window and
+sequence/predecessor chain. Strict HTTPS/ETag refresh publishes one immutable generation only after
+binding, freshness, bootstrap-signature, bootstrap/notary independence, active `2f+1` coverage and
+durable monotonic-floor checks. An unknown receipt key triggers one global-cooldown refresh, so a
+valid A-to-B rotation becomes visible without restart or a request stampede. Any source, protocol,
+signature, lifecycle, rollback, fork, gap, floor or active-quorum ambiguity immediately makes
+receipt verification unavailable; `304` confirms source reachability but cannot extend signed
+expiry, key lifecycle or active quorum. Static
+notary keys remain a `test`-profile compatibility path and cannot be mixed with managed trust.
+
 The built-in adapters rely on the JVM TLS context, so mTLS identity belongs in deployment TLS
 material, not in JSON properties. Both `allow-insecure-loopback` settings must remain disabled
 outside local tests. A deployment-owned KMS/certificate implementation may still replace
@@ -3951,6 +3993,10 @@ the distinction through `testability.suiteStabilityJobSubmissionEnabled` and the
 `atomicDualQuorumSuiteStabilityServingInventoryTrustRoots`,
 `externallyAnchoredSuiteStabilityServingInventoryOrdering`,
 `byzantineQuorumSuiteStabilityServingInventoryNonEquivocation`,
+`managedSuiteStabilityExternalNotaryTrust`,
+`restartFreeSuiteStabilityExternalNotaryKeyRotation`,
+`durableSuiteStabilityExternalNotaryTrustFloor`,
+`suiteStabilityExternalNotaryTrustReady`,
 `asyncSuiteStabilityJobQuery`, `asyncSuiteStabilityJobCancellation`, and
 `asyncSuiteStabilityJobCancellationSemanticAudit` feature flags. The strict
 request/response definitions live in
@@ -3964,6 +4010,8 @@ The atomic dual-root runtime-key publication is defined by
 [`suite-stability-serving-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json).
 The external compare-and-append request/receipt contract is defined by
 [`suite-stability-external-sequence-checkpoint-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json).
+The bootstrap-signed managed notary-key publication is defined by
+[`external-sequence-anchor-trust-publication-v1.schema.json`](schemas/resource-gateway-testing/external-sequence-anchor-trust-publication-v1.schema.json).
 The pre-delete compact-observation archive request/accepted-receipt/signed-conflict/receipt-set and
 read-only signed inventory request/item/page contracts are defined by
 [`suite-stability-observation-external-archive-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-observation-external-archive-v1.schema.json).
@@ -3981,6 +4029,9 @@ Managed runtime-key rotation and local durable ordering are recorded in
 External non-equivocation threat assumptions, commit ordering, failure semantics, and deployment
 responsibilities are recorded in
 [Stage 5 serving-inventory external non-equivocation verification](resource-gateway-execution-data-control-plane-stage5-suite-stability-external-non-equivocation-verification.md).
+Restart-free external-notary trust rotation, durable rollback protection and remaining bootstrap
+ceremony limits are recorded in
+[managed external-notary trust verification](resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md).
 
 The standalone Java test-kit exposes the same protocol without depending on Resource Gateway
 server classes:

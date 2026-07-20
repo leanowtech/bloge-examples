@@ -11,7 +11,7 @@ import java.util.Objects;
  * This distinct Java type prevents Spring from accidentally injecting a suite-stability notary
  * configured under another trust policy.</p>
  */
-public interface TestSecretAuthorityExternalSequenceAnchor {
+public interface TestSecretAuthorityExternalSequenceAnchor extends AutoCloseable {
 
     /** Anchors one exact test-secret sequence head before local durable state may advance. */
     void accept(TestSuiteStabilityExternalSequenceAnchor.Head head);
@@ -21,6 +21,18 @@ public interface TestSecretAuthorityExternalSequenceAnchor {
 
     /** @return aggregate runtime state; this read must not perform remote I/O */
     TestSuiteStabilityExternalSequenceAnchor.Snapshot snapshot();
+
+    /** @return aggregate receipt-trust refresh state without identities or key material */
+    default ExternalSequenceAnchorReceiptTrustStore.Snapshot trustSnapshot() {
+        return new ExternalSequenceAnchorReceiptTrustStore.Snapshot(
+                ExternalSequenceAnchorReceiptTrustStore.Snapshot.SCHEMA_VERSION,
+                false, "UNAVAILABLE", 0, 0, 0, null, 0, 0);
+    }
+
+    /** Static or unavailable implementations own no refresh resources. */
+    @Override
+    default void close() {
+    }
 
     /**
      * Adapts the shared strict HTTP/quorum implementation behind the domain-isolated port.
@@ -46,6 +58,16 @@ public interface TestSecretAuthorityExternalSequenceAnchor {
             @Override
             public TestSuiteStabilityExternalSequenceAnchor.Snapshot snapshot() {
                 return value.snapshot();
+            }
+
+            @Override
+            public ExternalSequenceAnchorReceiptTrustStore.Snapshot trustSnapshot() {
+                return value.trustSnapshot();
+            }
+
+            @Override
+            public void close() {
+                value.close();
             }
         };
     }
