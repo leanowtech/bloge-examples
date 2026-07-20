@@ -212,6 +212,17 @@ different suite at the same key remains an immutable revision conflict. These lo
 drift but do not replace external signing or WORM storage. See the
 [suite registry verification](../docs/resource-gateway-execution-data-control-plane-stage2-suite-registry-verification.md).
 
+Governed F4 replay values now cross the same kind of hostile storage boundary. The vault detaches
+caller JSON/beans, recomputes the available value fingerprint, verifies exact create receipts and
+tenant/environment/id/revision lookups, and binds descriptor JSON to every indexed projection. A
+second payload-free record commitment protects scope, provenance, and lifecycle state after expiry
+erases the value; read-time and scheduled expiry replace that commitment in the same CAS update.
+Malformed rows or valid cross-key adapter substitutions emit payload-free
+`RG.TEST.REPLAY_INTEGRITY_INVALID` failures. Legacy available rows are revalidated on upgrade;
+historical tombstones receive an explicit value-free baseline and therefore are not presented as
+retroactively externally authenticated. See the
+[replay vault storage integrity verification](../docs/resource-gateway-execution-data-control-plane-stage2-replay-storage-integrity-verification.md).
+
 Signed child evidence now uses one canonical snapshot from seal through storage. Payload-bearing JSON
 containers are recursively frozen, arbitrary Java values are detached by an exact evidence round
 trip, and the signer returns the value it actually signed. JDBC verifies that signature before a new

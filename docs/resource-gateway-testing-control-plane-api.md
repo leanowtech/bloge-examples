@@ -1088,6 +1088,20 @@ Query it with `GET /api/testing/replay-payloads/orders-approved?revision=1` and
 payload-free tombstone. The captured object contains only the selected sanitized output; historical
 request data, credentials, and side-effect outcomes are not copied or replayed.
 
+The vault verifies storage before clearance or value projection. Available values are detached by a
+canonical protocol round trip and must reproduce the descriptor fingerprint. A separate
+payload-free record commitment binds tenant, environment, descriptor, lifecycle state, availability,
+storage time, and writer after the value is deleted. Database reads also bind descriptor JSON to the
+indexed id, revision, fingerprint, classification, state, and expiry; create responses and custom
+repository results must match the exact submitted or requested record. Drift returns payload-free
+`409 RG.TEST.REPLAY_INTEGRITY_INVALID` with a `REPLAY_PAYLOAD_INTEGRITY_INVALID` security event.
+
+On first upgrade from the legacy table, available rows are revalidated and blank record commitments
+are backfilled in bounded pages. Historical tombstones establish a canonical value-free migration
+baseline because the erased value cannot be reconstructed. This does not retroactively authenticate
+pre-upgrade tombstone history; see the
+[replay storage integrity verification](resource-gateway-execution-data-control-plane-stage2-replay-storage-integrity-verification.md).
+
 ### 4.2b Execute a governed replay fixture
 
 Put the exact reference returned by capture into a node-boundary fixture rule. The caller may not
@@ -4340,7 +4354,8 @@ Implemented now:
   execution APIs, sharing one fixture registry, evidence model, and run store;
 - profile, identity, purpose, tenant/environment, and classification gates;
 - exact governed replay-payload capture with signed source lineage, server-side sanitization,
-  independent retention, and payload-free expiry tombstones;
+  independent retention, canonical value/lookup/receipt verification, and payload-free committed
+  expiry tombstones;
 - exact governed `REPLAY` execution with pre-plan closure resolution, immutable integrity and
   lifecycle rechecks, run-scoped payload freezing, payload-free plan v2 lineage, BLOGE output-schema
   gating, zero real-operator calls, `REPLAYED` evidence, and certification downgrade propagation;

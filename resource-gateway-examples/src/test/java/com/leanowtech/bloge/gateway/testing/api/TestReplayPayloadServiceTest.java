@@ -26,6 +26,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -196,15 +197,43 @@ class TestReplayPayloadServiceTest {
 
         StoredReplayPayload expiring = service.capture("orders-expiring",
                 request(source, "CONFIDENTIAL", 1,
-                        source.payloadRetention().expiresAt().minusSeconds(2)), replayIdentity());
-        replayJdbc.update("""
-                UPDATE test_replay_payloads SET expires_at = ?
-                WHERE replay_payload_id = ? AND revision = ?
-                """, java.sql.Timestamp.from(Instant.now().minusSeconds(1)), "orders-expiring", 1);
+                        replayRepository.currentTime().plusMillis(120)), replayIdentity());
+        try {
+            Thread.sleep(180);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(interrupted);
+        }
         assertThat(replayRepository.purgeExpired(10)).isEqualTo(1);
         assertProblem(() -> service.resolve(
                         replayBundle(expiring.descriptor().reference().canonical()), replayIdentity()),
                 410, "RG.TEST.REPLAY_PAYLOAD_UNAVAILABLE");
+    }
+
+    @Test
+    void rejectsValidRepositorySubstitutionOnCreateAndLookupAndAuditsIt() {
+        ReplayPayloadCaptureRequest capture = request(source, "CONFIDENTIAL", 1,
+                source.payloadRetention().expiresAt().minusSeconds(1));
+        StoredReplayPayload replacement = service.capture(
+                "replacement", capture, replayIdentity());
+
+        TestReplayPayloadService createGuard = new TestReplayPayloadService(sourceRuns,
+                new ReplacingReplayPayloadRepository(replayRepository, replacement, null),
+                securityEvents, new ObjectMapper().findAndRegisterModules(), Duration.ofDays(30));
+        assertProblem(() -> createGuard.capture("requested", capture, replayIdentity()),
+                409, "RG.TEST.REPLAY_INTEGRITY_INVALID");
+
+        TestReplayPayloadService lookupGuard = new TestReplayPayloadService(sourceRuns,
+                new ReplacingReplayPayloadRepository(replayRepository, null, replacement),
+                securityEvents, new ObjectMapper().findAndRegisterModules(), Duration.ofDays(30));
+        assertProblem(() -> lookupGuard.find("requested", 1, replayIdentity()),
+                409, "RG.TEST.REPLAY_INTEGRITY_INVALID");
+
+        assertThat(securityEvents.recent(10))
+                .filteredOn(event -> "REPLAY_PAYLOAD_INTEGRITY_INVALID".equals(event.eventType()))
+                .hasSize(2)
+                .allSatisfy(event -> assertThat(event.facts().toString())
+                        .doesNotContain("source-secret"));
     }
 
     private static ReplayPayloadCaptureRequest request(VisualGraphRunRecord run,
@@ -277,5 +306,44 @@ class TestReplayPayloadServiceTest {
 
     private static String fingerprint(char value) {
         return "sha256:" + String.valueOf(value).repeat(64);
+    }
+
+    private static final class ReplacingReplayPayloadRepository
+            implements ReplayPayloadRepository {
+
+        private final ReplayPayloadRepository delegate;
+        private final StoredReplayPayload createReplacement;
+        private final StoredReplayPayload lookupReplacement;
+
+        private ReplacingReplayPayloadRepository(ReplayPayloadRepository delegate,
+                                                 StoredReplayPayload createReplacement,
+                                                 StoredReplayPayload lookupReplacement) {
+            this.delegate = delegate;
+            this.createReplacement = createReplacement;
+            this.lookupReplacement = lookupReplacement;
+        }
+
+        @Override
+        public StoredReplayPayload create(StoredReplayPayload payload) {
+            return createReplacement == null ? delegate.create(payload) : createReplacement;
+        }
+
+        @Override
+        public Optional<StoredReplayPayload> find(String tenantId, String environmentId,
+                                                  String replayPayloadId, long revision) {
+            return lookupReplacement == null
+                    ? delegate.find(tenantId, environmentId, replayPayloadId, revision)
+                    : Optional.of(lookupReplacement);
+        }
+
+        @Override
+        public int purgeExpired(int limit) {
+            return delegate.purgeExpired(limit);
+        }
+
+        @Override
+        public Instant currentTime() {
+            return delegate.currentTime();
+        }
     }
 }

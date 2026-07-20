@@ -10,21 +10,31 @@ import java.util.List;
 import java.util.Map;
 
 /** Recursively detaches and freezes JSON containers embedded in testing protocol values. */
-final class ProtocolJsonValue {
+public final class ProtocolJsonValue {
 
     private static final int MAX_DEPTH = 128;
 
     private ProtocolJsonValue() {
     }
 
-    /** Returns a recursively copied, unmodifiable JSON value. */
-    static Object freeze(Object value) {
+    /**
+     * Returns a recursively copied, unmodifiable JSON value.
+     *
+     * @param value scalar or JSON container
+     * @return detached immutable JSON value
+     */
+    public static Object freeze(Object value) {
         return freeze(value, new IdentityHashMap<>(), 0);
     }
 
-    /** Returns a recursively copied, unmodifiable JSON object. */
+    /**
+     * Returns a recursively copied, unmodifiable JSON object.
+     *
+     * @param value JSON object, or {@code null} for an empty object
+     * @return detached immutable JSON object
+     */
     @SuppressWarnings("unchecked")
-    static Map<String, Object> freezeMap(Map<String, ?> value) {
+    public static Map<String, Object> freezeMap(Map<String, ?> value) {
         return value == null ? Map.of() : (Map<String, Object>) freeze(value);
     }
 

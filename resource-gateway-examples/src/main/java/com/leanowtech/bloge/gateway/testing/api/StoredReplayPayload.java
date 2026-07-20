@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import com.leanowtech.bloge.gateway.testing.domain.ProtocolJsonValue;
+
 import java.time.Instant;
 
 /**
@@ -42,6 +44,7 @@ public record StoredReplayPayload(
         tenantId = normalized(tenantId);
         environmentId = normalized(environmentId);
         state = defaulted(state, AVAILABLE).toUpperCase(java.util.Locale.ROOT);
+        value = ProtocolJsonValue.freeze(value);
         storedAt = storedAt == null ? Instant.EPOCH : storedAt;
         storedBy = normalized(storedBy);
     }

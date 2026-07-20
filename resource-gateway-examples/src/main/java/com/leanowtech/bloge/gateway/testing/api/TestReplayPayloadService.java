@@ -7,7 +7,6 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.ReplayPayloadRef;
-import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
@@ -144,20 +143,27 @@ public final class TestReplayPayloadService {
                 access.payload().payloadFingerprint(), run.environment());
         ReplayPayloadDescriptor.Redaction redaction = redaction(
                 access.payload().redaction(), sanitized.redaction());
-        String fingerprint = replayFingerprint(replayPayloadId, request.revision(), classification,
-                source, redaction, now, request.expiresAt(), signedPublication, gaps,
-                sanitized.output());
+        ReplayPayloadDescriptor fingerprintMaterial = new ReplayPayloadDescriptor("", replayPayloadId,
+                request.revision(), "", classification, source, redaction, now,
+                request.expiresAt(), signedPublication, gaps);
+        String fingerprint = ReplayPayloadIntegrity.payloadFingerprint(
+                objectMapper, fingerprintMaterial, sanitized.output());
         ReplayPayloadDescriptor descriptor = new ReplayPayloadDescriptor("", replayPayloadId,
                 request.revision(), fingerprint, classification, source, redaction, now,
                 request.expiresAt(), signedPublication, gaps);
-        StoredReplayPayload stored = new StoredReplayPayload("", identity.tenantId(),
+        StoredReplayPayload expectedRecord = ReplayPayloadIntegrity.verifiedAvailableSnapshot(
+                objectMapper, new StoredReplayPayload("", identity.tenantId(),
                 identity.environmentId(), descriptor, StoredReplayPayload.AVAILABLE, true,
-                sanitized.output(), now, identity.actorId());
+                sanitized.output(), now, identity.actorId()));
         try {
-            return payloads.create(stored);
+            return ReplayPayloadIntegrity.verifiedCreateReceipt(objectMapper,
+                    payloads.create(expectedRecord), expectedRecord);
         } catch (ReplayPayloadConflictException immutableConflict) {
             throw conflict(identity, "RG.TEST.REPLAY_REVISION_CONFLICT",
                     immutableConflict.getMessage(), Map.of());
+        } catch (ReplayPayloadIntegrityException invalid) {
+            replayIntegrityFailure(identity, replayPayloadId);
+            throw invalid;
         } catch (IntegrationProblemException expected) {
             throw expected;
         } catch (RuntimeException unavailable) {
@@ -177,22 +183,25 @@ public final class TestReplayPayloadService {
     public StoredReplayPayload find(String replayPayloadId, long revision,
                                     IntegrationRequestContext identity) {
         requireReplayIdentity(identity);
+        String payloadId = normalized(replayPayloadId);
         StoredReplayPayload stored;
         try {
             stored = payloads.find(identity.tenantId(), identity.environmentId(),
-                            normalized(replayPayloadId), revision)
+                            payloadId, revision)
                     .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
                             "RG.TEST.REPLAY_PAYLOAD_NOT_FOUND",
                             "Replay payload was not found in the authorized scope.",
                             identity.correlationId(), Map.of())));
+            stored = ReplayPayloadIntegrity.verifiedLookup(objectMapper, stored,
+                    identity.tenantId(), identity.environmentId(), payloadId, revision);
         } catch (IntegrationProblemException expected) {
             throw expected;
+        } catch (ReplayPayloadIntegrityException invalid) {
+            replayIntegrityFailure(identity, payloadId);
+            throw invalid;
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.REPLAY_STORE_UNAVAILABLE",
                     "The isolated replay payload vault is unavailable.");
-        }
-        if (stored.descriptor() == null) {
-            replayIntegrityFailure(identity, normalized(replayPayloadId));
         }
         requireClearance(stored.descriptor().classification(), identity);
         if (!stored.readable()) {
@@ -293,18 +302,11 @@ public final class TestReplayPayloadService {
 
     private void verifyStoredIntegrity(StoredReplayPayload stored,
                                        IntegrationRequestContext identity) {
-        ReplayPayloadDescriptor descriptor = stored.descriptor();
-        if (descriptor == null || !stored.readable()
-                || !CLASSIFICATIONS.contains(descriptor.classification())
-                || !FINGERPRINT.matcher(descriptor.fingerprint()).matches()) {
-            replayIntegrityFailure(identity, descriptor == null ? "" : descriptor.replayPayloadId());
-        }
-        String actual = replayFingerprint(descriptor.replayPayloadId(), descriptor.revision(),
-                descriptor.classification(), descriptor.source(), descriptor.redaction(),
-                descriptor.capturedAt(), descriptor.expiresAt(), descriptor.certificationEligible(),
-                descriptor.certificationGaps(), stored.value());
-        if (!descriptor.fingerprint().equals(actual)) {
-            replayIntegrityFailure(identity, descriptor.replayPayloadId());
+        try {
+            ReplayPayloadIntegrity.verifiedAvailableSnapshot(objectMapper, stored);
+        } catch (ReplayPayloadIntegrityException invalid) {
+            replayIntegrityFailure(identity, stored.descriptor() == null
+                    ? "" : stored.descriptor().replayPayloadId());
         }
     }
 
@@ -314,19 +316,6 @@ public final class TestReplayPayloadService {
                 replayPayloadId.isBlank() ? Map.of() : Map.of("replayPayloadId", replayPayloadId));
         throw conflict(identity, "RG.TEST.REPLAY_INTEGRITY_INVALID",
                 "Replay payload failed immutable integrity verification.", Map.of());
-    }
-
-    private String replayFingerprint(String replayPayloadId, long revision, String classification,
-                                     ReplayPayloadDescriptor.Source source,
-                                     ReplayPayloadDescriptor.Redaction redaction,
-                                     Instant capturedAt, Instant expiresAt,
-                                     boolean certificationEligible, List<String> certificationGaps,
-                                     Object value) {
-        ReplayPayloadDescriptor draft = new ReplayPayloadDescriptor("", replayPayloadId,
-                revision, "", classification, source, redaction, capturedAt, expiresAt,
-                certificationEligible, certificationGaps);
-        return ProtocolFingerprint.of(objectMapper, Map.of("descriptor", draft, "value",
-                value == null ? objectMapper.nullNode() : value));
     }
 
     private String canonicalJson(Object value, IntegrationRequestContext identity) {

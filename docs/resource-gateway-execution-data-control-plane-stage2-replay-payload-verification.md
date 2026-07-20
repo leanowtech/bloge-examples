@@ -27,6 +27,19 @@ Implemented contracts:
 The captured value is only the selected sanitized node output. Source input, credentials,
 side-effect outcomes, and side-effect journal records do not cross into the replay vault.
 
+## Storage Integrity Hardening (2026-07-20)
+
+The replay vault now treats persistence as a hostile adapter boundary rather than relying only on
+the service's available-value check. Values are canonicalized and detached, create receipts and
+complete lookup keys are verified, descriptor JSON is bound to every indexed projection, and a
+payload-free record commitment protects scope, provenance, and lifecycle state after expiry removes
+the value. Expiry replaces the commitment in the same compare-and-set update that erases
+`payload_json`; legacy available rows are revalidated and legacy tombstones receive an explicit
+value-free migration baseline before reads are served.
+
+Implementation, migration limits, attack cases, and current verification evidence are recorded in
+[Replay vault storage integrity verification](resource-gateway-execution-data-control-plane-stage2-replay-storage-integrity-verification.md).
+
 ## Trust Classes
 
 `ReplayPayloadDescriptor.certificationEligible` is true only for a signed immutable publication
