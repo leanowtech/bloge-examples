@@ -467,7 +467,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
         SnapshotReplay snapshot = replaySnapshot(projectionId, authority.authorityId());
         StoredProjection initial = StoredProjection.initial(
                 projectionId, source, snapshot.count(), snapshot.root(), now);
-        initial = initial.withFingerprint(projectionFingerprint(initial.fingerprintMaterial()));
+        initial = initial.withFingerprint(initial.fingerprint(objectMapper));
         try {
             int inserted = jdbc.update("""
                     INSERT INTO
@@ -1257,7 +1257,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
         }
         Instant now = databaseNow();
         StoredAuthority initial = StoredAuthority.initial(authorityId, now);
-        initial = initial.withFingerprint(authorityFingerprint(initial.fingerprintMaterial()));
+        initial = initial.withFingerprint(initial.fingerprint(objectMapper));
         try {
             jdbc.update("""
                     INSERT INTO
@@ -1307,7 +1307,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
 
     private void updateAuthority(StoredAuthority expected, StoredAuthority successor) {
         StoredAuthority material = successor.withFingerprint(
-                authorityFingerprint(successor.fingerprintMaterial()));
+                successor.fingerprint(objectMapper));
         int updated = jdbc.update("""
                 UPDATE rg_test_suite_stability_observation_external_finding_authorities
                 SET active_projection_id = ?, last_completed_projection_id = ?,
@@ -1367,7 +1367,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
 
     private void updateProjection(StoredProjection expected, StoredProjection successor) {
         StoredProjection material = successor.withFingerprint(
-                projectionFingerprint(successor.fingerprintMaterial()));
+                successor.fingerprint(objectMapper));
         int updated = jdbc.update("""
                 UPDATE rg_test_suite_stability_observation_external_finding_projections
                 SET projection_status = ?, next_after_object_id = ?, next_page_sequence = ?,
@@ -1604,14 +1604,6 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                 requiredIdentifier(archiveSetId, "archive set"),
                 requiredIdentifier(authorityId, "inventory authority"),
                 requiredIdentifier(failureDomain, "failure domain")));
-    }
-
-    private String authorityFingerprint(FindingAuthorityMaterial material) {
-        return ProtocolFingerprint.of(objectMapper, material);
-    }
-
-    private String projectionFingerprint(FindingProjectionMaterial material) {
-        return ProtocolFingerprint.of(objectMapper, material);
     }
 
     private Instant databaseNow() {
@@ -2225,8 +2217,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                     != lastAppliedComparisonId.isEmpty())
                     || revision < 0 || updatedAt == null
                     || !FINGERPRINT.matcher(recordFingerprint).matches()
-                    || !recordFingerprint.equals(ProtocolFingerprint.of(
-                    objectMapper, fingerprintMaterial()))) {
+                    || !recordFingerprint.equals(fingerprint(objectMapper))) {
                 throw new IllegalStateException("External finding authority state is corrupt");
             }
         }
@@ -2253,10 +2244,11 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                     lastAppliedComparisonCompletedAt, revision, updatedAt, fingerprint);
         }
 
-        private FindingAuthorityMaterial fingerprintMaterial() {
-            return new FindingAuthorityMaterial(FindingAuthorityMaterial.SCHEMA_VERSION,
+        private String fingerprint(ObjectMapper objectMapper) {
+            return ExternalArchiveFindingStateIntegrity.authorityFingerprint(objectMapper,
                     authorityId, activeProjectionId, lastCompletedProjectionId,
-                    lastAppliedComparisonId, lastAppliedComparisonCompletedAt, revision, updatedAt);
+                    lastAppliedComparisonId, lastAppliedComparisonCompletedAt, revision,
+                    updatedAt);
         }
 
         private Object[] sqlArguments() {
@@ -2324,8 +2316,7 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                     || (completedAt != null && (completedAt.isBefore(startedAt)
                     || updatedAt.isBefore(completedAt)))
                     || !FINGERPRINT.matcher(recordFingerprint).matches()
-                    || !recordFingerprint.equals(ProtocolFingerprint.of(
-                    objectMapper, fingerprintMaterial()))) {
+                    || !recordFingerprint.equals(fingerprint(objectMapper))) {
                 throw new IllegalStateException("External finding projection state is corrupt");
             }
         }
@@ -2393,8 +2384,8 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
             return TransitionCounts.sum(openedCount, observedCount, reopenedCount, resolvedCount);
         }
 
-        private FindingProjectionMaterial fingerprintMaterial() {
-            return new FindingProjectionMaterial(FindingProjectionMaterial.SCHEMA_VERSION,
+        private String fingerprint(ObjectMapper objectMapper) {
+            return ExternalArchiveFindingStateIntegrity.projectionFingerprint(objectMapper,
                     projectionId, comparisonId, authorityId, status, comparisonStartedAt,
                     comparisonCompletedAt, sourceCount, sourceRoot, snapshotCount, snapshotRoot,
                     nextAfterObjectId, nextPageSequence, processedCount, openedCount, observedCount,
@@ -2688,45 +2679,4 @@ public final class DatabaseTestSuiteStabilityObservationExternalArchiveFindingCo
                 "bloge.testSuiteStabilityObservationExternalArchiveFindingEvidenceRetirement.v1";
     }
 
-    private record FindingAuthorityMaterial(
-            String schemaVersion,
-            String authorityId,
-            String activeProjectionId,
-            String lastCompletedProjectionId,
-            String lastAppliedComparisonId,
-            Instant lastAppliedComparisonCompletedAt,
-            long revision,
-            Instant updatedAt) {
-        private static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityObservationExternalArchiveFindingAuthority.v1";
-    }
-
-    private record FindingProjectionMaterial(
-            String schemaVersion,
-            String projectionId,
-            String comparisonId,
-            String authorityId,
-            String status,
-            Instant comparisonStartedAt,
-            Instant comparisonCompletedAt,
-            long sourceClassificationCount,
-            String sourceClassificationRoot,
-            long snapshotFindingCount,
-            String snapshotRoot,
-            String nextAfterObjectId,
-            long nextPageSequence,
-            long processedClassificationCount,
-            long openedCount,
-            long observedCount,
-            long reopenedCount,
-            long resolvedCount,
-            long confirmedCount,
-            String eventRoot,
-            long revision,
-            Instant startedAt,
-            Instant completedAt,
-            Instant updatedAt) {
-        private static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityObservationExternalArchiveFindingProjection.v1";
-    }
 }

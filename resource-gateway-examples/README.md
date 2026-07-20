@@ -209,9 +209,12 @@ verification, and aggregate health. Its signed immutable-snapshot inventory prot
 read transport shape and exposes a fail-closed historical-page verifier that checks canonical
 material, configured topology, snapshot identity, and signing-time key validity without incorrectly
 reapplying the page's consumed live-admission deadline. The default-off test/staging control loop
-now wires durable lease/cursor,
-frozen classification, replay-verified finding projection, downstream backpressure, and bounded
-finding/evidence retention. Certified providers, source-history retention, historical trust
+now wires durable lease/cursor, frozen classification, replay-verified finding projection,
+downstream backpressure, and bounded
+finding/evidence retention. Its source-history retention core now separately fences processed and
+expired sources, verifies signing-time trust for stored pages, deletes one bounded dependency segment
+per transaction, and permanently gates classification export during and after retirement. Autonomous
+source-retention scheduling/health/capability wiring, certified providers, historical trust
 publication, legal-hold/erasure/backup and recovery controls,
 and witnessed non-equivocation are still required. See the
 [lifecycle protocol design](../docs/resource-gateway-execution-data-control-plane-stage5-observation-floor-lifecycle-protocol-design.md),

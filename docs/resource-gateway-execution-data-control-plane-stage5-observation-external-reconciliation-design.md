@@ -1,6 +1,7 @@
 # Stage 5 observation external reconciliation control-plane design
 
-**Phases A-E and the Phase F autonomous scheduling/readiness increments implemented (2026-07-20): every externally
+**Phases A-E, the Phase F autonomous scheduling/readiness increments, and the bounded source-history
+retention core implemented (2026-07-20): every externally
 acknowledged WORM copy is normalized into a payload-free expected-object index in the exact
 retirement transaction. Per-authority database-clock owner/token/epoch leases now fence durable
 snapshot cycles; verified page envelopes and normalized items commit atomically with cursor/root
@@ -11,8 +12,10 @@ self-verifying classifications. Completed comparisons then drive a separately fe
 finding projection with immutable transition evidence. Derived finding/evidence retention and a
 profile-gated downstream-first scheduler are now active only under explicit test/staging
 configuration. Fingerprint-verified stage snapshots, schedule-aware Actuator readiness, and exact
-configured/ready capability truth now close the operational observation loop. Source cycle/
-comparison/classification retention remains the next phase, and production provider certification,
+configured/ready capability truth now close the operational observation loop. Eligible source cycle,
+page, item, comparison, expected-snapshot, and classification history can now be retired through a
+separately fenced, replay-proven state machine; autonomous source-retention scheduling and health/
+capability integration remain the next increment. Production provider certification,
 legal hold/erasure, backup/recovery continuity, historical trust, and witnessed non-equivocation
 remain outside this preview.**
 
@@ -329,7 +332,77 @@ counts and roots equal the frozen projection summary. The projection summary and
 are never deleted; they prevent reprocessing and distinguish intentionally retired evidence from
 corruption.
 
-## 12. Failure analysis
+## 12. Bounded source-history retention core
+
+**Implemented core, not yet autonomously scheduled (2026-07-20):**
+`DatabaseTestSuiteStabilityObservationExternalArchiveSourceRetentionControlPlane` owns the local
+reconciliation source lifecycle independently from finding retention. The distinction is not
+cosmetic: finding retention deletes derived event/snapshot detail while preserving its compact
+projection; source retention deletes the now-consumed comparison and inventory staging sources only
+after governance can no longer need their detailed rows.
+
+Two eligibility families are closed and intentionally asymmetric:
+
+| Mode | Required terminal state | Mandatory exclusions |
+| --- | --- | --- |
+| `PROCESSED` | completed cycle and comparison; completed, fingerprint-verified finding projection; completed, fingerprint-verified finding-evidence retirement marker | candidate is not the inventory authority's active/latest cycle, comparison authority's active/latest comparison, or finding authority's last-applied comparison |
+| `SNAPSHOT_EXPIRED` | terminal expired cycle with no comparison | candidate is not the inventory authority's active/latest cycle and no comparison appeared before the candidate locks were acquired |
+
+The latest-position exclusions deliberately keep at least one newer authoritative generation. A
+completed comparison is not eligible merely because it is old: its finding projection must be
+complete, its source count/root must match the comparison, and the projection's own detailed
+evidence must already have a completed permanent retirement marker. Candidate SQL only finds work;
+inside the mutation transaction the control plane locks and verifies the whole-record fingerprints
+of inventory, comparison, and finding authorities, the source cycle/comparison, governance
+projection, and evidence-retirement marker. A changed pointer or status bit cannot become policy
+truth without also passing its canonical state proof.
+
+One singleton database-clock owner/token/epoch lease serializes source retention across replicas.
+Each public `retain(processedRetention, expiredRetention, pageSize)` call is `REQUIRES_NEW`, accepts
+only one-day through ten-year windows and a 1..500 page bound, and deletes rows from at most one
+child-table segment:
+
+1. classifications in object-id order;
+2. frozen expected objects in object-id order;
+3. normalized inventory items in object-id order;
+4. signed page envelopes in exact page-sequence order;
+5. comparison parent, when present, followed by the cycle parent.
+
+Classifications and inventory rows must reproduce their semantic and whole-storage-row
+fingerprints before exact deletion. Expected rows reproduce the topology-bearing expected root and
+are deleted with every persisted material column in the predicate. Inventory items reproduce the
+signed snapshot item root and retain their cycle/page/commit-time row fence. Every page is parsed
+from its exact stored JSON, rebound to all duplicated columns, checked against its storage-row
+fingerprint, and passed through `verifyStoredInventoryPage(...)`. That verifier intentionally
+ignores the already-consumed live admission deadline while retaining canonical material, topology,
+snapshot identity, signing-time key lifecycle, revocation, and detached signature checks. A custom
+provider that does not implement historical verification returns `UNAVAILABLE` by default and
+cannot retire a page.
+
+Progress stores frozen parent fingerprints, expected count/roots, per-segment cursors, deleted
+counts/roots, completion bits, revision, and a whole-record fingerprint. The permanent source
+retirement marker is a separate shared table. Classification export creates and understands that
+table even when autonomous retention is absent. Export first detects a completed marker, otherwise
+locks the comparison and rechecks the marker; this ordering closes both “parent already deleted” and
+“retirement started concurrently” races. `ACTIVE` and `COMPLETED` both deny export. Partial physical
+deletion can therefore never look like a shorter but valid evidence page.
+
+The final transaction requires all child tables to be empty and every deleted count/root to equal
+the frozen source truth, exactly deletes the parent rows by their original fingerprints, marks the
+permanent marker and progress `COMPLETED`, clears the active source, and advances cumulative state
+counters. Missing tails, late inserts, record drift, historical-key loss, marker/progress mismatch,
+lease loss, or parent drift rolls back the current page. If earlier pages already committed, the
+marker remains permanently `ACTIVE`; that is an explicit quarantine, not a retry that can relabel
+damaged history as complete.
+
+`operationalSnapshot(...)` exposes identity-free active-marker count, processed/expired backlog,
+cumulative per-segment deletes, completed source count, and database last-success time. It verifies
+state fingerprints, aggregate progress counters, and marker/progress lifecycle cardinality. The
+core is not yet wired into the Phase F scheduler, health SLO, capability descriptor, or Spring
+configuration, so deployment currently requires an explicit caller and must not claim autonomous
+source lifecycle enforcement.
+
+## 13. Failure analysis
 
 | Failure | Root cause | Control |
 | --- | --- | --- |
@@ -372,6 +445,12 @@ corruption.
 | governance resolution gains storage authority | evidence workflow becomes an accidental delete path | finding API has no remediation or WORM mutation operation |
 | a timer deletes event rows directly | partial evidence looks like corruption or completeness depends on requested page | create an availability marker before bounded deletion and deny every export during/after retirement |
 | retired projection row is deleted | old comparison becomes unprojected again | preserve compact projection summary and permanent retirement marker |
+| old processed source is deleted before governance evidence retirement | correctness detail disappears out of lifecycle order | require verified completed projection and completed finding-evidence retirement marker |
+| latest source generation is selected by age alone | current authority pointers become dangling | exclude active/latest inventory, comparison, and last-applied finding positions under lock |
+| retention reads a page with expired live deadline | valid historical evidence can never age out | distinct signing-time historical verifier; default implementation fails unavailable |
+| partial source deletion remains exportable | consumer mistakes a suffix for complete evidence | create permanent marker before deletion; serialize export with comparison lock and deny active/completed markers |
+| missing source tail is treated as successful empty page | deletion launders pre-existing loss | cumulative deleted count/root must equal frozen parent truth before parent deletion |
+| source marker and progress diverge | availability and deletion truth disagree | separate whole-record fingerprints plus aggregate status/cardinality cross-check |
 | retention races an active projection | frozen pre-state and resulting table diverge | lock verified authority first and archive only when `active_projection_id` is empty |
 | one replica resumes another replica's deletion with stale state | page is skipped or deleted twice | database-clock lease plus owner/token/epoch/revision and exact row fingerprint fences |
 | missing/tampered evidence is silently retired | deletion launders pre-existing corruption | verify each row and require terminal count/root equality with the frozen projection |
@@ -391,7 +470,7 @@ hashes. Startup backfill trusts a legacy test/staging row once only when its fin
 present-but-invalid values fail closed. This is deliberately not an N/N-1 production migration
 protocol.
 
-## 13. Operational readiness and capability truth
+## 14. Operational readiness and capability truth
 
 A scheduler heartbeat is not evidence that reconciliation is working. It can continue firing while
 one authority fails every pass, a comparison cursor never moves, the latest completed projection is
@@ -436,7 +515,7 @@ stage, evidence, and retention staleness cannot be shorter than their driving in
 duration and backlog count has a hard upper bound. Invalid policy fails startup even before the
 first scheduled run.
 
-## 14. Executable evidence
+## 15. Executable evidence
 
 The focused gate executes 59 tests with zero failures, errors, or skips. New and extended cases prove:
 
@@ -549,17 +628,28 @@ The focused inventory-integrity gate executes 63 tests with zero failures, error
 complete Resource Gateway `clean verify` executes 2996 tests with zero failures, zero errors, two
 existing browser-environment skips, and a successfully repackaged Spring Boot executable JAR.
 
-## 15. Remaining phases and acceptance
+The source-retention core adds 11 green database tests. They prove processed and expired eligibility,
+one bounded child segment per call, strict dependency-order deletion, permanent completed markers,
+active/completed classification-export denial, current-authority and unretired-governance
+exclusions, whole-authority/projection candidate verification, live database-lease rejection,
+cross-transaction durability, signed-page historical-trust failure, pre-start row corruption
+rollback, mid-retirement missing-tail quarantine, independent marker/progress/state tamper rejection,
+and identity-free aggregate totals. The joint source-retention, classification, and finding-control
+gate executes 44 tests with zero failures, errors, or skips. A complete Resource Gateway gate is
+required after scheduler/configuration integration and before this increment is described as
+deployment-operational.
+
+## 16. Remaining phases and acceptance
 
 The local expectation, durable remote cycle, frozen comparison, bounded ordered merge, terminal
 semantic classification, payload-free governed finding lifecycle, and derived finding/evidence
 retention portions of Phases A-E are complete. No partial comparison, finding projection, or evidence
 retirement can be exported as governance evidence.
 
-Until source cycle/comparison/classification retention is implemented,
 Resource Gateway may claim **durable local expectation indexing, verified inventory cycle staging,
 completed payload-free classification evidence, replay-verified governed finding evidence, and
-database-fenced bounded derived-evidence retention with explicitly enabled autonomous scheduling,
-aggregate readiness, and exact capability truth**. It may claim the explicitly configured test/
-staging loop is operationally observable, but not that its source history is bounded or that it is a
-certified production orphan-reconciliation service.
+database-fenced bounded derived-evidence and source-history retention cores with explicitly enabled
+reconciliation scheduling, aggregate readiness, and exact capability truth**. It may not yet claim
+that source-history retention is autonomously scheduled or represented in health/capability truth.
+It may claim the explicitly configured test/staging reconciliation loop is operationally observable,
+but not that it is a certified production orphan-reconciliation service.

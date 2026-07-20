@@ -3310,9 +3310,11 @@ uses database leases and durable cursors; it does not grant remediation authorit
 Both lifecycle endpoints are absent in production and disabled by default. V2 proves that an
 approved authority signed the acknowledgement recorded before deletion, but production WORM
 provider certification/wiring, legal hold/erasure, backup purge, recovery continuity, historical
-authority publication, source-history retention, and external non-equivocation policy are still
-missing. Test/staging reconciliation health/readiness and capability truth do not prove those
-physical provider and lifecycle properties. Capability
+authority publication, autonomous source-retention scheduling/health integration, and external
+non-equivocation policy are still missing. The internal source-retention core has no public
+destructive API: it only bounds already-consumed local staging history after governance evidence
+retirement and keeps a permanent export-denial marker. Test/staging reconciliation health/readiness
+and capability truth do not prove those physical provider and lifecycle properties. Capability
 `crossRetentionSuiteStabilityTrend` therefore remains `false`; strict verification proves the returned
 local lifecycle, external acknowledgement, and range, not physical persistence or a globally unique
 long-term history.

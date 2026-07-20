@@ -205,6 +205,7 @@ public final class
                     comparison_id, page_sequence, object_id
                 )
                 """);
+        ExternalArchiveSourceRetirementIntegrity.initializeMarkerTable(jdbc);
         migrateStorageFingerprints();
     }
 
@@ -339,8 +340,15 @@ public final class
             throw new IllegalArgumentException("Classification export limit must be 1 through 500");
         }
         List<Classification> result = transactions.execute(status -> {
-            StoredComparison comparison = readComparison(exactComparison);
+            SourceRetirementMarker observedMarker = sourceRetirementMarker(
+                    exactComparison, false);
+            if (observedMarker != null && "COMPLETED".equals(observedMarker.status())) {
+                observedMarker.verify(objectMapper, exactComparison);
+                throw new IllegalStateException("External classification source is retired");
+            }
+            StoredComparison comparison = lockComparison(exactComparison);
             comparison.requireCompleted();
+            requireSourceExportable(comparison);
             List<StoredClassificationRow> rows = jdbc.query("""
                     SELECT comparison_id, cycle_id, authority_id, object_id, outcome,
                            page_sequence,
@@ -370,6 +378,38 @@ public final class
             throw new IllegalStateException("Classification export returned no result");
         }
         return result;
+    }
+
+    private void requireSourceExportable(StoredComparison comparison) {
+        SourceRetirementMarker marker = sourceRetirementMarker(
+                comparison.comparisonId(), true);
+        if (marker == null) {
+            return;
+        }
+        marker.verify(objectMapper, comparison);
+        throw new IllegalStateException("External classification source is "
+                + ("ACTIVE".equals(marker.status()) ? "being retired" : "retired"));
+    }
+
+    private SourceRetirementMarker sourceRetirementMarker(
+            String comparisonId,
+            boolean lock) {
+        String suffix = lock ? " FOR UPDATE" : "";
+        List<SourceRetirementMarker> markers = jdbc.query("""
+                SELECT cycle_id, comparison_id, authority_id, retirement_mode,
+                       retirement_status, started_at, completed_at, record_fingerprint
+                FROM rg_test_suite_stability_observation_external_source_retirements
+                WHERE comparison_id = ?
+                """ + suffix, (result, row) -> new SourceRetirementMarker(
+                result.getString("cycle_id"), result.getString("comparison_id"),
+                result.getString("authority_id"), result.getString("retirement_mode"),
+                result.getString("retirement_status"), instant(result, "started_at"),
+                nullableInstant(result, "completed_at"),
+                result.getString("record_fingerprint")), comparisonId);
+        if (markers.size() > 1) {
+            throw new IllegalStateException("External source retirement marker is not unique");
+        }
+        return markers.isEmpty() ? null : markers.getFirst();
     }
 
     /**
@@ -1772,6 +1812,37 @@ public final class
             return new Object[]{activeComparisonId, lastCompletedComparisonId, revision,
                     Timestamp.from(updatedAt), recordFingerprint, expected.authorityId,
                     expected.revision, expected.recordFingerprint};
+        }
+    }
+
+    private record SourceRetirementMarker(
+            String cycleId,
+            String comparisonId,
+            String authorityId,
+            String mode,
+            String status,
+            Instant startedAt,
+            Instant completedAt,
+            String recordFingerprint) {
+        private void verify(ObjectMapper objectMapper, StoredComparison comparison) {
+            verify(objectMapper, comparison.comparisonId());
+            if (!cycleId.equals(comparison.cycleId())
+                    || !authorityId.equals(comparison.authorityId())) {
+                throw new IllegalStateException("External source retirement marker is corrupt");
+            }
+        }
+
+        private void verify(ObjectMapper objectMapper, String expectedComparisonId) {
+            boolean active = "ACTIVE".equals(status);
+            boolean complete = "COMPLETED".equals(status);
+            String expected = ExternalArchiveSourceRetirementIntegrity.markerFingerprint(
+                    objectMapper, cycleId, comparisonId, authorityId, mode, status, startedAt,
+                    completedAt);
+            if (!comparisonId.equals(expectedComparisonId)
+                    || !"PROCESSED".equals(mode) || (!active && !complete)
+                    || active != (completedAt == null) || !recordFingerprint.equals(expected)) {
+                throw new IllegalStateException("External source retirement marker is corrupt");
+            }
         }
     }
 
