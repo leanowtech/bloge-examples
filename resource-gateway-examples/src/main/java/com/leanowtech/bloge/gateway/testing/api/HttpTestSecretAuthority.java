@@ -40,6 +40,7 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
     private final ObjectMapper objectMapper;
     private final TestSecretAuthorityTrustStore trustStore;
     private final TestSecretAuthorityTrustCohortGate cohortGate;
+    private final TestSecretAuthorityServingInventoryAuthority servingInventoryAuthority;
     private final Settings settings;
     private final HttpClient client;
     private final URI authorityUri;
@@ -57,8 +58,10 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
             ObjectMapper objectMapper,
             TestSecretAuthorityTrustStore trustStore,
             Settings settings) {
-        this(objectMapper, trustStore, TestSecretAuthorityTrustCohortGate.localOnly(), settings,
-                Clock.systemUTC(), new SecureRandom(), null);
+        this(objectMapper, trustStore, TestSecretAuthorityTrustCohortGate.localOnly(),
+                TestSecretAuthorityServingInventoryAuthority.localOnly(), settings,
+                Clock.systemUTC(),
+                new SecureRandom(), null);
     }
 
     /**
@@ -74,7 +77,28 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
             TestSecretAuthorityTrustStore trustStore,
             TestSecretAuthorityTrustCohortGate cohortGate,
             Settings settings) {
-        this(objectMapper, trustStore, cohortGate, settings,
+        this(objectMapper, trustStore, cohortGate,
+                TestSecretAuthorityServingInventoryAuthority.localOnly(), settings,
+                Clock.systemUTC(),
+                new SecureRandom(), null);
+    }
+
+    /**
+     * Creates an adapter protected by exact cohort and serving-inventory convergence.
+     *
+     * @param objectMapper application JSON mapper
+     * @param trustStore signed-response verification policy
+     * @param cohortGate non-network database-backed convergence gate
+     * @param servingInventoryAuthority current local signed-inventory authority
+     * @param settings bounded endpoint and timeout settings
+     */
+    public HttpTestSecretAuthority(
+            ObjectMapper objectMapper,
+            TestSecretAuthorityTrustStore trustStore,
+            TestSecretAuthorityTrustCohortGate cohortGate,
+            TestSecretAuthorityServingInventoryAuthority servingInventoryAuthority,
+            Settings settings) {
+        this(objectMapper, trustStore, cohortGate, servingInventoryAuthority, settings,
                 Clock.systemUTC(), new SecureRandom(), null);
     }
 
@@ -86,8 +110,10 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
             Clock clock,
             SecureRandom secureRandom,
             HttpClient client) {
-        this(objectMapper, trustStore, TestSecretAuthorityTrustCohortGate.localOnly(), settings,
-                clock, secureRandom, client);
+        this(objectMapper, trustStore, TestSecretAuthorityTrustCohortGate.localOnly(),
+                TestSecretAuthorityServingInventoryAuthority.localOnly(), settings, clock,
+                secureRandom,
+                client);
     }
 
     /** Package-visible seam including the convergence gate for deterministic boundary tests. */
@@ -99,6 +125,21 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
             Clock clock,
             SecureRandom secureRandom,
             HttpClient client) {
+        this(objectMapper, trustStore, cohortGate,
+                TestSecretAuthorityServingInventoryAuthority.localOnly(), settings, clock,
+                secureRandom, client);
+    }
+
+    /** Package-visible complete seam for deterministic inventory-gate boundary tests. */
+    HttpTestSecretAuthority(
+            ObjectMapper objectMapper,
+            TestSecretAuthorityTrustStore trustStore,
+            TestSecretAuthorityTrustCohortGate cohortGate,
+            TestSecretAuthorityServingInventoryAuthority servingInventoryAuthority,
+            Settings settings,
+            Clock clock,
+            SecureRandom secureRandom,
+            HttpClient client) {
         this.settings = Objects.requireNonNull(settings, "settings").validated();
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper").copy()
                 .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
@@ -106,6 +147,8 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
         this.cohortGate = Objects.requireNonNull(cohortGate, "cohortGate");
+        this.servingInventoryAuthority = Objects.requireNonNull(
+                servingInventoryAuthority, "servingInventoryAuthority");
         if (!this.trustStore.descriptor().available()) {
             throw new IllegalArgumentException(
                     "Test-secret authority trust store must be ready before HTTP resolution");
@@ -180,7 +223,15 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
         } catch (RuntimeException unavailable) {
             cohort = TestSecretAuthorityTrustCohortGate.Descriptor.unavailable(0, 0);
         }
-        return new Descriptor("", trust.available() && cohort.available(),
+        TestSecretAuthorityServingInventoryAuthority.Descriptor inventory;
+        try {
+            inventory = servingInventoryAuthority.descriptor();
+        } catch (RuntimeException unavailable) {
+            inventory = new TestSecretAuthorityServingInventoryAuthority.Descriptor(
+                    TestSecretAuthorityServingInventoryAuthority.Descriptor.SCHEMA_VERSION,
+                    true, true, false, "UNAVAILABLE", 1, 1, Map.of());
+        }
+        return new Descriptor("", trust.available() && cohort.available() && inventory.available(),
                 "HTTPS_SIGNED_TEST_SECRET_AUTHORITY",
                 trust.expectedAuthorityId(), Map.ofEntries(
                 Map.entry("protocolVersion", TestSecretAuthorityRequest.SCHEMA_VERSION),
@@ -223,12 +274,43 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
                 Map.entry("trustCohortExactConfiguredInventory",
                         cohort.exactConfiguredInventory()),
                 Map.entry("trustCohortExternallyAttestedInventory",
-                        cohort.externallyAttestedInventory())));
+                        cohort.externallyAttestedInventory()),
+                Map.entry("servingInventorySourceType",
+                        inventory.properties().getOrDefault("sourceType", "LOCAL_CONFIGURED")),
+                Map.entry("servingInventoryAvailable", inventory.available()),
+                Map.entry("servingInventoryStatus", inventory.status()),
+                Map.entry("servingInventoryExternallyAttested",
+                        inventory.externallyAttested()),
+                Map.entry("servingInventoryExpectedReplicaCount",
+                        inventory.expectedReplicaCount()),
+                Map.entry("servingInventoryRevision", inventory.revision()),
+                Map.entry("servingInventoryAutomaticRefresh",
+                        inventory.properties().getOrDefault("automaticRefresh", false)),
+                Map.entry("servingInventoryRefreshState",
+                        inventory.properties().getOrDefault("refreshState", "STATIC")),
+                Map.entry("servingInventoryRefreshIntervalSeconds",
+                        inventory.properties().getOrDefault("refreshIntervalSeconds", 0L)),
+                Map.entry("servingInventoryMaximumSnapshotAgeSeconds",
+                        inventory.properties().getOrDefault("maximumSnapshotAgeSeconds", 0L)),
+                Map.entry("servingInventoryConditionalRequests",
+                        inventory.properties().getOrDefault("conditionalRequests", false)),
+                Map.entry("servingInventoryFailClosedOnRefreshFailure",
+                        inventory.properties().getOrDefault(
+                                "failClosedOnRefreshFailure", true)),
+                Map.entry("servingInventorySignedRevocation",
+                        inventory.properties().getOrDefault("signedRevocation", false)),
+                Map.entry("servingInventoryWitnessedPublications",
+                        inventory.properties().getOrDefault("witnessedPublications", false)),
+                Map.entry("servingInventoryWitnessSignatureThreshold",
+                        inventory.properties().getOrDefault("witnessSignatureThreshold", 0)),
+                Map.entry("servingInventoryDurablePublicationFloor",
+                        inventory.properties().getOrDefault("durablePublicationFloor", false))));
     }
 
     private void requireReady() {
         try {
-            if (!trustStore.descriptor().available() || !cohortGate.descriptor().available()) {
+            if (!trustStore.descriptor().available() || !cohortGate.descriptor().available()
+                    || !servingInventoryAuthority.observation().available()) {
                 throw new ResolutionException(Reason.UNAVAILABLE);
             }
         } catch (ResolutionException unavailable) {

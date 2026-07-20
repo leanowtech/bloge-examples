@@ -32,6 +32,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseReplayPayloadRep
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecretAuthorityTrustCohortRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecretAuthorityServingInventoryPublicationFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityAuthorityCohortRepository;
@@ -1293,7 +1294,7 @@ public class TestRuntimeConfiguration {
         return new TestSecretAuthorityTrustHealth(trustStore);
     }
 
-    /** Verifies one static deployment-signed exact test-secret serving inventory. */
+    /** Verifies one static or dynamically witnessed exact test-secret serving inventory. */
     @Bean
     @ConditionalOnBean(DynamicJwksTestSecretAuthorityTrustStore.class)
     @ConditionalOnProperty(
@@ -1302,6 +1303,8 @@ public class TestRuntimeConfiguration {
     TestSecretAuthorityServingInventoryAuthority
             testSecretAuthorityServingInventoryAuthority(
             ObjectMapper objectMapper,
+            ObjectProvider<TestSecretAuthorityServingInventoryPublicationFloor>
+                    publicationFloors,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.trust-domain:}")
             String trustDomain,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.accepted-policy-fingerprints:}")
@@ -1312,6 +1315,26 @@ public class TestRuntimeConfiguration {
             String authorityKeysJson,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.inventory-json:}")
             String inventoryJson,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.enabled:false}")
+            boolean remoteEnabled,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.required:false}")
+            boolean remoteRequired,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.uri:}")
+            String remoteUri,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.refresh-interval-seconds:30}")
+            long remoteRefreshIntervalSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.request-timeout-ms:3000}")
+            long remoteRequestTimeoutMillis,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.maximum-snapshot-age-seconds:60}")
+            long remoteMaximumSnapshotAgeSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.allow-insecure-loopback:false}")
+            boolean remoteAllowInsecureLoopback,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-domain:}")
+            String witnessDomain,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-signature-threshold:0}")
+            int witnessSignatureThreshold,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-authority-keys-json:[]}")
+            String witnessAuthorityKeysJson,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id:}")
             String scopeId,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.cohort-id:}")
@@ -1322,12 +1345,73 @@ public class TestRuntimeConfiguration {
             String artifactFingerprint,
             @Value("${gateway.testing.test-secrets.authority.http.expected-authority-id:}")
             String authorityId) {
+        if (remoteRequired && !remoteEnabled) {
+            throw new IllegalStateException(
+                    "This profile requires dynamic witnessed test-secret serving inventory");
+        }
+        if (remoteEnabled && inventoryJson != null && !inventoryJson.isBlank()) {
+            throw new IllegalStateException(
+                    "Dynamic test-secret serving inventory cannot use a static document");
+        }
         var binding = new ConfiguredTestSecretAuthorityServingInventoryAuthority.ExpectedBinding(
                 scopeId, cohortId, artifactFingerprint,
                 TestSecretAuthorityResponse.SCHEMA_VERSION, authorityId, instanceId);
+        if (remoteEnabled) {
+            List<TestSecretAuthorityServingInventoryPublicationFloor> floors =
+                    publicationFloors.orderedStream().toList();
+            if (floors.size() != 1 || !floors.getFirst().durable()) {
+                throw new IllegalStateException(
+                        "Dynamic test-secret inventory requires one durable publication floor");
+            }
+            URI uri;
+            try {
+                uri = URI.create(remoteUri == null ? "" : remoteUri.trim());
+            } catch (RuntimeException invalid) {
+                throw new IllegalArgumentException(
+                        "Test-secret inventory publication URI is invalid", invalid);
+            }
+            return DynamicTestSecretAuthorityServingInventoryAuthority.fromJson(
+                    objectMapper, trustDomain, acceptedPolicyFingerprints, signatureThreshold,
+                    authorityKeysJson, binding, floors.getFirst(), witnessDomain,
+                    witnessSignatureThreshold, witnessAuthorityKeysJson,
+                    new DynamicTestSecretAuthorityServingInventoryAuthority.Settings(
+                            uri, Duration.ofSeconds(remoteRefreshIntervalSeconds),
+                            Duration.ofMillis(remoteRequestTimeoutMillis),
+                            Duration.ofSeconds(remoteMaximumSnapshotAgeSeconds),
+                            remoteAllowInsecureLoopback));
+        }
         return ConfiguredTestSecretAuthorityServingInventoryAuthority.fromJson(
                 objectMapper, trustDomain, acceptedPolicyFingerprints, signatureThreshold,
                 authorityKeysJson, inventoryJson, binding);
+    }
+
+    /** Persists the dynamic test-secret publication and witness head before publication. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote",
+            name = "enabled", havingValue = "true")
+    TestSecretAuthorityServingInventoryPublicationFloor
+            testSecretAuthorityServingInventoryPublicationFloor(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id:}")
+            String scopeId) {
+        return new DatabaseTestSecretAuthorityServingInventoryPublicationFloor(
+                database.jdbc(), objectMapper, scopeId, database.transactionManager());
+    }
+
+    /** Exposes aggregate-only health for dynamic witnessed test-secret inventory refresh. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote",
+            name = "enabled", havingValue = "true")
+    TestSecretAuthorityServingInventoryHealth testSecretAuthorityServingInventoryHealth(
+            TestSecretAuthorityServingInventoryAuthority authority) {
+        if (!(authority instanceof DynamicTestSecretAuthorityServingInventoryAuthority dynamic)) {
+            throw new IllegalStateException(
+                    "Dynamic test-secret inventory health requires the dynamic authority");
+        }
+        return new TestSecretAuthorityServingInventoryHealth(dynamic);
     }
 
     /** Freezes one exact configured or deployment-signed test-secret trust cohort. */
@@ -1465,6 +1549,7 @@ public class TestRuntimeConfiguration {
             ObjectMapper objectMapper,
             TestSecretAuthorityTrustStore trustStore,
             ObjectProvider<TestSecretAuthorityTrustCohortGate> cohortGates,
+            ObjectProvider<TestSecretAuthorityServingInventoryAuthority> inventoryAuthorities,
             @Value("${gateway.testing.test-secrets.authority.http.base-uri:}") String baseUri,
             @Value("${gateway.testing.test-secrets.authority.http.request-timeout-ms:3000}")
             long requestTimeoutMillis,
@@ -1491,7 +1576,19 @@ public class TestRuntimeConfiguration {
         }
         TestSecretAuthorityTrustCohortGate cohortGate = cohortEnabled
                 ? configuredGates.getFirst() : TestSecretAuthorityTrustCohortGate.localOnly();
+        List<TestSecretAuthorityServingInventoryAuthority> configuredInventories =
+                inventoryAuthorities.orderedStream().toList();
+        if (configuredInventories.size() > 1
+                || !cohortEnabled && !configuredInventories.isEmpty()) {
+            throw new IllegalStateException(
+                    "Test-secret serving inventory requires its exact enabled cohort");
+        }
+        TestSecretAuthorityServingInventoryAuthority inventoryAuthority =
+                configuredInventories.isEmpty()
+                        ? TestSecretAuthorityServingInventoryAuthority.localOnly()
+                        : configuredInventories.getFirst();
         return new HttpTestSecretAuthority(objectMapper, trustStore, cohortGate,
+                inventoryAuthority,
                 new HttpTestSecretAuthority.Settings(uri,
                         Duration.ofMillis(requestTimeoutMillis), allowInsecureLoopback));
     }

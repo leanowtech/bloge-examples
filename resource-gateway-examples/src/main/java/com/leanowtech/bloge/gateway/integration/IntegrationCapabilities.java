@@ -1,11 +1,14 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.testing.api.DynamicJwksTestSecretAuthorityTrustStore;
+import com.leanowtech.bloge.gateway.testing.api.DynamicTestSecretAuthorityServingInventoryAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventory;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryPublication;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryPublicationFloor;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortPolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortGate;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortRepository;
@@ -502,6 +505,21 @@ public record IntegrationCapabilities(
             objects.put("testSecretAuthorityServingInventoryAttestation", List.of(
                     TestSecretAuthorityTrustCohortPolicy.ServingInventoryAttestation
                             .SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryPublication", List.of(
+                    TestSecretAuthorityServingInventoryPublication.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryPublicationMaterial", List.of(
+                    TestSecretAuthorityServingInventoryPublication.Material.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryWitness", List.of(
+                    TestSecretAuthorityServingInventoryPublication.WitnessCheckpoint
+                            .SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryWitnessMaterial", List.of(
+                    TestSecretAuthorityServingInventoryPublication.WitnessMaterial
+                            .SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryPublicationGeneration", List.of(
+                    TestSecretAuthorityServingInventoryPublicationFloor.Generation
+                            .SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryRefreshSnapshot", List.of(
+                    DynamicTestSecretAuthorityServingInventoryAuthority.Snapshot.SCHEMA_VERSION));
             objects.put("testSecretAuthorityDescriptor", List.of(
                     TestSecretAuthority.Descriptor.SCHEMA_VERSION));
             objects.put("effectiveExecutionPlan", List.of(
@@ -715,6 +733,11 @@ public record IntegrationCapabilities(
         features.put("testSecretAuthorityTrustCohortReady", false);
         features.put("testSecretAuthorityDeploymentSignedInventory", false);
         features.put("testSecretAuthorityDeploymentSignedInventoryReady", false);
+        features.put("testSecretAuthorityDynamicServingInventory", false);
+        features.put("testSecretAuthoritySignedInventoryRevocation", false);
+        features.put("testSecretAuthorityWitnessedInventoryPublication", false);
+        features.put("testSecretAuthorityDurableInventoryPublicationFloor", false);
+        features.put("testSecretAuthorityDynamicServingInventoryReady", false);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);
         features.put("pureDslMutationPlanning", testExecutionEndpointEnabled);

@@ -916,6 +916,73 @@ class TestRuntimeProfileIsolationTest {
     }
 
     @Test
+    void dynamicWitnessedTestSecretInventoryAssemblesFloorHealthAndResolutionGate()
+            throws Exception {
+        KeyPair trustKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        byte[] jwks = authorityJwks(trustKey, "secret-key-dynamic")
+                .getBytes(StandardCharsets.UTF_8);
+        KeyPair deploymentKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        KeyPair witnessKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        DynamicTestSecretInventoryFixture inventory = dynamicTestSecretInventoryFixture(
+                deploymentKey, witnessKey);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/jwks", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/jwk-set+json");
+            exchange.sendResponseHeaders(200, jwks.length);
+            try (var body = exchange.getResponseBody()) {
+                body.write(jwks);
+            }
+        });
+        server.createContext("/test-secret-inventory", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type",
+                    DynamicTestSecretAuthorityServingInventoryAuthority.MEDIA_TYPE);
+            exchange.getResponseHeaders().add(
+                    DynamicTestSecretAuthorityServingInventoryAuthority.PROTOCOL_HEADER,
+                    TestSecretAuthorityServingInventoryPublication.SCHEMA_VERSION);
+            exchange.getResponseHeaders().add("ETag", "profile-generation-1");
+            exchange.sendResponseHeaders(200, inventory.document().length);
+            try (var body = exchange.getResponseBody()) {
+                body.write(inventory.document());
+            }
+        });
+        server.start();
+        Map<String, Object> properties = dynamicTestSecretAuthorityProperties(server);
+        properties.putAll(inventory.properties(server.getAddress().getPort()));
+        properties.put("gateway.testing.store.jdbc-url",
+                "jdbc:h2:mem:profile-dynamic-test-secret-inventory;DB_CLOSE_DELAY=-1");
+        try {
+            try (AnnotationConfigApplicationContext context = context(properties, 0, "test")) {
+                assertThat(context.getBean(TestSecretAuthorityServingInventoryAuthority.class))
+                        .isInstanceOf(
+                                DynamicTestSecretAuthorityServingInventoryAuthority.class);
+                assertThat(context.getBean(TestSecretAuthorityServingInventoryHealth.class)
+                        .health()).satisfies(health -> {
+                            assertThat(health.getStatus()).isEqualTo(Status.UP);
+                            assertThat(health.getDetails())
+                                    .containsEntry("publicationState", "ACTIVE")
+                                    .containsEntry("durablePublicationFloor", true)
+                                    .doesNotContainKeys("etag", "uri", "authorityId",
+                                            "fingerprint", "instanceIds", "publicKey");
+                        });
+                assertThat(context.getBean(TestSecretAuthority.class).descriptor())
+                        .satisfies(descriptor -> {
+                            assertThat(descriptor.available()).isTrue();
+                            assertThat(descriptor.properties())
+                                    .containsEntry("servingInventorySourceType",
+                                            DynamicTestSecretAuthorityServingInventoryAuthority
+                                                    .SOURCE_TYPE)
+                                    .containsEntry("servingInventorySignedRevocation", true)
+                                    .containsEntry("servingInventoryWitnessedPublications", true)
+                                    .containsEntry("servingInventoryDurablePublicationFloor",
+                                            true);
+                        });
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void stagingCohortRejectsUnsignedTestSecretServingInventory() throws Exception {
         KeyPair trustKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         byte[] document = authorityJwks(trustKey, "secret-key-dynamic")
@@ -1553,6 +1620,115 @@ class TestRuntimeProfileIsolationTest {
         properties.put(prefix + "authority-keys-json", keysJson);
         properties.put(prefix + "inventory-json", objectMapper.writeValueAsString(inventory));
         return properties;
+    }
+
+    private static DynamicTestSecretInventoryFixture dynamicTestSecretInventoryFixture(
+            KeyPair deploymentKey, KeyPair witnessKey) throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        String policy = "sha256:" + "b".repeat(64);
+        var inventoryMaterial = new TestSecretAuthorityServingInventory.Material(
+                TestSecretAuthorityServingInventory.Material.SCHEMA_VERSION,
+                "inventory.example", "inventory-profile-dynamic", 1,
+                "test-secret-scope", "deployment-a", "sha256:" + "a".repeat(64),
+                TestSecretAuthorityResponse.SCHEMA_VERSION, "secret-authority.example",
+                List.of("replica-a"), policy, now.minusSeconds(30), now.minusSeconds(30),
+                now.plusSeconds(3600));
+        String inventoryFingerprint = ProtocolFingerprint.of(objectMapper, inventoryMaterial);
+        var inventory = new TestSecretAuthorityServingInventory(
+                TestSecretAuthorityServingInventory.SCHEMA_VERSION,
+                inventoryMaterial, inventoryFingerprint, List.of(testSecretInventorySignature(
+                deploymentKey, "deployment-inventory-a", "inventory-key-a",
+                inventoryFingerprint, now)));
+        var publicationMaterial = new TestSecretAuthorityServingInventoryPublication.Material(
+                TestSecretAuthorityServingInventoryPublication.Material.SCHEMA_VERSION,
+                "inventory.example", "publication-profile-1", 1,
+                inventoryFingerprint,
+                TestSecretAuthorityServingInventoryPublication.State.ACTIVE,
+                policy, "", now.minusSeconds(20), now.minusSeconds(20),
+                now.plusSeconds(600), "");
+        String publicationFingerprint = ProtocolFingerprint.of(
+                objectMapper, publicationMaterial);
+        var witnessMaterial =
+                new TestSecretAuthorityServingInventoryPublication.WitnessMaterial(
+                        TestSecretAuthorityServingInventoryPublication.WitnessMaterial
+                                .SCHEMA_VERSION,
+                        "inventory-witness.example", "checkpoint-profile-1", 1,
+                        publicationFingerprint, "", now.minusSeconds(10),
+                        now.minusSeconds(10), now.plusSeconds(600));
+        String witnessFingerprint = ProtocolFingerprint.of(objectMapper, witnessMaterial);
+        var witness = new TestSecretAuthorityServingInventoryPublication.WitnessCheckpoint(
+                TestSecretAuthorityServingInventoryPublication.WitnessCheckpoint.SCHEMA_VERSION,
+                witnessMaterial, witnessFingerprint, List.of(testSecretInventorySignature(
+                witnessKey, "inventory-witness-a", "witness-key-a",
+                witnessFingerprint, now)));
+        var publication = new TestSecretAuthorityServingInventoryPublication(
+                TestSecretAuthorityServingInventoryPublication.SCHEMA_VERSION,
+                inventory, publicationMaterial, publicationFingerprint,
+                List.of(testSecretInventorySignature(deploymentKey,
+                        "deployment-inventory-a", "inventory-key-a",
+                        publicationFingerprint, now)), witness);
+        String deploymentPublic = Base64.getEncoder().encodeToString(
+                deploymentKey.getPublic().getEncoded());
+        String witnessPublic = Base64.getEncoder().encodeToString(
+                witnessKey.getPublic().getEncoded());
+        String deploymentKeys = "[{\"authorityId\":\"deployment-inventory-a\"," +
+                "\"keyId\":\"inventory-key-a\",\"publicKeyBase64\":\"" +
+                deploymentPublic + "\",\"enabled\":true,\"revoked\":false}]";
+        String witnessKeys = "[{\"authorityId\":\"inventory-witness-a\"," +
+                "\"keyId\":\"witness-key-a\",\"publicKeyBase64\":\"" +
+                witnessPublic + "\",\"enabled\":true,\"revoked\":false}]";
+        return new DynamicTestSecretInventoryFixture(
+                objectMapper.writeValueAsBytes(publication), policy,
+                deploymentKeys, witnessKeys);
+    }
+
+    private static TestSecretAuthorityServingInventory.AuthoritySignature
+            testSecretInventorySignature(
+            KeyPair keyPair, String authorityId, String keyId,
+            String fingerprint, Instant signedAt) throws Exception {
+        Signature signer = Signature.getInstance("Ed25519");
+        signer.initSign(keyPair.getPrivate());
+        signer.update(fingerprint.getBytes(StandardCharsets.UTF_8));
+        return new TestSecretAuthorityServingInventory.AuthoritySignature(
+                authorityId, keyId, "Ed25519", signedAt,
+                Base64.getEncoder().encodeToString(signer.sign()));
+    }
+
+    private record DynamicTestSecretInventoryFixture(
+            byte[] document,
+            String policyFingerprint,
+            String deploymentKeys,
+            String witnessKeys) {
+
+        private Map<String, Object> properties(int port) {
+            String prefix =
+                    "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.";
+            Map<String, Object> properties = new LinkedHashMap<>();
+            properties.put(prefix + "enabled", "true");
+            properties.put(prefix + "required", "true");
+            properties.put(prefix + "trust-domain", "inventory.example");
+            properties.put(prefix + "accepted-policy-fingerprints", policyFingerprint);
+            properties.put(prefix + "signature-threshold", "1");
+            properties.put(prefix + "authority-keys-json", deploymentKeys);
+            properties.put(prefix + "remote.enabled", "true");
+            properties.put(prefix + "remote.required", "true");
+            properties.put(prefix + "remote.uri",
+                    "http://127.0.0.1:" + port + "/test-secret-inventory");
+            properties.put(prefix + "remote.refresh-interval-seconds", "3600");
+            properties.put(prefix + "remote.request-timeout-ms", "1000");
+            properties.put(prefix + "remote.maximum-snapshot-age-seconds", "7200");
+            properties.put(prefix + "remote.allow-insecure-loopback", "true");
+            properties.put(prefix + "remote.witness-domain", "inventory-witness.example");
+            properties.put(prefix + "remote.witness-signature-threshold", "1");
+            properties.put(prefix + "remote.witness-authority-keys-json", witnessKeys);
+            return properties;
+        }
+
+        @Override
+        public byte[] document() {
+            return document.clone();
+        }
     }
 
     private static Map<String, Object> externalObservationArchiveProperties()

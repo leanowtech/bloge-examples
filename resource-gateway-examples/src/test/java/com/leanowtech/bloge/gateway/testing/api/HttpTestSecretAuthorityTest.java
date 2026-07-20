@@ -15,8 +15,10 @@ import java.security.KeyPair;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -186,6 +188,44 @@ class HttpTestSecretAuthorityTest {
     }
 
     @Test
+    void servingInventoryRevocationBlocksNetworkAndDynamicTruthReachesDescriptor()
+            throws Exception {
+        try (AuthorityServer server = AuthorityServer.start(objectMapper,
+                observed -> signed(observed.request()))) {
+            var trustStore = new ConfiguredTestSecretAuthorityTrustStore(
+                    objectMapper, AUTHORITY_ID, Duration.ofSeconds(60), Duration.ofSeconds(5),
+                    Duration.ofMillis(10), List.of(
+                    new ConfiguredTestSecretAuthorityTrustStore.AuthorityKey(
+                            KEY_ID, keyPair.getPublic(), null, null, true, false)));
+            HttpTestSecretAuthority blocked = new HttpTestSecretAuthority(
+                    objectMapper, trustStore, TestSecretAuthorityTrustCohortGate.localOnly(),
+                    inventory(false),
+                    new HttpTestSecretAuthority.Settings(
+                            server.baseUri(), Duration.ofSeconds(1), true),
+                    Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(),
+                    HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
+                            .connectTimeout(Duration.ofSeconds(1)).build());
+
+            assertResolutionReason(blocked, TestSecretAuthority.Reason.UNAVAILABLE);
+            assertThat(server.requests()).isZero();
+            assertThat(blocked.descriptor()).satisfies(descriptor -> {
+                assertThat(descriptor.available()).isFalse();
+                assertThat(descriptor.properties())
+                        .containsEntry("servingInventorySourceType",
+                                DynamicTestSecretAuthorityServingInventoryAuthority.SOURCE_TYPE)
+                        .containsEntry("servingInventoryAvailable", false)
+                        .containsEntry("servingInventoryStatus", "REVOKED")
+                        .containsEntry("servingInventoryAutomaticRefresh", true)
+                        .containsEntry("servingInventorySignedRevocation", true)
+                        .containsEntry("servingInventoryWitnessedPublications", true)
+                        .containsEntry("servingInventoryDurablePublicationFloor", true)
+                        .doesNotContainKeys("publicationId", "fingerprint", "instanceIds",
+                                "authorityKey", "witnessKey", "uri");
+            });
+        }
+    }
+
+    @Test
     void settingsRequireHttpsExceptForExplicitLoopbackTests() {
         assertThatThrownBy(() -> new HttpTestSecretAuthority.Settings(
                 URI.create("http://authority.example"), Duration.ofSeconds(1), false).validated())
@@ -239,6 +279,39 @@ class HttpTestSecretAuthorityTest {
                 TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION,
                 true, false, "SNAPSHOT_DIVERGED", 2, 2, 2, 2, 0,
                 30, true, true, false);
+    }
+
+    private static TestSecretAuthorityServingInventoryAuthority inventory(boolean available) {
+        return new TestSecretAuthorityServingInventoryAuthority() {
+            @Override
+            public Observation observation() {
+                return new Observation(Observation.SCHEMA_VERSION, true, true, available,
+                        available ? "VERIFIED" : "REVOKED",
+                        DynamicTestSecretAuthorityServingInventoryAuthority.SOURCE_TYPE,
+                        3, "sha256:" + "c".repeat(64), 17,
+                        "sha256:" + "d".repeat(64), "sha256:" + "e".repeat(64),
+                        List.of("replica-a", "replica-b"),
+                        Instant.parse("2099-01-01T00:00:00Z"), 2, 2);
+            }
+
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(Descriptor.SCHEMA_VERSION, true, true, available,
+                        available ? "VERIFIED" : "REVOKED", 2, 17, Map.ofEntries(
+                        Map.entry("sourceType",
+                                DynamicTestSecretAuthorityServingInventoryAuthority.SOURCE_TYPE),
+                        Map.entry("automaticRefresh", true),
+                        Map.entry("refreshState", "HEALTHY"),
+                        Map.entry("refreshIntervalSeconds", 30L),
+                        Map.entry("maximumSnapshotAgeSeconds", 60L),
+                        Map.entry("conditionalRequests", true),
+                        Map.entry("failClosedOnRefreshFailure", true),
+                        Map.entry("signedRevocation", true),
+                        Map.entry("witnessedPublications", true),
+                        Map.entry("witnessSignatureThreshold", 2),
+                        Map.entry("durablePublicationFloor", true)));
+            }
+        };
     }
 
     private Reply signed(TestSecretAuthorityRequest request) {

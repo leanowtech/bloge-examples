@@ -141,7 +141,8 @@ public record TestSecretAuthorityTrustCohortPolicy(
                         ? new TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation(
                         TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
                                 .SCHEMA_VERSION,
-                        true, servingInventory.sourceType(), servingInventory.revision(),
+                        true, databaseInventorySourceType(servingInventory.sourceType()),
+                        servingInventory.revision(),
                         servingInventory.materialFingerprint(),
                         servingInventory.policyFingerprint(), servingInventory.expiresAt())
                         : TestSuiteStabilityAuthorityCohortPolicy.ServingInventoryAttestation
@@ -184,7 +185,9 @@ public record TestSecretAuthorityTrustCohortPolicy(
             materialFingerprint = normalized(materialFingerprint);
             policyFingerprint = normalized(policyFingerprint);
             boolean external = externallyAttested
-                    && "STATIC_SIGNED_ED25519_M_OF_N".equals(sourceType)
+                    && ("STATIC_SIGNED_ED25519_M_OF_N".equals(sourceType)
+                    || DynamicTestSecretAuthorityServingInventoryAuthority.SOURCE_TYPE.equals(
+                    sourceType))
                     && revision > 0
                     && FINGERPRINT.matcher(materialFingerprint).matches()
                     && FINGERPRINT.matcher(policyFingerprint).matches()
@@ -223,6 +226,13 @@ public record TestSecretAuthorityTrustCohortPolicy(
                     observation.materialFingerprint(), observation.policyFingerprint(),
                     observation.expiresAt());
         }
+    }
+
+    private static String databaseInventorySourceType(String sourceType) {
+        if (DynamicTestSecretAuthorityServingInventoryAuthority.SOURCE_TYPE.equals(sourceType)) {
+            return DynamicTestSuiteStabilityServingInventoryAuthority.SOURCE_TYPE;
+        }
+        return sourceType;
     }
 
     private static Duration bounded(

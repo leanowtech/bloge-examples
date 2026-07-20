@@ -264,6 +264,18 @@ class ToolStudioIntegrationServiceTest {
                         List.of("bloge.testSecretAuthorityServingInventoryDescriptor.v1"))
                 .containsEntry("testSecretAuthorityServingInventoryAttestation",
                         List.of("bloge.testSecretAuthorityServingInventoryAttestation.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryPublication",
+                        List.of("bloge.testSecretAuthorityServingInventoryPublication.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryPublicationMaterial",
+                        List.of("bloge.testSecretAuthorityServingInventoryPublicationMaterial.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryWitness",
+                        List.of("bloge.testSecretAuthorityServingInventoryWitness.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryWitnessMaterial",
+                        List.of("bloge.testSecretAuthorityServingInventoryWitnessMaterial.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryPublicationGeneration",
+                        List.of("bloge.testSecretAuthorityServingInventoryPublicationGeneration.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryRefreshSnapshot",
+                        List.of("bloge.testSecretAuthorityServingInventoryRefreshSnapshot.v1"))
                 .containsEntry("testSecretAuthorityDescriptor",
                         List.of("bloge.testSecretAuthorityDescriptor.v1"));
         assertThat(available.features())
@@ -274,7 +286,12 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("testSecretAuthorityTrustCohortConvergence", false)
                 .containsEntry("testSecretAuthorityTrustCohortReady", false)
                 .containsEntry("testSecretAuthorityDeploymentSignedInventory", false)
-                .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", false);
+                .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", false)
+                .containsEntry("testSecretAuthorityDynamicServingInventory", false)
+                .containsEntry("testSecretAuthoritySignedInventoryRevocation", false)
+                .containsEntry("testSecretAuthorityWitnessedInventoryPublication", false)
+                .containsEntry("testSecretAuthorityDurableInventoryPublicationFloor", false)
+                .containsEntry("testSecretAuthorityDynamicServingInventoryReady", false);
 
         ready.set(false);
         assertThat(service.capabilities().payload().features())
@@ -339,10 +356,26 @@ class ToolStudioIntegrationServiceTest {
                         Map.entry("trustCohortExternallyAttestedInventory", true),
                         Map.entry("trustCohortLeaseDurationSeconds", 30L),
                         Map.entry("trustCohortDatabaseAuthority", true),
-                        Map.entry("trustCohortExactConfiguredInventory", true))));
+                        Map.entry("trustCohortExactConfiguredInventory", true),
+                        Map.entry("servingInventorySourceType",
+                                "DYNAMIC_HTTPS_SIGNED_PUBLICATION_WITH_WITNESS"),
+                        Map.entry("servingInventoryAvailable", true),
+                        Map.entry("servingInventoryStatus", "VERIFIED"),
+                        Map.entry("servingInventoryAutomaticRefresh", true),
+                        Map.entry("servingInventoryConditionalRequests", true),
+                        Map.entry("servingInventoryFailClosedOnRefreshFailure", true),
+                        Map.entry("servingInventorySignedRevocation", true),
+                        Map.entry("servingInventoryWitnessedPublications", true),
+                        Map.entry("servingInventoryWitnessSignatureThreshold", 2),
+                        Map.entry("servingInventoryDurablePublicationFloor", true))));
         assertThat(service.capabilities().payload().features())
                 .containsEntry("testSecretAuthorityDeploymentSignedInventory", true)
-                .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", true);
+                .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", true)
+                .containsEntry("testSecretAuthorityDynamicServingInventory", true)
+                .containsEntry("testSecretAuthoritySignedInventoryRevocation", true)
+                .containsEntry("testSecretAuthorityWitnessedInventoryPublication", true)
+                .containsEntry("testSecretAuthorityDurableInventoryPublicationFloor", true)
+                .containsEntry("testSecretAuthorityDynamicServingInventoryReady", true);
 
         when(authority.descriptor()).thenReturn(new TestSecretAuthority.Descriptor(
                 "", false, "HTTPS_SIGNED_TEST_SECRET_AUTHORITY", "authority-a",

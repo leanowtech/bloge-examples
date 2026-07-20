@@ -15,7 +15,12 @@ public interface TestSecretAuthorityServingInventoryAuthority {
     /** Closed key-free descriptor vocabulary exposed through health and capabilities. */
     Set<String> DESCRIPTOR_PROPERTIES = Set.of(
             "sourceType", "privateMaterialPresent", "protocolVersion",
-            "signatureThreshold", "runtimeExpiryFence", "authorityIdentityBound");
+            "signatureThreshold", "runtimeExpiryFence", "authorityIdentityBound",
+            "automaticRefresh", "refreshState", "refreshIntervalSeconds",
+            "maximumSnapshotAgeSeconds", "conditionalRequests",
+            "failClosedOnRefreshFailure", "signedRevocation",
+            "witnessedPublications", "witnessSignatureThreshold",
+            "durablePublicationFloor");
 
     /** @return current verified inventory state without network or database I/O */
     Observation observation();

@@ -48,6 +48,24 @@ public final class TestingProtocol {
     /** Canonical deployment-owned test-secret inventory material version. */
     public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_MATERIAL_V1 =
             "bloge.testSecretAuthorityServingInventoryMaterial.v1";
+    /** Active-or-revoked witnessed test-secret inventory publication envelope version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_PUBLICATION_V1 =
+            "bloge.testSecretAuthorityServingInventoryPublication.v1";
+    /** Canonical deployment-signed test-secret inventory publication material version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_PUBLICATION_MATERIAL_V1 =
+            "bloge.testSecretAuthorityServingInventoryPublicationMaterial.v1";
+    /** Independent test-secret inventory witness checkpoint envelope version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_WITNESS_V1 =
+            "bloge.testSecretAuthorityServingInventoryWitness.v1";
+    /** Canonical independent test-secret inventory witness material version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_WITNESS_MATERIAL_V1 =
+            "bloge.testSecretAuthorityServingInventoryWitnessMaterial.v1";
+    /** Durable publication and witness floor candidate version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_GENERATION_V1 =
+            "bloge.testSecretAuthorityServingInventoryPublicationGeneration.v1";
+    /** Aggregate payload-free dynamic inventory refresh snapshot version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_REFRESH_SNAPSHOT_V1 =
+            "bloge.testSecretAuthorityServingInventoryRefreshSnapshot.v1";
     /** Fixture rule wire version. */
     public static final String FIXTURE_RULE_V1 = "bloge.fixtureRule.v1";
     /** Fixture registration request wire version. */
@@ -379,6 +397,10 @@ public final class TestingProtocol {
     /** Classpath location of the private signed test-secret authority JSON Schema. */
     public static final String TEST_SECRET_AUTHORITY_SCHEMA_RESOURCE =
             "/schemas/resource-gateway-testing/test-secret-authority-v1.schema.json";
+    /** Classpath location of the witnessed test-secret inventory publication JSON Schema. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_PUBLICATION_SCHEMA_RESOURCE =
+            "/schemas/resource-gateway-testing/"
+                    + "test-secret-authority-serving-inventory-publication-v1.schema.json";
     /** Classpath location of the semantic correctness workbook JSON Schema. */
     public static final String SEMANTIC_WORKBOOK_SCHEMA_RESOURCE =
             "/schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json";

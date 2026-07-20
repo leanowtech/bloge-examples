@@ -309,6 +309,43 @@ public class ToolStudioIntegrationService {
                 signedSecretInventory && secretCohortReady
                         && secretDistinctInventoryGenerations != null
                         && secretDistinctInventoryGenerations.longValue() == 1);
+        boolean dynamicSecretInventory = signedSecretInventory
+                && "DYNAMIC_HTTPS_SIGNED_PUBLICATION_WITH_WITNESS".equals(
+                testSecretAuthority.properties().get("servingInventorySourceType"))
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryAutomaticRefresh"))
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryConditionalRequests"))
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryFailClosedOnRefreshFailure"));
+        boolean signedSecretInventoryRevocation = dynamicSecretInventory
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventorySignedRevocation"));
+        boolean witnessedSecretInventory = dynamicSecretInventory
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryWitnessedPublications"))
+                && testSecretAuthority.properties().get(
+                "servingInventoryWitnessSignatureThreshold") instanceof Number threshold
+                && threshold.longValue() > 0;
+        boolean durableSecretInventoryFloor = dynamicSecretInventory
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryDurablePublicationFloor"));
+        boolean dynamicSecretInventoryReady = dynamicSecretInventory
+                && signedSecretInventoryRevocation && witnessedSecretInventory
+                && durableSecretInventoryFloor && secretCohortReady
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryAvailable"))
+                && "VERIFIED".equals(testSecretAuthority.properties().get(
+                "servingInventoryStatus"));
+        features.put("testSecretAuthorityDynamicServingInventory", dynamicSecretInventory);
+        features.put("testSecretAuthoritySignedInventoryRevocation",
+                signedSecretInventoryRevocation);
+        features.put("testSecretAuthorityWitnessedInventoryPublication",
+                witnessedSecretInventory);
+        features.put("testSecretAuthorityDurableInventoryPublicationFloor",
+                durableSecretInventoryFloor);
+        features.put("testSecretAuthorityDynamicServingInventoryReady",
+                dynamicSecretInventoryReady);
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),

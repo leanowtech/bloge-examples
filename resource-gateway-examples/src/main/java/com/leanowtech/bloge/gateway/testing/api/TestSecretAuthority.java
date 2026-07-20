@@ -29,7 +29,18 @@ public interface TestSecretAuthority {
             "trustCohortDistinctInventoryGenerationCount",
             "trustCohortLeaseDurationSeconds", "trustCohortDatabaseAuthority",
             "trustCohortExactConfiguredInventory",
-            "trustCohortExternallyAttestedInventory");
+            "trustCohortExternallyAttestedInventory",
+            "servingInventorySourceType", "servingInventoryAvailable",
+            "servingInventoryStatus", "servingInventoryExternallyAttested",
+            "servingInventoryExpectedReplicaCount", "servingInventoryRevision",
+            "servingInventoryAutomaticRefresh", "servingInventoryRefreshState",
+            "servingInventoryRefreshIntervalSeconds",
+            "servingInventoryMaximumSnapshotAgeSeconds",
+            "servingInventoryConditionalRequests",
+            "servingInventoryFailClosedOnRefreshFailure",
+            "servingInventorySignedRevocation", "servingInventoryWitnessedPublications",
+            "servingInventoryWitnessSignatureThreshold",
+            "servingInventoryDurablePublicationFloor");
 
     /**
      * Resolves the exact requested closure or fails closed.

@@ -153,6 +153,16 @@ Independent-store settings:
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_SIGNATURE_THRESHOLD` | distinct Ed25519 authority quorum, 1..32 |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_AUTHORITY_KEYS_JSON` | strict public-only authority/key lifecycle array |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.inventory-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_SIGNED_INVENTORY_JSON` | strict signed envelope; maximum lifetime 30 days |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.enabled` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_ENABLED` | `false`; selects witnessed HTTPS publication instead of static JSON |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.required` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_REQUIRED` | `false` in `test`, `true` in `staging` when remote mode is mandated |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.uri` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_URI` | strict publication v1 endpoint; HTTPS required outside explicit loopback tests |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.refresh-interval-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_REFRESH_SECONDS` | `30`; 1..3600 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.request-timeout-ms` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_TIMEOUT_MS` | `3000`; 100..30000 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.maximum-snapshot-age-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_MAXIMUM_AGE_SECONDS` | `60`; 2..86400 and at least refresh plus timeout |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.allow-insecure-loopback` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-domain` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_DOMAIN` | exact trust domain independent from deployment inventory trust |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD` | distinct witness M-of-N threshold, 1..32 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON` | strict public Ed25519 witness keys; authorities and key material must not overlap deployment keys |
 | `gateway.testing.stability-jobs.api.retry-after-seconds` | `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` | `5` |
 | `gateway.testing.stability-jobs.authority.http.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED` | `false` |
 | `gateway.testing.stability-jobs.authority.http.base-uri` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI` | empty; required when enabled |
@@ -1202,16 +1212,35 @@ material. The database substrate is shared with stability authority cohorts unde
 `test-secret/` scope namespace, preserving one transaction/lease/corruption implementation without
 allowing the two domains to elect each other's cohort.
 
-The current persistence adapter still projects through a stability-named internal cohort policy and
-repository. This is deliberately not a wire dependency, but it is a source-level domain coupling;
-extracting the exact-membership, database-clock lease and corruption rules into a neutral cohort
-kernel is the next maintainability step before adding a third cohort-backed security domain.
+Set `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_ENABLED=true` to replace the static inventory
+document with a witnessed runtime publication. The endpoint must return strict vendor media and
+`bloge.testSecretAuthorityServingInventoryPublication.v1`; generic JSON, redirects and protocol
+downgrade are rejected. Each document contains the nested signed inventory, a deployment-signed
+monotonic `ACTIVE`/`REVOKED` publication, and an independently signed witness checkpoint. Deployment
+and witness authority identities and public-key material must be disjoint. The machine-readable
+contract is
+[`test-secret-authority-serving-inventory-publication-v1.schema.json`](schemas/resource-gateway-testing/test-secret-authority-serving-inventory-publication-v1.schema.json).
 
-This increment implements a static deployment-signed startup source, not a remotely refreshable
-inventory publication chain. Runtime inventory revoke/refresh, independent signed JWKS/inventory
-witness, neutral cohort/crypto kernel extraction, endpoint and mTLS/KMS/HSM HA, non-H2 and backup
-rollback certification, external alert routing, and chaos/DR qualification remain explicit
-follow-up work.
+Refresh uses ETag and publishes only after the full candidate is verified and the namespaced
+database publication/witness floor has durably accepted its exact predecessor chain. Rollback,
+same-sequence fork, gap, broken predecessor, corrupt floor, stale source and signed revocation all
+close secret resolution. A failed candidate leaves the previous diagnostic head intact but marks it
+unavailable; a valid successor can recover without restart. `304` renews transport freshness but
+cannot extend signed expiry. The HTTP authority consumes the inventory gate before request I/O and
+after response verification.
+
+The running cohort policy intentionally freezes the nested inventory identity. Runtime successors
+can revoke and reactivate that exact inventory; a changed member topology requires a coordinated
+new cohort generation. Capabilities expose dynamic source, signed revocation, independent witness,
+durable floor and current readiness as separate booleans. Health remains aggregate-only.
+
+The persistence adapters still project through stability-named internal cohort and publication-floor
+kernels. These are not wire dependencies, but neutral kernel extraction remains a maintainability
+task. Managed deployment/witness trust-root rotation, external non-equivocation, endpoint
+mTLS/pinning, KMS/HSM custody, non-H2 and backup-rollback certification, external alert routing,
+multi-site HA and chaos/DR qualification remain explicit follow-up work. Full invariants and tests
+are recorded in the
+[dynamic test-secret serving-inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-dynamic-serving-inventory-verification.md).
 
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 

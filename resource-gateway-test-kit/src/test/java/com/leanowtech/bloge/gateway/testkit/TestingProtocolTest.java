@@ -24,6 +24,9 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SECRET_AUTHORITY_RESPONSE_V1);
             assertConstant(definitions, "trustRefreshSnapshot",
                     TestingProtocol.TEST_SECRET_AUTHORITY_TRUST_REFRESH_SNAPSHOT_V1);
+            assertConstant(definitions, "servingInventoryRefreshSnapshot",
+                    TestingProtocol
+                            .TEST_SECRET_AUTHORITY_SERVING_INVENTORY_REFRESH_SNAPSHOT_V1);
             assertConstant(definitions, "trustCohortSnapshot",
                     TestingProtocol.TEST_SECRET_AUTHORITY_TRUST_COHORT_SNAPSHOT_V1);
             assertConstant(definitions, "trustCohortDescriptor",
@@ -42,6 +45,24 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_SECRET_AUTHORITY_SERVING_INVENTORY_V1);
             assertConstant(definitions, "material",
                     TestingProtocol.TEST_SECRET_AUTHORITY_SERVING_INVENTORY_MATERIAL_V1);
+        }
+        try (InputStream schema = TestingProtocol.class.getResourceAsStream(
+                TestingProtocol
+                        .TEST_SECRET_AUTHORITY_SERVING_INVENTORY_PUBLICATION_SCHEMA_RESOURCE)) {
+            assertThat(schema).isNotNull();
+            JsonNode definitions = new ObjectMapper().readTree(schema).path("$defs");
+            assertConstant(definitions, "publication",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_SERVING_INVENTORY_PUBLICATION_V1);
+            assertConstant(definitions, "publicationMaterial",
+                    TestingProtocol
+                            .TEST_SECRET_AUTHORITY_SERVING_INVENTORY_PUBLICATION_MATERIAL_V1);
+            assertConstant(definitions, "witness",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_SERVING_INVENTORY_WITNESS_V1);
+            assertConstant(definitions, "witnessMaterial",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_SERVING_INVENTORY_WITNESS_MATERIAL_V1);
+            assertThat(definitions.at("/publication/additionalProperties").asBoolean()).isFalse();
+            assertThat(definitions.at("/publicationMaterial/allOf")).hasSize(3);
+            assertThat(definitions.at("/witnessMaterial/allOf")).hasSize(1);
         }
     }
 

@@ -315,10 +315,17 @@ for the complete serving-slot set and also binds the test-secret authority ident
 configured list is equality-only. Database-clock process-start leases then block secret resolution
 until every exact slot is live, healthy, on one complete JWKS generation and on one signed-inventory
 generation. Duplicate starts, overlapping deployments, inventory rollback/fork, runtime expiry and
-generation drift fail closed. Capability and health expose aggregate readiness only. Dynamic
-inventory refresh/revoke, independent witness, and authority HA/chaos certification remain open.
+generation drift fail closed. Set the signed-inventory `remote` properties to consume a strict
+vendor-media HTTPS publication with ETag refresh, signed `ACTIVE/REVOKED` state, an independent
+witness quorum and a namespaced durable publication/witness floor. Candidate verification and floor
+advance complete before one atomic local publish; any transport, protocol, signature, freshness,
+chain or floor ambiguity blocks resolution without discarding the last diagnostic head. A valid
+successor recovers without restart. Capability and health expose aggregate readiness only. Runtime
+trust-root rotation, external non-equivocation, mTLS/pinning, authority HA/chaos and DR certification
+remain open. A changed member topology still requires a coordinated new cohort generation.
 See the
-[testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#421a-control-identity-feature-flag-and-secret-built-ins).
+[testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#421a-control-identity-feature-flag-and-secret-built-ins)
+and [dynamic test-secret inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-test-secret-dynamic-serving-inventory-verification.md).
 
 The durable stability queue and authenticated asynchronous submit/query/cancel protocol are present
 in the isolated `test`/`staging` datastore. Query and cancellation remain available while the worker

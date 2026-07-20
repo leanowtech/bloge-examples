@@ -30,6 +30,12 @@ class TestSecretAuthorityProtocolSchemaTest {
                 new DynamicJwksTestSecretAuthorityTrustStore.RefreshSnapshot(
                         DynamicJwksTestSecretAuthorityTrustStore.RefreshSnapshot.SCHEMA_VERSION,
                         true, "HEALTHY", 1, 1, NOW, 1, 0, "", 30, 60);
+        DynamicTestSecretAuthorityServingInventoryAuthority.Snapshot inventoryRefresh =
+                new DynamicTestSecretAuthorityServingInventoryAuthority.Snapshot(
+                        DynamicTestSecretAuthorityServingInventoryAuthority.Snapshot
+                                .SCHEMA_VERSION,
+                        true, "HEALTHY", "ACTIVE", 1, NOW, 1, 0, "", 30, 60, 2,
+                        true);
         TestSecretAuthorityTrustCohortRepository.Snapshot cohortSnapshot =
                 new TestSecretAuthorityTrustCohortRepository.Snapshot(
                         TestSecretAuthorityTrustCohortRepository.Snapshot.SCHEMA_VERSION,
@@ -69,6 +75,8 @@ class TestSecretAuthorityProtocolSchemaTest {
                 schema.at("/$defs/trustDescriptor/properties"));
         assertProperties(objectMapper.valueToTree(refresh),
                 schema.at("/$defs/trustRefreshSnapshot/properties"));
+        assertProperties(objectMapper.valueToTree(inventoryRefresh),
+                schema.at("/$defs/servingInventoryRefreshSnapshot/properties"));
         assertProperties(objectMapper.valueToTree(cohortSnapshot),
                 schema.at("/$defs/trustCohortSnapshotV2/properties"));
         assertProperties(objectMapper.valueToTree(cohortDescriptor),
@@ -86,6 +94,10 @@ class TestSecretAuthorityProtocolSchemaTest {
         assertThat(schema.at("/$defs/trustCohortSnapshotV2/properties/schemaVersion/const")
                 .asText()).isEqualTo(
                 TestSecretAuthorityTrustCohortRepository.Snapshot.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/servingInventoryRefreshSnapshot/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DynamicTestSecretAuthorityServingInventoryAuthority.Snapshot.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/trustCohortDescriptorV2/properties/schemaVersion/const")
                 .asText()).isEqualTo(
                 TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION);
@@ -96,6 +108,7 @@ class TestSecretAuthorityProtocolSchemaTest {
                 .containsExactlyInAnyOrderElementsOf(TestSecretAuthority.DESCRIPTOR_PROPERTIES);
         assertThat(List.of("request", "response", "resolutionContext", "secretMaterial",
                 "signature", "trustDescriptor", "trustRefreshSnapshot",
+                "servingInventoryRefreshSnapshot",
                 "trustCohortSnapshot", "trustCohortSnapshotV2",
                 "trustCohortDescriptor", "trustCohortDescriptorV2",
                 "authorityDescriptor"))
