@@ -39,6 +39,7 @@ public final class ConfiguredExternalSequenceAnchorReceiptTrustStore
 
     private final Clock clock;
     private final ExpectedBinding binding;
+    private final ExternalSequenceAnchorBootstrapRootTrustStore rootTrustStore;
     private final Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
             keys;
     private final Set<String> authorityIds;
@@ -67,9 +68,37 @@ public final class ConfiguredExternalSequenceAnchorReceiptTrustStore
                     bootstrapRootKeys,
             ExternalSequenceAnchorTrustPublicationFloor floor,
             ExternalSequenceAnchorTrustPublication publication) {
+        this(objectMapper, clock, binding, acceptedPolicyFingerprints,
+                new StaticExternalSequenceAnchorBootstrapRootTrustStore(
+                        objectMapper, clock, binding.scopeId(), binding.trustRootSetId(),
+                        binding.bootstrapTrustDomain(), bootstrapSignatureThreshold,
+                        bootstrapRootKeys),
+                floor, publication);
+    }
+
+    /**
+     * Verifies one managed notary publication through an atomic bootstrap-root trust port.
+     *
+     * @param objectMapper canonical JSON baseline
+     * @param clock verification clock
+     * @param binding exact deployment binding and freshness policy
+     * @param acceptedPolicyFingerprints accepted notary-key governance policies
+     * @param rootTrustStore static or complete-chain managed bootstrap-root authority
+     * @param floor durable monotonic notary publication floor
+     * @param publication candidate signed notary trust publication
+     */
+    public ConfiguredExternalSequenceAnchorReceiptTrustStore(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ExpectedBinding binding,
+            Set<String> acceptedPolicyFingerprints,
+            ExternalSequenceAnchorBootstrapRootTrustStore rootTrustStore,
+            ExternalSequenceAnchorTrustPublicationFloor floor,
+            ExternalSequenceAnchorTrustPublication publication) {
         ObjectMapper canonical = Objects.requireNonNull(objectMapper, "objectMapper");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.binding = Objects.requireNonNull(binding, "binding");
+        this.rootTrustStore = Objects.requireNonNull(rootTrustStore, "rootTrustStore");
         Set<String> policies = acceptedPolicies(acceptedPolicyFingerprints);
         ExternalSequenceAnchorTrustPublicationFloor durable =
                 Objects.requireNonNull(floor, "floor");
@@ -77,22 +106,27 @@ public final class ConfiguredExternalSequenceAnchorReceiptTrustStore
             throw new IllegalArgumentException(
                     "Managed external sequence-anchor trust requires a durable floor");
         }
-        Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> roots =
-                ConfiguredTestSuiteStabilityServingInventoryAuthority.indexedKeys(
-                        bootstrapRootKeys, bootstrapSignatureThreshold);
         this.publication = Objects.requireNonNull(publication, "publication");
         ExternalSequenceAnchorTrustPublication.Material material = publication.material();
         Instant now = clock.instant();
         verifyBinding(canonical, material, policies, publication, now);
-        ConfiguredTestSuiteStabilityServingInventoryAuthority.verifyDetachedSignatures(
-                roots, bootstrapSignatureThreshold, publication.bootstrapSignatures(),
-                publication.materialFingerprint(), material.issuedAt(), material.expiresAt(), now,
-                "External sequence-anchor trust publication");
+        if (!rootTrustStore.matchesBinding(material.scopeId(),
+                material.trustRootSetId(), material.bootstrapTrustDomain())) {
+            throw new IllegalArgumentException(
+                    "Managed external sequence-anchor bootstrap-root binding is invalid");
+        }
+        try {
+            rootTrustStore.verify(publication, now);
+        } catch (ExternalSequenceAnchorBootstrapRootTrustStore.TrustException invalid) {
+            throw new IllegalArgumentException(
+                    "External sequence-anchor trust publication signature verification failed",
+                    invalid);
+        }
         this.keys = parseKeys(material.notaryKeys());
         this.authorityIds = this.keys.values().stream()
                 .map(ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey::authorityId)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        verifyIndependentAuthorities(roots, this.keys);
+        rootTrustStore.requireIndependentFrom(List.copyOf(this.keys.values()));
         if (activeAuthorityCount(now) < binding.receiptSignatureThreshold()) {
             throw new IllegalArgumentException(
                     "Managed external sequence-anchor trust active threshold is unavailable");
@@ -141,6 +175,7 @@ public final class ConfiguredExternalSequenceAnchorReceiptTrustStore
             Instant observedAt) {
         Objects.requireNonNull(receipt, "receipt");
         Instant now = observedAt == null ? clock.instant() : observedAt;
+        rootTrustStore.verify(publication, now);
         ExternalSequenceAnchorTrustPublication.Material material = publication.material();
         if (now.isBefore(material.notBefore()) || !now.isBefore(material.expiresAt())) {
             throw new TrustException(TrustException.Reason.UNAVAILABLE);
@@ -170,7 +205,8 @@ public final class ConfiguredExternalSequenceAnchorReceiptTrustStore
     /** {@inheritDoc} */
     @Override
     public boolean coversAuthorities(Set<String> expected) {
-        return expected != null && authorityIds.equals(Set.copyOf(expected));
+        return rootTrustStore.descriptor().available()
+                && expected != null && authorityIds.equals(Set.copyOf(expected));
     }
 
     /** {@inheritDoc} */
@@ -178,7 +214,8 @@ public final class ConfiguredExternalSequenceAnchorReceiptTrustStore
     public Descriptor descriptor() {
         Instant now = clock.instant();
         int active = activeAuthorityCount(now);
-        boolean available = usableAt(now, active);
+        boolean available = usableAt(now, active)
+                && rootTrustStore.descriptor().available();
         return new Descriptor(Descriptor.SCHEMA_VERSION, available, true, false,
                 durableFloor, authorityIds.size(), active);
     }
@@ -188,9 +225,10 @@ public final class ConfiguredExternalSequenceAnchorReceiptTrustStore
     public Snapshot snapshot() {
         Instant now = clock.instant();
         int active = activeAuthorityCount(now);
-        boolean available = usableAt(now, active);
+        boolean rootsAvailable = rootTrustStore.descriptor().available();
+        boolean available = usableAt(now, active) && rootsAvailable;
         return new Snapshot(Snapshot.SCHEMA_VERSION, available,
-                available ? "VERIFIED" : "EXPIRED",
+                available ? "VERIFIED" : rootsAvailable ? "EXPIRED" : "ROOT_UNAVAILABLE",
                 publication.material().sequence(), authorityIds.size(),
                 active, null, 0, 0);
     }
@@ -238,27 +276,6 @@ public final class ConfiguredExternalSequenceAnchorReceiptTrustStore
                         .anyMatch(key -> key.authorityId().equals(authority)
                                 && key.activeAt(now)))
                 .count();
-    }
-
-    private static void verifyIndependentAuthorities(
-            Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> roots,
-            Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
-                    notaries) {
-        Set<String> rootAuthorities = new HashSet<>();
-        Set<String> rootPublicKeys = new HashSet<>();
-        roots.values().forEach(key -> {
-            rootAuthorities.add(key.authorityId());
-            rootPublicKeys.add(Base64.getEncoder().encodeToString(key.publicKey().getEncoded()));
-        });
-        boolean overlaps = notaries.values().stream().anyMatch(key ->
-                rootAuthorities.contains(key.authorityId())
-                        || rootPublicKeys.contains(Base64.getEncoder()
-                        .encodeToString(key.publicKey().getEncoded())));
-        if (overlaps) {
-            throw new IllegalArgumentException(
-                    "Managed external sequence-anchor bootstrap and notary authorities "
-                            + "must be independent");
-        }
     }
 
     private static Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>

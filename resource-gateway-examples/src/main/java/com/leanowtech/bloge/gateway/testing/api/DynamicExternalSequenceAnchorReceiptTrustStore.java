@@ -56,9 +56,8 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
     private final Clock clock;
     private final ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding;
     private final Set<String> acceptedPolicies;
-    private final int bootstrapSignatureThreshold;
-    private final List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
-            bootstrapRootKeys;
+    private final ExternalSequenceAnchorBootstrapRootTrustStore rootTrustStore;
+    private final boolean ownsRootTrustStore;
     private final ExternalSequenceAnchorTrustPublicationFloor floor;
     private final Settings settings;
     private final DocumentFetcher fetcher;
@@ -94,6 +93,23 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
                 bootstrapSignatureThreshold, bootstrapRootKeys, floor, settings, null, true);
     }
 
+    /**
+     * Bootstraps managed notary trust through one dynamically managed bootstrap-root chain.
+     *
+     * <p>This store owns and closes the supplied root store. A root refresh failure immediately
+     * closes receipt verification even when the last notary publication remains locally fresh.</p>
+     */
+    public DynamicExternalSequenceAnchorReceiptTrustStore(
+            ObjectMapper objectMapper,
+            ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicies,
+            ExternalSequenceAnchorBootstrapRootTrustStore rootTrustStore,
+            ExternalSequenceAnchorTrustPublicationFloor floor,
+            Settings settings) {
+        this(objectMapper, Clock.systemUTC(), binding, acceptedPolicies,
+                rootTrustStore, floor, settings, null, true, true);
+    }
+
     DynamicExternalSequenceAnchorReceiptTrustStore(
             ObjectMapper objectMapper,
             Clock clock,
@@ -106,14 +122,30 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
             Settings settings,
             DocumentFetcher fetcher,
             boolean startScheduler) {
+        this(objectMapper, clock, binding, acceptedPolicies,
+                staticRootStore(objectMapper, clock, binding,
+                        bootstrapSignatureThreshold, bootstrapRootKeys),
+                floor, settings, fetcher, startScheduler, true);
+    }
+
+    DynamicExternalSequenceAnchorReceiptTrustStore(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicies,
+            ExternalSequenceAnchorBootstrapRootTrustStore rootTrustStore,
+            ExternalSequenceAnchorTrustPublicationFloor floor,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler,
+            boolean ownsRootTrustStore) {
         this.objectMapper = strict(objectMapper);
         this.clock = Objects.requireNonNull(clock, "clock");
         this.binding = Objects.requireNonNull(binding, "binding");
         this.acceptedPolicies = Set.copyOf(Objects.requireNonNull(
                 acceptedPolicies, "acceptedPolicies"));
-        this.bootstrapSignatureThreshold = bootstrapSignatureThreshold;
-        this.bootstrapRootKeys = List.copyOf(Objects.requireNonNull(
-                bootstrapRootKeys, "bootstrapRootKeys"));
+        this.rootTrustStore = Objects.requireNonNull(rootTrustStore, "rootTrustStore");
+        this.ownsRootTrustStore = ownsRootTrustStore;
         this.floor = Objects.requireNonNull(floor, "floor");
         if (!floor.durable()) {
             throw new IllegalArgumentException(
@@ -122,6 +154,9 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
         this.settings = Objects.requireNonNull(settings, "settings").validated();
         this.fetcher = fetcher == null ? new HttpDocumentFetcher() : fetcher;
         if (!refresh()) {
+            if (ownsRootTrustStore) {
+                rootTrustStore.close();
+            }
             throw new IllegalStateException(
                     "Dynamic external sequence-anchor trust bootstrap is unavailable");
         }
@@ -208,6 +243,9 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
                 Thread.currentThread().interrupt();
             }
         }
+        if (ownsRootTrustStore) {
+            rootTrustStore.close();
+        }
     }
 
     boolean refreshNow() {
@@ -253,7 +291,7 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
             ConfiguredExternalSequenceAnchorReceiptTrustStore store =
                     new ConfiguredExternalSequenceAnchorReceiptTrustStore(
                             objectMapper, clock, binding, acceptedPolicies,
-                            bootstrapSignatureThreshold, bootstrapRootKeys, floor, publication);
+                            rootTrustStore, floor, publication);
             String etag = document.etag().isBlank() ? previous.etag() : document.etag();
             state = previous.succeeded(publication, store, etag, now);
             refreshFailureLogged.set(false);
@@ -328,7 +366,7 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
             return "STALE";
         }
         if (!current.available()) {
-            return "EXPIRED";
+            return current.status();
         }
         return "HEALTHY";
     }
@@ -356,6 +394,19 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
 
     private static String failureCode(Throwable failure) {
         return failure instanceof IOException ? "TRANSPORT" : "INVALID_PUBLICATION";
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootTrustStore staticRootStore(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding,
+            int signatureThreshold,
+            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> rootKeys) {
+        ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding expected =
+                Objects.requireNonNull(binding, "binding");
+        return new StaticExternalSequenceAnchorBootstrapRootTrustStore(
+                objectMapper, clock, expected.scopeId(), expected.trustRootSetId(),
+                expected.bootstrapTrustDomain(), signatureThreshold, rootKeys);
     }
 
     private static ObjectMapper strict(ObjectMapper source) {

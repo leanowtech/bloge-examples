@@ -679,6 +679,16 @@ media/version、no-redirect、4 MiB/128 代双界、hard source age、unknown-ke
 fork/recovery、过期和数据库竞争在内的 17 项聚焦测试全绿。managed notary verifier 与双域
 Spring/staging/health/capability 接线仍是下一子步门禁。
 
+Stage 4 该增量第三子步消除 managed notary verifier 内复制静态 bootstrap-root 密钥和密码实现的
+旁路。configured/dynamic receipt trust 统一依赖原子 `ExternalSequenceAnchorBootstrapRootTrustStore`；
+notary publication 构造与每次 receipt 验证都会重检上游 root snapshot，root refresh 失败、过期或分叉
+立即向下传播 `ROOT_UNAVAILABLE`。notary successor 遇到未知 root key 时会先通过 root store 的全局
+single-flight 路径完整重放新链，再采纳 notary successor；close ownership 同时关闭双层 refresh lane。
+静态 root adapter 仅保留旧 test 配置兼容，明确不具备完整链、durable floor 或免重启轮换语义。
+双层轮换/分叉组合与既有兼容回归合计 20 项聚焦测试全绿。双域 Spring/staging/health/capability/script
+接线和 downgrade/误注入门禁仍是下一子步。完整 Resource Gateway `clean verify` 执行 3220 tests，
+0 failures、0 errors、2 个条件浏览器跳过，并成功重打包可执行 JAR。
+
 第五十三增量第十八子步根治 exact configured cohort 可被本地缩窄后自证的问题。staging cohort 必须
 消费 deployment-owned `bloge.testSuiteStabilityServingInventory.v1`：canonical material 把 trust domain、
 单调 revision、stable scope、immutable cohort、artifact、protocol、排序后的精确 serving-slot 集、外部

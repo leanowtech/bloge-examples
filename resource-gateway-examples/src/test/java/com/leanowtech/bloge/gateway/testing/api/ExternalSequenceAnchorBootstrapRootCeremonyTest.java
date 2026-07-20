@@ -60,7 +60,7 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
         genesisKeys = keys("genesis");
         generationOneKeys = keys("one");
         generationTwoKeys = keys("two");
-        notaryKeys = keys("notary");
+        notaryKeys = notaryKeys();
         genesis = genesis(genesisKeys);
     }
 
@@ -448,6 +448,56 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
         }
     }
 
+    @Test
+    void notarySuccessorDrivesRootRotationAndRootForkClosesReceiptTrust()
+            throws Exception {
+        ExternalSequenceAnchorBootstrapRootTransition first = transition(
+                1, genesis.materialFingerprint(objectMapper), genesisKeys,
+                generationOneKeys, NOW.minusSeconds(60), NOW.plusSeconds(7200));
+        ExternalSequenceAnchorBootstrapRootTransition second = transition(
+                2, first.materialFingerprint(), generationOneKeys, generationTwoKeys,
+                NOW.minusSeconds(10), NOW.plusSeconds(10_800));
+        Map<String, KeyPair> forkKeys = keys("fork");
+        ExternalSequenceAnchorBootstrapRootTransition fork = transition(
+                2, first.materialFingerprint(), generationOneKeys, forkKeys,
+                NOW.minusSeconds(10), NOW.plusSeconds(10_800));
+        QueueFetcher rootFetcher = new QueueFetcher(
+                document(bundle(first), "root-etag-a"),
+                document(bundle(first, second), "root-etag-b"),
+                document(bundle(first, fork), "root-etag-fork"));
+        DynamicExternalSequenceAnchorBootstrapRootTrustStore rootStore =
+                dynamic(new InMemoryFloor(), rootFetcher);
+
+        ExternalSequenceAnchorTrustPublication firstNotary =
+                notaryPublication(generationOneKeys);
+        ExternalSequenceAnchorTrustPublication secondNotary = notaryPublication(
+                generationTwoKeys, 2, firstNotary.materialFingerprint());
+        NotaryQueueFetcher notaryFetcher = new NotaryQueueFetcher(
+                notaryDocument(firstNotary, "notary-etag-a"),
+                notaryDocument(secondNotary, "notary-etag-b"));
+        var receiptStore = new DynamicExternalSequenceAnchorReceiptTrustStore(
+                objectMapper, clock, notaryBinding(), Set.of(POLICY), rootStore,
+                new InMemoryNotaryFloor(),
+                new DynamicExternalSequenceAnchorReceiptTrustStore.Settings(
+                        URI.create("http://127.0.0.1:8080/notary-trust"),
+                        Duration.ofSeconds(2), Duration.ofSeconds(10),
+                        Duration.ofMinutes(2), Duration.ofSeconds(5), true),
+                notaryFetcher, false, true);
+
+        assertThat(receiptStore.refreshNow()).isTrue();
+        assertThat(rootStore.snapshot().headSequence()).isEqualTo(2);
+        assertThat(receiptStore.snapshot().publicationSequence()).isEqualTo(2);
+        assertThat(rootFetcher.fetchCount()).isEqualTo(2);
+
+        assertThat(rootStore.refreshNow()).isFalse();
+        assertThat(rootStore.snapshot().status()).isEqualTo("REFRESH_FAILED");
+        assertThat(receiptStore.descriptor().available()).isFalse();
+        assertThat(receiptStore.snapshot().status()).isEqualTo("ROOT_UNAVAILABLE");
+
+        receiptStore.close();
+        assertThat(rootStore.snapshot().status()).isEqualTo("CLOSED");
+    }
+
     private ConfiguredExternalSequenceAnchorBootstrapRootTrustStore configured(
             ExternalSequenceAnchorBootstrapRootBundle bundle,
             ExternalSequenceAnchorBootstrapRootPublicationFloor floor) {
@@ -484,11 +534,24 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
                 false, objectMapper.writeValueAsBytes(bundle), etag);
     }
 
+    private DynamicExternalSequenceAnchorReceiptTrustStore.FetchedDocument notaryDocument(
+            ExternalSequenceAnchorTrustPublication publication, String etag) throws Exception {
+        return new DynamicExternalSequenceAnchorReceiptTrustStore.FetchedDocument(
+                false, objectMapper.writeValueAsBytes(publication), etag);
+    }
+
     private ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding binding() {
         return new ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding(
                 SCOPE, ROOT_SET, ROOT_DOMAIN, 3, 1,
                 Duration.ofDays(30), Duration.ofSeconds(5),
                 Duration.ofSeconds(30), 32);
+    }
+
+    private ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding notaryBinding() {
+        return new ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding(
+                SCOPE, ROOT_SET, ANCHOR_SET, NOTARY_DOMAIN, ROOT_DOMAIN,
+                3, 1, Duration.ofHours(24), Duration.ofSeconds(5),
+                Duration.ofSeconds(30));
     }
 
     private ExternalSequenceAnchorBootstrapRootGenesis genesis(Map<String, KeyPair> keys) {
@@ -544,6 +607,13 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
 
     private ExternalSequenceAnchorTrustPublication notaryPublication(
             Map<String, KeyPair> signingRoots) throws Exception {
+        return notaryPublication(signingRoots, 1, "");
+    }
+
+    private ExternalSequenceAnchorTrustPublication notaryPublication(
+            Map<String, KeyPair> signingRoots,
+            long sequence,
+            String previousMaterialFingerprint) throws Exception {
         List<ExternalSequenceAnchorTrustPublication.AuthorityKeyMaterial> materials =
                 notaryKeys.entrySet().stream()
                         .map(entry -> new ExternalSequenceAnchorTrustPublication
@@ -558,7 +628,8 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
                         .toList();
         var material = new ExternalSequenceAnchorTrustPublication.Material(
                 ExternalSequenceAnchorTrustPublication.Material.SCHEMA_VERSION,
-                ROOT_SET, 1, "", SCOPE, ANCHOR_SET, NOTARY_DOMAIN, ROOT_DOMAIN,
+                ROOT_SET, sequence, previousMaterialFingerprint,
+                SCOPE, ANCHOR_SET, NOTARY_DOMAIN, ROOT_DOMAIN,
                 3, 1, materials, POLICY, NOW.minusSeconds(10), NOW.minusSeconds(10),
                 NOW.plusSeconds(3600));
         String fingerprint = ProtocolFingerprint.of(objectMapper, material);
@@ -661,6 +732,15 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
         return result;
     }
 
+    private static Map<String, KeyPair> notaryKeys() throws Exception {
+        Map<String, KeyPair> result = new HashMap<>();
+        for (int index = 1; index <= 4; index++) {
+            result.put("notary-" + index,
+                    KeyPairGenerator.getInstance("Ed25519").generateKeyPair());
+        }
+        return result;
+    }
+
     private static final class InMemoryFloor
             implements ExternalSequenceAnchorBootstrapRootPublicationFloor {
 
@@ -721,6 +801,61 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
 
         private int fetchCount() {
             return fetches.get();
+        }
+    }
+
+    private static final class InMemoryNotaryFloor
+            implements ExternalSequenceAnchorTrustPublicationFloor {
+
+        private Generation current;
+
+        @Override
+        public synchronized void accept(Generation generation) {
+            if (current == null) {
+                if (generation.sequence() != 1) {
+                    throw new IllegalArgumentException("floor rejected non-genesis");
+                }
+                current = generation;
+                return;
+            }
+            if (generation.sequence() == current.sequence()
+                    && generation.materialFingerprint()
+                    .equals(current.materialFingerprint())) {
+                return;
+            }
+            if (generation.sequence() != current.sequence() + 1
+                    || !generation.previousMaterialFingerprint()
+                    .equals(current.materialFingerprint())) {
+                throw new IllegalArgumentException("floor rejected non-successor");
+            }
+            current = generation;
+        }
+
+        @Override
+        public boolean durable() {
+            return true;
+        }
+    }
+
+    private static final class NotaryQueueFetcher
+            implements DynamicExternalSequenceAnchorReceiptTrustStore.DocumentFetcher {
+
+        private final ArrayDeque<
+                DynamicExternalSequenceAnchorReceiptTrustStore.FetchedDocument> documents;
+
+        private NotaryQueueFetcher(
+                DynamicExternalSequenceAnchorReceiptTrustStore.FetchedDocument... documents) {
+            this.documents = new ArrayDeque<>(List.of(documents));
+        }
+
+        @Override
+        public synchronized DynamicExternalSequenceAnchorReceiptTrustStore.FetchedDocument fetch(
+                URI uri, String etag, Duration timeout) {
+            var result = documents.pollFirst();
+            if (result == null) {
+                throw new IllegalStateException("No queued managed-notary publication");
+            }
+            return result;
         }
     }
 

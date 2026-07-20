@@ -2,9 +2,10 @@
 
 ## 1. 本步边界
 
-本步只建立 external sequence-anchor bootstrap-root 的 ceremony 协议、完整链重放验证内核和专用
-durable floor 契约，不宣称动态远端刷新、Spring/staging 接线、health/capability 或生产 HSM/KMS
-托管已经完成。后续步骤必须消费本内核，不能另造一个只验证最新 root snapshot 的旁路。
+本步建立 external sequence-anchor bootstrap-root 的 ceremony 协议、完整链重放验证内核、专用
+durable floor、动态远端刷新和 managed notary 组合。不宣称 Spring/staging 双域接线、
+health/capability、启停 preflight 或生产 HSM/KMS 托管已经完成。后续接线必须消费同一原子 root
+snapshot，不能另造一个只验证最新 root snapshot 的旁路。
 
 ## 2. 根因
 
@@ -101,7 +102,19 @@ head。floor 非空后要求数据库中的 current head 必须是新 `VerifiedC
 
 `304` 只更新 source contact freshness，不延长 signed head expiry、key lifecycle 或 active quorum。
 
-## 8. Schema
+## 8. Managed notary 组合
+
+`ConfiguredExternalSequenceAnchorReceiptTrustStore` 不再持有第二份 bootstrap-root 密钥和验签实现，
+而是只依赖 `ExternalSequenceAnchorBootstrapRootTrustStore` 端口。构造 notary snapshot 和每次验 receipt
+都会重检上游 root 可用性与 publication 签名，因此 root 过期、撤销、分叉或刷新失败会立即传播为
+`ROOT_UNAVAILABLE`，不能继续使用仍在本地有效期内的旧 notary snapshot。
+
+`DynamicExternalSequenceAnchorReceiptTrustStore` 拥有并关闭动态 root store；notary successor 出现未知
+root key 时，由 root store 的全局 cooldown single-flight 路径拉取并完整重放新 root chain，再验证
+notary successor。保留的 `StaticExternalSequenceAnchorBootstrapRootTrustStore` 只用于旧 test 配置兼容，
+明确不具备完整链、durable root floor 或免重启轮换能力，不能作为 staging/production 降级路径。
+
+## 9. Schema
 
 权威 Schema：
 
@@ -110,7 +123,7 @@ head。floor 非空后要求数据库中的 current head 必须是新 `VerifiedC
 Schema 包含 bundle、transition、material、genesis 和 root-key definitions，仅包含公钥与治理元数据，
 拒绝 additional properties，并限制 transitions、keys 和 signatures 基数。
 
-## 9. 测试证据
+## 10. 测试证据
 
 `ExternalSequenceAnchorBootstrapRootCeremonyTest` 使用真实 Ed25519 key pairs 覆盖：
 
@@ -127,21 +140,24 @@ Schema 包含 bundle、transition、material、genesis 和 root-key definitions�
 - invalid signature 不触发 refresh；
 - fork refresh 立即 fail closed，随后 exact chain 恢复；
 - `304` 不延长 expired signed head；
-- 真实 HTTP media/version/ETag 与 no-redirect。
+- 真实 HTTP media/version/ETag 与 no-redirect；
+- notary successor 驱动 root generation 免重启推进；
+- root same-sequence fork 使下游 receipt trust 立即 `ROOT_UNAVAILABLE`；
+- receipt store 关闭时按 ownership 关闭 root store。
 
 `DatabaseExternalSequenceAnchorBootstrapRootPublicationFloorTest` 覆盖首次 head N、跨多代 catch-up、
 reconstruction idempotency、rollback/fork/forked ancestry、identity isolation、record corruption 和并发
 first-head linearization。
 
 `ExternalSequenceAnchorBootstrapRootProtocolSchemaTest` 锁定 Java record/Schema 字段同构、协议常量、
-128 代上限、`additionalProperties: false` 和 public-only 约束。本步聚焦执行 17 tests，0 failures、
-0 errors、0 skips。
+128 代上限、`additionalProperties: false` 和 public-only 约束。ceremony/Schema/database floor 共执行
+18 tests；加上 managed-notary 兼容回归共 20 tests，0 failures、0 errors、0 skips。完整 Resource
+Gateway `clean verify` 执行 3220 tests，0 failures、0 errors、2 个条件浏览器跳过，并成功重打包可执行
+JAR。
 
-## 10. 下一步硬门禁
+## 11. 下一步硬门禁
 
-下一步只有同时完成以下条件才可宣称 restart-free bootstrap-root rotation：
+内核组合已经证明 restart-free bootstrap-root rotation，但只有同时完成以下条件才可宣称可部署：
 
-- managed notary trust verifier 消费同一原子 root snapshot；
 - suite-stability/test-secret 双域隔离的 Spring/staging/health/capability/script 接线；
-- notary/root 双层 refresh 顺序、close ownership 和 failure propagation 测试；
 - 配置 downgrade、跨域误注入、staging static-root fallback 测试。

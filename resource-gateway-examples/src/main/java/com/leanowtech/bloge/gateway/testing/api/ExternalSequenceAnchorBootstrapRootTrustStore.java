@@ -122,7 +122,10 @@ public interface ExternalSequenceAnchorBootstrapRootTrustStore extends AutoClose
                     || refreshSuccessCount < 0 || refreshFailureCount < 0
                     || headSequence == 0 && transitionCount != 0
                     || headSequence > 0 && transitionCount == 0
-                    || available && (headSequence == 0 || headExpiresAt == null)) {
+                    || available && !((headSequence == 0 && transitionCount == 0
+                    && headExpiresAt == null)
+                    || (headSequence > 0 && transitionCount > 0
+                    && headExpiresAt != null))) {
                 throw new IllegalArgumentException(
                         "Invalid external sequence-anchor bootstrap-root snapshot");
             }
