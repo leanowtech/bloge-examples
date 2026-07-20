@@ -2,7 +2,6 @@ package com.leanowtech.bloge.gateway.testing.domain;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -47,7 +46,7 @@ public record TestSuite(
         cases = cases == null ? List.of() : List.copyOf(cases);
         coveragePolicy = coveragePolicy == null ? CoveragePolicy.defaults() : coveragePolicy;
         promotionPolicy = promotionPolicy == null ? PromotionPolicy.defaults() : promotionPolicy;
-        metadata = immutableMap(metadata);
+        metadata = ProtocolJsonValue.freezeMap(metadata);
     }
 
     /**
@@ -97,8 +96,9 @@ public record TestSuite(
         /** Normalizes case identifiers and freezes labels and metadata. */
         public TestCase {
             caseId = trimmed(caseId);
+            input = ProtocolJsonValue.freeze(input);
             tags = sortedIdentifiers(tags);
-            metadata = immutableMap(metadata);
+            metadata = ProtocolJsonValue.freezeMap(metadata);
         }
     }
 
@@ -214,11 +214,6 @@ public record TestSuite(
                 value == null ? "" : value.fromInvocationSiteId())
                 .thenComparing(value -> value == null ? "" : value.toInvocationSiteId()));
         return List.copyOf(sorted);
-    }
-
-    private static Map<String, Object> immutableMap(Map<String, Object> values) {
-        return values == null ? Map.of()
-                : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(values));
     }
 
     private static String defaulted(String value, String fallback) {

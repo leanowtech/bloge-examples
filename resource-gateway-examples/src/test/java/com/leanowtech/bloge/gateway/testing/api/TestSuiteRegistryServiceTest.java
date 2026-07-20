@@ -102,6 +102,51 @@ class TestSuiteRegistryServiceTest {
     }
 
     @Test
+    void registerAndFindRejectRepositorySubstitutionAndEmitPayloadFreeSecurityEvidence() {
+        TestSuite candidate = suite("suite-a", 1, "INTERNAL", targetFingerprint,
+                List.of(testCase("golden", TestSuite.CaseType.GOLDEN, internalFixture)),
+                TestSuite.CoveragePolicy.defaults());
+        TestSuite substitutedSuite = suite("suite-other", 1, "INTERNAL", targetFingerprint,
+                List.of(testCase("golden", TestSuite.CaseType.GOLDEN, internalFixture)),
+                TestSuite.CoveragePolicy.defaults());
+        StoredTestSuite substituted = storedSuite("tenant-b", "test", substitutedSuite,
+                "first-runner");
+        suites.createOverride = substituted;
+
+        assertProblem(() -> service.register("suite-a", new TestSuiteRegistrationRequest("", candidate),
+                identity("tenant-a", "test", "CONFIDENTIAL")),
+                "RG.TEST.SUITE_INTEGRITY_INVALID", 503);
+
+        suites.createOverride = null;
+        suites.values.put(InMemorySuites.key("tenant-a", "test", "suite-a", 1), substituted);
+        assertProblem(() -> service.find("suite-a", 1,
+                identity("tenant-a", "test", "CONFIDENTIAL")),
+                "RG.TEST.SUITE_INTEGRITY_INVALID", 503);
+        assertThat(securityEvents.events).extracting(TestSecurityEvent::eventType)
+                .containsExactly("TEST_SUITE_INTEGRITY_INVALID", "TEST_SUITE_INTEGRITY_INVALID");
+        assertThat(securityEvents.events).allSatisfy(event -> {
+            assertThat(event.facts()).isEmpty();
+            assertThat(event.reasonCode()).isEqualTo("RG.TEST.SUITE_INTEGRITY_INVALID");
+        });
+    }
+
+    @Test
+    void idempotentRegistrationPreservesFirstWriterProvenance() {
+        TestSuite candidate = suite("suite-a", 1, "INTERNAL", targetFingerprint,
+                List.of(testCase("golden", TestSuite.CaseType.GOLDEN, internalFixture)),
+                TestSuite.CoveragePolicy.defaults());
+        StoredTestSuite first = storedSuite("tenant-a", "test", candidate, "first-runner");
+        suites.values.put(InMemorySuites.key("tenant-a", "test", "suite-a", 1), first);
+
+        StoredTestSuite repeated = service.register("suite-a",
+                new TestSuiteRegistrationRequest("", candidate),
+                identity("tenant-a", "test", "CONFIDENTIAL"));
+
+        assertThat(repeated.createdBy()).isEqualTo("first-runner");
+        assertThat(repeated.createdAt()).isEqualTo(first.createdAt());
+    }
+
+    @Test
     void staleTargetAndFixtureSubstitutionFailBeforePersistence() {
         TestSuite staleTarget = suite("suite-stale", 1, "INTERNAL", "sha256:" + "0".repeat(64),
                 List.of(testCase("golden", TestSuite.CaseType.GOLDEN, internalFixture)),
@@ -476,6 +521,12 @@ class TestSuiteRegistryServiceTest {
                 fixture.fingerprint());
     }
 
+    private StoredTestSuite storedSuite(String tenant, String environment, TestSuite suite,
+                                        String createdBy) {
+        return new StoredTestSuite("", tenant, environment, suite.suiteId(), suite.revision(),
+                ProtocolFingerprint.of(mapper, suite), suite, Instant.EPOCH, createdBy);
+    }
+
     private static IntegrationRequestContext identity(String tenant, String environment, String clearance) {
         return new IntegrationRequestContext(tenant, "org-a", "project-a", environment,
                 "local", "WORKLOAD", "runner", "", "TEST_SUITE_WRITE", "correlation-1",
@@ -515,7 +566,11 @@ class TestSuiteRegistryServiceTest {
 
     private static final class InMemorySuites implements TestSuiteRepository {
         private final Map<String, StoredTestSuite> values = new LinkedHashMap<>();
+        private StoredTestSuite createOverride;
         @Override public StoredTestSuite create(StoredTestSuite value) {
+            if (createOverride != null) {
+                return createOverride;
+            }
             String key = key(value.tenantId(), value.environmentId(), value.suiteId(), value.revision());
             StoredTestSuite existing = values.putIfAbsent(key, value);
             if (existing != null && !existing.fingerprint().equals(value.fingerprint())) {

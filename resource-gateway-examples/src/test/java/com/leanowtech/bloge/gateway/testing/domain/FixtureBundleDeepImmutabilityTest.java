@@ -78,7 +78,7 @@ class FixtureBundleDeepImmutabilityTest {
                 "sha256:" + "a".repeat(64), "INTERNAL", null, null,
                 List.of(), List.of(), cycle))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Fixture JSON value contains a cycle");
+                .hasMessage("Protocol JSON value contains a cycle");
     }
 
     @Test
@@ -87,7 +87,7 @@ class FixtureBundleDeepImmutabilityTest {
         invalidKeys.put(42, "not-a-json-object");
         assertThatThrownBy(() -> FixtureRule.Behavior.returning(invalidKeys))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Fixture JSON object key must be a string");
+                .hasMessage("Protocol JSON object key must be a string");
 
         Object nested = "leaf";
         for (int depth = 0; depth < 129; depth++) {
@@ -96,7 +96,7 @@ class FixtureBundleDeepImmutabilityTest {
         Object excessiveNesting = nested;
         assertThatThrownBy(() -> FixtureRule.Behavior.returning(excessiveNesting))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Fixture JSON value exceeds maximum nesting depth");
+                .hasMessage("Protocol JSON value exceeds maximum nesting depth");
     }
 
     @SuppressWarnings("unchecked")

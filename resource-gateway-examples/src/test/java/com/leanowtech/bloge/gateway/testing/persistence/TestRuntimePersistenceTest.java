@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestRunRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteConflictException;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteIntegrityException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunLease;
@@ -166,18 +167,101 @@ class TestRuntimePersistenceTest {
                         "/root/fetch#PRIMARY", "/root/output#PRIMARY")), 1, true),
                 new TestSuite.PromotionPolicy(true, 1, true), Map.of("owner", "quality"));
         StoredTestSuite stored = new StoredTestSuite("", "tenant-a", "test", "suite-a", 3,
-                "sha256:" + "c".repeat(64), suite, Instant.now(), "runner");
+                ProtocolFingerprint.of(mapper, suite), suite, Instant.now(), "runner");
 
         suites.create(stored);
 
         assertThat(suites.find("tenant-a", "test", "suite-a", 3)).contains(stored);
         assertThat(suites.find("tenant-b", "test", "suite-a", 3)).isEmpty();
         assertThat(suites.find("tenant-a", "staging", "suite-a", 3)).isEmpty();
+        TestSuite changed = new TestSuite("", suite.suiteId(), suite.revision(), suite.target(),
+                suite.classification(), suite.cases(), suite.coveragePolicy(),
+                suite.promotionPolicy(), Map.of("owner", "another"));
         StoredTestSuite conflict = new StoredTestSuite("", "tenant-a", "test", "suite-a", 3,
-                "sha256:" + "d".repeat(64), suite, stored.createdAt(), "runner");
+                ProtocolFingerprint.of(mapper, changed), changed, stored.createdAt(), "runner");
         assertThatThrownBy(() -> suites.create(conflict))
                 .isInstanceOf(TestSuiteConflictException.class)
                 .hasMessageContaining("different immutable content");
+    }
+
+    @Test
+    void suiteCreatePersistsAndReturnsACanonicalSnapshotDetachedFromCallerAliases() {
+        MutableSuiteValue callerValue = new MutableSuiteValue("approved");
+        TestSuite suite = suite("suite-snapshot", 1, callerValue, Map.of());
+        StoredTestSuite requested = new StoredTestSuite("", "tenant-a", "test",
+                suite.suiteId(), suite.revision(), ProtocolFingerprint.of(mapper, suite), suite,
+                Instant.now(), "runner");
+
+        StoredTestSuite created = suites.create(requested);
+        callerValue.status = "denied";
+        StoredTestSuite reconstructed = suites.find(
+                "tenant-a", "test", "suite-snapshot", 1).orElseThrow();
+
+        assertThat(created).isNotSameAs(requested);
+        assertThat(created.suite().cases().getFirst().input())
+                .isEqualTo(Map.of("status", "approved"));
+        assertThat(reconstructed.suite().cases().getFirst().input())
+                .isEqualTo(Map.of("status", "approved"));
+        assertThat(reconstructed.fingerprint()).isEqualTo(created.fingerprint());
+    }
+
+    @Test
+    void suiteReadRejectsDatabaseJsonTamperingAgainstTheIndexedFingerprint() throws Exception {
+        TestSuite original = suite("suite-tamper", 1, Map.of("marker", "original"),
+                Map.of("secret", "must-never-escape-43"));
+        String fingerprint = ProtocolFingerprint.of(mapper, original);
+        suites.create(new StoredTestSuite("", "tenant-a", "test", "suite-tamper", 1,
+                fingerprint, original, Instant.now(), "runner"));
+        TestSuite tampered = suite("suite-tamper", 1, Map.of("marker", "changed"), Map.of());
+        jdbc.update("""
+                UPDATE rg_test_suites
+                SET suite_json = ?
+                WHERE tenant_id = ? AND environment_id = ?
+                  AND suite_id = ? AND revision = ?
+                """, mapper.writeValueAsString(tampered), "tenant-a", "test", "suite-tamper", 1);
+
+        assertThatThrownBy(() -> suites.find("tenant-a", "test", "suite-tamper", 1))
+                .isInstanceOf(TestSuiteIntegrityException.class)
+                .hasMessage("Stored test-suite integrity verification failed")
+                .hasMessageNotContaining("must-never-escape-43")
+                .hasMessageNotContaining("changed");
+    }
+
+    @Test
+    void suiteReadClassifiesMalformedStoredJsonAsPayloadFreeIntegrityFailure() {
+        TestSuite suite = suite("suite-malformed", 1, Map.of(), Map.of());
+        suites.create(new StoredTestSuite("", "tenant-a", "test", "suite-malformed", 1,
+                ProtocolFingerprint.of(mapper, suite), suite, Instant.now(), "runner"));
+        jdbc.update("""
+                UPDATE rg_test_suites
+                SET suite_json = ?
+                WHERE tenant_id = ? AND environment_id = ?
+                  AND suite_id = ? AND revision = ?
+                """, "{\"input\":\"must-never-escape-62\"", "tenant-a", "test",
+                "suite-malformed", 1);
+
+        assertThatThrownBy(() -> suites.find("tenant-a", "test", "suite-malformed", 1))
+                .isInstanceOf(TestSuiteIntegrityException.class)
+                .hasMessage("Stored test-suite integrity verification failed")
+                .hasMessageNotContaining("must-never-escape-62")
+                .hasMessageNotContaining("suite-malformed");
+    }
+
+    private TestSuite suite(String id, long revision, Object input, Map<String, Object> metadata) {
+        return new TestSuite("", id, revision,
+                new TestSuite.Target("GRAPH", "graph-a", "sha256:" + "a".repeat(64)),
+                "INTERNAL", List.of(new TestSuite.TestCase("golden",
+                TestSuite.CaseType.GOLDEN, input, new TestSuite.FixtureBundleRef(
+                "fixture-a", 1, "sha256:" + "b".repeat(64)), List.of(), Map.of())),
+                TestSuite.CoveragePolicy.defaults(), TestSuite.PromotionPolicy.defaults(), metadata);
+    }
+
+    private static final class MutableSuiteValue {
+        public String status;
+
+        private MutableSuiteValue(String status) {
+            this.status = status;
+        }
     }
 
     @Test
@@ -195,7 +279,7 @@ class TestRuntimePersistenceTest {
                 new SemanticCoveragePolicy(List.of(retry)),
                 new TestSuite.PromotionPolicy(true, 1, true), Map.of());
         StoredTestSuite storedSuite = new StoredTestSuite("", "tenant-a", "test", "suite-v2", 1,
-                "sha256:" + "c".repeat(64), suite, Instant.now(), "runner");
+                ProtocolFingerprint.of(mapper, suite), suite, Instant.now(), "runner");
         suites.create(storedSuite);
 
         Instant now = suiteRuns.currentTime();

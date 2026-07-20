@@ -1,8 +1,9 @@
 # Execution Data Control Plane Stage 2: TestSuite Registry Verification
 
-> Verified: 2026-07-15
+> Verified: 2026-07-20
 >
-> Scope: first-class immutable `bloge.testSuite.v1` protocol and registry, not suite execution
+> Scope: canonical immutable `bloge.testSuite.v1` through `v5` registry values and repository trust
+> boundaries; runner semantics are specified in their own verification documents
 
 ## Delivered Boundary
 
@@ -19,6 +20,12 @@ This increment turns a reviewed group of cases into a server-authoritative testi
 - capability objects, feature flag, endpoints, and canonical JSON Schema definitions;
 - synchronized product guide, service README, and both industrial evolution plans.
 
+The registry now also treats every Java object and persistence adapter as an untrusted ownership
+boundary. Request admission first round-trips the exact suite generation through the canonical codec.
+Database create/read and service create/read then independently reconstruct and verify a
+`StoredTestSuite` snapshot. This is deliberately redundant: a compliant JDBC adapter does not make an
+alternate repository implementation implicitly trusted.
+
 ## Fail-Closed Invariants
 
 Registration commits only after the complete dependency closure is verified:
@@ -34,6 +41,22 @@ Registration commits only after the complete dependency closure is verified:
    a policy that requires certification rejects an ineligible frozen target.
 9. Equivalent repeated registration is idempotent; different content at the same revision conflicts.
 10. Production identities and security-audit failures fail closed before registry access.
+11. Case inputs, case metadata, and suite metadata recursively copy and freeze JSON maps,
+    collections, and arrays; cycles, non-string object keys, and nesting beyond 128 containers fail.
+12. A stored envelope must use `bloge.storedTestSuite.v1`; its suite id and revision must equal the
+    exact decoded v1-v5 suite generation, and its indexed fingerprint must equal a fresh canonical
+    fingerprint of that generation.
+13. Every read result is bound to the complete authorized
+    `(tenant, environment, suiteId, revision)` lookup key. A different but internally valid stored
+    revision is an integrity failure, not a successful lookup.
+14. Every create receipt must equal the submitted immutable schema, scope, id, revision, and content
+    fingerprint. Idempotent retries retain the authoritative first writer's `createdAt` and
+    `createdBy`; those provenance fields must remain complete but need not equal the retry.
+15. Malformed/unsupported stored JSON, envelope-content drift, cross-scope substitution, and receipt
+    substitution emit a payload-free `TEST_SUITE_INTEGRITY_INVALID` security event and return
+    `503 RG.TEST.SUITE_INTEGRITY_INVALID`. Database connectivity failures remain
+    `RG.TEST.SUITE_STORE_UNAVAILABLE`; valid different content at the same immutable key remains a
+    `409 RG.TEST.SUITE_REVISION_CONFLICT`.
 
 No API resolves `latest`. A suite cannot be used as a lower-classification wrapper around restricted
 fixtures, and a missing fixture is not deferred until execution.
@@ -50,8 +73,19 @@ mvn -f resource-gateway-examples/pom.xml \
 TestingControlProtocolSchemaTest,TestabilityCapabilitiesTest,TestRuntimeApplicationIntegrationTest test
 ```
 
-Result: 24 tests, 0 failures, 0 errors. The real Spring test registers and reads a suite through HTTP
-with distinct purposes and the independent H2 store.
+Current integrity-focused command:
+
+```bash
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=StoredTestSuiteIntegrityTest,TestSuiteDeepImmutabilityTest,\
+FixtureBundleDeepImmutabilityTest,StoredFixtureBundleIntegrityTest,\
+TestSuiteRegistryServiceTest,TestRuntimePersistenceTest,TestSuiteV4Test,TestSuiteV5Test test
+```
+
+It proves mutable-object detachment, deep JSON immutability, cycle/depth/key bounds, v1-v5
+compatibility, alternate-repository substitution, idempotent first-writer provenance, valid JSON
+tampering, malformed JSON, and exact JDBC scope lookup. The final count is recorded after the full
+gate below. Result: 48 tests, 0 failures, 0 errors, 0 skips.
 
 Full Resource Gateway verification:
 
@@ -59,8 +93,8 @@ Full Resource Gateway verification:
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-Result: 1736 tests, 0 failures, 0 errors, 34 conditional skips. Real browser DOM/workflow suites and
-the repackaged Spring Boot JAR completed successfully.
+Result: 3053 tests, 0 failures, 0 errors, and 2 conditional browser skips. The 35 configured
+real-browser tests completed, and Maven rebuilt the executable Spring Boot JAR.
 
 Schema consumer verification:
 
@@ -73,13 +107,9 @@ Result: 13 tests, 0 failures, 0 errors. The test-kit JAR contains the updated ca
 
 ## Deliberate Non-Claims
 
-This increment does not yet provide:
-
-- a suite execution endpoint or suite-run persistence;
-- aggregate node/edge coverage evaluation or a promotion verdict;
-- test-kit methods, JUnit suite projection, CI command, or canvas `Save as governed suite`;
-- run-evidence linkage back to the exact suite revision;
-- signed suite artifacts, retention lifecycle, stale-impact indexes, or multi-region replication.
-
-Those are runner and product adapters over this registry. Until they land, an immutable suite is a
-governed execution manifest, not proof that its cases have run or passed.
+This increment proves local canonical consistency and ownership isolation. It does not prove that the
+storage source is honest: an authority able to replace both suite JSON and its indexed fingerprint can
+still mint a self-consistent row. External signatures, independently witnessed/WORM commitments,
+multi-region replication consistency, backup/restore verification, and non-H2 dialect certification
+remain separate work. A stored suite is still an execution manifest; only generation-matched signed
+terminal evidence proves that a particular run passed.

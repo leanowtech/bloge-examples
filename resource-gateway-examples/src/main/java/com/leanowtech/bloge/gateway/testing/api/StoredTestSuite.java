@@ -7,6 +7,10 @@ import java.time.Instant;
 /**
  * Immutable tenant- and environment-scoped test-suite registry revision.
  *
+ * <p>A record constructor alone cannot detach arbitrary values embedded in case inputs. Registry
+ * adapters and consumers use {@link StoredTestSuiteIntegrity#verifiedSnapshot} before trusting an
+ * instance, which binds this envelope to a canonical, independently owned suite value.</p>
+ *
  * @param schemaVersion stored-suite response protocol version
  * @param tenantId verified tenant scope
  * @param environmentId verified non-production environment scope

@@ -72,8 +72,7 @@ public record TestSuiteV3(
         boundaryPlanFingerprint = normalized(boundaryPlanFingerprint);
         inputSchemaFingerprint = normalized(inputSchemaFingerprint);
         admissionExpectations = immutableExpectations(admissionExpectations);
-        metadata = metadata == null ? Map.of()
-                : Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        metadata = ProtocolJsonValue.freezeMap(metadata);
         if (!FINGERPRINT.matcher(boundaryPlanFingerprint).matches()
                 || !FINGERPRINT.matcher(inputSchemaFingerprint).matches()) {
             throw new IllegalArgumentException(

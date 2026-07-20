@@ -202,6 +202,16 @@ See the
 [stored fixture integrity verification](../docs/resource-gateway-execution-data-control-plane-stage2-fixture-registry-integrity-verification.md)
 for invariants, failure semantics, and remaining trust assumptions.
 
+Stored TestSuite revisions use the same fail-closed ownership model across all v1-v5 generations.
+Registration first canonicalizes caller-owned case inputs and metadata; repository create/read and
+service create/read independently detach the returned value, recompute its exact-generation
+fingerprint, bind its envelope to the full tenant/environment/suiteId/revision key, and verify create
+receipts. Malformed JSON, content drift, or a valid cross-scope substitution produces the payload-free
+`RG.TEST.SUITE_INTEGRITY_INVALID`; idempotent retries retain first-write provenance, while a valid
+different suite at the same key remains an immutable revision conflict. These local hashes detect
+drift but do not replace external signing or WORM storage. See the
+[suite registry verification](../docs/resource-gateway-execution-data-control-plane-stage2-suite-registry-verification.md).
+
 See
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md)
 for the complete target-discovery, fixture-registration, execution, evidence,

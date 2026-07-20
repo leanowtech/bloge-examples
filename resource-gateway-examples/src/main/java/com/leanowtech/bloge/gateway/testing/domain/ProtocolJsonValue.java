@@ -9,12 +9,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Recursively detaches and freezes JSON containers embedded in fixture protocol values. */
-final class FixtureJsonValue {
+/** Recursively detaches and freezes JSON containers embedded in testing protocol values. */
+final class ProtocolJsonValue {
 
     private static final int MAX_DEPTH = 128;
 
-    private FixtureJsonValue() {
+    private ProtocolJsonValue() {
     }
 
     /** Returns a recursively copied, unmodifiable JSON value. */
@@ -33,17 +33,17 @@ final class FixtureJsonValue {
             return value;
         }
         if (depth >= MAX_DEPTH) {
-            throw new IllegalArgumentException("Fixture JSON value exceeds maximum nesting depth");
+            throw new IllegalArgumentException("Protocol JSON value exceeds maximum nesting depth");
         }
         if (path.put(value, Boolean.TRUE) != null) {
-            throw new IllegalArgumentException("Fixture JSON value contains a cycle");
+            throw new IllegalArgumentException("Protocol JSON value contains a cycle");
         }
         try {
             if (value instanceof Map<?, ?> source) {
                 Map<String, Object> copy = new LinkedHashMap<>();
                 source.forEach((key, nested) -> {
                     if (!(key instanceof String text)) {
-                        throw new IllegalArgumentException("Fixture JSON object key must be a string");
+                        throw new IllegalArgumentException("Protocol JSON object key must be a string");
                     }
                     copy.put(text, freeze(nested, path, depth + 1));
                 });

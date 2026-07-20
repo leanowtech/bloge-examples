@@ -2,7 +2,9 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
+import com.leanowtech.bloge.gateway.testing.api.StoredTestSuiteIntegrity;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteConflictException;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteIntegrityException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteProtocolCodec;
 import jakarta.annotation.PostConstruct;
@@ -18,12 +20,14 @@ import java.util.Optional;
 public final class DatabaseTestSuiteRepository implements TestSuiteRepository {
 
     private final JdbcTemplate jdbc;
+    private final ObjectMapper objectMapper;
     private final TestSuiteProtocolCodec codec;
 
     /** Creates a suite repository over the independent test-runtime database. */
     public DatabaseTestSuiteRepository(JdbcTemplate jdbc, ObjectMapper objectMapper) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
-        this.codec = new TestSuiteProtocolCodec(Objects.requireNonNull(objectMapper, "objectMapper"));
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.codec = new TestSuiteProtocolCodec(this.objectMapper);
     }
 
     /** Creates the additive suite table without changing fixture or run tables. */
@@ -47,11 +51,11 @@ public final class DatabaseTestSuiteRepository implements TestSuiteRepository {
     /** {@inheritDoc} */
     @Override
     public StoredTestSuite create(StoredTestSuite suite) {
-        require(suite);
-        Optional<StoredTestSuite> existing = find(suite.tenantId(), suite.environmentId(),
-                suite.suiteId(), suite.revision());
+        StoredTestSuite requested = StoredTestSuiteIntegrity.verifiedSnapshot(objectMapper, suite);
+        Optional<StoredTestSuite> existing = find(requested.tenantId(), requested.environmentId(),
+                requested.suiteId(), requested.revision());
         if (existing.isPresent()) {
-            return equivalentOrConflict(existing.get(), suite);
+            return equivalentOrConflict(existing.get(), requested);
         }
         try {
             jdbc.update("""
@@ -59,13 +63,14 @@ public final class DatabaseTestSuiteRepository implements TestSuiteRepository {
                         tenant_id, environment_id, suite_id, revision, fingerprint,
                         suite_json, created_at, created_by
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, suite.tenantId(), suite.environmentId(), suite.suiteId(), suite.revision(),
-                    suite.fingerprint(), codec.write(suite.suite()), Timestamp.from(suite.createdAt()),
-                    suite.createdBy());
-            return suite;
+                    """, requested.tenantId(), requested.environmentId(), requested.suiteId(),
+                    requested.revision(), requested.fingerprint(), codec.write(requested.suite()),
+                    Timestamp.from(requested.createdAt()), requested.createdBy());
+            return requested;
         } catch (DataIntegrityViolationException race) {
-            return find(suite.tenantId(), suite.environmentId(), suite.suiteId(), suite.revision())
-                    .map(value -> equivalentOrConflict(value, suite))
+            return find(requested.tenantId(), requested.environmentId(), requested.suiteId(),
+                    requested.revision())
+                    .map(value -> equivalentOrConflict(value, requested))
                     .orElseThrow(() -> race);
         }
     }
@@ -80,31 +85,31 @@ public final class DatabaseTestSuiteRepository implements TestSuiteRepository {
                         FROM rg_test_suites
                         WHERE tenant_id = ? AND environment_id = ?
                           AND suite_id = ? AND revision = ?
-                        """, (rs, row) -> new StoredTestSuite("",
-                        rs.getString("tenant_id"), rs.getString("environment_id"),
-                        rs.getString("suite_id"), rs.getLong("revision"),
-                        rs.getString("fingerprint"), codec.read(rs.getString("suite_json")),
-                        rs.getTimestamp("created_at").toInstant(), rs.getString("created_by")),
+                        """, (rs, row) -> {
+                    try {
+                        return new StoredTestSuite("", rs.getString("tenant_id"),
+                                rs.getString("environment_id"), rs.getString("suite_id"),
+                                rs.getLong("revision"), rs.getString("fingerprint"),
+                                codec.read(rs.getString("suite_json")),
+                                rs.getTimestamp("created_at").toInstant(),
+                                rs.getString("created_by"));
+                    } catch (RuntimeException corrupt) {
+                        throw new TestSuiteIntegrityException(corrupt);
+                    }
+                },
                 tenantId, environmentId, suiteId, revision);
-        return results.stream().findFirst();
+        return results.stream().findFirst().map(value ->
+                StoredTestSuiteIntegrity.verifiedSnapshot(objectMapper, value,
+                        tenantId, environmentId, suiteId, revision));
     }
 
-    private static StoredTestSuite equivalentOrConflict(StoredTestSuite existing,
-                                                         StoredTestSuite requested) {
+    private StoredTestSuite equivalentOrConflict(StoredTestSuite existing,
+                                                 StoredTestSuite requested) {
         if (!existing.fingerprint().equals(requested.fingerprint())) {
             throw new TestSuiteConflictException(
                     "Test-suite revision already exists with different immutable content");
         }
-        return existing;
-    }
-
-    private static void require(StoredTestSuite suite) {
-        if (suite == null || suite.suiteId() == null || suite.suiteId().isBlank()
-                || suite.revision() <= 0 || suite.fingerprint() == null || suite.fingerprint().isBlank()
-                || suite.suite() == null || suite.createdAt() == null || suite.createdBy() == null
-                || suite.createdBy().isBlank()) {
-            throw new IllegalArgumentException("Complete immutable test-suite revision is required");
-        }
+        return StoredTestSuiteIntegrity.verifiedSnapshot(objectMapper, existing, requested);
     }
 
 }

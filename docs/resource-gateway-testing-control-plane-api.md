@@ -2533,6 +2533,21 @@ Registration is dependency-closed and fail closed:
 - `requireTargetCertificationEligible=true` rejects a target revision with certification gaps;
 - `(tenant, environment, suiteId, revision)` is immutable and idempotent for equivalent content.
 
+The request is first converted into an independently owned canonical v1-v5 suite value, so retained
+mutable aliases cannot change validation or fingerprinting after admission. Repository create/read
+and service create/read each repeat exact-generation canonicalization and verify that
+`bloge.storedTestSuite.v1` binds the suite JSON and fingerprint to the complete
+tenant/environment/suiteId/revision key. Create responses must preserve immutable identity/content;
+an idempotent retry legitimately returns the first writer's `createdAt` and `createdBy`.
+
+Storage JSON that is malformed, uses an unsupported generation, differs from its indexed fingerprint,
+or belongs to another valid key returns `503 RG.TEST.SUITE_INTEGRITY_INVALID` and appends a
+payload-free `TEST_SUITE_INTEGRITY_INVALID` security event. A database outage instead returns
+`RG.TEST.SUITE_STORE_UNAVAILABLE`; a self-consistent different suite submitted at the same immutable
+key returns `409 RG.TEST.SUITE_REVISION_CONFLICT`. No error includes case input, suite metadata,
+fingerprint, or substituted scope. The canonical hash detects accidental/partial drift; it is not an
+external signature and cannot defeat an authority that can replace both JSON and fingerprint.
+
 Coverage uses `invocationSiteId` and explicit source/destination site pairs rather than local
 `nodeId` or `edgeId`. The structural coordinate includes graph path and invocation kind, so the same
 node name in a root graph, foreach body, and compensation graph cannot collapse into one false hit.

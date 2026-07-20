@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -80,7 +81,51 @@ class DatabaseTestSuiteStabilityRunRepositoryTest {
                         mapper, signer);
         retirementService = new TestSuiteStabilityObservationFloorRetirementService(
                 mapper, repository, retirementAttestations,
-                TestSuiteStabilityObservationExternalArchiveProtocolFixtures.authority(mapper));
+                databaseTimeAdvancingArchiveAuthority(
+                        TestSuiteStabilityObservationExternalArchiveProtocolFixtures
+                                .authority(mapper)));
+    }
+
+    private TestSuiteStabilityObservationExternalArchiveAuthority
+            databaseTimeAdvancingArchiveAuthority(
+                    TestSuiteStabilityObservationExternalArchiveAuthority delegate) {
+        return new TestSuiteStabilityObservationExternalArchiveAuthority() {
+            @Override
+            public TestSuiteStabilityObservationExternalArchiveReceiptSet archive(
+                    TestSuiteStabilityObservationFloorRetirement retirement,
+                    Instant retainUntil) {
+                awaitDatabaseTimeAfter(retirement.evidence().retiredAt());
+                return delegate.archive(retirement, retainUntil);
+            }
+
+            @Override
+            public Verification verify(
+                    TestSuiteStabilityObservationExternalArchiveReceiptSet receiptSet) {
+                return delegate.verify(receiptSet);
+            }
+
+            @Override
+            public Descriptor descriptor() {
+                return delegate.descriptor();
+            }
+
+            @Override
+            public Snapshot snapshot() {
+                return delegate.snapshot();
+            }
+        };
+    }
+
+    private void awaitDatabaseTimeAfter(Instant evidenceTime) {
+        Instant minimumCommitTime = evidenceTime.plusMillis(1);
+        long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+        while (repository.currentTime().isBefore(minimumCommitTime)) {
+            if (System.nanoTime() >= deadline) {
+                throw new IllegalStateException(
+                        "Test database time did not advance beyond retirement evidence");
+            }
+            LockSupport.parkNanos(Duration.ofMillis(1).toNanos());
+        }
     }
 
     @Test

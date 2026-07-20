@@ -1,10 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.domain;
 
-import java.lang.reflect.Array;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -344,41 +341,13 @@ public record TestSuiteV4(
         }
         return values.stream().map(value -> {
             Objects.requireNonNull(value, "testCase");
-            return new TestSuite.TestCase(value.caseId(), value.caseType(), deepFreeze(value.input()),
-                    value.fixtureBundleRef(), value.tags(), immutableMap(value.metadata()));
+            return new TestSuite.TestCase(value.caseId(), value.caseType(), value.input(),
+                    value.fixtureBundleRef(), value.tags(), value.metadata());
         }).toList();
     }
 
     private static Map<String, Object> immutableMap(Map<String, Object> values) {
-        if (values == null) {
-            return Map.of();
-        }
-        LinkedHashMap<String, Object> frozen = new LinkedHashMap<>();
-        values.forEach((key, value) -> frozen.put(key, deepFreeze(value)));
-        return Collections.unmodifiableMap(frozen);
-    }
-
-    private static Object deepFreeze(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            LinkedHashMap<Object, Object> frozen = new LinkedHashMap<>();
-            map.forEach((key, nested) -> frozen.put(key, deepFreeze(nested)));
-            return Collections.unmodifiableMap(frozen);
-        }
-        if (value instanceof List<?> list) {
-            return Collections.unmodifiableList(list.stream().map(TestSuiteV4::deepFreeze).toList());
-        }
-        if (value instanceof Set<?> set) {
-            return Collections.unmodifiableSet(new LinkedHashSet<>(
-                    set.stream().map(TestSuiteV4::deepFreeze).toList()));
-        }
-        if (value != null && value.getClass().isArray()) {
-            List<Object> frozen = new ArrayList<>(Array.getLength(value));
-            for (int index = 0; index < Array.getLength(value); index++) {
-                frozen.add(deepFreeze(Array.get(value, index)));
-            }
-            return Collections.unmodifiableList(frozen);
-        }
-        return value;
+        return ProtocolJsonValue.freezeMap(values);
     }
 
     private static String defaulted(String value, String fallback) {

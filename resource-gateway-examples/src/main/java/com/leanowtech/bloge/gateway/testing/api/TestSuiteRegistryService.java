@@ -164,7 +164,7 @@ public final class TestSuiteRegistryService {
             throw badRequest(identity, "RG.TEST.SUITE_REQUEST_INVALID",
                     "A versioned test-suite registration request is required.", Map.of());
         }
-        TestSuiteProtocol suite = request.testSuite();
+        TestSuiteProtocol suite = canonicalRequestSuite(request.testSuite(), identity);
         validateIdentity(suiteId, suite, identity);
         if (suite instanceof TestSuiteV4 && exactPropertyPlan == null) {
             throw badRequest(identity, "RG.TEST.PROPERTY_SUITE_MATERIALIZATION_REQUIRED",
@@ -197,10 +197,18 @@ public final class TestSuiteRegistryService {
         validatePoliciesAndCases(suite, exactPropertyPlan, exactMutationPlan,
                 exactOracleSuite, identity);
         String fingerprint = suiteCodec.fingerprint(suite);
-        StoredTestSuite stored = new StoredTestSuite("", identity.tenantId(), identity.environmentId(),
-                suite.suiteId(), suite.revision(), fingerprint, suite, Instant.now(), identity.actorId());
+        StoredTestSuite stored = StoredTestSuiteIntegrity.verifiedSnapshot(objectMapper,
+                new StoredTestSuite("", identity.tenantId(), identity.environmentId(),
+                        suite.suiteId(), suite.revision(), fingerprint, suite, Instant.now(),
+                        identity.actorId()));
         try {
-            return suiteRepository.create(stored);
+            return StoredTestSuiteIntegrity.verifiedSnapshot(objectMapper,
+                    suiteRepository.create(stored), stored);
+        } catch (TestSuiteIntegrityException corrupt) {
+            securityEvent(identity, "TEST_SUITE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.SUITE_INTEGRITY_INVALID", Map.of());
+            throw unavailable(identity, "RG.TEST.SUITE_INTEGRITY_INVALID",
+                    "The stored test-suite revision failed immutable-content verification.");
         } catch (TestSuiteConflictException immutableConflict) {
             throw conflict(identity, "RG.TEST.SUITE_REVISION_CONFLICT",
                     immutableConflict.getMessage(), Map.of());
@@ -224,22 +232,40 @@ public final class TestSuiteRegistryService {
             throw badRequest(identity, "RG.TEST.SUITE_IDENTITY_INVALID",
                     "A non-empty suiteId and positive revision are required.", Map.of());
         }
+        String normalizedSuiteId = normalized(suiteId);
         StoredTestSuite stored;
         try {
             stored = suiteRepository.find(identity.tenantId(), identity.environmentId(),
-                            normalized(suiteId), revision)
+                            normalizedSuiteId, revision)
                     .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
                             "RG.TEST.SUITE_NOT_FOUND",
                             "Test suite was not found in the authorized scope.",
                             identity.correlationId(), Map.of())));
+            stored = StoredTestSuiteIntegrity.verifiedSnapshot(objectMapper, stored,
+                    identity.tenantId(), identity.environmentId(), normalizedSuiteId, revision);
         } catch (IntegrationProblemException notFound) {
             throw notFound;
+        } catch (TestSuiteIntegrityException corrupt) {
+            securityEvent(identity, "TEST_SUITE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.SUITE_INTEGRITY_INVALID", Map.of());
+            throw unavailable(identity, "RG.TEST.SUITE_INTEGRITY_INVALID",
+                    "The stored test-suite revision failed immutable-content verification.");
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.SUITE_STORE_UNAVAILABLE",
                     "The independent test-suite registry is unavailable.");
         }
         requireClearance(stored.suite().classification(), identity);
         return stored;
+    }
+
+    private TestSuiteProtocol canonicalRequestSuite(TestSuiteProtocol suite,
+                                                     IntegrationRequestContext identity) {
+        try {
+            return suiteCodec.read(suiteCodec.write(suite));
+        } catch (RuntimeException invalid) {
+            throw badRequest(identity, "RG.TEST.SUITE_REQUEST_INVALID",
+                    "Test-suite content must be a supported canonical protocol value.", Map.of());
+        }
     }
 
     private void validateIdentity(String pathSuiteId, TestSuiteProtocol suite,

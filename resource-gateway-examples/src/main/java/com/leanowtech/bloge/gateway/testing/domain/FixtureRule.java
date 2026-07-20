@@ -184,11 +184,11 @@ public record FixtureRule(
     ) {
         /** Creates immutable match collections. */
         public Match {
-            canonicalInput = FixtureJsonValue.freeze(canonicalInput);
-            pathEquals = FixtureJsonValue.freezeMap(pathEquals);
+            canonicalInput = ProtocolJsonValue.freeze(canonicalInput);
+            pathEquals = ProtocolJsonValue.freezeMap(pathEquals);
             pathsExist = immutableList(pathsExist);
             pathsAbsent = immutableList(pathsAbsent);
-            schema = FixtureJsonValue.freezeMap(schema);
+            schema = ProtocolJsonValue.freezeMap(schema);
             correlationKey = trimmed(correlationKey);
             boundedRegex = boundedRegex == null ? Map.of() : Map.copyOf(boundedRegex);
         }
@@ -240,7 +240,7 @@ public record FixtureRule(
         public Behavior {
             kind = kind == null ? BehaviorKind.REAL : kind;
             boundary = boundary == null ? DoubleBoundary.NODE : boundary;
-            value = FixtureJsonValue.freeze(value);
+            value = ProtocolJsonValue.freeze(value);
             rawBody = rawBody == null ? "" : rawBody;
             headers = headers == null ? Map.of() : Map.copyOf(headers);
             errorCode = trimmed(errorCode);
@@ -324,7 +324,7 @@ public record FixtureRule(
         /** Normalizes sequence-step identifiers. */
         public BehaviorStep {
             kind = trimmed(kind);
-            value = FixtureJsonValue.freeze(value);
+            value = ProtocolJsonValue.freeze(value);
             errorCode = trimmed(errorCode);
         }
     }

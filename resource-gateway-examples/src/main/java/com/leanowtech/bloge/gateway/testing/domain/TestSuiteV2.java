@@ -1,7 +1,5 @@
 package com.leanowtech.bloge.gateway.testing.domain;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -50,8 +48,7 @@ public record TestSuiteV2(
                 ? SemanticCoveragePolicy.empty() : semanticCoveragePolicy;
         promotionPolicy = promotionPolicy == null
                 ? TestSuite.PromotionPolicy.defaults() : promotionPolicy;
-        metadata = metadata == null ? Map.of()
-                : Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        metadata = ProtocolJsonValue.freezeMap(metadata);
     }
 
     private static String defaulted(String value, String fallback) {

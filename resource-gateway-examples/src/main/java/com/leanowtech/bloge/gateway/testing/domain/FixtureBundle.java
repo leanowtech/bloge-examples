@@ -41,7 +41,7 @@ public record FixtureBundle(
         classification = defaulted(classification, "INTERNAL");
         rules = rules == null ? List.of() : List.copyOf(rules);
         assertions = assertions == null ? List.of() : List.copyOf(assertions);
-        metadata = FixtureJsonValue.freezeMap(metadata);
+        metadata = ProtocolJsonValue.freezeMap(metadata);
     }
 
     /**
@@ -68,7 +68,7 @@ public record FixtureBundle(
             nodeId = trimmed(nodeId);
             path = trimmed(path);
             operator = trimmed(operator);
-            expected = FixtureJsonValue.freeze(expected);
+            expected = ProtocolJsonValue.freeze(expected);
         }
     }
 
