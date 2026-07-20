@@ -3946,6 +3946,17 @@ SHA-256 value derived from `{schemaVersion, evidenceFingerprint, signedAt}`. Thi
 prevents a signature from another Resource Gateway evidence protocol from being transplanted and
 binds the signing time. Consumers must not hash arbitrary pretty-printed response JSON.
 
+The producer signs and persists the same independently owned canonical `TestRunEvidence` snapshot.
+All payload-bearing JSON containers are recursively frozen, then the exact evidence type is serialized
+and read before semantic verification, fingerprinting, and signing so an arbitrary mutable Java value
+cannot change after sealing. The durable record boundary additionally binds signed identity metadata,
+run/target/fixture/plan/purpose facts, the complete tenant/environment/run lookup key, and independently
+indexed row columns. A forged manifest, mutable-alias drift, cross-scope substitution, or indexed/JSON
+drift fails before response projection as `409 RG.TEST.EVIDENCE_INTEGRITY_INVALID` and emits a bounded
+security event. Historical unsigned v1 material may be decoded for migration but is not write-eligible;
+signed v1 material still requires identity binding. See the
+[child evidence storage integrity verification](resource-gateway-execution-data-control-plane-stage3-child-evidence-storage-integrity-verification.md).
+
 Projection semantics are deliberate:
 
 | verbosity | `integrity.projection` | independently verifiable from this response |

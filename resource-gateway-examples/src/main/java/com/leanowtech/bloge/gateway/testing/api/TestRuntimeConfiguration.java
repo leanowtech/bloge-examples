@@ -777,8 +777,9 @@ public class TestRuntimeConfiguration {
     }
 
     @Bean
-    TestRunRepository testRunRepository(TestRuntimeDatabase database, ObjectMapper objectMapper) {
-        return new DatabaseTestRunRepository(database.jdbc(), objectMapper);
+    TestRunRepository testRunRepository(TestRuntimeDatabase database, ObjectMapper objectMapper,
+                                        TestEvidenceIntegrityService evidenceIntegrity) {
+        return new DatabaseTestRunRepository(database.jdbc(), objectMapper, evidenceIntegrity);
     }
 
     @Bean

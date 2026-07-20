@@ -150,6 +150,23 @@ class TestExecutionApiServiceTest {
     }
 
     @Test
+    void storageEnvelopeIntegrityFailureIsRejectedAndAuditedBeforeProjection() {
+        TestExecutionApiResponse executed = service.execute(request(bundle("inline"), null,
+                TestExecutionApiRequest.Verbosity.FULL), identity("test"));
+        runs.failReadsWithIntegrity = true;
+
+        assertThatThrownBy(() -> service.find(executed.runId(),
+                TestExecutionApiRequest.Verbosity.FULL, identity("test")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.EVIDENCE_INTEGRITY_INVALID");
+                    assertThat(failure.problem().status()).isEqualTo(409);
+                });
+        assertThat(securityEvents.events).extracting(TestSecurityEvent::eventType)
+                .contains("TEST_EVIDENCE_INTEGRITY_INVALID");
+    }
+
+    @Test
     void signerOutageMakesOtherwisePassingEvidenceIncompleteAndNonCertifiable() {
         TestExecutionApiService unavailable = new TestExecutionApiService(graphService,
                 new DefaultOperatorRegistry(), resources, new BlgeExpressionEvaluator(), mapper,
@@ -452,6 +469,20 @@ class TestExecutionApiServiceTest {
     }
 
     @Test
+    void substitutedCreateReceiptDowngradesEvidenceAndEmitsSecurityEvent() {
+        runs.substituteCreateReceipt = true;
+
+        TestExecutionApiResponse response = service.execute(request(bundle("inline"), null,
+                TestExecutionApiRequest.Verbosity.FULL), identity("test"));
+
+        assertThat(response.evidence().status()).isEqualTo(TestRunEvidence.Status.EVIDENCE_INCOMPLETE);
+        assertThat(response.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+        assertThat(securityEvents.events).extracting(TestSecurityEvent::eventType)
+                .contains("TEST_EVIDENCE_INTEGRITY_INVALID");
+    }
+
+    @Test
     void securityBoundaryFailsClosedWhenItsAuditSinkCannotCommit() {
         securityEvents.failAppends = true;
 
@@ -713,14 +744,25 @@ class TestExecutionApiServiceTest {
     private static final class InMemoryRuns implements TestRunRepository {
         private final Map<String, TestRunRecord> values = new LinkedHashMap<>();
         private boolean failCreates;
+        private boolean failReadsWithIntegrity;
+        private boolean substituteCreateReceipt;
         @Override public TestRunRecord create(TestRunRecord record) {
             if (failCreates) {
                 throw new IllegalStateException("run store unavailable");
             }
             values.put(record.runId(), record);
+            if (substituteCreateReceipt) {
+                return new TestRunRecord(record.runId(), "tenant-b", record.organizationId(),
+                        record.projectId(), record.environmentId(), record.actorId(), record.target(),
+                        record.fixtureBundleRef(), record.requestedVerbosity(), record.plan(),
+                        record.evidence(), record.integrity(), record.createdAt(), record.expiresAt());
+            }
             return record;
         }
         @Override public Optional<TestRunRecord> find(String tenant, String environment, String runId) {
+            if (failReadsWithIntegrity) {
+                throw new TestRunIntegrityException();
+            }
             TestRunRecord record = values.get(runId);
             return record != null && record.tenantId().equals(tenant)
                     && record.environmentId().equals(environment) ? Optional.of(record) : Optional.empty();

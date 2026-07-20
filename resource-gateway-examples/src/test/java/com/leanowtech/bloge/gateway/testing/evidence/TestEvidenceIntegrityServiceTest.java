@@ -10,10 +10,13 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TestEvidenceIntegrityServiceTest {
 
@@ -34,6 +37,43 @@ class TestEvidenceIntegrityServiceTest {
         assertThat(result.integrity().independentlyVerifiable()).isTrue();
         assertThat(result.integrity().evidenceFingerprint()).startsWith("sha256:");
         assertThat(service.verify(evidence, result.integrity()))
+                .isEqualTo(TestEvidenceIntegrityService.Verification.VERIFIED);
+    }
+
+    @Test
+    void evidenceRecursivelyFreezesCallerOwnedJsonContainers() {
+        List<Object> tags = new ArrayList<>(List.of("reviewed"));
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("tags", tags);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("provenance", new LinkedHashMap<>(Map.of("pipeline", "quality")));
+
+        TestRunEvidence evidence = evidence("run-frozen", input, metadata);
+        tags.add("mutated");
+        ((Map<String, Object>) metadata.get("provenance")).put("pipeline", "untrusted");
+
+        assertThat(evidence.nodeTrace().getFirst().input())
+                .isEqualTo(Map.of("tags", List.of("reviewed")));
+        assertThat(evidence.metadata().get("provenance"))
+                .isEqualTo(Map.of("pipeline", "quality"));
+        assertThatThrownBy(() -> ((List<Object>) ((Map<?, ?>) evidence.nodeTrace()
+                .getFirst().input()).get("tags")).add("forbidden"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void sealReturnsCanonicalSnapshotDetachedFromArbitraryMutableValues() {
+        MutableValue mutable = new MutableValue("approved");
+        TestRunEvidence evidence = evidence("run-snapshot", mutable, Map.of());
+
+        TestEvidenceIntegrityService.SealResult result = service.seal(evidence);
+        mutable.status = "denied";
+
+        assertThat(result.verified()).isTrue();
+        assertThat(result.evidence()).isNotSameAs(evidence);
+        assertThat(result.evidence().nodeTrace().getFirst().input())
+                .isEqualTo(Map.of("status", "approved"));
+        assertThat(service.verify(result.evidence(), result.integrity()))
                 .isEqualTo(TestEvidenceIntegrityService.Verification.VERIFIED);
     }
 
@@ -138,5 +178,28 @@ class TestEvidenceIntegrityServiceTest {
                 List.of(), List.of(), List.of(), List.of(), Map.of("caseId", "case-a"));
         return TestSemanticResultFingerprint.attach(JsonMapper.builder()
                 .addModule(new JavaTimeModule()).build(), evidence);
+    }
+
+    private static TestRunEvidence evidence(String runId, Object input,
+                                            Map<String, Object> metadata) {
+        Instant started = Instant.parse("2026-07-16T00:00:00Z");
+        return TestSemanticResultFingerprint.attach(JsonMapper.builder()
+                        .addModule(new JavaTimeModule()).build(),
+                new TestRunEvidence("", runId, TestRunEvidence.Status.PASSED,
+                        TestRunEvidence.EvidenceClass.CERTIFIABLE,
+                        "GRAPH_CONTRACT_TEST", "sha256:" + "1".repeat(64),
+                        "sha256:" + "2".repeat(64), "sha256:" + "3".repeat(64),
+                        started, started.plusSeconds(1),
+                        List.of(new TestRunEvidence.NodeTrace("node-a", "operator-a",
+                                "SUCCESS", "REAL", input, Map.of("ok", true), "", 4)),
+                        List.of(), List.of(), List.of(), List.of(), metadata));
+    }
+
+    private static final class MutableValue {
+        public String status;
+
+        private MutableValue(String status) {
+            this.status = status;
+        }
     }
 }

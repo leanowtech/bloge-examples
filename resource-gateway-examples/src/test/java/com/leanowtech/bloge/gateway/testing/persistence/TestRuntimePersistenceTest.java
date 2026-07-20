@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan;
 import com.leanowtech.bloge.gateway.testing.api.TestRunRecord;
+import com.leanowtech.bloge.gateway.testing.api.TestRunIntegrityException;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteConflictException;
@@ -17,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRecord;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
@@ -54,6 +56,7 @@ class TestRuntimePersistenceTest {
     private DatabaseTestSuiteRepository suites;
     private DatabaseTestSuiteRunRepository suiteRuns;
     private TestSuiteRunAttestationService suiteAttestations;
+    private TestEvidenceIntegrityService evidenceIntegrity;
 
     @BeforeEach
     void setUp() {
@@ -61,13 +64,14 @@ class TestRuntimePersistenceTest {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:test-runtime-" + System.nanoTime() + ";DB_CLOSE_DELAY=-1", "sa", "");
         jdbc = new JdbcTemplate(dataSource);
+        InMemoryVisualEvidenceSigner signer = new InMemoryVisualEvidenceSigner();
+        evidenceIntegrity = new TestEvidenceIntegrityService(mapper, signer);
         fixtures = new DatabaseFixtureBundleRepository(jdbc, mapper);
-        runs = new DatabaseTestRunRepository(jdbc, mapper);
+        runs = new DatabaseTestRunRepository(jdbc, mapper, evidenceIntegrity);
         securityEvents = new DatabaseTestSecurityEventRepository(jdbc, mapper);
         suites = new DatabaseTestSuiteRepository(jdbc, mapper);
         suiteRuns = new DatabaseTestSuiteRunRepository(jdbc, mapper);
-        suiteAttestations = new TestSuiteRunAttestationService(
-                mapper, new InMemoryVisualEvidenceSigner());
+        suiteAttestations = new TestSuiteRunAttestationService(mapper, signer);
         fixtures.init();
         runs.init();
         securityEvents.init();
@@ -469,13 +473,19 @@ class TestRuntimePersistenceTest {
                 new TestRunEvidence("", "run-1", TestRunEvidence.Status.PASSED,
                 TestRunEvidence.EvidenceClass.CERTIFIABLE, "GRAPH_CONTRACT_TEST", "sha256:target",
                 "sha256:fixture", "sha256:plan", now, now, List.of(), List.of(), List.of(), List.of(),
-                List.of(), Map.of("payloadSanitized", true)));
-        var integrity = new TestEvidenceIntegrityService(mapper, new InMemoryVisualEvidenceSigner())
-                .seal(evidence).integrity();
+                List.of(), Map.ofEntries(
+                        Map.entry("tenantId", "tenant-a"),
+                        Map.entry("organizationId", "org-a"),
+                        Map.entry("projectId", "project-a"),
+                        Map.entry("environmentId", "test"),
+                        Map.entry("actorId", "runner"),
+                        Map.entry("payloadSanitized", true))));
+        var integrity = evidenceIntegrity.seal(evidence).integrity();
         TestRunRecord record = new TestRunRecord("run-1", "tenant-a", "org-a", "project-a", "test",
                 "runner", new TestExecutionApiRequest.Target("GRAPH", "graph-a", "sha256:target"),
                 new TestExecutionApiResponse.ResolvedFixtureBundleRef("STORED", "fixture-a", 2,
-                        "sha256:fixture"), TestExecutionApiRequest.Verbosity.FULL, null, evidence,
+                        "sha256:fixture"), TestExecutionApiRequest.Verbosity.FULL,
+                persistedPlan(), evidence,
                 integrity, now, now.plusSeconds(3600));
 
         runs.create(record);
@@ -483,6 +493,44 @@ class TestRuntimePersistenceTest {
         assertThat(runs.find("tenant-a", "test", "run-1")).contains(record);
         assertThat(runs.find("tenant-b", "test", "run-1")).isEmpty();
         assertThat(runs.find("tenant-a", "prod", "run-1")).isEmpty();
+    }
+
+    @Test
+    void forgedVerifiedManifestCannotCrossPersistenceBoundary() {
+        Instant now = Instant.parse("2026-07-20T08:00:00Z");
+        TestRunEvidence original = persistedEvidence("run-forged", now, "tenant-a", "approved");
+        var originalIntegrity = evidenceIntegrity.seal(original).integrity();
+        TestRunEvidence changed = persistedEvidence("run-forged", now, "tenant-a", "denied");
+        TestRunRecord forged = persistedRecord(changed, originalIntegrity, now);
+
+        assertThatThrownBy(() -> runs.create(forged))
+                .isInstanceOf(TestRunIntegrityException.class)
+                .hasMessage("Stored test-run integrity verification failed")
+                .hasMessageNotContaining("approved")
+                .hasMessageNotContaining("denied")
+                .hasMessageNotContaining("run-forged");
+    }
+
+    @Test
+    void indexedScopeAndSerializedRecordSubstitutionFailsClosedOnRead() throws Exception {
+        Instant now = Instant.parse("2026-07-20T08:00:00Z");
+        TestRunEvidence evidence = persistedEvidence("run-substituted", now, "tenant-a", "approved");
+        TestRunRecord record = persistedRecord(
+                evidence, evidenceIntegrity.seal(evidence).integrity(), now);
+        runs.create(record);
+        String substituted = mapper.writeValueAsString(new TestRunRecord(record.runId(), "tenant-b",
+                record.organizationId(), record.projectId(), record.environmentId(), record.actorId(),
+                record.target(), record.fixtureBundleRef(), record.requestedVerbosity(), record.plan(),
+                record.evidence(), record.integrity(), record.createdAt(), record.expiresAt()));
+        jdbc.update("UPDATE rg_test_run_records SET record_json = ? WHERE run_id = ?",
+                substituted, record.runId());
+
+        assertThatThrownBy(() -> runs.find("tenant-a", "test", record.runId()))
+                .isInstanceOf(TestRunIntegrityException.class)
+                .hasMessage("Stored test-run integrity verification failed")
+                .hasMessageNotContaining("tenant-a")
+                .hasMessageNotContaining("tenant-b")
+                .hasMessageNotContaining("run-substituted");
     }
 
     @Test
@@ -501,6 +549,37 @@ class TestRuntimePersistenceTest {
         assertThatThrownBy(() -> runs.create(record))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("verified full-evidence signature");
+    }
+
+    private TestRunEvidence persistedEvidence(String runId, Instant now, String tenantId,
+                                              String decision) {
+        return TestSemanticResultFingerprint.attach(mapper,
+                new TestRunEvidence("", runId, TestRunEvidence.Status.PASSED,
+                        TestRunEvidence.EvidenceClass.CERTIFIABLE, "GRAPH_CONTRACT_TEST",
+                        "sha256:target", "sha256:fixture", "sha256:plan", now, now,
+                        List.of(new TestRunEvidence.NodeTrace("node-a", "operator-a", "SUCCESS",
+                                "REAL", Map.of("decision", decision), Map.of("ok", true), "", 1)),
+                        List.of(), List.of(), List.of(), List.of(), Map.ofEntries(
+                        Map.entry("tenantId", tenantId), Map.entry("organizationId", "org-a"),
+                        Map.entry("projectId", "project-a"), Map.entry("environmentId", "test"),
+                        Map.entry("actorId", "runner"), Map.entry("payloadSanitized", true))));
+    }
+
+    private TestRunRecord persistedRecord(TestRunEvidence evidence,
+                                          com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity integrity,
+                                          Instant now) {
+        return new TestRunRecord(evidence.runId(), "tenant-a", "org-a", "project-a", "test",
+                "runner", new TestExecutionApiRequest.Target("GRAPH", "graph-a", "sha256:target"),
+                new TestExecutionApiResponse.ResolvedFixtureBundleRef(
+                        "STORED", "fixture-a", 2, "sha256:fixture"),
+                TestExecutionApiRequest.Verbosity.FULL, persistedPlan(), evidence, integrity,
+                now, now.plusSeconds(3600));
+    }
+
+    private static EffectiveExecutionPlan persistedPlan() {
+        return new EffectiveExecutionPlan("", "plan-a", "sha256:plan",
+                "GRAPH_CONTRACT_TEST", "sha256:target", "sha256:fixture",
+                List.of(), List.of(), Map.of(), List.of());
     }
 
     @Test

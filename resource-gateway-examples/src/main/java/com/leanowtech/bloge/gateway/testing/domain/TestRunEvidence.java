@@ -74,7 +74,13 @@ public record TestRunEvidence(
         CERTIFIABLE
     }
 
-    /** Creates immutable evidence collections. */
+    /**
+     * Creates immutable evidence collections and recursively freezes every JSON value container.
+     *
+     * <p>This is the first immutability line. The signing and persistence boundaries additionally
+     * perform a canonical JSON round trip because an {@code Object} field may still hold an
+     * arbitrary mutable Java bean that collection wrappers cannot detach.</p>
+     */
     public TestRunEvidence {
         schemaVersion = defaulted(schemaVersion, SCHEMA_VERSION);
         runId = trimmed(runId);
@@ -95,7 +101,7 @@ public record TestRunEvidence(
         fixtureConsumptions = immutableList(fixtureConsumptions);
         assertionResults = immutableList(assertionResults);
         diagnostics = immutableList(diagnostics);
-        metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+        metadata = ProtocolJsonValue.freezeMap(metadata);
     }
 
     /**
@@ -170,6 +176,8 @@ public record TestRunEvidence(
             invocationSiteId = trimmed(invocationSiteId);
             graphPath = trimmed(graphPath);
             correlationKey = trimmed(correlationKey);
+            input = ProtocolJsonValue.freeze(input);
+            output = ProtocolJsonValue.freeze(output);
             if (occurrence < 0) {
                 throw new IllegalArgumentException("occurrence must be >= 0");
             }
@@ -200,6 +208,8 @@ public record TestRunEvidence(
             }
             status = trimmed(status);
             fidelity = trimmed(fidelity);
+            input = ProtocolJsonValue.freeze(input);
+            output = ProtocolJsonValue.freeze(output);
             errorCode = trimmed(errorCode);
             if (durationMs < 0) {
                 throw new IllegalArgumentException("durationMs must be >= 0");
@@ -231,6 +241,7 @@ public record TestRunEvidence(
         public EdgeTrace {
             edgeId = trimmed(edgeId);
             status = trimmed(status);
+            value = ProtocolJsonValue.freeze(value);
             graphPath = trimmed(graphPath);
             correlationKey = trimmed(correlationKey);
             if (graphOccurrence < 0) {
@@ -273,6 +284,8 @@ public record TestRunEvidence(
         public AssertionResult {
             scope = trimmed(scope);
             path = trimmed(path);
+            expected = ProtocolJsonValue.freeze(expected);
+            actual = ProtocolJsonValue.freeze(actual);
             diagnostic = diagnostic == null ? "" : diagnostic;
         }
     }

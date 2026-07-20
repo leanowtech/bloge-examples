@@ -212,6 +212,15 @@ different suite at the same key remains an immutable revision conflict. These lo
 drift but do not replace external signing or WORM storage. See the
 [suite registry verification](../docs/resource-gateway-execution-data-control-plane-stage2-suite-registry-verification.md).
 
+Signed child evidence now uses one canonical snapshot from seal through storage. Payload-bearing JSON
+containers are recursively frozen, arbitrary Java values are detached by an exact evidence round
+trip, and the signer returns the value it actually signed. JDBC verifies that signature before a new
+write and binds serialized evidence to signed identity metadata, target/fixture/plan fingerprints,
+the full tenant/environment/run lookup, and independently indexed row columns on every read.
+Mutation, a forged `VERIFIED` manifest, indexed/JSON drift, or cross-scope substitution fails before
+projection as payload-free `RG.TEST.EVIDENCE_INTEGRITY_INVALID`. See the
+[child evidence storage integrity verification](../docs/resource-gateway-execution-data-control-plane-stage3-child-evidence-storage-integrity-verification.md).
+
 See
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md)
 for the complete target-discovery, fixture-registration, execution, evidence,

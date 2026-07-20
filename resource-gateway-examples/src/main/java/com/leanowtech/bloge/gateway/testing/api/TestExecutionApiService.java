@@ -402,15 +402,17 @@ public final class TestExecutionApiService {
                 new TestExecutionApiRequest.Target("GRAPH", graphName, targetFingerprint),
                 fixture.reference(), request.verbosity(), result.plan(), secured.evidence(), secured.integrity(),
                 secured.evidence().completedAt(), secured.evidence().completedAt().plus(retention));
+        TestRunRecord persisted;
         try {
-            runRepository.create(record);
+            persisted = createVerifiedRunRecord(record, identity);
         } catch (RuntimeException persistenceFailure) {
             SecuredEvidence incomplete = secureEvidence(
                     evidenceIncomplete(secured.evidence(), persistenceFailure));
             return response(record, result.plan(), incomplete.evidence(), incomplete.integrity(),
                     request.verbosity());
         }
-        return response(record, result.plan(), secured.evidence(), secured.integrity(), request.verbosity());
+        return response(persisted, persisted.plan(), persisted.evidence(), persisted.integrity(),
+                request.verbosity());
     }
 
     /** Returns the current graph contract and composite fingerprint needed to bind fixtures. */
@@ -702,16 +704,17 @@ public final class TestExecutionApiService {
                 fixture.reference(), request.verbosity(), result.execution().plan(), secured.evidence(),
                 secured.integrity(), secured.evidence().completedAt(),
                 secured.evidence().completedAt().plus(retention));
+        TestRunRecord persisted;
         try {
-            runRepository.create(record);
+            persisted = createVerifiedRunRecord(record, identity);
         } catch (RuntimeException persistenceFailure) {
             SecuredEvidence incomplete = secureEvidence(
                     evidenceIncomplete(secured.evidence(), persistenceFailure));
             return response(record, result.execution().plan(), incomplete.evidence(),
                     incomplete.integrity(), request.verbosity());
         }
-        return response(record, result.execution().plan(), secured.evidence(),
-                secured.integrity(), request.verbosity());
+        return response(persisted, persisted.plan(), persisted.evidence(),
+                persisted.integrity(), request.verbosity());
     }
 
     /** Executes a bounded set of independent requests sequentially. */
@@ -741,8 +744,16 @@ public final class TestExecutionApiService {
                     .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
                             "RG.TEST.RUN_NOT_FOUND", "Test run was not found in the authorized scope.",
                             identity.correlationId(), Map.of())));
+            record = TestRunRecordIntegrity.verifiedSnapshot(objectMapper, evidenceIntegrity, record,
+                    identity.tenantId(), identity.environmentId(), normalized(runId));
         } catch (IntegrationProblemException notFound) {
             throw notFound;
+        } catch (TestRunIntegrityException invalid) {
+            securityEvent(identity, "TEST_EVIDENCE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.EVIDENCE_INTEGRITY_INVALID",
+                    Map.of("runId", normalized(runId), "verification", "STORAGE_ENVELOPE_INVALID"));
+            throw conflict(identity, "RG.TEST.EVIDENCE_INTEGRITY_INVALID",
+                    "Persisted test evidence failed storage integrity verification.", Map.of());
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.RUN_STORE_UNAVAILABLE",
                     "The independent test-run store is unavailable.");
@@ -750,6 +761,21 @@ public final class TestExecutionApiService {
         verifyStoredEvidence(record, identity);
         TestExecutionApiRequest.Verbosity effective = verbosity == null ? record.requestedVerbosity() : verbosity;
         return response(record, record.plan(), record.evidence(), record.integrity(), effective);
+    }
+
+    private TestRunRecord createVerifiedRunRecord(TestRunRecord record,
+                                                  IntegrationRequestContext identity) {
+        TestRunRecord expected = TestRunRecordIntegrity.verifiedCreateSnapshot(
+                objectMapper, evidenceIntegrity, record);
+        try {
+            return TestRunRecordIntegrity.verifiedCreateReceipt(objectMapper, evidenceIntegrity,
+                    runRepository.create(expected), expected);
+        } catch (TestRunIntegrityException invalid) {
+            securityEvent(identity, "TEST_EVIDENCE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.EVIDENCE_INTEGRITY_INVALID",
+                    Map.of("runId", record.runId(), "verification", "CREATE_RECEIPT_INVALID"));
+            throw invalid;
+        }
     }
 
     /** Registers one immutable, clearance-checked fixture revision. */
@@ -1165,9 +1191,9 @@ public final class TestExecutionApiService {
     private SecuredEvidence secureEvidence(TestRunEvidence evidence) {
         TestEvidenceIntegrityService.SealResult sealed = evidenceIntegrity.seal(evidence);
         if (sealed.verified()) {
-            return new SecuredEvidence(evidence, sealed.integrity());
+            return new SecuredEvidence(sealed.evidence(), sealed.integrity());
         }
-        TestRunEvidence incomplete = evidenceIntegrityIncomplete(evidence, sealed.failureCode());
+        TestRunEvidence incomplete = evidenceIntegrityIncomplete(sealed.evidence(), sealed.failureCode());
         return new SecuredEvidence(incomplete, evidenceIntegrity.unavailable(incomplete));
     }
 

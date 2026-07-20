@@ -47,14 +47,15 @@ public final class TestEvidenceIntegrityService {
      * @return verified integrity or a fail-closed bounded failure result
      */
     public SealResult seal(TestRunEvidence evidence) {
-        Objects.requireNonNull(evidence, "evidence");
-        String fingerprint = ProtocolFingerprint.of(objectMapper, evidence);
-        if (!TestSemanticResultFingerprint.matches(objectMapper, evidence)) {
-            return SealResult.failed(TestEvidenceIntegrity.unavailable(fingerprint),
+        TestRunEvidence snapshot = canonicalSnapshot(evidence);
+        String fingerprint = ProtocolFingerprint.of(objectMapper, snapshot);
+        if (!TestSemanticResultFingerprint.matches(objectMapper, snapshot)) {
+            return SealResult.failed(snapshot, TestEvidenceIntegrity.unavailable(fingerprint),
                     SEMANTIC_FINGERPRINT_INVALID);
         }
         if (!signer.available()) {
-            return SealResult.failed(TestEvidenceIntegrity.unavailable(fingerprint), SIGNER_UNAVAILABLE);
+            return SealResult.failed(snapshot, TestEvidenceIntegrity.unavailable(fingerprint),
+                    SIGNER_UNAVAILABLE);
         }
         try {
             Instant signedAt = Instant.now();
@@ -64,12 +65,14 @@ public final class TestEvidenceIntegrityService {
                     TestEvidenceIntegrity.SignatureStatus.VERIFIED, seal.keyId(), seal.algorithm(),
                     signedAt, seal.signature(), TestEvidenceIntegrity.Projection.FULL,
                     fingerprint, true);
-            if (verify(evidence, integrity) != Verification.VERIFIED) {
-                return SealResult.failed(TestEvidenceIntegrity.unavailable(fingerprint), SIGNATURE_INVALID);
+            if (verify(snapshot, integrity) != Verification.VERIFIED) {
+                return SealResult.failed(snapshot, TestEvidenceIntegrity.unavailable(fingerprint),
+                        SIGNATURE_INVALID);
             }
-            return SealResult.verified(integrity);
+            return SealResult.verified(snapshot, integrity);
         } catch (RuntimeException failure) {
-            return SealResult.failed(TestEvidenceIntegrity.unavailable(fingerprint), SIGNER_UNAVAILABLE);
+            return SealResult.failed(snapshot, TestEvidenceIntegrity.unavailable(fingerprint),
+                    SIGNER_UNAVAILABLE);
         }
     }
 
@@ -80,8 +83,29 @@ public final class TestEvidenceIntegrityService {
      * @return unavailable integrity manifest bound to the supplied evidence
      */
     public TestEvidenceIntegrity unavailable(TestRunEvidence evidence) {
+        TestRunEvidence snapshot = canonicalSnapshot(evidence);
+        return TestEvidenceIntegrity.unavailable(ProtocolFingerprint.of(objectMapper, snapshot));
+    }
+
+    /**
+     * Produces an independently owned protocol value before fingerprints or signatures are trusted.
+     *
+     * <p>Recursive collection freezing cannot detach arbitrary Java beans stored in payload-bearing
+     * {@code Object} fields. Serializing and reading the exact evidence type converts those values to
+     * a canonical JSON graph and closes the mutation window between sealing and persistence.</p>
+     *
+     * @param evidence complete sanitized evidence
+     * @return independently owned canonical evidence snapshot
+     * @throws IllegalArgumentException when the value cannot round-trip as the evidence protocol
+     */
+    public TestRunEvidence canonicalSnapshot(TestRunEvidence evidence) {
         Objects.requireNonNull(evidence, "evidence");
-        return TestEvidenceIntegrity.unavailable(ProtocolFingerprint.of(objectMapper, evidence));
+        try {
+            return objectMapper.readValue(objectMapper.writeValueAsBytes(evidence),
+                    TestRunEvidence.class);
+        } catch (Exception invalid) {
+            throw new IllegalArgumentException("Test evidence cannot be canonicalized", invalid);
+        }
     }
 
     /**
@@ -179,12 +203,15 @@ public final class TestEvidenceIntegrityService {
     /**
      * Result of signing one complete evidence value.
      *
+     * @param evidence canonical independently owned value actually fingerprinted and signed
      * @param integrity verified or fail-closed integrity manifest
      * @param failureCode bounded stable diagnostic; blank on success
      */
-    public record SealResult(TestEvidenceIntegrity integrity, String failureCode) {
+    public record SealResult(TestRunEvidence evidence, TestEvidenceIntegrity integrity,
+                             String failureCode) {
         /** Normalizes result values. */
         public SealResult {
+            evidence = Objects.requireNonNull(evidence, "evidence");
             integrity = Objects.requireNonNull(integrity, "integrity");
             failureCode = failureCode == null ? "" : failureCode.trim();
         }
@@ -192,22 +219,27 @@ public final class TestEvidenceIntegrityService {
         /**
          * Creates one successfully verified result.
          *
+         * @param evidence canonical evidence that was signed
          * @param integrity verified signature manifest
          * @return successful result
          */
-        public static SealResult verified(TestEvidenceIntegrity integrity) {
-            return new SealResult(integrity, "");
+        public static SealResult verified(TestRunEvidence evidence,
+                                          TestEvidenceIntegrity integrity) {
+            return new SealResult(evidence, integrity, "");
         }
 
         /**
          * Creates one fail-closed signing result.
          *
+         * @param evidence canonical evidence associated with the failed signing attempt
          * @param integrity unavailable integrity manifest
          * @param failureCode stable bounded diagnostic
          * @return failed result
          */
-        public static SealResult failed(TestEvidenceIntegrity integrity, String failureCode) {
-            return new SealResult(integrity, failureCode);
+        public static SealResult failed(TestRunEvidence evidence,
+                                        TestEvidenceIntegrity integrity,
+                                        String failureCode) {
+            return new SealResult(evidence, integrity, failureCode);
         }
 
         /**
