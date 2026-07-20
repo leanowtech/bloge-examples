@@ -399,7 +399,9 @@ public class DurableTestRecoveryAuthorizer {
             stored = fixtureRepository.find(identity.tenantId(), identity.environmentId(),
                     ref.fixtureBundleId(), ref.revision()).orElse(null);
             if (stored != null) {
-                stored = StoredFixtureBundleIntegrity.verify(objectMapper, stored);
+                stored = StoredFixtureBundleIntegrity.verifiedSnapshot(objectMapper, stored,
+                        identity.tenantId(), identity.environmentId(), ref.fixtureBundleId(),
+                        ref.revision());
             }
         } catch (RuntimeException infrastructure) {
             throw dependencyStoreUnavailable(identity, "FIXTURE");

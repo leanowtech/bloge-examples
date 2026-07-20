@@ -184,10 +184,11 @@ public record FixtureRule(
     ) {
         /** Creates immutable match collections. */
         public Match {
-            pathEquals = immutableMap(pathEquals);
+            canonicalInput = FixtureJsonValue.freeze(canonicalInput);
+            pathEquals = FixtureJsonValue.freezeMap(pathEquals);
             pathsExist = immutableList(pathsExist);
             pathsAbsent = immutableList(pathsAbsent);
-            schema = immutableMap(schema);
+            schema = FixtureJsonValue.freezeMap(schema);
             correlationKey = trimmed(correlationKey);
             boundedRegex = boundedRegex == null ? Map.of() : Map.copyOf(boundedRegex);
         }
@@ -239,6 +240,7 @@ public record FixtureRule(
         public Behavior {
             kind = kind == null ? BehaviorKind.REAL : kind;
             boundary = boundary == null ? DoubleBoundary.NODE : boundary;
+            value = FixtureJsonValue.freeze(value);
             rawBody = rawBody == null ? "" : rawBody;
             headers = headers == null ? Map.of() : Map.copyOf(headers);
             errorCode = trimmed(errorCode);
@@ -322,6 +324,7 @@ public record FixtureRule(
         /** Normalizes sequence-step identifiers. */
         public BehaviorStep {
             kind = trimmed(kind);
+            value = FixtureJsonValue.freeze(value);
             errorCode = trimmed(errorCode);
         }
     }
@@ -393,7 +396,4 @@ public record FixtureRule(
         return values == null ? List.of() : List.copyOf(values);
     }
 
-    private static <K, V> Map<K, V> immutableMap(Map<K, V> values) {
-        return values == null ? Map.of() : Map.copyOf(values);
-    }
 }

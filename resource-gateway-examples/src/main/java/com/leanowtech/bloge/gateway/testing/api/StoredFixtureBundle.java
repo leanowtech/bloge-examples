@@ -8,8 +8,10 @@ import java.time.Instant;
  * Immutable tenant- and environment-scoped fixture registry revision.
  *
  * <p>{@code fingerprint} is the canonical fingerprint of {@code bundle}, not an independent caller
- * assertion. Repository and service trust boundaries verify that binding together with the
- * envelope/bundle id and revision before use.</p>
+ * assertion. Repository and service trust boundaries create a detached canonical snapshot, verify
+ * that binding together with the envelope/bundle id and revision, and bind repository results to
+ * the complete lookup key or submitted immutable create identity before use. Idempotent creates
+ * preserve the first registry timestamp and author.</p>
  */
 public record StoredFixtureBundle(
         String schemaVersion,

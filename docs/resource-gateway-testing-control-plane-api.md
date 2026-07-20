@@ -868,6 +868,12 @@ Content-Type: application/json
 The `(tenant, environment, fixtureBundleId, revision)` key is immutable. Repeating byte-equivalent
 content is idempotent; different content returns `RG.TEST.FIXTURE_REVISION_CONFLICT`.
 
+Registration canonicalizes the request before it reaches the repository, recursively detaching JSON
+containers and rejecting cyclic or excessively nested values. The repository response is accepted
+only when schema, scope, id, revision and fingerprint equal the submitted immutable identity. An
+idempotent retry returns the original registry author and timestamp instead of rewriting provenance.
+The API therefore never returns a caller- or repository-owned mutable object graph.
+
 ### 4.2.1 Control logical time, delay, and timeout
 
 `DELAY` and `TIMEOUT` are active only when the fixture bundle declares a `logicalClock` origin.
@@ -3763,12 +3769,15 @@ immediately but always produce `EXPLORATORY` evidence. Stored bundles can produc
 evidence only when there is no schema waiver and each mocked resource site is protocol-derived or
 transport-level rather than an output-level self-report.
 
-Every stored read recomputes the canonical bundle fingerprint and binds it back to the stored
-schema, id and revision. Execution and suite services repeat that check after repository return;
-`RG.TEST.FIXTURE_INTEGRITY_INVALID` is therefore raised before planning or persistence when a stored
-envelope and its content drift. The error and required security event never include fixture ids,
-fingerprints or payload values. Durable recovery intentionally projects the same corruption as a
-dependency-store outage, while a valid new fingerprint remains an exact-closure conflict. See
+Every stored read reconstructs an independently owned, deeply frozen canonical JSON snapshot,
+recomputes its bundle fingerprint, and binds it to the complete authorized
+tenant/environment/id/revision lookup key. Execution and suite services repeat that check after
+repository return; `RG.TEST.FIXTURE_INTEGRITY_INVALID` is therefore raised before planning or
+persistence when content drifts, a mutable repository alias is observed, or a valid revision is
+returned for a different key. The error and required security event never include fixture ids,
+fingerprints or payload values. Durable recovery intentionally projects corruption or cross-key
+substitution as a dependency-store outage, while a valid same-key new fingerprint remains an
+exact-closure conflict. See
 [Stage 2 fixture registry integrity verification](resource-gateway-execution-data-control-plane-stage2-fixture-registry-integrity-verification.md).
 
 ### 4.3.1 Execute a frozen operator binding

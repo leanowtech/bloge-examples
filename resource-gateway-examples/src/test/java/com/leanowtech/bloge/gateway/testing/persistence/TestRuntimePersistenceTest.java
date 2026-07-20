@@ -96,6 +96,29 @@ class TestRuntimePersistenceTest {
     }
 
     @Test
+    void fixtureCreatePersistsAndReturnsACanonicalSnapshotDetachedFromCallerAliases() {
+        MutableFixtureValue callerValue = new MutableFixtureValue("approved");
+        FixtureBundle bundle = new FixtureBundle("", "fixture-snapshot", 1,
+                "sha256:" + "a".repeat(64), "INTERNAL", null, null,
+                List.of(), List.of(), Map.of("runtime", callerValue));
+        StoredFixtureBundle requested = new StoredFixtureBundle("", "tenant-a", "test",
+                "fixture-snapshot", 1, ProtocolFingerprint.of(mapper, bundle), bundle,
+                Instant.now(), "runner");
+
+        StoredFixtureBundle created = fixtures.create(requested);
+        callerValue.status = "denied";
+        StoredFixtureBundle reconstructed = fixtures.find(
+                "tenant-a", "test", "fixture-snapshot", 1).orElseThrow();
+
+        assertThat(created).isNotSameAs(requested);
+        assertThat(created.bundle().metadata().get("runtime"))
+                .isEqualTo(Map.of("status", "approved"));
+        assertThat(reconstructed.bundle().metadata().get("runtime"))
+                .isEqualTo(Map.of("status", "approved"));
+        assertThat(reconstructed.fingerprint()).isEqualTo(created.fingerprint());
+    }
+
+    @Test
     void fixtureReadRejectsDatabaseJsonTamperingAgainstTheIndexedFingerprint() throws Exception {
         FixtureBundle bundle = new FixtureBundle("", "fixture-tamper", 1,
                 "sha256:" + "a".repeat(64), "INTERNAL", null, null,
@@ -119,6 +142,14 @@ class TestRuntimePersistenceTest {
                 .hasMessage("Stored fixture integrity verification failed")
                 .hasMessageNotContaining("original")
                 .hasMessageNotContaining("changed");
+    }
+
+    private static final class MutableFixtureValue {
+        public String status;
+
+        private MutableFixtureValue(String status) {
+            this.status = status;
+        }
     }
 
     @Test

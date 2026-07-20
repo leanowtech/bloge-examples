@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Objects;
@@ -24,15 +25,7 @@ public final class StoredFixtureBundleIntegrity {
     private StoredFixtureBundleIntegrity() {
     }
 
-    /**
-     * Verifies one complete stored fixture and returns the same immutable reference.
-     *
-     * @param objectMapper canonical protocol mapper
-     * @param stored stored envelope and bundle content
-     * @return {@code stored} after successful verification
-     * @throws FixtureBundleIntegrityException when envelope, identity, revision, or content drift
-     */
-    public static StoredFixtureBundle verify(ObjectMapper objectMapper, StoredFixtureBundle stored) {
+    private static StoredFixtureBundle verify(ObjectMapper objectMapper, StoredFixtureBundle stored) {
         Objects.requireNonNull(objectMapper, "objectMapper");
         if (stored == null || !StoredFixtureBundle.SCHEMA_VERSION.equals(stored.schemaVersion())
                 || blank(stored.tenantId()) || blank(stored.environmentId())
@@ -57,6 +50,96 @@ public final class StoredFixtureBundleIntegrity {
             throw new FixtureBundleIntegrityException();
         }
         return stored;
+    }
+
+    /**
+     * Canonically detaches one repository-owned bundle and verifies the exact detached value.
+     *
+     * <p>The serialization round trip is intentional. A Java record and its collection wrappers
+     * cannot detach an arbitrary mutable object embedded in an {@code Object} protocol field. The
+     * returned envelope owns a fresh JSON value graph, so a repository cannot mutate the runtime
+     * plan after verification through a retained alias.</p>
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param stored repository-owned envelope
+     * @return independently owned and integrity-verified envelope
+     * @throws FixtureBundleIntegrityException when canonicalization or verification fails
+     */
+    public static StoredFixtureBundle verifiedSnapshot(ObjectMapper objectMapper,
+                                                       StoredFixtureBundle stored) {
+        Objects.requireNonNull(objectMapper, "objectMapper");
+        if (stored == null || stored.bundle() == null) {
+            throw new FixtureBundleIntegrityException();
+        }
+        try {
+            byte[] canonicalValue = objectMapper.writeValueAsBytes(stored.bundle());
+            FixtureBundle bundle = objectMapper.readValue(canonicalValue, FixtureBundle.class);
+            return verify(objectMapper, new StoredFixtureBundle(stored.schemaVersion(),
+                    stored.tenantId(), stored.environmentId(), stored.fixtureBundleId(),
+                    stored.revision(), stored.fingerprint(), bundle, stored.createdAt(),
+                    stored.createdBy()));
+        } catch (FixtureBundleIntegrityException invalid) {
+            throw invalid;
+        } catch (IOException | RuntimeException invalid) {
+            throw new FixtureBundleIntegrityException(invalid);
+        }
+    }
+
+    /**
+     * Detaches and verifies a repository result against the exact lookup key.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param stored repository-owned result
+     * @param tenantId authorized tenant lookup key
+     * @param environmentId authorized environment lookup key
+     * @param fixtureBundleId requested fixture id
+     * @param revision requested revision
+     * @return independently owned result bound to the complete lookup key
+     * @throws FixtureBundleIntegrityException when the result is corrupt or cross-boundary
+     */
+    public static StoredFixtureBundle verifiedSnapshot(ObjectMapper objectMapper,
+                                                       StoredFixtureBundle stored,
+                                                       String tenantId,
+                                                       String environmentId,
+                                                       String fixtureBundleId,
+                                                       long revision) {
+        StoredFixtureBundle snapshot = verifiedSnapshot(objectMapper, stored);
+        if (!Objects.equals(tenantId, snapshot.tenantId())
+                || !Objects.equals(environmentId, snapshot.environmentId())
+                || !Objects.equals(fixtureBundleId, snapshot.fixtureBundleId())
+                || revision != snapshot.revision()) {
+            throw new FixtureBundleIntegrityException();
+        }
+        return snapshot;
+    }
+
+    /**
+     * Detaches and verifies a create result against the submitted immutable identity.
+     *
+     * <p>Creation provenance is intentionally not compared. An idempotent create returns the
+     * original registry timestamp and author, which legitimately differ from the retrying request.
+     * The base integrity check still requires both values to be complete.</p>
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param stored repository-owned create result
+     * @param expected canonical envelope submitted to the repository
+     * @return independently owned result with the submitted immutable identity and content
+     * @throws FixtureBundleIntegrityException when an immutable identity or content field changed
+     */
+    public static StoredFixtureBundle verifiedSnapshot(ObjectMapper objectMapper,
+                                                       StoredFixtureBundle stored,
+                                                       StoredFixtureBundle expected) {
+        if (expected == null) {
+            throw new FixtureBundleIntegrityException();
+        }
+        StoredFixtureBundle snapshot = verifiedSnapshot(objectMapper, stored,
+                expected.tenantId(), expected.environmentId(), expected.fixtureBundleId(),
+                expected.revision());
+        if (!Objects.equals(expected.schemaVersion(), snapshot.schemaVersion())
+                || !Objects.equals(expected.fingerprint(), snapshot.fingerprint())) {
+            throw new FixtureBundleIntegrityException();
+        }
+        return snapshot;
     }
 
     private static boolean validFingerprint(String value) {

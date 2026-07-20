@@ -192,9 +192,12 @@ curl -sS -X PUT http://localhost:8080/api/testing/catalogs/gateway-graph-contrac
 ```
 
 Stored fixture identity is verified at every trust boundary: the database repository and each
-execution, suite-publication, and durable-recovery consumer recompute the canonical bundle
-fingerprint and bind it to the stored fixture id/revision. A valid replacement revision is treated
-as dependency drift; malformed or tampered storage fails closed without exposing fixture content.
+execution, suite-publication, and durable-recovery consumer reconstruct an independently owned,
+deeply frozen canonical snapshot, recompute its bundle fingerprint, and bind it to the complete
+tenant/environment/id/revision lookup key. Create responses must also match the submitted immutable
+identity and content, while idempotent retries preserve first-write provenance. A valid same-key
+replacement is treated as dependency drift; mutable aliases, cross-scope
+substitution, malformed storage, and tampering fail closed without exposing fixture content.
 See the
 [stored fixture integrity verification](../docs/resource-gateway-execution-data-control-plane-stage2-fixture-registry-integrity-verification.md)
 for invariants, failure semantics, and remaining trust assumptions.

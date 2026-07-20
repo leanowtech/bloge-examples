@@ -45,11 +45,11 @@ public final class DatabaseFixtureBundleRepository implements FixtureBundleRepos
 
     @Override
     public StoredFixtureBundle create(StoredFixtureBundle fixture) {
-        StoredFixtureBundleIntegrity.verify(objectMapper, fixture);
-        Optional<StoredFixtureBundle> existing = find(fixture.tenantId(), fixture.environmentId(),
-                fixture.fixtureBundleId(), fixture.revision());
+        StoredFixtureBundle snapshot = StoredFixtureBundleIntegrity.verifiedSnapshot(objectMapper, fixture);
+        Optional<StoredFixtureBundle> existing = find(snapshot.tenantId(), snapshot.environmentId(),
+                snapshot.fixtureBundleId(), snapshot.revision());
         if (existing.isPresent()) {
-            return equivalentOrConflict(existing.get(), fixture);
+            return equivalentOrConflict(existing.get(), snapshot);
         }
         try {
             jdbc.update("""
@@ -57,13 +57,13 @@ public final class DatabaseFixtureBundleRepository implements FixtureBundleRepos
                         tenant_id, environment_id, fixture_bundle_id, revision, fingerprint,
                         bundle_json, created_at, created_by
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, fixture.tenantId(), fixture.environmentId(), fixture.fixtureBundleId(),
-                    fixture.revision(), fixture.fingerprint(), write(fixture.bundle()),
-                    Timestamp.from(fixture.createdAt()), fixture.createdBy());
-            return fixture;
+                    """, snapshot.tenantId(), snapshot.environmentId(), snapshot.fixtureBundleId(),
+                    snapshot.revision(), snapshot.fingerprint(), write(snapshot.bundle()),
+                    Timestamp.from(snapshot.createdAt()), snapshot.createdBy());
+            return snapshot;
         } catch (DataIntegrityViolationException race) {
-            return find(fixture.tenantId(), fixture.environmentId(), fixture.fixtureBundleId(), fixture.revision())
-                    .map(value -> equivalentOrConflict(value, fixture))
+            return find(snapshot.tenantId(), snapshot.environmentId(), snapshot.fixtureBundleId(),
+                    snapshot.revision()).map(value -> equivalentOrConflict(value, snapshot))
                     .orElseThrow(() -> race);
         }
     }
@@ -83,8 +83,8 @@ public final class DatabaseFixtureBundleRepository implements FixtureBundleRepos
                         rs.getString("fingerprint"), read(rs.getString("bundle_json"), FixtureBundle.class),
                         rs.getTimestamp("created_at").toInstant(), rs.getString("created_by")),
                 tenantId, environmentId, fixtureBundleId, revision);
-        return results.stream().map(stored -> StoredFixtureBundleIntegrity.verify(
-                objectMapper, stored)).findFirst();
+        return results.stream().map(stored -> StoredFixtureBundleIntegrity.verifiedSnapshot(
+                objectMapper, stored, tenantId, environmentId, fixtureBundleId, revision)).findFirst();
     }
 
     private static StoredFixtureBundle equivalentOrConflict(StoredFixtureBundle existing,

@@ -656,7 +656,9 @@ public final class TestSuiteRegistryService {
                             "A referenced fixture revision is absent from the authorized scope.",
                             Map.of("fixtureBundleId", reference.fixtureBundleId(),
                                     "revision", reference.revision())));
-            return StoredFixtureBundleIntegrity.verify(objectMapper, stored);
+            return StoredFixtureBundleIntegrity.verifiedSnapshot(objectMapper, stored,
+                    identity.tenantId(), identity.environmentId(), reference.fixtureBundleId(),
+                    reference.revision());
         } catch (IntegrationProblemException expected) {
             throw expected;
         } catch (FixtureBundleIntegrityException corrupt) {

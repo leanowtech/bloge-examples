@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +22,38 @@ class StoredFixtureBundleIntegrityTest {
         FixtureBundle bundle = bundle("fixture-a", 3, Map.of("owner", "quality"));
         StoredFixtureBundle stored = stored(bundle, ProtocolFingerprint.of(mapper, bundle));
 
-        assertThat(StoredFixtureBundleIntegrity.verify(mapper, stored)).isSameAs(stored);
+        StoredFixtureBundle snapshot = StoredFixtureBundleIntegrity.verifiedSnapshot(mapper, stored);
+
+        assertThat(snapshot).isNotSameAs(stored);
+        assertThat(snapshot.bundle()).isEqualTo(stored.bundle());
+    }
+
+    @Test
+    void verifiedSnapshotDetachesMutableRepositoryOwnedValuesBeforeUse() {
+        MutableValue repositoryValue = new MutableValue("approved");
+        FixtureRule rule = new FixtureRule("", "mutable", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning(repositoryValue), FixtureRule.Consumption.once(),
+                FixtureRule.SchemaCheck.strict());
+        FixtureBundle bundle = new FixtureBundle("", "fixture-mutable", 1,
+                "sha256:" + "a".repeat(64), "INTERNAL", null, null,
+                List.of(rule), List.of(), Map.of());
+        StoredFixtureBundle stored = stored(bundle, ProtocolFingerprint.of(mapper, bundle));
+
+        StoredFixtureBundle snapshot = StoredFixtureBundleIntegrity.verifiedSnapshot(mapper, stored);
+        repositoryValue.status = "denied";
+
+        assertThat(snapshot).isNotSameAs(stored);
+        assertThat(snapshot.bundle()).isNotSameAs(bundle);
+        assertThat(snapshot.bundle().rules().getFirst().behavior().value())
+                .isEqualTo(Map.of("status", "approved"));
+        assertThat(StoredFixtureBundleIntegrity.verifiedSnapshot(mapper, snapshot))
+                .isNotSameAs(snapshot);
+        assertThatThrownBy(() -> StoredFixtureBundleIntegrity.verifiedSnapshot(mapper, stored,
+                "tenant-b", "test", "fixture-mutable", 1))
+                .isInstanceOf(FixtureBundleIntegrityException.class)
+                .hasMessage("Stored fixture integrity verification failed")
+                .hasMessageNotContaining("tenant-b")
+                .hasMessageNotContaining("fixture-mutable");
     }
 
     @Test
@@ -51,7 +83,7 @@ class StoredFixtureBundleIntegrityTest {
     }
 
     private void assertPayloadFreeFailure(StoredFixtureBundle stored) {
-        assertThatThrownBy(() -> StoredFixtureBundleIntegrity.verify(mapper, stored))
+        assertThatThrownBy(() -> StoredFixtureBundleIntegrity.verifiedSnapshot(mapper, stored))
                 .isInstanceOf(FixtureBundleIntegrityException.class)
                 .hasMessage("Stored fixture integrity verification failed")
                 .hasMessageNotContaining("must-never-escape-93")
@@ -68,5 +100,13 @@ class StoredFixtureBundleIntegrityTest {
     private static FixtureBundle bundle(String id, long revision, Map<String, Object> metadata) {
         return new FixtureBundle("", id, revision, "sha256:" + "a".repeat(64),
                 "INTERNAL", null, null, List.of(), List.of(), metadata);
+    }
+
+    private static final class MutableValue {
+        public String status;
+
+        private MutableValue(String status) {
+            this.status = status;
+        }
     }
 }

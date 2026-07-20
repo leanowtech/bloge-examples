@@ -277,6 +277,86 @@ class TestExecutionApiServiceTest {
     }
 
     @Test
+    void storedFixtureReadReturnsCanonicalSnapshotDetachedFromRepositoryAliases() {
+        MutableFixtureValue repositoryValue = new MutableFixtureValue("approved");
+        FixtureBundle bundle = bundle("detached", new FixtureRule("", "mutable",
+                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning(repositoryValue),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict()));
+        String fingerprint = ProtocolFingerprint.of(mapper, bundle);
+        StoredFixtureBundle repositoryObject = new StoredFixtureBundle("", "tenant-a", "test",
+                "detached", 1, fingerprint, bundle, java.time.Instant.EPOCH, "repository");
+        fixtures.values.put(InMemoryFixtures.key("tenant-a", "test", "detached", 1), repositoryObject);
+
+        StoredFixtureBundle resolved = service.findFixture("detached", 1, identity("test"));
+        repositoryValue.status = "denied";
+
+        assertThat(resolved).isNotSameAs(repositoryObject);
+        assertThat(resolved.bundle().rules().getFirst().behavior().value())
+                .isEqualTo(Map.of("status", "approved"));
+        assertThat(StoredFixtureBundleIntegrity.verifiedSnapshot(mapper, resolved))
+                .isNotSameAs(resolved);
+    }
+
+    @Test
+    void storedFixtureReadRejectsAValidCrossScopeRepositorySubstitution() {
+        FixtureBundle bundle = bundle("cross-scope");
+        StoredFixtureBundle foreign = new StoredFixtureBundle("", "tenant-b", "test",
+                "cross-scope", 1, ProtocolFingerprint.of(mapper, bundle), bundle,
+                java.time.Instant.EPOCH, "repository");
+        fixtures.values.put(InMemoryFixtures.key("tenant-a", "test", "cross-scope", 1), foreign);
+
+        assertThatThrownBy(() -> service.findFixture("cross-scope", 1, identity("test")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.FIXTURE_INTEGRITY_INVALID");
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().title())
+                            .doesNotContain("tenant-a", "tenant-b", "cross-scope");
+                });
+        assertThat(securityEvents.events).singleElement().satisfies(event -> {
+            assertThat(event.reasonCode()).isEqualTo("RG.TEST.FIXTURE_INTEGRITY_INVALID");
+            assertThat(event.facts()).isEmpty();
+        });
+    }
+
+    @Test
+    void fixtureRegistrationRejectsAValidButSubstitutedRepositoryReceipt() {
+        FixtureBundle bundle = bundle("create-substitution");
+        fixtures.createOverride = new StoredFixtureBundle("", "tenant-b", "test",
+                "create-substitution", 1, ProtocolFingerprint.of(mapper, bundle), bundle,
+                java.time.Instant.EPOCH, "repository");
+
+        assertThatThrownBy(() -> service.registerFixture("create-substitution",
+                new FixtureBundleRegistrationRequest("", target(), bundle), identity("test")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.FIXTURE_INTEGRITY_INVALID");
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().title())
+                            .doesNotContain("tenant-a", "tenant-b", "create-substitution");
+                });
+        assertThat(securityEvents.events).singleElement().satisfies(event -> {
+            assertThat(event.reasonCode()).isEqualTo("RG.TEST.FIXTURE_INTEGRITY_INVALID");
+            assertThat(event.facts()).isEmpty();
+        });
+    }
+
+    @Test
+    void fixtureRegistrationPreservesProvenanceFromAnIdempotentExistingRevision() {
+        FixtureBundle bundle = bundle("idempotent-provenance");
+        fixtures.createOverride = new StoredFixtureBundle("", "tenant-a", "test",
+                "idempotent-provenance", 1, ProtocolFingerprint.of(mapper, bundle), bundle,
+                java.time.Instant.EPOCH, "original-author");
+
+        StoredFixtureBundle stored = service.registerFixture("idempotent-provenance",
+                new FixtureBundleRegistrationRequest("", target(), bundle), identity("test"));
+
+        assertThat(stored.createdAt()).isEqualTo(java.time.Instant.EPOCH);
+        assertThat(stored.createdBy()).isEqualTo("original-author");
+        assertThat(securityEvents.events).isEmpty();
+    }
+
+    @Test
     void staleTargetAndStoredFixtureFingerprintsFailClosedBeforeExecution() {
         FixtureBundle inline = bundle("stale", new FixtureRule(FixtureRule.SCHEMA_VERSION, "fixed",
                 FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning("ok"),
@@ -601,15 +681,25 @@ class TestExecutionApiServiceTest {
     ) {
     }
 
+    private static final class MutableFixtureValue {
+        public String status;
+
+        private MutableFixtureValue(String status) {
+            this.status = status;
+        }
+    }
+
     private static final class InMemoryFixtures implements FixtureBundleRepository {
         private final Map<String, StoredFixtureBundle> values = new LinkedHashMap<>();
+        private StoredFixtureBundle createOverride;
         @Override public StoredFixtureBundle create(StoredFixtureBundle value) {
             String key = key(value.tenantId(), value.environmentId(), value.fixtureBundleId(), value.revision());
             StoredFixtureBundle existing = values.putIfAbsent(key, value);
             if (existing != null && !existing.fingerprint().equals(value.fingerprint())) {
                 throw new FixtureBundleConflictException("immutable conflict");
             }
-            return existing == null ? value : existing;
+            StoredFixtureBundle result = existing == null ? value : existing;
+            return createOverride == null ? result : createOverride;
         }
         @Override public Optional<StoredFixtureBundle> find(String tenant, String environment,
                                                             String id, long revision) {
