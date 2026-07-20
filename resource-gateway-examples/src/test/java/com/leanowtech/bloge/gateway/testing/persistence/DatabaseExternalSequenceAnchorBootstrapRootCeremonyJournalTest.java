@@ -38,6 +38,7 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     private KeyPair keyPair;
     private ExternalSequenceAnchorBootstrapRootGenesis.RootKeyMaterial rootKey;
     private ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor descriptor;
+    private ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy recoveryPolicy;
     private DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal journal;
 
     @BeforeEach
@@ -54,6 +55,9 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
         descriptor = new ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor(
                 ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor.SCHEMA_VERSION,
                 rootKey.authorityId(), rootKey.keyId(), "Ed25519", publicKey);
+        recoveryPolicy = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy.SCHEMA_VERSION,
+                1L, 1L, 2L);
         journal = repository();
     }
 
@@ -404,6 +408,119 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
         }
     }
 
+    @Test
+    void recoveryAcquisitionClassifiesAbsentApprovalAndLiveLeaseWithoutResolvingWork() {
+        assertThat(journal.acquireRecovery(recovery("recovery-a", 30)).disposition())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .RecoveryAcquisitionDisposition.NO_ACTIVE_CEREMONY);
+
+        var proposal = proposal("ceremony-recovery-states", "maker-a", 'a');
+        journal.propose(proposal);
+        var awaiting = journal.acquireRecovery(recovery("recovery-a", 30));
+        assertThat(awaiting.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .RecoveryAcquisitionDisposition.AWAITING_APPROVAL);
+        assertThat(awaiting.snapshot().ceremonyId()).isEqualTo(proposal.ceremonyId());
+
+        journal.approve(approval(proposal.ceremonyId(), "approve-recovery-states",
+                "checker-a", 60));
+        var acquired = journal.acquireRecovery(recovery("recovery-a", 30));
+        var busy = repository().acquireRecovery(recovery("recovery-b", 30));
+        assertThat(acquired.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .RecoveryAcquisitionDisposition.ACQUIRED);
+        assertThat(busy.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .RecoveryAcquisitionDisposition.BUSY);
+        assertThat(busy.eligibleAt()).isEqualTo(acquired.claim().claimUntil());
+    }
+
+    @Test
+    void failedRecoveryUsesDatabaseBackoffAndStopsAtDurableAutomaticAttemptBudget()
+            throws Exception {
+        CeremonyProposalFixture fixture = approved("ceremony-recovery-budget", 'b');
+        var first = journal.acquireRecovery(recovery("recovery-a", 30));
+        journal.release(first.claim(),
+                ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
+                        .SIGNING_QUORUM_UNAVAILABLE);
+
+        var delayed = repository().acquireRecovery(recovery("recovery-b", 30));
+        assertThat(delayed.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .RecoveryAcquisitionDisposition.RETRY_DELAYED);
+        assertThat(delayed.eligibleAt()).isAfter(delayed.snapshot().lastFailedAt());
+
+        Thread.sleep(1_100L);
+        var second = repository().acquireRecovery(recovery("recovery-b", 30));
+        assertThat(second.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .RecoveryAcquisitionDisposition.ACQUIRED);
+        assertThat(second.snapshot().attemptCount()).isEqualTo(2L);
+        journal.release(second.claim(),
+                ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
+                        .SIGNING_QUORUM_UNAVAILABLE);
+
+        var exhausted = repository().acquireRecovery(recovery("recovery-c", 30));
+        assertThat(exhausted.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .RecoveryAcquisitionDisposition.ATTEMPT_LIMIT_REACHED);
+        assertThat(exhausted.snapshot().ceremonyId()).isEqualTo(fixture.id());
+        assertThat(exhausted.snapshot().attemptCount()).isEqualTo(2L);
+    }
+
+    @Test
+    void competingRecoveryReplicasAtomicallyIssueOnlyOneFence() throws Exception {
+        approved("ceremony-recovery-race", 'c');
+        var left = repository();
+        var right = repository();
+        CountDownLatch start = new CountDownLatch(1);
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            Future<ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                    .RecoveryAcquisitionDisposition> leftResult = workers.submit(() -> {
+                start.await();
+                return left.acquireRecovery(recovery("recovery-left", 30)).disposition();
+            });
+            Future<ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                    .RecoveryAcquisitionDisposition> rightResult = workers.submit(() -> {
+                start.await();
+                return right.acquireRecovery(recovery("recovery-right", 30)).disposition();
+            });
+            start.countDown();
+
+            assertThat(List.of(leftResult.get(), rightResult.get()))
+                    .containsExactlyInAnyOrder(
+                            ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                                    .RecoveryAcquisitionDisposition.ACQUIRED,
+                            ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                                    .RecoveryAcquisitionDisposition.BUSY);
+        }
+        assertThat(journal.snapshot("ceremony-recovery-race").orElseThrow().attemptCount())
+                .isEqualTo(1L);
+    }
+
+    @Test
+    void recoveryPolicyDriftAndOfflineBindingTamperFailClosed() {
+        var conflictingPolicy = new ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                .RecoveryPolicy(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy.SCHEMA_VERSION,
+                2L, 2L, 2L);
+        var conflicting = new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
+                database.jdbc(), objectMapper, SCOPE, ROOT_SET,
+                database.transactionManager(), conflictingPolicy);
+        assertThatThrownBy(conflicting::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("policy conflicts");
+
+        database.jdbc().update("""
+                UPDATE rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                SET recovery_policy_fingerprint = ?
+                WHERE scope_id = ? AND root_set_id = ?
+                """, fingerprint('f'), SCOPE, ROOT_SET);
+        assertThatThrownBy(() -> journal.acquireRecovery(recovery("recovery-a", 30)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("missing or corrupt");
+    }
+
     private CeremonyProposalFixture approved(String ceremonyId, char marker) {
         var proposal = proposal(ceremonyId, "maker-a", marker);
         journal.propose(proposal);
@@ -525,6 +642,15 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
                 ceremonyId, workerId, duration);
     }
 
+    private static ExternalSequenceAnchorBootstrapRootCeremonyJournal
+            .RecoveryAcquisitionCommand recovery(String workerId, long duration) {
+        return new ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                .RecoveryAcquisitionCommand(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .RecoveryAcquisitionCommand.SCHEMA_VERSION,
+                workerId, duration);
+    }
+
     private static ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatCommand heartbeat(
             String requestId,
             ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim claim,
@@ -538,7 +664,7 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     private DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal repository() {
         var result = new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
                 database.jdbc(), objectMapper, SCOPE, ROOT_SET,
-                database.transactionManager());
+                database.transactionManager(), recoveryPolicy);
         result.init();
         return result;
     }

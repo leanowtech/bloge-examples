@@ -422,13 +422,19 @@ the declared `<=f` Byzantine and independent-failure-domain assumptions; deployi
 backing up, and monitoring the external notary service remains a deployment responsibility. The
 embedded bootstrap-root maker/checker service now automatically renews an exact database-issued
 successor fence during long signer calls, freezes renewal before terminal commit, and fails closed
-on response ambiguity, malformed successors, expiry, or shutdown. Every descriptor and signature
-call passes through configurable wall-clock deadlines and a fixed-capacity, zero-queue daemon pool;
+on response ambiguity, malformed successors, expiry, or shutdown. Optional unattended recovery now
+uses one fixed-delay daemon lane per root-set journal. Discovery, failed-attempt backoff, automatic
+attempt budget, expired-lease takeover, and new fence issuance occur atomically under database time;
+the policy fingerprint is bound to the durable root-set lock so replicas with different retry
+pressure fail startup. Runtime authority resolution starts only after acquisition and the approved
+public cohort is recomputed before signing. Resolution, descriptor, and signature calls all pass
+through configurable wall-clock deadlines and one fixed-capacity, zero-queue daemon pool;
 interrupt-ignoring calls remain visible as bounded lingering occupancy, while saturation rejects new
-work immediately. Heartbeats never extend checker approval or the proposal execution deadline. A
-local timeout is not proof of remote HSM cancellation, so provider-confirmed cancellation, HSM
-custody, background recovery, and target-database certification remain deployment gates. The genesis
-and complete bundle Schemas,
+work immediately. Heartbeats and recovery never extend checker approval or the proposal execution
+deadline. Close the recovery scheduler before its ceremony service. This is an embeddable Java
+kernel, not a new HTTP endpoint or deployment-wide worker registry; Spring composition, cross-root
+discovery, target-database/DR/chaos certification, provider-confirmed cancellation, and HSM custody
+remain deployment gates. The genesis and complete bundle Schemas,
 failure matrix, runtime wiring, and remaining ceremony limits
 are documented in the
 [bootstrap-root ceremony verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md).

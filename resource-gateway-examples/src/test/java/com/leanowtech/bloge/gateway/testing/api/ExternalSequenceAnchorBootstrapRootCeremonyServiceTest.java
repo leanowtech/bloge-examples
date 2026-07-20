@@ -426,6 +426,156 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
         });
     }
 
+    @Test
+    void recoveryResolvesAuthoritiesOnlyAfterApprovalAndCommitsTheApprovedCohort() {
+        List<IdempotentSigner> authorizers = signers(genesisKeys, "genesis", Set.of());
+        List<IdempotentSigner> incoming = signers(incomingKeys, "incoming", Set.of());
+        AtomicInteger resolutions = new AtomicInteger();
+        ExternalSequenceAnchorBootstrapRootAuthorityResolver resolver = proposal -> {
+            resolutions.incrementAndGet();
+            return new ExternalSequenceAnchorBootstrapRootAuthorityResolver.AuthoritySet(
+                    authorities(authorizers), authorities(incoming));
+        };
+
+        assertThat(service.recover("recovery-worker", 30, resolver).status())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootCeremonyService.RecoveryStatus
+                        .NO_ACTIVE_CEREMONY);
+        var request = request("ceremony-automatic-recovery");
+        service.propose(request, "maker-a", 300, authorities(authorizers),
+                authorities(incoming));
+        assertThat(service.recover("recovery-worker", 30, resolver).status())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootCeremonyService.RecoveryStatus
+                        .AWAITING_APPROVAL);
+        assertThat(resolutions).hasValue(0);
+
+        approve(request.ceremonyId());
+        var recovered = service.recover("recovery-worker", 30, resolver);
+
+        assertThat(recovered.status()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyService.RecoveryStatus.EXECUTED);
+        assertThat(recovered.execution().status()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus.PRODUCED);
+        assertThat(recovered.snapshot().attemptCount()).isEqualTo(1L);
+        assertThat(resolutions).hasValue(1);
+        assertThat(authorizers).allSatisfy(signer -> assertThat(signer.callCount).isEqualTo(1));
+        assertThat(incoming).allSatisfy(signer -> assertThat(signer.callCount).isEqualTo(1));
+    }
+
+    @Test
+    void resolverFailureIsBoundedReleasesTheFenceAndEntersDurableBackoff() {
+        List<IdempotentSigner> authorizers = signers(genesisKeys, "genesis", Set.of());
+        List<IdempotentSigner> incoming = signers(incomingKeys, "incoming", Set.of());
+        var request = request("ceremony-resolver-failure");
+        service.propose(request, "maker-a", 300, authorities(authorizers),
+                authorities(incoming));
+        approve(request.ceremonyId());
+
+        var failed = service.recover("recovery-worker", 30, proposal -> {
+            throw new IllegalStateException("credential and provider details");
+        });
+
+        assertThat(failed.status()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyService.RecoveryStatus.EXECUTED);
+        assertThat(failed.execution().status()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus.FAILED);
+        assertThat(failed.execution().failureReason()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
+                        .SIGNER_BINDING_INVALID);
+        assertThat(failed.snapshot().state()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.APPROVED);
+        assertThat(objectMapper.valueToTree(failed).toString())
+                .doesNotContain("credential", "provider");
+        assertThat(service.recover("recovery-worker-2", 30, proposal ->
+                new ExternalSequenceAnchorBootstrapRootAuthorityResolver.AuthoritySet(
+                        authorities(authorizers), authorities(incoming))).status())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootCeremonyService.RecoveryStatus
+                        .RETRY_DELAYED);
+        assertThat(authorizers).allSatisfy(signer -> assertThat(signer.callCount).isZero());
+        assertThat(incoming).allSatisfy(signer -> assertThat(signer.callCount).isZero());
+    }
+
+    @Test
+    void resolverTimeoutReleasesTheFenceWithoutCallingAnySigner() {
+        service.close();
+        service = new ExternalSequenceAnchorBootstrapRootCeremonyService(
+                producer, journal,
+                new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Policy(
+                        Duration.ofMillis(100), Duration.ofSeconds(1),
+                        Duration.ofSeconds(1), 4));
+        List<IdempotentSigner> authorizers = signers(genesisKeys, "genesis", Set.of());
+        List<IdempotentSigner> incoming = signers(incomingKeys, "incoming", Set.of());
+        var request = request("ceremony-resolver-timeout");
+        service.propose(request, "maker-a", 300, authorities(authorizers),
+                authorities(incoming));
+        approve(request.ceremonyId());
+
+        long startedAt = System.nanoTime();
+        var failed = service.recover("recovery-worker", 30, proposal -> {
+            try {
+                Thread.sleep(10_000L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("resolver interrupted", interrupted);
+            }
+            return new ExternalSequenceAnchorBootstrapRootAuthorityResolver.AuthoritySet(
+                    authorities(authorizers), authorities(incoming));
+        });
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+        assertThat(elapsed).isLessThan(Duration.ofSeconds(2));
+        assertThat(failed.execution().status()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus.FAILED);
+        assertThat(failed.execution().failureReason()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
+                        .SIGNER_BINDING_INVALID);
+        assertThat(service.signerCallSnapshot().timedOutCalls()).isEqualTo(1L);
+        assertThat(authorizers).allSatisfy(signer -> assertThat(signer.callCount).isZero());
+        assertThat(incoming).allSatisfy(signer -> assertThat(signer.callCount).isZero());
+    }
+
+    @Test
+    void backgroundRecoverySchedulerRunsOneLaneAndClosesWithPayloadFreeCounters()
+            throws Exception {
+        List<IdempotentSigner> authorizers = signers(genesisKeys, "genesis", Set.of());
+        List<IdempotentSigner> incoming = signers(incomingKeys, "incoming", Set.of());
+        var request = request("ceremony-background-recovery");
+        service.propose(request, "maker-a", 300, authorities(authorizers),
+                authorities(incoming));
+        approve(request.ceremonyId());
+        var policy = new ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler
+                .SchedulePolicy(Duration.ZERO, Duration.ofMillis(100),
+                Duration.ofSeconds(1));
+        var scheduler = new ExternalSequenceAnchorBootstrapRootCeremonyRecoveryScheduler(
+                service, "background-worker", 30, proposal ->
+                new ExternalSequenceAnchorBootstrapRootAuthorityResolver.AuthoritySet(
+                        authorities(authorizers), authorities(incoming)), policy);
+        try {
+            Instant deadline = Instant.now().plusSeconds(5);
+            while (journal.snapshot(request.ceremonyId()).orElseThrow().state()
+                    != ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.PRODUCED
+                    && Instant.now().isBefore(deadline)) {
+                Thread.sleep(25L);
+            }
+            assertThat(journal.snapshot(request.ceremonyId())).isPresent().get()
+                    .extracting(ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                            .CeremonySnapshot::state)
+                    .isEqualTo(ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.PRODUCED);
+            assertThat(scheduler.snapshot()).satisfies(snapshot -> {
+                assertThat(snapshot.pollCount()).isGreaterThanOrEqualTo(1L);
+                assertThat(snapshot.executedCount()).isEqualTo(1L);
+                assertThat(snapshot.pollFailureCount()).isZero();
+            });
+        } finally {
+            scheduler.close();
+        }
+        assertThat(scheduler.snapshot().closed()).isTrue();
+        assertThatThrownBy(scheduler::runOnce)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("closed");
+        assertThat(objectMapper.valueToTree(scheduler.snapshot()).toString())
+                .doesNotContain(request.ceremonyId(), "root-1", "key-1");
+    }
+
     private void approve(String ceremonyId) {
         assertThat(service.approve(
                 new ExternalSequenceAnchorBootstrapRootCeremonyJournal.ApprovalCommand(
@@ -611,6 +761,11 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
         @Override
         public Acquisition acquire(AcquisitionCommand command) {
             return delegate.acquire(command);
+        }
+
+        @Override
+        public RecoveryAcquisition acquireRecovery(RecoveryAcquisitionCommand command) {
+            return delegate.acquireRecovery(command);
         }
 
         @Override

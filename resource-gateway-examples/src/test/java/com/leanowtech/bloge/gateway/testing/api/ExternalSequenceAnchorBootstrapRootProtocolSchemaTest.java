@@ -345,6 +345,9 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
                         .SCHEMA_VERSION);
         assertThat(schema.path("$id").asText()).endsWith(
                 "external-sequence-anchor-bootstrap-root-ceremony-journal-v2.schema.json");
+        assertThat(schema.at("/$defs").has("recoveryPolicy")).isFalse();
+        assertThat(schema.at("/$defs").has("recoveryAcquisitionCommand")).isFalse();
+        assertThat(schema.at("/$defs").has("recoveryAcquisition")).isFalse();
         for (String forbidden : List.of("privateKey", "credential", "secret", "endpoint",
                 "providerName", "errorMessage", "exception", "claimToken")) {
             assertThat(Files.readString(journalSchemaPath()))
@@ -364,6 +367,26 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
         assertThat(legacy.at("/$defs").has("heartbeatCommand")).isFalse();
         assertThat(legacy.path("$id").asText()).endsWith(
                 "external-sequence-anchor-bootstrap-root-ceremony-journal-v1.schema.json");
+    }
+
+    @Test
+    void processLocalRecoveryPolicyUsesBoundedOverflowSafeExponentialDelay() {
+        var policy = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy.SCHEMA_VERSION,
+                2L, 10L, 20L);
+
+        assertThat(policy.retryDelaySeconds(1L)).isEqualTo(2L);
+        assertThat(policy.retryDelaySeconds(2L)).isEqualTo(4L);
+        assertThat(policy.retryDelaySeconds(3L)).isEqualTo(8L);
+        assertThat(policy.retryDelaySeconds(4L)).isEqualTo(10L);
+        assertThat(policy.retryDelaySeconds(Long.MAX_VALUE)).isEqualTo(10L);
+        assertThatThrownBy(() -> policy.retryDelaySeconds(0L))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                .RecoveryPolicy(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy.SCHEMA_VERSION,
+                10L, 9L, 1L))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static Path schemaPath() {

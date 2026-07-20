@@ -8,9 +8,11 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.CompletionDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.FailureDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ProposalResult;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryAcquisitionCommand;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator.LeaseGuard;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator.LeaseLostException;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -56,7 +58,7 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
      *
      * @param producer side-effect-free preflight and opaque signing kernel
      * @param journal durable maker/checker and execution-fence authority
-     * @param signerCallPolicy local descriptor/signature deadlines and concurrency ceiling
+     * @param signerCallPolicy local resolver/descriptor/signature deadlines and concurrency ceiling
      */
     public ExternalSequenceAnchorBootstrapRootCeremonyService(
             ExternalSequenceAnchorBootstrapRootCeremonyProducer producer,
@@ -171,10 +173,7 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
                     authorizingAuthorities,
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
-        if (leaseDurationSeconds < 3L || leaseDurationSeconds > 300L) {
-            throw new IllegalArgumentException(
-                    "Ceremony auto-heartbeat lease must be from three through 300 seconds");
-        }
+        requireLeaseDuration(leaseDurationSeconds);
         var acquisition = journal.acquire(new AcquisitionCommand(
                 AcquisitionCommand.SCHEMA_VERSION, ceremonyId, workerId,
                 leaseDurationSeconds));
@@ -194,22 +193,87 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
                 case ACQUIRED -> throw new IllegalStateException("Unreachable acquisition state");
             };
         }
+        return executeAcquired(acquisition.claim(), acquisition.snapshot(),
+                leaseDurationSeconds, proposal ->
+                new ExternalSequenceAnchorBootstrapRootAuthorityResolver.AuthoritySet(
+                        authorities(authorizingAuthorities), authorities(incomingAuthorities)));
+    }
+
+    /**
+     * Atomically acquires and executes the current root-set ceremony under durable recovery policy.
+     *
+     * <p>The database selects the active ceremony, enforces failed-attempt backoff and the automatic
+     * attempt budget, and issues the execution fence in one transaction. Runtime signer resolution
+     * starts only after that fence exists. An operator-driven {@link #execute(String, String, long,
+     * List, List)} remains a separate explicit path and is not silently constrained by the
+     * automatic recovery budget.</p>
+     *
+     * @param workerId stable pre-authenticated recovery worker identity
+     * @param leaseDurationSeconds database-clock auto-renewed lease from 3 through 300 seconds
+     * @param authorityResolver runtime adapter resolver for the exact approved proposal
+     * @return bounded poll or execution result without provider diagnostics
+     */
+    public RecoveryExecutionResult recover(
+            String workerId,
+            long leaseDurationSeconds,
+            ExternalSequenceAnchorBootstrapRootAuthorityResolver authorityResolver) {
+        requireLeaseDuration(leaseDurationSeconds);
+        ExternalSequenceAnchorBootstrapRootAuthorityResolver safeResolver =
+                Objects.requireNonNull(authorityResolver, "authorityResolver");
+        var acquisition = journal.acquireRecovery(new RecoveryAcquisitionCommand(
+                RecoveryAcquisitionCommand.SCHEMA_VERSION, workerId, leaseDurationSeconds));
+        if (acquisition.disposition()
+                != ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                .RecoveryAcquisitionDisposition.ACQUIRED) {
+            RecoveryStatus status = switch (acquisition.disposition()) {
+                case NO_ACTIVE_CEREMONY -> RecoveryStatus.NO_ACTIVE_CEREMONY;
+                case AWAITING_APPROVAL -> RecoveryStatus.AWAITING_APPROVAL;
+                case BUSY -> RecoveryStatus.BUSY;
+                case RETRY_DELAYED -> RecoveryStatus.RETRY_DELAYED;
+                case ATTEMPT_LIMIT_REACHED -> RecoveryStatus.ATTEMPT_LIMIT_REACHED;
+                case ACQUIRED -> throw new IllegalStateException(
+                        "Unreachable recovery acquisition state");
+            };
+            return new RecoveryExecutionResult(status, null, acquisition.snapshot(),
+                    acquisition.eligibleAt());
+        }
+        ExecutionResult execution = executeAcquired(acquisition.claim(), acquisition.snapshot(),
+                leaseDurationSeconds, safeResolver);
+        return new RecoveryExecutionResult(RecoveryStatus.EXECUTED, execution,
+                execution.snapshot(), null);
+    }
+
+    private ExecutionResult executeAcquired(
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim claim,
+            CeremonySnapshot acquiredSnapshot,
+            long leaseDurationSeconds,
+            ExternalSequenceAnchorBootstrapRootAuthorityResolver authorityResolver) {
 
         LeaseGuard guard;
         try {
-            guard = leaseCoordinator.monitor(acquisition.claim(), acquisition.snapshot(),
+            guard = leaseCoordinator.monitor(claim, acquiredSnapshot,
                     leaseDurationSeconds);
         } catch (RuntimeException schedulingFailure) {
             return new ExecutionResult(ExecutionStatus.FENCE_REJECTED,
-                    acquisition.snapshot(), null);
+                    acquiredSnapshot, null);
         }
 
         try (guard) {
-            CeremonyProposal proposal = acquisition.claim().proposal();
+            CeremonyProposal proposal = claim.proposal();
+            ExternalSequenceAnchorBootstrapRootAuthorityResolver.AuthoritySet authoritySet;
+            try {
+                authoritySet = Objects.requireNonNull(
+                        signerCallSupervisor.resolve(authorityResolver, proposal),
+                        "resolved authorities");
+            } catch (RuntimeException resolutionFailure) {
+                return failed(guard,
+                        ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
+                                .SIGNER_BINDING_INVALID);
+            }
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> supervisedAuthorizers =
-                    supervised(authorizingAuthorities);
+                    supervised(authoritySet.authorizingAuthorities());
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> supervisedIncoming =
-                    supervised(incomingAuthorities);
+                    supervised(authoritySet.incomingAuthorities());
             ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome outcome;
             try {
                 var currentPreflight = proposal.currentBundle() == null
@@ -282,10 +346,21 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
         }
     }
 
+    private static void requireLeaseDuration(long leaseDurationSeconds) {
+        if (leaseDurationSeconds < 3L || leaseDurationSeconds > 300L) {
+            throw new IllegalArgumentException(
+                    "Ceremony auto-heartbeat lease must be from three through 300 seconds");
+        }
+    }
+
+    private static List<ExternalSequenceAnchorBootstrapRootSigningAuthority> authorities(
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority> authorities) {
+        return authorities == null ? List.of() : authorities;
+    }
+
     private List<ExternalSequenceAnchorBootstrapRootSigningAuthority> supervised(
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> authorities) {
-        return (authorities == null ? List
-                .<ExternalSequenceAnchorBootstrapRootSigningAuthority>of() : authorities)
+        return authorities(authorities)
                 .stream()
                 .<ExternalSequenceAnchorBootstrapRootSigningAuthority>map(
                         SupervisedSigningAuthority::new)
@@ -377,6 +452,58 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
 
         /** Attempt lost its execution fence and no generated artifact was exposed. */
         FENCE_REJECTED
+    }
+
+    /** Bounded unattended recovery poll status. */
+    public enum RecoveryStatus {
+        /** A database-acquired ceremony attempt ran and has an execution result. */
+        EXECUTED,
+
+        /** This root-set scope has no non-terminal ceremony. */
+        NO_ACTIVE_CEREMONY,
+
+        /** The current proposal still awaits an independent checker. */
+        AWAITING_APPROVAL,
+
+        /** Another worker owns a live execution lease. */
+        BUSY,
+
+        /** The durable failed-attempt retry instant has not arrived. */
+        RETRY_DELAYED,
+
+        /** The durable automatic execution budget is exhausted. */
+        ATTEMPT_LIMIT_REACHED
+    }
+
+    /**
+     * Payload-free unattended recovery result.
+     *
+     * @param status poll classification
+     * @param execution exact execution result only when an acquired attempt ran
+     * @param snapshot current durable projection, absent only when no active ceremony exists
+     * @param eligibleAt database instant for busy or delayed work, otherwise {@code null}
+     */
+    public record RecoveryExecutionResult(
+            RecoveryStatus status,
+            ExecutionResult execution,
+            CeremonySnapshot snapshot,
+            Instant eligibleAt) {
+
+        /** Enforces status-dependent execution, snapshot, and timing presence. */
+        public RecoveryExecutionResult {
+            status = Objects.requireNonNull(status, "status");
+            boolean executed = status == RecoveryStatus.EXECUTED;
+            boolean absent = status == RecoveryStatus.NO_ACTIVE_CEREMONY;
+            boolean timed = status == RecoveryStatus.BUSY
+                    || status == RecoveryStatus.RETRY_DELAYED;
+            if (executed != (execution != null)
+                    || absent != (snapshot == null)
+                    || timed != (eligibleAt != null)
+                    || executed && !Objects.equals(snapshot, execution.snapshot())) {
+                throw new IllegalArgumentException(
+                        "Bootstrap-root ceremony recovery result is invalid");
+            }
+        }
     }
 
     /**

@@ -41,6 +41,19 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
     Acquisition acquire(AcquisitionCommand command);
 
     /**
+     * Atomically discovers and acquires the one recoverable ceremony in this root-set scope.
+     *
+     * <p>Unlike a separate scan followed by {@link #acquire(AcquisitionCommand)}, this operation
+     * applies the durable retry delay and automatic-attempt budget under the same database lock as
+     * lease acquisition. That prevents competing recovery replicas from slipping an extra attempt
+     * between a fast failure release and the next scan.</p>
+     *
+     * @param command stable worker identity and bounded lease request
+     * @return acquisition, wait reason, or absence of an active ceremony
+     */
+    RecoveryAcquisition acquireRecovery(RecoveryAcquisitionCommand command);
+
+    /**
      * Replaces one exact live execution claim with a database-issued successor claim.
      *
      * <p>The most recently committed heartbeat is exactly replayable by request id. A new
@@ -170,6 +183,27 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
 
         /** Ceremony already has an immutable complete outcome. */
         PRODUCED
+    }
+
+    /** Automatic recovery acquisition disposition. */
+    enum RecoveryAcquisitionDisposition {
+        /** Caller owns a new execution fence. */
+        ACQUIRED,
+
+        /** This journal scope has no non-terminal ceremony. */
+        NO_ACTIVE_CEREMONY,
+
+        /** The active proposal still requires an independent checker. */
+        AWAITING_APPROVAL,
+
+        /** Another worker owns a live database lease. */
+        BUSY,
+
+        /** A durable failed-attempt delay has not elapsed. */
+        RETRY_DELAYED,
+
+        /** Automatic execution exhausted its durable attempt budget. */
+        ATTEMPT_LIMIT_REACHED
     }
 
     /** Execution heartbeat disposition. */
@@ -347,6 +381,96 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
                     || leaseDurationSeconds < 1 || leaseDurationSeconds > 300) {
                 throw new IllegalArgumentException(
                         "External bootstrap-root ceremony acquisition is invalid");
+            }
+        }
+    }
+
+    /**
+     * Root-set-scoped automatic recovery policy.
+     *
+     * <p>Database implementations bind the policy fingerprint to the root-set lock row so two
+     * replicas cannot silently apply different retry pressure. Policy replacement therefore
+     * requires an explicit maintenance migration rather than an accidental configuration drift.</p>
+     *
+     * @param schemaVersion recovery policy generation
+     * @param initialRetryDelaySeconds delay after the first recorded failed attempt
+     * @param maximumRetryDelaySeconds cap for exponential failed-attempt delay
+     * @param maximumAutomaticAttempts durable automatic acquisition budget
+     */
+    record RecoveryPolicy(
+            String schemaVersion,
+            long initialRetryDelaySeconds,
+            long maximumRetryDelaySeconds,
+            long maximumAutomaticAttempts) {
+
+        /** Current process-to-database recovery policy generation. */
+        public static final String SCHEMA_VERSION =
+                "bloge.externalSequenceAnchorBootstrapRootRecoveryPolicy.v1";
+
+        /** Conservative default for unattended bootstrap-root recovery. */
+        public static final RecoveryPolicy DEFAULT = new RecoveryPolicy(
+                SCHEMA_VERSION, 5L, 300L, 20L);
+
+        /** Enforces bounded, monotonic retry pressure and attempt cardinality. */
+        public RecoveryPolicy {
+            schemaVersion = normalized(schemaVersion);
+            if (!SCHEMA_VERSION.equals(schemaVersion)
+                    || initialRetryDelaySeconds < 1L
+                    || initialRetryDelaySeconds > 3_600L
+                    || maximumRetryDelaySeconds < initialRetryDelaySeconds
+                    || maximumRetryDelaySeconds > 86_400L
+                    || maximumAutomaticAttempts < 1L
+                    || maximumAutomaticAttempts > 10_000L) {
+                throw new IllegalArgumentException(
+                        "External bootstrap-root recovery policy is invalid");
+            }
+        }
+
+        /**
+         * Computes the capped exponential delay after a recorded attempt.
+         *
+         * @param attemptCount durable acquisition count, starting at one
+         * @return delay in whole seconds without arithmetic overflow
+         */
+        public long retryDelaySeconds(long attemptCount) {
+            if (attemptCount < 1L) {
+                throw new IllegalArgumentException("Recovery attempt count must be positive");
+            }
+            long delay = initialRetryDelaySeconds;
+            for (long exponent = 1L;
+                    exponent < attemptCount && delay < maximumRetryDelaySeconds;
+                    exponent++) {
+                delay = delay > maximumRetryDelaySeconds / 2L
+                        ? maximumRetryDelaySeconds : delay * 2L;
+            }
+            return Math.min(delay, maximumRetryDelaySeconds);
+        }
+    }
+
+    /**
+     * Database-atomic automatic recovery request for this journal's exact root-set scope.
+     *
+     * @param schemaVersion recovery command generation
+     * @param workerId stable pre-authenticated worker identity
+     * @param leaseDurationSeconds database-clock lease from 1 through 300 seconds
+     */
+    record RecoveryAcquisitionCommand(
+            String schemaVersion,
+            String workerId,
+            long leaseDurationSeconds) {
+
+        /** Current automatic recovery acquisition command generation. */
+        public static final String SCHEMA_VERSION =
+                "bloge.externalSequenceAnchorBootstrapRootRecoveryAcquisition.v1";
+
+        /** Enforces a bounded worker identity and lease. */
+        public RecoveryAcquisitionCommand {
+            schemaVersion = normalized(schemaVersion);
+            workerId = identifier(workerId, "workerId");
+            if (!SCHEMA_VERSION.equals(schemaVersion)
+                    || leaseDurationSeconds < 1L || leaseDurationSeconds > 300L) {
+                throw new IllegalArgumentException(
+                        "External bootstrap-root recovery acquisition is invalid");
             }
         }
     }
@@ -597,6 +721,37 @@ public interface ExternalSequenceAnchorBootstrapRootCeremonyJournal {
                     || disposition == AcquisitionDisposition.NOT_FOUND && snapshot != null
                     || disposition != AcquisitionDisposition.NOT_FOUND && snapshot == null) {
                 throw new IllegalArgumentException("Ceremony acquisition result is invalid");
+            }
+        }
+    }
+
+    /**
+     * Immutable database-atomic automatic recovery result.
+     *
+     * @param disposition acquisition or wait classification
+     * @param claim exact execution fence, present only when acquired
+     * @param snapshot current projection, absent only when no active ceremony exists
+     * @param eligibleAt database instant for a busy lease or delayed retry, otherwise {@code null}
+     */
+    record RecoveryAcquisition(
+            RecoveryAcquisitionDisposition disposition,
+            ExecutionClaim claim,
+            CeremonySnapshot snapshot,
+            Instant eligibleAt) {
+
+        /** Enforces claim, projection, and eligibility-instant presence semantics. */
+        public RecoveryAcquisition {
+            disposition = Objects.requireNonNull(disposition, "disposition");
+            boolean acquired = disposition == RecoveryAcquisitionDisposition.ACQUIRED;
+            boolean absent = disposition
+                    == RecoveryAcquisitionDisposition.NO_ACTIVE_CEREMONY;
+            boolean timed = disposition == RecoveryAcquisitionDisposition.BUSY
+                    || disposition == RecoveryAcquisitionDisposition.RETRY_DELAYED;
+            if (acquired != (claim != null)
+                    || absent != (snapshot == null)
+                    || timed != (eligibleAt != null)) {
+                throw new IllegalArgumentException(
+                        "Ceremony recovery acquisition result is invalid");
             }
         }
     }

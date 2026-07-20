@@ -22,6 +22,10 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.HeartbeatResult;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ProposalDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.ProposalResult;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryAcquisition;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryAcquisitionCommand;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryAcquisitionDisposition;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.State;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
@@ -63,6 +67,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
     private final ObjectMapper objectMapper;
     private final String scopeId;
     private final String rootSetId;
+    private final RecoveryPolicy recoveryPolicy;
+    private final String recoveryPolicyFingerprint;
     private final TransactionTemplate transactions;
 
     /**
@@ -80,10 +86,34 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             String scopeId,
             String rootSetId,
             PlatformTransactionManager transactionManager) {
+        this(jdbc, objectMapper, scopeId, rootSetId, transactionManager,
+                RecoveryPolicy.DEFAULT);
+    }
+
+    /**
+     * Creates one durable journal with an exact fleet-wide automatic recovery policy.
+     *
+     * @param jdbc isolated control-plane JDBC facade
+     * @param objectMapper canonical protocol mapper
+     * @param scopeId stable Resource Gateway fleet scope
+     * @param rootSetId exact managed bootstrap-root chain identity
+     * @param transactionManager manager for the same datasource
+     * @param recoveryPolicy automatic retry delay and attempt budget bound to this root set
+     */
+    public DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            String scopeId,
+            String rootSetId,
+            PlatformTransactionManager transactionManager,
+            RecoveryPolicy recoveryPolicy) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.scopeId = identifier(scopeId, "scopeId");
         this.rootSetId = identifier(rootSetId, "rootSetId");
+        this.recoveryPolicy = Objects.requireNonNull(recoveryPolicy, "recoveryPolicy");
+        this.recoveryPolicyFingerprint = ProtocolFingerprint.of(
+                this.objectMapper, this.recoveryPolicy);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(
                 transactionManager, "transactionManager"));
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -98,8 +128,13 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     rg_external_sequence_anchor_bootstrap_root_ceremony_locks (
                     scope_id VARCHAR(255) NOT NULL,
                     root_set_id VARCHAR(255) NOT NULL,
+                    recovery_policy_fingerprint VARCHAR(71),
                     PRIMARY KEY (scope_id, root_set_id)
                 )
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                ADD COLUMN IF NOT EXISTS recovery_policy_fingerprint VARCHAR(71)
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS
@@ -153,6 +188,7 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 """);
         Boolean migrated = transactions.execute(status -> {
             lockRootSet();
+            bindRecoveryPolicy();
             migrateLegacyRecordFingerprints();
             return Boolean.TRUE;
         });
@@ -288,31 +324,60 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 return new Acquisition(AcquisitionDisposition.BUSY, null,
                         snapshot(current));
             }
-            Instant requestedUntil = now.plusSeconds(safeCommand.leaseDurationSeconds());
-            Instant claimUntil = requestedUntil.isBefore(current.approvalUntil())
-                    ? requestedUntil : current.approvalUntil();
-            if (!claimUntil.isAfter(now)) {
-                StoredCeremony expired = expire(current, now, State.APPROVAL_EXPIRED);
-                return new Acquisition(AcquisitionDisposition.EXPIRED, null,
-                        snapshot(expired));
-            }
-            long nextVersion = Math.addExact(current.claimVersion(), 1L);
-            long nextAttempt = Math.addExact(current.attemptCount(), 1L);
-            StoredCeremony acquired = fingerprinted(copy(current, State.EXECUTING,
-                    current.approvalRequestId(), current.approvalFingerprint(),
-                    current.checkerId(), current.approvedAt(), current.approvalUntil(),
-                    safeCommand.workerId(), nextVersion, claimUntil,
-                    "", "", null, 0L, nextAttempt,
-                    current.lastFailure(), current.lastFailedAt(), current.outcome(),
-                    current.outcomeFingerprint(), current.completedAt(), now));
-            update(acquired);
-            ExecutionClaim claim = new ExecutionClaim(ExecutionClaim.SCHEMA_VERSION,
-                    acquired.ceremonyId(), acquired.claimOwner(), acquired.claimVersion(),
-                    acquired.claimUntil(), acquired.proposal());
-            return new Acquisition(AcquisitionDisposition.ACQUIRED, claim,
-                    snapshot(acquired));
+            return acquire(current, safeCommand, now);
         });
         return Objects.requireNonNull(result, "ceremony acquisition result");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public RecoveryAcquisition acquireRecovery(RecoveryAcquisitionCommand command) {
+        RecoveryAcquisitionCommand safeCommand = Objects.requireNonNull(command, "command");
+        RecoveryAcquisition result = transactions.execute(status -> {
+            lockRootSet();
+            requireRecoveryPolicyBinding();
+            Instant now = databaseNow();
+            StoredCeremony current = activeCeremony(now);
+            if (current == null) {
+                return new RecoveryAcquisition(
+                        RecoveryAcquisitionDisposition.NO_ACTIVE_CEREMONY,
+                        null, null, null);
+            }
+            if (current.state() == State.PENDING_APPROVAL) {
+                return new RecoveryAcquisition(
+                        RecoveryAcquisitionDisposition.AWAITING_APPROVAL,
+                        null, snapshot(current), null);
+            }
+            if (current.state() == State.EXECUTING
+                    && current.claimUntil().isAfter(now)) {
+                return new RecoveryAcquisition(RecoveryAcquisitionDisposition.BUSY,
+                        null, snapshot(current), current.claimUntil());
+            }
+            if (current.attemptCount() >= recoveryPolicy.maximumAutomaticAttempts()) {
+                return new RecoveryAcquisition(
+                        RecoveryAcquisitionDisposition.ATTEMPT_LIMIT_REACHED,
+                        null, snapshot(current), null);
+            }
+            if (current.lastFailedAt() != null) {
+                Instant retryAt = current.lastFailedAt().plusSeconds(
+                        recoveryPolicy.retryDelaySeconds(current.attemptCount()));
+                if (retryAt.isAfter(now)) {
+                    return new RecoveryAcquisition(
+                            RecoveryAcquisitionDisposition.RETRY_DELAYED,
+                            null, snapshot(current), retryAt);
+                }
+            }
+            Acquisition acquired = acquire(current, new AcquisitionCommand(
+                    AcquisitionCommand.SCHEMA_VERSION, current.ceremonyId(),
+                    safeCommand.workerId(), safeCommand.leaseDurationSeconds()), now);
+            if (acquired.disposition() != AcquisitionDisposition.ACQUIRED) {
+                throw new IllegalStateException(
+                        "Recoverable bootstrap-root ceremony could not be acquired");
+            }
+            return new RecoveryAcquisition(RecoveryAcquisitionDisposition.ACQUIRED,
+                    acquired.claim(), acquired.snapshot(), null);
+        });
+        return Objects.requireNonNull(result, "ceremony recovery acquisition result");
     }
 
     /** {@inheritDoc} */
@@ -481,6 +546,33 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
         return true;
     }
 
+    private Acquisition acquire(
+            StoredCeremony current, AcquisitionCommand command, Instant now) {
+        Instant requestedUntil = now.plusSeconds(command.leaseDurationSeconds());
+        Instant claimUntil = requestedUntil.isBefore(current.approvalUntil())
+                ? requestedUntil : current.approvalUntil();
+        if (!claimUntil.isAfter(now)) {
+            StoredCeremony expired = expire(current, now, State.APPROVAL_EXPIRED);
+            return new Acquisition(AcquisitionDisposition.EXPIRED, null,
+                    snapshot(expired));
+        }
+        long nextVersion = Math.addExact(current.claimVersion(), 1L);
+        long nextAttempt = Math.addExact(current.attemptCount(), 1L);
+        StoredCeremony acquired = fingerprinted(copy(current, State.EXECUTING,
+                current.approvalRequestId(), current.approvalFingerprint(),
+                current.checkerId(), current.approvedAt(), current.approvalUntil(),
+                command.workerId(), nextVersion, claimUntil,
+                "", "", null, 0L, nextAttempt,
+                current.lastFailure(), current.lastFailedAt(), current.outcome(),
+                current.outcomeFingerprint(), current.completedAt(), now));
+        update(acquired);
+        ExecutionClaim claim = new ExecutionClaim(ExecutionClaim.SCHEMA_VERSION,
+                acquired.ceremonyId(), acquired.claimOwner(), acquired.claimVersion(),
+                acquired.claimUntil(), acquired.proposal());
+        return new Acquisition(AcquisitionDisposition.ACQUIRED, claim,
+                snapshot(acquired));
+    }
+
     private StoredCeremony activeCeremony(Instant now) {
         List<StoredCeremony> rows = jdbc.query("""
                 SELECT *
@@ -612,6 +704,43 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 FROM rg_external_sequence_anchor_bootstrap_root_ceremony_locks
                 WHERE scope_id = ? AND root_set_id = ? FOR UPDATE
                 """, String.class, scopeId, rootSetId);
+    }
+
+    private void bindRecoveryPolicy() {
+        String bound = jdbc.queryForObject("""
+                SELECT recovery_policy_fingerprint
+                FROM rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                WHERE scope_id = ? AND root_set_id = ?
+                """, String.class, scopeId, rootSetId);
+        if (bound == null) {
+            int changed = jdbc.update("""
+                    UPDATE rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                    SET recovery_policy_fingerprint = ?
+                    WHERE scope_id = ? AND root_set_id = ?
+                      AND recovery_policy_fingerprint IS NULL
+                    """, recoveryPolicyFingerprint, scopeId, rootSetId);
+            if (changed != 1) {
+                throw new IllegalStateException(
+                        "Bootstrap-root recovery policy binding lost its lock row");
+            }
+            return;
+        }
+        if (!recoveryPolicyFingerprint.equals(bound)) {
+            throw new IllegalStateException(
+                    "Bootstrap-root recovery policy conflicts with the durable root-set binding");
+        }
+    }
+
+    private void requireRecoveryPolicyBinding() {
+        String bound = jdbc.queryForObject("""
+                SELECT recovery_policy_fingerprint
+                FROM rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                WHERE scope_id = ? AND root_set_id = ?
+                """, String.class, scopeId, rootSetId);
+        if (!recoveryPolicyFingerprint.equals(bound)) {
+            throw new IllegalStateException(
+                    "Bootstrap-root recovery policy binding is missing or corrupt");
+        }
     }
 
     private Optional<StoredCeremony> find(String ceremonyId, boolean forUpdate) {

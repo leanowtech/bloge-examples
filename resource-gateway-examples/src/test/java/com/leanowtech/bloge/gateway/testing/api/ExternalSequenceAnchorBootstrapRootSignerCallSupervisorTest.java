@@ -275,6 +275,10 @@ class ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest {
     @Test
     void policyRejectsUnboundedOrSubMillisecondLimits() {
         assertThatThrownBy(() -> new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor
+                .Policy(Duration.ofMillis(99), Duration.ofSeconds(1),
+                Duration.ofSeconds(1), 1))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor
                 .Policy(Duration.ofMillis(99), Duration.ofSeconds(1), 1))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor

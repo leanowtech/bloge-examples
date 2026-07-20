@@ -21,10 +21,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * Bounds opaque bootstrap-root signer calls without claiming remote-provider cancellation.
  *
  * <p>The supervisor uses a fixed number of daemon platform threads and a zero-capacity handoff
- * queue. Descriptor and signature calls therefore either start immediately or fail closed; a
- * blocked adapter can never create an unbounded thread or queue backlog. A wall-clock timeout asks
- * the task to stop with an interrupt and returns a bounded {@link InvocationException} without
- * provider diagnostics.</p>
+ * queue. Authority resolution, descriptor, and signature calls therefore either start immediately
+ * or fail closed; a blocked adapter can never create an unbounded thread or queue backlog. A
+ * wall-clock timeout asks the task to stop with an interrupt and returns a bounded
+ * {@link InvocationException} without provider diagnostics.</p>
  *
  * <p>Interrupt is only a local cancellation request. If an adapter ignores it, the running call is
  * counted as lingering and continues to consume one fixed slot until it actually exits. A valid
@@ -60,7 +60,7 @@ public final class ExternalSequenceAnchorBootstrapRootSignerCallSupervisor
     /**
      * Creates a fixed-capacity signer call boundary.
      *
-     * @param policy descriptor/signature deadlines and maximum concurrent calls
+     * @param policy resolver/descriptor/signature deadlines and maximum concurrent calls
      */
     public ExternalSequenceAnchorBootstrapRootSignerCallSupervisor(Policy policy) {
         this.policy = Objects.requireNonNull(policy, "policy");
@@ -76,6 +76,25 @@ public final class ExternalSequenceAnchorBootstrapRootSignerCallSupervisor
                 policy.maximumConcurrentCalls(), policy.maximumConcurrentCalls(),
                 0L, TimeUnit.MILLISECONDS, new SynchronousQueue<>(), threadFactory,
                 new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    /**
+     * Resolves runtime authority ports under the dedicated resolution deadline.
+     *
+     * @param resolver embedding boundary for approved-cohort runtime adapters
+     * @param proposal immutable database-approved proposal
+     * @return both role-specific runtime authority collections
+     * @throws InvocationException when resolution is unavailable, timed out, or rejected
+     */
+    public ExternalSequenceAnchorBootstrapRootAuthorityResolver.AuthoritySet resolve(
+            ExternalSequenceAnchorBootstrapRootAuthorityResolver resolver,
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal proposal) {
+        ExternalSequenceAnchorBootstrapRootAuthorityResolver requiredResolver =
+                Objects.requireNonNull(resolver, "resolver");
+        ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal safeProposal =
+                Objects.requireNonNull(proposal, "proposal");
+        return invoke(CallType.AUTHORITY_RESOLUTION, policy.resolverTimeout(),
+                () -> requiredResolver.resolve(safeProposal));
     }
 
     /**
@@ -203,6 +222,9 @@ public final class ExternalSequenceAnchorBootstrapRootSignerCallSupervisor
 
     /** Classifies the bounded local signer operation without exposing authority identity. */
     public enum CallType {
+        /** Runtime authority adapter resolution for an approved proposal. */
+        AUTHORITY_RESOLUTION,
+
         /** Public descriptor lookup used by preflight binding. */
         DESCRIPTOR,
 
@@ -231,21 +253,40 @@ public final class ExternalSequenceAnchorBootstrapRootSignerCallSupervisor
     /**
      * Fixed local signer-call limits.
      *
+     * @param resolverTimeout runtime authority resolution timeout from 100 ms through 300 seconds
      * @param descriptorTimeout public descriptor call timeout from 100 ms through 300 seconds
      * @param signatureTimeout detached signing call timeout from 100 ms through 300 seconds
      * @param maximumConcurrentCalls fixed process-local worker capacity from 1 through 32
      */
     public record Policy(
+            Duration resolverTimeout,
             Duration descriptorTimeout,
             Duration signatureTimeout,
             int maximumConcurrentCalls) {
 
-        /** Conservative embedded-service policy: 5 s descriptor, 30 s signature, 8 workers. */
+        /** Conservative defaults: 5 s resolution/descriptor, 30 s signature, 8 workers. */
         public static final Policy DEFAULT = new Policy(
-                Duration.ofSeconds(5), Duration.ofSeconds(30), 8);
+                Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofSeconds(30), 8);
+
+        /**
+         * Preserves the original descriptor/signature policy surface and uses descriptor timeout
+         * for authority resolution.
+         *
+         * @param descriptorTimeout public descriptor and authority resolution timeout
+         * @param signatureTimeout detached signing call timeout
+         * @param maximumConcurrentCalls fixed process-local worker capacity
+         */
+        public Policy(
+                Duration descriptorTimeout,
+                Duration signatureTimeout,
+                int maximumConcurrentCalls) {
+            this(descriptorTimeout, descriptorTimeout, signatureTimeout,
+                    maximumConcurrentCalls);
+        }
 
         /** Enforces millisecond-exact bounded timeouts and fixed capacity. */
         public Policy {
+            resolverTimeout = requiredTimeout(resolverTimeout, "resolverTimeout");
             descriptorTimeout = requiredTimeout(descriptorTimeout, "descriptorTimeout");
             signatureTimeout = requiredTimeout(signatureTimeout, "signatureTimeout");
             if (maximumConcurrentCalls < 1 || maximumConcurrentCalls > 32) {
