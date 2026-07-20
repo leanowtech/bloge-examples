@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.DurableTestExecutionCheckpoint;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -23,6 +24,7 @@ import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedTestSecrets;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -30,6 +32,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,6 +41,87 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class DurableTestRecoveryAuthorizerTest {
+
+    @Test
+    void durableRecoveryReauthorizesSecretsAndRejectsExactVersionDrift() {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        DefaultOperatorRegistry operators = new DefaultOperatorRegistry();
+        ResourceRegistry resources = mock(ResourceRegistry.class);
+        when(resources.all()).thenReturn(List.of());
+        Graph graph = new GraphBuilder("graph-a")
+                .node("subject", new ReadOnlyOperator()).build();
+        GatewayGraphService graphs = mock(GatewayGraphService.class);
+        when(graphs.requireGraph("graph-a")).thenReturn(graph);
+        String targetFingerprint = GraphExecutionTargetSnapshot.capture(
+                mapper, graph, resources).fingerprint();
+        FixtureBundle fixture = new FixtureBundle(FixtureBundle.SCHEMA_VERSION,
+                "fixture-a", 1, targetFingerprint, "CONFIDENTIAL", null, null,
+                List.of(new FixtureRule(FixtureRule.SCHEMA_VERSION, "subject-real",
+                        FixtureRule.Selector.node("subject"), FixtureRule.Behavior.real(),
+                        FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict())),
+                List.of(), Map.of(FixtureExecutionServices.METADATA_KEY, Map.of(
+                "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION_V2,
+                "identityAttributes", Map.of(), "featureFlags", Map.of(),
+                "secretRefs", Map.of("payment-key", "vault://test/payments/key@v3"))));
+        String fixtureFingerprint = ProtocolFingerprint.of(mapper, fixture);
+        FixtureBundleRepository fixtures = mock(FixtureBundleRepository.class);
+        when(fixtures.find("tenant-a", "test", "fixture-a", 1)).thenReturn(Optional.of(
+                new StoredFixtureBundle("", "tenant-a", "test", "fixture-a", 1,
+                        fixtureFingerprint, fixture, Instant.now(), "author-a")));
+        AtomicReference<String> version = new AtomicReference<>("version-3");
+        AtomicInteger resolutions = new AtomicInteger();
+        TestSecretAuthority secretAuthority = context -> {
+            resolutions.incrementAndGet();
+            Instant now = Instant.now();
+            String currentVersion = version.get();
+            return new ResolvedTestSecrets("", context.fingerprint(mapper),
+                    "authority-a", "generation-1", now.minusSeconds(1), now.plusSeconds(300),
+                    Map.of("payment-key", new ResolvedTestSecrets.Secret("payment-key",
+                            "vault://test/payments/key@v3", currentVersion,
+                            ResolvedTestSecrets.bindingFingerprint(mapper,
+                                    context.fingerprint(mapper), "authority-a", "generation-1",
+                                    "payment-key", "vault://test/payments/key@v3",
+                                    currentVersion), "run-only-secret")));
+        };
+        TestSecretResolutionService secretService = new TestSecretResolutionService(
+                mapper, secretAuthority, mock(TestSecurityEventRepository.class));
+        IntegrationRequestContext identity = identity("CONFIDENTIAL");
+        ResolvedTestSecrets initialSecrets = secretService.resolve(fixture, targetFingerprint,
+                targetFingerprint, "GRAPH_CONTRACT_TEST", identity);
+        CompiledExecutionControl compiled = new ExecutionControlCompiler(operators, mapper)
+                .compileWithSecrets(graph, fixture, "GRAPH_CONTRACT_TEST", targetFingerprint,
+                        ResolvedReplayPayloads.empty(), initialSecrets);
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.descriptor()).thenReturn(authorityDescriptor(30));
+        DurableTestRecoveryAuthority recoveryAuthority = new DurableTestRecoveryAuthority(
+                authenticator, mapper);
+        DurableTestExecutionCheckpoint.ControlDependencies dependencies =
+                new DurableTestExecutionCheckpoint.ControlDependencies(
+                        compiled.effectivePlan(),
+                        new DurableTestExecutionCheckpoint.ExactFixtureRef(
+                                "fixture-a", 1, fixtureFingerprint),
+                        "DENY_REAL", recoveryAuthority.currentSnapshot(),
+                        new DurableTestExecutionCheckpoint.ExecutionTargetRef(
+                                "GRAPH", "graph-a", targetFingerprint));
+        DurableTestExecutionCheckpoint checkpoint = mock(DurableTestExecutionCheckpoint.class);
+        when(checkpoint.schemaVersion()).thenReturn(DurableTestExecutionCheckpoint.SCHEMA_VERSION);
+        when(checkpoint.dependencies()).thenReturn(dependencies);
+        when(checkpoint.executionServiceState()).thenReturn(
+                compiled.executionServices().snapshotState());
+        when(checkpoint.checkpointFingerprint()).thenReturn(
+                ProtocolFingerprint.ofText("checkpoint-a"));
+        DurableTestRecoveryAuthorizer authorizer = new DurableTestRecoveryAuthorizer(
+                graphs, operators, resources, fixtures, mock(TestReplayPayloadService.class),
+                recoveryAuthority, mapper, secretService);
+
+        assertThat(authorizer.authorize(checkpoint, identity).control().effectivePlan()
+                .planFingerprint()).isEqualTo(compiled.effectivePlan().planFingerprint());
+        assertThat(resolutions).hasValue(2);
+
+        version.set("version-4");
+        assertUnavailable(() -> authorizer.authorize(checkpoint, identity), "PLAN");
+        assertThat(resolutions).hasValue(3);
+    }
 
     @Test
     void authorizesFreshCreationFromExactGraphFixtureAndAuthorityClosure() {

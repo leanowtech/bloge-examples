@@ -464,6 +464,11 @@ public record IntegrationCapabilities(
                     com.leanowtech.bloge.gateway.testing.api.TestSuiteCatalogMaterializationResponse.SCHEMA_VERSION));
             objects.put("fixtureBundle", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.FixtureBundle.SCHEMA_VERSION));
+            objects.put("fixtureExecutionServices", List.of(
+                    com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices
+                            .SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices
+                            .SCHEMA_VERSION_V2));
             objects.put("effectiveExecutionPlan", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION_V2,
@@ -667,6 +672,8 @@ public record IntegrationCapabilities(
                 && identityProvider.properties().get("revocationPropagationSloSeconds") instanceof Number);
         features.put("webhook", false);
         features.put("operatorMicroGraphExecution", testExecutionEndpointEnabled);
+        features.put("externalTestSecretAuthority", false);
+        features.put("durableTestSecretReauthorization", false);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);
         features.put("pureDslMutationPlanning", testExecutionEndpointEnabled);

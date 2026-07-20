@@ -37,6 +37,27 @@ class FixtureExecutionServicesTest {
     }
 
     @Test
+    void v2CarriesOnlyOpaqueSecretReferencesInCanonicalOrder() {
+        FixtureExecutionServices controls = FixtureExecutionServices.from(fixture(Map.of(
+                "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION_V2,
+                "identityAttributes", Map.of("tenant", "acme"),
+                "featureFlags", Map.of("pricing-v2", true),
+                "secretRefs", Map.of(
+                        "payment-key", "vault://test/payments/key@v3",
+                        "audit-token", "test-secret://risk/audit@2026-07"))));
+
+        assertThat(controls.secretRefs()).containsExactly(
+                Map.entry("audit-token", "test-secret://risk/audit@2026-07"),
+                Map.entry("payment-key", "vault://test/payments/key@v3"));
+        assertThat(controls.configures(ExecutionServiceKind.SECRET)).isTrue();
+        assertThat(controls.configuration(ExecutionServiceKind.SECRET))
+                .isEqualTo(controls.secretRefs());
+        assertThatThrownBy(() -> controls.secretRefs().put(
+                "late", "vault://test/late@v1"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
     void absentReservedMetadataLeavesEveryAmbientAuthorityUnconfigured() {
         FixtureExecutionServices controls = FixtureExecutionServices.from(fixtureWithoutControls());
 
@@ -80,6 +101,36 @@ class FixtureExecutionServicesTest {
                 "featureFlags", Map.of()))))
                 .hasMessageNotContaining("raw-secret-47")
                 .hasMessageNotContaining("subject");
+
+        assertRejected(Map.of(
+                "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION_V2,
+                "identityAttributes", Map.of(),
+                "featureFlags", Map.of(),
+                "secretRefs", Map.of()), "at least one");
+        assertRejected(Map.of(
+                "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION_V2,
+                "identityAttributes", Map.of(),
+                "featureFlags", Map.of(),
+                "secretRefs", Map.of("payment-key", "raw-secret-47")),
+                "absolute opaque URI");
+        assertRejected(Map.of(
+                "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION_V2,
+                "identityAttributes", Map.of(),
+                "featureFlags", Map.of(),
+                "secretRefs", Map.of("payment-key", "secret:raw-secret-47")),
+                "absolute opaque URI");
+        assertRejected(Map.of(
+                "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION_V2,
+                "identityAttributes", Map.of(),
+                "featureFlags", Map.of(),
+                "secretRefs", Map.of("payment-key", "https://user:password@vault.test/key")),
+                "must not contain user info");
+        assertRejected(Map.of(
+                "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION_V2,
+                "identityAttributes", Map.of(),
+                "featureFlags", Map.of(),
+                "secretRefs", Map.of("payment-key", "vault://test/key?token=raw-secret-47")),
+                "query or fragment");
     }
 
     @Test

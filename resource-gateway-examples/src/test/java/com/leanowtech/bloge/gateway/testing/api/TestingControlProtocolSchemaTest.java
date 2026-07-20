@@ -67,8 +67,10 @@ class TestingControlProtocolSchemaTest {
                 .isEqualTo(TestExecutionBatchResponse.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/fixtureBundleRegistrationRequest/properties/schemaVersion/const").asText())
                 .isEqualTo(FixtureBundleRegistrationRequest.SCHEMA_VERSION);
-        assertThat(schema.at("/$defs/fixtureExecutionServices/properties/schemaVersion/const").asText())
+        assertThat(schema.at("/$defs/fixtureExecutionServicesV1/properties/schemaVersion/const").asText())
                 .isEqualTo(FixtureExecutionServices.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/fixtureExecutionServicesV2/properties/schemaVersion/const").asText())
+                .isEqualTo(FixtureExecutionServices.SCHEMA_VERSION_V2);
         assertThat(schema.at("/$defs/storedFixtureBundle/properties/schemaVersion/const").asText())
                 .isEqualTo(StoredFixtureBundle.SCHEMA_VERSION);
         assertThat(schema.at("/$defs/replayPayloadCaptureRequest/properties/schemaVersion/const").asText())

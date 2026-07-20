@@ -18,6 +18,9 @@ public final class TestingProtocol {
     /** Nested deterministic identity and feature-flag fixture wire version. */
     public static final String FIXTURE_EXECUTION_SERVICES_V1 =
             "bloge.fixtureExecutionServices.v1";
+    /** Nested fixture wire version adding opaque external test-secret references. */
+    public static final String FIXTURE_EXECUTION_SERVICES_V2 =
+            "bloge.fixtureExecutionServices.v2";
     /** Fixture rule wire version. */
     public static final String FIXTURE_RULE_V1 = "bloge.fixtureRule.v1";
     /** Fixture registration request wire version. */

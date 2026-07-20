@@ -22,7 +22,8 @@ public record TestExecutionRequest(
         FixtureSource fixtureSource,
         Map<String, Object> metadata,
         boolean certificationEligible,
-        ResolvedReplayPayloads replayPayloads
+        ResolvedReplayPayloads replayPayloads,
+        ResolvedTestSecrets testSecrets
 ) {
     /** Provenance used for evidence trust classification. */
     public enum FixtureSource {
@@ -38,6 +39,7 @@ public record TestExecutionRequest(
         fixtureSource = fixtureSource == null ? FixtureSource.INLINE : fixtureSource;
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
         replayPayloads = replayPayloads == null ? ResolvedReplayPayloads.empty() : replayPayloads;
+        testSecrets = testSecrets == null ? ResolvedTestSecrets.empty() : testSecrets;
     }
 
     /** Backward-compatible internal constructor for already-frozen adapters. */
@@ -45,7 +47,8 @@ public record TestExecutionRequest(
                                 String authorizedPurpose, String targetFingerprint,
                                 FixtureSource fixtureSource, Map<String, Object> metadata) {
         this(graph, context, fixtureBundle, authorizedPurpose, targetFingerprint,
-                fixtureSource, metadata, true, ResolvedReplayPayloads.empty());
+                fixtureSource, metadata, true, ResolvedReplayPayloads.empty(),
+                ResolvedTestSecrets.empty());
     }
 
     /** Backward-compatible internal constructor without governed replay dependencies. */
@@ -54,6 +57,18 @@ public record TestExecutionRequest(
                                 FixtureSource fixtureSource, Map<String, Object> metadata,
                                 boolean certificationEligible) {
         this(graph, context, fixtureBundle, authorizedPurpose, targetFingerprint,
-                fixtureSource, metadata, certificationEligible, ResolvedReplayPayloads.empty());
+                fixtureSource, metadata, certificationEligible, ResolvedReplayPayloads.empty(),
+                ResolvedTestSecrets.empty());
+    }
+
+    /** Backward-compatible constructor without externally governed test secrets. */
+    public TestExecutionRequest(Graph graph, GraphContext context, FixtureBundle fixtureBundle,
+                                String authorizedPurpose, String targetFingerprint,
+                                FixtureSource fixtureSource, Map<String, Object> metadata,
+                                boolean certificationEligible,
+                                ResolvedReplayPayloads replayPayloads) {
+        this(graph, context, fixtureBundle, authorizedPurpose, targetFingerprint,
+                fixtureSource, metadata, certificationEligible, replayPayloads,
+                ResolvedTestSecrets.empty());
     }
 }

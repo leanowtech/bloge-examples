@@ -20,6 +20,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.GovernedExecutionServices;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedTestSecrets;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -114,7 +115,46 @@ public class ExecutionControlCompiler {
                                             ResolvedReplayPayloads replayPayloads,
                                             ExecutionServiceStateSnapshot providerState) {
         return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
-                targetFingerprint, replayPayloads, providerState);
+                targetFingerprint, replayPayloads, ResolvedTestSecrets.empty(), providerState);
+    }
+
+    /**
+     * Compiles with fresh externally authorized run-scoped test-secret values.
+     *
+     * @param graph frozen graph artifact
+     * @param fixtureBundle exact immutable fixture
+     * @param authorizedPurpose server-minted purpose
+     * @param targetFingerprint selected artifact fingerprint
+     * @param replayPayloads exact run-scoped replay values
+     * @param testSecrets exact run-scoped secret values
+     * @return executable and auditable frozen plan
+     */
+    public CompiledExecutionControl compileWithSecrets(
+            Graph graph, FixtureBundle fixtureBundle, String authorizedPurpose,
+            String targetFingerprint, ResolvedReplayPayloads replayPayloads,
+            ResolvedTestSecrets testSecrets) {
+        return compileWithSecrets(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                replayPayloads, testSecrets, null);
+    }
+
+    /**
+     * Recompiles and restores provider state after fresh test-secret re-authorization.
+     *
+     * @param graph frozen graph artifact
+     * @param fixtureBundle exact immutable fixture
+     * @param authorizedPurpose server-minted purpose
+     * @param targetFingerprint selected artifact fingerprint
+     * @param replayPayloads freshly resolved replay closure
+     * @param testSecrets freshly resolved secret closure
+     * @param providerState payload-free provider checkpoint, or null
+     * @return executable fresh or restored control
+     */
+    public CompiledExecutionControl compileWithSecrets(
+            Graph graph, FixtureBundle fixtureBundle, String authorizedPurpose,
+            String targetFingerprint, ResolvedReplayPayloads replayPayloads,
+            ResolvedTestSecrets testSecrets, ExecutionServiceStateSnapshot providerState) {
+        return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                targetFingerprint, replayPayloads, testSecrets, providerState);
     }
 
     /**
@@ -148,7 +188,36 @@ public class ExecutionControlCompiler {
                     "Separate fixture binding is restricted to a distinct mutation-suite target."));
         }
         return compileBound(graph, fixtureBundle, authorizedPurpose, executionTargetFingerprint,
-                fixtureBindingTargetFingerprint, replayPayloads, null);
+                fixtureBindingTargetFingerprint, replayPayloads, ResolvedTestSecrets.empty(), null);
+    }
+
+    /**
+     * Compiles one mutation child with a freshly authorized test-secret closure.
+     *
+     * @param graph exact server-regenerated mutant graph
+     * @param fixtureBundle immutable stored fixture bound to the reviewed baseline
+     * @param authorizedPurpose server-minted mutation-suite purpose
+     * @param executionTargetFingerprint exact mutant target fingerprint
+     * @param fixtureBindingTargetFingerprint exact reviewed baseline target fingerprint
+     * @param replayPayloads exact run-scoped replay values
+     * @param testSecrets exact run-scoped test-secret values
+     * @return executable and auditable frozen mutant plan
+     */
+    public CompiledExecutionControl compileMutationWithSecrets(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String executionTargetFingerprint,
+            String fixtureBindingTargetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            ResolvedTestSecrets testSecrets) {
+        if (!TestSuiteRunEvidenceV5.EXECUTION_PURPOSE.equals(authorizedPurpose)
+                || Objects.equals(executionTargetFingerprint, fixtureBindingTargetFingerprint)) {
+            throw new ControlPlanRejectedException("CONTROL_PLAN_MUTATION_BINDING_INVALID", List.of(
+                    "Separate fixture binding is restricted to a distinct mutation-suite target."));
+        }
+        return compileBound(graph, fixtureBundle, authorizedPurpose, executionTargetFingerprint,
+                fixtureBindingTargetFingerprint, replayPayloads, testSecrets, null);
     }
 
     private CompiledExecutionControl compileBound(
@@ -158,16 +227,19 @@ public class ExecutionControlCompiler {
             String targetFingerprint,
             String fixtureBindingTargetFingerprint,
             ResolvedReplayPayloads replayPayloads,
+            ResolvedTestSecrets testSecrets,
             ExecutionServiceStateSnapshot providerState) {
         Objects.requireNonNull(graph, "graph");
         ResolvedReplayPayloads resolvedReplays = replayPayloads == null
                 ? ResolvedReplayPayloads.empty() : replayPayloads;
+        ResolvedTestSecrets resolvedSecrets = testSecrets == null
+                ? ResolvedTestSecrets.empty() : testSecrets;
         safetyPreflight.validate(fixtureBundle, authorizedPurpose,
                 fixtureBindingTargetFingerprint, resolvedReplays);
 
         InvocationInventory inventory = inventoryBuilder.build(graph, targetFingerprint);
         GovernedExecutionServices executionServices = GovernedExecutionServices.prepare(
-                objectMapper, fixtureBundle, inventory);
+                objectMapper, fixtureBundle, inventory, resolvedSecrets);
         Map<String, CompiledExecutionControl.ResolvedControl> controls = new LinkedHashMap<>(
                 selectorResolver.resolve(inventory, fixtureBundle.rules()));
 
@@ -224,7 +296,7 @@ public class ExecutionControlCompiler {
         } else {
             try {
                 executionServices = GovernedExecutionServices.restore(objectMapper, fixtureBundle,
-                        inventory, planFingerprint, providerState);
+                        inventory, planFingerprint, providerState, resolvedSecrets);
             } catch (IllegalArgumentException unavailable) {
                 throw new ControlPlanRejectedException("CONTROL_PLAN_UNAVAILABLE", List.of(
                         "Checkpointed execution-service state does not match the frozen plan."));

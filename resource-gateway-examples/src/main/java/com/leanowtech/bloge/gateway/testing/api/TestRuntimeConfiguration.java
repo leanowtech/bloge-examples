@@ -931,10 +931,12 @@ public class TestRuntimeConfiguration {
             ResourceRegistry resourceRegistry,
             FixtureBundleRepository fixtureRepository,
             TestReplayPayloadService replayPayloadService,
+            TestSecretResolutionService testSecretResolutionService,
             DurableTestRecoveryAuthority authority,
             ObjectMapper objectMapper) {
         return new DurableTestRecoveryAuthorizer(graphService, operatorRegistry, resourceRegistry,
-                fixtureRepository, replayPayloadService, authority, objectMapper);
+                fixtureRepository, replayPayloadService, authority, objectMapper,
+                testSecretResolutionService);
     }
 
     /** Assembles the server-owned, idempotent durable lease ownership command boundary. */
@@ -1198,6 +1200,22 @@ public class TestRuntimeConfiguration {
                 Duration.ofDays(Math.max(1, Math.min(365, retentionDays))));
     }
 
+    /** Fails closed until deployment supplies an external governed test-secret authority. */
+    @Bean
+    @ConditionalOnMissingBean(TestSecretAuthority.class)
+    TestSecretAuthority testSecretAuthority() {
+        return TestSecretAuthority.unavailable();
+    }
+
+    /** Binds authenticated run context to exact short-lived test-secret resolution. */
+    @Bean
+    TestSecretResolutionService testSecretResolutionService(
+            ObjectMapper objectMapper,
+            TestSecretAuthority authority,
+            TestSecurityEventRepository securityEvents) {
+        return new TestSecretResolutionService(objectMapper, authority, securityEvents);
+    }
+
     /** Applies replay retention independently from visual run-history retention. */
     @Bean
     ReplayPayloadRetentionScheduler replayPayloadRetentionScheduler(
@@ -1217,13 +1235,14 @@ public class TestRuntimeConfiguration {
             TestRunRepository runRepository,
             TestSecurityEventRepository securityEvents,
             TestReplayPayloadService replayPayloadService,
+            TestSecretResolutionService testSecretResolutionService,
             TestEvidenceIntegrityService evidenceIntegrity,
             TestRuntimeAdmissionGate admissions,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
         return new TestExecutionApiService(graphService, operatorRegistry, resourceRegistry,
                 expressionEvaluator, objectMapper, fixtureRepository, runRepository, securityEvents,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), replayPayloadService,
-                evidenceIntegrity, admissions);
+                evidenceIntegrity, admissions, testSecretResolutionService);
     }
 
     /** Assembles the dependency-validating immutable suite registry service. */

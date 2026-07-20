@@ -153,11 +153,12 @@ public class TestRunService {
         CompiledExecutionControl compiled;
         try {
             compiled = mutationExecution
-                    ? compiler.compileMutation(request.graph(), request.fixtureBundle(),
+                    ? compiler.compileMutationWithSecrets(request.graph(), request.fixtureBundle(),
                     request.authorizedPurpose(), request.targetFingerprint(),
-                    fixtureBindingTargetFingerprint, request.replayPayloads())
-                    : compiler.compile(request.graph(), request.fixtureBundle(),
-                    request.authorizedPurpose(), request.targetFingerprint(), request.replayPayloads());
+                    fixtureBindingTargetFingerprint, request.replayPayloads(), request.testSecrets())
+                    : compiler.compileWithSecrets(request.graph(), request.fixtureBundle(),
+                    request.authorizedPurpose(), request.targetFingerprint(), request.replayPayloads(),
+                    request.testSecrets());
         } catch (ControlPlanRejectedException ex) {
             TestRunEvidence evidence = rejectedEvidence(runId, request, startedAt, ex);
             return new TestExecutionResult(null, null, evidence);

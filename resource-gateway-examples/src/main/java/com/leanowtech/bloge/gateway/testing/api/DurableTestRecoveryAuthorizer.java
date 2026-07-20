@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.domain.DurableTestRecoveryAuthorizat
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.OperatorExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -22,6 +23,7 @@ import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedTestSecrets;
 
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -47,6 +49,7 @@ public class DurableTestRecoveryAuthorizer {
     private final ResourceRegistry resourceRegistry;
     private final FixtureBundleRepository fixtureRepository;
     private final TestReplayPayloadService replayPayloads;
+    private final TestSecretResolutionService testSecrets;
     private final DurableTestRecoveryAuthority authority;
     private final ObjectMapper objectMapper;
     private final ExecutionControlCompiler compiler;
@@ -70,11 +73,37 @@ public class DurableTestRecoveryAuthorizer {
             TestReplayPayloadService replayPayloads,
             DurableTestRecoveryAuthority authority,
             ObjectMapper objectMapper) {
+        this(graphService, operatorRegistry, resourceRegistry, fixtureRepository, replayPayloads,
+                authority, objectMapper, null);
+    }
+
+    /**
+     * Creates recovery authorization with fresh external test-secret re-authorization.
+     *
+     * @param graphService current graph registry
+     * @param operatorRegistry current operator binding registry
+     * @param resourceRegistry current resource descriptor registry
+     * @param fixtureRepository immutable fixture registry
+     * @param replayPayloads governed replay resolver
+     * @param authority current integration identity policy snapshotter
+     * @param objectMapper canonical protocol mapper
+     * @param testSecrets external test-secret trust transition
+     */
+    public DurableTestRecoveryAuthorizer(
+            GatewayGraphService graphService,
+            OperatorRegistry operatorRegistry,
+            ResourceRegistry resourceRegistry,
+            FixtureBundleRepository fixtureRepository,
+            TestReplayPayloadService replayPayloads,
+            DurableTestRecoveryAuthority authority,
+            ObjectMapper objectMapper,
+            TestSecretResolutionService testSecrets) {
         this.graphService = Objects.requireNonNull(graphService, "graphService");
         this.operatorRegistry = Objects.requireNonNull(operatorRegistry, "operatorRegistry");
         this.resourceRegistry = Objects.requireNonNull(resourceRegistry, "resourceRegistry");
         this.fixtureRepository = Objects.requireNonNull(fixtureRepository, "fixtureRepository");
         this.replayPayloads = Objects.requireNonNull(replayPayloads, "replayPayloads");
+        this.testSecrets = testSecrets;
         this.authority = Objects.requireNonNull(authority, "authority");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.compiler = new ExecutionControlCompiler(operatorRegistry, objectMapper);
@@ -101,6 +130,8 @@ public class DurableTestRecoveryAuthorizer {
         AuthorizedTarget authorizedTarget = resolveRecoveryTarget(checkpoint, target, identity);
         FixtureBundle fixture = resolveFixture(dependencies, identity);
         ResolvedReplayPayloads replays = resolveReplays(fixture, identity);
+        ResolvedTestSecrets secrets = resolveSecrets(fixture, target.fingerprint(),
+                dependencies.plan().authorizedPurpose(), identity);
         if (!replays.planDependencies().equals(dependencies.plan().replayDependencies())) {
             throw unavailable(identity, "REPLAY");
         }
@@ -112,9 +143,9 @@ public class DurableTestRecoveryAuthorizer {
 
         CompiledExecutionControl compiled;
         try {
-            compiled = compiler.compile(authorizedTarget.graph(), fixture,
+            compiled = compiler.compileWithSecrets(authorizedTarget.graph(), fixture,
                     dependencies.plan().authorizedPurpose(), target.fingerprint(), replays,
-                    checkpoint.executionServiceState());
+                    secrets, checkpoint.executionServiceState());
         } catch (IllegalArgumentException rejected) {
             throw unavailable(identity, "PLAN");
         } catch (RuntimeException infrastructure) {
@@ -257,13 +288,14 @@ public class DurableTestRecoveryAuthorizer {
                         requestedFixture.fingerprint());
         FixtureBundle fixture = resolveFixture(fixtureRef, target.fingerprint(), identity);
         ResolvedReplayPayloads replays = resolveReplays(fixture, identity);
+        ResolvedTestSecrets secrets = resolveSecrets(
+                fixture, target.fingerprint(), authorizedPurpose, identity);
         String sideEffectPolicy = replays.references().isEmpty()
                 ? "DENY_REAL" : "REPLAY_ONLY";
         CompiledExecutionControl compiled;
         try {
-            compiled = compiler.compile(authorizedTarget.graph(), fixture,
-                    authorizedPurpose,
-                    target.fingerprint(), replays);
+            compiled = compiler.compileWithSecrets(authorizedTarget.graph(), fixture,
+                    authorizedPurpose, target.fingerprint(), replays, secrets);
         } catch (IllegalArgumentException rejected) {
             throw unavailable(identity, "PLAN");
         } catch (RuntimeException infrastructure) {
@@ -453,6 +485,31 @@ public class DurableTestRecoveryAuthorizer {
             throw unavailable(identity, "REPLAY");
         } catch (RuntimeException infrastructure) {
             throw dependencyStoreUnavailable(identity, "REPLAY");
+        }
+    }
+
+    private ResolvedTestSecrets resolveSecrets(
+            FixtureBundle fixture,
+            String targetFingerprint,
+            String authorizedPurpose,
+            IntegrationRequestContext identity) {
+        FixtureExecutionServices controls = FixtureExecutionServices.from(fixture);
+        if (controls.secretRefs().isEmpty()) {
+            return ResolvedTestSecrets.empty();
+        }
+        if (testSecrets == null) {
+            throw dependencyStoreUnavailable(identity, "SECRET_AUTHORITY");
+        }
+        try {
+            return testSecrets.resolve(fixture, targetFingerprint, fixture.targetFingerprint(),
+                    authorizedPurpose, identity);
+        } catch (IntegrationProblemException problem) {
+            if (problem.problem().status() == 403 || problem.problem().status() == 503) {
+                throw problem;
+            }
+            throw unavailable(identity, "SECRET_AUTHORITY");
+        } catch (RuntimeException infrastructure) {
+            throw dependencyStoreUnavailable(identity, "SECRET_AUTHORITY");
         }
     }
 

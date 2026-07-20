@@ -168,6 +168,42 @@ class GovernedExecutionServicesTest {
     }
 
     @Test
+    void externalTestSecretsResolveAtRunScopeWithoutEnteringPlanOrCheckpoint() throws Exception {
+        FixtureBundle fixture = new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "fixture", 1,
+                TARGET, "RESTRICTED", Instant.parse("2026-07-15T00:00:00Z"), 42L,
+                List.of(), List.of(), Map.of(FixtureExecutionServices.METADATA_KEY, Map.of(
+                        "schemaVersion", FixtureExecutionServices.SCHEMA_VERSION_V2,
+                        "identityAttributes", Map.of(), "featureFlags", Map.of(),
+                        "secretRefs", Map.of(
+                                "payment-key", "vault://test/payments/key@v3"))));
+        ResolvedTestSecrets resolved = new ResolvedTestSecrets("",
+                "sha256:" + "c".repeat(64), "authority-a", "generation-1",
+                Instant.parse("2026-07-15T00:00:00Z"),
+                Instant.parse("2026-07-15T00:05:00Z"), Map.of("payment-key",
+                new ResolvedTestSecrets.Secret("payment-key",
+                        "vault://test/payments/key@v3", "version-3",
+                        "sha256:" + "d".repeat(64), "run-only-secret")));
+
+        GovernedExecutionServices services = GovernedExecutionServices.prepare(
+                mapper, fixture, inventory(), resolved).bindToPlan(PLAN);
+
+        assertThat(services.services().secretProvider().resolve("payment-key"))
+                .isEqualTo("run-only-secret");
+        assertThat(services.bindings()).filteredOn(binding -> binding.service().equals("SECRET"))
+                .singleElement().satisfies(binding -> {
+                    assertThat(binding.mode()).isEqualTo("EXTERNAL_TEST_AUTHORITY");
+                    assertThat(binding.available()).isTrue();
+                    assertThat(binding.deterministic()).isTrue();
+                    assertThat(binding.certificationGaps()).isEmpty();
+                });
+        assertThat(mapper.writeValueAsString(services.bindings()))
+                .doesNotContain("run-only-secret", "payment-key",
+                        "vault://test/payments/key@v3", "version-3");
+        assertThat(mapper.writeValueAsString(services.snapshotState()))
+                .doesNotContain("run-only-secret", "payment-key");
+    }
+
+    @Test
     void snapshotAndRestoreContinueExactLogicalTimeRandomUuidAndUsageState() throws Exception {
         GovernedExecutionServices running = prepared(42L).bindToPlan(PLAN);
         String randomScope = "random@4:7#node=price/customer-C-1001";

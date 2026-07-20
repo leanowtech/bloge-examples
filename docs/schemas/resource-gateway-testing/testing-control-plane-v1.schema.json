@@ -1626,7 +1626,7 @@
         "numericTolerance": {"type": ["number", "null"], "minimum": 0}
       }
     },
-    "fixtureExecutionServices": {
+    "fixtureExecutionServicesV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "identityAttributes", "featureFlags"],
@@ -1657,6 +1657,59 @@
           "additionalProperties": {"type": "boolean"}
         }
       }
+    },
+    "fixtureExecutionServicesV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "identityAttributes", "featureFlags", "secretRefs"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.fixtureExecutionServices.v2"},
+        "identityAttributes": {
+          "type": "object",
+          "maxProperties": 100,
+          "propertyNames": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9._:/-]{0,127}$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {"type": "string", "maxLength": 4096},
+              {"type": "boolean"},
+              {"type": "integer"}
+            ]
+          }
+        },
+        "featureFlags": {
+          "type": "object",
+          "maxProperties": 100,
+          "propertyNames": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9._:/-]{0,127}$"
+          },
+          "additionalProperties": {"type": "boolean"}
+        },
+        "secretRefs": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 100,
+          "propertyNames": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9._:/-]{0,127}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "uri"
+          }
+        }
+      }
+    },
+    "fixtureExecutionServices": {
+      "oneOf": [
+        {"$ref": "#/$defs/fixtureExecutionServicesV1"},
+        {"$ref": "#/$defs/fixtureExecutionServicesV2"}
+      ]
     },
     "fixtureBundle": {
       "type": "object",

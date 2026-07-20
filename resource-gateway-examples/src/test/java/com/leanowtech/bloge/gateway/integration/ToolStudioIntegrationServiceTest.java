@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
@@ -179,6 +180,8 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("reconciliationSnapshot", true)
                 .containsEntry("trustedWorkloadIdentity", false)
                 .containsEntry("demoIdentityMode", false)
+                .containsEntry("externalTestSecretAuthority", false)
+                .containsEntry("durableTestSecretReauthorization", false)
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
@@ -209,6 +212,37 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"
                 );
+    }
+
+    @Test
+    void capabilitiesAdvertiseSecretProtocolAndReevaluateAuthorityReadiness() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        service.configureTestability(new TestabilityAvailability(
+                true, false, WorkerQuarantineRequestIndexMode.DUAL_READ_KEYED_WRITE,
+                WorkerQuarantineChangeAuthorizationTrustStore.unavailable().descriptor(),
+                authorityDescriptor(false)));
+        AtomicBoolean ready = new AtomicBoolean(true);
+        TestSecretAuthority authority = mock(TestSecretAuthority.class);
+        when(authority.descriptor()).thenAnswer(ignored -> new TestSecretAuthority.Descriptor(
+                "", ready.get(), "EXTERNAL_HTTPS", "authority-a", Map.of()));
+        @SuppressWarnings("unchecked")
+        ObjectProvider<TestSecretAuthority> providers = mock(ObjectProvider.class);
+        when(providers.getIfAvailable()).thenReturn(authority);
+        service.configureTestSecretAuthorities(providers);
+
+        IntegrationCapabilities available = service.capabilities().payload();
+
+        assertThat(available.supportedObjects().get("fixtureExecutionServices"))
+                .containsExactly("bloge.fixtureExecutionServices.v1",
+                        "bloge.fixtureExecutionServices.v2");
+        assertThat(available.features())
+                .containsEntry("externalTestSecretAuthority", true)
+                .containsEntry("durableTestSecretReauthorization", true);
+
+        ready.set(false);
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("externalTestSecretAuthority", false)
+                .containsEntry("durableTestSecretReauthorization", false);
     }
 
     @Test

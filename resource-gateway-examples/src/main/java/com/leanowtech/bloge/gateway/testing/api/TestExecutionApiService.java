@@ -36,6 +36,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.OperatorInputCoercer;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorMicroGraphRunner;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedTestSecrets;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
@@ -83,6 +84,7 @@ public final class TestExecutionApiService {
     private final TestRunRepository runRepository;
     private final TestSecurityEventRepository securityEvents;
     private final TestReplayPayloadService replayPayloads;
+    private final TestSecretResolutionService testSecrets;
     private final TestEvidenceIntegrityService evidenceIntegrity;
     private final TestEvidenceSanitizer sanitizer;
     private final TestRuntimeAdmissionGate admissions;
@@ -194,6 +196,28 @@ public final class TestExecutionApiService {
                                    TestReplayPayloadService replayPayloads,
                                    TestEvidenceIntegrityService evidenceIntegrity,
                                    TestRuntimeAdmissionGate admissions) {
+        this(graphService, operatorRegistry, resourceRegistry, expressionEvaluator, objectMapper,
+                fixtureRepository, runRepository, securityEvents, retention, replayPayloads,
+                evidenceIntegrity, admissions, null);
+    }
+
+    /**
+     * Creates the complete adapter with replay, external test-secret, integrity, and admission
+     * boundaries. The secret resolver may be absent only when fixtures contain no secret refs.
+     */
+    public TestExecutionApiService(GatewayGraphService graphService,
+                                   OperatorRegistry operatorRegistry,
+                                   ResourceRegistry resourceRegistry,
+                                   BlgeExpressionEvaluator expressionEvaluator,
+                                   ObjectMapper objectMapper,
+                                   FixtureBundleRepository fixtureRepository,
+                                   TestRunRepository runRepository,
+                                   TestSecurityEventRepository securityEvents,
+                                   Duration retention,
+                                   TestReplayPayloadService replayPayloads,
+                                   TestEvidenceIntegrityService evidenceIntegrity,
+                                   TestRuntimeAdmissionGate admissions,
+                                   TestSecretResolutionService testSecrets) {
         this.graphService = Objects.requireNonNull(graphService, "graphService");
         this.operatorRegistry = Objects.requireNonNull(operatorRegistry, "operatorRegistry");
         this.resourceRegistry = Objects.requireNonNull(resourceRegistry, "resourceRegistry");
@@ -203,6 +227,7 @@ public final class TestExecutionApiService {
         this.runRepository = Objects.requireNonNull(runRepository, "runRepository");
         this.securityEvents = Objects.requireNonNull(securityEvents, "securityEvents");
         this.replayPayloads = replayPayloads;
+        this.testSecrets = testSecrets;
         this.evidenceIntegrity = Objects.requireNonNull(evidenceIntegrity, "evidenceIntegrity");
         this.admissions = Objects.requireNonNull(admissions, "admissions");
         this.boundaryCases = new TestBoundaryCasePlanner(
@@ -336,6 +361,9 @@ public final class TestExecutionApiService {
                     "Mutation execution requires immutable stored fixture provenance.", Map.of());
         }
         ResolvedReplayPayloads resolvedReplays = resolveReplayPayloads(fixture.bundle(), identity);
+        ResolvedTestSecrets resolvedSecrets = resolveTestSecrets(fixture.bundle(),
+                coordinate.mutantTargetFingerprint(), baselineTarget.fingerprint(),
+                TestSuiteRunEvidenceV5.EXECUTION_PURPOSE, identity);
         ResourceFixtureRuntime resourceRuntime = new ResourceFixtureRuntime(
                 mutantTarget.resourceRegistry(), expressionEvaluator, objectMapper);
         TestRunService kernel = new TestRunService(operatorRegistry, objectMapper, resourceRuntime);
@@ -352,7 +380,7 @@ public final class TestExecutionApiService {
                 mutantGraph, new GraphContext(request.context()), fixture.bundle(),
                 TestSuiteRunEvidenceV5.EXECUTION_PURPOSE, coordinate.mutantTargetFingerprint(),
                 fixture.source(), Map.copyOf(metadata), mutantTarget.certificationEligible(),
-                resolvedReplays), baselineTarget.fingerprint());
+                resolvedReplays, resolvedSecrets), baselineTarget.fingerprint());
         return persistGraphExecution(request, identity, mutantGraph.name(),
                 coordinate.mutantTargetFingerprint(), fixture, result);
     }
@@ -375,6 +403,8 @@ public final class TestExecutionApiService {
 
         ResolvedFixture fixture = resolveFixture(request, target.fingerprint(), identity);
         ResolvedReplayPayloads resolvedReplays = resolveReplayPayloads(fixture.bundle(), identity);
+        ResolvedTestSecrets resolvedSecrets = resolveTestSecrets(fixture.bundle(),
+                target.fingerprint(), target.fingerprint(), AUTHORIZED_PURPOSE, identity);
         ResourceFixtureRuntime resourceRuntime = new ResourceFixtureRuntime(
                 target.resourceRegistry(), expressionEvaluator, objectMapper);
         TestRunService kernel = new TestRunService(operatorRegistry, objectMapper, resourceRuntime);
@@ -382,7 +412,7 @@ public final class TestExecutionApiService {
         TestExecutionResult result = kernel.execute(new TestExecutionRequest(
                 target.graph(), new GraphContext(request.context()), fixture.bundle(), AUTHORIZED_PURPOSE,
                 target.fingerprint(), fixture.source(), metadata, target.certificationEligible(),
-                resolvedReplays), compiled -> admissionGate.admit(identity,
+                resolvedReplays, resolvedSecrets), compiled -> admissionGate.admit(identity,
                 admissionIntent(Kind.GRAPH, request, target.fingerprint(),
                         compiled, target.dependencyFingerprints().keySet())));
         return persistGraphExecution(request, identity, graph.name(), target.fingerprint(),
@@ -679,6 +709,8 @@ public final class TestExecutionApiService {
         ResolvedFixture fixture = resolveFixture(request.fixtureBundle(), request.fixtureBundleRef(),
                 target.fingerprint(), identity);
         ResolvedReplayPayloads resolvedReplays = resolveReplayPayloads(fixture.bundle(), identity);
+        ResolvedTestSecrets resolvedSecrets = resolveTestSecrets(fixture.bundle(),
+                target.fingerprint(), target.fingerprint(), AUTHORIZED_OPERATOR_PURPOSE, identity);
         Object typedInput;
         try {
             typedInput = OperatorInputCoercer.coerce(request.input(), target.metadata(), objectMapper);
@@ -692,7 +724,8 @@ public final class TestExecutionApiService {
                 new OperatorMicroGraphRunner.Request(target.operatorRef(), target.synchronousOperator(),
                         target.fingerprint(), typedInput, fixture.bundle(), AUTHORIZED_OPERATOR_PURPOSE,
                         fixture.source(), target.certificationEligible(),
-                        operatorExecutionMetadata(request, identity, target), resolvedReplays),
+                        operatorExecutionMetadata(request, identity, target), resolvedReplays,
+                        resolvedSecrets),
                 compiled -> admissionGate.admit(identity,
                         admissionIntent(Kind.OPERATOR, request,
                                 target.fingerprint(), compiled,
@@ -876,6 +909,24 @@ public final class TestExecutionApiService {
                     "Governed replay payload resolution is unavailable.");
         }
         return replayPayloads.resolve(bundle, identity);
+    }
+
+    private ResolvedTestSecrets resolveTestSecrets(
+            FixtureBundle bundle,
+            String executionTargetFingerprint,
+            String fixtureTargetFingerprint,
+            String authorizedPurpose,
+            IntegrationRequestContext identity) {
+        FixtureExecutionServices controls = FixtureExecutionServices.from(bundle);
+        if (controls.secretRefs().isEmpty()) {
+            return ResolvedTestSecrets.empty();
+        }
+        if (testSecrets == null) {
+            throw unavailable(identity, "RG.TEST.SECRET_AUTHORITY_UNAVAILABLE",
+                    "The external test-secret authority is unavailable.");
+        }
+        return testSecrets.resolve(bundle, executionTargetFingerprint, fixtureTargetFingerprint,
+                authorizedPurpose, identity);
     }
 
     private ResolvedFixture resolveFixture(FixtureBundle inline,

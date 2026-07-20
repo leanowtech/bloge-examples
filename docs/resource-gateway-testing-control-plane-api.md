@@ -953,7 +953,7 @@ This mode verifies time-dependent business behavior and the graph's reaction to 
 not prove wall-clock watchdog accuracy, interruption of blocked operator code, or deterministic
 completion order between concurrent branches. Those remain engine/sandbox conformance concerns.
 
-### 4.2.1a Control identity and feature-flag built-ins
+### 4.2.1a Control identity, feature-flag, and secret built-ins
 
 Place deterministic ambient values in the reserved
 `fixtureBundle.metadata.executionServices` object. BLOGE operator providers and DSL built-ins use
@@ -1004,8 +1004,49 @@ The effective plan records `FIXTURE_MAP`, availability, determinism, and a servi
 configuration fingerprint. Evidence usage records function call sites and hashed provider scopes;
 neither projection contains raw configured values. The full node trace may still contain a value
 when it becomes business input or output, subject to the existing evidence classification and
-sanitization policy. `SECRET` deliberately remains `FAIL_CLOSED`: safe support requires opaque
-secret references and an independently governed test secret authority, not raw fixture values.
+sanitization policy.
+
+Secret values use the v2 nested contract. A fixture contains only exact aliases and opaque external
+references; it must never contain a password, token, private key, or other raw secret:
+
+```json
+{
+  "metadata": {
+    "executionServices": {
+      "schemaVersion": "bloge.fixtureExecutionServices.v2",
+      "identityAttributes": {},
+      "featureFlags": {},
+      "secretRefs": {
+        "payment-key": "vault://test/payments/key@v3",
+        "audit-token": "test-secret://risk/audit@2026-07"
+      }
+    }
+  }
+}
+```
+
+Use `.secretRef(alias, opaqueReference)` in `FixtureBundleBuilder`. References are bounded to 1,024
+characters and must be absolute hierarchical provider URIs with an authority and without user-info,
+query, or fragment; `data:`, `file:`, plain `http:`, and `javascript:` schemes are rejected. The Java
+parser is the authority for these checks; JSON Schema's `format: uri` is only an early
+interoperability guard.
+
+Immediately before graph, operator, mutation, or durable execution, Resource Gateway binds the
+authenticated tenant/organization/project/environment/region/actor/delegation/purpose, execution
+target, fixture target/id/revision/fingerprint, and exact reference closure into
+`bloge.testSecretResolutionContext.v1`. A configured `TestSecretAuthority` must return exact,
+versioned, short-lived values. Resource Gateway independently verifies scope, closure, reference,
+validity window, and binding fingerprints, then exposes plaintext only through the run-scoped BLOGE
+`SecretProvider`. Unknown aliases fail closed. Plan, checkpoint, evidence metadata, audit, and error
+messages contain only hashes and authority-generation fingerprints.
+
+Durable creation and every cold recovery resolve again; plaintext is never checkpointed. A changed
+secret version, authority generation, request binding, unavailable authority, or denied scope makes
+plan reconstruction fail closed. Capability flags `externalTestSecretAuthority` and
+`durableTestSecretReauthorization` are true only when the isolated test runtime and an available
+authority are both assembled. The built-in default is unavailable. This release supplies the typed
+authority SPI and trust transition; deployments providing a custom authority remain responsible for
+its network authentication until the signed challenge-bound HTTPS adapter is delivered.
 
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 

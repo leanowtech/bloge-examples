@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -66,6 +67,7 @@ public class ToolStudioIntegrationService {
             new TestSuiteStabilityJobAuthorizer.Descriptor(
                     "", false, "UNAVAILABLE", "", Map.of());
     private ObjectProvider<TestSuiteStabilityJobAuthorizer> suiteStabilityAuthorizers;
+    private ObjectProvider<TestSecretAuthority> testSecretAuthorities;
     private TestSuiteStabilityObservationExternalArchiveReconciliationHealth
             externalArchiveReconciliationHealth;
 
@@ -120,6 +122,12 @@ public class ToolStudioIntegrationService {
     void configureSuiteStabilityAuthorizers(
             ObjectProvider<TestSuiteStabilityJobAuthorizer> authorizers) {
         this.suiteStabilityAuthorizers = authorizers;
+    }
+
+    /** Resolves external test-secret readiness on every capability request. */
+    @Autowired
+    void configureTestSecretAuthorities(ObjectProvider<TestSecretAuthority> authorities) {
+        this.testSecretAuthorities = authorities;
     }
 
     /** Receives the explicit test/staging reconciliation readiness monitor when assembled. */
@@ -225,15 +233,41 @@ public class ToolStudioIntegrationService {
                 && currentAuthority.available();
         TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
                 archiveReconciliation = currentExternalArchiveReconciliation();
-        return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
-                IntegrationCapabilities.current(signer.descriptor(), identityResolver.descriptor(),
+        IntegrationCapabilities current = IntegrationCapabilities.current(
+                        signer.descriptor(), identityResolver.descriptor(),
                         sideEffectReconcilers.available(), payloads == null ? null : payloads.policyDescriptor(),
                         testExecutionEndpointEnabled, evidenceTrustStore.descriptor(),
                         workerQuarantineRequestIndexMode,
                         workerQuarantineChangeAuthorizationTrust,
                         stabilitySubmissionReady,
                         currentAuthority,
-                        archiveReconciliation));
+                        archiveReconciliation);
+        boolean secretAuthorityReady = currentTestSecretAuthority().available();
+        Map<String, Boolean> features = new LinkedHashMap<>(current.features());
+        features.put("externalTestSecretAuthority",
+                testExecutionEndpointEnabled && secretAuthorityReady);
+        features.put("durableTestSecretReauthorization",
+                testExecutionEndpointEnabled && secretAuthorityReady);
+        IntegrationCapabilities augmented = new IntegrationCapabilities(
+                current.schemaVersion(), current.protocol(), current.protocolVersion(),
+                current.supportedObjects(), features, current.identityProvider(),
+                current.evidenceSigner(), current.payloadGovernance(), current.testability(),
+                current.endpoints());
+        return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
+                augmented);
+    }
+
+    private TestSecretAuthority.Descriptor currentTestSecretAuthority() {
+        if (testSecretAuthorities == null) {
+            return TestSecretAuthority.unavailable().descriptor();
+        }
+        try {
+            TestSecretAuthority authority = testSecretAuthorities.getIfAvailable();
+            return authority == null
+                    ? TestSecretAuthority.unavailable().descriptor() : authority.descriptor();
+        } catch (RuntimeException unavailable) {
+            return TestSecretAuthority.unavailable().descriptor();
+        }
     }
 
     private TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor

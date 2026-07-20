@@ -33,6 +33,9 @@ suspend/resume adapter remains pending.
 - `bloge.fixtureExecutionServices.v1` is a strict nested contract at
   `fixtureBundle.metadata.executionServices`. It carries bounded scalar identity attributes and
   boolean feature flags while preserving the existing top-level v1 fixture shape.
+- `bloge.fixtureExecutionServices.v2` adds only bounded opaque `secretRefs`. It never accepts raw
+  values. `bloge.testSecretResolutionContext.v1` binds enterprise scope, actor/delegation, purpose,
+  execution and fixture identities, and the exact ref closure before external authority resolution.
 - `bloge.testRunEvidence.v2` adds `semanticResultFingerprint`; the schema retains explicit v1 and v2
   definitions and a dual-read union. Execution response v1 references evidence v1, while current
   signed execution response v2 requires evidence v2.
@@ -64,8 +67,9 @@ oracle. The full evidence fingerprint remains different across run id, timing an
 4. Missing logical clock or seed permits exploratory use, but declared or observed semantic use
    prevents certifiable evidence.
 5. IDENTITY and FEATURE_FLAG use exact immutable fixture maps. Missing keys fail closed and never
-   consult production identity/flag authorities; SECRET has no fixture authority and always fails
-   closed.
+   consult production identity/flag authorities. SECRET accepts only a short-lived closure that an
+   external `TestSecretAuthority` returned and Resource Gateway independently matched to the exact
+   request; otherwise it fails closed.
 6. A source-boundary test prevents `GovernedExecutionServices` references outside the testing
    subsystem.
 7. Every execution snapshots caller business context and creates a new root `GraphContext`; repeated
@@ -83,14 +87,23 @@ oracle. The full evidence fingerprint remains different across run id, timing an
 12. `ExecutionControlCompiler` runs normal preflight and recompiles the plan before restore. Any
     snapshot/plan/configuration mismatch becomes generic `CONTROL_PLAN_UNAVAILABLE`; it never falls
     back to current providers or REAL execution.
+13. Secret plaintext exists only in the in-memory `ResolvedTestSecrets` handed to one run-scoped
+    provider. Plans and checkpoints contain hashed dependency/version bindings. Fresh durable
+    creation and every recovery re-authorize; version or authority-generation drift changes the
+    rebuilt binding and blocks recovery.
 
 ## Automated Evidence
 
 `GovernedExecutionServicesTest` verifies reproducibility, seed isolation, payload-free plan
 projection, logical-clock advancement, exact identity/flag lookup, missing-key/secret rejection,
-usage audit, atomic concurrent capture, exact continuation, configuration drift, and
+usage audit, external test-secret isolation, atomic concurrent capture, exact continuation,
+configuration drift, and
 tamper/policy/cursor rejection. `FixtureExecutionServicesTest` freezes strict shape, scalar, key,
-entry, aggregate-size, immutability, and payload-safe rejection semantics.
+entry, aggregate-size, opaque-reference, immutability, and payload-safe rejection semantics.
+`TestSecretResolutionServiceTest` proves exact enterprise/fixture closure binding, independent
+response verification, no-authority bypass for non-secret fixtures, payload-safe failures, and
+security audit. `DurableTestRecoveryAuthorizerTest` proves recovery calls the authority again and
+rejects exact secret-version drift.
 `TestRunServiceTest.compiledLogicalClockReachesOperatorContextAndControlsCertification` executes a
 real BLOGE graph and proves the compiled clock reaches the operator and controls evidence class.
 `TestRunServiceTest.dslIdentityAndFeatureFlagBuiltInsUseOnlyTheFixtureAuthority` executes real DSL
@@ -103,10 +116,10 @@ identity before signing and on verification. Main capability tests and test-kit 
 v1/v2 compatibility plus the checkpoint schema/version. `TestRunAssertions.assertSameSemanticResult`
 provides a payload-free CI regression assertion.
 
-The release gate completed `mvn -f resource-gateway-examples/pom.xml clean verify` with 3,026 tests,
-zero failures, zero errors and two conditional browser skips; all 34 configured browser tests and
-the executable Spring Boot JAR build completed. The independent test-kit `clean verify` completed
-228 tests with zero failures, errors or skips, then passed authoritative-schema packaging,
+The release gate completed `mvn -f resource-gateway-examples/pom.xml clean verify` with 3,089 tests,
+zero failures, zero errors and two conditional browser skips; both browser suites, containing 35
+configured tests, and the executable Spring Boot JAR build completed. The independent test-kit
+`clean verify` completed 229 tests with zero failures, errors or skips, then passed authoritative-schema packaging,
 ordinary/shaded JAR packaging and public JavaDoc validation.
 
 ## Honest Remaining Gaps
@@ -127,14 +140,16 @@ ordinary/shaded JAR packaging and public JavaDoc validation.
   assignment order; deterministic parallel scheduling or a stronger invocation coordinate is
   required before claiming byte-identical semantics there.
 - Streaming/suspendable execution does not yet have equivalent governed evidence.
-- Secret support still requires opaque references and an external typed test authority. Raw secret
-  values must never be added to fixture bundles.
+- The typed authority SPI, run-scoped provider, capability truth, and durable re-authorization are
+  implemented, but Resource Gateway does not yet ship a signed challenge-bound HTTPS authority
+  adapter, dynamic trust refresh, revocation feed, or authority HA/SLO monitor. The default authority
+  is unavailable; custom implementations own those controls until the transport increment lands.
 
 ## Reproduction
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=FixtureExecutionServicesTest,GovernedExecutionServicesTest,ExecutionControlCompilerTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest test
+  -Dtest=FixtureExecutionServicesTest,ResolvedTestSecretsTest,TestSecretResolutionServiceTest,GovernedExecutionServicesTest,DurableTestRecoveryAuthorizerTest,ExecutionControlCompilerTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=FixtureBundleBuilderTest,ResourceGatewayTestClientTest,TestRunAssertionsTest,TestingProtocolTest test

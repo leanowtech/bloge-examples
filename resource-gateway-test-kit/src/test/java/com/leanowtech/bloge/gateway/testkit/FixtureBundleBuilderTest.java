@@ -107,6 +107,37 @@ class FixtureBundleBuilderTest {
     }
 
     @Test
+    void buildsV2OpaqueSecretReferencesWithoutAcceptingRawValues() throws Exception {
+        JsonNode bundle = FixtureBundleBuilder.graph("loanDecision", FINGERPRINT)
+                .id("secret-backed")
+                .secretRef("payment-key", "vault://test/payments/key@v3")
+                .secretRef("audit-token", "test-secret://risk/audit@2026-07")
+                .buildBundle();
+
+        JsonNode services = bundle.path("metadata").path("executionServices");
+        assertThat(services.path("schemaVersion").asText())
+                .isEqualTo(TestingProtocol.FIXTURE_EXECUTION_SERVICES_V2);
+        assertThat(services.path("secretRefs").path("payment-key").asText())
+                .isEqualTo("vault://test/payments/key@v3");
+        assertThat(services.toString()).doesNotContain("secretValue", "credential");
+        assertAllRequiredPropertiesPresent(services,
+                schema().at("/$defs/fixtureExecutionServicesV2"));
+
+        assertThatThrownBy(() -> FixtureBundleBuilder.graph("graph", FINGERPRINT)
+                .id("invalid")
+                .secretRef("payment-key", "raw-secret-47"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("absolute opaque URI")
+                .hasMessageNotContaining("raw-secret-47");
+        assertThatThrownBy(() -> FixtureBundleBuilder.graph("graph", FINGERPRINT)
+                .id("invalid")
+                .secretRef("payment-key", "secret:raw-secret-47"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("absolute opaque URI")
+                .hasMessageNotContaining("raw-secret-47");
+    }
+
+    @Test
     void rejectsWireContractViolationsBeforeSending() {
         assertThatThrownBy(() -> FixtureBundleBuilder.graph("", FINGERPRINT))
                 .isInstanceOf(IllegalArgumentException.class)

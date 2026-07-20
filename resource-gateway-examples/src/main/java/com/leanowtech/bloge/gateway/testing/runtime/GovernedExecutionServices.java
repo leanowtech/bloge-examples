@@ -48,8 +48,8 @@ import java.util.function.Supplier;
  * never rebuilds it from a mutable fixture. A configured seed drives independent SHA-256 streams
  * for random values and identifiers. Its provider-state checkpoint is bound to one effective plan,
  * contains no seed or raw scope, and can be restored only against the same binding set. Identity
- * and feature flags may be supplied by strict fixture maps; missing entries and secrets remain fail
- * closed.</p>
+ * and feature flags may be supplied by strict fixture maps. Secrets are accepted only from an
+ * independently verified, run-scoped external-authority result; missing entries fail closed.</p>
  */
 public final class GovernedExecutionServices {
 
@@ -97,9 +97,27 @@ public final class GovernedExecutionServices {
     public static GovernedExecutionServices prepare(ObjectMapper objectMapper,
                                                      FixtureBundle fixtureBundle,
                                                      InvocationInventory inventory) {
+        return prepare(objectMapper, fixtureBundle, inventory, ResolvedTestSecrets.empty());
+    }
+
+    /**
+     * Freezes providers with an independently verified run-scoped test-secret closure.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param fixtureBundle already validated immutable fixture
+     * @param inventory frozen invocation inventory
+     * @param testSecrets run-scoped values resolved immediately before this execution
+     * @return one stateful run-scoped service set
+     */
+    public static GovernedExecutionServices prepare(ObjectMapper objectMapper,
+                                                     FixtureBundle fixtureBundle,
+                                                     InvocationInventory inventory,
+                                                     ResolvedTestSecrets testSecrets) {
         Objects.requireNonNull(objectMapper, "objectMapper");
         Objects.requireNonNull(fixtureBundle, "fixtureBundle");
         Objects.requireNonNull(inventory, "inventory");
+        ResolvedTestSecrets resolvedSecrets = testSecrets == null
+                ? ResolvedTestSecrets.empty() : testSecrets;
         FixtureExecutionServices fixtureServices = FixtureExecutionServices.from(fixtureBundle);
         StateCoordinator stateCoordinator = new StateCoordinator();
         UsageTracker tracker = new UsageTracker();
@@ -148,7 +166,8 @@ public final class GovernedExecutionServices {
         });
         SecretProvider secrets = name -> stateCoordinator.mutate(() -> {
             tracker.recordProvider(ExecutionServiceKind.SECRET, name, true);
-            return SecretProvider.NONE.resolve(name);
+            return resolvedSecrets.isEmpty()
+                    ? SecretProvider.NONE.resolve(name) : resolvedSecrets.resolve(name);
         });
 
         ExecutionServices services = ExecutionServices.builder()
@@ -165,7 +184,7 @@ public final class GovernedExecutionServices {
         List<EffectiveExecutionPlan.ExecutionServiceBinding> bindings = Arrays.stream(
                 ExecutionServiceKind.values())
                 .map(kind -> binding(objectMapper, kind, fixtureBundle, fixtureServices,
-                        consumers.getOrDefault(kind, List.of())))
+                        resolvedSecrets, consumers.getOrDefault(kind, List.of())))
                 .toList();
         return new GovernedExecutionServices(objectMapper, services, bindings, tracker, logicalTime,
                 randomSequence, idSequence, stateCoordinator);
@@ -187,7 +206,29 @@ public final class GovernedExecutionServices {
                                                      InvocationInventory inventory,
                                                      String planFingerprint,
                                                      ExecutionServiceStateSnapshot snapshot) {
-        GovernedExecutionServices restored = prepare(objectMapper, fixtureBundle, inventory);
+        return restore(objectMapper, fixtureBundle, inventory, planFingerprint, snapshot,
+                ResolvedTestSecrets.empty());
+    }
+
+    /**
+     * Restores provider cursors only after fresh test-secret re-authorization.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param fixtureBundle exact immutable fixture
+     * @param inventory freshly rebuilt invocation inventory
+     * @param planFingerprint freshly rebuilt effective-plan fingerprint
+     * @param snapshot payload-free provider-state snapshot
+     * @param testSecrets freshly resolved run-scoped test-secret closure
+     * @return restored execution services
+     */
+    public static GovernedExecutionServices restore(ObjectMapper objectMapper,
+                                                     FixtureBundle fixtureBundle,
+                                                     InvocationInventory inventory,
+                                                     String planFingerprint,
+                                                     ExecutionServiceStateSnapshot snapshot,
+                                                     ResolvedTestSecrets testSecrets) {
+        GovernedExecutionServices restored = prepare(
+                objectMapper, fixtureBundle, inventory, testSecrets);
         restored.restoreState(planFingerprint, Objects.requireNonNull(snapshot, "snapshot"));
         return restored;
     }
@@ -563,6 +604,7 @@ public final class GovernedExecutionServices {
     private static EffectiveExecutionPlan.ExecutionServiceBinding binding(
             ObjectMapper mapper, ExecutionServiceKind kind, FixtureBundle bundle,
             FixtureExecutionServices fixtureServices,
+            ResolvedTestSecrets testSecrets,
             List<String> consumers) {
         String mode;
         boolean available;
@@ -606,11 +648,18 @@ public final class GovernedExecutionServices {
                 }
             }
             case SECRET -> {
-                mode = "FAIL_CLOSED";
-                available = false;
+                boolean configured = fixtureServices.configures(kind) && !testSecrets.isEmpty();
+                mode = configured ? "EXTERNAL_TEST_AUTHORITY" : "FAIL_CLOSED";
+                available = configured;
                 deterministic = true;
-                configuration = "UNCONFIGURED";
-                gaps.add(kind.name() + " has no governed test authority configured.");
+                configuration = configured ? Map.of(
+                        "authorityConfigurationFingerprint",
+                        testSecrets.configurationFingerprint(mapper),
+                        "dependencyFingerprints", testSecrets.planDependencies(mapper))
+                        : "UNCONFIGURED";
+                if (!configured) {
+                    gaps.add(kind.name() + " has no governed test authority configured.");
+                }
             }
             default -> throw new IllegalStateException("Unhandled execution service: " + kind);
         }

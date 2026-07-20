@@ -6,12 +6,15 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.math.BigInteger;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
@@ -34,6 +37,7 @@ public final class FixtureBundleBuilder {
     private static final int MAX_EXECUTION_SERVICE_ENTRIES = 100;
     private static final int MAX_EXECUTION_SERVICE_BYTES = 65_536;
     private static final int MAX_IDENTITY_STRING_CHARACTERS = 4_096;
+    private static final int MAX_SECRET_REF_CHARACTERS = 1_024;
     private static final Pattern EXECUTION_SERVICE_KEY =
             Pattern.compile("[A-Za-z_][A-Za-z0-9._:/-]{0,127}");
 
@@ -55,6 +59,7 @@ public final class FixtureBundleBuilder {
     private final Map<String, JsonNode> metadata = new LinkedHashMap<>();
     private final Map<String, Object> identityAttributes = new java.util.TreeMap<>();
     private final Map<String, Boolean> featureFlags = new java.util.TreeMap<>();
+    private final Map<String, String> secretRefs = new java.util.TreeMap<>();
     private final ArrayNode rules = JSON.createArrayNode();
     private final ArrayNode assertions = JSON.createArrayNode();
     private final Set<String> ruleIds = new LinkedHashSet<>();
@@ -154,7 +159,7 @@ public final class FixtureBundleBuilder {
         String key = required(name, "metadata name", 128);
         if ("executionServices".equals(key)) {
             throw new IllegalArgumentException(
-                    "executionServices is reserved; use identityAttribute or featureFlag");
+                    "executionServices is reserved; use identityAttribute, featureFlag, or secretRef");
         }
         if (!metadata.containsKey(key) && metadata.size() >= MAX_METADATA_ENTRIES) {
             throw new IllegalArgumentException("Fixture metadata may contain at most 100 entries");
@@ -216,6 +221,32 @@ public final class FixtureBundleBuilder {
             requireExecutionServiceSize();
         } catch (RuntimeException oversized) {
             restore(featureFlags, key, previous);
+            throw oversized;
+        }
+        return this;
+    }
+
+    /**
+     * Binds a secret alias to an opaque external test-secret reference.
+     *
+     * <p>The fixture never accepts raw secret values. Resolution is delegated to the configured
+     * test-secret authority immediately before each run or durable resume.</p>
+     *
+     * @param alias exact alias requested by the operator or built-in function
+     * @param opaqueReference absolute provider reference without user-info, query, or fragment
+     * @return this builder
+     */
+    public FixtureBundleBuilder secretRef(String alias, String opaqueReference) {
+        String key = executionServiceKey(alias, "secret alias");
+        String reference = validSecretRef(opaqueReference);
+        if (!secretRefs.containsKey(key) && secretRefs.size() >= MAX_EXECUTION_SERVICE_ENTRIES) {
+            throw new IllegalArgumentException("A fixture may bind at most 100 secret references");
+        }
+        String previous = secretRefs.put(key, reference);
+        try {
+            requireExecutionServiceSize();
+        } catch (RuntimeException oversized) {
+            restore(secretRefs, key, previous);
             throw oversized;
         }
         return this;
@@ -294,7 +325,7 @@ public final class FixtureBundleBuilder {
         bundle.set("assertions", assertions.deepCopy());
         ObjectNode metadataNode = bundle.putObject("metadata");
         metadata.forEach((name, value) -> metadataNode.set(name, value.deepCopy()));
-        if (!identityAttributes.isEmpty() || !featureFlags.isEmpty()) {
+        if (!identityAttributes.isEmpty() || !featureFlags.isEmpty() || !secretRefs.isEmpty()) {
             if (metadata.size() >= MAX_METADATA_ENTRIES) {
                 throw new IllegalArgumentException(
                         "Fixture metadata including executionServices may contain at most 100 entries");
@@ -510,6 +541,33 @@ public final class FixtureBundleBuilder {
                 || value instanceof Long || value instanceof BigInteger;
     }
 
+    private static String validSecretRef(String value) {
+        String reference = normalized(value);
+        if (reference.isBlank() || reference.length() > MAX_SECRET_REF_CHARACTERS) {
+            throw new IllegalArgumentException(
+                    "secret reference must be an absolute opaque URI of at most 1024 characters");
+        }
+        final URI uri;
+        try {
+            uri = new URI(reference);
+        } catch (URISyntaxException malformed) {
+            throw new IllegalArgumentException("secret reference must be an absolute opaque URI");
+        }
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        if (!uri.isAbsolute() || uri.isOpaque() || scheme.isBlank()
+                || uri.getRawAuthority() == null || uri.getRawAuthority().isBlank()
+                || Set.of("data", "file", "http", "javascript").contains(scheme)) {
+            throw new IllegalArgumentException("secret reference must be an absolute opaque URI");
+        }
+        if (uri.getRawUserInfo() != null) {
+            throw new IllegalArgumentException("secret reference must not contain user info");
+        }
+        if (uri.getRawQuery() != null || uri.getRawFragment() != null) {
+            throw new IllegalArgumentException("secret reference must not contain a query or fragment");
+        }
+        return reference;
+    }
+
     private void requireExecutionServiceSize() {
         int bytes = executionServicesNode().toString().getBytes(StandardCharsets.UTF_8).length;
         if (bytes > MAX_EXECUTION_SERVICE_BYTES) {
@@ -520,11 +578,17 @@ public final class FixtureBundleBuilder {
 
     private ObjectNode executionServicesNode() {
         ObjectNode executionServices = JSON.createObjectNode();
-        executionServices.put("schemaVersion", TestingProtocol.FIXTURE_EXECUTION_SERVICES_V1);
+        executionServices.put("schemaVersion", secretRefs.isEmpty()
+                ? TestingProtocol.FIXTURE_EXECUTION_SERVICES_V1
+                : TestingProtocol.FIXTURE_EXECUTION_SERVICES_V2);
         ObjectNode identities = executionServices.putObject("identityAttributes");
         identityAttributes.forEach((name, value) -> identities.set(name, JSON.valueToTree(value)));
         ObjectNode flags = executionServices.putObject("featureFlags");
         featureFlags.forEach(flags::put);
+        if (!secretRefs.isEmpty()) {
+            ObjectNode refs = executionServices.putObject("secretRefs");
+            secretRefs.forEach(refs::put);
+        }
         return executionServices;
     }
 
