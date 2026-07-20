@@ -646,6 +646,17 @@ staging 强制 managed trust 并禁止 static keys，test 保留兼容模式。�
 免重启轮换，不宣称 bootstrap root ceremony/热轮换、HSM/KMS custody 或 notary HA/DR 已认证。验证见
 [managed external-notary trust verification](resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md)。
 
+Stage 4 下一增量第一子步冻结 bootstrap-root ceremony kernel，尚未宣称运行时接线完成。新的
+`bloge.externalSequenceAnchorBootstrapRootGenesis.v1` 是 deployment-pinned 有限信任锚；每代
+`bloge.externalSequenceAnchorBootstrapRootTransition.v1` 必须由 preceding root quorum 授权并由
+incoming root quorum 对同一 canonical material 做 possession proof。完整有界 bundle 从 genesis
+重放 sequence/predecessor、scope/root-set/domain、`3f+1 / 2f+1`、policy、lifecycle 与双 quorum，
+current head 可见前再推进专用 durable floor。空 floor 允许首次接纳已完整重放的 head N，新副本无需
+伪造 sequence 1 本地历史；非空后严格拒绝 rollback/fork/gap。strict Schema、public-only JavaDoc 和
+9 项真实 Ed25519/Schema 聚焦测试已闭合。动态 HTTPS/ETag source、数据库 floor 实现、notary verifier
+与双域 Spring/staging 接线仍是下一子步门禁。验证见
+[bootstrap-root ceremony kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md)。
+
 第五十三增量第十八子步把 exact cohort 的 expected set 从 replica-local 配置提升为外部可验签事实。
 deployment governance 生成 strict `bloge.testSuiteStabilityServingInventory.v1`，以 canonical material 绑定
 trust domain、inventory/revision、stable scope、immutable cohort、artifact/protocol、排序且唯一的 1..256

@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-bundle-v1.schema.json",
+  "title": "Resource Gateway External Sequence Anchor Bootstrap Root Bundle v1",
+  "$ref": "#/$defs/bundle",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "wholeSecondInstant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "authoritySignature": {
+      "$ref": "suite-stability-serving-inventory-v1.schema.json#/$defs/authoritySignature"
+    },
+    "rootKeyMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorityId", "keyId", "publicKeyBase64", "notBefore", "expiresAt",
+        "enabled", "revoked"
+      ],
+      "properties": {
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "publicKeyBase64": {
+          "type": "string",
+          "minLength": 60,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        },
+        "notBefore": { "$ref": "#/$defs/wholeSecondInstant" },
+        "expiresAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "enabled": { "type": "boolean" },
+        "revoked": { "type": "boolean" }
+      }
+    },
+    "genesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "scopeId", "rootSetId", "trustDomain",
+        "signatureThreshold", "maximumFaults", "rootKeys", "policyFingerprint"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootGenesis.v1"
+        },
+        "scopeId": { "$ref": "#/$defs/identifier" },
+        "rootSetId": { "$ref": "#/$defs/identifier" },
+        "trustDomain": { "$ref": "#/$defs/identifier" },
+        "signatureThreshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "maximumFaults": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "rootKeys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/rootKeyMaterial" }
+        },
+        "policyFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "rootSetId", "sequence", "previousMaterialFingerprint",
+        "scopeId", "trustDomain", "signatureThreshold", "maximumFaults", "rootKeys",
+        "policyFingerprint", "issuedAt", "notBefore", "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootMaterial.v1"
+        },
+        "rootSetId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "previousMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "scopeId": { "$ref": "#/$defs/identifier" },
+        "trustDomain": { "$ref": "#/$defs/identifier" },
+        "signatureThreshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "maximumFaults": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "rootKeys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/rootKeyMaterial" }
+        },
+        "policyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "issuedAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "notBefore": { "$ref": "#/$defs/wholeSecondInstant" },
+        "expiresAt": { "$ref": "#/$defs/wholeSecondInstant" }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "material", "materialFingerprint",
+        "authorizingRootSignatures", "incomingRootSignatures"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootTransition.v1"
+        },
+        "material": { "$ref": "#/$defs/material" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "authorizingRootSignatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/authoritySignature" }
+        },
+        "incomingRootSignatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/authoritySignature" }
+        }
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "genesisMaterialFingerprint", "transitions",
+        "headMaterialFingerprint"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootBundle.v1"
+        },
+        "genesisMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "transitions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/transition" }
+        },
+        "headMaterialFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}
