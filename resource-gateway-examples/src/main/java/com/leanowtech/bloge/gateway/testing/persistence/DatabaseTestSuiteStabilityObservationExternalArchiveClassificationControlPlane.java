@@ -494,7 +494,7 @@ public final class
         SnapshotReplay expected = replayExpectedSnapshot(comparisonId, authorityId);
         StoredComparison initial = StoredComparison.initial(
                 comparisonId, cycle, expected.objectCount(), expected.root(), now, "");
-        initial = initial.withRecordFingerprint(stateFingerprint(initial.fingerprintMaterial()));
+        initial = initial.withRecordFingerprint(initial.fingerprint(objectMapper));
         try {
             int inserted = jdbc.update("""
                     INSERT INTO rg_test_suite_stability_observation_external_comparisons (
@@ -899,9 +899,9 @@ public final class
                 throw new IllegalStateException("Frozen external expected snapshot is corrupt");
             }
             requireCanonical(fact.item(), "expected inventory item");
-            root[0] = ProtocolFingerprint.of(objectMapper, new ExpectedRootLink(
-                    ExpectedRootLink.SCHEMA_VERSION, root[0], fact.item().itemFingerprint(),
-                    fact.topologyFingerprint()));
+            root[0] = ExternalArchiveComparisonStateIntegrity.appendExpectedRoot(
+                    objectMapper, root[0], fact.item().itemFingerprint(),
+                    fact.topologyFingerprint());
             count[0] = increment(count[0], "expected snapshot object count");
             previous[0] = fact.item().objectId();
         }, comparisonId);
@@ -1031,7 +1031,7 @@ public final class
 
     private void updateComparison(StoredComparison expected, StoredComparison successor) {
         StoredComparison withFingerprint = successor.withRecordFingerprint(
-                stateFingerprint(successor.fingerprintMaterial()));
+                successor.fingerprint(objectMapper));
         int updated = jdbc.update("""
                 UPDATE rg_test_suite_stability_observation_external_comparisons
                 SET comparison_status = ?, next_after_object_id = ?, next_page_sequence = ?,
@@ -1362,9 +1362,8 @@ public final class
     }
 
     private String appendClassificationRoot(String root, Classification classification) {
-        return ProtocolFingerprint.of(objectMapper, new ClassificationRootLink(
-                ClassificationRootLink.SCHEMA_VERSION, root,
-                classification.classificationFingerprint()));
+        return ExternalArchiveComparisonStateIntegrity.appendClassificationRoot(
+                objectMapper, root, classification.classificationFingerprint());
     }
 
     private String topologyFingerprint(
@@ -1372,16 +1371,11 @@ public final class
             String archiveSetId,
             String authorityId,
             String failureDomain) {
-        return ProtocolFingerprint.of(objectMapper, new TopologyMaterial(
-                TopologyMaterial.SCHEMA_VERSION,
+        return ExternalArchiveComparisonStateIntegrity.topologyFingerprint(objectMapper,
                 requiredIdentifier(trustDomain, "trust domain"),
                 requiredIdentifier(archiveSetId, "archive set"),
                 requiredIdentifier(authorityId, "inventory authority"),
-                requiredIdentifier(failureDomain, "failure domain")));
-    }
-
-    private String stateFingerprint(ComparisonStateMaterial material) {
-        return ProtocolFingerprint.of(objectMapper, material);
+                requiredIdentifier(failureDomain, "failure domain"));
     }
 
     private void requireCanonical(
@@ -1733,65 +1727,6 @@ public final class
                 "bloge.testSuiteStabilityObservationExternalArchiveClassification.v1";
     }
 
-    private record TopologyMaterial(
-            String schemaVersion,
-            String trustDomain,
-            String archiveSetId,
-            String authorityId,
-            String failureDomain) {
-        private static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityObservationExternalArchiveTopology.v1";
-    }
-
-    private record ExpectedRootLink(
-            String schemaVersion,
-            String previousRoot,
-            String itemFingerprint,
-            String topologyFingerprint) {
-        private static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityObservationExternalArchiveExpectedRootLink.v1";
-    }
-
-    private record ClassificationRootLink(
-            String schemaVersion,
-            String previousRoot,
-            String classificationFingerprint) {
-        private static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityObservationExternalArchiveClassificationRootLink.v1";
-    }
-
-    private record ComparisonStateMaterial(
-            String schemaVersion,
-            String comparisonId,
-            String cycleId,
-            String authorityId,
-            String status,
-            String trustDomain,
-            String archiveSetId,
-            String failureDomain,
-            String remoteSnapshotId,
-            long remoteObjectCount,
-            String remoteRoot,
-            long expectedObjectCount,
-            String expectedRoot,
-            String nextAfterObjectId,
-            long nextPageSequence,
-            long classifiedObjectCount,
-            long matchedCount,
-            long missingRemoteCount,
-            long unexpectedRemoteCount,
-            long materialConflictCount,
-            long retentionShortenedCount,
-            long unknownCount,
-            String classificationRoot,
-            long revision,
-            Instant startedAt,
-            Instant completedAt,
-            Instant updatedAt) {
-        private static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityObservationExternalArchiveComparisonState.v1";
-    }
-
     private record StoredComparisonAuthority(
             String authorityId,
             String activeComparisonId,
@@ -2020,8 +1955,7 @@ public final class
                     || (completedAt != null && (completedAt.isBefore(startedAt)
                     || updatedAt.isBefore(completedAt)))
                     || !FINGERPRINT.matcher(recordFingerprint).matches()
-                    || !recordFingerprint.equals(ProtocolFingerprint.of(
-                    objectMapper, fingerprintMaterial()))) {
+                    || !recordFingerprint.equals(fingerprint(objectMapper))) {
                 throw new IllegalStateException("External inventory comparison state is corrupt");
             }
         }
@@ -2080,14 +2014,14 @@ public final class
             return classifiedObjectCount - matchedCount;
         }
 
-        private ComparisonStateMaterial fingerprintMaterial() {
-            return new ComparisonStateMaterial(ComparisonStateMaterial.SCHEMA_VERSION, comparisonId,
-                    cycleId, authorityId, status, trustDomain, archiveSetId, failureDomain,
-                    remoteSnapshotId, remoteObjectCount, remoteRoot, expectedObjectCount,
-                    expectedRoot, nextAfterObjectId, nextPageSequence, classifiedObjectCount,
-                    matchedCount, missingRemoteCount, unexpectedRemoteCount, materialConflictCount,
-                    retentionShortenedCount, unknownCount, classificationRoot, revision, startedAt,
-                    completedAt, updatedAt);
+        private String fingerprint(ObjectMapper objectMapper) {
+            return ExternalArchiveComparisonStateIntegrity.comparisonFingerprint(objectMapper,
+                    comparisonId, cycleId, authorityId, status, trustDomain, archiveSetId,
+                    failureDomain, remoteSnapshotId, remoteObjectCount, remoteRoot,
+                    expectedObjectCount, expectedRoot, nextAfterObjectId, nextPageSequence,
+                    classifiedObjectCount, matchedCount, missingRemoteCount,
+                    unexpectedRemoteCount, materialConflictCount, retentionShortenedCount,
+                    unknownCount, classificationRoot, revision, startedAt, completedAt, updatedAt);
         }
 
         private Object[] sqlArguments() {
