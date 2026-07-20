@@ -650,6 +650,11 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                         PublicationAcquisitionDisposition.NO_WORK,
                         null, null, null);
             }
+            if (current.state() == PublicationState.QUARANTINED) {
+                return new PublicationAcquisition(
+                        PublicationAcquisitionDisposition.QUARANTINED,
+                        null, publicationSnapshot(current), null);
+            }
             if (current.state() == PublicationState.PUBLISHING
                     && current.claimUntil().isAfter(now)) {
                 return new PublicationAcquisition(
@@ -754,13 +759,18 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                         PublicationFailureDisposition.FENCE_REJECTED,
                         publicationSnapshot(current));
             }
+            boolean quarantine = safeReason
+                    == PublicationFailureReason.AUTHENTICATED_CONFLICT;
             StoredPublication released = fingerprintedPublication(copyPublication(
-                    current, PublicationState.PENDING, current.claimOwner(),
+                    current, quarantine ? PublicationState.QUARANTINED
+                            : PublicationState.PENDING, current.claimOwner(),
                     current.claimVersion(), current.claimUntil(), current.attemptCount(),
                     safeReason, now, current.receipt(), current.receiptFingerprint(),
                     current.publishedAt(), now));
             updatePublication(released);
-            return new PublicationFailure(PublicationFailureDisposition.RELEASED,
+            return new PublicationFailure(quarantine
+                    ? PublicationFailureDisposition.QUARANTINED
+                    : PublicationFailureDisposition.RELEASED,
                     publicationSnapshot(released));
         });
         return Objects.requireNonNull(result, "publication failure result");

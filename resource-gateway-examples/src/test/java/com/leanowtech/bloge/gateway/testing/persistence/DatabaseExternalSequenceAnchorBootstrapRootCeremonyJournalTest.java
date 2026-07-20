@@ -6,6 +6,10 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyProducer;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootGenesis;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationScheduler;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationService;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublisher;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublisherCallSupervisor;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootSigningAuthority;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootTransition;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityServingInventory;
@@ -17,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -25,6 +30,8 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -739,6 +746,152 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
                 .hasMessageContaining("outbox row is corrupt");
     }
 
+    @Test
+    void publicationSchedulerCommitsAnExactReceiptThroughTheRealDatabaseOutbox() {
+        ProducedFixture produced = produced("ceremony-publication-service", '7');
+        var publisher = publisher(claimRequest -> new ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                .PublicationReceipt(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationReceipt
+                        .SCHEMA_VERSION,
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationReceiptStatus.PUBLISHED,
+                claimRequest.publicationId(), claimRequest.sequence(),
+                claimRequest.bundleFingerprint(), claimRequest.headMaterialFingerprint(),
+                Instant.now()));
+        try (var service = new ExternalSequenceAnchorBootstrapRootPublicationService(
+                journal, publisher,
+                new ExternalSequenceAnchorBootstrapRootPublisherCallSupervisor.Policy(
+                        Duration.ofMillis(100), 1));
+             var scheduler = new ExternalSequenceAnchorBootstrapRootPublicationScheduler(
+                     service, "publisher-worker-a", 3,
+                     new ExternalSequenceAnchorBootstrapRootPublicationScheduler.SchedulePolicy(
+                             Duration.ofDays(1), Duration.ofMillis(100),
+                             Duration.ofSeconds(1)))) {
+
+            var published = scheduler.runOnce();
+
+            assertThat(published.status()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootPublicationService.ExecutionStatus
+                            .PUBLISHED);
+            assertThat(published.snapshot().ceremonyId()).isEqualTo(produced.fixture().id());
+            assertThat(published.snapshot().state()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationState
+                            .PUBLISHED);
+            assertThat(scheduler.snapshot()).satisfies(snapshot -> {
+                assertThat(snapshot.pollCount()).isOne();
+                assertThat(snapshot.completionCount()).isOne();
+                assertThat(snapshot.pollFailureCount()).isZero();
+            });
+            assertThat(service.publishNext("publisher-worker-b", 3).status()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootPublicationService.ExecutionStatus
+                            .NO_WORK);
+            scheduler.close();
+            assertThat(scheduler.snapshot().closed()).isTrue();
+            assertThatThrownBy(scheduler::runOnce)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("closed");
+        }
+    }
+
+    @Test
+    void authenticatedConflictQuarantinesOldestAndBlocksEverySuccessor() {
+        ProducedFixture first = produced("ceremony-publication-conflict", '6');
+        var successor = successorProposal("ceremony-publication-blocked", "maker-b", '5',
+                first.outcome().bundle());
+        journal.propose(successor);
+        journal.approve(approval(successor.ceremonyId(), "approve-blocked",
+                "checker-b", 60));
+        var successorClaim = journal.acquire(acquisition(
+                successor.ceremonyId(), "ceremony-worker-b", 30)).claim();
+        journal.complete(successorClaim, outcome(successor));
+        AtomicInteger calls = new AtomicInteger();
+        var publisher = publisher(request -> {
+            calls.incrementAndGet();
+            throw new ExternalSequenceAnchorBootstrapRootPublisher.PublisherException(
+                    ExternalSequenceAnchorBootstrapRootPublisher.FailureReason
+                            .AUTHENTICATED_CONFLICT);
+        });
+        try (var service = new ExternalSequenceAnchorBootstrapRootPublicationService(
+                journal, publisher,
+                new ExternalSequenceAnchorBootstrapRootPublisherCallSupervisor.Policy(
+                        Duration.ofMillis(100), 1))) {
+
+            var conflict = service.publishNext("publisher-worker-a", 3);
+            var blocked = service.publishNext("publisher-worker-b", 3);
+
+            assertThat(conflict.status()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootPublicationService.ExecutionStatus
+                            .AUTHENTICATED_CONFLICT);
+            assertThat(conflict.snapshot()).satisfies(snapshot -> {
+                assertThat(snapshot.state()).isEqualTo(
+                        ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationState
+                                .QUARANTINED);
+                assertThat(snapshot.lastFailure()).isEqualTo(
+                        ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                                .PublicationFailureReason.AUTHENTICATED_CONFLICT);
+            });
+            assertThat(blocked.status()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootPublicationService.ExecutionStatus
+                            .QUARANTINED);
+            assertThat(calls).hasValue(1);
+            assertThat(repository().acquirePublication(
+                    publicationAcquisition("publisher-worker-c", 3)).disposition())
+                    .isEqualTo(ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                            .PublicationAcquisitionDisposition.QUARANTINED);
+            assertThat(journal.publicationSnapshot(successor.ceremonyId())).isPresent().get()
+                    .extracting(ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                            .PublicationSnapshot::state)
+                    .isEqualTo(ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                            .PublicationState.PENDING);
+        }
+    }
+
+    @Test
+    void unboundPublisherReceiptUsesDatabaseBackoffInsteadOfTerminalCommit() {
+        ProducedFixture produced = produced("ceremony-publication-invalid-response", '4');
+        var publisher = publisher(request -> new ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                .PublicationReceipt(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationReceipt
+                        .SCHEMA_VERSION,
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationReceiptStatus.PUBLISHED,
+                request.publicationId(), request.sequence(), fingerprint('f'),
+                request.headMaterialFingerprint(), Instant.now()));
+        try (var service = new ExternalSequenceAnchorBootstrapRootPublicationService(
+                journal, publisher,
+                new ExternalSequenceAnchorBootstrapRootPublisherCallSupervisor.Policy(
+                        Duration.ofMillis(100), 1))) {
+
+            assertThatThrownBy(() -> service.publishNext("publisher-worker-short", 2))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("deadline margin");
+            assertThat(journal.publicationSnapshot(produced.fixture().id())).isPresent().get()
+                    .extracting(ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                            .PublicationSnapshot::attemptCount)
+                    .isEqualTo(0L);
+
+            var invalid = service.publishNext("publisher-worker-a", 3);
+            var delayed = service.publishNext("publisher-worker-b", 3);
+
+            assertThat(invalid.status()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootPublicationService.ExecutionStatus
+                            .RESPONSE_INVALID);
+            assertThat(invalid.snapshot()).satisfies(snapshot -> {
+                assertThat(snapshot.ceremonyId()).isEqualTo(produced.fixture().id());
+                assertThat(snapshot.state()).isEqualTo(
+                        ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationState
+                                .PENDING);
+                assertThat(snapshot.lastFailure()).isEqualTo(
+                        ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                                .PublicationFailureReason.RESPONSE_INVALID);
+            });
+            assertThat(delayed.status()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootPublicationService.ExecutionStatus
+                            .RETRY_DELAYED);
+            assertThat(delayed.eligibleAt()).isAfter(delayed.snapshot().lastFailedAt());
+        }
+    }
+
     private CeremonyProposalFixture approved(String ceremonyId, char marker) {
         var proposal = proposal(ceremonyId, "maker-a", marker);
         journal.propose(proposal);
@@ -883,6 +1036,33 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
                 claim.publicationId(), claim.request().sequence(),
                 claim.request().bundleFingerprint(),
                 claim.request().headMaterialFingerprint(), Instant.now());
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootPublisher publisher(
+            Function<ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest,
+                    ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationReceipt>
+                    publication) {
+        return new ExternalSequenceAnchorBootstrapRootPublisher() {
+            @Override
+            public ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationReceipt
+                    publish(
+                    ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest
+                            request) {
+                return publication.apply(request);
+            }
+
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(Descriptor.SCHEMA_VERSION, true, true, true,
+                        true, true, true, 4 * 1024 * 1024);
+            }
+
+            @Override
+            public Snapshot snapshot() {
+                return new Snapshot(Snapshot.SCHEMA_VERSION, true, "HEALTHY",
+                        0L, 0L, 0L, 0L, null);
+            }
+        };
     }
 
     private String json(Object value) {

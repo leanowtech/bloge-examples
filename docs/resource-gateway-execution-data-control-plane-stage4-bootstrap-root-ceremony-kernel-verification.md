@@ -8,8 +8,10 @@ durable floor、动态远端刷新、managed notary 组合、Spring/staging 双�
 时间、自动续租与单调后继围栏、崩溃接管、精确 signer/heartbeat request 重放、终态幂等、N-1 指纹
 迁移、整行完整性校验，以及 signer resolver/descriptor/signature 的本地 wall-clock deadline、固定容量零队列和
 lingering-call 观测；`PRODUCED` 与 content-addressed publication outbox 已在同一数据库事务提交，并具备
-顺序 claim、退避/attempt budget、旧行回填和 receipt fence；它仍不
-等于带企业 IAM、HSM/KMS、后台 worker、root publisher HA 和外部审计留存的生产 ceremony 产品。
+顺序 claim、退避/attempt budget、旧行回填和 receipt fence；strict HTTPS + Ed25519 signed-response
+publisher adapter、固定容量调用监督、数据库驱动 publication service、单 lane scheduler 和冲突永久
+quarantine 亦已闭合。它仍不等于带企业 IAM、HSM/KMS、默认部署级 worker、root publisher HA 和外部
+审计留存的生产 ceremony 产品。
 所有消费路径必须使用同一原子 root snapshot，不能另造一个只验证最新 root snapshot 的旁路。
 
 ## 2. 根因
@@ -266,6 +268,14 @@ journal、database journal、resolver、service、scheduler 与 supervisor 6 个
 真实执行，并成功重打包 Spring Boot 可执行 JAR。该结论证明待发布事实不会跨本地 crash gap 丢失，
 不证明远端 publisher transport 已认证。
 
+认证 publication consumer 子步新增严格 machine Schema、静态 Ed25519 响应信任、HTTP
+content-addressed idempotency/predecessor conditional、短时签名响应、固定容量零队列调用监督、数据库
+fence service、单 lane scheduler 和 durable `QUARANTINED`。本子步与既有 ceremony 组联合聚焦门禁执行
+85 tests，0 failures、0 errors、0 skips；完整 Resource Gateway `clean verify` 执行 3314 tests，
+0 failures、0 errors、2 skips，Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功
+重打包 Spring Boot 可执行 JAR。边界明确不包含 publisher mTLS/client identity、certificate pinning、
+response-key 热轮换、跨 root-set worker platform 或 publisher HA/anti-equivocation。
+
 ## 11. 双域部署接线
 
 Spring 组合根现已在 suite-stability 与 test-secret 两个域分别创建：
@@ -300,10 +310,12 @@ bundle、legacy fallback、timing bounds、public-only shape 和跨域 alias。J
 
 ## 12. Producer 与 durable workflow 使用
 
-producer、journal、service 和可选 recovery scheduler 都是可嵌入 Java 组件，不新增 HTTP endpoint 或
-独立进程，因此现有 `scripts/visual-canvas-demo.sh start|stop` 无需增加 ceremony 进程。service 自有
+producer、journal、service、可选 recovery scheduler、publication service/scheduler 都是可嵌入 Java
+组件，不新增 Resource Gateway HTTP endpoint 或独立进程；publisher adapter 调用外部 bundle service，
+因此现有 `scripts/visual-canvas-demo.sh start|stop` 无需增加本地 ceremony 进程。ceremony service 自有
 一个 daemon heartbeat scheduler 和一个固定容量 daemon signer pool；recovery scheduler 另有一条
-fixed-delay daemon lane。关闭顺序必须是 recovery scheduler 在前、service 在后。durable 审批场景必须显式配置
+fixed-delay daemon lane。publication service 自有固定容量零队列 publisher pool，publication scheduler
+另有一条 fixed-delay lane。关闭顺序必须是各 scheduler 在前、对应 service 在后。durable 审批场景必须显式配置
 `maximumExecutionDelay`，不能拿面向同步调用的 clock-skew 默认值冒充审批窗口：
 
 ```java
@@ -338,6 +350,24 @@ try (var ceremonies = new ExternalSequenceAnchorBootstrapRootCeremonyService(
         var firstPoll = recovery.runOnce();
     }
 }
+
+var publisher = HttpExternalSequenceAnchorBootstrapRootPublisher.fromBase64(
+        objectMapper, publisherTrustDomain, publisherId, publisherKeyId,
+        publisherPublicKeyBase64, publisherKeyNotBefore, publisherKeyExpiresAt,
+        publisherUri,
+        new HttpExternalSequenceAnchorBootstrapRootPublisher.Settings(
+                Duration.ofSeconds(10), Duration.ofSeconds(5),
+                Duration.ofSeconds(30), false));
+var publisherCalls = new ExternalSequenceAnchorBootstrapRootPublisherCallSupervisor.Policy(
+        Duration.ofSeconds(15), 2);
+try (var publications = new ExternalSequenceAnchorBootstrapRootPublicationService(
+        journal, publisher, publisherCalls)) {
+    // 15 s deadline requires at least 17 s; use 30 s for operational margin.
+    try (var delivery = new ExternalSequenceAnchorBootstrapRootPublicationScheduler(
+            publications, publisherWorkerId, 30)) {
+        var firstDelivery = delivery.runOnce();
+    }
+}
 ```
 
 `propose` 只做 side-effect-free preflight，并冻结 material fingerprint、sequence、public-only signer cohort
@@ -370,8 +400,21 @@ bundle fingerprint 内容寻址，绑定 scope/root-set/ceremony/sequence/predec
 `completePublication` 才能推进 `PUBLISHED`；远端成功、本地提交前崩溃时，下次领取必须向具备 exact
 idempotency 的 publisher 重放同一 request。receipt 的 `PUBLISHED/IDEMPOTENT_REPLAY` 是 transport
 结果，不参与终态等价；publisher 必须原样返回首次 `publishedAt`，时间变化仍按 receipt conflict 拒绝。
-当前尚未内置该远端 adapter/worker，嵌入方不能把
-`PENDING` 误报为已对消费端生效。
+内置 HTTP adapter 把 `publicationId` 放入 `Idempotency-Key`，把 predecessor 放入 `If-Match`，并要求
+exact media/protocol/status、strict bounded JSON、canonical request/material fingerprint、publisher/
+key/trust binding、短时 freshness 和 Ed25519 signature。`200` 只接受 `PUBLISHED/IDEMPOTENT_REPLAY`；
+`409` 只有在签名和 meaningful observed-head conflict 全部成立后才成为
+`AUTHENTICATED_CONFLICT`。错误签名、过期、未知字段或不匹配的 `409` 只能进入 `RESPONSE_INVALID` 退避，
+无权改变安全状态。权威 wire 定义见
+[`external-sequence-anchor-bootstrap-root-publication-v1.schema.json`](schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-publication-v1.schema.json)。
+
+publication service 要求 database lease 至少比本地 publisher deadline 长 2 秒；远端成功但 receipt commit
+时 fence 已失效，只返回 `FENCE_REJECTED`，由后继 worker 精确重放。publisher timeout 为
+100 ms..240 s、固定容量 1..16；默认 30 s/2 slots，使用 `SynchronousQueue`，不建立隐藏 backlog。
+忽略 interrupt 的 adapter 会持续占用固定槽位并出现在 lingering counters 中，不能被描述为远端已取消。
+普通 unavailable/invalid response 写入数据库时间退避；只有认证 conflict 原子进入 `QUARANTINED`，且
+最老 sequence 会永久阻塞后继，直到未来受治理的人工 repair 协议处理。当前没有该 repair 命令，运维方
+不得直接改表“解锁”。
 
 resolver、descriptor、signature timeout 与最大并发分别硬限制为 100 ms..300 s、100 ms..300 s、
 100 ms..300 s 和 1..32；默认值为 5 s、5 s、30 s、8。signer pool 使用 `SynchronousQueue`，所以所有槽位被占用时立即
@@ -406,7 +449,7 @@ Schema 不变，本地细分类只存在 supervisor snapshot。
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest \
+  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootPublisherCallSupervisorTest,HttpExternalSequenceAnchorBootstrapRootPublisherTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest \
   test
 ```
 
@@ -424,11 +467,11 @@ mvn -f resource-gateway-examples/pom.xml \
 - recovery scheduler 接入默认 Spring composition root、跨 root-set 发现/分片、fleet rollout jitter、
   policy 维护迁移、SLO/告警和目标数据库多副本认证；当前完成的是每 root-set 可嵌入的一条 daemon lane，
   不能被描述为部署级 worker platform；
-- outbox consumer worker、publisher mTLS/pinning/响应认证、默认 Spring lifecycle、跨 root-set 分片与
-  SLO；当前已闭合 `PRODUCED` 到 durable request 的原子 crash gap、顺序 fence 和重试预算，但尚未自动
-  发出网络请求；
-- publisher 侧 exact-idempotency 认证、显式 abandon/人工重开、跨区域 HA、独立 consistency witness、
-  anti-equivocation、journal/outbox retention 与 legal hold；
+- publisher mTLS/client identity、certificate pinning、静态 response key 热轮换、默认 Spring lifecycle、
+  跨 root-set 发现/分片与 fleet SLO；当前 adapter 依赖 JVM HTTPS server trust 并额外验证 Ed25519 响应，
+  不等于双向 TLS 或证书 pinning；
+- publisher 侧 exact-idempotency conformance 认证、受治理 quarantine repair/abandon、跨区域 HA、独立
+  consistency witness、anti-equivocation、journal/outbox retention 与 legal hold；
 - transaction-bound security audit、外部 WORM/evidence；当前 whole-record SHA-256 用于发现偶发腐化，
   不是能抵抗拥有数据库写权限攻击者的 keyed 或外部 tamper evidence；
 - 本地数据库 floor 与 root publisher 同时回退时的外部不可回退证明；

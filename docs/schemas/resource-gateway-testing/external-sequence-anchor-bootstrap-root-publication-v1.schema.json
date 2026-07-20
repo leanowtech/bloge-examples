@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-publication-v1.schema.json",
+  "title": "Resource Gateway External Sequence Anchor Bootstrap Root Publication HTTP v1",
+  "oneOf": [
+    { "$ref": "#/$defs/publicationRequest" },
+    { "$ref": "#/$defs/signedResponse" }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "publicationId": {
+      "type": "string",
+      "pattern": "^root-pub-[a-f0-9]{64}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "wholeSecondInstant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "nullableWholeSecondInstant": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/wholeSecondInstant" }
+      ]
+    },
+    "publicationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "publicationId", "scopeId", "rootSetId", "ceremonyId",
+        "sequence", "expectedPreviousMaterialFingerprint", "bundle",
+        "bundleFingerprint", "headMaterialFingerprint"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootPublicationRequest.v1"
+        },
+        "publicationId": { "$ref": "#/$defs/publicationId" },
+        "scopeId": { "$ref": "#/$defs/identifier" },
+        "rootSetId": { "$ref": "#/$defs/identifier" },
+        "ceremonyId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "expectedPreviousMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "bundle": {
+          "$ref": "external-sequence-anchor-bootstrap-root-bundle-v1.schema.json#/$defs/bundle"
+        },
+        "bundleFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "headMaterialFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "responseMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "decision", "trustDomain", "publisherId", "keyId",
+        "requestFingerprint", "publicationId", "scopeId", "rootSetId", "sequence",
+        "expectedPreviousMaterialFingerprint", "bundleFingerprint",
+        "headMaterialFingerprint", "observedSequence",
+        "observedHeadMaterialFingerprint", "publishedAt", "signedAt", "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootPublisherResponseMaterial.v1"
+        },
+        "decision": {
+          "type": "string",
+          "enum": ["PUBLISHED", "IDEMPOTENT_REPLAY", "CONFLICT"]
+        },
+        "trustDomain": { "$ref": "#/$defs/identifier" },
+        "publisherId": { "$ref": "#/$defs/identifier" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "publicationId": { "$ref": "#/$defs/publicationId" },
+        "scopeId": { "$ref": "#/$defs/identifier" },
+        "rootSetId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "expectedPreviousMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "bundleFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "headMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "observedSequence": { "type": "integer", "minimum": 0 },
+        "observedHeadMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "publishedAt": { "$ref": "#/$defs/nullableWholeSecondInstant" },
+        "signedAt": { "$ref": "#/$defs/wholeSecondInstant" },
+        "expiresAt": { "$ref": "#/$defs/wholeSecondInstant" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "decision": { "const": "CONFLICT" } },
+            "required": ["decision"]
+          },
+          "then": {
+            "properties": { "publishedAt": { "type": "null" } }
+          },
+          "else": {
+            "properties": {
+              "publishedAt": { "$ref": "#/$defs/wholeSecondInstant" }
+            }
+          }
+        }
+      ]
+    },
+    "signedResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "material", "materialFingerprint", "signatureBase64"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootPublisherResponse.v1"
+        },
+        "material": { "$ref": "#/$defs/responseMaterial" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "signatureBase64": {
+          "type": "string",
+          "minLength": 88,
+          "maxLength": 88,
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    }
+  }
+}

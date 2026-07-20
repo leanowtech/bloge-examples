@@ -74,6 +74,9 @@ public interface ExternalSequenceAnchorBootstrapRootPublicationOutbox {
         /** One database-fenced publisher owns the current attempt. */
         PUBLISHING,
 
+        /** An authenticated remote conflict blocks this root set pending human repair. */
+        QUARANTINED,
+
         /** An exact matching publisher receipt is durably committed. */
         PUBLISHED
     }
@@ -93,7 +96,10 @@ public interface ExternalSequenceAnchorBootstrapRootPublicationOutbox {
         RETRY_DELAYED,
 
         /** The oldest unpublished row exhausted its automatic attempt budget. */
-        ATTEMPT_LIMIT_REACHED
+        ATTEMPT_LIMIT_REACHED,
+
+        /** The oldest unpublished row carries an authenticated remote conflict. */
+        QUARANTINED
     }
 
     /** Exact publication completion disposition. */
@@ -116,6 +122,9 @@ public interface ExternalSequenceAnchorBootstrapRootPublicationOutbox {
         /** Live claim was released into durable retry backoff. */
         RELEASED,
 
+        /** Live claim was permanently isolated after an authenticated remote conflict. */
+        QUARANTINED,
+
         /** Claim owner, version, lease, or request is stale. */
         FENCE_REJECTED
     }
@@ -129,7 +138,10 @@ public interface ExternalSequenceAnchorBootstrapRootPublicationOutbox {
         RESPONSE_INVALID,
 
         /** Local claim control became unavailable before a safe terminal mutation. */
-        CONTROL_UNAVAILABLE
+        CONTROL_UNAVAILABLE,
+
+        /** Authenticated publisher state conflicts with the expected predecessor or head. */
+        AUTHENTICATED_CONFLICT
     }
 
     /**
@@ -436,6 +448,7 @@ public interface ExternalSequenceAnchorBootstrapRootPublicationOutbox {
             recordFingerprint = fingerprint(recordFingerprint, "recordFingerprint");
             boolean attempted = attemptCount > 0L;
             boolean publishing = state == PublicationState.PUBLISHING;
+            boolean quarantined = state == PublicationState.QUARANTINED;
             boolean failed = lastFailure != null;
             boolean published = state == PublicationState.PUBLISHED;
             if (!SCHEMA_VERSION.equals(schemaVersion)
@@ -444,6 +457,8 @@ public interface ExternalSequenceAnchorBootstrapRootPublicationOutbox {
                     || attempted != (!claimOwner.isEmpty() && claimUntil != null)
                     || publishing && !attempted
                     || failed != (lastFailedAt != null)
+                    || quarantined != (lastFailure
+                    == PublicationFailureReason.AUTHENTICATED_CONFLICT)
                     || published != (receipt != null)
                     || published != (!receiptFingerprint.isEmpty())
                     || published != (publishedAt != null)

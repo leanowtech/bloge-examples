@@ -431,6 +431,68 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
         assertThat(journalSchema.at("/$defs").has("publicationSnapshot")).isFalse();
     }
 
+    @Test
+    void signedPublisherResponseProtocolRequiresExactSuccessOrMeaningfulConflict()
+            throws Exception {
+        var request = publicationRequest();
+        Instant signedAt = Instant.parse("2026-07-21T00:01:00Z");
+        var success = new ExternalSequenceAnchorBootstrapRootPublisher.ResponseMaterial(
+                ExternalSequenceAnchorBootstrapRootPublisher.ResponseMaterial.SCHEMA_VERSION,
+                ExternalSequenceAnchorBootstrapRootPublisher.ResponseDecision.PUBLISHED,
+                "publisher.example", "publisher-a", "key-a",
+                ProtocolFingerprint.of(objectMapper, request), request.publicationId(),
+                request.scopeId(), request.rootSetId(), request.sequence(),
+                request.expectedPreviousMaterialFingerprint(), request.bundleFingerprint(),
+                request.headMaterialFingerprint(), request.sequence(),
+                request.headMaterialFingerprint(), signedAt.minusSeconds(1), signedAt,
+                signedAt.plusSeconds(30));
+        String fingerprint = ProtocolFingerprint.of(objectMapper, success);
+        var envelope = new ExternalSequenceAnchorBootstrapRootPublisher.SignedResponse(
+                ExternalSequenceAnchorBootstrapRootPublisher.SignedResponse.SCHEMA_VERSION,
+                success, fingerprint, Base64.getEncoder().encodeToString(new byte[64]));
+
+        assertThat(envelope.fingerprintVerified(objectMapper)).isTrue();
+        assertThat(success.toReceipt().publicationId()).isEqualTo(request.publicationId());
+        assertThatThrownBy(() -> new ExternalSequenceAnchorBootstrapRootPublisher
+                .ResponseMaterial(success.schemaVersion(),
+                ExternalSequenceAnchorBootstrapRootPublisher.ResponseDecision.CONFLICT,
+                success.trustDomain(), success.publisherId(), success.keyId(),
+                success.requestFingerprint(), success.publicationId(), success.scopeId(),
+                success.rootSetId(), success.sequence(),
+                success.expectedPreviousMaterialFingerprint(), success.bundleFingerprint(),
+                success.headMaterialFingerprint(), success.sequence(),
+                success.headMaterialFingerprint(), null, signedAt,
+                signedAt.plusSeconds(30)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ExternalSequenceAnchorBootstrapRootPublisher
+                .SignedResponse(envelope.schemaVersion(), envelope.material(),
+                envelope.materialFingerprint(), Base64.getEncoder()
+                .encodeToString(new byte[63])))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        JsonNode publicationSchema = objectMapper.readTree(
+                Files.readString(publicationSchemaPath()));
+        assertProperties(objectMapper.valueToTree(request),
+                publicationSchema.at("/$defs/publicationRequest/properties"));
+        assertProperties(objectMapper.valueToTree(success),
+                publicationSchema.at("/$defs/responseMaterial/properties"));
+        assertProperties(objectMapper.valueToTree(envelope),
+                publicationSchema.at("/$defs/signedResponse/properties"));
+        assertThat(publicationSchema.at(
+                "/$defs/publicationRequest/properties/schemaVersion/const").asText())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationRequest.SCHEMA_VERSION);
+        assertThat(publicationSchema.at(
+                "/$defs/signedResponse/properties/schemaVersion/const").asText())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootPublisher
+                        .SignedResponse.SCHEMA_VERSION);
+        assertThat(Files.readString(publicationSchemaPath()))
+                .doesNotContain("credential", "privateKey", "endpoint", "providerSecret");
+
+        JsonNode journalSchema = objectMapper.readTree(Files.readString(journalSchemaPath()));
+        assertThat(journalSchema.at("/$defs").has("signedPublisherResponse")).isFalse();
+    }
+
     private ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest
             publicationRequest() throws Exception {
         Instant now = Instant.parse("2026-07-21T00:00:00Z");
@@ -488,6 +550,11 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
     private static Path legacyJournalSchemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-ceremony-journal-v1.schema.json");
+    }
+
+    private static Path publicationSchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-publication-v1.schema.json");
     }
 
     private static void assertProperties(JsonNode value, JsonNode properties) {

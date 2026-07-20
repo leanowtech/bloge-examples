@@ -436,11 +436,19 @@ complete-chain publication request in a separate durable outbox. The outbox veri
 ceremony on every claim, preserves root sequence order, uses database leases/backoff/attempt limits,
 backfills legacy produced rows, and rejects policy drift or whole-row corruption. Remote publishers
 must replay the exact `publicationId`; only a matching receipt advances the outbox to `PUBLISHED`.
-Close the recovery scheduler before its ceremony service. This is an embeddable Java
-kernel, not a new HTTP endpoint or deployment-wide worker registry; Spring composition, cross-root
-discovery, an authenticated publisher adapter/worker, target-database/DR/chaos certification,
-provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis and complete bundle Schemas,
-failure matrix, runtime wiring, and remaining ceremony limits
+The built-in publisher adapter sends that request over strict HTTPS with the publication id as the
+idempotency key and the predecessor as an HTTP conditional. It accepts only bounded strict JSON
+whose fresh response material, request fingerprint, status, publisher binding, and Ed25519 signature
+all verify against one statically pinned public response key. A database-fenced publication service
+and one-lane scheduler perform automatic delivery through a fixed-capacity zero-queue call
+supervisor. Invalid or unsigned `409` responses enter ordinary retry backoff; only a meaningful
+signed conflict enters durable `QUARANTINED` and blocks every successor sequence. Close each
+recovery/publication scheduler before its owning service. This remains an embeddable Java kernel,
+not a new Resource Gateway endpoint or deployment-wide worker registry; default Spring composition,
+cross-root discovery, publisher mTLS/client identity and certificate pinning, response-key hot
+rotation, publisher HA/anti-equivocation, target-database/DR/chaos certification,
+provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
+bundle, and publication HTTP Schemas, failure matrix, runtime wiring, and remaining ceremony limits
 are documented in the
 [bootstrap-root ceremony verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md).
 
