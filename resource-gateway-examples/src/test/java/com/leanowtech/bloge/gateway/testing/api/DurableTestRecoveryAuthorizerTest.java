@@ -212,11 +212,16 @@ class DurableTestRecoveryAuthorizerTest {
 
         Scenario fixtureDrift = Scenario.graph();
         StoredFixtureBundle stored = fixtureDrift.storedFixture();
+        FixtureBundle changedFixture = new FixtureBundle(stored.bundle().schemaVersion(),
+                stored.bundle().fixtureBundleId(), stored.bundle().revision(),
+                stored.bundle().targetFingerprint(), stored.bundle().classification(),
+                stored.bundle().logicalClock(), stored.bundle().randomSeed(), stored.bundle().rules(),
+                stored.bundle().assertions(), Map.of("revisionMarker", "changed"));
         when(fixtureDrift.fixtures().find("tenant-a", "test", "fixture-a", 1))
                 .thenReturn(Optional.of(new StoredFixtureBundle("", stored.tenantId(),
                         stored.environmentId(), stored.fixtureBundleId(), stored.revision(),
-                        "sha256:" + "f".repeat(64), stored.bundle(), stored.createdAt(),
-                        stored.createdBy())));
+                        ProtocolFingerprint.of(fixtureDrift.mapper(), changedFixture), changedFixture,
+                        stored.createdAt(), stored.createdBy())));
         assertUnavailable(() -> fixtureDrift.authorizer().authorize(
                 fixtureDrift.checkpoint(), identity("CONFIDENTIAL")), "FIXTURE");
 
@@ -225,6 +230,27 @@ class DurableTestRecoveryAuthorizerTest {
                 authorityDescriptor(60));
         assertUnavailable(() -> authorityDrift.authorizer().authorize(
                 authorityDrift.checkpoint(), identity("CONFIDENTIAL")), "AUTHORITY");
+    }
+
+    @Test
+    void corruptFixtureEnvelopeIsAnUnavailableStoreNotAComparableDependencyRevision() {
+        Scenario scenario = Scenario.graph();
+        StoredFixtureBundle stored = scenario.storedFixture();
+        when(scenario.fixtures().find("tenant-a", "test", "fixture-a", 1))
+                .thenReturn(Optional.of(new StoredFixtureBundle("", stored.tenantId(),
+                        stored.environmentId(), stored.fixtureBundleId(), stored.revision(),
+                        "sha256:" + "f".repeat(64), stored.bundle(), stored.createdAt(),
+                        stored.createdBy())));
+
+        assertThatThrownBy(() -> scenario.authorizer().authorize(
+                scenario.checkpoint(), identity("CONFIDENTIAL")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.DURABLE_DEPENDENCY_STORE_UNAVAILABLE");
+                    assertThat(failure.problem().details()).containsOnly(
+                            org.assertj.core.data.MapEntry.entry("dependencyKind", "FIXTURE"));
+                });
     }
 
     @Test

@@ -3763,6 +3763,14 @@ immediately but always produce `EXPLORATORY` evidence. Stored bundles can produc
 evidence only when there is no schema waiver and each mocked resource site is protocol-derived or
 transport-level rather than an output-level self-report.
 
+Every stored read recomputes the canonical bundle fingerprint and binds it back to the stored
+schema, id and revision. Execution and suite services repeat that check after repository return;
+`RG.TEST.FIXTURE_INTEGRITY_INVALID` is therefore raised before planning or persistence when a stored
+envelope and its content drift. The error and required security event never include fixture ids,
+fingerprints or payload values. Durable recovery intentionally projects the same corruption as a
+dependency-store outage, while a valid new fingerprint remains an exact-closure conflict. See
+[Stage 2 fixture registry integrity verification](resource-gateway-execution-data-control-plane-stage2-fixture-registry-integrity-verification.md).
+
 ### 4.3.1 Execute a frozen operator binding
 
 Register the fixture through the same fixture endpoint with `target.kind=OPERATOR`, then submit:

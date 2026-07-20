@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.api.FixtureBundleConflictException;
 import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
+import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundleIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -44,7 +45,7 @@ public final class DatabaseFixtureBundleRepository implements FixtureBundleRepos
 
     @Override
     public StoredFixtureBundle create(StoredFixtureBundle fixture) {
-        require(fixture);
+        StoredFixtureBundleIntegrity.verify(objectMapper, fixture);
         Optional<StoredFixtureBundle> existing = find(fixture.tenantId(), fixture.environmentId(),
                 fixture.fixtureBundleId(), fixture.revision());
         if (existing.isPresent()) {
@@ -82,7 +83,8 @@ public final class DatabaseFixtureBundleRepository implements FixtureBundleRepos
                         rs.getString("fingerprint"), read(rs.getString("bundle_json"), FixtureBundle.class),
                         rs.getTimestamp("created_at").toInstant(), rs.getString("created_by")),
                 tenantId, environmentId, fixtureBundleId, revision);
-        return results.stream().findFirst();
+        return results.stream().map(stored -> StoredFixtureBundleIntegrity.verify(
+                objectMapper, stored)).findFirst();
     }
 
     private static StoredFixtureBundle equivalentOrConflict(StoredFixtureBundle existing,
@@ -92,14 +94,6 @@ public final class DatabaseFixtureBundleRepository implements FixtureBundleRepos
                     "Fixture revision already exists with different immutable content");
         }
         return existing;
-    }
-
-    private static void require(StoredFixtureBundle fixture) {
-        if (fixture == null || fixture.fixtureBundleId() == null || fixture.fixtureBundleId().isBlank()
-                || fixture.revision() <= 0 || fixture.fingerprint() == null || fixture.fingerprint().isBlank()
-                || fixture.bundle() == null || fixture.createdAt() == null) {
-            throw new IllegalArgumentException("Complete immutable fixture revision is required");
-        }
     }
 
     private String write(Object value) {

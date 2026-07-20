@@ -191,6 +191,14 @@ curl -sS -X PUT http://localhost:8080/api/testing/catalogs/gateway-graph-contrac
   -H 'X-Purpose: TEST_SUITE_WRITE'
 ```
 
+Stored fixture identity is verified at every trust boundary: the database repository and each
+execution, suite-publication, and durable-recovery consumer recompute the canonical bundle
+fingerprint and bind it to the stored fixture id/revision. A valid replacement revision is treated
+as dependency drift; malformed or tampered storage fails closed without exposing fixture content.
+See the
+[stored fixture integrity verification](../docs/resource-gateway-execution-data-control-plane-stage2-fixture-registry-integrity-verification.md)
+for invariants, failure semantics, and remaining trust assumptions.
+
 See
 [Testing Control Plane API](../docs/resource-gateway-testing-control-plane-api.md)
 for the complete target-discovery, fixture-registration, execution, evidence,

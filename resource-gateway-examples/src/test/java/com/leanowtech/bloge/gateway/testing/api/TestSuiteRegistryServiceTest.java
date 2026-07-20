@@ -126,6 +126,38 @@ class TestSuiteRegistryServiceTest {
     }
 
     @Test
+    void suiteDependencyRejectsCorruptFixtureContentBeforePersistence() {
+        FixtureBundle tampered = new FixtureBundle("", internalFixture.fixtureBundleId(),
+                internalFixture.revision(), targetFingerprint, "INTERNAL", null, null,
+                List.of(), List.of(), Map.of("payload", "must-never-escape-319"));
+        fixtures.values.put(InMemoryFixtures.key("tenant-a", "test",
+                        internalFixture.fixtureBundleId(), internalFixture.revision()),
+                new StoredFixtureBundle("", "tenant-a", "test",
+                        internalFixture.fixtureBundleId(), internalFixture.revision(),
+                        internalFixture.fingerprint(), tampered, internalFixture.createdAt(),
+                        internalFixture.createdBy()));
+        TestSuite candidate = suite("suite-corrupt-fixture", 1, "INTERNAL", targetFingerprint,
+                List.of(testCase("golden", TestSuite.CaseType.GOLDEN, internalFixture)),
+                TestSuite.CoveragePolicy.defaults());
+
+        assertThatThrownBy(() -> service.register("suite-corrupt-fixture",
+                new TestSuiteRegistrationRequest("", candidate),
+                identity("tenant-a", "test", "CONFIDENTIAL")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.FIXTURE_INTEGRITY_INVALID");
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().title())
+                            .doesNotContain("must-never-escape-319", internalFixture.fingerprint());
+                });
+        assertThat(suites.values).isEmpty();
+        assertThat(securityEvents.events).singleElement().satisfies(event -> {
+            assertThat(event.eventType()).isEqualTo("FIXTURE_INTEGRITY_INVALID");
+            assertThat(event.facts()).isEmpty();
+        });
+    }
+
+    @Test
     void suiteCannotDowngradeFixtureClassificationOrBypassReadClearance() {
         StoredFixtureBundle confidential = storeFixture("fixture-confidential", "CONFIDENTIAL", 1);
         TestSuite downgraded = suite("suite-public", 1, "PUBLIC", targetFingerprint,

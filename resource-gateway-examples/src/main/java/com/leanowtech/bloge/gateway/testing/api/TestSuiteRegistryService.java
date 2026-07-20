@@ -649,14 +649,21 @@ public final class TestSuiteRegistryService {
     private StoredFixtureBundle requireFixture(TestSuite.FixtureBundleRef reference,
                                                 IntegrationRequestContext identity) {
         try {
-            return fixtureRepository.find(identity.tenantId(), identity.environmentId(),
+            StoredFixtureBundle stored = fixtureRepository.find(
+                            identity.tenantId(), identity.environmentId(),
                             reference.fixtureBundleId(), reference.revision())
                     .orElseThrow(() -> conflict(identity, "RG.TEST.SUITE_FIXTURE_NOT_FOUND",
                             "A referenced fixture revision is absent from the authorized scope.",
                             Map.of("fixtureBundleId", reference.fixtureBundleId(),
                                     "revision", reference.revision())));
+            return StoredFixtureBundleIntegrity.verify(objectMapper, stored);
         } catch (IntegrationProblemException expected) {
             throw expected;
+        } catch (FixtureBundleIntegrityException corrupt) {
+            securityEvent(identity, "FIXTURE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.FIXTURE_INTEGRITY_INVALID", Map.of());
+            throw unavailable(identity, "RG.TEST.FIXTURE_INTEGRITY_INVALID",
+                    "A referenced fixture failed immutable-content verification.");
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.FIXTURE_STORE_UNAVAILABLE",
                     "The independent fixture registry is unavailable.");

@@ -1,8 +1,9 @@
 package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
 import com.leanowtech.bloge.gateway.testing.api.FixtureBundleConflictException;
+import com.leanowtech.bloge.gateway.testing.api.FixtureBundleIntegrityException;
+import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestBoundaryCasePlan;
@@ -25,6 +26,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV2;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV3;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteV2;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSuiteRunAttestationService;
@@ -44,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TestRuntimePersistenceTest {
 
     private ObjectMapper mapper;
+    private JdbcTemplate jdbc;
     private DatabaseFixtureBundleRepository fixtures;
     private DatabaseTestRunRepository runs;
     private DatabaseTestSecurityEventRepository securityEvents;
@@ -56,7 +59,7 @@ class TestRuntimePersistenceTest {
         mapper = new ObjectMapper().findAndRegisterModules();
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:test-runtime-" + System.nanoTime() + ";DB_CLOSE_DELAY=-1", "sa", "");
-        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc = new JdbcTemplate(dataSource);
         fixtures = new DatabaseFixtureBundleRepository(jdbc, mapper);
         runs = new DatabaseTestRunRepository(jdbc, mapper);
         securityEvents = new DatabaseTestSecurityEventRepository(jdbc, mapper);
@@ -75,18 +78,47 @@ class TestRuntimePersistenceTest {
     void immutableFixtureRevisionSurvivesRepositoryReconstructionAndRejectsConflict() {
         FixtureBundle bundle = new FixtureBundle("", "fixture-a", 2, "sha256:target",
                 "INTERNAL", null, null, List.of(), List.of(), Map.of("owner", "quality"));
+        String fingerprint = ProtocolFingerprint.of(mapper, bundle);
         StoredFixtureBundle stored = new StoredFixtureBundle("", "tenant-a", "test", "fixture-a", 2,
-                "sha256:fixture-a", bundle, Instant.now(), "runner");
+                fingerprint, bundle, Instant.now(), "runner");
 
         fixtures.create(stored);
 
         assertThat(fixtures.find("tenant-a", "test", "fixture-a", 2)).contains(stored);
         assertThat(fixtures.find("tenant-b", "test", "fixture-a", 2)).isEmpty();
+        FixtureBundle changed = new FixtureBundle("", "fixture-a", 2, "sha256:target",
+                "INTERNAL", null, null, List.of(), List.of(), Map.of("owner", "another"));
         StoredFixtureBundle conflict = new StoredFixtureBundle("", "tenant-a", "test", "fixture-a", 2,
-                "sha256:different", bundle, stored.createdAt(), "runner");
+                ProtocolFingerprint.of(mapper, changed), changed, stored.createdAt(), "runner");
         assertThatThrownBy(() -> fixtures.create(conflict))
                 .isInstanceOf(FixtureBundleConflictException.class)
                 .hasMessageContaining("different immutable content");
+    }
+
+    @Test
+    void fixtureReadRejectsDatabaseJsonTamperingAgainstTheIndexedFingerprint() throws Exception {
+        FixtureBundle bundle = new FixtureBundle("", "fixture-tamper", 1,
+                "sha256:" + "a".repeat(64), "INTERNAL", null, null,
+                List.of(), List.of(), Map.of("marker", "original"));
+        String fingerprint = ProtocolFingerprint.of(mapper, bundle);
+        fixtures.create(new StoredFixtureBundle("", "tenant-a", "test", "fixture-tamper", 1,
+                fingerprint, bundle, Instant.now(), "runner"));
+        FixtureBundle tampered = new FixtureBundle("", "fixture-tamper", 1,
+                bundle.targetFingerprint(), "INTERNAL", null, null,
+                List.of(), List.of(), Map.of("marker", "changed"));
+        jdbc.update("""
+                UPDATE rg_test_fixture_bundles
+                SET bundle_json = ?
+                WHERE tenant_id = ? AND environment_id = ?
+                  AND fixture_bundle_id = ? AND revision = ?
+                """, mapper.writeValueAsString(tampered), "tenant-a", "test",
+                "fixture-tamper", 1);
+
+        assertThatThrownBy(() -> fixtures.find("tenant-a", "test", "fixture-tamper", 1))
+                .isInstanceOf(FixtureBundleIntegrityException.class)
+                .hasMessage("Stored fixture integrity verification failed")
+                .hasMessageNotContaining("original")
+                .hasMessageNotContaining("changed");
     }
 
     @Test

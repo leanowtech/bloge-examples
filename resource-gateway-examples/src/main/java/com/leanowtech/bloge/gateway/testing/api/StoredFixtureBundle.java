@@ -4,7 +4,13 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 
 import java.time.Instant;
 
-/** Immutable tenant- and environment-scoped fixture registry revision. */
+/**
+ * Immutable tenant- and environment-scoped fixture registry revision.
+ *
+ * <p>{@code fingerprint} is the canonical fingerprint of {@code bundle}, not an independent caller
+ * assertion. Repository and service trust boundaries verify that binding together with the
+ * envelope/bundle id and revision before use.</p>
+ */
 public record StoredFixtureBundle(
         String schemaVersion,
         String tenantId,

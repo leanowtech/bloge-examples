@@ -807,8 +807,14 @@ public final class TestExecutionApiService {
                     .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
                             "RG.TEST.FIXTURE_NOT_FOUND", "Fixture bundle was not found in the authorized scope.",
                             identity.correlationId(), Map.of())));
+            stored = StoredFixtureBundleIntegrity.verify(objectMapper, stored);
         } catch (IntegrationProblemException notFound) {
             throw notFound;
+        } catch (FixtureBundleIntegrityException corrupt) {
+            securityEvent(identity, "FIXTURE_INTEGRITY_INVALID", "REJECTED",
+                    "RG.TEST.FIXTURE_INTEGRITY_INVALID", Map.of());
+            throw unavailable(identity, "RG.TEST.FIXTURE_INTEGRITY_INVALID",
+                    "The stored fixture failed immutable-content verification.");
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.FIXTURE_STORE_UNAVAILABLE",
                     "The independent fixture registry is unavailable.");

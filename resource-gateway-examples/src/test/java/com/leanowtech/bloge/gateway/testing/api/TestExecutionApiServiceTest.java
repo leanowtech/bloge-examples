@@ -247,6 +247,36 @@ class TestExecutionApiServiceTest {
     }
 
     @Test
+    void storedFixtureIntegrityDriftFailsClosedAndEmitsPayloadFreeSecurityAudit() {
+        FixtureBundle original = bundle("integrity", new FixtureRule(FixtureRule.SCHEMA_VERSION,
+                "fixed", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning(Map.of("result", "ok")),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict()));
+        StoredFixtureBundle stored = service.registerFixture("integrity",
+                new FixtureBundleRegistrationRequest("", target(), original), identity("test"));
+        FixtureBundle tampered = new FixtureBundle("", "integrity", 1, targetFingerprint,
+                "INTERNAL", null, null, List.of(), List.of(),
+                Map.of("payload", "must-never-escape-721"));
+        fixtures.values.put(InMemoryFixtures.key("tenant-a", "test", "integrity", 1),
+                new StoredFixtureBundle("", "tenant-a", "test", "integrity", 1,
+                        stored.fingerprint(), tampered, stored.createdAt(), stored.createdBy()));
+
+        assertThatThrownBy(() -> service.findFixture("integrity", 1, identity("test")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.FIXTURE_INTEGRITY_INVALID");
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                    assertThat(failure.problem().title())
+                            .doesNotContain("must-never-escape-721", "integrity", stored.fingerprint());
+                });
+        assertThat(securityEvents.events).singleElement().satisfies(event -> {
+            assertThat(event.eventType()).isEqualTo("FIXTURE_INTEGRITY_INVALID");
+            assertThat(event.reasonCode()).isEqualTo("RG.TEST.FIXTURE_INTEGRITY_INVALID");
+            assertThat(event.facts()).isEmpty();
+        });
+    }
+
+    @Test
     void staleTargetAndStoredFixtureFingerprintsFailClosedBeforeExecution() {
         FixtureBundle inline = bundle("stale", new FixtureRule(FixtureRule.SCHEMA_VERSION, "fixed",
                 FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning("ok"),
