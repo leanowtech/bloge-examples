@@ -1,11 +1,12 @@
-# Stage 4 external-anchor bootstrap-root ceremony kernel verification
+# Stage 4 external-anchor bootstrap-root ceremony durable workflow verification
 
 ## 1. 本步边界
 
 本步建立 external sequence-anchor bootstrap-root 的 ceremony 协议、完整链重放验证内核、专用
-durable floor、动态远端刷新、managed notary 组合、Spring/staging 双域接线，以及不接触私钥的
-ceremony producer kernel。producer kernel 可以生成并自验 sequence 1 或在完整已验链上追加一代；它
-不是带持久化状态机、maker/checker 审批、HSM/KMS 适配和 publisher HA 的完整 ceremony service。
+durable floor、动态远端刷新、managed notary 组合、Spring/staging 双域接线、不接触私钥的 producer，
+以及可嵌入的数据库权威 maker/checker workflow。新 workflow 已闭合不可变提案、独立审批、数据库
+时间、执行租约与单调围栏、崩溃接管、精确 signer request 重放、终态幂等和整行完整性校验；它仍不
+等于带企业 IAM、HSM/KMS、后台 worker、root publisher HA 和外部审计留存的生产 ceremony 产品。
 所有消费路径必须使用同一原子 root snapshot，不能另造一个只验证最新 root snapshot 的旁路。
 
 ## 2. 根因
@@ -131,8 +132,13 @@ producer command、opaque signer descriptor/request/response、payload-free sign
 
 `docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-ceremony-v1.schema.json`
 
+maker/checker proposal、approval、execution claim、durable snapshot 和 bounded execution result 使用：
+
+`docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-ceremony-journal-v1.schema.json`
+
 Schema 仅包含公钥、签名和治理元数据，拒绝 additional properties，并限制 transitions、keys、signatures
-和 attempts 基数；不包含私钥、credential、provider endpoint 或异常文本。
+和 attempts 基数；不包含私钥、credential、provider endpoint、claim token 或异常文本。journal Schema
+把 proposal 与 approval timeout 分成不同终态，不能用一个笼统的 `EXPIRED` 掩盖责任边界。
 
 ## 10. 测试证据
 
@@ -161,8 +167,8 @@ reconstruction idempotency、rollback/fork/forked ancestry、identity isolation�
 first-head linearization。
 
 `ExternalSequenceAnchorBootstrapRootProtocolSchemaTest` 锁定 Java record/Schema 字段同构、协议常量、
-128 代上限、`additionalProperties: false` 和 public-only 约束。新增
-`ExternalSequenceAnchorBootstrapRootCeremonyProducerTest` 的 12 项真实 Ed25519 测试覆盖：
+128 代上限、`additionalProperties: false` 和 public-only 约束。
+`ExternalSequenceAnchorBootstrapRootCeremonyProducerTest` 的 14 项真实 Ed25519 测试覆盖：
 
 - sequence 1 与 sequence 2 的旧根授权、新根 possession proof 和最终整链反向验收；
 - 相同 command 的 byte-identical bundle 与 deterministic signer request id；
@@ -175,6 +181,21 @@ first-head linearization。
   horizon，从而禁止密码学合法却必然中断服务的信任空窗；
 - outcome 不包含 private key、credential 或 provider endpoint。
 
+`DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest` 的 10 项真实数据库测试进一步覆盖：
+
+- 相同 proposal 精确重放、同 ceremony id 内容冲突和同 root-set 单 active workflow；
+- proposal timeout 与 approval timeout 的独立终态和后续 workflow 解锁；
+- maker/checker 分离、approval request 精确幂等与冲突；
+- live lease 排他、过期 takeover、claim version/attempt 单调递增和旧 fence 拒绝；
+- live failure 释放后重试，以及审批已过期时只落确定性 expiry、不接受 post-fence failure 归因；
+- terminal outcome 精确重放、changed outcome 冲突和 latest-produced-head 强制连续；
+- 进程重建、整行离线腐化 fail closed 和两个并发首提案线性化为一个 winner。
+
+`ExternalSequenceAnchorBootstrapRootCeremonyServiceTest` 的 4 项端到端测试覆盖正常提交与重启重放、
+远端实际签名后进程崩溃再接管、审批后 signer cohort 漂移零签名失败，以及临时 quorum outage 后按
+同一 approved cohort 重试。崩溃测试证明每个 content-addressed signer request id 只产生一次真实签名，
+恢复调用只取得签名端的精确幂等回放。
+
 producer/Schema 聚焦门禁当前执行 18 tests 全绿；加入 consumer quorum-horizon 回归后，三类核心门禁
 执行 32 tests 全绿。此前 ceremony/Schema/database floor 共
 执行 20 tests；新增 Spring runtime composition 执行 4 tests。两组配置、capability、health、script 和
@@ -182,6 +203,11 @@ producer/Schema 聚焦门禁当前执行 18 tests 全绿；加入 consumer quoru
 聚焦调用，均为 0 failures、0 errors、0 skips。前一子步完整 Resource Gateway `clean verify` 执行
 3231 tests；本 producer 增量最终完整 `clean verify` 执行 3247 tests，0 failures、0 errors、2 skips，
 并成功重打包可执行 JAR；本次环境还实际执行了 34 项浏览器回归，而不是把全部浏览器用例条件跳过。
+本 durable workflow 增量的 producer/protocol-schema/journal/service 聚焦门禁执行 34 tests，0 failures、
+0 errors、0 skips；最终 Resource Gateway `clean verify` 执行 3263 tests，0 failures、0 errors、2 skips，
+其中浏览器测试类共 34 项、32 项真实执行，并成功重打包 Spring Boot 可执行 JAR。本次新增及修改的
+5 个公共 ceremony 类型另以 `javadoc -Werror -Xdoclint:all` 独立验证，0 warnings、0 errors；全模块
+JavaDoc 仍受未触碰旧类型的 16 个既有 doclint errors 阻断，不能误报为全仓 JavaDoc 已清零。
 
 ## 11. 双域部署接线
 
@@ -215,47 +241,71 @@ replay、durable floor 和 current readiness；root readiness 为 false 时，�
 bundle、legacy fallback、timing bounds、public-only shape 和跨域 alias。Java 组合根再次执行完整严格
 解析、密码学、binding、quorum 与 floor 校验；shell 只是更早反馈，不是安全边界。
 
-## 12. Producer kernel 使用与边界
+## 12. Producer 与 durable workflow 使用
 
-`ExternalSequenceAnchorBootstrapRootCeremonyProducer` 是可嵌入 Java 组件，不新增 HTTP endpoint、后台
-线程或常驻进程，因此现有 `scripts/visual-canvas-demo.sh start|stop` 无需增加 ceremony 服务。典型调用
-顺序如下：
+producer、journal 和 service 都是可嵌入 Java 组件，不新增 HTTP endpoint、后台线程或常驻进程，因此
+现有 `scripts/visual-canvas-demo.sh start|stop` 无需增加 ceremony 进程。durable 审批场景必须显式配置
+`maximumExecutionDelay`，不能拿面向同步调用的 clock-skew 默认值冒充审批窗口：
 
 ```java
 var producer = new ExternalSequenceAnchorBootstrapRootCeremonyProducer(
-        objectMapper, clock, binding, acceptedPolicies, pinnedGenesis);
+        objectMapper, clock, binding, acceptedPolicies, pinnedGenesis,
+        Duration.ofMinutes(10));
 
-var first = producer.begin(rotationRequest, genesisAuthorities, incomingAuthorities);
-var successor = producer.append(
-        first.bundle(), nextRotationRequest, incomingAuthorities, nextAuthorities);
+var journal = new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
+        jdbcTemplate, objectMapper, scopeId, rootSetId, transactionManager);
+var ceremonies = new ExternalSequenceAnchorBootstrapRootCeremonyService(producer, journal);
+
+ceremonies.propose(rotationRequest, makerId, 300,
+        genesisAuthorities, incomingAuthorities);
+ceremonies.approve(new ApprovalCommand(
+        ApprovalCommand.SCHEMA_VERSION, ceremonyId, approvalRequestId,
+        checkerId, 300));
+var result = ceremonies.execute(
+        ceremonyId, workerId, 30, genesisAuthorities, incomingAuthorities);
 ```
 
+`propose` 只做 side-effect-free preflight，并冻结 material fingerprint、sequence、public-only signer cohort
+和 exclusive `executionDeadline`。数据库把 proposal/approval deadline 都夹紧到该截止时间；审批者必须
+与 maker 不同。`execute` 取得数据库时间租约后重算完整 preflight，任何 signer 集合或配置漂移都会在
+签名前失败。signer 调用发生在事务外，complete 必须提交 exact owner/version/until/proposal fence；失去
+fence 的调用方看不到刚生成但未提交的 artifact。
+
 `RotationRequest.expectedPreviousMaterialFingerprint` 是显式 CAS；`issuedAt` 必须在本地 clock-skew 窗口
-内。producer 在调用 signer 前验证 current chain、policy、生命周期、active quorum、chain bound 和 signer
-public identity，再对每个 signer 生成 content-addressed request id。每个返回签名会以对应 public key 本地
-验签；两个 role 都达到 threshold 后，candidate bundle 还必须通过既有 consumer verifier 完整重放。
+的未来边界内，历史年龄则受显式 `maximumExecutionDelay` 限制。producer 在调用 signer 前验证 current
+chain、policy、生命周期、active quorum、chain bound 和 signer public identity，再对每个 signer 生成
+content-addressed request id。每个返回签名会以对应 public key 本地验签；两个 role 都达到 threshold
+后，candidate bundle 还必须通过既有 consumer verifier 完整重放。
 
 signer 失败按 `UNAVAILABLE / INVALID_RESPONSE / INVALID_SIGNATURE` 聚合，provider 异常文本不会进入
 outcome。允许在 `3f+1 / 2f+1` 策略内带一个坏 signer 成功，但任一 quorum 不足时不返回 partial bundle。
-这只是“协议产物原子性”：已被 HSM 执行的签名不能由 Java 回滚。完整服务必须以 `ceremonyId` 持久化
-command/outcome，确保重试读取既有结果而不是在 clock-skew 窗口外伪造 backdated ceremony。
+已被签名端执行的签名仍不能由 Java 回滚，因此 signer adapter 必须把 request id 与完整请求内容一起
+持久化：同 id 同内容精确回放，同 id 异内容拒绝。journal 只允许最新 `PRODUCED` outcome 的 exact bundle
+作为下一代 predecessor；这防止从仍密码学有效但已陈旧的分支继续演进。
 
 聚焦运行命令：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest \
+  -Dtest=ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest \
   test
 ```
 
 ## 13. 仍未宣称
 
-当前实现闭合的是消费侧 restart-free chain 和可嵌入 producer kernel，不等于以下部署认证：
+当前实现闭合的是消费侧 restart-free chain 与可嵌入 durable workflow kernel，不等于以下部署认证：
 
-- durable ceremony service、maker/checker 双人审批、幂等账本、超时恢复和离线 break-glass；
-- HSM/KMS adapter、不可导出 private-key custody、mTLS、key attestation 与 provider HA；
+- 企业 IAM/PDP 对 maker/checker/worker 的认证授权、职责分离策略、审批撤回和离线 break-glass；
+- HSM/KMS adapter、不可导出 private-key custody、mTLS、key attestation、provider HA 和 signer
+  idempotency capability attestation；
+- 执行 heartbeat/lease extension、后台恢复调度、重试预算、cancel/reject；当前单次签名尝试必须在
+  1..300 秒 lease 内完成，长耗时或大 signer cohort 尚未认证；
+- `PRODUCED` 后 publisher 失败的对账/补发、显式 abandon 规则、journal retention 与 legal hold；
 - root bundle publisher 的 mTLS/pinning、跨区域 HA、独立 consistency witness 与 anti-equivocation；
+- transaction-bound security audit、外部 WORM/evidence；当前 whole-record SHA-256 用于发现偶发腐化，
+  不是能抵抗拥有数据库写权限攻击者的 keyed 或外部 tamper evidence；
 - 本地数据库 floor 与 root publisher 同时回退时的外部不可回退证明；
-- PostgreSQL/MySQL 等目标数据库并发、备份恢复、跨区 DR 与长期 chaos/SLO 认证。
+- 正式 migration 工具、PostgreSQL/MySQL 等目标数据库并发、备份恢复、跨区 DR 与长期 chaos/SLO
+  认证；当前 DDL/锁语义只由内嵌 H2 测试证明。
 
 这些项目不能由本地 green tests 推导为已完成，仍是进入生产前的独立交付门禁。

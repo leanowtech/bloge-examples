@@ -49,6 +49,7 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
     private final Set<String> acceptedPolicyFingerprints;
     private final ExternalSequenceAnchorBootstrapRootGenesis genesis;
     private final String genesisFingerprint;
+    private final Duration maximumExecutionDelay;
 
     /**
      * Creates one deployment-bound producer kernel.
@@ -65,11 +66,43 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
             ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding binding,
             Set<String> acceptedPolicyFingerprints,
             ExternalSequenceAnchorBootstrapRootGenesis genesis) {
+        this(objectMapper, clock, binding, acceptedPolicyFingerprints, genesis,
+                Objects.requireNonNull(binding, "binding").clockSkew());
+    }
+
+    /**
+     * Creates one deployment-bound producer with an explicit durable approval delay.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param clock trusted ceremony host clock
+     * @param binding exact consumer-compatible chain and lifecycle policy
+     * @param acceptedPolicyFingerprints accepted ceremony policy revisions
+     * @param genesis deployment-pinned public-only genesis
+     * @param maximumExecutionDelay maximum age of approved material before signer invocation
+     */
+    public ExternalSequenceAnchorBootstrapRootCeremonyProducer(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicyFingerprints,
+            ExternalSequenceAnchorBootstrapRootGenesis genesis,
+            Duration maximumExecutionDelay) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.binding = Objects.requireNonNull(binding, "binding");
         this.acceptedPolicyFingerprints = acceptedPolicies(acceptedPolicyFingerprints);
         this.genesis = Objects.requireNonNull(genesis, "genesis");
+        this.maximumExecutionDelay = Objects.requireNonNull(
+                maximumExecutionDelay, "maximumExecutionDelay");
+        if (this.maximumExecutionDelay.isZero()
+                || this.maximumExecutionDelay.isNegative()
+                || !this.maximumExecutionDelay.equals(
+                Duration.ofSeconds(this.maximumExecutionDelay.toSeconds()))
+                || this.maximumExecutionDelay.compareTo(binding.clockSkew()) < 0
+                || this.maximumExecutionDelay.compareTo(binding.maximumRootLifetime()) > 0) {
+            throw new IllegalArgumentException(
+                    "Bootstrap-root maximum execution delay is invalid");
+        }
         if (!binding.scopeId().equals(genesis.scopeId())
                 || !binding.rootSetId().equals(genesis.rootSetId())
                 || !binding.trustDomain().equals(genesis.trustDomain())
@@ -116,7 +149,84 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
                 authorizingAuthorities, incomingAuthorities);
     }
 
+    /**
+     * Validates and freezes a sequence-one ceremony without invoking any signer.
+     *
+     * @param request immutable sequence-one command
+     * @param authorizingAuthorities opaque genesis-root authorities
+     * @param incomingAuthorities opaque successor-root authorities
+     * @return canonical signer cohorts and material identity approved by a durable workflow
+     */
+    public CeremonyPreflight preflight(
+            RotationRequest request,
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
+                    authorizingAuthorities,
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
+        return prepare(null, request, authorizingAuthorities, incomingAuthorities).preflight();
+    }
+
+    /**
+     * Validates and freezes one successor ceremony without invoking any signer.
+     *
+     * @param currentBundle untrusted complete current chain
+     * @param request immutable successor command
+     * @param authorizingAuthorities opaque current-root authorities
+     * @param incomingAuthorities opaque successor-root authorities
+     * @return canonical signer cohorts and material identity approved by a durable workflow
+     */
+    public CeremonyPreflight preflight(
+            ExternalSequenceAnchorBootstrapRootBundle currentBundle,
+            RotationRequest request,
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
+                    authorizingAuthorities,
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
+        return prepare(Objects.requireNonNull(currentBundle, "currentBundle"), request,
+                authorizingAuthorities, incomingAuthorities).preflight();
+    }
+
     private CeremonyOutcome produce(
+            ExternalSequenceAnchorBootstrapRootBundle currentBundle,
+            RotationRequest request,
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
+                    authorizingAuthorities,
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
+        PreparedCeremony prepared = prepare(currentBundle, request, authorizingAuthorities,
+                incomingAuthorities);
+        RotationRequest command = prepared.command();
+        CurrentHead current = prepared.current();
+        String materialFingerprint = prepared.materialFingerprint();
+        SigningResult oldRootResult = collectSignatures(command, materialFingerprint,
+                current.sequence(), ExternalSequenceAnchorBootstrapRootSigningAuthority.Role
+                        .AUTHORIZING_ROOT, prepared.authorizers());
+        requireQuorum(oldRootResult,
+                ExternalSequenceAnchorBootstrapRootSigningAuthority.Role.AUTHORIZING_ROOT);
+        SigningResult incomingResult = collectSignatures(command, materialFingerprint,
+                current.sequence(), ExternalSequenceAnchorBootstrapRootSigningAuthority.Role
+                        .INCOMING_ROOT, prepared.incoming());
+        requireQuorum(incomingResult,
+                ExternalSequenceAnchorBootstrapRootSigningAuthority.Role.INCOMING_ROOT);
+
+        var transition = new ExternalSequenceAnchorBootstrapRootTransition(
+                ExternalSequenceAnchorBootstrapRootTransition.SCHEMA_VERSION,
+                prepared.material(), materialFingerprint, oldRootResult.signatures(),
+                incomingResult.signatures());
+        List<ExternalSequenceAnchorBootstrapRootTransition> transitions = new ArrayList<>();
+        if (currentBundle != null) {
+            transitions.addAll(currentBundle.transitions());
+        }
+        transitions.add(transition);
+        var bundle = new ExternalSequenceAnchorBootstrapRootBundle(
+                ExternalSequenceAnchorBootstrapRootBundle.SCHEMA_VERSION,
+                genesisFingerprint, transitions, materialFingerprint);
+        verifyProducedBundle(bundle, command.notBefore());
+
+        List<SigningAttempt> attempts = new ArrayList<>(oldRootResult.attempts());
+        attempts.addAll(incomingResult.attempts());
+        return new CeremonyOutcome(CeremonyOutcome.SCHEMA_VERSION,
+                command.ceremonyId(), bundle, attempts);
+    }
+
+    private PreparedCeremony prepare(
             ExternalSequenceAnchorBootstrapRootBundle currentBundle,
             RotationRequest request,
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
@@ -144,6 +254,12 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
                     null, 0, binding.signatureThreshold());
         }
         validateSuccessorLifecycle(command, current.quorumHorizon());
+        Instant executionDeadline = earliest(command.issuedAt().plus(maximumExecutionDelay),
+                current.quorumHorizon(), command.expiresAt());
+        if (!clock.instant().isBefore(executionDeadline)) {
+            throw new CeremonyException(FailureReason.CLOCK_OUT_OF_BOUNDS,
+                    null, 0, binding.signatureThreshold());
+        }
 
         var material = new ExternalSequenceAnchorBootstrapRootTransition.Material(
                 ExternalSequenceAnchorBootstrapRootTransition.Material.SCHEMA_VERSION,
@@ -160,35 +276,9 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
         List<SignerBinding> incoming = bindAuthorities(
                 incomingAuthorities, command.incomingRootKeys(), command.issuedAt(),
                 ExternalSequenceAnchorBootstrapRootSigningAuthority.Role.INCOMING_ROOT);
-        SigningResult oldRootResult = collectSignatures(command, materialFingerprint,
-                current.sequence(), ExternalSequenceAnchorBootstrapRootSigningAuthority.Role
-                        .AUTHORIZING_ROOT, authorizers);
-        requireQuorum(oldRootResult,
-                ExternalSequenceAnchorBootstrapRootSigningAuthority.Role.AUTHORIZING_ROOT);
-        SigningResult incomingResult = collectSignatures(command, materialFingerprint,
-                current.sequence(), ExternalSequenceAnchorBootstrapRootSigningAuthority.Role
-                        .INCOMING_ROOT, incoming);
-        requireQuorum(incomingResult,
-                ExternalSequenceAnchorBootstrapRootSigningAuthority.Role.INCOMING_ROOT);
-
-        var transition = new ExternalSequenceAnchorBootstrapRootTransition(
-                ExternalSequenceAnchorBootstrapRootTransition.SCHEMA_VERSION,
-                material, materialFingerprint, oldRootResult.signatures(),
-                incomingResult.signatures());
-        List<ExternalSequenceAnchorBootstrapRootTransition> transitions = new ArrayList<>();
-        if (currentBundle != null) {
-            transitions.addAll(currentBundle.transitions());
-        }
-        transitions.add(transition);
-        var bundle = new ExternalSequenceAnchorBootstrapRootBundle(
-                ExternalSequenceAnchorBootstrapRootBundle.SCHEMA_VERSION,
-                genesisFingerprint, transitions, materialFingerprint);
-        verifyProducedBundle(bundle, command.notBefore());
-
-        List<SigningAttempt> attempts = new ArrayList<>(oldRootResult.attempts());
-        attempts.addAll(incomingResult.attempts());
-        return new CeremonyOutcome(CeremonyOutcome.SCHEMA_VERSION,
-                command.ceremonyId(), bundle, attempts);
+        return new PreparedCeremony(command, current, material, materialFingerprint,
+                executionDeadline,
+                authorizers, incoming);
     }
 
     private CurrentHead verifiedCurrentHead(
@@ -369,8 +459,8 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
 
     private void validateCeremonyClock(Instant issuedAt) {
         Instant now = clock.instant();
-        Duration drift = Duration.between(issuedAt, now).abs();
-        if (drift.compareTo(binding.clockSkew()) > 0) {
+        if (issuedAt.isAfter(now.plus(binding.clockSkew()))
+                || issuedAt.isBefore(now.minus(maximumExecutionDelay))) {
             throw new CeremonyException(FailureReason.CLOCK_OUT_OF_BOUNDS,
                     null, 0, binding.signatureThreshold());
         }
@@ -424,6 +514,11 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
                 && !at.isBefore(key.notBefore()) && at.isBefore(key.expiresAt());
     }
 
+    private static Instant earliest(Instant first, Instant second, Instant third) {
+        Instant result = first.isBefore(second) ? first : second;
+        return result.isBefore(third) ? result : third;
+    }
+
     private static PublicKey publicKey(
             ExternalSequenceAnchorBootstrapRootGenesis.RootKeyMaterial material) {
         try {
@@ -462,6 +557,31 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
                     "One through 32 bootstrap-root producer policies are required");
         }
         return Set.copyOf(result);
+    }
+
+    private static List<ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor>
+            canonicalDescriptors(
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor> values) {
+        List<ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor> result =
+                new ArrayList<>(values == null ? List.of() : values);
+        if (result.isEmpty() || result.size()
+                > ExternalSequenceAnchorBootstrapRootTransition
+                .MAXIMUM_SIGNATURES_PER_ROLE
+                || result.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException(
+                    "External bootstrap-root preflight signer cohort is invalid");
+        }
+        result.sort(Comparator.comparing(
+                ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor::authorityId)
+                .thenComparing(
+                        ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor::keyId));
+        Set<String> authorityIds = new HashSet<>();
+        if (result.stream().anyMatch(descriptor ->
+                !authorityIds.add(descriptor.authorityId()))) {
+            throw new IllegalArgumentException(
+                    "External bootstrap-root preflight signer cohort is ambiguous");
+        }
+        return List.copyOf(result);
     }
 
     private static String normalized(String value) {
@@ -514,6 +634,57 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
                     || notBefore.isBefore(issuedAt) || !expiresAt.isAfter(notBefore)) {
                 throw new IllegalArgumentException(
                         "External bootstrap-root ceremony request is invalid");
+            }
+        }
+    }
+
+    /**
+     * Public-only immutable result of a side-effect-free ceremony preflight.
+     *
+     * <p>A durable maker/checker workflow persists this exact value and recomputes it before every
+     * execution or recovery attempt. Equality therefore binds the approved root material to both
+     * signer cohorts without storing credentials, endpoints, or private keys.</p>
+     *
+     * @param schemaVersion preflight protocol generation
+     * @param ceremonyId exact proposal identity
+     * @param sequence derived successor sequence
+     * @param materialFingerprint canonical transition material identity
+     * @param executionDeadline exclusive signer-invocation deadline
+     * @param authorizingAuthorities canonical old-root signer descriptors
+     * @param incomingAuthorities canonical successor-root signer descriptors
+     */
+    public record CeremonyPreflight(
+            String schemaVersion,
+            String ceremonyId,
+            long sequence,
+            String materialFingerprint,
+            Instant executionDeadline,
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor>
+                    authorizingAuthorities,
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor>
+                    incomingAuthorities) {
+
+        /** Current durable-workflow preflight protocol. */
+        public static final String SCHEMA_VERSION =
+                "bloge.externalSequenceAnchorBootstrapRootCeremonyPreflight.v1";
+
+        /** Enforces complete canonical public-only preflight identity. */
+        public CeremonyPreflight {
+            schemaVersion = normalized(schemaVersion);
+            ceremonyId = normalized(ceremonyId);
+            materialFingerprint = normalized(materialFingerprint);
+            executionDeadline = Objects.requireNonNull(
+                    executionDeadline, "executionDeadline");
+            authorizingAuthorities = canonicalDescriptors(authorizingAuthorities);
+            incomingAuthorities = canonicalDescriptors(incomingAuthorities);
+            if (!SCHEMA_VERSION.equals(schemaVersion)
+                    || !IDENTIFIER.matcher(ceremonyId).matches()
+                    || sequence < 1
+                    || !FINGERPRINT.matcher(materialFingerprint).matches()
+                    || !ExternalSequenceAnchorBootstrapRootGenesis.wholeSecond(
+                    executionDeadline)) {
+                throw new IllegalArgumentException(
+                        "External bootstrap-root ceremony preflight is invalid");
             }
         }
     }
@@ -733,6 +904,24 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
             ExternalSequenceAnchorBootstrapRootSigningAuthority authority,
             ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor descriptor,
             PublicKey publicKey) {
+    }
+
+    private record PreparedCeremony(
+            RotationRequest command,
+            CurrentHead current,
+            ExternalSequenceAnchorBootstrapRootTransition.Material material,
+            String materialFingerprint,
+            Instant executionDeadline,
+            List<SignerBinding> authorizers,
+            List<SignerBinding> incoming) {
+
+        private CeremonyPreflight preflight() {
+            return new CeremonyPreflight(CeremonyPreflight.SCHEMA_VERSION,
+                    command.ceremonyId(), current.sequence(), materialFingerprint,
+                    executionDeadline,
+                    authorizers.stream().map(SignerBinding::descriptor).toList(),
+                    incoming.stream().map(SignerBinding::descriptor).toList());
+        }
     }
 
     private record SigningResult(

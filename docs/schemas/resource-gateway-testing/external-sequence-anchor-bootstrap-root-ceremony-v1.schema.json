@@ -117,6 +117,38 @@
         "expiresAt": { "$ref": "#/$defs/wholeSecondInstant" }
       }
     },
+    "ceremonyPreflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "ceremonyId", "sequence", "materialFingerprint",
+        "executionDeadline",
+        "authorizingAuthorities", "incomingAuthorities"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.externalSequenceAnchorBootstrapRootCeremonyPreflight.v1"
+        },
+        "ceremonyId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "executionDeadline": { "$ref": "#/$defs/wholeSecondInstant" },
+        "authorizingAuthorities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/signerDescriptor" }
+        },
+        "incomingAuthorities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/signerDescriptor" }
+        }
+      }
+    },
     "signingAttempt": {
       "type": "object",
       "additionalProperties": false,

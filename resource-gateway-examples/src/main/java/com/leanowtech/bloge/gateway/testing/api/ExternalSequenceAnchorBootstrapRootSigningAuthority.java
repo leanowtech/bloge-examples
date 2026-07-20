@@ -23,6 +23,11 @@ public interface ExternalSequenceAnchorBootstrapRootSigningAuthority {
     /**
      * Signs one exact ceremony material fingerprint.
      *
+     * <p>Implementations used by a durable ceremony service must treat {@code requestId} as an
+     * idempotency key: the same complete request returns the same response, while reuse with any
+     * changed field fails closed. This permits safe recovery after a process loses its database
+     * lease between a remote signature side effect and outcome commit.</p>
+     *
      * @param request bounded, role-aware, deterministic signing command
      * @return detached signature response echoing the complete request identity
      */

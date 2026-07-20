@@ -282,6 +282,42 @@ class ExternalSequenceAnchorBootstrapRootCeremonyProducerTest {
     }
 
     @Test
+    void explicitExecutionDelaySupportsApprovalWithoutWeakeningFutureClockChecks() {
+        List<TestSigner> authorizers = signers(genesisKeys, "genesis", Map.of());
+        List<TestSigner> incoming = signers(generationOneKeys, "one", Map.of());
+        var durableProducer = new ExternalSequenceAnchorBootstrapRootCeremonyProducer(
+                objectMapper, Clock.fixed(NOW, ZoneOffset.UTC), binding(),
+                Set.of(POLICY), genesis, Duration.ofMinutes(10));
+        var command = request("ceremony-approved-later",
+                genesis.materialFingerprint(objectMapper), generationOneKeys, "one",
+                NOW.minusSeconds(60), NOW, NOW.plusSeconds(3600));
+
+        var preflight = durableProducer.preflight(command,
+                authorities(authorizers), authorities(incoming));
+
+        assertThat(preflight.executionDeadline()).isEqualTo(NOW.plusSeconds(540));
+        assertThat(authorizers).allSatisfy(signer -> assertThat(signer.requests).isEmpty());
+        assertThat(incoming).allSatisfy(signer -> assertThat(signer.requests).isEmpty());
+
+        var outcome = durableProducer.begin(command,
+                authorities(authorizers), authorities(incoming));
+        assertThat(outcome.bundle().headMaterialFingerprint())
+                .isEqualTo(preflight.materialFingerprint());
+
+        var futureCommand = request("ceremony-future-clock",
+                genesis.materialFingerprint(objectMapper), generationOneKeys, "one",
+                NOW.plusSeconds(6), NOW.plusSeconds(6), NOW.plusSeconds(3600));
+        assertThatThrownBy(() -> durableProducer.preflight(futureCommand,
+                authorities(authorizers), authorities(incoming)))
+                .isInstanceOfSatisfying(
+                        ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyException
+                                .class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                ExternalSequenceAnchorBootstrapRootCeremonyProducer
+                                        .FailureReason.CLOCK_OUT_OF_BOUNDS));
+    }
+
+    @Test
     void signerSetMismatchIsRejectedBeforeAnyAuthorityIsCalled() throws Exception {
         List<TestSigner> authorizers = signers(genesisKeys, "genesis", Map.of());
         List<TestSigner> incoming = signers(generationOneKeys, "one", Map.of());

@@ -143,6 +143,13 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
                         .SCHEMA_VERSION,
                 "ceremony-a", genesisFingerprint, List.of(key),
                 "sha256:" + "b".repeat(64), now, now, now.plusSeconds(3600));
+        var preflight = new ExternalSequenceAnchorBootstrapRootCeremonyProducer
+                .CeremonyPreflight(
+                ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyPreflight
+                        .SCHEMA_VERSION,
+                "ceremony-a", 1L, materialFingerprint, now.plusSeconds(300),
+                List.of(descriptor),
+                List.of(descriptor));
         var authoritySignature = new TestSuiteStabilityServingInventory.AuthoritySignature(
                 "root-a", "root-key-a", "Ed25519", now, signatureValue);
         var transition = new ExternalSequenceAnchorBootstrapRootTransition(
@@ -176,12 +183,14 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
                 schema.at("/$defs/signatureResponse/properties"));
         assertProperties(objectMapper.valueToTree(rotationRequest),
                 schema.at("/$defs/rotationRequest/properties"));
+        assertProperties(objectMapper.valueToTree(preflight),
+                schema.at("/$defs/ceremonyPreflight/properties"));
         assertProperties(objectMapper.valueToTree(attempts.getFirst()),
                 schema.at("/$defs/signingAttempt/properties"));
         assertProperties(objectMapper.valueToTree(outcome),
                 schema.at("/$defs/ceremonyOutcome/properties"));
         assertThat(List.of("signerDescriptor", "signatureRequest", "signatureResponse",
-                "rotationRequest", "signingAttempt", "ceremonyOutcome"))
+                "rotationRequest", "ceremonyPreflight", "signingAttempt", "ceremonyOutcome"))
                 .allSatisfy(definition -> assertThat(schema.at(
                         "/$defs/" + definition + "/additionalProperties").asBoolean())
                         .isFalse());
@@ -216,6 +225,92 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
         }
     }
 
+    @Test
+    void strictDurableCeremonySchemaMatchesMakerCheckerAndLeaseRecords() throws Exception {
+        Instant now = Instant.parse("2026-07-21T00:00:00Z");
+        String publicKey = Base64.getEncoder().encodeToString(
+                KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+                        .getPublic().getEncoded());
+        var key = new ExternalSequenceAnchorBootstrapRootGenesis.RootKeyMaterial(
+                "root-a", "root-key-a", publicKey, now.minusSeconds(60),
+                now.plusSeconds(3600), true, false);
+        var descriptor = new ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor(
+                ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor.SCHEMA_VERSION,
+                "root-a", "root-key-a", "Ed25519", publicKey);
+        var request = new ExternalSequenceAnchorBootstrapRootCeremonyProducer.RotationRequest(
+                ExternalSequenceAnchorBootstrapRootCeremonyProducer.RotationRequest
+                        .SCHEMA_VERSION,
+                "ceremony-durable", "sha256:" + "a".repeat(64), List.of(key),
+                "sha256:" + "b".repeat(64), now, now, now.plusSeconds(3600));
+        var preflight = new ExternalSequenceAnchorBootstrapRootCeremonyProducer
+                .CeremonyPreflight(
+                ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyPreflight
+                        .SCHEMA_VERSION,
+                "ceremony-durable", 1L, "sha256:" + "c".repeat(64),
+                now.plusSeconds(300),
+                List.of(descriptor), List.of(descriptor));
+        var proposal = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal
+                        .SCHEMA_VERSION,
+                request, null, preflight, "maker-a", 300);
+        var approval = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.ApprovalCommand(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.ApprovalCommand
+                        .SCHEMA_VERSION,
+                request.ceremonyId(), "approval-a", "checker-a", 300);
+        var acquisition = new ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                .AcquisitionCommand(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.AcquisitionCommand
+                        .SCHEMA_VERSION,
+                request.ceremonyId(), "worker-a", 30);
+        var claim = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim
+                        .SCHEMA_VERSION,
+                request.ceremonyId(), "worker-a", 1L, now.plusSeconds(30), proposal);
+        var snapshot = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonySnapshot(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonySnapshot
+                        .SCHEMA_VERSION,
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.EXECUTING,
+                proposal, "sha256:" + "d".repeat(64), now, now.plusSeconds(300),
+                approval.approvalRequestId(),
+                "sha256:" + "e".repeat(64), approval.checkerId(), now,
+                now.plusSeconds(300), claim.workerId(), claim.claimVersion(),
+                claim.claimUntil(), 1L, null, null, null, "", null, now,
+                "sha256:" + "f".repeat(64));
+        var execution = new ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionResult(
+                ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus.BUSY,
+                snapshot, null);
+        JsonNode schema = objectMapper.readTree(Files.readString(journalSchemaPath()));
+
+        assertProperties(objectMapper.valueToTree(proposal),
+                schema.at("/$defs/ceremonyProposal/properties"));
+        assertProperties(objectMapper.valueToTree(approval),
+                schema.at("/$defs/approvalCommand/properties"));
+        assertProperties(objectMapper.valueToTree(acquisition),
+                schema.at("/$defs/acquisitionCommand/properties"));
+        assertProperties(objectMapper.valueToTree(claim),
+                schema.at("/$defs/executionClaim/properties"));
+        assertProperties(objectMapper.valueToTree(snapshot),
+                schema.at("/$defs/ceremonySnapshot/properties"));
+        assertProperties(objectMapper.valueToTree(execution),
+                schema.at("/$defs/executionResult/properties"));
+        assertThat(List.of("ceremonyProposal", "approvalCommand", "acquisitionCommand",
+                "executionClaim", "ceremonySnapshot", "executionResult"))
+                .allSatisfy(definition -> assertThat(schema.at(
+                        "/$defs/" + definition + "/additionalProperties").asBoolean())
+                        .isFalse());
+        assertThat(schema.at(
+                "/$defs/approvalCommand/properties/approvalDurationSeconds/minimum").asInt())
+                .isEqualTo(1);
+        assertThat(schema.at(
+                "/$defs/acquisitionCommand/properties/leaseDurationSeconds/maximum").asInt())
+                .isEqualTo(300);
+        for (String forbidden : List.of("privateKey", "credential", "secret", "endpoint",
+                "providerName", "errorMessage", "exception", "claimToken")) {
+            assertThat(Files.readString(journalSchemaPath()))
+                    .doesNotContain("\"" + forbidden + "\"");
+        }
+    }
+
     private static Path schemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-bundle-v1.schema.json");
@@ -229,6 +324,11 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
     private static Path ceremonySchemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-ceremony-v1.schema.json");
+    }
+
+    private static Path journalSchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-ceremony-journal-v1.schema.json");
     }
 
     private static void assertProperties(JsonNode value, JsonNode properties) {
