@@ -389,6 +389,82 @@ class ExternalSequenceAnchorBootstrapRootProtocolSchemaTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void publicationOutboxPolicyAndRecordsRemainBoundedOutsideCeremonyWireSchemas()
+            throws Exception {
+        var policy = new ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                .PublicationPolicy(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationPolicy
+                        .SCHEMA_VERSION,
+                2L, 10L, 20L);
+        var request = publicationRequest();
+        var claim = new ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationClaim(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationClaim
+                        .SCHEMA_VERSION,
+                request.publicationId(), request.ceremonyId(), "publisher-a", 1L,
+                Instant.now().plusSeconds(30), request);
+
+        assertThat(policy.retryDelaySeconds(1L)).isEqualTo(2L);
+        assertThat(policy.retryDelaySeconds(2L)).isEqualTo(4L);
+        assertThat(policy.retryDelaySeconds(3L)).isEqualTo(8L);
+        assertThat(policy.retryDelaySeconds(4L)).isEqualTo(10L);
+        assertThat(policy.retryDelaySeconds(Long.MAX_VALUE)).isEqualTo(10L);
+        assertThat(claim.publicationId()).isEqualTo(request.publicationId());
+        assertThatThrownBy(() -> policy.retryDelaySeconds(0L))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                .PublicationPolicy(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationPolicy
+                        .SCHEMA_VERSION,
+                10L, 9L, 1L))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                .PublicationRequest(request.schemaVersion(), "root-pub-" + "f".repeat(64),
+                request.scopeId(), request.rootSetId(), request.ceremonyId(),
+                request.sequence(), request.expectedPreviousMaterialFingerprint(),
+                request.bundle(), request.bundleFingerprint(),
+                request.headMaterialFingerprint()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        JsonNode journalSchema = objectMapper.readTree(Files.readString(journalSchemaPath()));
+        assertThat(journalSchema.at("/$defs").has("publicationRequest")).isFalse();
+        assertThat(journalSchema.at("/$defs").has("publicationSnapshot")).isFalse();
+    }
+
+    private ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest
+            publicationRequest() throws Exception {
+        Instant now = Instant.parse("2026-07-21T00:00:00Z");
+        String publicKey = Base64.getEncoder().encodeToString(
+                KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+                        .getPublic().getEncoded());
+        var key = new ExternalSequenceAnchorBootstrapRootGenesis.RootKeyMaterial(
+                "root-a", "root-key-a", publicKey, now.minusSeconds(60),
+                now.plusSeconds(3600), true, false);
+        String predecessor = "sha256:" + "a".repeat(64);
+        var material = new ExternalSequenceAnchorBootstrapRootTransition.Material(
+                ExternalSequenceAnchorBootstrapRootTransition.Material.SCHEMA_VERSION,
+                "notary-bootstrap-roots", 1L, predecessor, "stability-fleet",
+                "bootstrap.example", 1, 0, List.of(key),
+                "sha256:" + "b".repeat(64), now, now, now.plusSeconds(3600));
+        String materialFingerprint = ProtocolFingerprint.of(objectMapper, material);
+        var signature = new TestSuiteStabilityServingInventory.AuthoritySignature(
+                "root-a", "root-key-a", "Ed25519", now,
+                Base64.getEncoder().encodeToString(new byte[64]));
+        var transition = new ExternalSequenceAnchorBootstrapRootTransition(
+                ExternalSequenceAnchorBootstrapRootTransition.SCHEMA_VERSION,
+                material, materialFingerprint, List.of(signature), List.of(signature));
+        var bundle = new ExternalSequenceAnchorBootstrapRootBundle(
+                ExternalSequenceAnchorBootstrapRootBundle.SCHEMA_VERSION,
+                predecessor, List.of(transition), materialFingerprint);
+        String bundleFingerprint = ProtocolFingerprint.of(objectMapper, bundle);
+        return new ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest
+                        .SCHEMA_VERSION,
+                "root-pub-" + bundleFingerprint.substring("sha256:".length()),
+                "stability-fleet", "notary-bootstrap-roots", "ceremony-a", 1L,
+                predecessor, bundle, bundleFingerprint, materialFingerprint);
+    }
+
     private static Path schemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-bundle-v1.schema.json");

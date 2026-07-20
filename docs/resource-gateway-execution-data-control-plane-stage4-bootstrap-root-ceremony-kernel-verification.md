@@ -7,7 +7,8 @@ durable floor、动态远端刷新、managed notary 组合、Spring/staging 双�
 以及可嵌入的数据库权威 maker/checker workflow。新 workflow 已闭合不可变提案、独立审批、数据库
 时间、自动续租与单调后继围栏、崩溃接管、精确 signer/heartbeat request 重放、终态幂等、N-1 指纹
 迁移、整行完整性校验，以及 signer resolver/descriptor/signature 的本地 wall-clock deadline、固定容量零队列和
-lingering-call 观测；它仍不
+lingering-call 观测；`PRODUCED` 与 content-addressed publication outbox 已在同一数据库事务提交，并具备
+顺序 claim、退避/attempt budget、旧行回填和 receipt fence；它仍不
 等于带企业 IAM、HSM/KMS、后台 worker、root publisher HA 和外部审计留存的生产 ceremony 产品。
 所有消费路径必须使用同一原子 root snapshot，不能另造一个只验证最新 root snapshot 的旁路。
 
@@ -187,7 +188,7 @@ first-head linearization。
   horizon，从而禁止密码学合法却必然中断服务的信任空窗；
 - outcome 不包含 private key、credential 或 provider endpoint。
 
-`DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest` 的 18 项真实数据库测试进一步覆盖：
+`DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest` 的 23 项真实数据库测试进一步覆盖：
 
 - 相同 proposal 精确重放、同 ceremony id 内容冲突和同 root-set 单 active workflow；
 - proposal timeout 与 approval timeout 的独立终态和后续 workflow 解锁；
@@ -201,7 +202,10 @@ first-head linearization。
   一个 winner；
 - recovery 对无 active、待审批、live lease 的精确分类，两个副本原子竞争只签发一个 fence；
 - 数据库时间失败退避、durable automatic-attempt budget、跨副本 policy fingerprint 漂移与离线篡改
-  fail closed。
+  fail closed；
+- `PRODUCED` 与 complete-chain publication request 的同事务提交，outbox 冲突时 ceremony 终态整体回滚；
+- content-addressed publication id、跨副本 claim 排他、严格 sequence 顺序、exact receipt replay、数据库
+  退避/attempt budget、旧 `PRODUCED` 行回填、policy 漂移及 outbox 离线腐化 fail closed。
 
 `ExternalSequenceAnchorBootstrapRootCeremonyServiceTest` 的 14 项端到端测试覆盖非法自动续租 lease
 在数据库写入前失败、正常提交与重启重放、
@@ -255,6 +259,13 @@ journal、database journal、resolver、service、scheduler 与 supervisor 6 个
 执行 3291 tests，0 failures、0 errors、2 skips；Browser DOM 34 项中 32 项及 browser workflow 1 项
 真实执行，并成功重打包 Spring Boot 可执行 JAR。该局部结论不外推为目标数据库、DR 或生产部署认证。
 
+原子 publication outbox 子步把同组聚焦门禁扩展到 68 tests，0 failures、0 errors、0 skips。新增
+`ExternalSequenceAnchorBootstrapRootPublicationOutbox` 及 database journal 两个公共类型以
+`javadoc -Werror -Xdoclint:all` 独立验证，0 warnings、0 errors。最终 Resource Gateway `clean verify`
+执行 3297 tests，0 failures、0 errors、2 skips；Browser DOM 34 项中 32 项及 browser workflow 1 项
+真实执行，并成功重打包 Spring Boot 可执行 JAR。该结论证明待发布事实不会跨本地 crash gap 丢失，
+不证明远端 publisher transport 已认证。
+
 ## 11. 双域部署接线
 
 Spring 组合根现已在 suite-stability 与 test-secret 两个域分别创建：
@@ -302,9 +313,11 @@ var producer = new ExternalSequenceAnchorBootstrapRootCeremonyProducer(
 
 var recoveryPolicy = new RecoveryPolicy(
         RecoveryPolicy.SCHEMA_VERSION, 5, 300, 20);
+var publicationPolicy = new PublicationPolicy(
+        PublicationPolicy.SCHEMA_VERSION, 5, 300, 20);
 var journal = new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
         jdbcTemplate, objectMapper, scopeId, rootSetId, transactionManager,
-        recoveryPolicy);
+        recoveryPolicy, publicationPolicy);
 journal.init();
 var signerCalls = new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Policy(
         Duration.ofSeconds(5), Duration.ofSeconds(5),
@@ -347,6 +360,18 @@ authority ports；service 随后重算完整 preflight 并 exact compare approve
 resolver 不得返回 credential 或 provider diagnostics；resolution 自身也经过 signer supervisor 的独立
 deadline 和零队列容量边界。scheduler 只有一条本地 lane，多副本正确性仍完全依赖数据库 fence，而非
 进程内 timer。`Snapshot` 只含 aggregate counters/status，不是 wire protocol，也不是治理 evidence。
+
+`complete` 取得 root-set lock 后，在同一事务内先提交 `PRODUCED` ceremony，再建立 immutable
+`PublicationRequest`；任一 outbox 冲突或完整性错误会回滚整个事务。request 的 `publicationId` 由完整
+bundle fingerprint 内容寻址，绑定 scope/root-set/ceremony/sequence/predecessor/complete bundle/head。
+`acquirePublication` 每次先从所有 `PRODUCED` 行回填缺失 outbox，再完整校验 source/outbox 一致性，只给
+最老未发布 sequence 签发数据库 lease；live claim、失败退避、20 次默认自动预算和 policy fingerprint
+均由数据库裁决。远端成功后必须以相同 publication id、sequence、bundle/head fingerprint 构造 receipt，
+`completePublication` 才能推进 `PUBLISHED`；远端成功、本地提交前崩溃时，下次领取必须向具备 exact
+idempotency 的 publisher 重放同一 request。receipt 的 `PUBLISHED/IDEMPOTENT_REPLAY` 是 transport
+结果，不参与终态等价；publisher 必须原样返回首次 `publishedAt`，时间变化仍按 receipt conflict 拒绝。
+当前尚未内置该远端 adapter/worker，嵌入方不能把
+`PENDING` 误报为已对消费端生效。
 
 resolver、descriptor、signature timeout 与最大并发分别硬限制为 100 ms..300 s、100 ms..300 s、
 100 ms..300 s 和 1..32；默认值为 5 s、5 s、30 s、8。signer pool 使用 `SynchronousQueue`，所以所有槽位被占用时立即
@@ -399,8 +424,11 @@ mvn -f resource-gateway-examples/pom.xml \
 - recovery scheduler 接入默认 Spring composition root、跨 root-set 发现/分片、fleet rollout jitter、
   policy 维护迁移、SLO/告警和目标数据库多副本认证；当前完成的是每 root-set 可嵌入的一条 daemon lane，
   不能被描述为部署级 worker platform；
-- `PRODUCED` 后 publisher 失败的对账/补发、显式 abandon 规则、journal retention 与 legal hold；
-- root bundle publisher 的 mTLS/pinning、跨区域 HA、独立 consistency witness 与 anti-equivocation；
+- outbox consumer worker、publisher mTLS/pinning/响应认证、默认 Spring lifecycle、跨 root-set 分片与
+  SLO；当前已闭合 `PRODUCED` 到 durable request 的原子 crash gap、顺序 fence 和重试预算，但尚未自动
+  发出网络请求；
+- publisher 侧 exact-idempotency 认证、显式 abandon/人工重开、跨区域 HA、独立 consistency witness、
+  anti-equivocation、journal/outbox retention 与 legal hold；
 - transaction-bound security audit、外部 WORM/evidence；当前 whole-record SHA-256 用于发现偶发腐化，
   不是能抵抗拥有数据库写权限攻击者的 keyed 或外部 tamper evidence；
 - 本地数据库 floor 与 root publisher 同时回退时的外部不可回退证明；

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyProducer;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.Acquisition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.AcquisitionCommand;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.AcquisitionDisposition;
@@ -27,6 +28,20 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryAcquisitionDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.State;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationAcquisition;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationAcquisitionCommand;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationAcquisitionDisposition;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationClaim;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationCompletion;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationCompletionDisposition;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationFailure;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationFailureDisposition;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationFailureReason;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationPolicy;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationReceipt;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationSnapshot;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationState;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -53,7 +68,8 @@ import java.util.regex.Pattern;
  * migrates only an exact heartbeat-empty v1 fingerprint into the v2 record shape.</p>
  */
 public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
-        implements ExternalSequenceAnchorBootstrapRootCeremonyJournal {
+        implements ExternalSequenceAnchorBootstrapRootCeremonyJournal,
+        ExternalSequenceAnchorBootstrapRootPublicationOutbox {
 
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
@@ -62,6 +78,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             "bloge.externalSequenceAnchorBootstrapRootCeremonyJournalRecord.v1";
     private static final String RECORD_SCHEMA =
             "bloge.externalSequenceAnchorBootstrapRootCeremonyJournalRecord.v2";
+    private static final String PUBLICATION_RECORD_SCHEMA =
+            "bloge.externalSequenceAnchorBootstrapRootPublicationRecord.v1";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -69,6 +87,8 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
     private final String rootSetId;
     private final RecoveryPolicy recoveryPolicy;
     private final String recoveryPolicyFingerprint;
+    private final PublicationPolicy publicationPolicy;
+    private final String publicationPolicyFingerprint;
     private final TransactionTemplate transactions;
 
     /**
@@ -87,7 +107,7 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             String rootSetId,
             PlatformTransactionManager transactionManager) {
         this(jdbc, objectMapper, scopeId, rootSetId, transactionManager,
-                RecoveryPolicy.DEFAULT);
+                RecoveryPolicy.DEFAULT, PublicationPolicy.DEFAULT);
     }
 
     /**
@@ -107,6 +127,29 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             String rootSetId,
             PlatformTransactionManager transactionManager,
             RecoveryPolicy recoveryPolicy) {
+        this(jdbc, objectMapper, scopeId, rootSetId, transactionManager,
+                recoveryPolicy, PublicationPolicy.DEFAULT);
+    }
+
+    /**
+     * Creates one durable journal with independently governed recovery and publication policies.
+     *
+     * @param jdbc isolated control-plane JDBC facade
+     * @param objectMapper canonical protocol mapper
+     * @param scopeId stable Resource Gateway fleet scope
+     * @param rootSetId exact managed bootstrap-root chain identity
+     * @param transactionManager manager for the same datasource
+     * @param recoveryPolicy ceremony retry delay and attempt budget
+     * @param publicationPolicy publication retry delay and attempt budget
+     */
+    public DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            String scopeId,
+            String rootSetId,
+            PlatformTransactionManager transactionManager,
+            RecoveryPolicy recoveryPolicy,
+            PublicationPolicy publicationPolicy) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.scopeId = identifier(scopeId, "scopeId");
@@ -114,6 +157,10 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
         this.recoveryPolicy = Objects.requireNonNull(recoveryPolicy, "recoveryPolicy");
         this.recoveryPolicyFingerprint = ProtocolFingerprint.of(
                 this.objectMapper, this.recoveryPolicy);
+        this.publicationPolicy = Objects.requireNonNull(
+                publicationPolicy, "publicationPolicy");
+        this.publicationPolicyFingerprint = ProtocolFingerprint.of(
+                this.objectMapper, this.publicationPolicy);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(
                 transactionManager, "transactionManager"));
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -129,12 +176,17 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     scope_id VARCHAR(255) NOT NULL,
                     root_set_id VARCHAR(255) NOT NULL,
                     recovery_policy_fingerprint VARCHAR(71),
+                    publication_policy_fingerprint VARCHAR(71),
                     PRIMARY KEY (scope_id, root_set_id)
                 )
                 """);
         jdbc.execute("""
                 ALTER TABLE rg_external_sequence_anchor_bootstrap_root_ceremony_locks
                 ADD COLUMN IF NOT EXISTS recovery_policy_fingerprint VARCHAR(71)
+                """);
+        jdbc.execute("""
+                ALTER TABLE rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                ADD COLUMN IF NOT EXISTS publication_policy_fingerprint VARCHAR(71)
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS
@@ -186,10 +238,41 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 ALTER TABLE rg_external_sequence_anchor_bootstrap_root_ceremonies
                 ADD COLUMN IF NOT EXISTS heartbeat_count BIGINT DEFAULT 0 NOT NULL
                 """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS
+                    rg_external_sequence_anchor_bootstrap_root_publications (
+                    scope_id VARCHAR(255) NOT NULL,
+                    root_set_id VARCHAR(255) NOT NULL,
+                    ceremony_id VARCHAR(255) NOT NULL,
+                    publication_id VARCHAR(255) NOT NULL,
+                    publication_sequence BIGINT NOT NULL,
+                    state VARCHAR(32) NOT NULL,
+                    request_json CLOB NOT NULL,
+                    request_fingerprint VARCHAR(71) NOT NULL,
+                    enqueued_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    claim_owner VARCHAR(255),
+                    claim_version BIGINT NOT NULL,
+                    claim_until TIMESTAMP WITH TIME ZONE,
+                    attempt_count BIGINT NOT NULL,
+                    last_failure_reason VARCHAR(64),
+                    last_failed_at TIMESTAMP WITH TIME ZONE,
+                    receipt_json CLOB,
+                    receipt_fingerprint VARCHAR(71),
+                    published_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL,
+                    PRIMARY KEY (scope_id, root_set_id, ceremony_id),
+                    UNIQUE (scope_id, root_set_id, publication_id),
+                    UNIQUE (scope_id, root_set_id, publication_sequence)
+                )
+                """);
         Boolean migrated = transactions.execute(status -> {
             lockRootSet();
             bindRecoveryPolicy();
+            bindPublicationPolicy();
             migrateLegacyRecordFingerprints();
+            backfillPublicationOutbox();
+            oldestUnpublishedPublication();
             return Boolean.TRUE;
         });
         Objects.requireNonNull(migrated, "ceremony journal migration result");
@@ -453,10 +536,13 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 Objects.requireNonNull(outcome, "outcome");
         String outcomeFingerprint = ProtocolFingerprint.of(objectMapper, safeOutcome);
         CompletionResult result = transactions.execute(status -> {
+            lockRootSet();
+            requirePublicationPolicyBinding();
             StoredCeremony current = find(safeClaim.ceremonyId(), true).orElseThrow(() ->
                     new IllegalStateException("Bootstrap-root ceremony journal row is missing"));
             requireValid(current);
             if (current.state() == State.PRODUCED) {
+                ensurePublication(current);
                 return new CompletionResult(current.outcomeFingerprint().equals(
                         outcomeFingerprint)
                         ? CompletionDisposition.IDEMPOTENT_REPLAY
@@ -479,6 +565,7 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                     current.attemptCount(), current.lastFailure(), current.lastFailedAt(),
                     safeOutcome, outcomeFingerprint, now, now));
             update(produced);
+            ensurePublication(produced);
             return new CompletionResult(CompletionDisposition.PRODUCED,
                     snapshot(produced));
         });
@@ -543,6 +630,162 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
     /** {@inheritDoc} */
     @Override
     public boolean durable() {
+        return true;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public PublicationAcquisition acquirePublication(
+            PublicationAcquisitionCommand command) {
+        PublicationAcquisitionCommand safeCommand = Objects.requireNonNull(
+                command, "command");
+        PublicationAcquisition result = transactions.execute(status -> {
+            lockRootSet();
+            requirePublicationPolicyBinding();
+            backfillPublicationOutbox();
+            Instant now = databaseNow();
+            StoredPublication current = oldestUnpublishedPublication();
+            if (current == null) {
+                return new PublicationAcquisition(
+                        PublicationAcquisitionDisposition.NO_WORK,
+                        null, null, null);
+            }
+            if (current.state() == PublicationState.PUBLISHING
+                    && current.claimUntil().isAfter(now)) {
+                return new PublicationAcquisition(
+                        PublicationAcquisitionDisposition.BUSY,
+                        null, publicationSnapshot(current), current.claimUntil());
+            }
+            if (current.attemptCount()
+                    >= publicationPolicy.maximumAutomaticAttempts()) {
+                return new PublicationAcquisition(
+                        PublicationAcquisitionDisposition.ATTEMPT_LIMIT_REACHED,
+                        null, publicationSnapshot(current), null);
+            }
+            if (current.lastFailedAt() != null) {
+                Instant retryAt = current.lastFailedAt().plusSeconds(
+                        publicationPolicy.retryDelaySeconds(current.attemptCount()));
+                if (retryAt.isAfter(now)) {
+                    return new PublicationAcquisition(
+                            PublicationAcquisitionDisposition.RETRY_DELAYED,
+                            null, publicationSnapshot(current), retryAt);
+                }
+            }
+            long nextClaimVersion = Math.addExact(current.claimVersion(), 1L);
+            long nextAttempt = Math.addExact(current.attemptCount(), 1L);
+            Instant claimUntil = now.plusSeconds(safeCommand.leaseDurationSeconds());
+            StoredPublication acquired = fingerprintedPublication(copyPublication(
+                    current, PublicationState.PUBLISHING, safeCommand.workerId(),
+                    nextClaimVersion, claimUntil, nextAttempt,
+                    current.lastFailure(), current.lastFailedAt(), current.receipt(),
+                    current.receiptFingerprint(), current.publishedAt(), now));
+            updatePublication(acquired);
+            PublicationClaim claim = publicationClaim(acquired);
+            return new PublicationAcquisition(
+                    PublicationAcquisitionDisposition.ACQUIRED,
+                    claim, publicationSnapshot(acquired), null);
+        });
+        return Objects.requireNonNull(result, "publication acquisition result");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public PublicationCompletion completePublication(
+            PublicationClaim claim,
+            PublicationReceipt receipt) {
+        PublicationClaim safeClaim = Objects.requireNonNull(claim, "claim");
+        PublicationReceipt safeReceipt = Objects.requireNonNull(receipt, "receipt");
+        String receiptFingerprint = ProtocolFingerprint.of(objectMapper, safeReceipt);
+        PublicationCompletion result = transactions.execute(status -> {
+            lockRootSet();
+            requirePublicationPolicyBinding();
+            StoredPublication current = findPublication(
+                    safeClaim.ceremonyId(), true).orElseThrow(() ->
+                    new IllegalStateException(
+                            "Bootstrap-root publication outbox row is missing"));
+            requireValidPublication(current);
+            requirePublicationSource(current);
+            if (current.state() == PublicationState.PUBLISHED) {
+                return new PublicationCompletion(
+                        equivalentPublicationReceipt(current.receipt(), safeReceipt)
+                                ? PublicationCompletionDisposition.IDEMPOTENT_REPLAY
+                                : PublicationCompletionDisposition.RECEIPT_CONFLICT,
+                        publicationSnapshot(current));
+            }
+            Instant now = databaseNow();
+            if (!matchesLivePublicationFence(current, safeClaim, now)) {
+                return new PublicationCompletion(
+                        PublicationCompletionDisposition.FENCE_REJECTED,
+                        publicationSnapshot(current));
+            }
+            requireBoundReceipt(current.request(), safeReceipt);
+            StoredPublication published = fingerprintedPublication(copyPublication(
+                    current, PublicationState.PUBLISHED, current.claimOwner(),
+                    current.claimVersion(), current.claimUntil(), current.attemptCount(),
+                    current.lastFailure(), current.lastFailedAt(), safeReceipt,
+                    receiptFingerprint, now, now));
+            updatePublication(published);
+            return new PublicationCompletion(
+                    PublicationCompletionDisposition.PUBLISHED,
+                    publicationSnapshot(published));
+        });
+        return Objects.requireNonNull(result, "publication completion result");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public PublicationFailure releasePublication(
+            PublicationClaim claim,
+            PublicationFailureReason reason) {
+        PublicationClaim safeClaim = Objects.requireNonNull(claim, "claim");
+        PublicationFailureReason safeReason = Objects.requireNonNull(reason, "reason");
+        PublicationFailure result = transactions.execute(status -> {
+            lockRootSet();
+            requirePublicationPolicyBinding();
+            StoredPublication current = findPublication(
+                    safeClaim.ceremonyId(), true).orElseThrow(() ->
+                    new IllegalStateException(
+                            "Bootstrap-root publication outbox row is missing"));
+            requireValidPublication(current);
+            requirePublicationSource(current);
+            Instant now = databaseNow();
+            if (!matchesLivePublicationFence(current, safeClaim, now)) {
+                return new PublicationFailure(
+                        PublicationFailureDisposition.FENCE_REJECTED,
+                        publicationSnapshot(current));
+            }
+            StoredPublication released = fingerprintedPublication(copyPublication(
+                    current, PublicationState.PENDING, current.claimOwner(),
+                    current.claimVersion(), current.claimUntil(), current.attemptCount(),
+                    safeReason, now, current.receipt(), current.receiptFingerprint(),
+                    current.publishedAt(), now));
+            updatePublication(released);
+            return new PublicationFailure(PublicationFailureDisposition.RELEASED,
+                    publicationSnapshot(released));
+        });
+        return Objects.requireNonNull(result, "publication failure result");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Optional<PublicationSnapshot> publicationSnapshot(String ceremonyId) {
+        String safeCeremonyId = identifier(ceremonyId, "ceremonyId");
+        Optional<PublicationSnapshot> result = transactions.execute(status -> {
+            lockRootSet();
+            StoredPublication current = findPublication(safeCeremonyId, true).orElse(null);
+            if (current == null) {
+                return Optional.empty();
+            }
+            requireValidPublication(current);
+            requirePublicationSource(current);
+            return Optional.of(publicationSnapshot(current));
+        });
+        return Objects.requireNonNull(result, "publication snapshot result");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public boolean durablePublicationOutbox() {
         return true;
     }
 
@@ -741,6 +984,355 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             throw new IllegalStateException(
                     "Bootstrap-root recovery policy binding is missing or corrupt");
         }
+    }
+
+    private void bindPublicationPolicy() {
+        String bound = jdbc.queryForObject("""
+                SELECT publication_policy_fingerprint
+                FROM rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                WHERE scope_id = ? AND root_set_id = ?
+                """, String.class, scopeId, rootSetId);
+        if (bound == null) {
+            int changed = jdbc.update("""
+                    UPDATE rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                    SET publication_policy_fingerprint = ?
+                    WHERE scope_id = ? AND root_set_id = ?
+                      AND publication_policy_fingerprint IS NULL
+                    """, publicationPolicyFingerprint, scopeId, rootSetId);
+            if (changed != 1) {
+                throw new IllegalStateException(
+                        "Bootstrap-root publication policy binding lost its lock row");
+            }
+            return;
+        }
+        if (!publicationPolicyFingerprint.equals(bound)) {
+            throw new IllegalStateException(
+                    "Bootstrap-root publication policy conflicts with the durable root-set binding");
+        }
+    }
+
+    private void requirePublicationPolicyBinding() {
+        String bound = jdbc.queryForObject("""
+                SELECT publication_policy_fingerprint
+                FROM rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                WHERE scope_id = ? AND root_set_id = ?
+                """, String.class, scopeId, rootSetId);
+        if (!publicationPolicyFingerprint.equals(bound)) {
+            throw new IllegalStateException(
+                    "Bootstrap-root publication policy binding is missing or corrupt");
+        }
+    }
+
+    private void backfillPublicationOutbox() {
+        List<StoredCeremony> produced = jdbc.query("""
+                SELECT *
+                FROM rg_external_sequence_anchor_bootstrap_root_ceremonies
+                WHERE scope_id = ? AND root_set_id = ? AND state = 'PRODUCED'
+                ORDER BY completed_at, ceremony_id
+                FOR UPDATE
+                """, this::row, scopeId, rootSetId);
+        for (StoredCeremony ceremony : produced) {
+            requireValid(ceremony);
+            ensurePublication(ceremony);
+        }
+    }
+
+    private void ensurePublication(StoredCeremony ceremony) {
+        if (ceremony.state() != State.PRODUCED || ceremony.outcome() == null
+                || ceremony.completedAt() == null) {
+            throw new IllegalStateException(
+                    "Bootstrap-root publication source is not a produced ceremony");
+        }
+        PublicationRequest request = publicationRequest(ceremony);
+        StoredPublication existing = findPublication(ceremony.ceremonyId(), true)
+                .orElse(null);
+        if (existing != null) {
+            requireValidPublication(existing);
+            if (!existing.request().equals(request)) {
+                throw new IllegalStateException(
+                        "Bootstrap-root publication outbox conflicts with its ceremony outcome");
+            }
+            return;
+        }
+        String requestFingerprint = ProtocolFingerprint.of(objectMapper, request);
+        Instant enqueuedAt = ceremony.completedAt();
+        StoredPublication publication = fingerprintedPublication(new StoredPublication(
+                scopeId, rootSetId, ceremony.ceremonyId(), request.publicationId(),
+                request.sequence(), PublicationState.PENDING, request,
+                requestFingerprint, enqueuedAt, "", 0L, null, 0L,
+                null, null, null, "", null, enqueuedAt, ""));
+        insertPublication(publication);
+    }
+
+    private PublicationRequest publicationRequest(StoredCeremony ceremony) {
+        var bundle = ceremony.outcome().bundle();
+        String bundleFingerprint = ProtocolFingerprint.of(objectMapper, bundle);
+        String publicationId = "root-pub-" + bundleFingerprint.substring("sha256:".length());
+        return new PublicationRequest(PublicationRequest.SCHEMA_VERSION,
+                publicationId, scopeId, rootSetId, ceremony.ceremonyId(),
+                ceremony.proposal().preflight().sequence(),
+                ceremony.proposal().request().expectedPreviousMaterialFingerprint(),
+                bundle, bundleFingerprint, bundle.headMaterialFingerprint());
+    }
+
+    private StoredPublication oldestUnpublishedPublication() {
+        List<StoredPublication> rows = publicationRows(true);
+        StoredPublication oldest = null;
+        boolean unpublishedSeen = false;
+        for (StoredPublication row : rows) {
+            requireValidPublication(row);
+            requirePublicationSource(row);
+            if (row.state() == PublicationState.PUBLISHED) {
+                if (unpublishedSeen) {
+                    throw new IllegalStateException(
+                            "Bootstrap-root publication order is corrupt");
+                }
+                continue;
+            }
+            unpublishedSeen = true;
+            if (oldest == null) {
+                oldest = row;
+            }
+        }
+        return oldest;
+    }
+
+    private List<StoredPublication> publicationRows(boolean forUpdate) {
+        return jdbc.query("""
+                SELECT *
+                FROM rg_external_sequence_anchor_bootstrap_root_publications
+                WHERE scope_id = ? AND root_set_id = ?
+                ORDER BY publication_sequence, ceremony_id
+                """ + (forUpdate ? " FOR UPDATE" : ""), this::publicationRow,
+                scopeId, rootSetId);
+    }
+
+    private Optional<StoredPublication> findPublication(
+            String ceremonyId,
+            boolean forUpdate) {
+        List<StoredPublication> rows = jdbc.query("""
+                SELECT *
+                FROM rg_external_sequence_anchor_bootstrap_root_publications
+                WHERE scope_id = ? AND root_set_id = ? AND ceremony_id = ?
+                """ + (forUpdate ? " FOR UPDATE" : ""), this::publicationRow,
+                scopeId, rootSetId, ceremonyId);
+        if (rows.size() > 1) {
+            throw new IllegalStateException(
+                    "Duplicate bootstrap-root publication outbox row");
+        }
+        return rows.stream().findFirst();
+    }
+
+    private void insertPublication(StoredPublication value) {
+        jdbc.update("""
+                INSERT INTO rg_external_sequence_anchor_bootstrap_root_publications (
+                    scope_id, root_set_id, ceremony_id, publication_id,
+                    publication_sequence, state, request_json, request_fingerprint,
+                    enqueued_at, claim_owner, claim_version, claim_until, attempt_count,
+                    last_failure_reason, last_failed_at, receipt_json,
+                    receipt_fingerprint, published_at, updated_at, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, publicationParameters(value));
+    }
+
+    private void updatePublication(StoredPublication value) {
+        int changed = jdbc.update("""
+                UPDATE rg_external_sequence_anchor_bootstrap_root_publications
+                SET publication_id = ?, publication_sequence = ?, state = ?,
+                    request_json = ?, request_fingerprint = ?, enqueued_at = ?,
+                    claim_owner = ?, claim_version = ?, claim_until = ?,
+                    attempt_count = ?, last_failure_reason = ?, last_failed_at = ?,
+                    receipt_json = ?, receipt_fingerprint = ?, published_at = ?,
+                    updated_at = ?, record_fingerprint = ?
+                WHERE scope_id = ? AND root_set_id = ? AND ceremony_id = ?
+                """, value.publicationId(), value.publicationSequence(),
+                value.state().name(), write(value.request()), value.requestFingerprint(),
+                timestamp(value.enqueuedAt()), nullable(value.claimOwner()),
+                value.claimVersion(), timestamp(value.claimUntil()), value.attemptCount(),
+                value.lastFailure() == null ? null : value.lastFailure().name(),
+                timestamp(value.lastFailedAt()), writeNullable(value.receipt()),
+                nullable(value.receiptFingerprint()), timestamp(value.publishedAt()),
+                timestamp(value.updatedAt()), value.recordFingerprint(), scopeId,
+                rootSetId, value.ceremonyId());
+        if (changed != 1) {
+            throw new IllegalStateException(
+                    "Bootstrap-root publication update lost its row");
+        }
+    }
+
+    private Object[] publicationParameters(StoredPublication value) {
+        return new Object[]{value.scopeId(), value.rootSetId(), value.ceremonyId(),
+                value.publicationId(), value.publicationSequence(), value.state().name(),
+                write(value.request()), value.requestFingerprint(),
+                timestamp(value.enqueuedAt()), nullable(value.claimOwner()),
+                value.claimVersion(), timestamp(value.claimUntil()), value.attemptCount(),
+                value.lastFailure() == null ? null : value.lastFailure().name(),
+                timestamp(value.lastFailedAt()), writeNullable(value.receipt()),
+                nullable(value.receiptFingerprint()), timestamp(value.publishedAt()),
+                timestamp(value.updatedAt()), value.recordFingerprint()};
+    }
+
+    private StoredPublication publicationRow(ResultSet result, int rowNumber)
+            throws SQLException {
+        return new StoredPublication(result.getString("scope_id"),
+                result.getString("root_set_id"), result.getString("ceremony_id"),
+                result.getString("publication_id"),
+                result.getLong("publication_sequence"),
+                PublicationState.valueOf(result.getString("state")),
+                read(result.getString("request_json"), PublicationRequest.class),
+                result.getString("request_fingerprint"),
+                instant(result, "enqueued_at"),
+                normalized(result.getString("claim_owner")),
+                result.getLong("claim_version"), instant(result, "claim_until"),
+                result.getLong("attempt_count"), publicationFailureReason(
+                result.getString("last_failure_reason")),
+                instant(result, "last_failed_at"),
+                readNullable(result.getString("receipt_json"), PublicationReceipt.class),
+                normalized(result.getString("receipt_fingerprint")),
+                instant(result, "published_at"), instant(result, "updated_at"),
+                result.getString("record_fingerprint"));
+    }
+
+    private void requireValidPublication(StoredPublication value) {
+        try {
+            boolean requestValid = scopeId.equals(value.scopeId())
+                    && rootSetId.equals(value.rootSetId())
+                    && value.ceremonyId().equals(value.request().ceremonyId())
+                    && value.publicationId().equals(value.request().publicationId())
+                    && value.publicationSequence() == value.request().sequence()
+                    && value.requestFingerprint().equals(
+                    ProtocolFingerprint.of(objectMapper, value.request()))
+                    && value.request().bundleFingerprint().equals(
+                    ProtocolFingerprint.of(objectMapper, value.request().bundle()));
+            boolean receiptValid = value.receipt() == null
+                    && value.receiptFingerprint().isEmpty()
+                    || value.receipt() != null
+                    && value.receiptFingerprint().equals(
+                    ProtocolFingerprint.of(objectMapper, value.receipt()));
+            if (!requestValid || !receiptValid
+                    || !FINGERPRINT.matcher(value.recordFingerprint()).matches()
+                    || !value.recordFingerprint().equals(
+                    publicationIntegrityFingerprint(value))) {
+                throw new IllegalStateException(
+                        "Bootstrap-root publication outbox row is corrupt");
+            }
+            if (value.receipt() != null) {
+                requireBoundReceipt(value.request(), value.receipt());
+            }
+            publicationSnapshot(value);
+        } catch (IllegalStateException corrupt) {
+            throw corrupt;
+        } catch (RuntimeException corrupt) {
+            throw new IllegalStateException(
+                    "Bootstrap-root publication outbox row is corrupt", corrupt);
+        }
+    }
+
+    private void requirePublicationSource(StoredPublication publication) {
+        StoredCeremony ceremony = find(publication.ceremonyId(), true).orElseThrow(() ->
+                new IllegalStateException(
+                        "Bootstrap-root publication source ceremony is missing"));
+        requireValid(ceremony);
+        if (ceremony.state() != State.PRODUCED
+                || !publication.request().equals(publicationRequest(ceremony))) {
+            throw new IllegalStateException(
+                    "Bootstrap-root publication source ceremony conflicts with its outbox");
+        }
+    }
+
+    private static void requireBoundReceipt(
+            PublicationRequest request,
+            PublicationReceipt receipt) {
+        if (!request.publicationId().equals(receipt.publicationId())
+                || request.sequence() != receipt.sequence()
+                || !request.bundleFingerprint().equals(receipt.bundleFingerprint())
+                || !request.headMaterialFingerprint().equals(
+                receipt.headMaterialFingerprint())) {
+            throw new IllegalArgumentException(
+                    "Bootstrap-root publication receipt does not match its request");
+        }
+    }
+
+    private static boolean equivalentPublicationReceipt(
+            PublicationReceipt existing,
+            PublicationReceipt replay) {
+        return existing != null
+                && existing.publicationId().equals(replay.publicationId())
+                && existing.sequence() == replay.sequence()
+                && existing.bundleFingerprint().equals(replay.bundleFingerprint())
+                && existing.headMaterialFingerprint().equals(
+                replay.headMaterialFingerprint())
+                && existing.publishedAt().equals(replay.publishedAt());
+    }
+
+    private static boolean matchesLivePublicationFence(
+            StoredPublication current,
+            PublicationClaim claim,
+            Instant now) {
+        return current.state() == PublicationState.PUBLISHING
+                && current.publicationId().equals(claim.publicationId())
+                && current.ceremonyId().equals(claim.ceremonyId())
+                && current.claimOwner().equals(claim.workerId())
+                && current.claimVersion() == claim.claimVersion()
+                && current.claimUntil().equals(claim.claimUntil())
+                && current.claimUntil().isAfter(now)
+                && current.request().equals(claim.request());
+    }
+
+    private static PublicationClaim publicationClaim(StoredPublication value) {
+        return new PublicationClaim(PublicationClaim.SCHEMA_VERSION,
+                value.publicationId(), value.ceremonyId(), value.claimOwner(),
+                value.claimVersion(), value.claimUntil(), value.request());
+    }
+
+    private PublicationSnapshot publicationSnapshot(StoredPublication value) {
+        return new PublicationSnapshot(PublicationSnapshot.SCHEMA_VERSION,
+                value.state(), value.request(), value.requestFingerprint(),
+                value.enqueuedAt(), value.claimOwner(), value.claimVersion(),
+                value.claimUntil(), value.attemptCount(), value.lastFailure(),
+                value.lastFailedAt(), value.receipt(), value.receiptFingerprint(),
+                value.publishedAt(), value.updatedAt(), value.recordFingerprint());
+    }
+
+    private StoredPublication fingerprintedPublication(StoredPublication value) {
+        return new StoredPublication(value.scopeId(), value.rootSetId(), value.ceremonyId(),
+                value.publicationId(), value.publicationSequence(), value.state(),
+                value.request(), value.requestFingerprint(), value.enqueuedAt(),
+                value.claimOwner(), value.claimVersion(), value.claimUntil(),
+                value.attemptCount(), value.lastFailure(), value.lastFailedAt(),
+                value.receipt(), value.receiptFingerprint(), value.publishedAt(),
+                value.updatedAt(), publicationIntegrityFingerprint(value));
+    }
+
+    private String publicationIntegrityFingerprint(StoredPublication value) {
+        return ProtocolFingerprint.of(objectMapper, new PublicationIntegrityMaterial(
+                PUBLICATION_RECORD_SCHEMA, value.scopeId(), value.rootSetId(),
+                value.ceremonyId(), value.publicationId(), value.publicationSequence(),
+                value.state(), value.request(), value.requestFingerprint(),
+                value.enqueuedAt(), value.claimOwner(), value.claimVersion(),
+                value.claimUntil(), value.attemptCount(), value.lastFailure(),
+                value.lastFailedAt(), value.receipt(), value.receiptFingerprint(),
+                value.publishedAt(), value.updatedAt()));
+    }
+
+    private static StoredPublication copyPublication(
+            StoredPublication value,
+            PublicationState state,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            long attemptCount,
+            PublicationFailureReason lastFailure,
+            Instant lastFailedAt,
+            PublicationReceipt receipt,
+            String receiptFingerprint,
+            Instant publishedAt,
+            Instant updatedAt) {
+        return new StoredPublication(value.scopeId(), value.rootSetId(), value.ceremonyId(),
+                value.publicationId(), value.publicationSequence(), state, value.request(),
+                value.requestFingerprint(), value.enqueuedAt(), claimOwner, claimVersion,
+                claimUntil, attemptCount, lastFailure, lastFailedAt, receipt,
+                receiptFingerprint, publishedAt, updatedAt, "");
     }
 
     private Optional<StoredCeremony> find(String ceremonyId, boolean forUpdate) {
@@ -1021,6 +1613,10 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
                 .valueOf(value);
     }
 
+    private static PublicationFailureReason publicationFailureReason(String value) {
+        return value == null ? null : PublicationFailureReason.valueOf(value);
+    }
+
     private static Instant instant(ResultSet result, String column) throws SQLException {
         Timestamp value = result.getTimestamp(column);
         return value == null ? null : value.toInstant();
@@ -1079,6 +1675,52 @@ public final class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal
             Instant completedAt,
             Instant updatedAt,
             String recordFingerprint) {
+    }
+
+    private record StoredPublication(
+            String scopeId,
+            String rootSetId,
+            String ceremonyId,
+            String publicationId,
+            long publicationSequence,
+            PublicationState state,
+            PublicationRequest request,
+            String requestFingerprint,
+            Instant enqueuedAt,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            long attemptCount,
+            PublicationFailureReason lastFailure,
+            Instant lastFailedAt,
+            PublicationReceipt receipt,
+            String receiptFingerprint,
+            Instant publishedAt,
+            Instant updatedAt,
+            String recordFingerprint) {
+    }
+
+    private record PublicationIntegrityMaterial(
+            String schemaVersion,
+            String scopeId,
+            String rootSetId,
+            String ceremonyId,
+            String publicationId,
+            long publicationSequence,
+            PublicationState state,
+            PublicationRequest request,
+            String requestFingerprint,
+            Instant enqueuedAt,
+            String claimOwner,
+            long claimVersion,
+            Instant claimUntil,
+            long attemptCount,
+            PublicationFailureReason lastFailure,
+            Instant lastFailedAt,
+            PublicationReceipt receipt,
+            String receiptFingerprint,
+            Instant publishedAt,
+            Instant updatedAt) {
     }
 
     private record IntegrityMaterial(

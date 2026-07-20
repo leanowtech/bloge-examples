@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyProducer;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootGenesis;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootSigningAuthority;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootTransition;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityServingInventory;
@@ -15,7 +16,9 @@ import org.junit.jupiter.api.Test;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
@@ -39,6 +42,8 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     private ExternalSequenceAnchorBootstrapRootGenesis.RootKeyMaterial rootKey;
     private ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor descriptor;
     private ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy recoveryPolicy;
+    private ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationPolicy
+            publicationPolicy;
     private DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal journal;
 
     @BeforeEach
@@ -57,6 +62,11 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
                 rootKey.authorityId(), rootKey.keyId(), "Ed25519", publicKey);
         recoveryPolicy = new ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy(
                 ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy.SCHEMA_VERSION,
+                1L, 1L, 2L);
+        publicationPolicy = new ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                .PublicationPolicy(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationPolicy
+                        .SCHEMA_VERSION,
                 1L, 1L, 2L);
         journal = repository();
     }
@@ -499,7 +509,7 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     }
 
     @Test
-    void recoveryPolicyDriftAndOfflineBindingTamperFailClosed() {
+    void recoveryAndPublicationPolicyDriftAndOfflineBindingTamperFailClosed() {
         var conflictingPolicy = new ExternalSequenceAnchorBootstrapRootCeremonyJournal
                 .RecoveryPolicy(
                 ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy.SCHEMA_VERSION,
@@ -511,6 +521,20 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("policy conflicts");
 
+        var conflictingPublicationPolicy =
+                new ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationPolicy(
+                        ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationPolicy
+                                .SCHEMA_VERSION,
+                        2L, 2L, 2L);
+        var conflictingPublisher =
+                new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
+                        database.jdbc(), objectMapper, SCOPE, ROOT_SET,
+                        database.transactionManager(), recoveryPolicy,
+                        conflictingPublicationPolicy);
+        assertThatThrownBy(conflictingPublisher::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("publication policy conflicts");
+
         database.jdbc().update("""
                 UPDATE rg_external_sequence_anchor_bootstrap_root_ceremony_locks
                 SET recovery_policy_fingerprint = ?
@@ -519,6 +543,200 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
         assertThatThrownBy(() -> journal.acquireRecovery(recovery("recovery-a", 30)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("missing or corrupt");
+
+        database.jdbc().update("""
+                UPDATE rg_external_sequence_anchor_bootstrap_root_ceremony_locks
+                SET recovery_policy_fingerprint = ?, publication_policy_fingerprint = ?
+                WHERE scope_id = ? AND root_set_id = ?
+                """, ProtocolFingerprint.of(objectMapper, recoveryPolicy), fingerprint('e'),
+                SCOPE, ROOT_SET);
+        assertThatThrownBy(() -> journal.acquirePublication(
+                publicationAcquisition("publisher-a", 30)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("publication policy binding");
+    }
+
+    @Test
+    void completionAtomicallyEnqueuesOneExactContentAddressedPublication() {
+        ProducedFixture produced = produced("ceremony-publication", 'a');
+
+        var snapshot = journal.publicationSnapshot(produced.fixture().id()).orElseThrow();
+
+        assertThat(snapshot.state()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationState.PENDING);
+        assertThat(snapshot.request().ceremonyId()).isEqualTo(produced.fixture().id());
+        assertThat(snapshot.request().sequence()).isOne();
+        assertThat(snapshot.request().bundle()).isEqualTo(produced.outcome().bundle());
+        assertThat(snapshot.request().bundleFingerprint()).isEqualTo(
+                ProtocolFingerprint.of(objectMapper, produced.outcome().bundle()));
+        assertThat(snapshot.request().publicationId()).startsWith("root-pub-");
+        assertThat(snapshot.attemptCount()).isZero();
+        assertThat(journal.complete(produced.claim(), produced.outcome()).disposition())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                        .CompletionDisposition.IDEMPOTENT_REPLAY);
+        assertThat(database.jdbc().queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_external_sequence_anchor_bootstrap_root_publications
+                WHERE scope_id = ? AND root_set_id = ? AND ceremony_id = ?
+                """, Long.class, SCOPE, ROOT_SET, produced.fixture().id())).isOne();
+    }
+
+    @Test
+    void outboxConflictRollsBackTheProducedTransitionInTheSameTransaction() {
+        CeremonyProposalFixture fixture = approved("ceremony-publication-atomic", 'b');
+        var acquisition = journal.acquire(acquisition(fixture.id(), "worker-a", 30));
+        var outcome = outcome(fixture.proposal());
+        var request = publicationRequest(fixture.proposal(), outcome);
+        database.jdbc().update("""
+                INSERT INTO rg_external_sequence_anchor_bootstrap_root_publications (
+                    scope_id, root_set_id, ceremony_id, publication_id,
+                    publication_sequence, state, request_json, request_fingerprint,
+                    enqueued_at, claim_owner, claim_version, claim_until, attempt_count,
+                    last_failure_reason, last_failed_at, receipt_json,
+                    receipt_fingerprint, published_at, updated_at, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, NULL, 0, NULL, 0,
+                          NULL, NULL, NULL, NULL, NULL, ?, ?)
+                """, SCOPE, ROOT_SET, fixture.id(), request.publicationId(),
+                request.sequence(), json(request), ProtocolFingerprint.of(objectMapper, request),
+                Timestamp.from(Instant.now()), Timestamp.from(Instant.now()), fingerprint('f'));
+
+        assertThatThrownBy(() -> journal.complete(acquisition.claim(), outcome))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("outbox row is corrupt");
+        assertThat(journal.snapshot(fixture.id()).orElseThrow().state()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.EXECUTING);
+
+        database.jdbc().update("""
+                DELETE FROM rg_external_sequence_anchor_bootstrap_root_publications
+                WHERE scope_id = ? AND root_set_id = ? AND ceremony_id = ?
+                """, SCOPE, ROOT_SET, fixture.id());
+        assertThat(journal.complete(acquisition.claim(), outcome).disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyJournal.CompletionDisposition
+                        .PRODUCED);
+    }
+
+    @Test
+    void publicationClaimsAreExclusiveAndPreserveProducedSequenceOrder() {
+        ProducedFixture first = produced("ceremony-publication-one", 'c');
+        var successor = successorProposal("ceremony-publication-two", "maker-b", 'd',
+                first.outcome().bundle());
+        journal.propose(successor);
+        journal.approve(approval(successor.ceremonyId(), "approve-publication-two",
+                "checker-a", 60));
+        var successorClaim = journal.acquire(acquisition(
+                successor.ceremonyId(), "ceremony-worker-b", 30)).claim();
+        var successorOutcome = outcome(successor);
+        journal.complete(successorClaim, successorOutcome);
+
+        var firstPublication = journal.acquirePublication(
+                publicationAcquisition("publisher-a", 30));
+        var busy = repository().acquirePublication(
+                publicationAcquisition("publisher-b", 30));
+
+        assertThat(firstPublication.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationAcquisitionDisposition.ACQUIRED);
+        assertThat(firstPublication.claim().ceremonyId()).isEqualTo(first.fixture().id());
+        assertThat(firstPublication.claim().request().sequence()).isOne();
+        assertThat(busy.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationAcquisitionDisposition.BUSY);
+        assertThat(busy.eligibleAt()).isEqualTo(firstPublication.claim().claimUntil());
+
+        var receipt = receipt(firstPublication.claim());
+        assertThat(journal.completePublication(firstPublication.claim(), receipt).disposition())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationCompletionDisposition.PUBLISHED);
+        var replayReceipt = new ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                .PublicationReceipt(receipt.schemaVersion(),
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationReceiptStatus.IDEMPOTENT_REPLAY,
+                receipt.publicationId(), receipt.sequence(), receipt.bundleFingerprint(),
+                receipt.headMaterialFingerprint(), receipt.publishedAt());
+        assertThat(repository().completePublication(
+                firstPublication.claim(), replayReceipt).disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationCompletionDisposition.IDEMPOTENT_REPLAY);
+        var conflictingReceipt = new ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                .PublicationReceipt(receipt.schemaVersion(), receipt.status(),
+                receipt.publicationId(), receipt.sequence(), receipt.bundleFingerprint(),
+                receipt.headMaterialFingerprint(), receipt.publishedAt().plusSeconds(1));
+        assertThat(repository().completePublication(
+                firstPublication.claim(), conflictingReceipt).disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationCompletionDisposition.RECEIPT_CONFLICT);
+        var secondPublication = repository().acquirePublication(
+                publicationAcquisition("publisher-b", 30));
+        assertThat(secondPublication.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationAcquisitionDisposition.ACQUIRED);
+        assertThat(secondPublication.claim().ceremonyId()).isEqualTo(
+                successor.ceremonyId());
+        assertThat(secondPublication.claim().request().sequence()).isEqualTo(2L);
+    }
+
+    @Test
+    void failedPublicationUsesDatabaseBackoffAndStopsAtDurableAttemptBudget()
+            throws Exception {
+        ProducedFixture produced = produced("ceremony-publication-budget", 'e');
+        var first = journal.acquirePublication(publicationAcquisition("publisher-a", 30));
+        journal.releasePublication(first.claim(),
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationFailureReason.PUBLISHER_UNAVAILABLE);
+
+        var delayed = repository().acquirePublication(
+                publicationAcquisition("publisher-b", 30));
+        assertThat(delayed.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationAcquisitionDisposition.RETRY_DELAYED);
+        assertThat(delayed.eligibleAt()).isAfter(delayed.snapshot().lastFailedAt());
+
+        Thread.sleep(1_100L);
+        var second = repository().acquirePublication(
+                publicationAcquisition("publisher-b", 30));
+        assertThat(second.snapshot().attemptCount()).isEqualTo(2L);
+        journal.releasePublication(second.claim(),
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationFailureReason.RESPONSE_INVALID);
+
+        var exhausted = repository().acquirePublication(
+                publicationAcquisition("publisher-c", 30));
+        assertThat(exhausted.disposition()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationAcquisitionDisposition.ATTEMPT_LIMIT_REACHED);
+        assertThat(exhausted.snapshot().ceremonyId()).isEqualTo(produced.fixture().id());
+        assertThat(exhausted.snapshot().lastFailure()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationFailureReason.RESPONSE_INVALID);
+    }
+
+    @Test
+    void restartBackfillsMissingProducedOutboxAndOfflineCorruptionFailsClosed() {
+        ProducedFixture produced = produced("ceremony-publication-backfill", 'f');
+        database.jdbc().update("""
+                DELETE FROM rg_external_sequence_anchor_bootstrap_root_publications
+                WHERE scope_id = ? AND root_set_id = ? AND ceremony_id = ?
+                """, SCOPE, ROOT_SET, produced.fixture().id());
+
+        var restarted = repository();
+        assertThat(restarted.publicationSnapshot(produced.fixture().id())).isPresent().get()
+                .extracting(ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationSnapshot::state)
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationState.PENDING);
+
+        database.jdbc().update("""
+                UPDATE rg_external_sequence_anchor_bootstrap_root_publications
+                SET attempt_count = attempt_count + 1
+                WHERE scope_id = ? AND root_set_id = ? AND ceremony_id = ?
+                """, SCOPE, ROOT_SET, produced.fixture().id());
+        assertThatThrownBy(() -> restarted.acquirePublication(
+                publicationAcquisition("publisher-a", 30)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("outbox row is corrupt");
+        assertThatThrownBy(this::repository)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("outbox row is corrupt");
     }
 
     private CeremonyProposalFixture approved(String ceremonyId, char marker) {
@@ -527,6 +745,14 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
         journal.approve(approval(ceremonyId, "approve-" + ceremonyId,
                 "checker-a", 60));
         return new CeremonyProposalFixture(ceremonyId, proposal);
+    }
+
+    private ProducedFixture produced(String ceremonyId, char marker) {
+        CeremonyProposalFixture fixture = approved(ceremonyId, marker);
+        var acquisition = journal.acquire(acquisition(ceremonyId, "worker-" + ceremonyId, 30));
+        var outcome = outcome(fixture.proposal());
+        journal.complete(acquisition.claim(), outcome);
+        return new ProducedFixture(fixture, acquisition.claim(), outcome);
     }
 
     private ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal proposal(
@@ -584,9 +810,10 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     private ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome outcome(
             ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal proposal) {
         String materialFingerprint = proposal.preflight().materialFingerprint();
+        long sequence = proposal.preflight().sequence();
         var material = new ExternalSequenceAnchorBootstrapRootTransition.Material(
                 ExternalSequenceAnchorBootstrapRootTransition.Material.SCHEMA_VERSION,
-                ROOT_SET, 1L, proposal.request().expectedPreviousMaterialFingerprint(),
+                ROOT_SET, sequence, proposal.request().expectedPreviousMaterialFingerprint(),
                 SCOPE, TRUST_DOMAIN, 1, 0, List.of(rootKey), fingerprint('9'), NOW, NOW,
                 NOW.plusSeconds(3600));
         var signature = new TestSuiteStabilityServingInventory.AuthoritySignature(
@@ -595,10 +822,17 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
         var transition = new ExternalSequenceAnchorBootstrapRootTransition(
                 ExternalSequenceAnchorBootstrapRootTransition.SCHEMA_VERSION,
                 material, materialFingerprint, List.of(signature), List.of(signature));
+        List<ExternalSequenceAnchorBootstrapRootTransition> transitions = new ArrayList<>();
+        if (proposal.currentBundle() != null) {
+            transitions.addAll(proposal.currentBundle().transitions());
+        }
+        transitions.add(transition);
         var bundle = new ExternalSequenceAnchorBootstrapRootBundle(
                 ExternalSequenceAnchorBootstrapRootBundle.SCHEMA_VERSION,
-                proposal.request().expectedPreviousMaterialFingerprint(),
-                List.of(transition), materialFingerprint);
+                proposal.currentBundle() == null
+                        ? proposal.request().expectedPreviousMaterialFingerprint()
+                        : proposal.currentBundle().genesisMaterialFingerprint(),
+                List.copyOf(transitions), materialFingerprint);
         return new ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome(
                 ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome
                         .SCHEMA_VERSION,
@@ -610,8 +844,53 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
                         ExternalSequenceAnchorBootstrapRootCeremonyProducer.AttemptStatus.SIGNED),
                 new ExternalSequenceAnchorBootstrapRootCeremonyProducer.SigningAttempt(
                         ExternalSequenceAnchorBootstrapRootSigningAuthority.Role.INCOMING_ROOT,
-                        descriptor.authorityId(), descriptor.keyId(),
+                descriptor.authorityId(), descriptor.keyId(),
                         ExternalSequenceAnchorBootstrapRootCeremonyProducer.AttemptStatus.SIGNED)));
+    }
+
+    private ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest
+            publicationRequest(
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal proposal,
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome outcome) {
+        String bundleFingerprint = ProtocolFingerprint.of(objectMapper, outcome.bundle());
+        return new ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationRequest
+                        .SCHEMA_VERSION,
+                "root-pub-" + bundleFingerprint.substring("sha256:".length()),
+                SCOPE, ROOT_SET, proposal.ceremonyId(), proposal.preflight().sequence(),
+                proposal.request().expectedPreviousMaterialFingerprint(), outcome.bundle(),
+                bundleFingerprint, outcome.bundle().headMaterialFingerprint());
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootPublicationOutbox
+            .PublicationAcquisitionCommand publicationAcquisition(
+            String workerId,
+            long duration) {
+        return new ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                .PublicationAcquisitionCommand(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationAcquisitionCommand.SCHEMA_VERSION,
+                workerId, duration);
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationReceipt
+            receipt(ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationClaim claim) {
+        return new ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationReceipt(
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationReceipt
+                        .SCHEMA_VERSION,
+                ExternalSequenceAnchorBootstrapRootPublicationOutbox
+                        .PublicationReceiptStatus.PUBLISHED,
+                claim.publicationId(), claim.request().sequence(),
+                claim.request().bundleFingerprint(),
+                claim.request().headMaterialFingerprint(), Instant.now());
+    }
+
+    private String json(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception invalid) {
+            throw new IllegalStateException(invalid);
+        }
     }
 
     private static ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome
@@ -664,7 +943,7 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     private DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal repository() {
         var result = new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
                 database.jdbc(), objectMapper, SCOPE, ROOT_SET,
-                database.transactionManager(), recoveryPolicy);
+                database.transactionManager(), recoveryPolicy, publicationPolicy);
         result.init();
         return result;
     }
@@ -686,6 +965,12 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     private record CeremonyProposalFixture(
             String id,
             ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal proposal) {
+    }
+
+    private record ProducedFixture(
+            CeremonyProposalFixture fixture,
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal.ExecutionClaim claim,
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome outcome) {
     }
 
     private record LegacyIntegrityMaterial(

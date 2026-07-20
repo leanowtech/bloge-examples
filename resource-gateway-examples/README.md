@@ -431,10 +431,15 @@ public cohort is recomputed before signing. Resolution, descriptor, and signatur
 through configurable wall-clock deadlines and one fixed-capacity, zero-queue daemon pool;
 interrupt-ignoring calls remain visible as bounded lingering occupancy, while saturation rejects new
 work immediately. Heartbeats and recovery never extend checker approval or the proposal execution
-deadline. Close the recovery scheduler before its ceremony service. This is an embeddable Java
+deadline. A successful `PRODUCED` transition now atomically enqueues one content-addressed,
+complete-chain publication request in a separate durable outbox. The outbox verifies its source
+ceremony on every claim, preserves root sequence order, uses database leases/backoff/attempt limits,
+backfills legacy produced rows, and rejects policy drift or whole-row corruption. Remote publishers
+must replay the exact `publicationId`; only a matching receipt advances the outbox to `PUBLISHED`.
+Close the recovery scheduler before its ceremony service. This is an embeddable Java
 kernel, not a new HTTP endpoint or deployment-wide worker registry; Spring composition, cross-root
-discovery, target-database/DR/chaos certification, provider-confirmed cancellation, and HSM custody
-remain deployment gates. The genesis and complete bundle Schemas,
+discovery, an authenticated publisher adapter/worker, target-database/DR/chaos certification,
+provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis and complete bundle Schemas,
 failure matrix, runtime wiring, and remaining ceremony limits
 are documented in the
 [bootstrap-root ceremony verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md).
