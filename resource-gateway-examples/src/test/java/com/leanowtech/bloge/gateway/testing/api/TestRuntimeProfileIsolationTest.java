@@ -735,6 +735,20 @@ class TestRuntimeProfileIsolationTest {
         } finally {
             ambiguous.close();
         }
+
+        Map<String, Object> staticWithCohort = new LinkedHashMap<>(
+                builtInTestSecretAuthorityProperties());
+        staticWithCohort.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.enabled", "true");
+        AnnotationConfigApplicationContext incompatible =
+                unrefreshedContext(staticWithCohort, 0, "test");
+        try {
+            assertThatThrownBy(incompatible::refresh).rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("requires exactly one gate");
+        } finally {
+            incompatible.close();
+        }
     }
 
     @Test
@@ -772,6 +786,29 @@ class TestRuntimeProfileIsolationTest {
         properties.put(
                 "gateway.testing.test-secrets.authority.http.jwks.maximum-snapshot-age-seconds",
                 "3610");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.enabled", "true");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id",
+                "test-secret-scope");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.cohort-id",
+                "deployment-a");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.instance-id",
+                "replica-a");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.artifact-fingerprint",
+                "sha256:" + "a".repeat(64));
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.expected-instance-ids",
+                "replica-a");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.heartbeat-interval-seconds",
+                "1");
+        properties.put(
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.lease-duration-seconds",
+                "3");
         try {
             try (AnnotationConfigApplicationContext context = context(properties, 0, "test")) {
                 assertThat(context.getBeansOfType(TestSecretAuthorityTrustStore.class))
@@ -801,10 +838,24 @@ class TestRuntimeProfileIsolationTest {
                                     .containsEntry("trustMaximumSnapshotAgeSeconds", 3610L)
                                     .containsEntry("trustConditionalRequests", true)
                                     .containsEntry("trustFailClosedOnRefreshFailure", true)
+                                    .containsEntry("trustCohortConfigured", true)
+                                    .containsEntry("trustCohortAvailable", true)
+                                    .containsEntry("trustCohortStatus", "CONVERGED")
+                                    .containsEntry("trustCohortExpectedReplicaCount", 1)
+                                    .containsEntry("trustCohortLiveReplicaCount", 1)
+                                    .containsEntry("trustCohortHealthyReplicaCount", 1)
+                                    .containsEntry("trustCohortDistinctGenerationCount", 1)
+                                    .containsEntry("trustCohortDatabaseAuthority", true)
+                                    .containsEntry("trustCohortExactConfiguredInventory", true)
                                     .doesNotContainKeys("jwksUri", "baseUri", "etag",
-                                            "keyId", "publicKey", "privateKey");
+                                            "keyId", "publicKey", "privateKey", "instanceId",
+                                            "startupId", "snapshotFingerprint");
                         });
                 assertThat(context.getBean(TestSecretAuthorityTrustHealth.class)
+                        .health().getStatus()).isEqualTo(Status.UP);
+                assertThat(context.getBean(TestSecretAuthorityTrustCohortMonitor.class)
+                        .descriptor().available()).isTrue();
+                assertThat(context.getBean(TestSecretAuthorityTrustCohortHealth.class)
                         .health().getStatus()).isEqualTo(Status.UP);
                 assertThat(context.getBeansOfType(
                         ConfiguredTestSecretAuthorityTrustStore.class)).isEmpty();

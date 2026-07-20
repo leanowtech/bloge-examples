@@ -110,6 +110,11 @@ oracle. The full evidence fingerprint remains different across run id, timing an
     on every ambiguous refresh. ETag 304 renews freshness; a silent refresh lane still expires at
     the local maximum age. Explicit `revoked`, disabled, inactive and expired keys cannot release a
     closure.
+16. An enabled multi-replica test-secret cohort uses database-clock process-start leases and one
+    active deployment cohort per stable scope. Every exact configured slot must be live, healthy,
+    policy/artifact/protocol equivalent and on one complete trust generation. Local generation
+    changes close immediately until published; secret resolution checks the aggregate gate before
+    network I/O and after signature verification. Member identities and fingerprints stay private.
 
 ## Automated Evidence
 
@@ -125,6 +130,8 @@ security audit. `DurableTestRecoveryAuthorizerTest` proves recovery calls the au
 rejects exact secret-version drift.
 `TestSecretAuthorityProtocolTest`, `ConfiguredTestSecretAuthorityTrustStoreTest`,
 `HttpTestSecretAuthorityTest`, `DynamicJwksTestSecretAuthorityTrustStoreTest`,
+`TestSecretAuthorityTrustCohortMonitorTest`,
+`DatabaseTestSecretAuthorityTrustCohortRepositoryTest`,
 `TestSecretAuthorityProtocolSchemaTest`, and profile-isolation tests
 freeze the credential-free request, secret-bearing signed response, challenge/replay binding,
 static and dynamic Ed25519 lifecycle, concurrent unknown-key rotation, revocation, ETag refresh,
@@ -143,7 +150,7 @@ identity before signing and on verification. Main capability tests and test-kit 
 v1/v2 compatibility plus the checkpoint schema/version. `TestRunAssertions.assertSameSemanticResult`
 provides a payload-free CI regression assertion.
 
-The release gate completed `mvn -f resource-gateway-examples/pom.xml clean verify` with 3,118 tests,
+The release gate completed `mvn -f resource-gateway-examples/pom.xml clean verify` with 3,127 tests,
 zero failures, zero errors and two conditional browser skips; both browser suites, containing 35
 configured tests, and the executable Spring Boot JAR build completed. The independent test-kit
 `clean verify` completed 230 tests with zero failures, errors or skips, then passed authoritative-schema packaging,
@@ -169,16 +176,17 @@ ordinary/shaded JAR packaging and public JavaDoc validation.
 - Streaming/suspendable execution does not yet have equivalent governed evidence.
 - The typed authority SPI, run-scoped provider, capability truth, durable re-authorization, strict
   signed challenge-bound HTTPS adapter, static Ed25519 lifecycle, atomic dynamic JWKS refresh,
-  revocation propagation, hard local expiry and payload-free health are implemented. Exact
-  cross-replica trust-generation convergence, signed-JWKS witness, endpoint/mTLS/KMS HA, external
-  alert integration and chaos/DR certification are not. The adapter and dynamic trust remain
+  revocation propagation, hard local expiry, payload-free health, database-clock exact configured
+  membership and cross-replica trust-generation convergence are implemented. The configured member
+  set is not yet independently signed, and signed-JWKS witness, endpoint/mTLS/KMS HA, external alert
+  integration and chaos/DR certification are not. The adapter, dynamic trust and cohort gate remain
   explicitly disabled by default.
 
 ## Reproduction
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=FixtureExecutionServicesTest,ResolvedTestSecretsTest,TestSecretResolutionServiceTest,TestSecretAuthorityProtocolTest,ConfiguredTestSecretAuthorityTrustStoreTest,DynamicJwksTestSecretAuthorityTrustStoreTest,HttpTestSecretAuthorityTest,TestSecretAuthorityProtocolSchemaTest,GovernedExecutionServicesTest,DurableTestRecoveryAuthorizerTest,ExecutionControlCompilerTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest,TestRuntimeProfileIsolationTest test
+  -Dtest=FixtureExecutionServicesTest,ResolvedTestSecretsTest,TestSecretResolutionServiceTest,TestSecretAuthorityProtocolTest,ConfiguredTestSecretAuthorityTrustStoreTest,DynamicJwksTestSecretAuthorityTrustStoreTest,TestSecretAuthorityTrustCohortMonitorTest,DatabaseTestSecretAuthorityTrustCohortRepositoryTest,HttpTestSecretAuthorityTest,TestSecretAuthorityProtocolSchemaTest,GovernedExecutionServicesTest,DurableTestRecoveryAuthorizerTest,ExecutionControlCompilerTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest,TestRuntimeProfileIsolationTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=FixtureBundleBuilderTest,ResourceGatewayTestClientTest,TestRunAssertionsTest,TestingProtocolTest test

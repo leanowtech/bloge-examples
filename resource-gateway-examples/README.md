@@ -306,8 +306,14 @@ drift, and signature failure all fail closed; values remain run-scoped and never
 Set `RG_TEST_SECRET_AUTHORITY_JWKS_ENABLED=true` and its HTTPS URI to get atomic ETag refresh,
 unknown-key rotation, explicit `enabled`/`revoked` propagation, a hard maximum snapshot age, and
 payload-free Actuator health without restart. Static and dynamic key modes are mutually exclusive;
-dynamic bootstrap or any ambiguous refresh fails closed. Cross-replica generation convergence and
-authority HA/chaos certification remain open. See the
+dynamic bootstrap or any ambiguous refresh fails closed. Multi-replica deployments can additionally
+set `RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED=true` plus one stable fleet scope, immutable deployment
+cohort, exact instance slot, artifact fingerprint and complete expected-instance list. Database-clock
+process-start leases then block secret resolution until every exact slot is live, healthy and on one
+complete JWKS generation; duplicate starts, overlapping deployment cohorts and generation drift fail
+closed. The authority checks this gate before the request and again after signature verification.
+The configured inventory is not yet independently signed, and signed JWKS witness plus authority
+HA/chaos certification remain open. See the
 [testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#421a-control-identity-feature-flag-and-secret-built-ins).
 
 The durable stability queue and authenticated asynchronous submit/query/cancel protocol are present

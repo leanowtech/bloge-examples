@@ -171,6 +171,16 @@ gateway:
             request-timeout-ms: ${RG_TEST_SECRET_AUTHORITY_JWKS_TIMEOUT_MS:3000}
             maximum-snapshot-age-seconds: ${RG_TEST_SECRET_AUTHORITY_JWKS_MAXIMUM_AGE_SECONDS:60}
             allow-insecure-loopback: ${RG_TEST_SECRET_AUTHORITY_JWKS_ALLOW_INSECURE_LOOPBACK:false}
+            cohort:
+              enabled: ${RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED:false}
+              scope-id: ${RG_TEST_SECRET_AUTHORITY_COHORT_SCOPE_ID:}
+              cohort-id: ${RG_TEST_SECRET_AUTHORITY_COHORT_ID:}
+              instance-id: ${RG_RESOURCE_GATEWAY_INSTANCE_ID:}
+              artifact-fingerprint: ${RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT:}
+              expected-instance-ids: ${RG_TEST_SECRET_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS:}
+              heartbeat-interval-seconds: ${RG_TEST_SECRET_AUTHORITY_COHORT_HEARTBEAT_SECONDS:10}
+              lease-duration-seconds: ${RG_TEST_SECRET_AUTHORITY_COHORT_LEASE_SECONDS:30}
+              record-retention-seconds: ${RG_TEST_SECRET_AUTHORITY_COHORT_RETENTION_SECONDS:86400}
     stability-jobs:
       api:
         retry-after-seconds: ${RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS:5}

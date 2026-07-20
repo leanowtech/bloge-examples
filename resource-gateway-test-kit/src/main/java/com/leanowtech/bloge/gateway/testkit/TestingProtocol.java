@@ -30,6 +30,12 @@ public final class TestingProtocol {
     /** Payload-free dynamic test-secret authority trust refresh snapshot version. */
     public static final String TEST_SECRET_AUTHORITY_TRUST_REFRESH_SNAPSHOT_V1 =
             "bloge.testSecretAuthorityTrustRefreshSnapshot.v1";
+    /** Aggregate database-authoritative test-secret trust cohort snapshot version. */
+    public static final String TEST_SECRET_AUTHORITY_TRUST_COHORT_SNAPSHOT_V1 =
+            "bloge.testSecretAuthorityTrustCohortSnapshot.v1";
+    /** Payload-free test-secret trust cohort gate descriptor version. */
+    public static final String TEST_SECRET_AUTHORITY_TRUST_COHORT_DESCRIPTOR_V1 =
+            "bloge.testSecretAuthorityTrustCohortDescriptor.v1";
     /** Fixture rule wire version. */
     public static final String FIXTURE_RULE_V1 = "bloge.fixtureRule.v1";
     /** Fixture registration request wire version. */

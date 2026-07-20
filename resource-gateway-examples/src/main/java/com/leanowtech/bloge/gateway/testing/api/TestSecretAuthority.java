@@ -22,7 +22,12 @@ public interface TestSecretAuthority {
             "privateMaterialPresent", "requestTimeoutMillis", "trustProviderType",
             "trustAvailable", "trustRefreshState", "trustAutomaticRefresh",
             "trustRefreshIntervalSeconds", "trustMaximumSnapshotAgeSeconds",
-            "trustConditionalRequests", "trustFailClosedOnRefreshFailure");
+            "trustConditionalRequests", "trustFailClosedOnRefreshFailure",
+            "trustCohortConfigured", "trustCohortAvailable", "trustCohortStatus",
+            "trustCohortExpectedReplicaCount", "trustCohortLiveReplicaCount",
+            "trustCohortHealthyReplicaCount", "trustCohortDistinctGenerationCount",
+            "trustCohortLeaseDurationSeconds", "trustCohortDatabaseAuthority",
+            "trustCohortExactConfiguredInventory");
 
     /**
      * Resolves the exact requested closure or fails closed.

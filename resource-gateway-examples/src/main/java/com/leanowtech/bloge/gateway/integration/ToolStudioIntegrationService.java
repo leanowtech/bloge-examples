@@ -267,6 +267,37 @@ public class ToolStudioIntegrationService {
                 "trustConditionalRequests"))
                 && Boolean.TRUE.equals(testSecretAuthority.properties().get(
                 "trustFailClosedOnRefreshFailure")));
+        Number secretExpectedReplicas = testSecretAuthority.properties().get(
+                "trustCohortExpectedReplicaCount") instanceof Number value ? value : null;
+        Number secretLiveReplicas = testSecretAuthority.properties().get(
+                "trustCohortLiveReplicaCount") instanceof Number value ? value : null;
+        Number secretHealthyReplicas = testSecretAuthority.properties().get(
+                "trustCohortHealthyReplicaCount") instanceof Number value ? value : null;
+        Number secretDistinctGenerations = testSecretAuthority.properties().get(
+                "trustCohortDistinctGenerationCount") instanceof Number value ? value : null;
+        Number secretCohortLease = testSecretAuthority.properties().get(
+                "trustCohortLeaseDurationSeconds") instanceof Number value ? value : null;
+        boolean secretCohortSupported = dynamicSecretTrust
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "trustCohortConfigured"))
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "trustCohortDatabaseAuthority"))
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "trustCohortExactConfiguredInventory"))
+                && secretExpectedReplicas != null && secretExpectedReplicas.longValue() > 0
+                && secretCohortLease != null && secretCohortLease.longValue() > 0;
+        boolean secretCohortReady = secretCohortSupported
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "trustCohortAvailable"))
+                && "CONVERGED".equals(testSecretAuthority.properties().get(
+                "trustCohortStatus"))
+                && secretLiveReplicas != null && secretHealthyReplicas != null
+                && secretDistinctGenerations != null
+                && secretLiveReplicas.longValue() == secretExpectedReplicas.longValue()
+                && secretHealthyReplicas.longValue() == secretExpectedReplicas.longValue()
+                && secretDistinctGenerations.longValue() == 1;
+        features.put("testSecretAuthorityTrustCohortConvergence", secretCohortSupported);
+        features.put("testSecretAuthorityTrustCohortReady", secretCohortReady);
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),

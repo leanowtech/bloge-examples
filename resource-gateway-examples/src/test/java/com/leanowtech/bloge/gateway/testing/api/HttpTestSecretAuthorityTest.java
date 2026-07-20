@@ -17,6 +17,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -71,6 +72,9 @@ class HttpTestSecretAuthorityTest {
                         .containsEntry("credentialFree", true)
                         .containsEntry("redirectsFollowed", false)
                         .containsEntry("automaticRetries", false)
+                        .containsEntry("trustCohortConfigured", false)
+                        .containsEntry("trustCohortAvailable", true)
+                        .containsEntry("trustCohortStatus", "LOCAL_ONLY")
                         .doesNotContainKeys("baseUri", "publicKey", "privateKey", "secret");
             });
         }
@@ -154,6 +158,34 @@ class HttpTestSecretAuthorityTest {
     }
 
     @Test
+    void cohortConvergenceIsRequiredBeforeNetworkAndAfterSignatureVerification()
+            throws Exception {
+        try (AuthorityServer server = AuthorityServer.start(objectMapper,
+                observed -> signed(observed.request()))) {
+            HttpTestSecretAuthority preflightBlocked = authority(
+                    server.baseUri(), Duration.ofSeconds(1), () -> divergentCohort());
+            assertResolutionReason(preflightBlocked, TestSecretAuthority.Reason.UNAVAILABLE);
+            assertThat(server.requests()).isZero();
+
+            AtomicInteger reads = new AtomicInteger();
+            HttpTestSecretAuthority changedInFlight = authority(
+                    server.baseUri(), Duration.ofSeconds(1), () ->
+                            reads.incrementAndGet() == 1 ? convergedCohort() : divergentCohort());
+            assertResolutionReason(changedInFlight, TestSecretAuthority.Reason.UNAVAILABLE);
+            assertThat(server.requests()).isOne();
+            assertThat(changedInFlight.descriptor()).satisfies(descriptor -> {
+                assertThat(descriptor.available()).isFalse();
+                assertThat(descriptor.properties())
+                        .containsEntry("trustCohortConfigured", true)
+                        .containsEntry("trustCohortAvailable", false)
+                        .containsEntry("trustCohortStatus", "SNAPSHOT_DIVERGED")
+                        .containsEntry("trustCohortDistinctGenerationCount", 2)
+                        .doesNotContainKeys("instanceId", "startupId", "snapshotFingerprint");
+            });
+        }
+    }
+
+    @Test
     void settingsRequireHttpsExceptForExplicitLoopbackTests() {
         assertThatThrownBy(() -> new HttpTestSecretAuthority.Settings(
                 URI.create("http://authority.example"), Duration.ofSeconds(1), false).validated())
@@ -176,16 +208,35 @@ class HttpTestSecretAuthorityTest {
     }
 
     private HttpTestSecretAuthority authority(URI baseUri, Duration timeout) {
+        return authority(baseUri, timeout, TestSecretAuthorityTrustCohortGate.localOnly());
+    }
+
+    private HttpTestSecretAuthority authority(
+            URI baseUri,
+            Duration timeout,
+            TestSecretAuthorityTrustCohortGate cohortGate) {
         var trustStore = new ConfiguredTestSecretAuthorityTrustStore(
                 objectMapper, AUTHORITY_ID, Duration.ofSeconds(60), Duration.ofSeconds(5),
                 Duration.ofMillis(10), List.of(
                 new ConfiguredTestSecretAuthorityTrustStore.AuthorityKey(
                         KEY_ID, keyPair.getPublic(), null, null, true, false)));
-        return new HttpTestSecretAuthority(objectMapper, trustStore,
+        return new HttpTestSecretAuthority(objectMapper, trustStore, cohortGate,
                 new HttpTestSecretAuthority.Settings(baseUri, timeout, true),
                 Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(),
                 HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
                         .connectTimeout(timeout).build());
+    }
+
+    private static TestSecretAuthorityTrustCohortGate.Descriptor convergedCohort() {
+        return new TestSecretAuthorityTrustCohortGate.Descriptor(
+                TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION,
+                true, true, "CONVERGED", 1, 1, 1, 1, 30, true, true);
+    }
+
+    private static TestSecretAuthorityTrustCohortGate.Descriptor divergentCohort() {
+        return new TestSecretAuthorityTrustCohortGate.Descriptor(
+                TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION,
+                true, false, "SNAPSHOT_DIVERGED", 2, 2, 2, 2, 30, true, true);
     }
 
     private Reply signed(TestSecretAuthorityRequest request) {

@@ -31,6 +31,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseFixtureBundleRep
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseReplayPayloadRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecurityEventRepository;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSecretAuthorityTrustCohortRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteRunRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityAuthorityCohortRepository;
@@ -1292,6 +1293,78 @@ public class TestRuntimeConfiguration {
         return new TestSecretAuthorityTrustHealth(trustStore);
     }
 
+    /** Freezes one exact configured test-secret trust cohort and process-start identity. */
+    @Bean
+    @ConditionalOnBean(DynamicJwksTestSecretAuthorityTrustStore.class)
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort",
+            name = "enabled", havingValue = "true")
+    TestSecretAuthorityTrustCohortPolicy testSecretAuthorityTrustCohortPolicy(
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id:}")
+            String scopeId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.cohort-id:}")
+            String cohortId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.instance-id:}")
+            String instanceId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.artifact-fingerprint:}")
+            String artifactFingerprint,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.expected-instance-ids:}")
+            String expectedInstanceIds,
+            @Value("${gateway.testing.test-secrets.authority.http.expected-authority-id:}")
+            String authorityId,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.heartbeat-interval-seconds:10}")
+            long heartbeatIntervalSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.lease-duration-seconds:30}")
+            long leaseDurationSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.record-retention-seconds:86400}")
+            long recordRetentionSeconds) {
+        return new TestSecretAuthorityTrustCohortPolicy(
+                scopeId, cohortId, instanceId, UUID.randomUUID().toString(),
+                artifactFingerprint, testSecretAuthorityExpectedInstances(expectedInstanceIds),
+                authorityId, TestSecretAuthorityResponse.SCHEMA_VERSION,
+                Duration.ofSeconds(heartbeatIntervalSeconds),
+                Duration.ofSeconds(leaseDurationSeconds),
+                Duration.ofSeconds(recordRetentionSeconds));
+    }
+
+    /** Creates the database-clock lease and exact trust-generation registry. */
+    @Bean
+    @ConditionalOnBean(DynamicJwksTestSecretAuthorityTrustStore.class)
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort",
+            name = "enabled", havingValue = "true")
+    DatabaseTestSecretAuthorityTrustCohortRepository
+            testSecretAuthorityTrustCohortRepository(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            TestSecretAuthorityTrustCohortPolicy policy) {
+        return new DatabaseTestSecretAuthorityTrustCohortRepository(
+                database.jdbc(), objectMapper, policy, database.transactionManager());
+    }
+
+    /** Publishes local dynamic trust and gates secret resolution on exact fleet convergence. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnBean(DynamicJwksTestSecretAuthorityTrustStore.class)
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.test-secrets.authority.http.jwks.cohort",
+            name = "enabled", havingValue = "true")
+    TestSecretAuthorityTrustCohortMonitor testSecretAuthorityTrustCohortMonitor(
+            DatabaseTestSecretAuthorityTrustCohortRepository repository,
+            DynamicJwksTestSecretAuthorityTrustStore trustStore,
+            TestSecretAuthorityTrustCohortPolicy policy,
+            ObjectMapper objectMapper) {
+        return new TestSecretAuthorityTrustCohortMonitor(
+                repository, trustStore, policy, objectMapper);
+    }
+
+    /** Exposes aggregate-only exact trust-cohort convergence through Actuator. */
+    @Bean
+    @ConditionalOnBean(TestSecretAuthorityTrustCohortMonitor.class)
+    TestSecretAuthorityTrustCohortHealth testSecretAuthorityTrustCohortHealth(
+            TestSecretAuthorityTrustCohortMonitor monitor) {
+        return new TestSecretAuthorityTrustCohortHealth(monitor);
+    }
+
     /**
      * Creates the opt-in challenge-bound HTTPS test-secret authority adapter.
      *
@@ -1305,11 +1378,14 @@ public class TestRuntimeConfiguration {
     TestSecretAuthority httpTestSecretAuthority(
             ObjectMapper objectMapper,
             TestSecretAuthorityTrustStore trustStore,
+            ObjectProvider<TestSecretAuthorityTrustCohortGate> cohortGates,
             @Value("${gateway.testing.test-secrets.authority.http.base-uri:}") String baseUri,
             @Value("${gateway.testing.test-secrets.authority.http.request-timeout-ms:3000}")
             long requestTimeoutMillis,
             @Value("${gateway.testing.test-secrets.authority.http.allow-insecure-loopback:false}")
-            boolean allowInsecureLoopback) {
+            boolean allowInsecureLoopback,
+            @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.enabled:false}")
+            boolean cohortEnabled) {
         URI uri;
         try {
             uri = URI.create(baseUri == null ? "" : baseUri.trim());
@@ -1317,7 +1393,19 @@ public class TestRuntimeConfiguration {
             throw new IllegalArgumentException(
                     "Test-secret authority base URI is invalid", invalid);
         }
-        return new HttpTestSecretAuthority(objectMapper, trustStore,
+        List<TestSecretAuthorityTrustCohortGate> configuredGates =
+                cohortGates.orderedStream().toList();
+        if (cohortEnabled && configuredGates.size() != 1) {
+            throw new IllegalStateException(
+                    "Enabled test-secret trust cohort requires exactly one gate");
+        }
+        if (!cohortEnabled && !configuredGates.isEmpty()) {
+            throw new IllegalStateException(
+                    "Test-secret trust cohort gate requires its explicit switch");
+        }
+        TestSecretAuthorityTrustCohortGate cohortGate = cohortEnabled
+                ? configuredGates.getFirst() : TestSecretAuthorityTrustCohortGate.localOnly();
+        return new HttpTestSecretAuthority(objectMapper, trustStore, cohortGate,
                 new HttpTestSecretAuthority.Settings(uri,
                         Duration.ofMillis(requestTimeoutMillis), allowInsecureLoopback));
     }
@@ -2713,6 +2801,19 @@ public class TestRuntimeConfiguration {
             if (normalized.isBlank() || !exact.add(normalized)) {
                 throw new IllegalArgumentException(
                         "Stability authority cohort instance inventory is invalid");
+            }
+        }
+        return Set.copyOf(exact);
+    }
+
+    private static Set<String> testSecretAuthorityExpectedInstances(String instances) {
+        String[] values = instances == null ? new String[0] : instances.split(",", -1);
+        LinkedHashSet<String> exact = new LinkedHashSet<>();
+        for (String value : values) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank() || !exact.add(normalized)) {
+                throw new IllegalArgumentException(
+                        "Test-secret authority trust cohort instance inventory is invalid");
             }
         }
         return Set.copyOf(exact);

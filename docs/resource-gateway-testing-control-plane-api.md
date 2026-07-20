@@ -137,6 +137,15 @@ Independent-store settings:
 | `gateway.testing.test-secrets.authority.http.jwks.request-timeout-ms` | `RG_TEST_SECRET_AUTHORITY_JWKS_TIMEOUT_MS` | `3000`; 100..30000 |
 | `gateway.testing.test-secrets.authority.http.jwks.maximum-snapshot-age-seconds` | `RG_TEST_SECRET_AUTHORITY_JWKS_MAXIMUM_AGE_SECONDS` | `60`; hard fail-closed age, at least refresh plus timeout |
 | `gateway.testing.test-secrets.authority.http.jwks.allow-insecure-loopback` | `RG_TEST_SECRET_AUTHORITY_JWKS_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.enabled` | `RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED` | `false`; exact database-backed cross-replica gate |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id` | `RG_TEST_SECRET_AUTHORITY_COHORT_SCOPE_ID` | stable fleet scope across deployment generations |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.cohort-id` | `RG_TEST_SECRET_AUTHORITY_COHORT_ID` | immutable deployment generation |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.instance-id` | `RG_RESOURCE_GATEWAY_INSTANCE_ID` | exact serving slot represented by this process |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.artifact-fingerprint` | `RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT` | canonical `sha256:<lowercase-hex>` immutable artifact |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.expected-instance-ids` | `RG_TEST_SECRET_AUTHORITY_COHORT_EXPECTED_INSTANCE_IDS` | comma-separated complete serving-slot set |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.heartbeat-interval-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_HEARTBEAT_SECONDS` | `10`; 1..300 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.lease-duration-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_LEASE_SECONDS` | `30`; 3..900 and at least three heartbeats |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.record-retention-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_RETENTION_SECONDS` | `86400`; 3600..2592000 and at least the lease |
 | `gateway.testing.stability-jobs.api.retry-after-seconds` | `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` | `5` |
 | `gateway.testing.stability-jobs.authority.http.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED` | `false` |
 | `gateway.testing.stability-jobs.authority.http.base-uri` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI` | empty; required when enabled |
@@ -1141,8 +1150,37 @@ failure, `maximum-snapshot-age-seconds` is a hard local expiry fence. The payloa
 indicator exposes only state, counts, last success, failure family, interval, and maximum age.
 Capability flags `dynamicTestSecretAuthorityTrust` and `testSecretAuthorityTrustRefreshSlo` prove
 automatic refresh, conditional requests, bounded age, and fail-closed semantics without exposing
-URI, ETag, key ids or material. Cross-replica trust-generation convergence, signed JWKS witness,
-endpoint/mTLS/KMS HA and external chaos/alert certification remain explicit follow-up work.
+URI, ETag, key ids or material.
+
+For a multi-replica deployment, also set `RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED=true` and provide
+one stable scope, immutable deployment cohort, exact instance slot, immutable artifact fingerprint,
+and the same complete expected-instance set to every replica. Each process publishes only local
+refresh state, active-key count and the SHA-256 identity of its complete public trust generation
+under a database-clock process-start lease. The gate remains closed for missing or unexpected
+members, two live starts for one slot, artifact/policy/protocol/authority drift, unhealthy local
+trust, record corruption, two simultaneous deployment cohorts, or more than one JWKS generation.
+A local generation change closes that process immediately until its next successful heartbeat.
+The HTTPS adapter checks convergence both before network I/O and after response signature
+verification, so a split that appears while a secret request is in flight cannot release plaintext
+into DAG execution.
+
+Actuator exposes aggregate counts and status only. Capability
+`testSecretAuthorityTrustCohortConvergence` means the exact database/configuration protocol is
+assembled; `testSecretAuthorityTrustCohortReady` additionally means it is currently converged.
+Neither projection contains member ids, startup ids, artifact/trust fingerprints, ETag, URI or key
+material. The database substrate is shared with stability authority cohorts under a dedicated
+`test-secret/` scope namespace, preserving one transaction/lease/corruption implementation without
+allowing the two domains to elect each other's cohort.
+
+The current persistence adapter still projects through a stability-named internal cohort policy and
+repository. This is deliberately not a wire dependency, but it is a source-level domain coupling;
+extracting the exact-membership, database-clock lease and corruption rules into a neutral cohort
+kernel is the next maintainability step before adding a third cohort-backed security domain.
+
+The expected member set is still deployment configuration authority. It is not yet an independently
+signed serving inventory, and the JWKS sequence itself has no signed external witness. Signed
+inventory/witness, endpoint and mTLS/KMS HA, external alert routing, and chaos/DR certification
+remain explicit follow-up work.
 
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 

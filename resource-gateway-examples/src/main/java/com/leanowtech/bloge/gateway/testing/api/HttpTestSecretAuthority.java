@@ -39,6 +39,7 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
 
     private final ObjectMapper objectMapper;
     private final TestSecretAuthorityTrustStore trustStore;
+    private final TestSecretAuthorityTrustCohortGate cohortGate;
     private final Settings settings;
     private final HttpClient client;
     private final URI authorityUri;
@@ -56,7 +57,25 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
             ObjectMapper objectMapper,
             TestSecretAuthorityTrustStore trustStore,
             Settings settings) {
-        this(objectMapper, trustStore, settings, Clock.systemUTC(), new SecureRandom(), null);
+        this(objectMapper, trustStore, TestSecretAuthorityTrustCohortGate.localOnly(), settings,
+                Clock.systemUTC(), new SecureRandom(), null);
+    }
+
+    /**
+     * Creates an adapter protected by exact cross-replica trust-generation convergence.
+     *
+     * @param objectMapper application JSON mapper
+     * @param trustStore signed-response verification policy
+     * @param cohortGate non-network database-backed convergence gate
+     * @param settings bounded endpoint and timeout settings
+     */
+    public HttpTestSecretAuthority(
+            ObjectMapper objectMapper,
+            TestSecretAuthorityTrustStore trustStore,
+            TestSecretAuthorityTrustCohortGate cohortGate,
+            Settings settings) {
+        this(objectMapper, trustStore, cohortGate, settings,
+                Clock.systemUTC(), new SecureRandom(), null);
     }
 
     /** Package-visible seam for deterministic transport and timeout tests. */
@@ -67,12 +86,26 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
             Clock clock,
             SecureRandom secureRandom,
             HttpClient client) {
+        this(objectMapper, trustStore, TestSecretAuthorityTrustCohortGate.localOnly(), settings,
+                clock, secureRandom, client);
+    }
+
+    /** Package-visible seam including the convergence gate for deterministic boundary tests. */
+    HttpTestSecretAuthority(
+            ObjectMapper objectMapper,
+            TestSecretAuthorityTrustStore trustStore,
+            TestSecretAuthorityTrustCohortGate cohortGate,
+            Settings settings,
+            Clock clock,
+            SecureRandom secureRandom,
+            HttpClient client) {
         this.settings = Objects.requireNonNull(settings, "settings").validated();
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper").copy()
                 .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
+        this.cohortGate = Objects.requireNonNull(cohortGate, "cohortGate");
         if (!this.trustStore.descriptor().available()) {
             throw new IllegalArgumentException(
                     "Test-secret authority trust store must be ready before HTTP resolution");
@@ -88,9 +121,7 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
 
     @Override
     public ResolvedTestSecrets resolve(TestSecretResolutionContext context) {
-        if (!trustStore.descriptor().available()) {
-            throw new ResolutionException(Reason.UNAVAILABLE);
-        }
+        requireReady();
         Instant requestedAt = clock.instant();
         byte[] challengeBytes = new byte[32];
         secureRandom.nextBytes(challengeBytes);
@@ -128,6 +159,7 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
                     ? Reason.UNAVAILABLE : Reason.INVALID_RESPONSE;
             throw new ResolutionException(reason);
         }
+        requireReady();
         if (response.decision() == TestSecretAuthorityResponse.Decision.DENIED) {
             throw new ResolutionException(Reason.DENIED);
         }
@@ -142,7 +174,14 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
         } catch (RuntimeException unavailable) {
             trust = TestSecretAuthorityTrustStore.unavailable().descriptor();
         }
-        return new Descriptor("", trust.available(), "HTTPS_SIGNED_TEST_SECRET_AUTHORITY",
+        TestSecretAuthorityTrustCohortGate.Descriptor cohort;
+        try {
+            cohort = cohortGate.descriptor();
+        } catch (RuntimeException unavailable) {
+            cohort = TestSecretAuthorityTrustCohortGate.Descriptor.unavailable(0, 0);
+        }
+        return new Descriptor("", trust.available() && cohort.available(),
+                "HTTPS_SIGNED_TEST_SECRET_AUTHORITY",
                 trust.expectedAuthorityId(), Map.ofEntries(
                 Map.entry("protocolVersion", TestSecretAuthorityRequest.SCHEMA_VERSION),
                 Map.entry("responseProtocolVersion",
@@ -167,7 +206,32 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
                 Map.entry("trustConditionalRequests",
                         trust.properties().getOrDefault("conditionalRequests", false)),
                 Map.entry("trustFailClosedOnRefreshFailure",
-                        trust.properties().getOrDefault("failClosedOnRefreshFailure", true))));
+                        trust.properties().getOrDefault("failClosedOnRefreshFailure", true)),
+                Map.entry("trustCohortConfigured", cohort.configured()),
+                Map.entry("trustCohortAvailable", cohort.available()),
+                Map.entry("trustCohortStatus", cohort.status()),
+                Map.entry("trustCohortExpectedReplicaCount", cohort.expectedReplicaCount()),
+                Map.entry("trustCohortLiveReplicaCount", cohort.liveReplicaCount()),
+                Map.entry("trustCohortHealthyReplicaCount", cohort.healthyReplicaCount()),
+                Map.entry("trustCohortDistinctGenerationCount",
+                        cohort.distinctTrustGenerationCount()),
+                Map.entry("trustCohortLeaseDurationSeconds",
+                        cohort.leaseDurationSeconds()),
+                Map.entry("trustCohortDatabaseAuthority", cohort.databaseAuthority()),
+                Map.entry("trustCohortExactConfiguredInventory",
+                        cohort.exactConfiguredInventory())));
+    }
+
+    private void requireReady() {
+        try {
+            if (!trustStore.descriptor().available() || !cohortGate.descriptor().available()) {
+                throw new ResolutionException(Reason.UNAVAILABLE);
+            }
+        } catch (ResolutionException unavailable) {
+            throw unavailable;
+        } catch (RuntimeException unavailable) {
+            throw new ResolutionException(Reason.UNAVAILABLE);
+        }
     }
 
     private ExchangeResult exchange(TestSecretAuthorityRequest request, byte[] body) {

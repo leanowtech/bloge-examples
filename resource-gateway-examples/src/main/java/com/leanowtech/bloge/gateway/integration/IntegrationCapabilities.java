@@ -1,17 +1,19 @@
 package com.leanowtech.bloge.gateway.integration;
 
-import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
+import com.leanowtech.bloge.gateway.testing.api.DynamicJwksTestSecretAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortGate;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustStore;
-import com.leanowtech.bloge.gateway.testing.api.DynamicJwksTestSecretAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
+import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.ManagedEvidenceSigningProvider;
@@ -482,6 +484,10 @@ public record IntegrationCapabilities(
                     TestSecretAuthorityTrustStore.Descriptor.SCHEMA_VERSION));
             objects.put("testSecretAuthorityTrustRefreshSnapshot", List.of(
                     DynamicJwksTestSecretAuthorityTrustStore.RefreshSnapshot.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityTrustCohortSnapshot", List.of(
+                    TestSecretAuthorityTrustCohortRepository.Snapshot.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityTrustCohortDescriptor", List.of(
+                    TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION));
             objects.put("testSecretAuthorityDescriptor", List.of(
                     TestSecretAuthority.Descriptor.SCHEMA_VERSION));
             objects.put("effectiveExecutionPlan", List.of(
@@ -691,6 +697,8 @@ public record IntegrationCapabilities(
         features.put("durableTestSecretReauthorization", false);
         features.put("dynamicTestSecretAuthorityTrust", false);
         features.put("testSecretAuthorityTrustRefreshSlo", false);
+        features.put("testSecretAuthorityTrustCohortConvergence", false);
+        features.put("testSecretAuthorityTrustCohortReady", false);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);
         features.put("pureDslMutationPlanning", testExecutionEndpointEnabled);
