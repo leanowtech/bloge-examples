@@ -66,6 +66,22 @@ public final class TestingProtocol {
     /** Aggregate payload-free dynamic inventory refresh snapshot version. */
     public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_REFRESH_SNAPSHOT_V1 =
             "bloge.testSecretAuthorityServingInventoryRefreshSnapshot.v1";
+    /** Atomic dual-root publication for test-secret inventory runtime verification keys. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_TRUST_ROOT_PUBLICATION_V1 =
+            "bloge.testSecretAuthorityServingInventoryTrustRootPublication.v1";
+    /** Canonical dual runtime-key material approved by independent bootstrap quorums. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_TRUST_ROOT_MATERIAL_V1 =
+            "bloge.testSecretAuthorityServingInventoryTrustRootMaterial.v1";
+    /** Durable managed dual-root floor candidate version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_TRUST_ROOT_GENERATION_V1 =
+            "bloge.testSecretAuthorityServingInventoryTrustRootGeneration.v1";
+    /** Aggregate verified managed-root snapshot version. */
+    public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_TRUST_ROOT_SNAPSHOT_V1 =
+            "bloge.testSecretAuthorityServingInventoryTrustRootSnapshot.v1";
+    /** Aggregate dynamic managed-root refresh snapshot version. */
+    public static final String
+            TEST_SECRET_AUTHORITY_SERVING_INVENTORY_DYNAMIC_TRUST_ROOT_SNAPSHOT_V1 =
+            "bloge.testSecretAuthorityServingInventoryDynamicTrustRootSnapshot.v1";
     /** Fixture rule wire version. */
     public static final String FIXTURE_RULE_V1 = "bloge.fixtureRule.v1";
     /** Fixture registration request wire version. */
@@ -401,6 +417,11 @@ public final class TestingProtocol {
     public static final String TEST_SECRET_AUTHORITY_SERVING_INVENTORY_PUBLICATION_SCHEMA_RESOURCE =
             "/schemas/resource-gateway-testing/"
                     + "test-secret-authority-serving-inventory-publication-v1.schema.json";
+    /** Classpath location of the atomic test-secret inventory dual-root publication Schema. */
+    public static final String
+            TEST_SECRET_AUTHORITY_SERVING_INVENTORY_TRUST_ROOT_PUBLICATION_SCHEMA_RESOURCE =
+            "/schemas/resource-gateway-testing/"
+                    + "test-secret-authority-serving-inventory-trust-root-publication-v1.schema.json";
     /** Classpath location of the semantic correctness workbook JSON Schema. */
     public static final String SEMANTIC_WORKBOOK_SCHEMA_RESOURCE =
             "/schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json";

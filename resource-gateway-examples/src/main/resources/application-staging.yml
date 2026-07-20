@@ -200,6 +200,23 @@ gateway:
                   witness-domain: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_DOMAIN:}
                   witness-signature-threshold: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD:0}
                   witness-authority-keys-json: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON:[]}
+                  trust-roots:
+                    enabled: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED:false}
+                    required: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_REQUIRED:true}
+                    uri: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_URI:}
+                    trust-root-set-id: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOT_SET_ID:}
+                    accepted-policy-fingerprints: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOT_POLICY_FINGERPRINTS:}
+                    deployment-root-domain: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_DEPLOYMENT_ROOT_DOMAIN:}
+                    deployment-root-signature-threshold: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_DEPLOYMENT_ROOT_THRESHOLD:0}
+                    deployment-root-authority-keys-json: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_DEPLOYMENT_ROOT_KEYS_JSON:[]}
+                    witness-root-domain: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_ROOT_DOMAIN:}
+                    witness-root-signature-threshold: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_ROOT_THRESHOLD:0}
+                    witness-root-authority-keys-json: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_ROOT_KEYS_JSON:[]}
+                    refresh-interval-seconds: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_REFRESH_SECONDS:30}
+                    request-timeout-ms: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_TIMEOUT_MS:3000}
+                    unknown-key-refresh-interval-seconds: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_UNKNOWN_KEY_REFRESH_SECONDS:5}
+                    maximum-snapshot-age-seconds: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_MAXIMUM_AGE_SECONDS:60}
+                    allow-insecure-loopback: ${RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ALLOW_INSECURE_LOOPBACK:false}
     stability-jobs:
       api:
         retry-after-seconds: ${RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS:5}

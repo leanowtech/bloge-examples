@@ -330,6 +330,18 @@ public class ToolStudioIntegrationService {
         boolean durableSecretInventoryFloor = dynamicSecretInventory
                 && Boolean.TRUE.equals(testSecretAuthority.properties().get(
                 "servingInventoryDurablePublicationFloor"));
+        boolean managedSecretInventoryRoots = dynamicSecretInventory
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryManagedTrustRootRefresh"));
+        boolean atomicSecretInventoryRoots = managedSecretInventoryRoots
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryAtomicDualTrustRootPublication"));
+        boolean durableSecretInventoryRootFloor = managedSecretInventoryRoots
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryDurableTrustRootFloor"));
+        boolean externallyAnchoredSecretInventoryRootFloor = managedSecretInventoryRoots
+                && Boolean.TRUE.equals(testSecretAuthority.properties().get(
+                "servingInventoryExternallyAnchoredTrustRootFloor"));
         boolean dynamicSecretInventoryReady = dynamicSecretInventory
                 && signedSecretInventoryRevocation && witnessedSecretInventory
                 && durableSecretInventoryFloor && secretCohortReady
@@ -344,6 +356,17 @@ public class ToolStudioIntegrationService {
                 witnessedSecretInventory);
         features.put("testSecretAuthorityDurableInventoryPublicationFloor",
                 durableSecretInventoryFloor);
+        features.put("testSecretAuthorityManagedServingInventoryTrustRoots",
+                managedSecretInventoryRoots);
+        features.put("testSecretAuthorityAtomicDualServingInventoryTrustRoots",
+                atomicSecretInventoryRoots);
+        features.put("testSecretAuthorityDurableTrustRootFloor",
+                durableSecretInventoryRootFloor);
+        features.put("testSecretAuthorityExternallyAnchoredTrustRootFloor",
+                externallyAnchoredSecretInventoryRootFloor);
+        features.put("testSecretAuthorityManagedTrustRootsReady",
+                managedSecretInventoryRoots && atomicSecretInventoryRoots
+                        && durableSecretInventoryRootFloor && dynamicSecretInventoryReady);
         features.put("testSecretAuthorityDynamicServingInventoryReady",
                 dynamicSecretInventoryReady);
         IntegrationCapabilities augmented = new IntegrationCapabilities(

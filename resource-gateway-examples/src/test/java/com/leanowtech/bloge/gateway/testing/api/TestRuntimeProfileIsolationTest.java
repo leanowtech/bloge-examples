@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
+import com.leanowtech.bloge.gateway.integration.ToolStudioResourceGatewayProtocol;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionCoordinator;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionPolicy;
@@ -58,6 +59,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -923,8 +925,15 @@ class TestRuntimeProfileIsolationTest {
                 .getBytes(StandardCharsets.UTF_8);
         KeyPair deploymentKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         KeyPair witnessKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        KeyPair deploymentRootKey = KeyPairGenerator.getInstance("Ed25519")
+                .generateKeyPair();
+        KeyPair witnessRootKey = KeyPairGenerator.getInstance("Ed25519")
+                .generateKeyPair();
         DynamicTestSecretInventoryFixture inventory = dynamicTestSecretInventoryFixture(
                 deploymentKey, witnessKey);
+        DynamicTestSecretTrustRootFixture trustRoots = dynamicTestSecretTrustRootFixture(
+                deploymentRootKey, witnessRootKey, deploymentKey, witnessKey,
+                inventory.policyFingerprint());
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/jwks", exchange -> {
             exchange.getResponseHeaders().add("Content-Type", "application/jwk-set+json");
@@ -945,9 +954,22 @@ class TestRuntimeProfileIsolationTest {
                 body.write(inventory.document());
             }
         });
+        server.createContext("/test-secret-inventory-trust-roots", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type",
+                    DynamicTestSecretAuthorityServingInventoryTrustRootAuthority.MEDIA_TYPE);
+            exchange.getResponseHeaders().add(
+                    DynamicTestSecretAuthorityServingInventoryTrustRootAuthority.PROTOCOL_HEADER,
+                    TestSecretAuthorityServingInventoryTrustRootPublication.SCHEMA_VERSION);
+            exchange.getResponseHeaders().add("ETag", "profile-root-generation-1");
+            exchange.sendResponseHeaders(200, trustRoots.document().length);
+            try (var body = exchange.getResponseBody()) {
+                body.write(trustRoots.document());
+            }
+        });
         server.start();
         Map<String, Object> properties = dynamicTestSecretAuthorityProperties(server);
-        properties.putAll(inventory.properties(server.getAddress().getPort()));
+        properties.putAll(inventory.managedProperties(
+                server.getAddress().getPort(), trustRoots));
         properties.put("gateway.testing.store.jdbc-url",
                 "jdbc:h2:mem:profile-dynamic-test-secret-inventory;DB_CLOSE_DELAY=-1");
         try {
@@ -955,6 +977,14 @@ class TestRuntimeProfileIsolationTest {
                 assertThat(context.getBean(TestSecretAuthorityServingInventoryAuthority.class))
                         .isInstanceOf(
                                 DynamicTestSecretAuthorityServingInventoryAuthority.class);
+                assertThat(context.getBean(
+                        TestSecretAuthorityServingInventoryTrustRootFloor.class).durable())
+                        .isTrue();
+                assertThat(context.getBean(
+                        DynamicTestSecretAuthorityServingInventoryTrustRootAuthority.class)
+                        .snapshot().available()).isTrue();
+                assertThat(context.getBean(TestSecretAuthorityServingInventoryTrustRootHealth.class)
+                        .health().getStatus()).isEqualTo(Status.UP);
                 assertThat(context.getBean(TestSecretAuthorityServingInventoryHealth.class)
                         .health()).satisfies(health -> {
                             assertThat(health.getStatus()).isEqualTo(Status.UP);
@@ -974,7 +1004,14 @@ class TestRuntimeProfileIsolationTest {
                                     .containsEntry("servingInventorySignedRevocation", true)
                                     .containsEntry("servingInventoryWitnessedPublications", true)
                                     .containsEntry("servingInventoryDurablePublicationFloor",
-                                            true);
+                                            true)
+                                    .containsEntry("servingInventoryManagedTrustRootRefresh", true)
+                                    .containsEntry("servingInventoryAtomicDualTrustRootPublication",
+                                            true)
+                                    .containsEntry("servingInventoryDurableTrustRootFloor", true)
+                                    .containsEntry(
+                                            "servingInventoryExternallyAnchoredTrustRootFloor",
+                                            false);
                         });
             }
         } finally {
@@ -1009,6 +1046,51 @@ class TestRuntimeProfileIsolationTest {
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining(
                             "requires deployment-signed test-secret serving inventory");
+        } finally {
+            context.close();
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void managedTestSecretInventoryRootsRejectDisabledRemoteInventoryBeforeRootIo()
+            throws Exception {
+        KeyPair trustKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        byte[] document = authorityJwks(trustKey, "secret-key-dynamic")
+                .getBytes(StandardCharsets.UTF_8);
+        AtomicInteger rootCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/jwks", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/jwk-set+json");
+            exchange.sendResponseHeaders(200, document.length);
+            try (var body = exchange.getResponseBody()) {
+                body.write(document);
+            }
+        });
+        server.createContext("/roots", exchange -> {
+            rootCalls.incrementAndGet();
+            exchange.sendResponseHeaders(500, -1);
+            exchange.close();
+        });
+        server.start();
+        Map<String, Object> properties = dynamicTestSecretAuthorityProperties(server);
+        String prefix =
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.";
+        properties.put(prefix + "enabled", "true");
+        properties.put(prefix + "required", "true");
+        properties.put(prefix + "remote.enabled", "false");
+        properties.put(prefix + "remote.trust-roots.enabled", "true");
+        properties.put(prefix + "remote.trust-roots.uri",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/roots");
+        properties.put("gateway.testing.store.jdbc-url",
+                "jdbc:h2:mem:profile-invalid-test-secret-roots;DB_CLOSE_DELAY=-1");
+        AnnotationConfigApplicationContext context = unrefreshedContext(properties, 0, "test");
+        try {
+            assertThatThrownBy(context::refresh).rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining(
+                            "Managed test-secret inventory trust roots require remote inventory");
+            assertThat(rootCalls).hasValue(0);
         } finally {
             context.close();
             server.stop(0);
@@ -1695,22 +1777,76 @@ class TestRuntimeProfileIsolationTest {
                 Base64.getEncoder().encodeToString(signer.sign()));
     }
 
+    private static DynamicTestSecretTrustRootFixture dynamicTestSecretTrustRootFixture(
+            KeyPair deploymentRootKey,
+            KeyPair witnessRootKey,
+            KeyPair deploymentKey,
+            KeyPair witnessKey,
+            String policyFingerprint) throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        var deploymentMaterial =
+                new TestSecretAuthorityServingInventoryTrustRootPublication.AuthorityKeyMaterial(
+                        "deployment-inventory-a", "inventory-key-a",
+                        Base64.getEncoder().encodeToString(
+                                deploymentKey.getPublic().getEncoded()),
+                        now.minusSeconds(60), now.plusSeconds(7200), true, false);
+        var witnessMaterial =
+                new TestSecretAuthorityServingInventoryTrustRootPublication.AuthorityKeyMaterial(
+                        "inventory-witness-a", "witness-key-a",
+                        Base64.getEncoder().encodeToString(
+                                witnessKey.getPublic().getEncoded()),
+                        now.minusSeconds(60), now.plusSeconds(7200), true, false);
+        var material = new TestSecretAuthorityServingInventoryTrustRootPublication.Material(
+                TestSecretAuthorityServingInventoryTrustRootPublication.Material.SCHEMA_VERSION,
+                "test-secret-inventory-roots", 1, "", "test-secret-scope",
+                ToolStudioResourceGatewayProtocol.VERSION,
+                "inventory-deployment-root.example", "inventory-witness-root.example",
+                "inventory.example", "inventory-witness.example", 1, 1,
+                List.of(deploymentMaterial), List.of(witnessMaterial), policyFingerprint,
+                now.minusSeconds(30), now.minusSeconds(30), now.plusSeconds(3600));
+        String fingerprint = ProtocolFingerprint.of(objectMapper, material);
+        var publication = new TestSecretAuthorityServingInventoryTrustRootPublication(
+                TestSecretAuthorityServingInventoryTrustRootPublication.SCHEMA_VERSION,
+                material, fingerprint,
+                List.of(testSecretInventorySignature(deploymentRootKey,
+                        "inventory-deployment-root-a", "deployment-root-key-a",
+                        fingerprint, now)),
+                List.of(testSecretInventorySignature(witnessRootKey,
+                        "inventory-witness-root-a", "witness-root-key-a",
+                        fingerprint, now)));
+        return new DynamicTestSecretTrustRootFixture(
+                objectMapper.writeValueAsBytes(publication),
+                authorityKeysJson(deploymentRootKey, "inventory-deployment-root-a",
+                        "deployment-root-key-a", now),
+                authorityKeysJson(witnessRootKey, "inventory-witness-root-a",
+                        "witness-root-key-a", now));
+    }
+
+    private static String authorityKeysJson(
+            KeyPair keyPair, String authorityId, String keyId, Instant now) {
+        return "[{\"authorityId\":\"" + authorityId + "\",\"keyId\":\"" + keyId
+                + "\",\"publicKeyBase64\":\""
+                + Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded())
+                + "\",\"notBefore\":\"" + now.minusSeconds(60)
+                + "\",\"expiresAt\":\"" + now.plusSeconds(7200)
+                + "\",\"enabled\":true,\"revoked\":false}]";
+    }
+
     private record DynamicTestSecretInventoryFixture(
             byte[] document,
             String policyFingerprint,
             String deploymentKeys,
             String witnessKeys) {
 
-        private Map<String, Object> properties(int port) {
+        private Map<String, Object> managedProperties(
+                int port, DynamicTestSecretTrustRootFixture trustRoots) {
             String prefix =
                     "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.";
             Map<String, Object> properties = new LinkedHashMap<>();
             properties.put(prefix + "enabled", "true");
             properties.put(prefix + "required", "true");
-            properties.put(prefix + "trust-domain", "inventory.example");
             properties.put(prefix + "accepted-policy-fingerprints", policyFingerprint);
-            properties.put(prefix + "signature-threshold", "1");
-            properties.put(prefix + "authority-keys-json", deploymentKeys);
             properties.put(prefix + "remote.enabled", "true");
             properties.put(prefix + "remote.required", "true");
             properties.put(prefix + "remote.uri",
@@ -1719,11 +1855,39 @@ class TestRuntimeProfileIsolationTest {
             properties.put(prefix + "remote.request-timeout-ms", "1000");
             properties.put(prefix + "remote.maximum-snapshot-age-seconds", "7200");
             properties.put(prefix + "remote.allow-insecure-loopback", "true");
-            properties.put(prefix + "remote.witness-domain", "inventory-witness.example");
-            properties.put(prefix + "remote.witness-signature-threshold", "1");
-            properties.put(prefix + "remote.witness-authority-keys-json", witnessKeys);
+            String roots = prefix + "remote.trust-roots.";
+            properties.put(roots + "enabled", "true");
+            properties.put(roots + "required", "true");
+            properties.put(roots + "uri",
+                    "http://127.0.0.1:" + port + "/test-secret-inventory-trust-roots");
+            properties.put(roots + "trust-root-set-id", "test-secret-inventory-roots");
+            properties.put(roots + "accepted-policy-fingerprints", policyFingerprint);
+            properties.put(roots + "deployment-root-domain",
+                    "inventory-deployment-root.example");
+            properties.put(roots + "deployment-root-signature-threshold", "1");
+            properties.put(roots + "deployment-root-authority-keys-json",
+                    trustRoots.deploymentRootKeys());
+            properties.put(roots + "witness-root-domain", "inventory-witness-root.example");
+            properties.put(roots + "witness-root-signature-threshold", "1");
+            properties.put(roots + "witness-root-authority-keys-json",
+                    trustRoots.witnessRootKeys());
+            properties.put(roots + "refresh-interval-seconds", "3600");
+            properties.put(roots + "request-timeout-ms", "1000");
+            properties.put(roots + "maximum-snapshot-age-seconds", "7200");
+            properties.put(roots + "allow-insecure-loopback", "true");
             return properties;
         }
+
+        @Override
+        public byte[] document() {
+            return document.clone();
+        }
+    }
+
+    private record DynamicTestSecretTrustRootFixture(
+            byte[] document,
+            String deploymentRootKeys,
+            String witnessRootKeys) {
 
         @Override
         public byte[] document() {

@@ -304,7 +304,17 @@ public final class HttpTestSecretAuthority implements TestSecretAuthority {
                 Map.entry("servingInventoryWitnessSignatureThreshold",
                         inventory.properties().getOrDefault("witnessSignatureThreshold", 0)),
                 Map.entry("servingInventoryDurablePublicationFloor",
-                        inventory.properties().getOrDefault("durablePublicationFloor", false))));
+                        inventory.properties().getOrDefault("durablePublicationFloor", false)),
+                Map.entry("servingInventoryManagedTrustRootRefresh",
+                        inventory.properties().getOrDefault("managedTrustRootRefresh", false)),
+                Map.entry("servingInventoryAtomicDualTrustRootPublication",
+                        inventory.properties().getOrDefault(
+                                "atomicDualTrustRootPublication", false)),
+                Map.entry("servingInventoryDurableTrustRootFloor",
+                        inventory.properties().getOrDefault("durableTrustRootFloor", false)),
+                Map.entry("servingInventoryExternallyAnchoredTrustRootFloor",
+                        inventory.properties().getOrDefault(
+                                "externallyAnchoredTrustRootFloor", false))));
     }
 
     private void requireReady() {

@@ -163,6 +163,22 @@ Independent-store settings:
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-domain` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_DOMAIN` | exact trust domain independent from deployment inventory trust |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_SIGNATURE_THRESHOLD` | distinct witness M-of-N threshold, 1..32 |
 | `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.witness-authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON` | strict public Ed25519 witness keys; authorities and key material must not overlap deployment keys |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.enabled` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED` | `false`; selects one managed atomic deployment/witness runtime-key publication |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.required` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_REQUIRED` | `false` in `test`, `true` in `staging` |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.uri` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_URI` | strict trust-root publication v1 endpoint; HTTPS required outside explicit loopback tests |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.trust-root-set-id` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOT_SET_ID` | stable managed dual runtime-key set identity |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.accepted-policy-fingerprints` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOT_POLICY_FINGERPRINTS` | comma-separated accepted rotation policy fingerprints |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.deployment-root-domain` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_DEPLOYMENT_ROOT_DOMAIN` | offline deployment bootstrap-root trust domain |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.deployment-root-signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_DEPLOYMENT_ROOT_THRESHOLD` | deployment bootstrap-root M-of-N threshold, 1..32 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.deployment-root-authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_DEPLOYMENT_ROOT_KEYS_JSON` | strict public-only offline deployment root keys |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.witness-root-domain` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_ROOT_DOMAIN` | independent offline witness bootstrap-root trust domain |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.witness-root-signature-threshold` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_ROOT_THRESHOLD` | witness bootstrap-root M-of-N threshold, 1..32 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.witness-root-authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_WITNESS_ROOT_KEYS_JSON` | strict public-only offline witness root keys; independent from deployment roots |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.refresh-interval-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_REFRESH_SECONDS` | `30`; jittered background refresh interval, 1..3600 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.request-timeout-ms` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_TIMEOUT_MS` | `3000`; 100..30000 |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.unknown-key-refresh-interval-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_UNKNOWN_KEY_REFRESH_SECONDS` | `5`; global cooldown for candidate-driven refresh |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.maximum-snapshot-age-seconds` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_MAXIMUM_AGE_SECONDS` | `60`; hard local age, at least refresh plus timeout |
+| `gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.trust-roots.allow-insecure-loopback` | `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
 | `gateway.testing.stability-jobs.api.retry-after-seconds` | `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` | `5` |
 | `gateway.testing.stability-jobs.authority.http.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED` | `false` |
 | `gateway.testing.stability-jobs.authority.http.base-uri` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI` | empty; required when enabled |
@@ -1234,13 +1250,30 @@ can revoke and reactivate that exact inventory; a changed member topology requir
 new cohort generation. Capabilities expose dynamic source, signed revocation, independent witness,
 durable floor and current readiness as separate booleans. Health remains aggregate-only.
 
-The persistence adapters still project through stability-named internal cohort and publication-floor
-kernels. These are not wire dependencies, but neutral kernel extraction remains a maintainability
-task. Managed deployment/witness trust-root rotation, external non-equivocation, endpoint
-mTLS/pinning, KMS/HSM custody, non-H2 and backup-rollback certification, external alert routing,
-multi-site HA and chaos/DR qualification remain explicit follow-up work. Full invariants and tests
-are recorded in the
-[dynamic test-secret serving-inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-dynamic-serving-inventory-verification.md).
+Set `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED=true` to remove the legacy static
+deployment/witness runtime keys. One canonical publication atomically carries both runtime key sets,
+trust domains, thresholds and a sequence/predecessor chain. Independent deployment and witness
+bootstrap-root M-of-N quorums approve the same material; the bootstrap roots remain low-frequency
+deployment trust anchors and are not rotated by this protocol. Strict HTTPS/ETag refresh, unknown-key
+refresh, signed expiry, hard local age and a namespaced database floor make routine runtime-key
+rotation restart-free. Root generation changes immediately invalidate inventory readiness. Even an
+inventory `304` must reverify the cached publication with the new immutable key snapshot before
+readiness returns. Managed and legacy static runtime-key modes are mutually exclusive.
+
+Capabilities independently expose managed refresh, atomic dual publication, durable floor, external
+anchor and composite readiness. The current test-secret floor is database durable but not externally
+anchored, so `testSecretAuthorityExternallyAnchoredTrustRootFloor` remains false. Root health contains
+only aggregate status, sequence, timing, counters and thresholds. The authoritative publication
+Schema is
+[`test-secret-authority-serving-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/test-secret-authority-serving-inventory-trust-root-publication-v1.schema.json).
+
+The persistence adapters still project through stability-named internal cohort and floor kernels.
+These are not wire dependencies, but neutral kernel extraction remains a maintainability task.
+Bootstrap-root rotation ceremony, external non-equivocation, endpoint mTLS/pinning, KMS/HSM custody,
+non-H2 and backup-rollback certification, external alert routing, multi-site HA and chaos/DR
+qualification remain explicit follow-up work. Full invariants and tests are recorded in the
+[dynamic inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-dynamic-serving-inventory-verification.md)
+and [managed trust-root verification](resource-gateway-execution-data-control-plane-stage4-test-secret-trust-root-rotation-verification.md).
 
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 

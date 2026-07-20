@@ -20,7 +20,9 @@ public interface TestSecretAuthorityServingInventoryAuthority {
             "maximumSnapshotAgeSeconds", "conditionalRequests",
             "failClosedOnRefreshFailure", "signedRevocation",
             "witnessedPublications", "witnessSignatureThreshold",
-            "durablePublicationFloor");
+            "durablePublicationFloor", "managedTrustRootRefresh",
+            "atomicDualTrustRootPublication", "durableTrustRootFloor",
+            "externallyAnchoredTrustRootFloor");
 
     /** @return current verified inventory state without network or database I/O */
     Observation observation();

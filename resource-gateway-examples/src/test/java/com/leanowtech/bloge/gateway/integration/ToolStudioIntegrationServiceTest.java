@@ -276,6 +276,17 @@ class ToolStudioIntegrationServiceTest {
                         List.of("bloge.testSecretAuthorityServingInventoryPublicationGeneration.v1"))
                 .containsEntry("testSecretAuthorityServingInventoryRefreshSnapshot",
                         List.of("bloge.testSecretAuthorityServingInventoryRefreshSnapshot.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryTrustRootPublication",
+                        List.of("bloge.testSecretAuthorityServingInventoryTrustRootPublication.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryTrustRootMaterial",
+                        List.of("bloge.testSecretAuthorityServingInventoryTrustRootMaterial.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryTrustRootGeneration",
+                        List.of("bloge.testSecretAuthorityServingInventoryTrustRootGeneration.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryTrustRootSnapshot",
+                        List.of("bloge.testSecretAuthorityServingInventoryTrustRootSnapshot.v1"))
+                .containsEntry("testSecretAuthorityServingInventoryDynamicTrustRootSnapshot",
+                        List.of(
+                                "bloge.testSecretAuthorityServingInventoryDynamicTrustRootSnapshot.v1"))
                 .containsEntry("testSecretAuthorityDescriptor",
                         List.of("bloge.testSecretAuthorityDescriptor.v1"));
         assertThat(available.features())
@@ -291,6 +302,12 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("testSecretAuthoritySignedInventoryRevocation", false)
                 .containsEntry("testSecretAuthorityWitnessedInventoryPublication", false)
                 .containsEntry("testSecretAuthorityDurableInventoryPublicationFloor", false)
+                .containsEntry("testSecretAuthorityManagedServingInventoryTrustRoots", false)
+                .containsEntry(
+                        "testSecretAuthorityAtomicDualServingInventoryTrustRoots", false)
+                .containsEntry("testSecretAuthorityDurableTrustRootFloor", false)
+                .containsEntry("testSecretAuthorityExternallyAnchoredTrustRootFloor", false)
+                .containsEntry("testSecretAuthorityManagedTrustRootsReady", false)
                 .containsEntry("testSecretAuthorityDynamicServingInventoryReady", false);
 
         ready.set(false);
@@ -367,7 +384,11 @@ class ToolStudioIntegrationServiceTest {
                         Map.entry("servingInventorySignedRevocation", true),
                         Map.entry("servingInventoryWitnessedPublications", true),
                         Map.entry("servingInventoryWitnessSignatureThreshold", 2),
-                        Map.entry("servingInventoryDurablePublicationFloor", true))));
+                        Map.entry("servingInventoryDurablePublicationFloor", true),
+                        Map.entry("servingInventoryManagedTrustRootRefresh", true),
+                        Map.entry("servingInventoryAtomicDualTrustRootPublication", true),
+                        Map.entry("servingInventoryDurableTrustRootFloor", true),
+                        Map.entry("servingInventoryExternallyAnchoredTrustRootFloor", false))));
         assertThat(service.capabilities().payload().features())
                 .containsEntry("testSecretAuthorityDeploymentSignedInventory", true)
                 .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", true)
@@ -375,6 +396,12 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("testSecretAuthoritySignedInventoryRevocation", true)
                 .containsEntry("testSecretAuthorityWitnessedInventoryPublication", true)
                 .containsEntry("testSecretAuthorityDurableInventoryPublicationFloor", true)
+                .containsEntry("testSecretAuthorityManagedServingInventoryTrustRoots", true)
+                .containsEntry(
+                        "testSecretAuthorityAtomicDualServingInventoryTrustRoots", true)
+                .containsEntry("testSecretAuthorityDurableTrustRootFloor", true)
+                .containsEntry("testSecretAuthorityExternallyAnchoredTrustRootFloor", false)
+                .containsEntry("testSecretAuthorityManagedTrustRootsReady", true)
                 .containsEntry("testSecretAuthorityDynamicServingInventoryReady", true);
 
         when(authority.descriptor()).thenReturn(new TestSecretAuthority.Descriptor(

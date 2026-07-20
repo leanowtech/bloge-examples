@@ -36,6 +36,18 @@ class TestSecretAuthorityProtocolSchemaTest {
                                 .SCHEMA_VERSION,
                         true, "HEALTHY", "ACTIVE", 1, NOW, 1, 0, "", 30, 60, 2,
                         true);
+        ConfiguredTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot rootSnapshot =
+                new ConfiguredTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot(
+                        ConfiguredTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot
+                                .SCHEMA_VERSION,
+                        true, "VERIFIED", 1, "sha256:" + "a".repeat(64),
+                        NOW.plusSeconds(3600), 1, 1, 1, 1, true);
+        DynamicTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot rootRefresh =
+                new DynamicTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot(
+                        DynamicTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot
+                                .SCHEMA_VERSION,
+                        true, "HEALTHY", 1, NOW, 1, 0, "", 30, 3000, 5, 60,
+                        1, 1, 1, 1, true, false, false, true);
         TestSecretAuthorityTrustCohortRepository.Snapshot cohortSnapshot =
                 new TestSecretAuthorityTrustCohortRepository.Snapshot(
                         TestSecretAuthorityTrustCohortRepository.Snapshot.SCHEMA_VERSION,
@@ -77,6 +89,10 @@ class TestSecretAuthorityProtocolSchemaTest {
                 schema.at("/$defs/trustRefreshSnapshot/properties"));
         assertProperties(objectMapper.valueToTree(inventoryRefresh),
                 schema.at("/$defs/servingInventoryRefreshSnapshot/properties"));
+        assertProperties(objectMapper.valueToTree(rootSnapshot),
+                schema.at("/$defs/servingInventoryTrustRootSnapshot/properties"));
+        assertProperties(objectMapper.valueToTree(rootRefresh),
+                schema.at("/$defs/servingInventoryDynamicTrustRootSnapshot/properties"));
         assertProperties(objectMapper.valueToTree(cohortSnapshot),
                 schema.at("/$defs/trustCohortSnapshotV2/properties"));
         assertProperties(objectMapper.valueToTree(cohortDescriptor),
@@ -98,6 +114,16 @@ class TestSecretAuthorityProtocolSchemaTest {
                 "/$defs/servingInventoryRefreshSnapshot/properties/schemaVersion/const")
                 .asText()).isEqualTo(
                 DynamicTestSecretAuthorityServingInventoryAuthority.Snapshot.SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/servingInventoryTrustRootSnapshot/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                ConfiguredTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot
+                        .SCHEMA_VERSION);
+        assertThat(schema.at(
+                "/$defs/servingInventoryDynamicTrustRootSnapshot/properties/schemaVersion/const")
+                .asText()).isEqualTo(
+                DynamicTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot
+                        .SCHEMA_VERSION);
         assertThat(schema.at("/$defs/trustCohortDescriptorV2/properties/schemaVersion/const")
                 .asText()).isEqualTo(
                 TestSecretAuthorityTrustCohortGate.Descriptor.SCHEMA_VERSION);
@@ -108,7 +134,8 @@ class TestSecretAuthorityProtocolSchemaTest {
                 .containsExactlyInAnyOrderElementsOf(TestSecretAuthority.DESCRIPTOR_PROPERTIES);
         assertThat(List.of("request", "response", "resolutionContext", "secretMaterial",
                 "signature", "trustDescriptor", "trustRefreshSnapshot",
-                "servingInventoryRefreshSnapshot",
+                "servingInventoryRefreshSnapshot", "servingInventoryTrustRootSnapshot",
+                "servingInventoryDynamicTrustRootSnapshot",
                 "trustCohortSnapshot", "trustCohortSnapshotV2",
                 "trustCohortDescriptor", "trustCohortDescriptorV2",
                 "authorityDescriptor"))

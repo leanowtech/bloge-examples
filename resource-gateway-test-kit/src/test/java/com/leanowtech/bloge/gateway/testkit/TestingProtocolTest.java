@@ -27,6 +27,12 @@ class TestingProtocolTest {
             assertConstant(definitions, "servingInventoryRefreshSnapshot",
                     TestingProtocol
                             .TEST_SECRET_AUTHORITY_SERVING_INVENTORY_REFRESH_SNAPSHOT_V1);
+            assertConstant(definitions, "servingInventoryTrustRootSnapshot",
+                    TestingProtocol
+                            .TEST_SECRET_AUTHORITY_SERVING_INVENTORY_TRUST_ROOT_SNAPSHOT_V1);
+            assertConstant(definitions, "servingInventoryDynamicTrustRootSnapshot",
+                    TestingProtocol
+                            .TEST_SECRET_AUTHORITY_SERVING_INVENTORY_DYNAMIC_TRUST_ROOT_SNAPSHOT_V1);
             assertConstant(definitions, "trustCohortSnapshot",
                     TestingProtocol.TEST_SECRET_AUTHORITY_TRUST_COHORT_SNAPSHOT_V1);
             assertConstant(definitions, "trustCohortDescriptor",
@@ -63,6 +69,20 @@ class TestingProtocolTest {
             assertThat(definitions.at("/publication/additionalProperties").asBoolean()).isFalse();
             assertThat(definitions.at("/publicationMaterial/allOf")).hasSize(3);
             assertThat(definitions.at("/witnessMaterial/allOf")).hasSize(1);
+        }
+        try (InputStream schema = TestingProtocol.class.getResourceAsStream(
+                TestingProtocol
+                        .TEST_SECRET_AUTHORITY_SERVING_INVENTORY_TRUST_ROOT_PUBLICATION_SCHEMA_RESOURCE)) {
+            assertThat(schema).isNotNull();
+            JsonNode definitions = new ObjectMapper().readTree(schema).path("$defs");
+            assertConstant(definitions, "publication",
+                    TestingProtocol
+                            .TEST_SECRET_AUTHORITY_SERVING_INVENTORY_TRUST_ROOT_PUBLICATION_V1);
+            assertConstant(definitions, "material",
+                    TestingProtocol
+                            .TEST_SECRET_AUTHORITY_SERVING_INVENTORY_TRUST_ROOT_MATERIAL_V1);
+            assertThat(definitions.at("/publication/additionalProperties").asBoolean()).isFalse();
+            assertThat(definitions.at("/material/allOf")).hasSize(1);
         }
     }
 

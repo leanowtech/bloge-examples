@@ -8,9 +8,12 @@ document to a strictly versioned, witnessed and atomically refreshed runtime aut
 Transport, parsing, signature, freshness, predecessor, witness or durable-floor ambiguity also
 closes resolution.
 
-This increment deliberately keeps deployment and witness public keys static. It does not claim
-managed trust-root rotation, external non-equivocation, mTLS/pinning, certified multi-site HA,
-chaos/DR SLOs, or automatic hot adoption of a changed fleet topology.
+This increment originally kept deployment and witness public keys static. The subsequent
+[managed trust-root increment](resource-gateway-execution-data-control-plane-stage4-test-secret-trust-root-rotation-verification.md)
+now rotates those daily runtime verification keys without restart through one atomic dual-quorum
+publication. Offline bootstrap roots remain deployment trust anchors. External non-equivocation,
+mTLS/pinning, certified multi-site HA, chaos/DR SLOs, and automatic hot adoption of a changed fleet
+topology are still not claimed.
 
 ## Protocol
 
@@ -121,14 +124,15 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 
 Latest full verification on 2026-07-20:
 
-- Resource Gateway: 3,153 tests, 0 failures, 0 errors, 2 skipped across 342 Surefire reports.
+- Resource Gateway: 3,171 tests, 0 failures, 0 errors, 2 skipped across 344 Surefire reports.
 - Test kit: 230 tests, 0 failures, 0 errors, 0 skipped across 24 Surefire reports; shaded JAR and
   Javadoc packaging also completed.
 
 ## Deliberate Gaps
 
-- Deployment and witness trust roots still rotate through application configuration and restart.
-- The local database floor is durable but not externally anchored against a fully compromised
+- Daily deployment and witness runtime keys now rotate without restart, but their offline bootstrap
+  roots still require a governed deployment ceremony.
+- The local inventory and managed-root database floors are durable but not externally anchored against a fully compromised
   database; there is no cross-region witness gossip or Byzantine non-equivocation proof.
 - Publication transport has no built-in mTLS identity, certificate pinning or signed endpoint
   discovery.

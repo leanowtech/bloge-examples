@@ -320,12 +320,17 @@ vendor-media HTTPS publication with ETag refresh, signed `ACTIVE/REVOKED` state,
 witness quorum and a namespaced durable publication/witness floor. Candidate verification and floor
 advance complete before one atomic local publish; any transport, protocol, signature, freshness,
 chain or floor ambiguity blocks resolution without discarding the last diagnostic head. A valid
-successor recovers without restart. Capability and health expose aggregate readiness only. Runtime
-trust-root rotation, external non-equivocation, mTLS/pinning, authority HA/chaos and DR certification
-remain open. A changed member topology still requires a coordinated new cohort generation.
+successor recovers without restart. Capability and health expose aggregate readiness only. Staging
+additionally requires managed roots: independent deployment and witness bootstrap-root quorums sign
+one atomic deployment/witness runtime-key publication, whose strict HTTPS/ETag refresh and database
+floor permit routine key rotation without restarting Resource Gateway. A root generation change
+closes resolution until the inventory is reverified, including after an inventory `304`; managed and
+legacy static runtime keys cannot be mixed. Bootstrap-root ceremony, external non-equivocation,
+mTLS/pinning, authority HA/chaos and DR certification remain open. A changed member topology still
+requires a coordinated new cohort generation.
 See the
 [testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#421a-control-identity-feature-flag-and-secret-built-ins)
-and [dynamic test-secret inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-test-secret-dynamic-serving-inventory-verification.md).
+and [managed test-secret trust-root verification](../docs/resource-gateway-execution-data-control-plane-stage4-test-secret-trust-root-rotation-verification.md).
 
 The durable stability queue and authenticated asynchronous submit/query/cancel protocol are present
 in the isolated `test`/`staging` datastore. Query and cancellation remain available while the worker

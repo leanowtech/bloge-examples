@@ -40,7 +40,11 @@ public interface TestSecretAuthority {
             "servingInventoryFailClosedOnRefreshFailure",
             "servingInventorySignedRevocation", "servingInventoryWitnessedPublications",
             "servingInventoryWitnessSignatureThreshold",
-            "servingInventoryDurablePublicationFloor");
+            "servingInventoryDurablePublicationFloor",
+            "servingInventoryManagedTrustRootRefresh",
+            "servingInventoryAtomicDualTrustRootPublication",
+            "servingInventoryDurableTrustRootFloor",
+            "servingInventoryExternallyAnchoredTrustRootFloor");
 
     /**
      * Resolves the exact requested closure or fails closed.

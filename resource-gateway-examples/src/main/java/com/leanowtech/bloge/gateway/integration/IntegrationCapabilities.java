@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.testing.api.DynamicJwksTestSecretAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.DynamicTestSecretAuthorityServingInventoryAuthority;
+import com.leanowtech.bloge.gateway.testing.api.DynamicTestSecretAuthorityServingInventoryTrustRootAuthority;
+import com.leanowtech.bloge.gateway.testing.api.ConfiguredTestSecretAuthorityServingInventoryTrustRootAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityResponse;
@@ -9,6 +11,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInvent
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryPublication;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryPublicationFloor;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryTrustRootFloor;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityServingInventoryTrustRootPublication;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortPolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortGate;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustCohortRepository;
@@ -520,6 +524,20 @@ public record IntegrationCapabilities(
                             .SCHEMA_VERSION));
             objects.put("testSecretAuthorityServingInventoryRefreshSnapshot", List.of(
                     DynamicTestSecretAuthorityServingInventoryAuthority.Snapshot.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryTrustRootPublication", List.of(
+                    TestSecretAuthorityServingInventoryTrustRootPublication.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryTrustRootMaterial", List.of(
+                    TestSecretAuthorityServingInventoryTrustRootPublication.Material
+                            .SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryTrustRootGeneration", List.of(
+                    TestSecretAuthorityServingInventoryTrustRootFloor.Generation
+                            .SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryTrustRootSnapshot", List.of(
+                    ConfiguredTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot
+                            .SCHEMA_VERSION));
+            objects.put("testSecretAuthorityServingInventoryDynamicTrustRootSnapshot", List.of(
+                    DynamicTestSecretAuthorityServingInventoryTrustRootAuthority.Snapshot
+                            .SCHEMA_VERSION));
             objects.put("testSecretAuthorityDescriptor", List.of(
                     TestSecretAuthority.Descriptor.SCHEMA_VERSION));
             objects.put("effectiveExecutionPlan", List.of(
@@ -737,6 +755,11 @@ public record IntegrationCapabilities(
         features.put("testSecretAuthoritySignedInventoryRevocation", false);
         features.put("testSecretAuthorityWitnessedInventoryPublication", false);
         features.put("testSecretAuthorityDurableInventoryPublicationFloor", false);
+        features.put("testSecretAuthorityManagedServingInventoryTrustRoots", false);
+        features.put("testSecretAuthorityAtomicDualServingInventoryTrustRoots", false);
+        features.put("testSecretAuthorityDurableTrustRootFloor", false);
+        features.put("testSecretAuthorityExternallyAnchoredTrustRootFloor", false);
+        features.put("testSecretAuthorityManagedTrustRootsReady", false);
         features.put("testSecretAuthorityDynamicServingInventoryReady", false);
         features.put("schemaBoundaryCasePlanning", testExecutionEndpointEnabled);
         features.put("seededPropertyCasePlanning", testExecutionEndpointEnabled);

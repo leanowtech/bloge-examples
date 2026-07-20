@@ -117,6 +117,70 @@ class TestSecretAuthorityServingInventoryProtocolSchemaTest {
                         + "/additionalProperties").asBoolean()).isFalse());
     }
 
+    @Test
+    void trustRootSchemaMatchesAtomicDualRuntimeKeyPublication() throws Exception {
+        JsonNode schema = objectMapper.readTree(Files.readString(Path.of("..", "docs", "schemas",
+                "resource-gateway-testing",
+                "test-secret-authority-serving-inventory-trust-root-publication-v1.schema.json")));
+        Instant now = Instant.parse("2026-07-20T00:00:00Z");
+        var deploymentKey =
+                new TestSecretAuthorityServingInventoryTrustRootPublication.AuthorityKeyMaterial(
+                        "deployment-authority", "deployment-key",
+                        java.util.Base64.getEncoder().encodeToString(new byte[44]),
+                        now, now.plusSeconds(3600), true, false);
+        var witnessKey =
+                new TestSecretAuthorityServingInventoryTrustRootPublication.AuthorityKeyMaterial(
+                        "witness-authority", "witness-key",
+                        java.util.Base64.getEncoder().encodeToString(bytes(44, (byte) 1)),
+                        now, now.plusSeconds(3600), true, false);
+        var material = new TestSecretAuthorityServingInventoryTrustRootPublication.Material(
+                TestSecretAuthorityServingInventoryTrustRootPublication.Material.SCHEMA_VERSION,
+                "test-secret-inventory-roots", 1, "", "scope-a", "1.0",
+                "deployment-root.example", "witness-root.example",
+                "deployment-runtime.example", "witness-runtime.example", 1, 1,
+                List.of(deploymentKey), List.of(witnessKey),
+                "sha256:" + "a".repeat(64), now, now, now.plusSeconds(3600));
+        var signature = new TestSecretAuthorityServingInventory.AuthoritySignature(
+                "bootstrap-authority", "bootstrap-key", "Ed25519", now,
+                java.util.Base64.getEncoder().encodeToString(new byte[64]));
+        var publication = new TestSecretAuthorityServingInventoryTrustRootPublication(
+                TestSecretAuthorityServingInventoryTrustRootPublication.SCHEMA_VERSION,
+                material, "sha256:" + "b".repeat(64), List.of(signature),
+                List.of(new TestSecretAuthorityServingInventory.AuthoritySignature(
+                        "independent-bootstrap-authority", "independent-bootstrap-key",
+                        "Ed25519", now,
+                        java.util.Base64.getEncoder().encodeToString(bytes(64, (byte) 1)))));
+
+        assertProperties(objectMapper.valueToTree(publication),
+                schema.at("/$defs/publication/properties"));
+        assertProperties(objectMapper.valueToTree(material),
+                schema.at("/$defs/material/properties"));
+        assertProperties(objectMapper.valueToTree(deploymentKey),
+                schema.at("/$defs/authorityKeyMaterial/properties"));
+        assertThat(schema.at("/$defs/publication/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSecretAuthorityServingInventoryTrustRootPublication
+                        .SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/material/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSecretAuthorityServingInventoryTrustRootPublication.Material
+                        .SCHEMA_VERSION);
+        assertThat(List.of("publication", "material", "authorityKeyMaterial"))
+                .allSatisfy(name -> assertThat(schema.at("/$defs/" + name
+                        + "/additionalProperties").asBoolean()).isFalse());
+        String raw = Files.readString(Path.of("..", "docs", "schemas",
+                "resource-gateway-testing",
+                "test-secret-authority-serving-inventory-trust-root-publication-v1.schema.json"));
+        for (String forbidden : List.of("credential", "privateKey", "payload", "endpoint",
+                "etag", "fixture", "context", "secretValue")) {
+            assertThat(raw).doesNotContain("\"" + forbidden + "\"");
+        }
+    }
+
+    private static byte[] bytes(int size, byte value) {
+        byte[] result = new byte[size];
+        java.util.Arrays.fill(result, value);
+        return result;
+    }
+
     private static void assertProperties(JsonNode value, JsonNode properties) {
         assertThat(fieldNames(value)).containsExactlyInAnyOrderElementsOf(fieldNames(properties));
     }
