@@ -347,6 +347,85 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
                         .SIGNING_QUORUM_UNAVAILABLE);
     }
 
+    @Test
+    void timedOutSignerIsUnavailableButRemainingQuorumCanCommitWithinTheBound() {
+        service.close();
+        service = new ExternalSequenceAnchorBootstrapRootCeremonyService(
+                producer, journal,
+                new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Policy(
+                        Duration.ofSeconds(1), Duration.ofMillis(100), 4));
+        List<IdempotentSigner> authorizers = signers(genesisKeys, "genesis", Set.of());
+        IdempotentSigner first = authorizers.getFirst();
+        authorizers.set(0, new IdempotentSigner(first.authorityId, first.keyId,
+                first.keyPair, false, 1_000L, new CountDownLatch(1)));
+        List<IdempotentSigner> incoming = signers(incomingKeys, "incoming", Set.of());
+        var request = request("ceremony-bounded-signer-timeout");
+        service.propose(request, "maker-a", 300, authorities(authorizers),
+                authorities(incoming));
+        approve(request.ceremonyId());
+
+        long startedAt = System.nanoTime();
+        var result = service.execute(request.ceremonyId(), "worker-a", 30,
+                authorities(authorizers), authorities(incoming));
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+        assertThat(elapsed).isLessThan(Duration.ofSeconds(2));
+        assertThat(result.status()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus.PRODUCED);
+        assertThat(result.snapshot().outcome().signingAttempts()).anySatisfy(attempt -> {
+            assertThat(attempt.authorityId()).isEqualTo("root-1");
+            assertThat(attempt.role()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootSigningAuthority.Role.AUTHORIZING_ROOT);
+            assertThat(attempt.status()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootCeremonyProducer.AttemptStatus.UNAVAILABLE);
+        });
+        assertThat(service.signerCallSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.timedOutCalls()).isEqualTo(1L);
+            assertThat(snapshot.activeCalls()).isZero();
+            assertThat(snapshot.lingeringCalls()).isZero();
+        });
+    }
+
+    @Test
+    void signerTimeoutQuorumFailureReopensApprovedAttemptWithoutPartialArtifact() {
+        service.close();
+        service = new ExternalSequenceAnchorBootstrapRootCeremonyService(
+                producer, journal,
+                new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Policy(
+                        Duration.ofSeconds(1), Duration.ofMillis(100), 4));
+        List<IdempotentSigner> authorizers = signers(genesisKeys, "genesis", Set.of());
+        for (int index = 0; index < 2; index++) {
+            IdempotentSigner signer = authorizers.get(index);
+            authorizers.set(index, new IdempotentSigner(signer.authorityId, signer.keyId,
+                    signer.keyPair, false, 1_000L, new CountDownLatch(1)));
+        }
+        List<IdempotentSigner> incoming = signers(incomingKeys, "incoming", Set.of());
+        var request = request("ceremony-timeout-quorum-failure");
+        service.propose(request, "maker-a", 300, authorities(authorizers),
+                authorities(incoming));
+        approve(request.ceremonyId());
+
+        var result = service.execute(request.ceremonyId(), "worker-a", 30,
+                authorities(authorizers), authorities(incoming));
+
+        assertThat(result.status()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
+                        .SIGNING_QUORUM_UNAVAILABLE);
+        assertThat(result.snapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.state()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootCeremonyJournal.State.APPROVED);
+            assertThat(snapshot.outcome()).isNull();
+        });
+        assertThat(incoming).allSatisfy(signer -> assertThat(signer.callCount).isZero());
+        assertThat(service.signerCallSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.timedOutCalls()).isEqualTo(2L);
+            assertThat(snapshot.activeCalls()).isZero();
+            assertThat(snapshot.lingeringCalls()).isZero();
+        });
+    }
+
     private void approve(String ceremonyId) {
         assertThat(service.approve(
                 new ExternalSequenceAnchorBootstrapRootCeremonyJournal.ApprovalCommand(

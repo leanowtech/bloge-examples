@@ -6,7 +6,8 @@
 durable floor、动态远端刷新、managed notary 组合、Spring/staging 双域接线、不接触私钥的 producer，
 以及可嵌入的数据库权威 maker/checker workflow。新 workflow 已闭合不可变提案、独立审批、数据库
 时间、自动续租与单调后继围栏、崩溃接管、精确 signer/heartbeat request 重放、终态幂等、N-1 指纹
-迁移和整行完整性校验；它仍不
+迁移、整行完整性校验，以及 signer descriptor/signature 的本地 wall-clock deadline、固定容量零队列和
+lingering-call 观测；它仍不
 等于带企业 IAM、HSM/KMS、后台 worker、root publisher HA 和外部审计留存的生产 ceremony 产品。
 所有消费路径必须使用同一原子 root snapshot，不能另造一个只验证最新 root snapshot 的旁路。
 
@@ -199,7 +200,7 @@ first-head linearization。
 - 精确 v1 row fingerprint 到 v2 的 N-1 迁移、整行离线腐化 fail closed，以及两个并发首提案线性化为
   一个 winner。
 
-`ExternalSequenceAnchorBootstrapRootCeremonyServiceTest` 的 8 项端到端测试覆盖非法自动续租 lease
+`ExternalSequenceAnchorBootstrapRootCeremonyServiceTest` 的 10 项端到端测试覆盖非法自动续租 lease
 在数据库写入前失败、正常提交与重启重放、
 远端实际签名后进程崩溃再接管、审批后 signer cohort 漂移零签名失败，以及临时 quorum outage 后按
 同一 approved cohort 重试。慢 signer 测试证明超过原始 lease 后竞争 worker 仍为 `BUSY`，提交使用最新
@@ -208,6 +209,15 @@ first-head linearization。
 精确幂等回放。
 审批剩余时间短于配置 lease 时，初始 claim 会直接夹紧到 approval hard horizon；对应测试证明 guard
 不会发送必然无法延长的 heartbeat，截止前完成仍可提交，而截止后的终态 CAS 仍由数据库时钟拒绝。
+新增的两项 signer deadline 集成测试证明：一个超时旧根按 `UNAVAILABLE` 记录，剩余三根仍可在本地
+deadline 内完成 quorum 并提交；两个旧根超时导致 quorum 不足时，incoming signer 完全不调用，workflow
+回到 `APPROVED` 且没有 partial outcome。
+
+`ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest` 的 8 项测试独立覆盖正常 descriptor/signature、
+provider 异常脱敏、协作式 interrupt、忽略 interrupt 后的 active/lingering 占位、零队列 saturation、caller
+interrupt flag 保留、close 不等待且拒绝新调用、1000 次并发快调用和四路同时 timeout 跃迁中快照不出现
+不可能计数，以及 policy 上下界。它验证的是进程内容量与调用方返回边界，不把
+`Future.cancel(true)` 解释为远端 HSM 已取消。
 
 producer/Schema 聚焦门禁当前执行 18 tests 全绿；加入 consumer quorum-horizon 回归后，三类核心门禁
 执行 32 tests 全绿。此前 ceremony/Schema/database floor 共
@@ -227,6 +237,11 @@ Resource Gateway `clean verify` 执行 3272 tests，0 failures、0 errors、2 sk
 共 34 项、32 项真实执行，并成功重打包 Spring Boot 可执行 JAR。本子步涉及的 journal、lease
 coordinator、service 与数据库 journal 4 个公共类型以 `javadoc -Werror -Xdoclint:all` 独立验证，
 0 warnings、0 errors；该结论仍不外推为全模块 JavaDoc 已清零。
+
+本地 signer call supervision 子步把同组聚焦门禁扩展到 53 tests，0 failures、0 errors、0 skips。
+supervisor 与 service 两个公共类型以 `javadoc -Werror -Xdoclint:all` 独立验证，0 warnings、0 errors；
+最终 Resource Gateway `clean verify` 执行 3282 tests，0 failures、0 errors、2 skips；Browser DOM
+测试类 34 项中 32 项真实执行，browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
 
 ## 11. 双域部署接线
 
@@ -262,8 +277,9 @@ bundle、legacy fallback、timing bounds、public-only shape 和跨域 alias。J
 
 ## 12. Producer 与 durable workflow 使用
 
-producer、journal 和 service 都是可嵌入 Java 组件，不新增 HTTP endpoint、后台线程或常驻进程，因此
-现有 `scripts/visual-canvas-demo.sh start|stop` 无需增加 ceremony 进程。durable 审批场景必须显式配置
+producer、journal 和 service 都是可嵌入 Java 组件，不新增 HTTP endpoint 或常驻进程，因此现有
+`scripts/visual-canvas-demo.sh start|stop` 无需增加 ceremony 进程。service 自有一个 daemon heartbeat
+scheduler 和一个固定容量 daemon signer pool，必须关闭。durable 审批场景必须显式配置
 `maximumExecutionDelay`，不能拿面向同步调用的 clock-skew 默认值冒充审批窗口：
 
 ```java
@@ -274,8 +290,10 @@ var producer = new ExternalSequenceAnchorBootstrapRootCeremonyProducer(
 var journal = new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
         jdbcTemplate, objectMapper, scopeId, rootSetId, transactionManager);
 journal.init();
+var signerCalls = new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Policy(
+        Duration.ofSeconds(5), Duration.ofSeconds(30), 8);
 try (var ceremonies = new ExternalSequenceAnchorBootstrapRootCeremonyService(
-        producer, journal)) {
+        producer, journal, signerCalls)) {
     ceremonies.propose(rotationRequest, makerId, 300,
             genesisAuthorities, incomingAuthorities);
     ceremonies.approve(new ApprovalCommand(
@@ -292,7 +310,14 @@ try (var ceremonies = new ExternalSequenceAnchorBootstrapRootCeremonyService(
 集合或配置漂移都会在签名前失败。signer 调用发生在事务外；进程内 guard 以 lease 三分之一为间隔，
 用完整前驱 claim 换取数据库签发的后继 claim。complete/release 前必须 `freeze()` 调度、等待在途
 heartbeat 并提交最新 owner/version/until/proposal fence；失去 fence 的调用方看不到刚生成但未提交的
-artifact。service 拥有 daemon scheduler，嵌入方必须像示例一样关闭它。
+artifact。service 拥有 heartbeat 与 signer 两个 daemon supervisor，嵌入方必须像示例一样关闭它们。
+
+descriptor timeout、signature timeout 与最大并发分别硬限制为 100 ms..300 s、100 ms..300 s 和
+1..32；默认值为 5 s、30 s、8。signer pool 使用 `SynchronousQueue`，所以所有槽位被占用时立即
+`SATURATED`，不会排队。`signerCallSnapshot()` 返回 payload-free policy/counter/occupancy，可用于本地
+SLO 和饱和告警；该进程内 projection 没有导出为 wire protocol。调用总时长不是单一 signer timeout：
+producer 目前顺序遍历 signer，最坏耗时是 descriptor/signature deadline 的有界和，外层仍由数据库
+approval/execution fence 裁决能否提交。
 
 心跳不会推进 attempt count，也不会越过 checker approval 或 proposal `executionDeadline`。每个 attempt
 最多提交 10000 次 heartbeat；只保留最近一次 request id 的精确重放槽，以同 id 和不同 intent 重试会
@@ -309,6 +334,9 @@ content-addressed request id。每个返回签名会以对应 public key 本地�
 
 signer 失败按 `UNAVAILABLE / INVALID_RESPONSE / INVALID_SIGNATURE` 聚合，provider 异常文本不会进入
 outcome。允许在 `3f+1 / 2f+1` 策略内带一个坏 signer 成功，但任一 quorum 不足时不返回 partial bundle。
+descriptor 的 timeout/failure 仍映射 `SIGNER_BINDING_INVALID`；signature 的 timeout、saturation、close
+和 adapter failure 仍映射该 authority 的 `UNAVAILABLE`。这保持 ceremony v1 与 journal v2 strict
+Schema 不变，本地细分类只存在 supervisor snapshot。
 已被签名端执行的签名仍不能由 Java 回滚，因此 signer adapter 必须把 request id 与完整请求内容一起
 持久化：同 id 同内容精确回放，同 id 异内容拒绝。journal 只允许最新 `PRODUCED` outcome 的 exact bundle
 作为下一代 predecessor；这防止从仍密码学有效但已陈旧的分支继续演进。
@@ -317,7 +345,7 @@ outcome。允许在 `3f+1 / 2f+1` 策略内带一个坏 signer 成功，但任�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest \
+  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest \
   test
 ```
 
@@ -328,9 +356,10 @@ mvn -f resource-gateway-examples/pom.xml \
 - 企业 IAM/PDP 对 maker/checker/worker 的认证授权、职责分离策略、审批撤回和离线 break-glass；
 - HSM/KMS adapter、不可导出 private-key custody、mTLS、key attestation、provider HA 和 signer
   idempotency capability attestation；
-- signer/provider 强制 timeout、可证明 cancellation、后台恢复调度、跨进程 supervision、重试预算和
-  cancel/reject；自动 heartbeat 只能保持健康调用的 fence，approval 硬截止后无法取消的 provider
-  调用仍可占用调用线程，但不能提交 artifact；
+- provider-confirmed cancellation receipt、独立 worker 进程/container kill、后台恢复调度、跨进程
+  supervision、跨进程 orphan reconciliation 和 provider 级重试预算；当前本地 timeout 只中断 adapter，
+  忽略 interrupt 的调用会占用一个固定槽位直到真实返回，但不能形成无界线程/队列，也不能提交过期
+  artifact；
 - `PRODUCED` 后 publisher 失败的对账/补发、显式 abandon 规则、journal retention 与 legal hold；
 - root bundle publisher 的 mTLS/pinning、跨区域 HA、独立 consistency witness 与 anti-equivocation；
 - transaction-bound security audit、外部 WORM/evidence；当前 whole-record SHA-256 用于发现偶发腐化，

@@ -20,10 +20,11 @@ import java.util.Optional;
  *
  * <p>The service preflights before proposal persistence, calls opaque signers only after an
  * independent database approval and automatically renewed execution lease, and commits an outcome
- * only under the latest exact live fence. A crash after signer side effects but before outcome
- * commit is recovered by lease
- * takeover and exact deterministic request replay. Signing adapters used here must therefore
- * implement the idempotency contract on
+ * only under the latest exact live fence. Descriptor and signature calls pass through a fixed
+ * capacity, zero-queue wall-clock supervisor, so an uncooperative adapter cannot create unbounded
+ * local threads or backlog. A crash or timeout after signer side effects but before outcome commit
+ * is recovered by lease takeover and exact deterministic request replay. Signing adapters used
+ * here must therefore implement the idempotency contract on
  * {@link ExternalSequenceAnchorBootstrapRootSigningAuthority#sign}.</p>
  *
  * <p>Actor and worker ids are assumed to have been authenticated by the embedding boundary. This
@@ -35,6 +36,7 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
     private final ExternalSequenceAnchorBootstrapRootCeremonyProducer producer;
     private final ExternalSequenceAnchorBootstrapRootCeremonyJournal journal;
     private final ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator leaseCoordinator;
+    private final ExternalSequenceAnchorBootstrapRootSignerCallSupervisor signerCallSupervisor;
 
     /**
      * Creates a coordinator that refuses non-durable journal implementations.
@@ -46,16 +48,48 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
             ExternalSequenceAnchorBootstrapRootCeremonyProducer producer,
             ExternalSequenceAnchorBootstrapRootCeremonyJournal journal) {
         this(producer, journal,
-                new ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator(journal));
+                ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Policy.DEFAULT);
+    }
+
+    /**
+     * Creates a coordinator with explicit bounded signer-call deadlines and capacity.
+     *
+     * @param producer side-effect-free preflight and opaque signing kernel
+     * @param journal durable maker/checker and execution-fence authority
+     * @param signerCallPolicy local descriptor/signature deadlines and concurrency ceiling
+     */
+    public ExternalSequenceAnchorBootstrapRootCeremonyService(
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer producer,
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal journal,
+            ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Policy signerCallPolicy) {
+        this.producer = requiredProducer(producer);
+        this.journal = requiredJournal(journal);
+        ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Policy requiredPolicy =
+                Objects.requireNonNull(signerCallPolicy, "signerCallPolicy");
+        this.leaseCoordinator =
+                new ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator(this.journal);
+        this.signerCallSupervisor =
+                new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor(requiredPolicy);
     }
 
     ExternalSequenceAnchorBootstrapRootCeremonyService(
             ExternalSequenceAnchorBootstrapRootCeremonyProducer producer,
             ExternalSequenceAnchorBootstrapRootCeremonyJournal journal,
             ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator leaseCoordinator) {
+        this(requiredProducer(producer), requiredJournal(journal), leaseCoordinator,
+                new ExternalSequenceAnchorBootstrapRootSignerCallSupervisor());
+    }
+
+    ExternalSequenceAnchorBootstrapRootCeremonyService(
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer producer,
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal journal,
+            ExternalSequenceAnchorBootstrapRootCeremonyLeaseCoordinator leaseCoordinator,
+            ExternalSequenceAnchorBootstrapRootSignerCallSupervisor signerCallSupervisor) {
         this.producer = Objects.requireNonNull(producer, "producer");
         this.journal = Objects.requireNonNull(journal, "journal");
         this.leaseCoordinator = Objects.requireNonNull(leaseCoordinator, "leaseCoordinator");
+        this.signerCallSupervisor = Objects.requireNonNull(
+                signerCallSupervisor, "signerCallSupervisor");
         if (!journal.durable()) {
             throw new IllegalArgumentException(
                     "Bootstrap-root ceremony service requires a durable journal");
@@ -63,7 +97,7 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
     }
 
     /**
-     * Preflights and idempotently proposes a sequence-one ceremony without calling signers.
+     * Preflights and idempotently proposes a sequence-one ceremony without requesting signatures.
      *
      * @param request immutable rotation command
      * @param makerId pre-authenticated maker identity
@@ -79,14 +113,14 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
                     authorizingAuthorities,
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
-        var preflight = producer.preflight(request, authorizingAuthorities,
-                incomingAuthorities);
+        var preflight = producer.preflight(request, supervised(authorizingAuthorities),
+                supervised(incomingAuthorities));
         return journal.propose(new CeremonyProposal(CeremonyProposal.SCHEMA_VERSION,
                 request, null, preflight, makerId, proposalDurationSeconds));
     }
 
     /**
-     * Preflights and idempotently proposes one successor without calling signers.
+     * Preflights and idempotently proposes one successor without requesting signatures.
      *
      * @param currentBundle complete untrusted current chain
      * @param request immutable rotation command
@@ -104,8 +138,8 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority>
                     authorizingAuthorities,
             List<ExternalSequenceAnchorBootstrapRootSigningAuthority> incomingAuthorities) {
-        var preflight = producer.preflight(currentBundle, request, authorizingAuthorities,
-                incomingAuthorities);
+        var preflight = producer.preflight(currentBundle, request,
+                supervised(authorizingAuthorities), supervised(incomingAuthorities));
         return journal.propose(new CeremonyProposal(CeremonyProposal.SCHEMA_VERSION,
                 request, currentBundle, preflight, makerId, proposalDurationSeconds));
     }
@@ -172,23 +206,27 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
 
         try (guard) {
             CeremonyProposal proposal = acquisition.claim().proposal();
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority> supervisedAuthorizers =
+                    supervised(authorizingAuthorities);
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority> supervisedIncoming =
+                    supervised(incomingAuthorities);
             ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyOutcome outcome;
             try {
                 var currentPreflight = proposal.currentBundle() == null
-                        ? producer.preflight(proposal.request(), authorizingAuthorities,
-                        incomingAuthorities)
+                        ? producer.preflight(proposal.request(), supervisedAuthorizers,
+                        supervisedIncoming)
                         : producer.preflight(proposal.currentBundle(), proposal.request(),
-                        authorizingAuthorities, incomingAuthorities);
+                        supervisedAuthorizers, supervisedIncoming);
                 if (!proposal.preflight().equals(currentPreflight)) {
                     return failed(guard,
                             ExternalSequenceAnchorBootstrapRootCeremonyProducer.FailureReason
                                     .SIGNER_BINDING_INVALID);
                 }
                 outcome = proposal.currentBundle() == null
-                        ? producer.begin(proposal.request(), authorizingAuthorities,
-                        incomingAuthorities)
+                        ? producer.begin(proposal.request(), supervisedAuthorizers,
+                        supervisedIncoming)
                         : producer.append(proposal.currentBundle(), proposal.request(),
-                        authorizingAuthorities, incomingAuthorities);
+                        supervisedAuthorizers, supervisedIncoming);
             } catch (ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyException
                      failure) {
                 return failed(guard, failure.reason());
@@ -224,10 +262,50 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
         return journal.snapshot(ceremonyId);
     }
 
-    /** Stops the owned heartbeat scheduler and invalidates any in-process guarded attempt. */
+    /**
+     * Returns current process-local signer call capacity and bounded failure counters.
+     *
+     * @return payload-free signer call supervisor projection
+     */
+    public ExternalSequenceAnchorBootstrapRootSignerCallSupervisor.Snapshot
+            signerCallSnapshot() {
+        return signerCallSupervisor.snapshot();
+    }
+
+    /** Stops heartbeat and signer supervisors without waiting for interrupt-ignoring adapters. */
     @Override
     public void close() {
-        leaseCoordinator.close();
+        try {
+            leaseCoordinator.close();
+        } finally {
+            signerCallSupervisor.close();
+        }
+    }
+
+    private List<ExternalSequenceAnchorBootstrapRootSigningAuthority> supervised(
+            List<ExternalSequenceAnchorBootstrapRootSigningAuthority> authorities) {
+        return (authorities == null ? List
+                .<ExternalSequenceAnchorBootstrapRootSigningAuthority>of() : authorities)
+                .stream()
+                .<ExternalSequenceAnchorBootstrapRootSigningAuthority>map(
+                        SupervisedSigningAuthority::new)
+                .toList();
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootCeremonyProducer requiredProducer(
+            ExternalSequenceAnchorBootstrapRootCeremonyProducer producer) {
+        return Objects.requireNonNull(producer, "producer");
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootCeremonyJournal requiredJournal(
+            ExternalSequenceAnchorBootstrapRootCeremonyJournal journal) {
+        ExternalSequenceAnchorBootstrapRootCeremonyJournal required =
+                Objects.requireNonNull(journal, "journal");
+        if (!required.durable()) {
+            throw new IllegalArgumentException(
+                    "Bootstrap-root ceremony service requires a durable journal");
+        }
+        return required;
     }
 
     private ExecutionResult failed(
@@ -252,6 +330,26 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
     private static ExecutionResult fenceRejected(LeaseLostException failure) {
         return new ExecutionResult(ExecutionStatus.FENCE_REJECTED,
                 failure.lastVerifiedSnapshot(), null);
+    }
+
+    private final class SupervisedSigningAuthority
+            implements ExternalSequenceAnchorBootstrapRootSigningAuthority {
+        private final ExternalSequenceAnchorBootstrapRootSigningAuthority delegate;
+
+        private SupervisedSigningAuthority(
+                ExternalSequenceAnchorBootstrapRootSigningAuthority delegate) {
+            this.delegate = Objects.requireNonNull(delegate, "signing authority");
+        }
+
+        @Override
+        public Descriptor descriptor() {
+            return signerCallSupervisor.descriptor(delegate);
+        }
+
+        @Override
+        public SignatureResponse sign(SignatureRequest request) {
+            return signerCallSupervisor.sign(delegate, request);
+        }
     }
 
     /** Bounded coordinator result status. */

@@ -422,9 +422,13 @@ the declared `<=f` Byzantine and independent-failure-domain assumptions; deployi
 backing up, and monitoring the external notary service remains a deployment responsibility. The
 embedded bootstrap-root maker/checker service now automatically renews an exact database-issued
 successor fence during long signer calls, freezes renewal before terminal commit, and fails closed
-on response ambiguity, malformed successors, expiry, or shutdown. Heartbeats never extend checker
-approval or the proposal execution deadline; signer cancellation, HSM custody, background recovery,
-and target-database certification remain deployment gates. The genesis and complete bundle Schemas,
+on response ambiguity, malformed successors, expiry, or shutdown. Every descriptor and signature
+call passes through configurable wall-clock deadlines and a fixed-capacity, zero-queue daemon pool;
+interrupt-ignoring calls remain visible as bounded lingering occupancy, while saturation rejects new
+work immediately. Heartbeats never extend checker approval or the proposal execution deadline. A
+local timeout is not proof of remote HSM cancellation, so provider-confirmed cancellation, HSM
+custody, background recovery, and target-database certification remain deployment gates. The genesis
+and complete bundle Schemas,
 failure matrix, runtime wiring, and remaining ceremony limits
 are documented in the
 [bootstrap-root ceremony verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md).
