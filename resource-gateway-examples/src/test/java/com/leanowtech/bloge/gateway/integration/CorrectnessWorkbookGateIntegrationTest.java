@@ -35,6 +35,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class CorrectnessWorkbookGateIntegrationTest {
+    private static final Instant CURRENT_GATE_EXPIRES_AT =
+            Instant.parse("2126-07-20T00:00:00Z");
+
     private InMemoryGraphDraftRepository drafts;
     private InMemoryVisualOperatorContractTestSuiteRepository suites;
     private InMemoryVisualGraphRunRepository runs;
@@ -285,7 +288,7 @@ class CorrectnessWorkbookGateIntegrationTest {
                 new GovernanceGateResult.Target("GRAPH_DRAFT", draft.draftId(), draft.revision(),
                         ToolStudioIntegrationService.draftFingerprint(draft), draft.tenantId(), draft.namespace(),
                         draft.environment()), "PASSED", List.of(), Instant.parse("2026-07-13T00:00:00Z"),
-                Instant.parse("2026-07-20T00:00:00Z"), "", basis);
+                CURRENT_GATE_EXPIRES_AT, "", basis);
     }
 
     private GovernanceGateResult semanticPassedGate(
@@ -309,7 +312,7 @@ class CorrectnessWorkbookGateIntegrationTest {
                 new GovernanceGateResult.Target("GRAPH_DRAFT", draft.draftId(), draft.revision(),
                         ToolStudioIntegrationService.draftFingerprint(draft), draft.tenantId(), draft.namespace(),
                         draft.environment()), "PASSED", List.of(), Instant.parse("2026-07-13T00:00:00Z"),
-                Instant.parse("2026-07-20T00:00:00Z"), "", basis);
+                CURRENT_GATE_EXPIRES_AT, "", basis);
     }
 
     private GovernanceGateResult.SemanticWorkbookRef semanticReference(String targetKind) {
