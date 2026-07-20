@@ -121,6 +121,15 @@ Independent-store settings:
 | `gateway.testing.stability-runs.heartbeat-interval-seconds` | `RG_TEST_STABILITY_HEARTBEAT_SECONDS` | `5` |
 | `gateway.testing.stability-runs.lease-cleanup-interval-ms` | `RG_TEST_STABILITY_LEASE_CLEANUP_INTERVAL_MS` | `15000` |
 | `gateway.testing.stability-runs.lease-cleanup-batch-size` | `RG_TEST_STABILITY_LEASE_CLEANUP_BATCH_SIZE` | `1000` |
+| `gateway.testing.test-secrets.authority.http.enabled` | `RG_TEST_SECRET_AUTHORITY_HTTP_ENABLED` | `false`; default remains unavailable |
+| `gateway.testing.test-secrets.authority.http.base-uri` | `RG_TEST_SECRET_AUTHORITY_HTTP_BASE_URI` | empty; required when enabled |
+| `gateway.testing.test-secrets.authority.http.expected-authority-id` | `RG_TEST_SECRET_AUTHORITY_ID` | empty; exact signed authority id |
+| `gateway.testing.test-secrets.authority.http.request-timeout-ms` | `RG_TEST_SECRET_AUTHORITY_TIMEOUT_MS` | `3000`; 100..30000 |
+| `gateway.testing.test-secrets.authority.http.maximum-response-lifetime-seconds` | `RG_TEST_SECRET_AUTHORITY_MAX_LIFETIME_SECONDS` | `60`; 1..300 |
+| `gateway.testing.test-secrets.authority.http.clock-skew-seconds` | `RG_TEST_SECRET_AUTHORITY_CLOCK_SKEW_SECONDS` | `5`; 0..300 |
+| `gateway.testing.test-secrets.authority.http.minimum-remaining-validity-ms` | `RG_TEST_SECRET_AUTHORITY_MIN_REMAINING_MS` | `100`; less than response lifetime |
+| `gateway.testing.test-secrets.authority.http.allow-insecure-loopback` | `RG_TEST_SECRET_AUTHORITY_ALLOW_INSECURE_LOOPBACK` | `false`; local tests only |
+| `gateway.testing.test-secrets.authority.http.authority-keys-json` | `RG_TEST_SECRET_AUTHORITY_KEYS_JSON` | `[]`; strict public Ed25519 keys required when enabled |
 | `gateway.testing.stability-jobs.api.retry-after-seconds` | `RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS` | `5` |
 | `gateway.testing.stability-jobs.authority.http.enabled` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_ENABLED` | `false` |
 | `gateway.testing.stability-jobs.authority.http.base-uri` | `RG_TEST_STABILITY_JOB_AUTHORITY_HTTP_BASE_URI` | empty; required when enabled |
@@ -1045,8 +1054,51 @@ secret version, authority generation, request binding, unavailable authority, or
 plan reconstruction fail closed. Capability flags `externalTestSecretAuthority` and
 `durableTestSecretReauthorization` are true only when the isolated test runtime and an available
 authority are both assembled. The built-in default is unavailable. This release supplies the typed
-authority SPI and trust transition; deployments providing a custom authority remain responsible for
-its network authentication until the signed challenge-bound HTTPS adapter is delivered.
+authority SPI, trust transition, and an opt-in signed HTTPS adapter. Enable it only in the isolated
+`test`/`staging` profiles with `RG_TEST_SECRET_AUTHORITY_HTTP_ENABLED=true`. Resource Gateway sends
+exactly one credential-free `bloge.testSecretAuthorityRequest.v1` to:
+
+```text
+<RG_TEST_SECRET_AUTHORITY_HTTP_BASE_URI>/v1/test-secret-resolutions
+```
+
+Every call has a fresh 256-bit challenge, request id, requested-at time, the exact
+`bloge.testSecretResolutionContext.v1`, and canonical context/request fingerprints. It has no
+transport credential, correlation id, graph input, fixture payload, evidence, or previously
+resolved value. The adapter follows no redirects and performs no automatic retry; the calling run
+or durable recovery policy owns retry accounting.
+
+The authority must return HTTP `200 application/json` with a strict bounded
+`bloge.testSecretAuthorityResponse.v1`. Both `AUTHORIZED` and `DENIED` must be short-lived and carry
+an Ed25519 signature over a canonical material fingerprint that includes the request/challenge,
+authority generation, decision, exact references, versions, bindings, and authorized values. An
+unsigned `401`/`403`, redirect, malformed JSON, duplicate/unknown field, stale response, unknown or
+revoked key, signature failure, body above 2 MiB, or closure above 1 MiB is never policy truth and
+fails closed. The standalone authority schema is
+[`test-secret-authority-v1.schema.json`](schemas/resource-gateway-testing/test-secret-authority-v1.schema.json).
+
+`RG_TEST_SECRET_AUTHORITY_KEYS_JSON` accepts one through 64 public X.509-encoded Ed25519 keys:
+
+```json
+[
+  {
+    "keyId": "secret-authority-key-2026-07",
+    "algorithm": "Ed25519",
+    "publicKeyBase64": "<X.509 SubjectPublicKeyInfo bytes>",
+    "notBefore": "2026-07-01T00:00:00Z",
+    "expiresAt": "2026-10-01T00:00:00Z",
+    "enabled": true,
+    "revoked": false
+  }
+]
+```
+
+Partial or malformed enabled configuration aborts startup; simultaneously enabling the built-in
+adapter and contributing a custom `TestSecretAuthority` is also rejected as ambiguous. Capability
+readiness is reevaluated from the key-free descriptor on every probe. The built-in trust source is
+currently static and therefore requires restart for rotation; dynamic JWKS/revocation propagation,
+cross-replica generation convergence, endpoint HA/chaos certification, and an authority SLO health
+monitor remain explicit follow-up work.
 
 ### 4.2.1.1 Select retry attempts and graph re-entry occurrences
 

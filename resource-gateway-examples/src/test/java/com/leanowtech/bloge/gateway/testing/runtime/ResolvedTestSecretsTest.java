@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -72,6 +73,29 @@ class ResolvedTestSecretsTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageNotContaining("unknown-secret")
                 .hasMessageNotContaining("test-payment-secret-47");
+    }
+
+    @Test
+    void rejectsAggregatePlaintextAboveOneMebibyteForEveryAuthorityImplementation() {
+        TreeMap<String, String> refs = new TreeMap<>();
+        TreeMap<String, ResolvedTestSecrets.Secret> values = new TreeMap<>();
+        for (int index = 0; index < 17; index++) {
+            String alias = "secret-" + index;
+            String reference = "vault://test/secrets/value-" + index;
+            refs.put(alias, reference);
+        }
+        TestSecretResolutionContext context = context(refs);
+        refs.forEach((alias, reference) -> values.put(alias, new ResolvedTestSecrets.Secret(
+                alias, reference, "version-1",
+                ResolvedTestSecrets.bindingFingerprint(MAPPER, context.fingerprint(MAPPER),
+                        "test-secret-authority", "generation-7", alias, reference, "version-1"),
+                "s".repeat(65_536))));
+
+        assertThatThrownBy(() -> new ResolvedTestSecrets("", context.fingerprint(MAPPER),
+                "test-secret-authority", "generation-7", NOW, NOW.plusSeconds(60), values))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("aggregate value bound")
+                .hasMessageNotContaining("ssssssss");
     }
 
     private static void assertInvalid(Runnable action) {

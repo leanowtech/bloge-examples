@@ -1,0 +1,290 @@
+package com.leanowtech.bloge.gateway.testing.api;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedTestSecrets;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.security.KeyPair;
+import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+
+import static com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityProtocolTestFixtures.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class HttpTestSecretAuthorityTest {
+
+    private ObjectMapper objectMapper;
+    private KeyPair keyPair;
+
+    @BeforeEach
+    void setUp() {
+        objectMapper = new ObjectMapper().findAndRegisterModules();
+        keyPair = keyPair();
+    }
+
+    @Test
+    void resolvesAnExactSignedClosureWithFreshCredentialFreeChallenges() throws Exception {
+        AtomicReference<String> firstChallenge = new AtomicReference<>();
+        try (AuthorityServer server = AuthorityServer.start(objectMapper, observed -> {
+            firstChallenge.compareAndSet(null, observed.request().challenge());
+            return json(response(objectMapper, keyPair, observed.request(),
+                    TestSecretAuthorityResponse.Decision.AUTHORIZED, ""));
+        })) {
+            HttpTestSecretAuthority authority = authority(server.baseUri(), Duration.ofSeconds(1));
+            ResolvedTestSecrets first = authority.resolve(context());
+            ResolvedTestSecrets second = authority.resolve(context());
+
+            assertThat(first.resolve(ALIAS)).isEqualTo(VALUE);
+            assertThat(second.resolve(ALIAS)).isEqualTo(VALUE);
+            assertThat(server.requests()).isEqualTo(2);
+            assertThat(server.lastRequest()).satisfies(observed -> {
+                assertThat(observed.method()).isEqualTo("POST");
+                assertThat(observed.idempotencyKey())
+                        .isEqualTo(observed.request().requestId());
+                assertThat(observed.body()).contains(REFERENCE, "RESOLVE_TEST_SECRET_CLOSURE")
+                        .doesNotContain(VALUE, "Bearer ", "credential", "correlationId",
+                                "graphInput", "fixturePayload", "privateKey");
+                assertThat(observed.request().challenge()).isNotEqualTo(firstChallenge.get());
+            });
+            assertThat(ResolvedTestSecrets.verified(
+                    objectMapper, second, context(), NOW).resolve(ALIAS)).isEqualTo(VALUE);
+            assertThat(authority.descriptor()).satisfies(descriptor -> {
+                assertThat(descriptor.available()).isTrue();
+                assertThat(descriptor.providerType())
+                        .isEqualTo("HTTPS_SIGNED_TEST_SECRET_AUTHORITY");
+                assertThat(descriptor.properties())
+                        .containsEntry("signedResponses", true)
+                        .containsEntry("challengeBound", true)
+                        .containsEntry("credentialFree", true)
+                        .containsEntry("redirectsFollowed", false)
+                        .containsEntry("automaticRetries", false)
+                        .doesNotContainKeys("baseUri", "publicKey", "privateKey", "secret");
+            });
+        }
+    }
+
+    @Test
+    void acceptsOnlySignedDenialAsDefinitivePolicyTruth() throws Exception {
+        try (AuthorityServer server = AuthorityServer.start(objectMapper, observed -> json(response(
+                objectMapper, keyPair, observed.request(),
+                TestSecretAuthorityResponse.Decision.DENIED,
+                "RG.POLICY.SECRET_DENIED")))) {
+            assertResolutionReason(authority(server.baseUri(), Duration.ofSeconds(1)),
+                    TestSecretAuthority.Reason.DENIED);
+        }
+        try (AuthorityServer server = AuthorityServer.start(objectMapper,
+                observed -> new Reply(403, "application/json", "{}"))) {
+            assertResolutionReason(authority(server.baseUri(), Duration.ofSeconds(1)),
+                    TestSecretAuthority.Reason.UNAVAILABLE);
+        }
+    }
+
+    @Test
+    void rejectsTamperedSignatureAndCrossRequestReplay() throws Exception {
+        try (AuthorityServer server = AuthorityServer.start(objectMapper, observed -> json(response(
+                objectMapper, keyPair(), observed.request(),
+                TestSecretAuthorityResponse.Decision.AUTHORIZED, "")))) {
+            assertResolutionReason(authority(server.baseUri(), Duration.ofSeconds(1)),
+                    TestSecretAuthority.Reason.INVALID_RESPONSE);
+        }
+        try (AuthorityServer server = AuthorityServer.start(objectMapper, observed -> {
+            String otherChallenge = java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(new byte[33]);
+            return json(response(objectMapper, keyPair, observed.request(),
+                    TestSecretAuthorityResponse.Decision.AUTHORIZED, "", otherChallenge,
+                    AUTHORITY_ID, AUTHORITY_GENERATION, KEY_ID, NOW,
+                    NOW.plusSeconds(30), VALUE));
+        })) {
+            assertResolutionReason(authority(server.baseUri(), Duration.ofSeconds(1)),
+                    TestSecretAuthority.Reason.INVALID_RESPONSE);
+        }
+    }
+
+    @Test
+    void rejectsDuplicateUnknownNonJsonAndOversizedResponses() throws Exception {
+        assertInvalid(observed -> {
+            Reply valid = signed(observed.request());
+            String duplicate = valid.body().replaceFirst(
+                    "\\\"requestId\\\":\\\"", "\"requestId\":\"duplicate\",\"requestId\":\"");
+            return new Reply(200, "application/json", duplicate);
+        });
+        assertInvalid(observed -> {
+            Reply valid = signed(observed.request());
+            return new Reply(200, "application/json",
+                    valid.body().substring(0, valid.body().length() - 1)
+                            + ",\"unknown\":true}");
+        });
+        assertInvalid(observed -> new Reply(200, "text/plain", "not-json"));
+        assertInvalid(observed -> new Reply(
+                200, "application/json", "x".repeat(2 * 1024 * 1024 + 1)));
+    }
+
+    @Test
+    void neverFollowsRedirectAndMapsTimeoutToUnavailable() throws Exception {
+        try (AuthorityServer server = AuthorityServer.start(objectMapper,
+                observed -> new Reply(302, "application/json", "{}"))) {
+            assertResolutionReason(authority(server.baseUri(), Duration.ofSeconds(1)),
+                    TestSecretAuthority.Reason.UNAVAILABLE);
+            assertThat(server.requests()).isOne();
+        }
+        try (AuthorityServer server = AuthorityServer.start(objectMapper, observed -> {
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return signed(observed.request());
+        })) {
+            assertResolutionReason(authority(server.baseUri(), Duration.ofMillis(100)),
+                    TestSecretAuthority.Reason.UNAVAILABLE);
+        }
+    }
+
+    @Test
+    void settingsRequireHttpsExceptForExplicitLoopbackTests() {
+        assertThatThrownBy(() -> new HttpTestSecretAuthority.Settings(
+                URI.create("http://authority.example"), Duration.ofSeconds(1), false).validated())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("HTTPS");
+        assertThatThrownBy(() -> new HttpTestSecretAuthority.Settings(
+                URI.create("http://127.0.0.1"), Duration.ofSeconds(1), false).validated())
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new HttpTestSecretAuthority.Settings(
+                URI.create("https://user@authority.example"),
+                Duration.ofSeconds(1), false).validated())
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(new HttpTestSecretAuthority.Settings(
+                URI.create("http://127.0.0.1"), Duration.ofSeconds(1), true).validated()
+                .baseUri()).hasToString("http://127.0.0.1");
+        assertThat(new HttpTestSecretAuthority.Settings(
+                URI.create("https://authority.example/secrets"),
+                Duration.ofSeconds(1), false).validated().baseUri())
+                .hasToString("https://authority.example/secrets");
+    }
+
+    private HttpTestSecretAuthority authority(URI baseUri, Duration timeout) {
+        var trustStore = new ConfiguredTestSecretAuthorityTrustStore(
+                objectMapper, AUTHORITY_ID, Duration.ofSeconds(60), Duration.ofSeconds(5),
+                Duration.ofMillis(10), List.of(
+                new ConfiguredTestSecretAuthorityTrustStore.AuthorityKey(
+                        KEY_ID, keyPair.getPublic(), null, null, true, false)));
+        return new HttpTestSecretAuthority(objectMapper, trustStore,
+                new HttpTestSecretAuthority.Settings(baseUri, timeout, true),
+                Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(),
+                HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
+                        .connectTimeout(timeout).build());
+    }
+
+    private Reply signed(TestSecretAuthorityRequest request) {
+        return json(response(objectMapper, keyPair, request,
+                TestSecretAuthorityResponse.Decision.AUTHORIZED, ""));
+    }
+
+    private Reply json(Object value) {
+        try {
+            return new Reply(200, "application/json", objectMapper.writeValueAsString(value));
+        } catch (IOException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private void assertInvalid(Function<ObservedRequest, Reply> responder) throws Exception {
+        try (AuthorityServer server = AuthorityServer.start(objectMapper, responder)) {
+            assertResolutionReason(authority(server.baseUri(), Duration.ofSeconds(1)),
+                    TestSecretAuthority.Reason.INVALID_RESPONSE);
+        }
+    }
+
+    private static void assertResolutionReason(
+            HttpTestSecretAuthority authority,
+            TestSecretAuthority.Reason expected) {
+        assertThatThrownBy(() -> authority.resolve(context()))
+                .isInstanceOfSatisfying(TestSecretAuthority.ResolutionException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(expected))
+                .hasMessageNotContaining(REFERENCE)
+                .hasMessageNotContaining(ALIAS)
+                .hasMessageNotContaining(VALUE);
+    }
+
+    private record Reply(int status, String contentType, String body) {
+    }
+
+    private record ObservedRequest(
+            String method,
+            String body,
+            String idempotencyKey,
+            TestSecretAuthorityRequest request) {
+    }
+
+    private static final class AuthorityServer implements AutoCloseable {
+        private final HttpServer server;
+        private int requests;
+        private ObservedRequest lastRequest;
+
+        private AuthorityServer(HttpServer server) {
+            this.server = server;
+        }
+
+        static AuthorityServer start(
+                ObjectMapper objectMapper,
+                Function<ObservedRequest, Reply> responder) throws IOException {
+            HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            AuthorityServer authority = new AuthorityServer(server);
+            server.createContext("/v1/test-secret-resolutions", exchange -> {
+                authority.requests++;
+                authority.handle(objectMapper, responder, exchange);
+            });
+            server.start();
+            return authority;
+        }
+
+        URI baseUri() {
+            return URI.create("http://127.0.0.1:" + server.getAddress().getPort());
+        }
+
+        int requests() {
+            return requests;
+        }
+
+        ObservedRequest lastRequest() {
+            return lastRequest;
+        }
+
+        @Override
+        public void close() {
+            server.stop(0);
+        }
+
+        private void handle(
+                ObjectMapper objectMapper,
+                Function<ObservedRequest, Reply> responder,
+                HttpExchange exchange) throws IOException {
+            String body = new String(exchange.getRequestBody().readAllBytes(),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            TestSecretAuthorityRequest request = objectMapper.readValue(
+                    body, TestSecretAuthorityRequest.class);
+            lastRequest = new ObservedRequest(exchange.getRequestMethod(), body,
+                    exchange.getRequestHeaders().getFirst("Idempotency-Key"), request);
+            Reply reply = responder.apply(lastRequest);
+            byte[] bytes = reply.body().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", reply.contentType());
+            exchange.sendResponseHeaders(reply.status(), bytes.length);
+            try (var response = exchange.getResponseBody()) {
+                response.write(bytes);
+            }
+        }
+    }
+}

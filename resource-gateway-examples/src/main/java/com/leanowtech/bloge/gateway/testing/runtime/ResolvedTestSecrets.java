@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretResolutionContext;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,6 +27,7 @@ public final class ResolvedTestSecrets {
 
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final int MAX_SECRET_CHARACTERS = 65_536;
+    private static final int MAX_TOTAL_SECRET_BYTES = 1024 * 1024;
     private static final ResolvedTestSecrets EMPTY = new ResolvedTestSecrets(
             SCHEMA_VERSION, "", "", "", Instant.EPOCH, Instant.EPOCH, Map.of(), true);
 
@@ -78,6 +80,12 @@ public final class ResolvedTestSecrets {
         }
         if (!empty && (frozen.isEmpty() || frozen.size() > 100)) {
             throw invalid("secret closure must contain 1 to 100 entries");
+        }
+        long totalSecretBytes = frozen.values().stream()
+                .mapToLong(secret -> secret.value().getBytes(StandardCharsets.UTF_8).length)
+                .sum();
+        if (totalSecretBytes > MAX_TOTAL_SECRET_BYTES) {
+            throw invalid("secret closure exceeds its aggregate value bound");
         }
         this.secrets = Collections.unmodifiableMap(frozen);
     }

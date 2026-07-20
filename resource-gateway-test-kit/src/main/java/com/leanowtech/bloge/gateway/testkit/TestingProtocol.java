@@ -21,6 +21,12 @@ public final class TestingProtocol {
     /** Nested fixture wire version adding opaque external test-secret references. */
     public static final String FIXTURE_EXECUTION_SERVICES_V2 =
             "bloge.fixtureExecutionServices.v2";
+    /** Credential-free challenge-bound test-secret authority request wire version. */
+    public static final String TEST_SECRET_AUTHORITY_REQUEST_V1 =
+            "bloge.testSecretAuthorityRequest.v1";
+    /** Secret-bearing signed test-secret authority response wire version. */
+    public static final String TEST_SECRET_AUTHORITY_RESPONSE_V1 =
+            "bloge.testSecretAuthorityResponse.v1";
     /** Fixture rule wire version. */
     public static final String FIXTURE_RULE_V1 = "bloge.fixtureRule.v1";
     /** Fixture registration request wire version. */
@@ -349,6 +355,9 @@ public final class TestingProtocol {
     /** Classpath location of the authoritative JSON Schema packaged in the test-kit JAR. */
     public static final String SCHEMA_RESOURCE =
             "/schemas/resource-gateway-testing/testing-control-plane-v1.schema.json";
+    /** Classpath location of the private signed test-secret authority JSON Schema. */
+    public static final String TEST_SECRET_AUTHORITY_SCHEMA_RESOURCE =
+            "/schemas/resource-gateway-testing/test-secret-authority-v1.schema.json";
     /** Classpath location of the semantic correctness workbook JSON Schema. */
     public static final String SEMANTIC_WORKBOOK_SCHEMA_RESOURCE =
             "/schemas/tool-studio-resource-gateway/semantic-correctness-workbook-bundle-v1.schema.json";

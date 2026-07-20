@@ -295,6 +295,17 @@ and the focused
 [execution-lease verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-execution-lease-verification.md)
 and [durable-progress verification](../docs/resource-gateway-execution-data-control-plane-stage5-suite-stability-durable-progress-verification.md).
 
+Fixture `executionServices` v2 can resolve opaque test-secret references without storing plaintext.
+The default authority is unavailable. Set `RG_TEST_SECRET_AUTHORITY_HTTP_ENABLED=true`, the HTTPS
+base URI, exact authority id, and a strict public Ed25519 key array to enable the built-in adapter in
+`test`/`staging`. It calls `/v1/test-secret-resolutions` once per fresh or recovered run with a new
+256-bit challenge and accepts only an exact short-lived signed `AUTHORIZED` or `DENIED` response.
+Unsigned HTTP denial, redirect, timeout, malformed/oversized response, stale or revoked key, closure
+drift, and signature failure all fail closed; values remain run-scoped and never enter a checkpoint.
+The current built-in trust source is static, so rotation needs restart until dynamic JWKS and
+cross-replica trust convergence land. See the
+[testing control-plane guide](../docs/resource-gateway-testing-control-plane-api.md#421a-control-identity-feature-flag-and-secret-built-ins).
+
 The durable stability queue and authenticated asynchronous submit/query/cancel protocol are present
 in the isolated `test`/`staging` datastore. Query and cancellation remain available while the worker
 is disabled or draining; fresh submission then returns

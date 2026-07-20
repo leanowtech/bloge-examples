@@ -235,6 +235,15 @@ class ToolStudioIntegrationServiceTest {
         assertThat(available.supportedObjects().get("fixtureExecutionServices"))
                 .containsExactly("bloge.fixtureExecutionServices.v1",
                         "bloge.fixtureExecutionServices.v2");
+        assertThat(available.supportedObjects())
+                .containsEntry("testSecretAuthorityRequest",
+                        List.of("bloge.testSecretAuthorityRequest.v1"))
+                .containsEntry("testSecretAuthorityResponse",
+                        List.of("bloge.testSecretAuthorityResponse.v1"))
+                .containsEntry("testSecretAuthorityTrustDescriptor",
+                        List.of("bloge.testSecretAuthorityTrustDescriptor.v1"))
+                .containsEntry("testSecretAuthorityDescriptor",
+                        List.of("bloge.testSecretAuthorityDescriptor.v1"));
         assertThat(available.features())
                 .containsEntry("externalTestSecretAuthority", true)
                 .containsEntry("durableTestSecretReauthorization", true);

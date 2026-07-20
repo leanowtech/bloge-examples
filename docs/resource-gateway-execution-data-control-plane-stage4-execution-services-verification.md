@@ -36,6 +36,11 @@ suspend/resume adapter remains pending.
 - `bloge.fixtureExecutionServices.v2` adds only bounded opaque `secretRefs`. It never accepts raw
   values. `bloge.testSecretResolutionContext.v1` binds enterprise scope, actor/delegation, purpose,
   execution and fixture identities, and the exact ref closure before external authority resolution.
+- `bloge.testSecretAuthorityRequest.v1` adds a fresh request id, 256-bit challenge, request time and
+  exact context/request fingerprints without credentials or business payload. The strict
+  `bloge.testSecretAuthorityResponse.v1` signs the echoed request, decision, authority generation,
+  exact versioned closure and values with Ed25519. The private standalone JSON Schema freezes both
+  directions and their key-free descriptors.
 - `bloge.testRunEvidence.v2` adds `semanticResultFingerprint`; the schema retains explicit v1 and v2
   definitions and a dual-read union. Execution response v1 references evidence v1, while current
   signed execution response v2 requires evidence v2.
@@ -91,6 +96,10 @@ oracle. The full evidence fingerprint remains different across run id, timing an
     provider. Plans and checkpoints contain hashed dependency/version bindings. Fresh durable
     creation and every recovery re-authorize; version or authority-generation drift changes the
     rebuilt binding and blocks recovery.
+14. The built-in authority performs one bounded HTTPS request without redirects or automatic
+    retries. Only signed `AUTHORIZED` or signed `DENIED` is policy truth; HTTP status alone is not.
+    Response bytes are capped at 2 MiB and every authority implementation is capped at 1 MiB of
+    aggregate run-scoped plaintext.
 
 ## Automated Evidence
 
@@ -104,6 +113,12 @@ entry, aggregate-size, opaque-reference, immutability, and payload-safe rejectio
 response verification, no-authority bypass for non-secret fixtures, payload-safe failures, and
 security audit. `DurableTestRecoveryAuthorizerTest` proves recovery calls the authority again and
 rejects exact secret-version drift.
+`TestSecretAuthorityProtocolTest`, `ConfiguredTestSecretAuthorityTrustStoreTest`,
+`HttpTestSecretAuthorityTest`, `TestSecretAuthorityProtocolSchemaTest`, and profile-isolation tests
+freeze the credential-free request, secret-bearing signed response, challenge/replay binding,
+static Ed25519 lifecycle, strict HTTPS/JSON/body bounds, signed denial semantics, startup fail-fast,
+and key-free capability projection. `ResolvedTestSecretsTest` independently enforces the 1 MiB
+aggregate plaintext ceiling for built-in and deployment-provided authorities.
 `TestRunServiceTest.compiledLogicalClockReachesOperatorContextAndControlsCertification` executes a
 real BLOGE graph and proves the compiled clock reaches the operator and controls evidence class.
 `TestRunServiceTest.dslIdentityAndFeatureFlagBuiltInsUseOnlyTheFixtureAuthority` executes real DSL
@@ -116,10 +131,10 @@ identity before signing and on verification. Main capability tests and test-kit 
 v1/v2 compatibility plus the checkpoint schema/version. `TestRunAssertions.assertSameSemanticResult`
 provides a payload-free CI regression assertion.
 
-The release gate completed `mvn -f resource-gateway-examples/pom.xml clean verify` with 3,089 tests,
+The release gate completed `mvn -f resource-gateway-examples/pom.xml clean verify` with 3,108 tests,
 zero failures, zero errors and two conditional browser skips; both browser suites, containing 35
 configured tests, and the executable Spring Boot JAR build completed. The independent test-kit
-`clean verify` completed 229 tests with zero failures, errors or skips, then passed authoritative-schema packaging,
+`clean verify` completed 230 tests with zero failures, errors or skips, then passed authoritative-schema packaging,
 ordinary/shaded JAR packaging and public JavaDoc validation.
 
 ## Honest Remaining Gaps
@@ -140,16 +155,17 @@ ordinary/shaded JAR packaging and public JavaDoc validation.
   assignment order; deterministic parallel scheduling or a stronger invocation coordinate is
   required before claiming byte-identical semantics there.
 - Streaming/suspendable execution does not yet have equivalent governed evidence.
-- The typed authority SPI, run-scoped provider, capability truth, and durable re-authorization are
-  implemented, but Resource Gateway does not yet ship a signed challenge-bound HTTPS authority
-  adapter, dynamic trust refresh, revocation feed, or authority HA/SLO monitor. The default authority
-  is unavailable; custom implementations own those controls until the transport increment lands.
+- The typed authority SPI, run-scoped provider, capability truth, durable re-authorization, strict
+  signed challenge-bound HTTPS adapter, and static Ed25519 key lifecycle are implemented. Dynamic
+  trust refresh/revocation propagation, cross-replica trust-generation convergence, endpoint
+  HA/chaos certification, and an authority SLO monitor are not. The adapter remains explicitly
+  disabled by default and static rotation requires restart.
 
 ## Reproduction
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=FixtureExecutionServicesTest,ResolvedTestSecretsTest,TestSecretResolutionServiceTest,GovernedExecutionServicesTest,DurableTestRecoveryAuthorizerTest,ExecutionControlCompilerTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest test
+  -Dtest=FixtureExecutionServicesTest,ResolvedTestSecretsTest,TestSecretResolutionServiceTest,TestSecretAuthorityProtocolTest,ConfiguredTestSecretAuthorityTrustStoreTest,HttpTestSecretAuthorityTest,TestSecretAuthorityProtocolSchemaTest,GovernedExecutionServicesTest,DurableTestRecoveryAuthorizerTest,ExecutionControlCompilerTest,TestRunServiceTest,TestSemanticResultFingerprintTest,TestEvidenceSanitizerTest,TestEvidenceIntegrityServiceTest,TestingControlProtocolSchemaTest,TestRuntimeProfileIsolationTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=FixtureBundleBuilderTest,ResourceGatewayTestClientTest,TestRunAssertionsTest,TestingProtocolTest test

@@ -151,6 +151,18 @@ gateway:
           health-maximum-source-retirement-idle-seconds: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_SOURCE_RETIREMENT_IDLE_SECONDS:7200}
           health-maximum-processed-source-backlog: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_PROCESSED_SOURCE_BACKLOG:0}
           health-maximum-expired-source-backlog: ${RG_TEST_STABILITY_OBSERVATION_ARCHIVE_RECONCILIATION_HEALTH_MAXIMUM_EXPIRED_SOURCE_BACKLOG:0}
+    test-secrets:
+      authority:
+        http:
+          enabled: ${RG_TEST_SECRET_AUTHORITY_HTTP_ENABLED:false}
+          base-uri: ${RG_TEST_SECRET_AUTHORITY_HTTP_BASE_URI:}
+          expected-authority-id: ${RG_TEST_SECRET_AUTHORITY_ID:}
+          request-timeout-ms: ${RG_TEST_SECRET_AUTHORITY_TIMEOUT_MS:3000}
+          maximum-response-lifetime-seconds: ${RG_TEST_SECRET_AUTHORITY_MAX_LIFETIME_SECONDS:60}
+          clock-skew-seconds: ${RG_TEST_SECRET_AUTHORITY_CLOCK_SKEW_SECONDS:5}
+          minimum-remaining-validity-ms: ${RG_TEST_SECRET_AUTHORITY_MIN_REMAINING_MS:100}
+          allow-insecure-loopback: ${RG_TEST_SECRET_AUTHORITY_ALLOW_INSECURE_LOOPBACK:false}
+          authority-keys-json: ${RG_TEST_SECRET_AUTHORITY_KEYS_JSON:[]}
     stability-jobs:
       api:
         retry-after-seconds: ${RG_TEST_STABILITY_JOB_API_RETRY_AFTER_SECONDS:5}

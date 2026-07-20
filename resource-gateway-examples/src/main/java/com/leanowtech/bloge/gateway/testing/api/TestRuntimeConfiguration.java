@@ -1200,7 +1200,63 @@ public class TestRuntimeConfiguration {
                 Duration.ofDays(Math.max(1, Math.min(365, retentionDays))));
     }
 
-    /** Fails closed until deployment supplies an external governed test-secret authority. */
+    /**
+     * Builds static public-key trust for the signed test-secret authority when explicitly enabled.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "gateway.testing.test-secrets.authority.http",
+            name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(TestSecretAuthorityTrustStore.class)
+    TestSecretAuthorityTrustStore testSecretAuthorityTrustStore(
+            ObjectMapper objectMapper,
+            @Value("${gateway.testing.test-secrets.authority.http.expected-authority-id:}")
+            String expectedAuthorityId,
+            @Value("${gateway.testing.test-secrets.authority.http.maximum-response-lifetime-seconds:60}")
+            long maximumResponseLifetimeSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.clock-skew-seconds:5}")
+            long clockSkewSeconds,
+            @Value("${gateway.testing.test-secrets.authority.http.minimum-remaining-validity-ms:100}")
+            long minimumRemainingValidityMillis,
+            @Value("${gateway.testing.test-secrets.authority.http.authority-keys-json:[]}")
+            String authorityKeysJson) {
+        return ConfiguredTestSecretAuthorityTrustStore.fromJson(
+                objectMapper, expectedAuthorityId,
+                Duration.ofSeconds(maximumResponseLifetimeSeconds),
+                Duration.ofSeconds(clockSkewSeconds),
+                Duration.ofMillis(minimumRemainingValidityMillis), authorityKeysJson);
+    }
+
+    /**
+     * Creates the opt-in challenge-bound HTTPS test-secret authority adapter.
+     *
+     * <p>An explicitly enabled but partial trust or endpoint configuration fails application
+     * startup. A deployment-provided custom authority and this built-in provider are intentionally
+     * ambiguous so Spring refuses to choose one silently.</p>
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "gateway.testing.test-secrets.authority.http",
+            name = "enabled", havingValue = "true")
+    TestSecretAuthority httpTestSecretAuthority(
+            ObjectMapper objectMapper,
+            TestSecretAuthorityTrustStore trustStore,
+            @Value("${gateway.testing.test-secrets.authority.http.base-uri:}") String baseUri,
+            @Value("${gateway.testing.test-secrets.authority.http.request-timeout-ms:3000}")
+            long requestTimeoutMillis,
+            @Value("${gateway.testing.test-secrets.authority.http.allow-insecure-loopback:false}")
+            boolean allowInsecureLoopback) {
+        URI uri;
+        try {
+            uri = URI.create(baseUri == null ? "" : baseUri.trim());
+        } catch (RuntimeException invalid) {
+            throw new IllegalArgumentException(
+                    "Test-secret authority base URI is invalid", invalid);
+        }
+        return new HttpTestSecretAuthority(objectMapper, trustStore,
+                new HttpTestSecretAuthority.Settings(uri,
+                        Duration.ofMillis(requestTimeoutMillis), allowInsecureLoopback));
+    }
+
+    /** Fails closed until deployment supplies or enables a governed test-secret authority. */
     @Bean
     @ConditionalOnMissingBean(TestSecretAuthority.class)
     TestSecretAuthority testSecretAuthority() {

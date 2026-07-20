@@ -672,6 +672,72 @@ class TestRuntimeProfileIsolationTest {
     }
 
     @Test
+    void testSecretAuthorityDefaultsUnavailableAndBuiltInSignedHttpsIsExplicit() throws Exception {
+        try (AnnotationConfigApplicationContext context = context("test")) {
+            assertThat(context.getBeansOfType(TestSecretAuthority.class))
+                    .hasSize(1).allSatisfy((name, authority) ->
+                            assertThat(authority.descriptor().available()).isFalse());
+            assertThat(context.getBeansOfType(TestSecretAuthorityTrustStore.class)).isEmpty();
+        }
+
+        try (AnnotationConfigApplicationContext context = context(
+                builtInTestSecretAuthorityProperties(), 0, "test")) {
+            assertThat(context.getBeansOfType(TestSecretAuthority.class))
+                    .hasSize(1).allSatisfy((name, authority) -> {
+                        assertThat(authority).isInstanceOf(HttpTestSecretAuthority.class);
+                        assertThat(authority.descriptor().available()).isTrue();
+                        assertThat(authority.descriptor().properties())
+                                .containsEntry("signedResponses", true)
+                                .containsEntry("challengeBound", true)
+                                .containsEntry("credentialFree", true)
+                                .doesNotContainKeys("baseUri", "publicKey", "privateKey");
+                    });
+            assertThat(context.getBeansOfType(TestSecretAuthorityTrustStore.class))
+                    .hasSize(1).allSatisfy((name, trust) -> {
+                        assertThat(trust).isInstanceOf(
+                                ConfiguredTestSecretAuthorityTrustStore.class);
+                        assertThat(trust.descriptor().available()).isTrue();
+                    });
+            assertThat(context.getBean(TestSecretResolutionService.class).descriptor().available())
+                    .isTrue();
+        }
+    }
+
+    @Test
+    void incompleteOrAmbiguousBuiltInTestSecretAuthorityFailsStartup() throws Exception {
+        Map<String, Object> incomplete = new LinkedHashMap<>();
+        incomplete.put("gateway.testing.test-secrets.authority.http.enabled", "true");
+        incomplete.put("gateway.testing.test-secrets.authority.http.base-uri",
+                "http://127.0.0.1:18082");
+        incomplete.put("gateway.testing.test-secrets.authority.http.allow-insecure-loopback",
+                "true");
+        incomplete.put("gateway.testing.test-secrets.authority.http.expected-authority-id",
+                "secret-authority.example");
+        AnnotationConfigApplicationContext missingKeys =
+                unrefreshedContext(incomplete, 0, "test");
+        try {
+            assertThatThrownBy(missingKeys::refresh).rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Authority keys");
+        } finally {
+            missingKeys.close();
+        }
+
+        AnnotationConfigApplicationContext ambiguous = unrefreshedContext(
+                builtInTestSecretAuthorityProperties(), 0, "test");
+        ambiguous.registerBean("deploymentTestSecretAuthority", TestSecretAuthority.class,
+                () -> context -> { throw new TestSecretAuthority.ResolutionException(
+                        TestSecretAuthority.Reason.UNAVAILABLE); });
+        try {
+            assertThatThrownBy(ambiguous::refresh).rootCause()
+                    .isInstanceOf(org.springframework.beans.factory.NoUniqueBeanDefinitionException.class)
+                    .hasMessageContaining("TestSecretAuthority");
+        } finally {
+            ambiguous.close();
+        }
+    }
+
+    @Test
     void builtInSignedHttpAuthorityAssemblesWithoutADeploymentAuthorizer() throws Exception {
         Map<String, Object> properties = builtInAuthorityProperties();
         try (AnnotationConfigApplicationContext context = context(properties, 0, "test")) {
@@ -1148,6 +1214,24 @@ class TestRuntimeProfileIsolationTest {
                 "iam.example");
         properties.put("gateway.testing.stability-jobs.authority.http.authority-keys-json",
                 "[{\"keyId\":\"iam-key-1\",\"algorithm\":\"Ed25519\","
+                        + "\"publicKeyBase64\":\"" + publicKey + "\"}]");
+        return properties;
+    }
+
+    private static Map<String, Object> builtInTestSecretAuthorityProperties() throws Exception {
+        String publicKey = Base64.getEncoder().encodeToString(
+                KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+                        .getPublic().getEncoded());
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("gateway.testing.test-secrets.authority.http.enabled", "true");
+        properties.put("gateway.testing.test-secrets.authority.http.base-uri",
+                "http://127.0.0.1:18082");
+        properties.put("gateway.testing.test-secrets.authority.http.allow-insecure-loopback",
+                "true");
+        properties.put("gateway.testing.test-secrets.authority.http.expected-authority-id",
+                "secret-authority.example");
+        properties.put("gateway.testing.test-secrets.authority.http.authority-keys-json",
+                "[{\"keyId\":\"secret-key-1\",\"algorithm\":\"Ed25519\","
                         + "\"publicKeyBase64\":\"" + publicKey + "\"}]");
         return properties;
     }

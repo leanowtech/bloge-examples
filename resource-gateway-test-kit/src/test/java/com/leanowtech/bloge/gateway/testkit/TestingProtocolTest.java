@@ -13,6 +13,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TestingProtocolTest {
 
     @Test
+    void packagedTestSecretAuthoritySchemaTracksPrivateProtocolVersions() throws Exception {
+        try (InputStream input = TestingProtocolTest.class.getResourceAsStream(
+                TestingProtocol.TEST_SECRET_AUTHORITY_SCHEMA_RESOURCE)) {
+            assertThat(input).isNotNull();
+            JsonNode definitions = new ObjectMapper().readTree(input).path("$defs");
+            assertConstant(definitions, "request",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_REQUEST_V1);
+            assertConstant(definitions, "response",
+                    TestingProtocol.TEST_SECRET_AUTHORITY_RESPONSE_V1);
+        }
+    }
+
+    @Test
     void packagedSchemaTracksEveryTestKitWireVersion() throws Exception {
         try (InputStream input = TestingProtocolTest.class.getResourceAsStream(
                 TestingProtocol.SCHEMA_RESOURCE)) {

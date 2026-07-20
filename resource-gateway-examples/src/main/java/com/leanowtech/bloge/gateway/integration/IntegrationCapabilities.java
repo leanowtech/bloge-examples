@@ -1,6 +1,10 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityTrustStore;
@@ -469,6 +473,14 @@ public record IntegrationCapabilities(
                             .SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices
                             .SCHEMA_VERSION_V2));
+            objects.put("testSecretAuthorityRequest", List.of(
+                    TestSecretAuthorityRequest.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityResponse", List.of(
+                    TestSecretAuthorityResponse.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityTrustDescriptor", List.of(
+                    TestSecretAuthorityTrustStore.Descriptor.SCHEMA_VERSION));
+            objects.put("testSecretAuthorityDescriptor", List.of(
+                    TestSecretAuthority.Descriptor.SCHEMA_VERSION));
             objects.put("effectiveExecutionPlan", List.of(
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan.SCHEMA_VERSION_V2,
