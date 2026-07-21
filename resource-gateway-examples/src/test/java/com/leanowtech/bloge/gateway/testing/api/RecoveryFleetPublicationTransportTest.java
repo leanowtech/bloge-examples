@@ -34,7 +34,8 @@ class RecoveryFleetPublicationTransportTest {
         AtomicReference<String> peer = new AtomicReference<>();
         try (var server = RecoveryFleetPublicationTlsFixture.startPublication(
                 material, peer)) {
-            var transport = transport(material.clientKeyStore(), material.trustStore(),
+            ControlPlaneHttpTransport transport = transport(
+                    material.clientKeyStore(), material.trustStore(),
                     material.serverCertificate());
             var response = transport.client(Duration.ofSeconds(2)).send(
                     HttpRequest.newBuilder(server.uri()).GET()
@@ -45,8 +46,8 @@ class RecoveryFleetPublicationTransportTest {
             assertThat(response.body()).isEqualTo("publication");
             assertThat(peer.get()).contains("CN=recovery-client-trusted");
             assertThat(transport.descriptor()).isEqualTo(
-                    new RecoveryFleetPublicationTransport.Descriptor(
-                            RecoveryFleetPublicationTransport.Descriptor.SCHEMA_VERSION,
+                    new ControlPlaneHttpTransport.Descriptor(
+                            ControlPlaneHttpTransport.Descriptor.SCHEMA_VERSION,
                             false, true, true, true));
             assertThat(transport.descriptor().toString())
                     .doesNotContain(temporaryDirectory.toString(), "test:trust", "test:client",
