@@ -87,6 +87,8 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
     private final List<AuthorityKey> witnessKeys;
     private final Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
             indexedWitnessKeys;
+    private final DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+            managedTrustRoots;
     private final Settings settings;
     private final DocumentFetcher fetcher;
     private final Object refreshLock = new Object();
@@ -128,7 +130,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
             Settings settings) {
         this(objectMapper, Clock.systemUTC(), trustDomain, acceptedPolicyFingerprints,
                 signatureThreshold, authorityKeys, binding, laneResolver, publicationFloor,
-                witnessDomain, witnessSignatureThreshold, witnessKeys, settings, null, true);
+                witnessDomain, witnessSignatureThreshold, witnessKeys, settings, null, true, null);
     }
 
     DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority(
@@ -148,6 +150,30 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
             Settings settings,
             DocumentFetcher fetcher,
             boolean startScheduler) {
+        this(objectMapper, clock, trustDomain, acceptedPolicyFingerprints, signatureThreshold,
+                authorityKeys, binding, laneResolver, publicationFloor, witnessDomain,
+                witnessSignatureThreshold, witnessKeys, settings, fetcher, startScheduler, null);
+    }
+
+    private DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            String trustDomain,
+            Set<String> acceptedPolicyFingerprints,
+            int signatureThreshold,
+            List<AuthorityKey> authorityKeys,
+            VerifiedBinding binding,
+            LaneResolver laneResolver,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
+                    publicationFloor,
+            String witnessDomain,
+            int witnessSignatureThreshold,
+            List<AuthorityKey> witnessKeys,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler,
+            DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                    managedTrustRoots) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper").copy()
                 .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -171,6 +197,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
         this.indexedWitnessKeys = ConfiguredTestSuiteStabilityServingInventoryAuthority
                 .indexedKeys(this.witnessKeys.stream().map(AuthorityKey::delegate).toList(),
                         witnessSignatureThreshold);
+        this.managedTrustRoots = managedTrustRoots;
         this.settings = Objects.requireNonNull(settings, "settings").validated();
         if (!this.publicationFloor.durable()) {
             throw new IllegalArgumentException(
@@ -188,6 +215,70 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                     "Dynamic recovery-fleet inventory publication bootstrap is unavailable");
         }
         this.scheduler = startScheduler ? scheduler() : null;
+    }
+
+    /**
+     * Bootstraps remote inventory with restart-free, atomically rotated runtime verification keys.
+     *
+     * @param objectMapper canonical application protocol mapper
+     * @param acceptedPolicyFingerprints accepted inventory/publication policy revisions
+     * @param binding exact local deployment artifact and fixed fleet topology
+     * @param laneResolver reviewed non-blocking local runtime catalog
+     * @param publicationFloor durable publication/witness floor
+     * @param managedTrustRoots current dual-quorum runtime-key authority
+     * @param settings bounded remote refresh and freshness policy
+     */
+    public DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority(
+            ObjectMapper objectMapper,
+            Set<String> acceptedPolicyFingerprints,
+            VerifiedBinding binding,
+            LaneResolver laneResolver,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
+                    publicationFloor,
+            DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                    managedTrustRoots,
+            Settings settings) {
+        this(objectMapper, Clock.systemUTC(), acceptedPolicyFingerprints, binding, laneResolver,
+                publicationFloor, managedTrustRoots, settings, null, true);
+    }
+
+    DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            Set<String> acceptedPolicyFingerprints,
+            VerifiedBinding binding,
+            LaneResolver laneResolver,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
+                    publicationFloor,
+            DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                    managedTrustRoots,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler) {
+        this(objectMapper, clock, acceptedPolicyFingerprints, binding, laneResolver,
+                publicationFloor, Objects.requireNonNull(managedTrustRoots, "managedTrustRoots"),
+                settings, fetcher, startScheduler, managedMaterial(managedTrustRoots));
+    }
+
+    private DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            Set<String> acceptedPolicyFingerprints,
+            VerifiedBinding binding,
+            LaneResolver laneResolver,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
+                    publicationFloor,
+            DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                    managedTrustRoots,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler,
+            ManagedMaterial material) {
+        this(objectMapper, clock, material.deploymentTrustDomain(),
+                acceptedPolicyFingerprints, material.deploymentSignatureThreshold(),
+                material.deploymentKeys(), binding, laneResolver, publicationFloor,
+                material.witnessTrustDomain(), material.witnessSignatureThreshold(),
+                material.witnessKeys(), settings, fetcher, startScheduler, managedTrustRoots);
     }
 
     /**
@@ -266,15 +357,24 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                     "Dynamic recovery-fleet inventory publication is not bootstrapped");
         }
         Material inventory = state.verifiedInventory().material();
+        DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                .RuntimeView rootView = managedTrustRoots == null
+                ? null : managedTrustRoots.runtimeView();
+        DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                .Snapshot rootSnapshot = rootView == null ? null : rootView.snapshot();
         boolean available = false;
         String status;
         if (closed) {
             status = "CLOSED";
         } else if (state.localState() != LocalState.HEALTHY) {
             status = "REFRESH_UNAVAILABLE";
-        } else if (state.lastSuccessfulRefreshAt() == null
-                || !now.isBefore(state.lastSuccessfulRefreshAt()
-                .plus(settings.maximumSnapshotAge()))) {
+        } else if (rootSnapshot != null && !rootSnapshot.available()) {
+            status = "TRUST_ROOT_" + rootSnapshot.status();
+        } else if (managedTrustRoots != null
+                && !state.trustRootGenerationFingerprint().equals(
+                rootView.generationFingerprint())) {
+            status = "TRUST_ROOT_GENERATION_UNVERIFIED";
+        } else if (!sourceFresh(state.lastSuccessfulRefreshAt(), now)) {
             status = "SOURCE_EXPIRED";
         } else if (now.isBefore(state.publication().material().notBefore())) {
             status = "PUBLICATION_NOT_YET_VALID";
@@ -297,7 +397,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
         return new Observation(Observation.SCHEMA_VERSION, available, status, SOURCE_TYPE,
                 inventory.generation(), inventory.laneDescriptors().size(),
                 inventory.expiresAt(), state.verifiedInventory().validSignatureCount(),
-                signatureThreshold);
+                state.verifiedInventory().requiredSignatureCount());
     }
 
     /** Returns the exact deployment and fixed topology bound by every accepted publication. */
@@ -319,7 +419,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                         ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication
                                 .SCHEMA_VERSION),
                 Map.entry("privateMaterialPresent", false),
-                Map.entry("signatureThreshold", signatureThreshold),
+                Map.entry("signatureThreshold", currentDeploymentSignatureThreshold()),
                 Map.entry("runtimeExpiryFence", true),
                 Map.entry("fleetTopologyBound", true),
                 Map.entry("exactRuntimeBinding", true),
@@ -332,14 +432,24 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                 Map.entry("conditionalRequests", true),
                 Map.entry("failClosedOnRefreshFailure", true),
                 Map.entry("witnessedPublications", true),
-                Map.entry("witnessSignatureThreshold", witnessSignatureThreshold),
+                Map.entry("witnessSignatureThreshold", currentWitnessSignatureThreshold()),
                 Map.entry("refreshIntervalSeconds", settings.refreshInterval().toSeconds()),
                 Map.entry("maximumSnapshotAgeSeconds",
                         settings.maximumSnapshotAge().toSeconds()),
                 Map.entry("externallyAnchoredPublicationFloor",
                         publicationFloor.externallyAnchored()),
                 Map.entry("byzantineQuorumAnchoredPublicationFloor",
-                        publicationFloor.byzantineQuorumAnchored())));
+                        publicationFloor.byzantineQuorumAnchored()),
+                Map.entry("managedTrustRootRefresh", managedTrustRoots != null),
+                Map.entry("atomicDualTrustRootPublication", managedTrustRoots != null),
+                Map.entry("externallyAnchoredTrustRootFloor", managedTrustRoots != null
+                        && managedTrustRoots.externallyAnchoredFloor()),
+                Map.entry("byzantineQuorumAnchoredTrustRootFloor", managedTrustRoots != null
+                        && managedTrustRoots.byzantineQuorumAnchoredFloor()),
+                Map.entry("externalInventoryNonEquivocation",
+                        externalInventoryNonEquivocation()),
+                Map.entry("byzantineQuorumInventoryNonEquivocation",
+                        byzantineQuorumInventoryNonEquivocation())));
     }
 
     /**
@@ -356,7 +466,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                 state.lastSuccessfulRefreshAt(), state.refreshSuccessCount(),
                 state.refreshFailureCount(), state.lastFailureCode(),
                 settings.refreshInterval().toSeconds(),
-                settings.maximumSnapshotAge().toSeconds(), witnessSignatureThreshold,
+                settings.maximumSnapshotAge().toSeconds(), currentWitnessSignatureThreshold(),
                 publicationFloor.durable(), publicationFloor.externallyAnchored(),
                 publicationFloor.byzantineQuorumAnchored());
     }
@@ -402,7 +512,8 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                 VerifiedPublication verified = verify(publication, previous, now);
                 String etag = fetched.etag();
                 refreshState = new RefreshState(publication, verified.inventory(),
-                        verified.inventorySnapshot(), etag, LocalState.HEALTHY, now,
+                        verified.inventorySnapshot(), verified.trustRootGenerationFingerprint(),
+                        etag, LocalState.HEALTHY, now,
                         previous.refreshSuccessCount() + 1,
                         previous.refreshFailureCount(), "");
                 refreshFailureLogged.set(false);
@@ -460,10 +571,11 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication publication,
             RefreshState previous,
             Instant now) {
+        VerificationTrust verificationTrust = verificationTrust(publication);
         var material = publication.material();
         if (!publication.fingerprintVerified(objectMapper)
                 || !publication.witness().fingerprintVerified(objectMapper)
-                || !trustDomain.equals(material.trustDomain())
+                || !verificationTrust.deploymentTrustDomain().equals(material.trustDomain())
                 || !binding.deploymentScopeId().equals(material.deploymentScopeId())
                 || !binding.fleetId().equals(material.fleetId())
                 || !acceptedPolicyFingerprints.contains(material.policyFingerprint())) {
@@ -473,13 +585,14 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
         requireCurrentWindow(material.issuedAt(), material.notBefore(),
                 material.expiresAt(), now, "Recovery-fleet inventory publication");
         ConfiguredTestSuiteStabilityServingInventoryAuthority.verifyDetachedSignatures(
-                indexedAuthorityKeys, signatureThreshold,
+                verificationTrust.deploymentKeys(),
+                verificationTrust.deploymentSignatureThreshold(),
                 signatures(publication.signatures()), publication.materialFingerprint(),
                 material.issuedAt(), material.expiresAt(), now,
                 "Recovery-fleet inventory publication");
 
         var witness = publication.witness().material();
-        if (!witnessDomain.equals(witness.witnessDomain())
+        if (!verificationTrust.witnessTrustDomain().equals(witness.witnessDomain())
                 || !binding.deploymentScopeId().equals(witness.deploymentScopeId())
                 || !binding.fleetId().equals(witness.fleetId())
                 || witness.issuedAt().isBefore(material.issuedAt().minus(CLOCK_SKEW))
@@ -491,7 +604,8 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
         requireCurrentWindow(witness.issuedAt(), witness.notBefore(), witness.expiresAt(),
                 now, "Recovery-fleet inventory witness");
         ConfiguredTestSuiteStabilityServingInventoryAuthority.verifyDetachedSignatures(
-                indexedWitnessKeys, witnessSignatureThreshold,
+                verificationTrust.witnessKeys(),
+                verificationTrust.witnessSignatureThreshold(),
                 signatures(publication.witness().signatures()),
                 publication.witness().materialFingerprint(), witness.issuedAt(),
                 witness.expiresAt(), now, "Recovery-fleet inventory witness");
@@ -499,17 +613,45 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
 
         int validInventorySignatures =
                 ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
-                        .verifyEnvelope(objectMapper, trustDomain,
-                                acceptedPolicyFingerprints, indexedAuthorityKeys,
-                                signatureThreshold, publication.inventory(), binding, now);
+                        .verifyEnvelope(objectMapper,
+                                verificationTrust.deploymentTrustDomain(),
+                                acceptedPolicyFingerprints, verificationTrust.deploymentKeys(),
+                                verificationTrust.deploymentSignatureThreshold(),
+                                publication.inventory(), binding, now);
         VerifiedInventory verifiedInventory = new VerifiedInventory(
-                publication.inventory().material(), validInventorySignatures);
+                publication.inventory().material(), validInventorySignatures,
+                verificationTrust.deploymentSignatureThreshold());
         Snapshot inventorySnapshot = material.state() == State.ACTIVE
                 ? ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
                 .resolveSnapshot(publication.inventory().material(), laneResolver)
                 : null;
         publicationFloor.accept(publicationGeneration(publication));
-        return new VerifiedPublication(verifiedInventory, inventorySnapshot);
+        return new VerifiedPublication(verifiedInventory, inventorySnapshot,
+                verificationTrust.trustRootGenerationFingerprint());
+    }
+
+    private VerificationTrust verificationTrust(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication publication) {
+        if (managedTrustRoots == null) {
+            return new VerificationTrust(trustDomain, witnessDomain, signatureThreshold,
+                    witnessSignatureThreshold, indexedAuthorityKeys, indexedWitnessKeys, "");
+        }
+        var keys = managedTrustRoots.keysFor(publication.signatures(),
+                publication.witness().signatures());
+        return new VerificationTrust(keys.deploymentTrustDomain(), keys.witnessTrustDomain(),
+                keys.deploymentSignatureThreshold(), keys.witnessSignatureThreshold(),
+                keys.deploymentKeys(), keys.witnessKeys(),
+                keys.generationFingerprint());
+    }
+
+    private int currentDeploymentSignatureThreshold() {
+        return managedTrustRoots == null ? signatureThreshold
+                : managedTrustRoots.snapshot().deploymentSignatureThreshold();
+    }
+
+    private int currentWitnessSignatureThreshold() {
+        return managedTrustRoots == null ? witnessSignatureThreshold
+                : managedTrustRoots.snapshot().witnessSignatureThreshold();
     }
 
     private ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor.Generation
@@ -673,22 +815,41 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
         UNAVAILABLE
     }
 
-    private record VerifiedInventory(Material material, int validSignatureCount) {
+    private record VerifiedInventory(
+            Material material,
+            int validSignatureCount,
+            int requiredSignatureCount) {
 
         private VerifiedInventory {
             material = Objects.requireNonNull(material, "material");
-            if (validSignatureCount < 1 || validSignatureCount > 32) {
+            if (requiredSignatureCount < 1 || requiredSignatureCount > 32
+                    || validSignatureCount < requiredSignatureCount
+                    || validSignatureCount > 32) {
                 throw new IllegalArgumentException("Invalid verified inventory signature count");
             }
         }
     }
 
+    private record VerificationTrust(
+            String deploymentTrustDomain,
+            String witnessTrustDomain,
+            int deploymentSignatureThreshold,
+            int witnessSignatureThreshold,
+            Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    deploymentKeys,
+            Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    witnessKeys,
+            String trustRootGenerationFingerprint) {
+    }
+
     private record VerifiedPublication(
             VerifiedInventory inventory,
-            Snapshot inventorySnapshot) {
+            Snapshot inventorySnapshot,
+            String trustRootGenerationFingerprint) {
 
         private VerifiedPublication {
             inventory = Objects.requireNonNull(inventory, "inventory");
+            trustRootGenerationFingerprint = normalized(trustRootGenerationFingerprint);
         }
     }
 
@@ -696,6 +857,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication publication,
             VerifiedInventory verifiedInventory,
             Snapshot inventorySnapshot,
+            String trustRootGenerationFingerprint,
             String etag,
             LocalState localState,
             Instant lastSuccessfulRefreshAt,
@@ -704,6 +866,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
             String lastFailureCode) {
 
         private RefreshState {
+            trustRootGenerationFingerprint = normalized(trustRootGenerationFingerprint);
             etag = normalized(etag);
             localState = localState == null ? LocalState.UNAVAILABLE : localState;
             lastFailureCode = normalized(lastFailureCode);
@@ -713,14 +876,15 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
         }
 
         private static RefreshState empty() {
-            return new RefreshState(null, null, null, "", LocalState.BOOTSTRAPPING,
+            return new RefreshState(null, null, null, "", "", LocalState.BOOTSTRAPPING,
                     null, 0, 0, "");
         }
 
         private RefreshState failed(String failureCode) {
-            return new RefreshState(publication, verifiedInventory, inventorySnapshot, etag,
-                    LocalState.UNAVAILABLE, lastSuccessfulRefreshAt, refreshSuccessCount,
-                    refreshFailureCount + 1, failureCode);
+            return new RefreshState(publication, verifiedInventory, inventorySnapshot,
+                    trustRootGenerationFingerprint, etag, LocalState.UNAVAILABLE,
+                    lastSuccessfulRefreshAt, refreshSuccessCount, refreshFailureCount + 1,
+                    failureCode);
         }
     }
 
@@ -992,6 +1156,53 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                         "Dynamic recovery-fleet inventory refresh snapshot is invalid");
             }
         }
+    }
+
+    private boolean externalInventoryNonEquivocation() {
+        return publicationFloor.externallyAnchored()
+                && (managedTrustRoots == null || managedTrustRoots.externallyAnchoredFloor());
+    }
+
+    private boolean byzantineQuorumInventoryNonEquivocation() {
+        return publicationFloor.byzantineQuorumAnchored()
+                && (managedTrustRoots == null
+                || managedTrustRoots.byzantineQuorumAnchoredFloor());
+    }
+
+    private boolean sourceFresh(Instant refreshedAt, Instant now) {
+        if (refreshedAt == null || now.isBefore(refreshedAt)) {
+            return false;
+        }
+        return Duration.between(refreshedAt, now)
+                .compareTo(settings.maximumSnapshotAge()) < 0;
+    }
+
+    private static ManagedMaterial managedMaterial(
+            DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                    authority) {
+        var keys = Objects.requireNonNull(authority, "managedTrustRoots")
+                .keysFor(List.of(), List.of());
+        return new ManagedMaterial(keys.deploymentTrustDomain(),
+                keys.deploymentSignatureThreshold(), wrappedKeys(keys.deploymentKeys()),
+                keys.witnessTrustDomain(), keys.witnessSignatureThreshold(),
+                wrappedKeys(keys.witnessKeys()));
+    }
+
+    private static List<AuthorityKey> wrappedKeys(
+            Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    keys) {
+        return keys.values().stream().map(key -> new AuthorityKey(key.authorityId(),
+                key.keyId(), key.publicKey(), key.notBefore(), key.expiresAt(), key.enabled(),
+                key.revoked())).toList();
+    }
+
+    private record ManagedMaterial(
+            String deploymentTrustDomain,
+            int deploymentSignatureThreshold,
+            List<AuthorityKey> deploymentKeys,
+            String witnessTrustDomain,
+            int witnessSignatureThreshold,
+            List<AuthorityKey> witnessKeys) {
     }
 
     private static Duration bounded(

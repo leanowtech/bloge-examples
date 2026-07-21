@@ -25,9 +25,10 @@
 | Stage 5 | In progress（bounded mutation、deterministic/fixed-horizon 与 anytime-valid stability 端到端协议已闭环） | 已落地 graph/operator schema boundary planning/admission、seeded bounded property plan/materialization/execution/evidence、recoverable AST mutation planning/exact regeneration、immutable V5 mutation suite、baseline-first 隔离执行、V5 signed evidence/abandoned reconciliation，以及 deterministic 3..20 次重跑、统计 request v2-v4、evidence v3-v5、首基线 `n-1` 比较口径、零/非零事件精确单侧区间、anytime-valid e-process、fail-closed censoring、签名模型假设、独立同步/异步 test-kit、pinned CI/CLI/JUnit gate、数据库权威的跨副本 stability parent lease、tenant-fair SQL queue、parent-first terminal、签名 success proof、执行围栏、bounded worker/scheduler、database-clock aggregate telemetry/readiness、防 request resurrection 的 HMAC tombstone 与租约化 retention scheduler/SLO、公开异步 submit/query/cancel、strict Schema/capability truth、transaction-bound cancellation semantic audit、credential-free challenge-bound HTTPS current-authority PDP、原子 Ed25519 JWKS refresh、exact cohort 的数据库租约/单 active generation/全成员 trust-generation 收敛，以及 deployment-signed serving inventory、稳定 scope revision floor、严格 HTTPS/ETag 动态 `ACTIVE/REVOKED` publication、独立 witness checkpoint、跨重启 durable publication/witness floor、全成员 publication-generation 收敛和 submit/worker 双门禁；运行密钥 restart-free 原子双根发布/刷新、数据库 durable floor、库存重验、外部 challenge-bound `3f+1 / 2f+1` 双流非等价锚、external-first 提交、Spring/staging 接线、cohort v4、health/capability 与 strict Schema 已落地；保留窗口历史趋势与独立 test-kit、跨 retention compact observation ledger、signed range proof、strict Schema、typed verifier、数据库权威签名 floor retirement、external-first 外部归档回执写侧准入 core、receipt-aware lifecycle v2 exact proof export/独立双信任域 verifier，以及 strict multi-authority HTTPS WORM adapter/test-staging fail-fast wiring 已落地；外部 inventory 的 local expectation、durable cycle、frozen classification、replay-verified governed finding、bounded derived finding/evidence retention Phase A-E，以及显式 test/staging 下游优先、逐 authority 故障隔离的自主调度 Phase F 首增量和 aggregate health/readiness/capability truth 第二增量已落地；source-history retention 的独立调度、数据库权威健康度与 capability v2 子视图已落地，floor lifecycle v1/v2 test/staging preview 已开放，certified production provider/historical trust publication、法务留置/备份擦除/灾备连续性、完整 production orphan reconciliation 与 witnessed non-equivocation 尚未开放；显式 alpha-spending、跨 suite 共同原因证明、分布式/物理隔离 attempt runtime 尚未落地 |
 
 > Stage 4 recovery-fleet trust-root 状态校正：日常 deployment/witness 运行密钥的原子双根
-> publication、双 bootstrap quorum verifier 与数据库 durable generation floor 内核已闭合；strict
-> HTTPS/ETag refresh、unknown-key single-flight、dynamic inventory consumer、Spring/health/capability
-> 接线尚未闭合，因此不能宣称 recovery fleet 已具备免重启运行密钥轮换。
+> publication、双 bootstrap quorum verifier、数据库 durable generation floor、strict HTTPS/ETag
+> refresh、unknown-key single-flight、aggregate health 与 dynamic inventory consumer 已闭合；Spring
+> 配置、staging downgrade fence 与 capability 接线尚未闭合，因此当前只宣称 embedding API
+> 具备免重启轮换内核，不宣称产品路径已端到端开放。
 
 Stage 4 本轮把调用方控制权从 TIME/RANDOM/UUID 扩展到 IDENTITY/FEATURE_FLAG：保持
 `bloge.fixtureBundle.v1` 顶层兼容，在保留字段 `metadata.executionServices` 下定义严格
@@ -1213,6 +1214,25 @@ Schema、数据库重建/竞争聚焦测试全绿，四个公共类型通过 str
 capability、external Byzantine floor、mTLS/pinning、HSM/KMS、production/目标数据库/HA/DR/chaos 仍待后续
 子步，不能把它解读为免重启轮换已端到端开放。完整 `clean verify` 执行 3533 tests，0 failures、0 errors、
 2 个条件浏览器跳过并成功重打包；其中本子步新增 15 项，第二十三子步 SLO 新增 25 项。
+
+Stage 4 该增量第二十五子步把第二十四子步的原子双根协议接入运行期，根治“可信 publication 只能在
+重启时转成构造参数，以及 deployment/witness 两域可能跨代读取”的消费根因。新增 strict HTTPS/ETag
+动态 authority：拒绝 redirect、weak/duplicate/changed ETag、非精确 media/protocol、超限实体、重复/未知/
+尾随 JSON；`304` 只续 source age，clock rollback 与 exact hard-age deadline 均关闭 admission。unknown-key
+路径与后台刷新共用单锁并受 cooldown 限流，durable floor 在可见性之前推进，返回的双域 key map、threshold
+与 generation fingerprint 来自同一个 immutable `VerifiedKeySet`，消除 keys/fingerprint TOCTOU。
+
+dynamic inventory managed mode 把根代次写入每次已验签库存状态；根不可用、撤销、过期或代次漂移均以
+稳定状态立即关闭。库存源即使返回 `304` 也重验完整缓存 publication：与新根不相交的旧签名会失败关闭，
+不会因内容未变化而延长旧信任。兼容 static-key constructor 保持不变，aggregate health 不暴露 URI、ETag、
+scope、root/key id、公钥、policy 或 fingerprint；strict snapshot Schema 与 Java record 保持逐字段一致。
+10 项新增真实 Ed25519/HTTP/生命周期/轮换/304/撤销/恢复集成测试、4 项 snapshot Schema 一致性测试，
+连同 13 项既有 dynamic-inventory 对抗回归组成 27 项联合门禁；四个公共类型 strict JavaDoc 门禁全绿。验证见
+[bootstrap-root recovery fleet dynamic trust-root verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-trust-root-verification.md)。该步只关闭动态 source、
+aggregate health 与 managed consumer embedding API；Spring 配置、staging downgrade fence、capability
+Schema、external Byzantine floor、mTLS/pinning、HSM/KMS、production/目标数据库/HA/DR/chaos 仍待后续
+子步，不能把内核能力解读为产品路径已经开放。最终独占 `clean verify` 执行 3547 tests，0 failures、
+0 errors、2 个条件浏览器跳过，并成功重打包 Spring Boot 可执行 JAR。
 
 第五十三增量第十八子步根治 exact configured cohort 可被本地缩窄后自证的问题。staging cohort 必须
 消费 deployment-owned `bloge.testSuiteStabilityServingInventory.v1`：canonical material 把 trust domain、

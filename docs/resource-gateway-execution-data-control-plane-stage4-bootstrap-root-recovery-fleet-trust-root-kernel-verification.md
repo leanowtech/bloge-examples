@@ -12,11 +12,14 @@
 3. 一个 floor-before-visible 的持久单调代际接口及数据库适配器。
 4. 一个 Draft 2020-12 严格 JSON Schema 和 Java/Schema 字段一致性门禁。
 
-本子步是动态刷新链的可信协议内核，**不等于 recovery fleet 已经支持免重启轮换**。以下能力仍未接线：
+本子步提交时只是动态刷新链的可信协议内核，**当时不等于 recovery fleet 已经支持免重启轮换**。后续
+[dynamic trust-root increment](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-trust-root-verification.md)
+已关闭前两项运行期缺口：
 
-- 严格 HTTPS/ETag source、后台刷新、unknown-key 单飞刷新和 hard-age 监管；
-- 把 `VerifiedKeySet` 接入现有 dynamic inventory authority，并在 `304` 后按新根代次重验库存；
-- Spring test/staging composition、health/capability、演示脚本和 staging fail-fast；
+- 已闭合：严格 HTTPS/ETag source、后台刷新、unknown-key 单飞刷新和 hard-age 监管；
+- 已闭合：把 `VerifiedKeySet` 接入 dynamic inventory authority，并在 `304` 后按新根代次重验库存；
+- 部分闭合：aggregate health 已有；Spring test/staging composition、capability、演示脚本和 staging
+  fail-fast 仍未接线；
 - 外部 Byzantine/non-equivocation floor、mTLS/pinning、HSM/KMS、production profile、非 H2/DR/chaos 认证。
 
 两组 bootstrap public keys 仍是部署注入的最终 trust anchor。这里轮换的是高频运行签名密钥，不以
@@ -152,9 +155,9 @@ var authority =
 var status = authority.snapshot();
 ```
 
-`snapshot()` 适合内部 health/capability projection，但本子步尚未完成该产品接线。真正消费运行 key 的
-`verifiedKeySet()` 保持 package-private，后续由同包 dynamic inventory authority 集成，避免把 key map
-扩散为新的公共 API。
+`snapshot()` 适合内部 health/capability projection；后续子步已接入 aggregate Actuator health，但尚未完成
+Spring/capability 产品接线。真正消费运行 key 的 `verifiedKeySet()` 保持 package-private，并已由同包
+dynamic inventory authority 集成，避免把 key map 扩散为新的公共 API。
 
 ## 7. 自动验证
 
@@ -176,15 +179,16 @@ var status = authority.snapshot();
 立即复跑 1/1 通过，未修改其代码，随后第二次完整 `clean verify` 全绿。该时间敏感测试仍应在后续独立
 稳定性增量中消除 wall-clock sleep，而不在本次安全协议提交中夹带修改。
 
-## 8. 下一子步验收条件
+## 8. 后续状态与剩余验收条件
 
-下一子步只有同时满足以下条件，才能把“免重启运行密钥轮换”从内核能力提升为运行期能力：
+动态 source/consumer 子步已经满足第 1-4 项并关闭 embedding API 的运行期能力：
 
 1. strict HTTPS source 具备精确 media/protocol、no redirect、大小/超时上界、ETag/304 和 hard-age。
 2. refresh 按 predecessor 连续推进，unknown inventory key 只触发有 cooldown 的 single-flight 根刷新。
 3. dynamic inventory 每次验签记录 exact root generation；根代次变化时即使 inventory 返回 `304` 也重验。
 4. refresh/root expiry/revocation/floor outage 立即关闭 recovery admission，旧 snapshot 只作诊断。
-5. Spring test/staging 只允许完整 managed mode，禁止与 legacy static runtime keys 混配。
-6. health/capability 只输出 aggregate truth，并通过真实 Spring、JDK HTTP、H2 和 Ed25519 端到端测试。
+5. **待完成**：Spring test/staging 只允许完整 managed mode，禁止与 legacy static runtime keys 混配。
+6. **部分完成**：health 已只输出 aggregate truth，JDK HTTP/Ed25519 已验证；capability、真实 Spring 与
+   H2 产品接线仍待完成。
 7. production 声明继续被 external Byzantine floor、mTLS/pinning、HSM/KMS、目标数据库、HA/DR/chaos
    门禁阻断。

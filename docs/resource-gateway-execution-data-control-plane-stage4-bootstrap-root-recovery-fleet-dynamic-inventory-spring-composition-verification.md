@@ -146,8 +146,9 @@ capability protocol 的完整 recovery-fleet 142 tests 均为 0 failures、0 err
 
 本子步只关闭 test/staging 产品接线，不解除以下生产门禁：
 
-1. deployment/witness 原子双 trust-root publication、验证器与 durable key floor 内核已闭合；strict
-   HTTPS/ETag refresh、unknown-key refresh、dynamic authority/Spring/capability 接线仍待完成；
+1. deployment/witness 原子双 trust-root publication、验证器、durable key floor、strict HTTPS/ETag
+   refresh、unknown-key refresh、dynamic authority 与 aggregate health 已闭合；managed-root Spring/
+   capability 接线、配置 Schema 和 staging downgrade fence 仍待完成；
 2. capability truth 已由后续子步闭合；配置 metadata、外部告警/SLO 和跨副本 convergence readiness；
 3. mTLS、certificate pinning、DNS/proxy policy 与 response-key rotation；
 4. external Byzantine anchor、publisher/witness HA、equivocation detection 和跨区 transparency；

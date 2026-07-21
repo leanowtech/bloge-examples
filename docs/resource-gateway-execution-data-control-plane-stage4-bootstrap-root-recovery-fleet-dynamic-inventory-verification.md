@@ -22,8 +22,9 @@ Resource Gateway 的运行期 authority：
 `ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration` 提供可选的 test/staging
 composition。调用方仍负责提供 public trust keys、唯一 reviewed lane resolver 和固定 deployment binding；
 可以接受默认 database floor，也可以替换为唯一 custom durable floor。后续子步已闭合 dynamic trust-root
-原子双根协议、验证器和 durable floor 内核，但尚未闭合其 HTTPS refresh、unknown-key refresh 与 consumer
-接线。本步也不宣称 production profile、publisher mTLS/pinning、外部 transparency、跨区 Byzantine anchor、
+原子双根协议、验证器、durable floor、strict HTTPS/ETag refresh、unknown-key refresh、aggregate health 与
+consumer embedding 接线；Spring properties、staging downgrade fence 与 capability 仍待产品接线。本步也
+不宣称 production profile、publisher mTLS/pinning、外部 transparency、跨区 Byzantine anchor、
 非 H2 数据库、HA/DR/chaos 或容量认证。
 
 ## 2. 根因与不变量
@@ -227,7 +228,8 @@ authority、authority SPI、health 与 configured verifier 四个公共类型通
 
 1. capability truth 已由后续子步通过既有 integration endpoint 闭合；运维配置 metadata、外部告警/SLO 和
    跨副本 convergence readiness 仍未完成；
-2. deployment/witness trust roots 固定在构造期，未实现 restart-free 双根发布、撤销和 durable key floor；
+2. deployment/witness trust-root 双根协议、撤销、durable floor、strict HTTPS/ETag refresh 与 managed
+   consumer 已由后续子步闭合；Spring properties、staging downgrade fence 与 capability 接线仍未完成；
 3. publication floor 只在本地数据库持久化，`externallyAnchored=false`、`byzantineQuorumAnchored=false`；
 4. HTTPS 未声明 client mTLS、certificate pinning、代理策略、DNS rebinding 防护和 response-key 热轮换；
 5. H2 证明不替代 PostgreSQL/MySQL 的 DDL、锁超时、隔离级别、backup/restore 和 rolling upgrade 认证；

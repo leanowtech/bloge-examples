@@ -140,8 +140,9 @@ mvn -f resource-gateway-examples/pom.xml \
 
 1. local SLO policy/assessment/metric vocabulary 已由后续子步闭合；外部 metrics backend/alert routing、
    durable SLI window 与跨副本 convergence readiness 仍未完成；
-2. deployment/witness 原子双 trust-root publication、验证器与 durable key floor 内核已闭合，但 strict
-   HTTPS/ETag refresh、unknown-key refresh、dynamic authority 与 capability 接线仍待完成；
+2. deployment/witness 原子双 trust-root publication、验证器、durable key floor、strict HTTPS/ETag
+   refresh、unknown-key refresh、dynamic authority 与 aggregate health 已闭合；Spring/capability 产品
+   接线、staging downgrade fence 与配置 Schema 仍待完成；
 3. publication floor 的外部 Byzantine anchor、publisher/witness HA 与 split-view/equivocation 检测；
 4. mTLS、certificate pinning、DNS/proxy policy 和 response-key hot rotation；
 5. enterprise IAM/PDP、HSM/KMS custody 和 production profile composition；

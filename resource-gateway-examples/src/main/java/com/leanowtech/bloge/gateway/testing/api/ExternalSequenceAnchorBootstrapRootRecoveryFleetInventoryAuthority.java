@@ -27,7 +27,10 @@ public interface ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthor
             "witnessedPublications", "witnessSignatureThreshold",
             "refreshIntervalSeconds", "maximumSnapshotAgeSeconds",
             "externallyAnchoredPublicationFloor",
-            "byzantineQuorumAnchoredPublicationFloor");
+            "byzantineQuorumAnchoredPublicationFloor", "managedTrustRootRefresh",
+            "atomicDualTrustRootPublication", "externallyAnchoredTrustRootFloor",
+            "byzantineQuorumAnchoredTrustRootFloor", "externalInventoryNonEquivocation",
+            "byzantineQuorumInventoryNonEquivocation");
 
     /**
      * Returns current verified authority state without network or database I/O.

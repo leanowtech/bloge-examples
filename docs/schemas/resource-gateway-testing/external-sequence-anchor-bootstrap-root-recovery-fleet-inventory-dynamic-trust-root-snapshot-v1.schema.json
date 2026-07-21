@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resource-gateway.local/schemas/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-dynamic-trust-root-snapshot-v1.schema.json",
+  "title": "Recovery fleet inventory dynamic trust-root snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "available",
+    "status",
+    "sequence",
+    "lastSuccessfulRefreshAt",
+    "refreshSuccessCount",
+    "refreshFailureCount",
+    "lastFailureCode",
+    "refreshIntervalSeconds",
+    "requestTimeoutMillis",
+    "unknownKeyRefreshIntervalSeconds",
+    "maximumSnapshotAgeSeconds",
+    "deploymentSignatureThreshold",
+    "witnessSignatureThreshold",
+    "activeDeploymentAuthorityCount",
+    "activeWitnessAuthorityCount",
+    "durableFloor",
+    "externalNonEquivocation",
+    "byzantineQuorumNonEquivocation",
+    "automaticRefresh"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetInventoryDynamicTrustRootSnapshot.v1"
+    },
+    "available": { "type": "boolean" },
+    "status": {
+      "enum": [
+        "HEALTHY",
+        "CLOSED",
+        "REFRESH_UNAVAILABLE",
+        "SOURCE_EXPIRED",
+        "EXPIRED",
+        "DEPLOYMENT_THRESHOLD_UNAVAILABLE",
+        "WITNESS_THRESHOLD_UNAVAILABLE"
+      ]
+    },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "lastSuccessfulRefreshAt": { "type": "string", "format": "date-time" },
+    "refreshSuccessCount": { "type": "integer", "minimum": 1 },
+    "refreshFailureCount": { "type": "integer", "minimum": 0 },
+    "lastFailureCode": {
+      "enum": [
+        "",
+        "TRUST_ROOT_SOURCE_UNAVAILABLE",
+        "TRUST_ROOT_DOCUMENT_INVALID",
+        "TRUST_ROOT_REFRESH_FAILED"
+      ]
+    },
+    "refreshIntervalSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+    "requestTimeoutMillis": { "type": "integer", "minimum": 100, "maximum": 30000 },
+    "unknownKeyRefreshIntervalSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    },
+    "maximumSnapshotAgeSeconds": { "type": "integer", "minimum": 2, "maximum": 86400 },
+    "deploymentSignatureThreshold": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "witnessSignatureThreshold": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "activeDeploymentAuthorityCount": { "type": "integer", "minimum": 0, "maximum": 32 },
+    "activeWitnessAuthorityCount": { "type": "integer", "minimum": 0, "maximum": 32 },
+    "durableFloor": { "const": true },
+    "externalNonEquivocation": { "type": "boolean" },
+    "byzantineQuorumNonEquivocation": { "type": "boolean" },
+    "automaticRefresh": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "HEALTHY" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "available": { "const": true },
+          "lastFailureCode": { "const": "" }
+        }
+      },
+      "else": { "properties": { "available": { "const": false } } }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "REFRESH_UNAVAILABLE" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "lastFailureCode": {
+            "enum": [
+              "TRUST_ROOT_SOURCE_UNAVAILABLE",
+              "TRUST_ROOT_DOCUMENT_INVALID",
+              "TRUST_ROOT_REFRESH_FAILED"
+            ]
+          }
+        }
+      },
+      "else": { "properties": { "lastFailureCode": { "const": "" } } }
+    },
+    {
+      "if": {
+        "properties": { "byzantineQuorumNonEquivocation": { "const": true } },
+        "required": ["byzantineQuorumNonEquivocation"]
+      },
+      "then": { "properties": { "externalNonEquivocation": { "const": true } } }
+    }
+  ]
+}
