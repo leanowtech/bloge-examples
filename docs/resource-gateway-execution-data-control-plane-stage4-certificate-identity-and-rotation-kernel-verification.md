@@ -28,6 +28,10 @@ live serving fence：数据库时间到达签名时刻且全副本 `STAGED` 后�
 `bloge.controlPlaneCertificateStatusPublication.v1`：外部 adapter 把已验证的 CA event、OCSP 或 CRL
 归一化为完整、签名、硬过期、cursor 连续的无载荷快照，并由独立 M-of-N Ed25519 trust store 校验。
 该协议内核不等于运行时吊销已开放；数据库单调 floor、watcher 和 request gate 仍是后继门禁。
+CA 事件分发的 page-chain/cursor 子步也已冻结：每页绑定 scope、连续 sequence、previous page
+fingerprint 和最多 12 个不同 target 的独立签名事件；每个 stable serving slot 以数据库
+`stage -> apply -> commit` 游标防止部分处理后误推进，并对 exact replay、gap、fork、baseline drift 与
+whole-record mutation 失败关闭。该子步尚未接入 HTTP watcher，因此不改变 `productionReady=false`。
 
 ## 2. 根因模型
 
@@ -139,6 +143,9 @@ signed active head 也必须重新形成全副本 ACTIVE proof。`FENCED_QUORUM`
   durable-before-live activation、restart ACTIVE re-proof 与 request serving fence。
 - `ControlPlaneCertificateRotationActivationAuthority`：floor 事务内只消费本地 cached proof，禁止网络或
   数据库 provider I/O。
+- `ControlPlaneCertificateRotationEventPage` 与
+  `DatabaseControlPlaneCertificateRotationEventCursor`：连续 page chain、稳定 serving-slot baseline、
+  durable staged successor、全部事件成功后的显式 commit，以及 crash/replay/fork 封闭。
 - `ControlPlaneCertificateRotationHealth`：投影 bounded local readiness、durable state、convergence
   integration/availability/proof 与 serving readiness；enterprise `productionReady` 继续保持 false。
 - `RecoveryFleetPublicationTransportProperties`：对六个身份字段执行全有或全无校验，
@@ -164,6 +171,8 @@ signed active head 也必须重新形成全副本 ACTIVE proof。`FENCED_QUORUM`
   TLS material location 或 provider diagnostics。
 - convergence configuration v1、monitor descriptor v1 与 runtime descriptor v2 严格 Schema：冻结
   all-replica、外部 inventory、lease bounds、aggregate readiness，并强制 production readiness 为 false。
+- event page v1 与 cursor snapshot v1 严格 Schema：冻结 source ordering 和两阶段消费位置；cursor
+  projection 不携带 event body、TLS material、secret 或 provider diagnostics。
 - health/capability/Tool Studio：投影 `certificateIdentityBound`、signed rotation、durable local readiness
   和固定计数，不返回 Subject、SAN、issuer pin、fingerprint、路径或 secret reference；fleet convergence
   由真实 monitor 状态驱动，production readiness 固定为 false。
@@ -237,8 +246,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 7. 下一门禁
 
-下一门禁不再重复定义吊销 JSON，而是把已冻结的 status publication 接入 database-clock cursor/
-fingerprint floor、CA event watcher、硬过期缓存和逐请求 admission，并补齐 convergence SLO/alert、
+下一门禁不再重复定义轮换或吊销 JSON，而是把已冻结的 rotation event cursor 接入 CA event watcher，
+并把 status publication 接入 database-clock cursor/fingerprint floor、硬过期缓存和逐请求 admission，
+随后补齐 convergence SLO/alert、
 受控 switch-forward recovery 与独立运维演练。`FENCED_QUORUM` 只有在部署权威能证明缺失副本已
 无法继续服务旧 generation 后才可开放。尚未闭合的外部生产责任
 包括企业 CA 签发/吊销事件源、OCSP/CRL、HSM 私钥 custody、secret-manager lease、生产数据库迁移与

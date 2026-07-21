@@ -131,6 +131,12 @@ restart ACTIVE re-proof 和 serving fence 接入产品 runtime。当前轮换聚
 12 项以及 3700 项全量测试全绿。企业 CA 事件分发、撤销/OCSP/CRL、HSM
 custody 与生产数据库/HA/DR/chaos 认证仍未闭合，不能据此宣称企业 PKI 已开放。验证见
 [certificate identity and rotation kernel verification](resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md)。
+紧随其后的事件分发第一子步已冻结 fingerprint-chained page 和每 stable serving-slot 的 durable
+cursor：数据库在 apply 前 stage exact successor，只有页面内全部独立签名事件 durable apply 后才 commit；
+crash 只允许 exact replay，gap、fork、competing page、baseline drift 和 whole-record mutation 全部失败
+关闭。15 项协议/数据库门禁全绿。HTTP/mTLS watcher、自动调度与 freshness SLO 尚未接线，因此
+production readiness 不变。验证见
+[certificate rotation event cursor verification](resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-cursor-verification.md)。
 
 Stage 2 本轮审计继续关闭 stored fixture 的对象稳定性和仓储替换断点：数据库 create/read 与
 execution、suite、durable 三类消费边界先做 canonical serialization round trip，递归冻结 JSON 容器并

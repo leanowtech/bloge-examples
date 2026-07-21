@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-event-cursor-snapshot-v1.schema.json",
+  "title": "Resource Gateway Control-Plane Certificate Rotation Event Cursor Snapshot v1",
+  "description": "Material-free committed and staged page-chain state for one stable serving slot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "deploymentScopeId", "instanceId", "baselineSequence",
+    "baselinePageFingerprint", "committedSequence", "committedPageFingerprint",
+    "stagedSequence", "stagedPreviousPageFingerprint", "stagedPageFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateRotationEventCursorSnapshot.v1"
+    },
+    "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+    "instanceId": { "$ref": "#/$defs/identifier" },
+    "baselineSequence": { "type": "integer", "minimum": 0 },
+    "baselinePageFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "committedSequence": { "type": "integer", "minimum": 0 },
+    "committedPageFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "stagedSequence": { "type": "integer", "minimum": 0 },
+    "stagedPreviousPageFingerprint": {
+      "anyOf": [{ "const": "" }, { "$ref": "#/$defs/fingerprint" }]
+    },
+    "stagedPageFingerprint": {
+      "anyOf": [{ "const": "" }, { "$ref": "#/$defs/fingerprint" }]
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}

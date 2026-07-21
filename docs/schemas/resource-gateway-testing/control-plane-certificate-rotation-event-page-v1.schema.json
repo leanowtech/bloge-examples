@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-event-page-v1.schema.json",
+  "title": "Resource Gateway Control-Plane Certificate Rotation Event Page v1",
+  "description": "Strict fingerprint-chained delivery page. Page authentication does not replace independent event authorization.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "material", "pageFingerprint"],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateRotationEventPage.v1"
+    },
+    "material": { "$ref": "#/$defs/material" },
+    "pageFingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "deploymentScopeId", "sequence",
+        "previousPageFingerprint", "issuedAt", "expiresAt", "events"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.controlPlaneCertificateRotationEventPageMaterial.v1"
+        },
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "previousPageFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "$ref": "control-plane-certificate-rotation-event-v1.schema.json#/$defs/event"
+          }
+        }
+      }
+    }
+  }
+}
