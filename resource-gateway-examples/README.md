@@ -500,8 +500,15 @@ staging failed after durable acceptance. Set
 trust domain, accepted policy fingerprints, M-of-N public Ed25519 authorities, timing bounds, target
 baseline generation/material ids, and public material-location catalog under the adjacent
 `RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_*` variables. The demo script rejects partial policy,
-malformed bounds/JSON, private keys, or resolved passwords before building the service. Local
-Actuator health and Tool Studio capability expose only bounded readiness/durability booleans and
+malformed bounds/JSON, private keys, or resolved passwords before building the service. The
+fleet-convergence primitives now also define an exact replica inventory, process-start leases,
+strict `STAGED/ACTIVE/FAILED` acknowledgements, all-replica or fenced-quorum stage thresholds, one
+database-authoritative active fleet, and an external inventory revision/downgrade floor. Their
+aggregate snapshot separates `activationPermitted` from exact all-replica `converged` and never
+returns replica ids or TLS material locations. These primitives are not yet wired to runtime
+heartbeats or the durable activation/serving fence; `FENCED_QUORUM` therefore remains a
+protocol-only option and must not be enabled on a serving path. Local Actuator health and Tool
+Studio capability expose only bounded readiness/durability booleans and
 target counts. They deliberately keep replica convergence and production readiness false: CA-event
 distribution, per-replica acknowledgements, revocation/OCSP/CRL, HSM custody, production database
 certification, and HA/DR/chaos remain follow-up gates. See the

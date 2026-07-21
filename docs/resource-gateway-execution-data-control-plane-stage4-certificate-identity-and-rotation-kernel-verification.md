@@ -16,9 +16,12 @@ feature projection。证书轮换在原子 TLS 内核之上形成了 test/stagin
 协议、独立 M-of-N Ed25519 信任、deployment/target/predecessor/candidate 精确绑定、材料
 解析隔离、并发幂等和状态漂移封闭；database-clock durable floor 在 live staging 前线性化
 generation、持久化 exact event journal、防止重启回退/同代分叉并自动晋升到期 successor；12 条
-稳定 target id 通过统一 runtime 恢复 active/pending generation。它仍没有 CA event watcher、逐副本
-确认或 fleet convergence proof，因此 capability 明确保持 `replicaConvergenceProven=false`、
-`productionReady=false`，不能被解释为企业 PKI 或生产证书轮换已经开放。
+稳定 target id 通过统一 runtime 恢复 active/pending generation。后续 convergence kernel 已冻结精确
+replica inventory、process-start lease、`STAGED/ACTIVE/FAILED` ACK、all-replica/fenced-quorum 阈值与
+aggregate-only proof；数据库实现以单 active fleet、外部 inventory revision floor、严格 sequence 和
+whole-record fingerprint 阻断重复副本、回退、分叉、篡改与 authority downgrade。它尚未接入 runtime
+heartbeat、CA event watcher 或 activation/serving fence，因此 capability 明确保持
+`replicaConvergenceProven=false`、`productionReady=false`，不能被解释为企业 PKI 或生产证书轮换已经开放。
 
 ## 2. 根因模型
 
@@ -88,8 +91,16 @@ fingerprint、异常、路径或 secret reference。
 产品状态机先完成签名和候选 fingerprint 验证，再 durable accept，最后把同一 generation/material
 stage 到本副本 live target；durable accept 后本地 staging 失败时，同一签名事件可重放修复。重启会先
 验证 baseline ancestry，再从受控 catalog 恢复 durable active/pending material。这个顺序关闭了
-“live 已切换但 floor 未落盘”的危险窗口，却不能把“数据库已接受”解释为“所有副本已切换”：当前没有
-副本清单、逐副本 stage/activate acknowledgement、quorum activation fence 或 convergence SLO。
+“live 已切换但 floor 未落盘”的危险窗口，却不能把“数据库已接受”解释为“所有副本已切换”。
+
+`ControlPlaneCertificateRotationFleetPolicy` 与
+`DatabaseControlPlaneCertificateRotationConvergenceRepository` 已建立下一层数据库权威事实面：精确清单
+不是 discovery 结果；同一 scope 只有一个 live fleet；每个 serving slot/process-start/target 以严格 sequence
+报告 exact generation/event/settings/activation identity；重复 startup 不能制造 quorum；外部 inventory
+attestation 有 hard expiry、revision floor 与 local downgrade fence。`activationPermitted` 只表示无 live
+冲突且 staged/active 唯一 slot 达到 `ALL_REPLICAS` 或 `FENCED_QUORUM` 阈值，`converged` 则必须是清单内
+每个 slot 恰有一个 exact `ACTIVE`。当前 runtime 尚未自动发布这些 ACK，durable generation floor 也尚未
+消费 activation fence；尤其 `FENCED_QUORUM` 在 serving admission fence 接入前只是冻结协议，不可启用。
 
 ## 5. 代码证据
 
@@ -110,6 +121,11 @@ stage 到本副本 live target；durable accept 后本地 staging 失败时，�
   whole-record fingerprint、baseline ancestry 验证、重启防回退与同代分叉拒绝。
 - `ControlPlaneCertificateRotationRuntime`：统一管理 12 个 stable target id，构造 durable floor，恢复
   active/pending material，并注册 floor-bound controller。
+- `ControlPlaneCertificateRotationFleetPolicy`：冻结精确 replica inventory、immutable artifact、协议、
+  all-replica/fenced-quorum 阈值、数据库租约和外部 inventory attestation。
+- `DatabaseControlPlaneCertificateRotationConvergenceRepository`：database-clock process-start ACK、单 active
+  fleet、唯一 slot 计数、严格 sequence、inventory revision/downgrade floor、篡改检测，以及
+  activation/convergence 双判定。
 - `ControlPlaneCertificateRotationHealth`：只投影 bounded local readiness、durable state 和目标计数；
   replica convergence 与 production readiness 永远不由本地事实推导。
 - `RecoveryFleetPublicationTransportProperties`：对六个身份字段执行全有或全无校验，
@@ -127,6 +143,9 @@ stage 到本副本 live target；durable accept 后本地 staging 失败时，�
   fingerprint 与时间，不携带 TLS material location 或 credential。
 - certificate rotation configuration v1 严格 Schema：冻结 authority、timing、baseline inventory 与
   material catalog 的 Spring 边界，不允许私钥或 resolved password。
+- certificate rotation replica acknowledgement v1 与 convergence snapshot v1 严格 Schema：前者是绑定
+  exact rotation identity 的私有 ACK，后者只输出固定基数 aggregate counts/blockers，不携带副本清单、
+  TLS material location 或 provider diagnostics。
 - health/capability/Tool Studio：投影 `certificateIdentityBound`、signed rotation、durable local readiness
   和固定计数，不返回 Subject、SAN、issuer pin、fingerprint、路径或 secret reference；fleet convergence
   和 production readiness 固定为 false。
@@ -170,6 +189,11 @@ durable floor 另执行 6 项数据库测试，0 failures、0 errors、0 skips�
 回退/跳代/分叉拒绝、future staged 与 database-time 到期晋升、exact replay、event-id reuse、scope/
 predecessor 漂移、floor/event journal 篡改失败关闭，以及同一 target/generation 双副本竞争只有一个赢家。
 
+convergence kernel 执行 9 项真实数据库测试，并与扩展后的 6 项 rotation Schema 门禁合计 15 tests，
+0 failures、0 errors、0 skips。覆盖 all-replica 与 fenced-quorum 双判定、重复 process-start 不制造阈值、
+严格 ACK sequence/状态推进、database-time 提前激活拒绝、单 active fleet 并发竞争、外部 inventory
+revision 回退/同代分叉/过期/篡改/local downgrade、租约过期、whole-record corruption 与 bounded cleanup。
+
 此前复用 transport 的 79 项联合协议回归和产品接线的 87 项聚焦测试亦全绿；本轮 56 项覆盖 typed
 properties、Spring 组装、真实 TLS、durable restart、Schema 冻结、health/capability、Tool Studio
 projection 与 demo preflight。
@@ -188,9 +212,10 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 7. 下一门禁
 
-下一门禁从“本地 durable 正确”推进到“fleet 可证明收敛”：引入受治理的 replica inventory、事件分发
-cursor、逐副本 `STAGED/ACTIVE/FAILED` acknowledgement、staging quorum/all-replica policy、激活 fence、
-离线副本隔离与 convergence SLO；只有独立 verifier 证明 exact target/generation/material cohort 收敛后，
-`replicaConvergenceProven` 才能为 true。其后仍需受控 switch-forward recovery。尚未闭合的外部生产责任
+下一门禁把已验证的 ACK 事实面接入产品状态机：runtime heartbeat/withdraw、事件分发 cursor、
+floor activation fence、请求侧 serving admission fence、离线副本隔离、固定基数 health/telemetry 与
+convergence SLO。只有独立 verifier 证明 exact target/generation/material cohort 收敛后，
+`replicaConvergenceProven` 才能为 true；`FENCED_QUORUM` 只有在缺失副本无法继续服务旧 generation 后才
+可开放。其后仍需受控 switch-forward recovery。尚未闭合的外部生产责任
 包括企业 CA 签发/吊销事件源、OCSP/CRL、HSM 私钥 custody、secret-manager lease、生产数据库迁移与
 备份恢复、HA/DR/chaos 和长周期证书生命周期认证。

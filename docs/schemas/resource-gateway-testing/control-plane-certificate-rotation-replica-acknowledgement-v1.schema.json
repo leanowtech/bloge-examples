@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-replica-acknowledgement-v1.schema.json",
+  "title": "Resource Gateway Control-Plane Certificate Rotation Replica Acknowledgement v1",
+  "description": "Strict private payload- and credential-free process-start acknowledgement for one exact signed certificate rotation.",
+  "$ref": "#/$defs/acknowledgement",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "expectedRotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetId", "generation", "eventId", "eventFingerprint",
+        "settingsFingerprint", "activateAt"
+      ],
+      "properties": {
+        "targetId": { "$ref": "#/$defs/identifier" },
+        "generation": { "type": "integer", "minimum": 1 },
+        "eventId": { "$ref": "#/$defs/identifier" },
+        "eventFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "settingsFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "activateAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "acknowledgement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "deploymentScopeId", "fleetId", "instanceId",
+        "startupId", "artifactFingerprint", "policyFingerprint",
+        "protocolVersion", "sequence", "expectedRotation", "state", "failureCode"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.controlPlaneCertificateRotationReplicaAcknowledgement.v1"
+        },
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "fleetId": { "$ref": "#/$defs/identifier" },
+        "instanceId": { "$ref": "#/$defs/identifier" },
+        "startupId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "artifactFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "policyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "protocolVersion": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "expectedRotation": { "$ref": "#/$defs/expectedRotation" },
+        "state": { "enum": ["STAGED", "ACTIVE", "FAILED"] },
+        "failureCode": {
+          "type": "string",
+          "pattern": "^(|[A-Z][A-Z0-9_]{0,63})$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "state": { "const": "FAILED" } },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "failureCode": { "pattern": "^[A-Z][A-Z0-9_]{0,63}$" }
+            }
+          },
+          "else": {
+            "properties": { "failureCode": { "const": "" } }
+          }
+        }
+      ]
+    }
+  }
+}

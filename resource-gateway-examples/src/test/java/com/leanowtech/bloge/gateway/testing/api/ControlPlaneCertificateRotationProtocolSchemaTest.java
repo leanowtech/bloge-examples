@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,6 +27,10 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 "control-plane-certificate-rotation-apply-result-v1.schema.json");
         JsonNode floorSchema = schema(
                 "control-plane-certificate-rotation-floor-snapshot-v1.schema.json");
+        JsonNode acknowledgementSchema = schema(
+                "control-plane-certificate-rotation-replica-acknowledgement-v1.schema.json");
+        JsonNode convergenceSchema = schema(
+                "control-plane-certificate-rotation-convergence-snapshot-v1.schema.json");
         ControlPlaneCertificateRotationEvent event = event();
         var result = new ControlPlaneCertificateRotationController.ApplyResult(
                 ControlPlaneCertificateRotationController.ApplyResult.SCHEMA_VERSION,
@@ -37,6 +42,22 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 "rg-staging-sg", "recovery-fleet.publisher", 1, "initial-a",
                 FINGERPRINT, "", "", now, 2, "candidate-b", FINGERPRINT,
                 "rotation-002", FINGERPRINT, now.plusSeconds(300), now);
+        var expectedRotation = new ControlPlaneCertificateRotationConvergenceRepository
+                .ExpectedRotation(ControlPlaneCertificateRotationTargets.RECOVERY_FLEET_INVENTORY,
+                2, "rotation-002", FINGERPRINT, FINGERPRINT, now.plusSeconds(300));
+        var acknowledgement = new ControlPlaneCertificateRotationConvergenceRepository
+                .Acknowledgement(
+                ControlPlaneCertificateRotationConvergenceRepository.Acknowledgement
+                        .SCHEMA_VERSION,
+                "rg-staging-sg", "rollout-2026q3", "replica-a",
+                UUID.randomUUID().toString(), FINGERPRINT, FINGERPRINT,
+                "bloge.rotation.v1", 1, expectedRotation,
+                ControlPlaneCertificateRotationConvergenceRepository.ReplicaState.STAGED, "");
+        var convergence = new ControlPlaneCertificateRotationConvergenceRepository.Snapshot(
+                ControlPlaneCertificateRotationConvergenceRepository.Snapshot.SCHEMA_VERSION,
+                true, false, "ACTIVATION_PERMITTED", 2, 2, 2, 2, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, now, now.plusSeconds(30),
+                List.of(), List.of("REPLICA_NOT_ACTIVE", "ACTIVE_REPLICA_MISSING"));
 
         assertProperties(objectMapper.valueToTree(event),
                 eventSchema.at("/$defs/event/properties"));
@@ -47,6 +68,12 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         assertProperties(objectMapper.valueToTree(result), resultSchema.path("properties"));
         assertProperties(objectMapper.valueToTree(floor),
                 floorSchema.at("/$defs/snapshot/properties"));
+        assertProperties(objectMapper.valueToTree(acknowledgement),
+                acknowledgementSchema.at("/$defs/acknowledgement/properties"));
+        assertProperties(objectMapper.valueToTree(expectedRotation),
+                acknowledgementSchema.at("/$defs/expectedRotation/properties"));
+        assertProperties(objectMapper.valueToTree(convergence),
+                convergenceSchema.path("properties"));
         assertThat(eventSchema.at("/$defs/event/additionalProperties").asBoolean(true)).isFalse();
         assertThat(eventSchema.at("/$defs/material/additionalProperties").asBoolean(true))
                 .isFalse();
@@ -55,6 +82,11 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         assertThat(resultSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(floorSchema.at("/$defs/snapshot/additionalProperties")
                 .asBoolean(true)).isFalse();
+        assertThat(acknowledgementSchema.at("/$defs/acknowledgement/additionalProperties")
+                .asBoolean(true)).isFalse();
+        assertThat(acknowledgementSchema.at("/$defs/expectedRotation/additionalProperties")
+                .asBoolean(true)).isFalse();
+        assertThat(convergenceSchema.path("additionalProperties").asBoolean(true)).isFalse();
     }
 
     @Test
@@ -64,6 +96,10 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 "control-plane-certificate-rotation-apply-result-v1.schema.json");
         JsonNode floorSchema = schema(
                 "control-plane-certificate-rotation-floor-snapshot-v1.schema.json");
+        JsonNode acknowledgementSchema = schema(
+                "control-plane-certificate-rotation-replica-acknowledgement-v1.schema.json");
+        JsonNode convergenceSchema = schema(
+                "control-plane-certificate-rotation-convergence-snapshot-v1.schema.json");
 
         assertThat(eventSchema.at("/$defs/event/properties/schemaVersion/const").asText())
                 .isEqualTo(ControlPlaneCertificateRotationEvent.SCHEMA_VERSION);
@@ -74,6 +110,13 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         assertThat(floorSchema.at(
                 "/$defs/snapshot/properties/schemaVersion/const").asText())
                 .isEqualTo(ControlPlaneCertificateRotationFloor.Snapshot.SCHEMA_VERSION);
+        assertThat(acknowledgementSchema.at(
+                "/$defs/acknowledgement/properties/schemaVersion/const").asText())
+                .isEqualTo(ControlPlaneCertificateRotationConvergenceRepository
+                        .Acknowledgement.SCHEMA_VERSION);
+        assertThat(convergenceSchema.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(ControlPlaneCertificateRotationConvergenceRepository
+                        .Snapshot.SCHEMA_VERSION);
         assertThat(resultSchema.at("/properties/status/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactlyInAnyOrder(Arrays.stream(
@@ -87,6 +130,13 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 .doesNotContain(":", "/", "#");
         assertThat(floorSchema.at("/$defs/materialId/pattern").asText())
                 .doesNotContain(":", "/", "#");
+        assertThat(acknowledgementSchema.at(
+                "/$defs/acknowledgement/properties/state/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(Arrays.stream(
+                                ControlPlaneCertificateRotationConvergenceRepository
+                                        .ReplicaState.values())
+                        .map(Enum::name).toArray(String[]::new));
     }
 
     @Test
@@ -132,6 +182,22 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 .contains("does not imply replica convergence")
                 .contains("private keys are forbidden")
                 .doesNotContain("productionReady\": true", "resolved-password");
+    }
+
+    @Test
+    void replicaProtocolsCannotCarryTlsMaterialLocationsOrProviderDiagnostics()
+            throws Exception {
+        String source = Files.readString(schemaPath(
+                "control-plane-certificate-rotation-replica-acknowledgement-v1.schema.json"))
+                + Files.readString(schemaPath(
+                "control-plane-certificate-rotation-convergence-snapshot-v1.schema.json"));
+
+        for (String forbidden : new String[]{
+                "materialId", "certificate", "privateKey", "password", "secretRef",
+                "keyStore", "trustStore", "path", "exception", "errorMessage",
+                "stackTrace", "instanceIds", "eventIds"}) {
+            assertThat(source).doesNotContain("\"" + forbidden + "\"");
+        }
     }
 
     private ControlPlaneCertificateRotationEvent event() {

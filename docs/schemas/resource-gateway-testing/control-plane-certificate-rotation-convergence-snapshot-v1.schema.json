@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-convergence-snapshot-v1.schema.json",
+  "title": "Resource Gateway Control-Plane Certificate Rotation Convergence Snapshot v1",
+  "description": "Strict aggregate-only distinction between staging-threshold permission and exact all-replica active convergence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "activationPermitted", "converged", "status",
+    "expectedReplicaCount", "requiredStagedReplicaCount", "liveReplicaCount",
+    "stagedReplicaCount", "activeReplicaCount", "failedReplicaCount",
+    "missingReplicaCount", "unexpectedReplicaCount", "duplicateReplicaCount",
+    "divergentArtifactCount", "divergentPolicyCount", "divergentProtocolCount",
+    "divergentRotationCount", "corruptReplicaCount", "observedAt",
+    "nextLeaseExpiryAt", "activationBlockers", "convergenceBlockers"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateRotationConvergenceSnapshot.v1"
+    },
+    "activationPermitted": { "type": "boolean" },
+    "converged": { "type": "boolean" },
+    "status": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+    },
+    "expectedReplicaCount": { "type": "integer", "minimum": 1, "maximum": 64 },
+    "requiredStagedReplicaCount": { "type": "integer", "minimum": 1, "maximum": 64 },
+    "liveReplicaCount": { "$ref": "#/$defs/boundedCount" },
+    "stagedReplicaCount": { "$ref": "#/$defs/boundedCount" },
+    "activeReplicaCount": { "$ref": "#/$defs/boundedCount" },
+    "failedReplicaCount": { "$ref": "#/$defs/boundedCount" },
+    "missingReplicaCount": { "$ref": "#/$defs/replicaCount" },
+    "unexpectedReplicaCount": { "$ref": "#/$defs/boundedCount" },
+    "duplicateReplicaCount": { "$ref": "#/$defs/replicaCount" },
+    "divergentArtifactCount": { "$ref": "#/$defs/boundedCount" },
+    "divergentPolicyCount": { "$ref": "#/$defs/boundedCount" },
+    "divergentProtocolCount": { "$ref": "#/$defs/boundedCount" },
+    "divergentRotationCount": { "$ref": "#/$defs/boundedCount" },
+    "corruptReplicaCount": { "$ref": "#/$defs/boundedCount" },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "nextLeaseExpiryAt": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "format": "date-time" }
+      ]
+    },
+    "activationBlockers": { "$ref": "#/$defs/blockers" },
+    "convergenceBlockers": { "$ref": "#/$defs/blockers" }
+  },
+  "$defs": {
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    },
+    "boundedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 128
+    },
+    "blockers": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+      }
+    }
+  }
+}

@@ -18,8 +18,10 @@
 > Stage 4 证书轮换状态校正：database-clock durable generation floor 已通过统一 runtime 接入 12 条
 > stable live transport，严格执行“签名/材料验真 -> durable accept -> local stage”，并支持 baseline ancestry
 > 验证、active/pending 重启恢复和 exact replay 修复。固定基数 health/capability 只声明 durable local
-> readiness；事件分发、逐副本 acknowledgement 与 fleet convergence proof 尚未闭合，因此 production
-> readiness 继续关闭。
+> readiness。后续已补齐精确 replica inventory/process-start lease、`STAGED/ACTIVE/FAILED` ACK、
+> all-replica/fenced-quorum 双判定、单 active fleet、外部 inventory revision/downgrade floor 与严格 Schema
+> 的数据库 convergence kernel；runtime heartbeat、事件分发、activation/serving fence 和独立 convergence
+> proof 尚未接线，因此 production readiness 继续关闭。
 
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
@@ -119,8 +121,10 @@ properties、test/staging 配置、demo preflight、dynamic inventory v3、exter
 capability v4、固定基数 health 与 Tool Studio projection 同步闭合。87 项产品聚焦测试与
 3669 项全量测试全绿。静态证书身份绑定已产品化；restart-free rotation 已从原子 TLS kernel
 推进到 12 条 test/staging 产品链路的严格事件、M-of-N 信任、受控材料目录、floor-first durable
-generation、重启恢复、固定基数 health/capability 和 demo preflight，本轮 56 项聚焦验证全绿。
-企业 CA 事件分发、逐副本 acknowledgement/convergence、吊销/OCSP/CRL、HSM custody 与生产
+generation、重启恢复、固定基数 health/capability 和 demo preflight，本轮 56 项聚焦验证全绿；下一子步
+又冻结受治理 replica inventory、逐副本 ACK、quorum/all-replica threshold 与数据库 convergence kernel，
+9 项真实数据库测试和扩展后的 6 项 Schema 门禁全绿。企业 CA 事件分发、runtime ACK heartbeat、
+activation/serving fence、最终 convergence proof、吊销/OCSP/CRL、HSM custody 与生产
 数据库/HA/DR/chaos 认证仍未闭合，不能据此宣称企业 PKI 已开放。验证见
 [certificate identity and rotation kernel verification](resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md)。
 
