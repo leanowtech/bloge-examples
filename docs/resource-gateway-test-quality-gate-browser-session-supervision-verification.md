@@ -33,7 +33,8 @@ JUnit 线程中，并且把 `service.stop()`、迟到 session cleanup 和正常 
     阶段被中断后只在独立 daemon 上异步发起 force-close，立即恢复 interrupt 并返回闭集错误。
 11. ChromeDriver capture 必须以 executable 与 frozen port argument 唯一定位，并钉住 PID、start instant、
     command 以及当时可见的后代；graceful success 需证明这些身份都已退出，force-close 需先复验身份再
-    终止，不能仅凭可复用 PID 杀进程。
+    终止，不能仅凭可复用 PID 杀进程。start instant 改变代表 PID 已被替换，不得继续操作；同一 start
+    instant 下 command 不匹配或身份属性暂不可见则失败关闭，不能误当成原进程已经退出。
 
 ## 3. 实现边界
 
@@ -91,16 +92,23 @@ Surefire 运行中被另一 Maven 编译重写 `target/test-classes` 并产生�
 形成进程退出证据。修复后的同一真实用例再次耗时约 40 秒，实际越过 graceful 边界后仍成功收敛，20 项
 联合门禁全绿，随后 OS 扫描没有 ChromeDriver、headless Chrome 或夹具进程残留。
 
-修复提交 `21c7cef5` 又创建不共享 `target` 的 detached worktree 并执行完整门禁：
+提交 `e73ed61d` 创建不共享 `target` 的 detached worktree 并执行完整门禁：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
 结果为 3921 tests，0 failures、0 errors、2 个条件浏览器跳过，Spring Boot 可执行 JAR 重打包成功，总耗时
-7 分 40 秒。其中 `VisualAuthoringBrowserDomTest` 为 34 tests、0 failures、0 errors、2 skips；launcher、
-closer 与 process-scope 19 项内核测试全部执行且全绿。独立解析 446 份 Surefire XML 得到相同汇总，
-构建退出后没有受监督进程残留。该结果是本次生命周期修复的最终全量基线。
+8 分 04 秒。其中 `VisualAuthoringBrowserDomTest` 为 34 tests、0 failures、0 errors、2 skips；launcher、
+closer 与 process-scope 19 项内核测试全部执行且全绿。独立解析 446 份 Surefire XML 得到相同汇总，制品
+大小为 39,339,813 字节；构建退出后没有 ChromeDriver、headless Chrome 或进程夹具残留。
+
+后续提交 `195dd9e2` 进一步把 start instant 变化的 `REPLACED` 与同一进程 command 异常的
+`ATTRIBUTE_MISMATCH` 分开：前者停止追踪且绝不杀死复用 PID，后者与身份属性暂不可见都继续失败关闭。
+当前 HEAD 的 `ScopedProcessTreeTest,BoundedBrowserSessionCloserTest` 聚焦门禁为 12 tests、0 failures、
+0 errors、0 skips；`ScopedProcessTree` 的 package JavaDoc 以 `--release 25 -Werror -Xdoclint:all` 校验为
+0 warnings、0 errors。由于这一步尚未重新执行完整 `clean verify`，当前严格全量基线仍是其父提交
+`e73ed61d`，不能把聚焦门禁外推为新提交的全量证明。
 
 ## 5. 未完成边界
 
