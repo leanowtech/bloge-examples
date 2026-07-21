@@ -64,6 +64,7 @@ public final class TestSuiteStabilityExternalSequenceAnchorHealth implements Hea
                             ? "" : roots.lastSuccessfulRefreshAt().toString());
             details.put("bootstrapRootRefreshSuccessCount", roots.refreshSuccessCount());
             details.put("bootstrapRootRefreshFailureCount", roots.refreshFailureCount());
+            details.put("transportSecurity", anchor.transportSecurity().asMap());
             return (snapshot.available() ? Health.up() : Health.down())
                     .withDetails(Map.copyOf(details)).build();
         } catch (RuntimeException unavailable) {

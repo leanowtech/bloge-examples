@@ -82,6 +82,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -103,9 +104,51 @@ public class TestRuntimeConfiguration {
     private static final String RECOVERY_FLEET_SCOPE_PROPERTY =
             ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
                     .DynamicInventoryProperties.PREFIX + ".deployment-scope-id";
+    private static final String BOOTSTRAP_ROOT_PUBLICATION_PREFIX =
+            ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration.Properties.PREFIX;
+    private static final List<ControlPlaneSource> CONTROL_PLANE_SOURCES = List.of(
+            controlPlaneSource(BOOTSTRAP_ROOT_PUBLICATION_PREFIX,
+                    BOOTSTRAP_ROOT_PUBLICATION_PREFIX + ".transport"),
+            controlPlaneSource(
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
+                            .FleetProperties.PREFIX,
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                            .DynamicInventoryProperties.PREFIX,
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                            .DynamicInventoryProperties.PREFIX + ".transport"),
+            controlPlaneSource(
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
+                            .FleetProperties.PREFIX,
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                            .DynamicInventoryProperties.PREFIX,
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                            .ManagedTrustRootProperties.PREFIX,
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                            .ManagedTrustRootProperties.PREFIX + ".transport"),
+            notarySource(TEST_SECRET_EXTERNAL_ANCHOR_PREFIX),
+            managedTrustSource(TEST_SECRET_EXTERNAL_ANCHOR_PREFIX),
+            bootstrapRootSource(TEST_SECRET_EXTERNAL_ANCHOR_PREFIX),
+            notarySource(SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX),
+            managedTrustSource(SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX),
+            bootstrapRootSource(SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX),
+            notarySource(RECOVERY_FLEET_EXTERNAL_ANCHOR_PREFIX),
+            managedTrustSource(RECOVERY_FLEET_EXTERNAL_ANCHOR_PREFIX),
+            bootstrapRootSource(RECOVERY_FLEET_EXTERNAL_ANCHOR_PREFIX));
 
     /** Creates the profile-gated Spring composition root. */
     public TestRuntimeConfiguration() {
+    }
+
+    /**
+     * Supplies the default no-cache environment resolver for authenticated control-plane sources.
+     *
+     * <p>Enterprise deployments may replace it with one Vault, KMS, or workload-identity backed
+     * resolver. Secret values never enter Spring configuration binding.</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean(ControlPlaneHttpTransport.SecretResolver.class)
+    ControlPlaneHttpTransport.SecretResolver controlPlaneHttpTransportSecretResolver() {
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport.EnvironmentSecretResolver();
     }
 
     @Bean(destroyMethod = "close")
@@ -1484,7 +1527,8 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-receipt-lifetime-seconds:15}")
             long maximumReceiptLifetimeSeconds,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.allow-insecure-loopback:false}")
-            boolean allowInsecureLoopback) {
+            boolean allowInsecureLoopback,
+            ControlPlaneHttpTransport.SecretResolver secretResolver) {
         int profileMinimumFaults = Arrays.asList(environment.getActiveProfiles())
                 .contains("staging") ? 1 : 0;
         int effectiveMinimumFaults = Math.max(minimumFaults, profileMinimumFaults);
@@ -1498,7 +1542,8 @@ public class TestRuntimeConfiguration {
                 TEST_SECRET_EXTERNAL_ANCHOR_PREFIX,
                 "test-secret", scopeId, trustDomain, anchorSetId, signatureThreshold,
                 maximumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
-                clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback));
+                clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback,
+                secretResolver));
     }
 
     /** Exposes endpoint- and key-free health for test-secret external non-equivocation. */
@@ -2755,7 +2800,8 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.maximum-receipt-lifetime-seconds:15}")
             long maximumReceiptLifetimeSeconds,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.allow-insecure-loopback:false}")
-            boolean allowInsecureLoopback) {
+            boolean allowInsecureLoopback,
+            ControlPlaneHttpTransport.SecretResolver secretResolver) {
         int profileMinimumFaults = Arrays.asList(environment.getActiveProfiles())
                 .contains("staging") ? 1 : 0;
         int effectiveMinimumFaults = Math.max(minimumFaults, profileMinimumFaults);
@@ -2769,7 +2815,8 @@ public class TestRuntimeConfiguration {
                 SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX,
                 "suite-stability", scopeId, trustDomain, anchorSetId, signatureThreshold,
                 maximumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
-                clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback);
+                clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback,
+                secretResolver);
     }
 
     /** Exposes endpoint- and key-free health for the external non-equivocation quorum. */
@@ -3277,7 +3324,8 @@ public class TestRuntimeConfiguration {
             long requestTimeoutMillis,
             long clockSkewSeconds,
             long maximumReceiptLifetimeSeconds,
-            boolean allowInsecureLoopback) {
+            boolean allowInsecureLoopback,
+            ControlPlaneHttpTransport.SecretResolver secretResolver) {
         boolean staging = Arrays.asList(environment.getActiveProfiles()).contains("staging");
         boolean managed = Boolean.TRUE.equals(environment.getProperty(
                 prefix + ".managed-trust.enabled", Boolean.class, false));
@@ -3304,19 +3352,74 @@ public class TestRuntimeConfiguration {
             throw new IllegalStateException("Staging " + domainLabel
                     + " external anchor requires managed bootstrap-root trust");
         }
+        String notaryTransportPrefix = prefix + ".transport";
+        RecoveryFleetPublicationTransportProperties notaryTransportProperties =
+                controlPlaneTransportProperties(environment, notaryTransportPrefix);
+        if (staging && (!notaryTransportProperties.enabled()
+                || !notaryTransportProperties.required())) {
+            throw new IllegalStateException("Staging " + domainLabel
+                    + " external notaries require pinned mutual TLS");
+        }
+        if (notaryTransportProperties.enabled() && allowInsecureLoopback) {
+            throw new IllegalStateException("Authenticated " + domainLabel
+                    + " external notaries require HTTPS");
+        }
+        requireIndependentControlPlaneIdentity(
+                environment, notaryTransportPrefix, notaryTransportProperties);
+        ControlPlaneHttpTransport notaryTransport = notaryTransportProperties.create(
+                Objects.requireNonNull(secretResolver, "secretResolver"));
         var anchorSettings = new HttpTestSuiteStabilityExternalSequenceAnchor.Settings(
                 Duration.ofMillis(requestTimeoutMillis), Duration.ofSeconds(clockSkewSeconds),
                 Duration.ofSeconds(maximumReceiptLifetimeSeconds), allowInsecureLoopback);
         if (!managed) {
             return HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
                     objectMapper, trustDomain, anchorSetId, signatureThreshold, maximumFaults,
-                    authorityKeysJson, endpointsJson, anchorSettings);
+                    authorityKeysJson, endpointsJson, anchorSettings, notaryTransport);
         }
         if (!emptyJsonArray(objectMapper, authorityKeysJson)) {
             throw new IllegalStateException("Managed " + domainLabel
                     + " external anchor forbids static notary keys");
         }
         try {
+            String managedTransportPrefix = prefix + ".managed-trust.transport";
+            String bootstrapTransportPrefix = prefix
+                    + ".managed-trust.bootstrap-roots.transport";
+            RecoveryFleetPublicationTransportProperties managedTransportProperties =
+                    controlPlaneTransportProperties(environment, managedTransportPrefix);
+            RecoveryFleetPublicationTransportProperties bootstrapTransportProperties =
+                    managedBootstrapRoots
+                            ? controlPlaneTransportProperties(
+                            environment, bootstrapTransportPrefix)
+                            : RecoveryFleetPublicationTransportProperties.disabled();
+            boolean trustAllowInsecureLoopback = Boolean.TRUE.equals(environment.getProperty(
+                    prefix + ".managed-trust.allow-insecure-loopback",
+                    Boolean.class, false));
+            boolean bootstrapAllowInsecureLoopback = Boolean.TRUE.equals(environment.getProperty(
+                    prefix + ".managed-trust.bootstrap-roots.allow-insecure-loopback",
+                    Boolean.class, false));
+            if (staging && (!managedTransportProperties.enabled()
+                    || !managedTransportProperties.required()
+                    || !bootstrapTransportProperties.enabled()
+                    || !bootstrapTransportProperties.required())) {
+                throw new IllegalStateException("Staging " + domainLabel
+                        + " managed trust sources require pinned mutual TLS");
+            }
+            if (managedTransportProperties.enabled() && trustAllowInsecureLoopback
+                    || bootstrapTransportProperties.enabled()
+                    && bootstrapAllowInsecureLoopback) {
+                throw new IllegalStateException("Authenticated " + domainLabel
+                        + " managed trust sources require HTTPS");
+            }
+            requireIndependentControlPlaneIdentity(
+                    environment, managedTransportPrefix, managedTransportProperties);
+            if (managedBootstrapRoots) {
+                requireIndependentControlPlaneIdentity(
+                        environment, bootstrapTransportPrefix, bootstrapTransportProperties);
+            }
+            ControlPlaneHttpTransport managedTransport = managedTransportProperties.create(
+                    Objects.requireNonNull(secretResolver, "secretResolver"));
+            ControlPlaneHttpTransport bootstrapTransport = bootstrapTransportProperties.create(
+                    secretResolver);
             String trustRootSetId = environment.getProperty(
                     prefix + ".managed-trust.trust-root-set-id", "");
             String bootstrapTrustDomain = environment.getProperty(
@@ -3350,9 +3453,6 @@ public class TestRuntimeConfiguration {
             long minimumRemainingValiditySeconds = environment.getProperty(
                     prefix + ".managed-trust.minimum-remaining-validity-seconds",
                     Long.class, 30L);
-            boolean trustAllowInsecureLoopback = Boolean.TRUE.equals(environment.getProperty(
-                    prefix + ".managed-trust.allow-insecure-loopback",
-                    Boolean.class, false));
             if (staging && trustAllowInsecureLoopback) {
                 throw new IllegalStateException("Staging " + domainLabel
                         + " external anchor requires an HTTPS managed-trust publication");
@@ -3391,11 +3491,11 @@ public class TestRuntimeConfiguration {
                 ExternalSequenceAnchorBootstrapRootTrustStore rootStore =
                         buildBootstrapRootTrustStore(objectMapper, environment, database,
                                 prefix, domainLabel, staging, scopeId, trustRootSetId,
-                                bootstrapTrustDomain, trustDomain);
+                                bootstrapTrustDomain, trustDomain, bootstrapTransport);
                 try {
                     trustStore = new DynamicExternalSequenceAnchorReceiptTrustStore(
                             objectMapper, binding, notaryPolicies, rootStore, floor,
-                            trustSettings);
+                            trustSettings, managedTransport);
                 } catch (RuntimeException invalid) {
                     rootStore.close();
                     throw invalid;
@@ -3404,12 +3504,14 @@ public class TestRuntimeConfiguration {
                 trustStore = new DynamicExternalSequenceAnchorReceiptTrustStore(
                         objectMapper, binding, notaryPolicies, bootstrapThreshold,
                         ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
-                                objectMapper, bootstrapKeysJson), floor, trustSettings);
+                                objectMapper, bootstrapKeysJson), floor, trustSettings,
+                        managedTransport);
             }
             try {
                 return HttpTestSuiteStabilityExternalSequenceAnchor.fromTrustStore(
                         objectMapper, trustDomain, anchorSetId, signatureThreshold,
-                        maximumFaults, trustStore, endpointsJson, anchorSettings);
+                        maximumFaults, trustStore, endpointsJson, anchorSettings,
+                        notaryTransport);
             } catch (RuntimeException invalid) {
                 trustStore.close();
                 throw invalid;
@@ -3440,6 +3542,29 @@ public class TestRuntimeConfiguration {
             String trustRootSetId,
             String bootstrapTrustDomain,
             String notaryTrustDomain) {
+        return buildBootstrapRootTrustStore(objectMapper, environment, database,
+                externalAnchorPrefix, domainLabel, staging, scopeId, trustRootSetId,
+                bootstrapTrustDomain, notaryTrustDomain,
+                new SystemTrustRecoveryFleetPublicationTransport());
+    }
+
+    /**
+     * Builds one complete-chain view with an explicit authenticated bundle-source transport.
+     *
+     * @param transport frozen bundle-source trust and client-identity policy
+     */
+    static ExternalSequenceAnchorBootstrapRootTrustStore buildBootstrapRootTrustStore(
+            ObjectMapper objectMapper,
+            Environment environment,
+            TestRuntimeDatabase database,
+            String externalAnchorPrefix,
+            String domainLabel,
+            boolean staging,
+            String scopeId,
+            String trustRootSetId,
+            String bootstrapTrustDomain,
+            String notaryTrustDomain,
+            ControlPlaneHttpTransport transport) {
         String prefix = externalAnchorPrefix + ".managed-trust.bootstrap-roots";
         String genesisJson = environment.getProperty(prefix + ".genesis-json", "");
         String acceptedPolicies = environment.getProperty(
@@ -3505,7 +3630,7 @@ public class TestRuntimeConfiguration {
                         Duration.ofSeconds(refreshIntervalSeconds),
                         Duration.ofSeconds(maximumSnapshotAgeSeconds),
                         Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
-                        allowInsecureLoopback));
+                        allowInsecureLoopback), transport);
     }
 
     /** Rejects accidental trust-domain or durable-floor aliasing between product domains. */
@@ -3559,6 +3684,90 @@ public class TestRuntimeConfiguration {
                 throw new IllegalStateException("External-anchor product domains must not share "
                         + "trust domains or root floors");
             }
+        }
+    }
+
+    private static RecoveryFleetPublicationTransportProperties
+            controlPlaneTransportProperties(Environment environment, String prefix) {
+        return new RecoveryFleetPublicationTransportProperties(
+                Boolean.TRUE.equals(environment.getProperty(
+                        prefix + ".enabled", Boolean.class, false)),
+                Boolean.TRUE.equals(environment.getProperty(
+                        prefix + ".required", Boolean.class, false)),
+                environment.getProperty(prefix + ".trust-store-path", ""),
+                environment.getProperty(prefix + ".trust-store-password-ref", ""),
+                environment.getProperty(prefix + ".client-key-store-path", ""),
+                environment.getProperty(prefix + ".client-key-store-password-ref", ""),
+                environment.getProperty(prefix + ".server-spki-pins", ""));
+    }
+
+    private static void requireIndependentControlPlaneIdentity(
+            Environment environment,
+            String currentTransportPrefix,
+            RecoveryFleetPublicationTransportProperties current) {
+        for (ControlPlaneSource source : CONTROL_PLANE_SOURCES) {
+            if (source.transportPrefix().equals(currentTransportPrefix)
+                    || !source.enabled(environment)) {
+                continue;
+            }
+            RecoveryFleetPublicationTransportProperties other =
+                    controlPlaneTransportProperties(environment, source.transportPrefix());
+            if (current.sharesClientIdentityWith(other)) {
+                throw new IllegalStateException(
+                        "Control-plane sources require independent client identities");
+            }
+        }
+    }
+
+    private static ControlPlaneSource notarySource(String anchorPrefix) {
+        return controlPlaneSource(anchorPrefix, anchorPrefix + ".transport");
+    }
+
+    private static ControlPlaneSource managedTrustSource(String anchorPrefix) {
+        String owner = anchorPrefix + ".managed-trust";
+        return new ControlPlaneSource(List.of(anchorPrefix, owner), owner + ".transport");
+    }
+
+    private static ControlPlaneSource bootstrapRootSource(String anchorPrefix) {
+        String owner = anchorPrefix + ".managed-trust.bootstrap-roots";
+        return new ControlPlaneSource(List.of(
+                anchorPrefix, anchorPrefix + ".managed-trust", owner),
+                owner + ".transport");
+    }
+
+    private static ControlPlaneSource controlPlaneSource(
+            String ownerPrefix,
+            String transportPrefix) {
+        return new ControlPlaneSource(List.of(ownerPrefix), transportPrefix);
+    }
+
+    private static ControlPlaneSource controlPlaneSource(
+            String firstOwnerPrefix,
+            String secondOwnerPrefix,
+            String transportPrefix) {
+        return new ControlPlaneSource(
+                List.of(firstOwnerPrefix, secondOwnerPrefix), transportPrefix);
+    }
+
+    private static ControlPlaneSource controlPlaneSource(
+            String firstOwnerPrefix,
+            String secondOwnerPrefix,
+            String thirdOwnerPrefix,
+            String transportPrefix) {
+        return new ControlPlaneSource(
+                List.of(firstOwnerPrefix, secondOwnerPrefix, thirdOwnerPrefix),
+                transportPrefix);
+    }
+
+    private record ControlPlaneSource(List<String> ownerPrefixes, String transportPrefix) {
+
+        private ControlPlaneSource {
+            ownerPrefixes = List.copyOf(ownerPrefixes);
+        }
+
+        private boolean enabled(Environment environment) {
+            return ownerPrefixes.stream().allMatch(prefix -> Boolean.TRUE.equals(
+                    environment.getProperty(prefix + ".enabled", Boolean.class, false)));
         }
     }
 

@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -177,6 +178,26 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void stagingRejectsExternalAnchorTransportDowngradeBeforeBuild() throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        Map<String, String> environment = new HashMap<>(stagingBase());
+        environment.putAll(stagingTestSecretExternalAnchor());
+        builder.environment().putAll(environment);
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Staging test-secret external notary requires pinned mutual TLS.");
+        assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
+    }
+
+    @Test
     void stagingRecoveryFleetRejectsManagedRootDowngradeBeforeBuild() throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
                 "bash", SCRIPT.toString(), "start", "--no-build")
@@ -214,7 +235,7 @@ class VisualCanvasDemoScriptTest {
 
         assertThat(process.exitValue()).isEqualTo(1);
         assertThat(output).contains(
-                "Staging recovery-fleet bootstrap-root publisher requires pinned mutual TLS.");
+                "Staging bootstrap-root publisher requires pinned mutual TLS.");
         assertThat(output).doesNotContain("Building Resource Gateway",
                 "Starting visual canvas");
     }
@@ -244,7 +265,7 @@ class VisualCanvasDemoScriptTest {
 
         assertThat(process.exitValue()).isEqualTo(1);
         assertThat(output).contains(
-                "Staging recovery-fleet inventory source requires pinned mutual TLS.");
+                "Staging inventory source requires pinned mutual TLS.");
         assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
     }
 
@@ -317,5 +338,56 @@ class VisualCanvasDemoScriptTest {
                         "sha256:" + "b".repeat(64)),
                 Map.entry("RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD", "1"),
                 Map.entry("RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON", "[{}]"));
+    }
+
+    private static Map<String, String> stagingTestSecretExternalAnchor() {
+        String fingerprint = "sha256:" + "c".repeat(64);
+        return Map.ofEntries(
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED", "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_SCOPE_ID", "secret-fleet"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_HTTP_ENABLED", "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_JWKS_ENABLED", "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_SIGNED_INVENTORY_ENABLED", "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_REMOTE_ENABLED", "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_ENABLED", "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED", "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN",
+                        "secret-notary.example"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SET_ID",
+                        "secret-notary-set"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD",
+                        "3"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MAXIMUM_FAULTS",
+                        "1"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_AUTHORITY_KEYS_JSON",
+                        "[]"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENDPOINTS_JSON",
+                        "[{}]"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MANAGED_TRUST_ENABLED",
+                        "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_MANAGED_TRUST_REQUIRED",
+                        "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_URI",
+                        "https://notary-trust.example/current"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_ROOT_SET_ID",
+                        "secret-notary-roots"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_TRUST_DOMAIN",
+                        "secret-root.example"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_POLICY_FINGERPRINTS",
+                        fingerprint),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_THRESHOLD",
+                        "0"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_KEYS_JSON",
+                        "[]"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOTS_ENABLED",
+                        "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOTS_REQUIRED",
+                        "true"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_GENESIS_JSON",
+                        "{}"),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_POLICY_FINGERPRINTS",
+                        fingerprint),
+                Map.entry("RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_BUNDLE_URI",
+                        "https://root-chain.example/current"));
     }
 }

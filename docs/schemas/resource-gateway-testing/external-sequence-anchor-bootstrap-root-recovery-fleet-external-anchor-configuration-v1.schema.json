@@ -5,7 +5,7 @@
   "description": "Public-only challenge-bound notary quorum, managed receipt trust, and complete bootstrap-root chain configuration.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["enabled", "required", "managed-trust"],
+  "required": ["enabled", "required", "transport", "managed-trust"],
   "properties": {
     "enabled": { "type": "boolean" },
     "required": { "type": "boolean" },
@@ -20,6 +20,7 @@
     "clock-skew-seconds": { "type": "integer", "minimum": 0, "maximum": 300 },
     "maximum-receipt-lifetime-seconds": { "type": "integer", "minimum": 1, "maximum": 60 },
     "allow-insecure-loopback": { "type": "boolean" },
+    "transport": { "$ref": "#/$defs/publicationTransport" },
     "managed-trust": { "$ref": "#/$defs/managedTrust" }
   },
   "$defs": {
@@ -52,10 +53,79 @@
       "pattern": "^(https://[^?#]+|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]{1,5})?/[^?#]*)$",
       "maxLength": 2048
     },
+    "secretReference": {
+      "type": "string",
+      "pattern": "^(|[a-z][a-z0-9+.-]{1,31}:[^#\\s]{1,480})$",
+      "maxLength": 512
+    },
+    "publicationTransport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled", "required", "trust-store-path", "trust-store-password-ref",
+        "client-key-store-path", "client-key-store-password-ref", "server-spki-pins"
+      ],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "required": { "type": "boolean" },
+        "trust-store-path": { "type": "string", "pattern": "^(|/.*)$", "maxLength": 4096 },
+        "trust-store-password-ref": { "$ref": "#/$defs/secretReference" },
+        "client-key-store-path": { "type": "string", "pattern": "^(|/.*)$", "maxLength": 4096 },
+        "client-key-store-password-ref": { "$ref": "#/$defs/secretReference" },
+        "server-spki-pins": {
+          "type": "string",
+          "pattern": "^(|sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,15})$",
+          "maxLength": 1151
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "required": { "const": true } }, "required": ["required"] },
+          "then": { "properties": { "enabled": { "const": true } } }
+        },
+        {
+          "if": { "properties": { "enabled": { "const": false } }, "required": ["enabled"] },
+          "then": {
+            "properties": {
+              "required": { "const": false },
+              "trust-store-path": { "const": "" },
+              "trust-store-password-ref": { "const": "" },
+              "client-key-store-path": { "const": "" },
+              "client-key-store-password-ref": { "const": "" },
+              "server-spki-pins": { "const": "" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+          "then": {
+            "properties": {
+              "client-key-store-path": { "minLength": 2 },
+              "client-key-store-password-ref": { "minLength": 4 },
+              "server-spki-pins": { "minLength": 71 }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "trust-store-path": { "const": "" },
+                  "trust-store-password-ref": { "const": "" }
+                }
+              },
+              {
+                "properties": {
+                  "trust-store-path": { "minLength": 2 },
+                  "trust-store-password-ref": { "minLength": 4 }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
     "managedTrust": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "required", "bootstrap-roots"],
+      "required": ["enabled", "required", "transport", "bootstrap-roots"],
       "properties": {
         "enabled": { "type": "boolean" },
         "required": { "type": "boolean" },
@@ -73,6 +143,7 @@
         "clock-skew-seconds": { "type": "integer", "minimum": 0, "maximum": 300 },
         "minimum-remaining-validity-seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
         "allow-insecure-loopback": { "type": "boolean" },
+        "transport": { "$ref": "#/$defs/publicationTransport" },
         "bootstrap-roots": { "$ref": "#/$defs/bootstrapRoots" }
       },
       "allOf": [
@@ -89,7 +160,7 @@
               "request-timeout-millis", "unknown-key-refresh-interval-seconds",
               "maximum-snapshot-age-seconds", "maximum-publication-lifetime-seconds",
               "clock-skew-seconds", "minimum-remaining-validity-seconds",
-              "allow-insecure-loopback", "bootstrap-roots"
+              "allow-insecure-loopback", "transport", "bootstrap-roots"
             ]
           }
         },
@@ -130,7 +201,7 @@
     "bootstrapRoots": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "required"],
+      "required": ["enabled", "required", "transport"],
       "properties": {
         "enabled": { "type": "boolean" },
         "required": { "type": "boolean" },
@@ -145,7 +216,8 @@
         "clock-skew-seconds": { "type": "integer", "minimum": 0, "maximum": 300 },
         "minimum-remaining-validity-seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
         "maximum-transitions": { "type": "integer", "minimum": 1, "maximum": 1024 },
-        "allow-insecure-loopback": { "type": "boolean" }
+        "allow-insecure-loopback": { "type": "boolean" },
+        "transport": { "$ref": "#/$defs/publicationTransport" }
       },
       "allOf": [
         {
@@ -161,7 +233,7 @@
               "unknown-key-refresh-interval-seconds", "maximum-snapshot-age-seconds",
               "maximum-root-lifetime-seconds", "clock-skew-seconds",
               "minimum-remaining-validity-seconds", "maximum-transitions",
-              "allow-insecure-loopback"
+              "allow-insecure-loopback", "transport"
             ]
           }
         }
@@ -180,7 +252,7 @@
           "trust-domain", "anchor-set-id", "signature-threshold", "maximum-faults",
           "minimum-faults", "endpoints-json", "request-timeout-millis",
           "clock-skew-seconds", "maximum-receipt-lifetime-seconds",
-          "allow-insecure-loopback", "managed-trust"
+          "allow-insecure-loopback", "transport", "managed-trust"
         ],
         "properties": { "signature-threshold": { "minimum": 1 } }
       }

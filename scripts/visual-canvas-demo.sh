@@ -165,6 +165,13 @@ Environment:
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_ENDPOINTS_JSON  required non-empty notary array
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_MANAGED_TRUST_ENABLED  required true for staging fleet
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_BOOTSTRAP_ROOTS_ENABLED  required true for staging fleet
+  <EXTERNAL_ANCHOR_PREFIX>_TRANSPORT_ENABLED  required true for staging notary calls
+  <EXTERNAL_ANCHOR_PREFIX>_TRUST_TRANSPORT_ENABLED  required true for managed trust reads
+  <EXTERNAL_ANCHOR_PREFIX>_BOOTSTRAP_ROOT_TRANSPORT_ENABLED  required true for root-bundle reads
+  Each external-anchor transport also requires REQUIRED=true, a dedicated absolute client
+  PKCS#12 path, an env:VARIABLE password reference, canonical sha256 SPKI pins, and an optional
+  complete private trust-store path/password-reference pair. Client identities must not be reused
+  across publisher, inventory, trust-root, notary, managed-trust, or root-bundle sources.
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS  default: 10; 1..300
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS      default: 30; 3..900 and >= 3x heartbeat
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS  default: 86400; 3600..2592000
@@ -365,6 +372,12 @@ validate_managed_external_anchor_trust() {
         echo "Managed ${label} bootstrap-root timing bounds are invalid." >&2
         return 1
     fi
+    validate_control_plane_transport "${prefix}_TRANSPORT" \
+        "${label} external notary" || return 1
+    validate_control_plane_transport "${prefix}_TRUST_TRANSPORT" \
+        "${label} managed-trust source" || return 1
+    validate_control_plane_transport "${prefix}_BOOTSTRAP_ROOT_TRANSPORT" \
+        "${label} bootstrap-root source" || return 1
 }
 
 validate_control_plane_transport() {
@@ -379,7 +392,7 @@ validate_control_plane_transport() {
     local pins_var="${prefix}_SERVER_SPKI_PINS"
 
     if ! truthy "${!enabled_var:-false}" || ! truthy "${!required_var:-true}"; then
-        echo "Staging recovery-fleet ${label} requires pinned mutual TLS." >&2
+        echo "Staging ${label} requires pinned mutual TLS." >&2
         return 1
     fi
     if [ -z "${!client_path_var:-}" ] || [ -z "${!client_ref_var:-}" ] ||
@@ -391,49 +404,106 @@ validate_control_plane_transport() {
     fi
     case "${!client_path_var}" in
         /*) ;;
-        *) echo "Recovery-fleet ${label} client key store must use an absolute path." >&2; return 1 ;;
+        *) echo "${label} client key store must use an absolute path." >&2; return 1 ;;
     esac
     if [ ! -f "${!client_path_var}" ] || [ ! -r "${!client_path_var}" ]; then
-        echo "Recovery-fleet ${label} client key store is not readable." >&2
+        echo "${label} client key store is not readable." >&2
         return 1
     fi
     if [ -n "${!trust_path_var:-}" ]; then
         case "${!trust_path_var}" in
             /*) ;;
-            *) echo "Recovery-fleet ${label} trust store must use an absolute path." >&2; return 1 ;;
+            *) echo "${label} trust store must use an absolute path." >&2; return 1 ;;
         esac
         if [ ! -f "${!trust_path_var}" ] || [ ! -r "${!trust_path_var}" ]; then
-            echo "Recovery-fleet ${label} trust store is not readable." >&2
+            echo "${label} trust store is not readable." >&2
             return 1
         fi
     fi
     local client_ref="${!client_ref_var}"
     if ! printf '%s' "${client_ref}" | grep -Eq '^env:[A-Z][A-Z0-9_]{0,127}$'; then
-        echo "Recovery-fleet ${label} client credential must be an env:VARIABLE reference." >&2
+        echo "${label} client credential must be an env:VARIABLE reference." >&2
         return 1
     fi
     local client_secret="${client_ref#env:}"
     if [ -z "${!client_secret:-}" ]; then
-        echo "Recovery-fleet ${label} client credential is unavailable." >&2
+        echo "${label} client credential is unavailable." >&2
         return 1
     fi
     if [ -n "${!trust_ref_var:-}" ]; then
         local trust_ref="${!trust_ref_var}"
         if ! printf '%s' "${trust_ref}" | grep -Eq '^env:[A-Z][A-Z0-9_]{0,127}$'; then
-            echo "Recovery-fleet ${label} trust-store credential must be an env:VARIABLE reference." >&2
+            echo "${label} trust-store credential must be an env:VARIABLE reference." >&2
             return 1
         fi
         local trust_secret="${trust_ref#env:}"
         if [ -z "${!trust_secret:-}" ]; then
-            echo "Recovery-fleet ${label} trust-store credential is unavailable." >&2
+            echo "${label} trust-store credential is unavailable." >&2
             return 1
         fi
     fi
     if ! printf '%s' "${!pins_var}" |
         grep -Eq '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,15}$'; then
-        echo "Recovery-fleet ${label} SPKI pins are invalid." >&2
+        echo "${label} SPKI pins are invalid." >&2
         return 1
     fi
+}
+
+validate_control_plane_identity_isolation() {
+    local -a prefixes=()
+    if truthy "${RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENABLED:-false}"; then
+        prefixes+=("RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT")
+    fi
+    if truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED:-false}" &&
+        truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED:-false}"; then
+        prefixes+=("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT")
+        if truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOTS_ENABLED:-false}"; then
+            prefixes+=("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT")
+        fi
+        if truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_ENABLED:-false}"; then
+            prefixes+=("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_TRANSPORT")
+            if truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_MANAGED_TRUST_ENABLED:-false}"; then
+                prefixes+=("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_TRUST_TRANSPORT")
+                if truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_BOOTSTRAP_ROOTS_ENABLED:-false}"; then
+                    prefixes+=("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_BOOTSTRAP_ROOT_TRANSPORT")
+                fi
+            fi
+        fi
+    fi
+
+    local anchor_prefix
+    for anchor_prefix in \
+        "RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR" \
+        "RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR"; do
+        local anchor_enabled_var="${anchor_prefix}_ENABLED"
+        if truthy "${!anchor_enabled_var:-false}"; then
+            prefixes+=("${anchor_prefix}_TRANSPORT")
+            local managed_enabled_var="${anchor_prefix}_MANAGED_TRUST_ENABLED"
+            if truthy "${!managed_enabled_var:-false}"; then
+                prefixes+=("${anchor_prefix}_TRUST_TRANSPORT")
+                local roots_enabled_var="${anchor_prefix}_BOOTSTRAP_ROOTS_ENABLED"
+                if truthy "${!roots_enabled_var:-false}"; then
+                    prefixes+=("${anchor_prefix}_BOOTSTRAP_ROOT_TRANSPORT")
+                fi
+            fi
+        fi
+    done
+
+    local i j
+    for ((i = 0; i < ${#prefixes[@]}; i++)); do
+        local first_path_var="${prefixes[i]}_CLIENT_KEY_STORE_PATH"
+        local first_ref_var="${prefixes[i]}_CLIENT_KEY_STORE_PASSWORD_REF"
+        for ((j = i + 1; j < ${#prefixes[@]}; j++)); do
+            local second_path_var="${prefixes[j]}_CLIENT_KEY_STORE_PATH"
+            local second_ref_var="${prefixes[j]}_CLIENT_KEY_STORE_PASSWORD_REF"
+            if [ -n "${!first_path_var:-}" ] &&
+                [ "${!first_path_var}" = "${!second_path_var:-}" ] &&
+                [ "${!first_ref_var:-}" = "${!second_ref_var:-}" ]; then
+                echo "Control-plane sources require independent client identities." >&2
+                return 1
+            fi
+        done
+    done
 }
 
 validate_recovery_fleet_external_anchor() {
@@ -1175,6 +1245,7 @@ validate_profile_secrets() {
         fi
     fi
     validate_external_anchor_domain_isolation
+    validate_control_plane_identity_isolation
 }
 
 pid_file() {

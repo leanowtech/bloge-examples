@@ -25,6 +25,7 @@ import java.util.Objects;
  * @param clockSkewSeconds accepted signed receipt clock skew
  * @param maximumReceiptLifetimeSeconds maximum signed receipt validity
  * @param allowInsecureLoopback test-profile-only HTTP loopback escape hatch
+ * @param transport authenticated notary endpoint transport
  * @param managedTrust optional restart-free receipt trust source
  */
 public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties(
@@ -41,6 +42,7 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
         Long clockSkewSeconds,
         Long maximumReceiptLifetimeSeconds,
         Boolean allowInsecureLoopback,
+        @NestedConfigurationProperty RecoveryFleetPublicationTransportProperties transport,
         @NestedConfigurationProperty ManagedTrustProperties managedTrust) {
 
     /** Nested prefix shared by profile files, environment variables, and deployment docs. */
@@ -63,13 +65,15 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
         clockSkewSeconds = defaulted(clockSkewSeconds, 5L);
         maximumReceiptLifetimeSeconds = defaulted(maximumReceiptLifetimeSeconds, 15L);
         allowInsecureLoopback = Boolean.TRUE.equals(allowInsecureLoopback);
+        transport = transport == null
+                ? RecoveryFleetPublicationTransportProperties.disabled() : transport;
         managedTrust = managedTrust == null ? ManagedTrustProperties.disabled() : managedTrust;
         if (required && !enabled) {
             throw invalid();
         }
         if (!enabled && configured(trustDomain, anchorSetId, signatureThreshold,
                 maximumFaults, minimumFaults, authorityKeysJson, endpointsJson,
-                allowInsecureLoopback, managedTrust.configured())) {
+                allowInsecureLoopback, transport.configured(), managedTrust.configured())) {
             throw invalid();
         }
         if (enabled && (trustDomain.isBlank() || anchorSetId.isBlank()
@@ -84,20 +88,29 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
         if (enabled && !managedTrust.enabled() && emptyArray(authorityKeysJson)) {
             throw invalid();
         }
+        if (enabled && (transport.enabled() && allowInsecureLoopback
+                || transport.sharesClientIdentityWith(managedTrust.transport())
+                || transport.sharesClientIdentityWith(
+                managedTrust.bootstrapRoots().transport())
+                || managedTrust.transport().sharesClientIdentityWith(
+                managedTrust.bootstrapRoots().transport()))) {
+            throw invalid();
+        }
     }
 
     /** @return disabled configuration with finite timing defaults */
     static ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties disabled() {
         return new ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties(
                 false, false, "", "", 0, 0, 0, "[]", "[]", 3_000L, 5L, 15L,
-                false, ManagedTrustProperties.disabled());
+                false, RecoveryFleetPublicationTransportProperties.disabled(),
+                ManagedTrustProperties.disabled());
     }
 
     /** @return whether any non-default feature configuration is present */
     boolean configured() {
         return required || enabled || configured(trustDomain, anchorSetId, signatureThreshold,
                 maximumFaults, minimumFaults, authorityKeysJson, endpointsJson,
-                allowInsecureLoopback, managedTrust.configured());
+                allowInsecureLoopback, transport.configured(), managedTrust.configured());
     }
 
     private static boolean configured(
@@ -109,10 +122,11 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
             String keys,
             String endpoints,
             boolean insecure,
+            boolean authenticatedTransport,
             boolean managed) {
         return !trustDomain.isBlank() || !anchorSetId.isBlank() || signatureThreshold != 0
                 || maximumFaults != 0 || minimumFaults != 0 || !emptyArray(keys)
-                || !emptyArray(endpoints) || insecure || managed;
+                || !emptyArray(endpoints) || insecure || authenticatedTransport || managed;
     }
 
     /**
@@ -134,6 +148,7 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
      * @param clockSkewSeconds accepted trust-publication clock skew
      * @param minimumRemainingValiditySeconds required usable publication lifetime
      * @param allowInsecureLoopback test-profile-only HTTP loopback escape hatch
+     * @param transport authenticated trust-publication source transport
      * @param bootstrapRoots optional restart-free bootstrap-root chain
      */
     public record ManagedTrustProperties(
@@ -153,6 +168,7 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
             Long clockSkewSeconds,
             Long minimumRemainingValiditySeconds,
             Boolean allowInsecureLoopback,
+            @NestedConfigurationProperty RecoveryFleetPublicationTransportProperties transport,
             @NestedConfigurationProperty BootstrapRootProperties bootstrapRoots) {
 
         /** Nested managed receipt-trust prefix. */
@@ -181,6 +197,8 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
             minimumRemainingValiditySeconds = defaulted(
                     minimumRemainingValiditySeconds, 30L);
             allowInsecureLoopback = Boolean.TRUE.equals(allowInsecureLoopback);
+            transport = transport == null
+                    ? RecoveryFleetPublicationTransportProperties.disabled() : transport;
             bootstrapRoots = bootstrapRoots == null
                     ? BootstrapRootProperties.disabled() : bootstrapRoots;
             if (required && !enabled) {
@@ -189,7 +207,8 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
             if (!enabled && configured(publicationUri, trustRootSetId,
                     bootstrapTrustDomain, acceptedPolicyFingerprints,
                     bootstrapSignatureThreshold, bootstrapAuthorityKeysJson,
-                    allowInsecureLoopback, bootstrapRoots.configured())) {
+                    allowInsecureLoopback, transport.configured(),
+                    bootstrapRoots.configured())) {
                 throw invalid();
             }
             if (enabled && (publicationUri.isBlank() || trustRootSetId.isBlank()
@@ -207,11 +226,15 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
                     || emptyArray(bootstrapAuthorityKeysJson))) {
                 throw invalid();
             }
+            if (enabled && transport.enabled() && allowInsecureLoopback) {
+                throw invalid();
+            }
         }
 
         private static ManagedTrustProperties disabled() {
             return new ManagedTrustProperties(false, false, "", "", "", "", 0,
                     "[]", 30L, 3_000L, 5L, 60L, 86_400L, 5L, 30L, false,
+                    RecoveryFleetPublicationTransportProperties.disabled(),
                     BootstrapRootProperties.disabled());
         }
 
@@ -219,7 +242,8 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
             return required || enabled || configured(publicationUri, trustRootSetId,
                     bootstrapTrustDomain, acceptedPolicyFingerprints,
                     bootstrapSignatureThreshold, bootstrapAuthorityKeysJson,
-                    allowInsecureLoopback, bootstrapRoots.configured());
+                    allowInsecureLoopback, transport.configured(),
+                    bootstrapRoots.configured());
         }
 
         private static boolean configured(
@@ -230,10 +254,11 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
                 int threshold,
                 String keys,
                 boolean insecure,
+                boolean authenticatedTransport,
                 boolean roots) {
             return !uri.isBlank() || !rootSetId.isBlank() || !bootstrapDomain.isBlank()
                     || !policies.isBlank() || threshold != 0 || !emptyArray(keys)
-                    || insecure || roots;
+                    || insecure || authenticatedTransport || roots;
         }
     }
 
@@ -254,6 +279,7 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
      * @param minimumRemainingValiditySeconds required usable head lifetime
      * @param maximumTransitions maximum complete-chain transition count
      * @param allowInsecureLoopback test-profile-only HTTP loopback escape hatch
+     * @param transport authenticated complete-chain bundle source transport
      */
     public record BootstrapRootProperties(
             Boolean enabled,
@@ -269,7 +295,8 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
             Long clockSkewSeconds,
             Long minimumRemainingValiditySeconds,
             Integer maximumTransitions,
-            Boolean allowInsecureLoopback) {
+            Boolean allowInsecureLoopback,
+            @NestedConfigurationProperty RecoveryFleetPublicationTransportProperties transport) {
 
         /** Nested managed bootstrap-root prefix. */
         public static final String PREFIX = ManagedTrustProperties.PREFIX + ".bootstrap-roots";
@@ -292,36 +319,44 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProp
                     minimumRemainingValiditySeconds, 30L);
             maximumTransitions = defaulted(maximumTransitions, 128);
             allowInsecureLoopback = Boolean.TRUE.equals(allowInsecureLoopback);
+            transport = transport == null
+                    ? RecoveryFleetPublicationTransportProperties.disabled() : transport;
             if (required && !enabled) {
                 throw invalid();
             }
             if (!enabled && configured(genesisJson, acceptedPolicyFingerprints, bundleUri,
-                    allowInsecureLoopback)) {
+                    allowInsecureLoopback, transport.configured())) {
                 throw invalid();
             }
             if (enabled && (genesisJson.isBlank() || acceptedPolicyFingerprints.isBlank()
                     || bundleUri.isBlank())) {
                 throw invalid();
             }
+            if (enabled && transport.enabled() && allowInsecureLoopback) {
+                throw invalid();
+            }
         }
 
         private static BootstrapRootProperties disabled() {
             return new BootstrapRootProperties(false, false, "", "", "", 30L, 3_000L,
-                    5L, 60L, 2_592_000L, 5L, 30L, 128, false);
+                    5L, 60L, 2_592_000L, 5L, 30L, 128, false,
+                    RecoveryFleetPublicationTransportProperties.disabled());
         }
 
         private boolean configured() {
             return required || enabled || configured(
                     genesisJson, acceptedPolicyFingerprints, bundleUri,
-                    allowInsecureLoopback);
+                    allowInsecureLoopback, transport.configured());
         }
 
         private static boolean configured(
                 String genesis,
                 String policies,
                 String uri,
-                boolean insecure) {
-            return !genesis.isBlank() || !policies.isBlank() || !uri.isBlank() || insecure;
+                boolean insecure,
+                boolean authenticatedTransport) {
+            return !genesis.isBlank() || !policies.isBlank() || !uri.isBlank() || insecure
+                    || authenticatedTransport;
         }
     }
 

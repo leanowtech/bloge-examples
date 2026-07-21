@@ -204,7 +204,8 @@ class ExternallyAnchoredTestSecretAuthorityServingInventoryFloorTest {
                 "bootstrapRootTransitionCount", "bootstrapRootAuthorityCount",
                 "bootstrapRootActiveAuthorityCount", "bootstrapRootHeadExpiresAt",
                 "bootstrapRootLastSuccessfulRefreshAt",
-                "bootstrapRootRefreshSuccessCount", "bootstrapRootRefreshFailureCount");
+                "bootstrapRootRefreshSuccessCount", "bootstrapRootRefreshFailureCount",
+                "transportSecurity");
         assertThat(health.getDetails())
                 .containsEntry("trustStatus", "UNAVAILABLE")
                 .containsEntry("trustPublicationSequence", 0L)
@@ -223,7 +224,8 @@ class ExternallyAnchoredTestSecretAuthorityServingInventoryFloorTest {
                 .containsEntry("bootstrapRootRefreshSuccessCount", 0L)
                 .containsEntry("bootstrapRootRefreshFailureCount", 0L);
         assertThat(health.getDetails().toString())
-                .doesNotContain("endpoint", "stream", "fingerprint", "authorityId", "key");
+                .doesNotContain("endpoint", "stream", "fingerprint", "authorityId", "key",
+                        "sha256:", "certificate");
 
         anchor.snapshotFails = true;
         assertThat(new TestSecretAuthorityExternalSequenceAnchorHealth(anchor)

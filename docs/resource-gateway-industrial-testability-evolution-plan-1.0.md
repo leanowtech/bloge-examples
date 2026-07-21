@@ -22,10 +22,10 @@
 > publication、双 bootstrap quorum verifier、数据库 durable generation floor、strict HTTPS/ETag
 > refresh、unknown-key single-flight、aggregate health、dynamic inventory consumer、strict Spring
 > 配置、staging downgrade fence、capability v3、配置 Schema 与 metadata 已闭合，test/staging 产品路径
-> 已开放。默认 external/Byzantine publication/root floor、两个业务 source 以及 bootstrap-root
-> publisher 写侧的 pinned mTLS 已闭合；表内“publisher mTLS/pinning 待完成”已被本增量取代。
-> managed notary trust publication、bootstrap-root bundle 等读侧 transport pinning、HSM/KMS、生产
-> 数据库/HA/DR/chaos 认证仍未闭合，因此
+> 已开放。默认 external/Byzantine publication/root floor、两个业务 source、bootstrap-root publisher
+> 写侧，以及 external notary、managed trust publication、bootstrap-root bundle 三条读侧链路的 pinned
+> mTLS 已闭合；表内旧的“publisher/读侧 mTLS/pinning 待完成”均已被本增量取代。自动证书/identity
+> 轮换、HSM/KMS、根源 anti-equivocation 与生产数据库/HA/DR/chaos 认证仍未闭合，因此
 > 不能把 test/staging 路径解读为 production readiness。
 
 本轮将 `bloge.fixtureExecutionServices.v1` 作为 `metadata.executionServices` 的严格保留子协议
@@ -65,8 +65,8 @@ dynamic inventory consumer 已闭合；root generation 变化会使旧 inventory
 downgrade fence、capability v2、配置 Schema/metadata 与 demo preflight，test/staging 产品路径已开放；
 production 路径仍受下述门禁约束。
 provider-confirmed cancellation/process isolation、动态 rebalance、production
-composition、运维配置 metadata/外部告警 SLO、managed notary/bootstrap-root 读侧
-mTLS/pinning、response-key 热轮换、根源 anti-equivocation 与生产认证、HA/chaos/外部 SLO
+composition、运维配置 metadata/外部告警 SLO、企业 PKI/证书自动轮换与吊销、
+response-key 热轮换、根源 anti-equivocation 与生产认证、HA/chaos/外部 SLO
 仍待完成。
 
 本轮进一步把 recovery-fleet 的 publication/witness composite head 与 atomic dual-root head 接入同一
@@ -75,8 +75,10 @@ domain-isolated external sequence anchor port，强制 external-first 后再推�
 和 managed-root publication source 又分别接入 PKIX + hostname verification + SPKI pinning + mTLS，
 默认 demo resolver 只接受 `env:` secret reference，且两个 source 不得复用同一 client identity 配置。
 capability v3、dynamic configuration v2、严格 external-anchor Schema、Spring metadata/health 和 demo
-preflight 已同步。该能力不覆盖 external notary 与 managed-trust/bootstrap-root 读侧 endpoint 自身的
-pinned mTLS、HSM/KMS、
+preflight 已同步。后续又把三个 product domain 的 external notary、managed-trust publication 与
+bootstrap-root bundle 九条读侧链路全部接入独立的 PKIX + hostname + SPKI pin + mTLS policy；staging
+禁止 transport 降级、insecure loopback 和跨任意 control-plane source 的 client identity 复用，test
+保留显式 system-trust 兼容路径。该能力仍不覆盖 HSM/KMS、企业证书签发/吊销/自动轮换、
 publisher/notary HA/gossip 与目标数据库/DR/chaos 认证；验证见
 [recovery fleet transport and non-equivocation verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-transport-and-non-equivocation-verification.md)。
 
@@ -84,9 +86,13 @@ publisher/notary HA/gossip 与目标数据库/DR/chaos 认证；验证见
 staging 必须在 journal/protocol adapter 组装前加载独立 PKCS#12 client identity，并同时通过 PKIX、
 hostname verification、SPKI pinning 与 mTLS；health 只公开四个固定基数传输事实。真实双向 TLS 测试
 证明正确 client principal 可达，错误 pin 与 system-trust/匿名客户端均在 HTTP handler 前失败。
-managed notary trust publication 与 bootstrap-root bundle 读侧仍是下一断点。验证见
+随后完成的读侧 transport 增量复用同一协议，并以真实 TLS 测试证明 notary、managed trust 与
+bootstrap-root source 都会携带各自 client principal；错误 pin 和匿名/system-trust client 在 handler
+前失败，health/capability 仅输出固定布尔结构。验证见
 [bootstrap-root publisher transport verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-publisher-transport-verification.md)。
-完整 Resource Gateway `clean verify` 执行 3589 tests，0 failures、0 errors、2 个条件浏览器跳过；
+完整读侧配置、失败语义与真实 TLS 证据见
+[recovery fleet transport and non-equivocation verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-transport-and-non-equivocation-verification.md)。
+完整 Resource Gateway `clean verify` 执行 3599 tests，0 failures、0 errors、2 个条件浏览器跳过；
 Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功生成 Spring Boot 可执行 JAR；
 独立 test-kit `clean verify`
 执行 230 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR 与 public

@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,5 +53,18 @@ class ExternalSequenceAnchorTransportSecurityTest {
         assertThat(security.bootstrapRootBundle()).get()
                 .extracting(ControlPlaneHttpTransport.Descriptor::serverSpkiPinned)
                 .isEqualTo(true);
+        assertThat(security.asMap().toString())
+                .contains("serverSpkiPinned=true", "mutualTls=true")
+                .doesNotContain("endpoint", "keystore", "secret", "sha256:", "certificate");
+    }
+
+    @Test
+    void descriptorRejectsMalformedTransportProjection() {
+        assertThatThrownBy(() -> new TestSuiteStabilityExternalSequenceAnchor.Descriptor(
+                TestSuiteStabilityExternalSequenceAnchor.Descriptor.SCHEMA_VERSION,
+                true, true, true, true, 4, 3, 1, 4,
+                Map.of("transportSecurity", Map.of("mutualTls", true))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Invalid external sequence-anchor descriptor");
     }
 }

@@ -333,8 +333,10 @@ The smallest staging topology is four independent notaries with three accepted r
 bootstrap roots are themselves restart-free: staging pins one public genesis, replays a complete
 cross-signed root chain from a strict HTTPS bundle, and advances a dedicated durable floor before a
 root head becomes usable. The demo startup script validates this configuration before build or Java
-startup. Ceremony tooling, HSM/KMS custody, mTLS/pinning, authority HA/chaos and DR certification
-remain open.
+startup. Staging also authenticates the external notary, managed receipt-trust publication, and
+complete root-bundle source with separately pinned mutual-TLS identities. Automated certificate
+rotation, HSM/KMS custody, authority HA/chaos, root anti-equivocation, target-database and DR
+certification remain open.
 A changed member topology still
 requires a coordinated new cohort generation.
 See the
@@ -560,10 +562,15 @@ cached inventory instead of extending its trust. The test/staging Spring path no
 product mode under `bootstrap-root-recovery-fleet-dynamic-inventory.trust-roots`. Managed mode
 forbids every static runtime domain, threshold, and key; owns a separate durable root floor and
 aggregate health indicator; and closes inventory before roots. Staging requires dynamic inventory,
-managed roots, independent pinned-mTLS client identities for both sources, external Byzantine
-ordering for the publication and atomic-root streams, and no insecure loopback. Test retains the
-system-trust/static compatibility paths for migration. The demo script checks the same downgrade
-invariants before build, while Spring remains the authoritative gate. See the
+managed roots, external Byzantine ordering for the publication and atomic-root streams, and pinned
+mutual TLS for every control-plane call. Inventory, inventory trust-root, bootstrap-root publisher,
+and each product domain's notary, managed receipt-trust publication, and complete root-bundle source
+must use independent client identity configurations. All links retain PKIX and hostname verification,
+add one to sixteen exact server SPKI pins, and reject insecure loopback. Test retains explicit
+system-trust/static compatibility paths for migration. The demo script checks the same downgrade and
+global identity-isolation invariants before build, while Spring remains the authoritative gate.
+External-anchor descriptor and health surfaces expose only fixed transport booleans, never endpoints,
+paths, secret references, pins, or certificate identities. See the
 [recovery fleet trust-root kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-trust-root-kernel-verification.md)
 and [dynamic trust-root verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-trust-root-verification.md), the
 [managed trust-root Spring verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-managed-trust-root-spring-verification.md), plus the strict
@@ -648,7 +655,8 @@ and strict
 [SLO assessment JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-slo-assessment-v1.schema.json).
 
 Scope, cohort, recovery-fleet inventory/root sources, static-key exclusion, managed-root freshness,
-external-anchor quorum/timing, and lease settings are checked by
+external-anchor quorum/timing, authenticated transport, global client-identity isolation, and lease
+settings are checked by
 `scripts/visual-canvas-demo.sh` before staging startup. A deployment may
 instead contribute one custom
 `TestSuiteStabilityJobAuthorizer` with a ready key-free descriptor. There is no allow-all fallback:

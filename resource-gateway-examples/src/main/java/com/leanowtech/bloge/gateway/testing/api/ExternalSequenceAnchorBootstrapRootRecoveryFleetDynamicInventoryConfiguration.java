@@ -230,6 +230,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
      * @param database isolated durable testing database
      * @param properties strict dynamic inventory and external anchor policy
      * @param validated successful public-only preflight
+     * @param secretResolver deployment control-plane credential resolver
      * @return domain-isolated external sequence authority
      */
     @Bean(destroyMethod = "close")
@@ -245,7 +246,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             Environment environment,
             TestRuntimeDatabase database,
             DynamicInventoryProperties properties,
-            ValidatedDynamicInventoryConfiguration validated) {
+            ValidatedDynamicInventoryConfiguration validated,
+            ControlPlaneHttpTransport.SecretResolver secretResolver) {
         Objects.requireNonNull(validated, "validated");
         var anchor = properties.externalAnchor();
         int profileMinimumFaults = environment.acceptsProfiles(Profiles.of("staging")) ? 1 : 0;
@@ -263,7 +265,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                         anchor.maximumFaults(), anchor.authorityKeysJson(), anchor.endpointsJson(),
                         anchor.requestTimeoutMillis(), anchor.clockSkewSeconds(),
                         anchor.maximumReceiptLifetimeSeconds(),
-                        anchor.allowInsecureLoopback());
+                        anchor.allowInsecureLoopback(), secretResolver);
         return ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor.adapt(
                 shared);
     }

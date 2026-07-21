@@ -255,6 +255,11 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
                 assertThat(descriptor.serverSpkiPinned()).isTrue();
                 assertThat(descriptor.mutualTls()).isTrue();
             });
+            assertThat(anchor.descriptor().properties())
+                    .containsEntry("notaryTransportSystemTrustStore", false)
+                    .containsEntry("notaryTransportPinnedMutualTls", true)
+                    .containsEntry("managedTrustTransportConfigured", false)
+                    .containsEntry("bootstrapRootTransportConfigured", false);
             assertThat(peer.get()).contains("recovery-client-external-notary");
             assertThat(tlsServer.requests()).isEqualTo(1);
 

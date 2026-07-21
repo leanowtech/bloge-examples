@@ -160,7 +160,7 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
                 new ObjectMapper().findAndRegisterModules(),
                 environment, mock(TestRuntimeDatabase.class), "scope-a",
                 "inventory-transparency", "notary-set-a", 1, 0, 0,
-                "[]", "[]", 3000, 5, 15, false))
+                "[]", "[]", 3000, 5, 15, false, secretResolver()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("does not meet the deployment fault policy");
     }
@@ -177,7 +177,8 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
         assertThatThrownBy(() -> configuration.testSuiteStabilityExternalSequenceAnchor(
                 new ObjectMapper().findAndRegisterModules(), environment,
                 mock(TestRuntimeDatabase.class), "scope-a", "inventory-transparency",
-                "notary-set-a", 3, 1, 1, "[]", "[]", 3000, 5, 15, false))
+                "notary-set-a", 3, 1, 1, "[]", "[]", 3000, 5, 15, false,
+                secretResolver()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("requires managed bootstrap-root trust");
     }
@@ -191,6 +192,10 @@ class TestSuiteStabilityServingInventoryConfigurationTest {
                 provider, "scope-a", "cohort-a", "replica-a",
                 "sha256:" + "f".repeat(64), configuredInstances, "iam.example",
                 1, 3, 3600, enabled, required);
+    }
+
+    private static ControlPlaneHttpTransport.SecretResolver secretResolver() {
+        return reference -> "unused-test-secret".toCharArray();
     }
 
     private static TestSuiteStabilityServingInventoryAuthority.Observation observation() {

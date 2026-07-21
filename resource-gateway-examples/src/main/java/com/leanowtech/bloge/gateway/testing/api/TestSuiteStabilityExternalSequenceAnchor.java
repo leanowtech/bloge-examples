@@ -20,7 +20,10 @@ public interface TestSuiteStabilityExternalSequenceAnchor extends AutoCloseable 
     Set<String> DESCRIPTOR_PROPERTIES = Set.of(
             "sourceType", "externalFirstCommit", "authenticatedConflictFatal",
             "concurrentNotaryRequests", "managedTrustPublication",
-            "restartFreeNotaryKeyRotation", "durableTrustPublicationFloor");
+            "restartFreeNotaryKeyRotation", "durableTrustPublicationFloor",
+            "notaryTransportSystemTrustStore", "notaryTransportPinnedMutualTls",
+            "managedTrustTransportConfigured", "managedTrustTransportPinnedMutualTls",
+            "bootstrapRootTransportConfigured", "bootstrapRootTransportPinnedMutualTls");
 
     /** Anchors one exact stream head or throws before local durable state may advance. */
     void accept(Head head);
@@ -161,7 +164,7 @@ public interface TestSuiteStabilityExternalSequenceAnchor extends AutoCloseable 
                     || !DESCRIPTOR_PROPERTIES.containsAll(properties.keySet())
                     || properties.size() > DESCRIPTOR_PROPERTIES.size()
                     || properties.entrySet().stream().anyMatch(
-                    entry -> !safeDescriptorValue(entry.getValue()))
+                    entry -> !safeDescriptorValue(entry.getKey(), entry.getValue()))
                     || available && (!externallyDurable || !challengeBound || !quorumShape)
                     || byzantineQuorum != (available && maximumFaults > 0)) {
                 throw new IllegalArgumentException("Invalid external sequence-anchor descriptor");
@@ -281,8 +284,10 @@ public interface TestSuiteStabilityExternalSequenceAnchor extends AutoCloseable 
         return Objects.requireNonNullElse(value, "").trim();
     }
 
-    private static boolean safeDescriptorValue(Object value) {
-        return value instanceof Boolean
+    private static boolean safeDescriptorValue(String key, Object value) {
+        return "transportSecurity".equals(key)
+                ? ExternalSequenceAnchorTransportSecurity.isValidProjection(value)
+                : value instanceof Boolean
                 || value instanceof String text && !text.isBlank() && text.length() <= 128
                 && text.chars().noneMatch(Character::isISOControl);
     }

@@ -8,10 +8,13 @@
    必须分别使用 PKIX、hostname verification、SHA-256 SPKI pinning 和 mTLS client identity。
 2. inventory publication/witness composite head 与 atomic dual-root head 不再只写本地数据库 floor；
    staging 必须先获得 challenge-bound external quorum receipt，再提交本地 durable floor。
+3. recovery fleet、test-secret 和 suite-stability 三个 external-anchor domain 的 notary、managed
+   receipt-trust publication、complete bootstrap-root bundle 共九条读链路使用同一认证 transport；
+   staging 禁止 system-trust fallback，并要求每条链路使用独立 client identity 配置。
 
 两项能力共同降低 MITM、错误 CA、跨源身份复用、本地数据库回滚和多副本 split-view 风险，但不等于
-production certification。notary endpoint、notary trust publication 和 bootstrap-root bundle 的专用
-mTLS/pinning，HSM/KMS custody，目标数据库、跨区 HA/DR、故障注入和容量认证仍是部署门禁。
+production certification。企业 PKI 签发、吊销与自动轮换，HSM/KMS custody，目标数据库、跨区
+HA/DR、故障注入和容量认证仍是部署门禁。
 
 ## 2. 根因与边界
 
@@ -38,7 +41,8 @@ external-first + local-durable 的双层提交，而不是把外部服务变成�
 - private trust store 可选；一旦配置，路径与 opaque password reference 必须同时存在。
 - 密码不进入 Spring properties、descriptor、health、capability 或日志，只接受 opaque reference。
 - 默认 demo resolver 只解析 `env:VARIABLE_NAME`，返回的 `char[]` 在 TLS context 初始化完成或失败后清零。
-- inventory 与 trust-root source 必须使用不同的 client-keystore path + credential-reference 组合。
+- publisher、inventory、trust-root 以及九条 external-anchor 读链路中的所有活跃 source 必须使用
+  不同的 client-keystore path + credential-reference 组合。
 - test 可显式使用 system-trust compatibility adapter；staging 同时要求 `enabled=true` 和
   `required=true`，禁止静默降级。
 
@@ -97,13 +101,14 @@ durable root floor 必须隔离。
 - [capability v3 Schema](schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v3.schema.json)
 
 `application-test.yml` 默认关闭强能力，便于迁移测试；`application-staging.yml` 把 dynamic inventory、
-managed roots、两个 pinned mTLS transport、external anchor、managed notary trust 和 managed
-bootstrap roots 标记为 required，但仍要求部署者显式提供所有身份和公开信任材料。
+managed roots、两个 publication transport、external anchor、managed notary trust、managed
+bootstrap roots 及其三条读侧 transport 标记为 required，但仍要求部署者显式提供所有身份和公开
+信任材料。该规则分别应用于 recovery fleet、test-secret 和 suite-stability domain。
 
 `scripts/visual-canvas-demo.sh` 在 Maven build 之前执行同方向门禁：
 
-- 两个 transport 均启用且 required；keystore 可读、reference 合法且 secret 可取得；pin 合法；
-- 两个 source client identity 不复用；
+- 所有活跃 transport 均启用且 required；keystore 可读、reference 合法且 secret 可取得；pin 合法；
+- 所有 control-plane source client identity 全局不复用；
 - external anchor、managed trust 与 bootstrap roots 均启用且 required；
 - quorum、timing、URI、public-only material 与 insecure-loopback 策略合法。
 
@@ -146,13 +151,34 @@ export RG_RECOVERY_ROOT_CLIENT_PASSWORD='injected-by-secret-manager'
 export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF=env:RG_RECOVERY_ROOT_CLIENT_PASSWORD
 ```
 
+### 5.2 External-anchor 读侧 transport 配置
+
+三个 domain 使用相同的三组后缀：
+
+| Domain base prefix | 用途 |
+| --- | --- |
+| `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR` | recovery-fleet 外部顺序锚 |
+| `RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR` | test-secret inventory 外部顺序锚 |
+| `RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR` | suite-stability inventory 外部顺序锚 |
+
+| Transport suffix group | 远端调用 |
+| --- | --- |
+| `_TRANSPORT_` | challenge-bound notary append 请求 |
+| `_TRUST_TRANSPORT_` | managed receipt-key publication 读取 |
+| `_BOOTSTRAP_ROOT_TRANSPORT_` | complete bootstrap-root bundle 读取 |
+
+每组都使用 5.1 表中的七个字段。staging 要求三组同时 `ENABLED=true`、`REQUIRED=true`；任一组
+缺失、启用 HTTP loopback、复用其他 source 身份，或 secret resolver 候选不唯一，都会在数据库 floor
+创建和远端调用前失败。`ExternalSequenceAnchorTransportSecurity` 在 descriptor 与 health 中只投影
+`systemTrustStore`、`privateTrustStore`、`serverSpkiPinned`、`mutualTls` 及两个 source-configured 布尔值。
+
 ## 6. 失败语义
 
 | 故障 | 结果 |
 | --- | --- |
 | PKIX、hostname、pin 或 client certificate 失败 | source refresh 失败，旧 snapshot 仅保留诊断价值并受 hard age fence |
 | credential ref 缺失或 resolver 多候选 | stateful source 创建前 fail closed |
-| inventory/root source 复用同一 client identity 配置 | preflight 失败 |
+| 任意两个活跃 control-plane source 复用同一 client identity 配置 | preflight 失败 |
 | external anchor 不可用或不持久 | floor 创建前失败 |
 | staging anchor 只有 crash-fault tolerance | floor DDL 和 source network 前失败 |
 | external advance 失败 | 本地 publication/root floor 不写入 |
@@ -172,12 +198,17 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSP
   predecessor continuity、stream isolation、外部失败零本地写、unsafe adapter 和 Byzantine truth。
 - `ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurationTest`：两个独立 CA、server
   certificate 和 client identity 的真实双源 mTLS handshake；同一 durable database 上的两次 Spring
-  重建；descriptor/capability/health 真值；共享 client identity 在建表和联网前拒绝；以及双 floor
-  persistence、自定义 Byzantine anchor、crash-only 拒绝和 profile 隔离。
+  重建；descriptor/capability/health 真值；共享 client identity 在建表和联网前拒绝；双 floor
+  persistence、自定义 Byzantine anchor、crash-only 拒绝和 profile 隔离；以及 external-anchor 三段
+  transport 的 Spring 绑定、staging downgrade fence 和 domain 隔离。
+- `HttpTestSuiteStabilityExternalSequenceAnchorTest`、`ExternalSequenceAnchorManagedTrustTest` 与
+  `ExternalSequenceAnchorBootstrapRootCeremonyTest`：三个读侧 source 的真实 mTLS client principal、错误
+  pin、匿名/system-trust client 在 handler 前失败，以及 payload-free transport projection。
+- `VisualCanvasDemoScriptTest`：构建前拒绝 transport downgrade 与 recovery source 身份复用，且错误
+  输出不包含解析后的 credential；`TestSecretAuthorityExternalNonEquivocationConfigurationTest` 另证明
+  跨 publisher/domain 身份复用会在 secret resolution 和数据库访问前失败。
 - Schema/capability/integration tests：record/schema 字段同构、Spring metadata、v1/v2 冻结、v3
   no-sensitive vocabulary 与 Tool Studio feature projection。
-- `VisualCanvasDemoScriptTest`：Bash 语法、staging transport downgrade 和跨 source 共享 client identity
-  均在 build 前拒绝，错误输出不包含 secret 值。
 
 标准门禁：
 
@@ -185,14 +216,13 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSP
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-验收结果：3582 tests，0 failures、0 errors、2 个条件浏览器跳过；Browser DOM 34 项中
+验收结果：3599 tests，0 failures、0 errors、2 个条件浏览器跳过；Browser DOM 34 项中
 32 项真实执行，browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
 
 ## 8. 尚未闭合
 
-1. bootstrap-root publisher 写侧已复用同一 control-plane transport 并强制 staging pinned mTLS；
-   external notary、notary trust publication 和 bootstrap-root bundle 读侧仍未接入，因此仍不应宣称
-   transport pinning 完整闭环。写侧验证见
+1. bootstrap-root publisher 写侧与 external-anchor 三条读侧均已复用 control-plane transport；但这只
+   关闭应用层配置和握手闭环，不等于企业 PKI 生命周期认证。写侧验证见
    [publisher transport verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-publisher-transport-verification.md)。
 2. `env:` resolver 适合 demo，不是企业 secret manager；正式部署需提供 Vault/KMS/workload identity
    resolver，并证明 secret rotation、lease、审计和不可回显。

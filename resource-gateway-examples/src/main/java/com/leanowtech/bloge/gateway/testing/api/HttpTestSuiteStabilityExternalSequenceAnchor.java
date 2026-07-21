@@ -378,18 +378,32 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
         boolean available = trust.available()
                 && trust.activeAuthorityCount() >= signatureThreshold
                 && trustStore.coversAuthorities(endpointAuthorityIds);
+        ControlPlaneHttpTransport.Descriptor notary = transportSecurity.notary();
+        var managed = transportSecurity.managedTrustPublication();
+        var roots = transportSecurity.bootstrapRootBundle();
         return new Descriptor(Descriptor.SCHEMA_VERSION, available, true, true,
                 available && maximumFaults > 0, endpoints.size(), signatureThreshold, maximumFaults,
-                endpoints.size(), Map.of(
-                "sourceType", trust.managedPublication()
-                        ? "HTTPS_SIGNED_MULTI_NOTARY_MANAGED_TRUST"
-                        : "HTTPS_SIGNED_MULTI_NOTARY_STATIC_TRUST",
-                "externalFirstCommit", true,
-                "authenticatedConflictFatal", true,
-                "concurrentNotaryRequests", true,
-                "managedTrustPublication", trust.managedPublication(),
-                "restartFreeNotaryKeyRotation", trust.restartFreeRotation(),
-                "durableTrustPublicationFloor", trust.durableFloor()));
+                endpoints.size(), Map.ofEntries(
+                        Map.entry("sourceType", trust.managedPublication()
+                                ? "HTTPS_SIGNED_MULTI_NOTARY_MANAGED_TRUST"
+                                : "HTTPS_SIGNED_MULTI_NOTARY_STATIC_TRUST"),
+                        Map.entry("externalFirstCommit", true),
+                        Map.entry("authenticatedConflictFatal", true),
+                        Map.entry("concurrentNotaryRequests", true),
+                        Map.entry("managedTrustPublication", trust.managedPublication()),
+                        Map.entry("restartFreeNotaryKeyRotation", trust.restartFreeRotation()),
+                        Map.entry("durableTrustPublicationFloor", trust.durableFloor()),
+                        Map.entry("notaryTransportSystemTrustStore",
+                                notary.systemTrustStore()),
+                        Map.entry("notaryTransportPinnedMutualTls", pinnedMutualTls(notary)),
+                        Map.entry("managedTrustTransportConfigured", managed.isPresent()),
+                        Map.entry("managedTrustTransportPinnedMutualTls",
+                                managed.map(HttpTestSuiteStabilityExternalSequenceAnchor
+                                        ::pinnedMutualTls).orElse(false)),
+                        Map.entry("bootstrapRootTransportConfigured", roots.isPresent()),
+                        Map.entry("bootstrapRootTransportPinnedMutualTls",
+                                roots.map(HttpTestSuiteStabilityExternalSequenceAnchor
+                                        ::pinnedMutualTls).orElse(false))));
     }
 
     /** Returns aggregate process-local operation state without remote I/O. */
@@ -644,6 +658,10 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
         byte[] value = new byte[32];
         secureRandom.nextBytes(value);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
+    }
+
+    private static boolean pinnedMutualTls(ControlPlaneHttpTransport.Descriptor descriptor) {
+        return descriptor.serverSpkiPinned() && descriptor.mutualTls();
     }
 
     private static void closeQuietly(InputStream input) {

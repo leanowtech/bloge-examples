@@ -33,6 +33,11 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
     private static final String BOOTSTRAP_ROOT_PREFIX =
             ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
                     .BootstrapRootProperties.PREFIX;
+    private static final String EXTERNAL_TRANSPORT_PREFIX = EXTERNAL_PREFIX + ".transport";
+    private static final String MANAGED_NOTARY_TRANSPORT_PREFIX =
+            MANAGED_NOTARY_PREFIX + ".transport";
+    private static final String BOOTSTRAP_ROOT_TRANSPORT_PREFIX =
+            BOOTSTRAP_ROOT_PREFIX + ".transport";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -75,9 +80,14 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                 .containsExactlyInAnyOrderElementsOf(recordProperties(
                         ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
                                 .BootstrapRootProperties.class));
+        assertThat(propertyNames(schema.at("/$defs/publicationTransport/properties")))
+                .containsExactlyInAnyOrderElementsOf(recordProperties(
+                        RecoveryFleetPublicationTransportProperties.class));
         assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(schema.at("/$defs/managedTrust/additionalProperties").asBoolean()).isFalse();
         assertThat(schema.at("/$defs/bootstrapRoots/additionalProperties").asBoolean()).isFalse();
+        assertThat(schema.at("/$defs/publicationTransport/additionalProperties").asBoolean())
+                .isFalse();
     }
 
     @Test
@@ -117,7 +127,9 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                 .map(value -> value.path("name").asText()).collect(Collectors.toSet());
         assertThat(groups).contains(PREFIX, ROOT_PREFIX, TRANSPORT_PREFIX,
                 ROOT_TRANSPORT_PREFIX, EXTERNAL_PREFIX,
-                MANAGED_NOTARY_PREFIX, BOOTSTRAP_ROOT_PREFIX);
+                MANAGED_NOTARY_PREFIX, BOOTSTRAP_ROOT_PREFIX,
+                EXTERNAL_TRANSPORT_PREFIX, MANAGED_NOTARY_TRANSPORT_PREFIX,
+                BOOTSTRAP_ROOT_TRANSPORT_PREFIX);
 
         var properties = metadata.path("properties").valueStream()
                 .filter(value -> value.path("name").asText().startsWith(PREFIX + "."))
@@ -132,8 +144,8 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                 .ManagedTrustProperties.class.getRecordComponents().length
                 + ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
                 .BootstrapRootProperties.class.getRecordComponents().length
-                + 2 * RecoveryFleetPublicationTransportProperties.class
-                .getRecordComponents().length - 6;
+                + 5 * RecoveryFleetPublicationTransportProperties.class
+                .getRecordComponents().length - 9;
         assertThat(properties).hasSize(expectedProperties);
         assertThat(properties)
                 .allSatisfy(value -> assertThat(value.path("description").asText())
@@ -147,8 +159,11 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                         ROOT_TRANSPORT_PREFIX + ".client-key-store-path",
                         EXTERNAL_PREFIX + ".enabled",
                         EXTERNAL_PREFIX + ".maximum-faults",
+                        EXTERNAL_TRANSPORT_PREFIX + ".server-spki-pins",
                         MANAGED_NOTARY_PREFIX + ".publication-uri",
-                        BOOTSTRAP_ROOT_PREFIX + ".genesis-json");
+                        MANAGED_NOTARY_TRANSPORT_PREFIX + ".client-key-store-password-ref",
+                        BOOTSTRAP_ROOT_PREFIX + ".genesis-json",
+                        BOOTSTRAP_ROOT_TRANSPORT_PREFIX + ".client-key-store-path");
     }
 
     private JsonNode projectConfigurationMetadata() throws Exception {

@@ -18,6 +18,8 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
@@ -105,7 +107,7 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
         assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
                 objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
                 "secret-transparency", "notary-set-a",
-                1, 0, 0, "[]", "[]", 3000, 5, 15, false))
+                1, 0, 0, "[]", "[]", 3000, 5, 15, false, secretResolver()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("does not meet deployment fault policy");
     }
@@ -139,7 +141,8 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
                         objectMapper, environment, mock(TestRuntimeDatabase.class),
                         "secret-fleet", "secret-transparency", "notary-set-a",
                         3, 1, 1, objectMapper.writeValueAsString(keys),
-                        objectMapper.writeValueAsString(endpoints), 3000, 5, 15, false);
+                        objectMapper.writeValueAsString(endpoints), 3000, 5, 15, false,
+                        secretResolver());
 
         assertThat(anchor.descriptor())
                 .extracting(TestSuiteStabilityExternalSequenceAnchor.Descriptor::available,
@@ -159,7 +162,7 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
         assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
                 objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
                 "secret-transparency", "notary-set-a", 3, 1, 1,
-                "[]", "[]", 3000, 5, 15, false))
+                "[]", "[]", 3000, 5, 15, false, secretResolver()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("requires managed notary trust");
     }
@@ -176,9 +179,66 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
         assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
                 objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
                 "secret-transparency", "notary-set-a", 3, 1, 1,
-                "[]", "[]", 3000, 5, 15, false))
+                "[]", "[]", 3000, 5, 15, false, secretResolver()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("requires managed bootstrap-root trust");
+    }
+
+    @Test
+    void stagingRejectsUnauthenticatedNotaryTransportBeforeOpeningTheDatabase() {
+        String prefix =
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor";
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty(prefix + ".managed-trust.enabled", "true")
+                .withProperty(prefix + ".managed-trust.bootstrap-roots.enabled", "true");
+        environment.setActiveProfiles("staging");
+        TestRuntimeDatabase database = mock(TestRuntimeDatabase.class);
+
+        assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
+                objectMapper, environment, database, "secret-fleet",
+                "secret-transparency", "notary-set-a", 3, 1, 1,
+                "[]", "[]", 3000, 5, 15, false, secretResolver()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("external notaries require pinned mutual TLS");
+        verify(database, never()).jdbc();
+    }
+
+    @Test
+    void clientIdentityReuseAcrossControlPlaneSourcesFailsBeforeSecretResolution() {
+        String prefix =
+                "gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor";
+        String publisher = ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration
+                .Properties.PREFIX;
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty(prefix + ".transport.enabled", "true")
+                .withProperty(prefix + ".transport.required", "true")
+                .withProperty(prefix + ".transport.client-key-store-path", "/tmp/shared.p12")
+                .withProperty(prefix + ".transport.client-key-store-password-ref",
+                        "env:SHARED_PASSWORD")
+                .withProperty(prefix + ".transport.server-spki-pins",
+                        "sha256:" + "a".repeat(64))
+                .withProperty(publisher + ".enabled", "true")
+                .withProperty(publisher + ".transport.enabled", "true")
+                .withProperty(publisher + ".transport.required", "true")
+                .withProperty(publisher + ".transport.client-key-store-path",
+                        "/tmp/shared.p12")
+                .withProperty(publisher + ".transport.client-key-store-password-ref",
+                        "env:SHARED_PASSWORD")
+                .withProperty(publisher + ".transport.server-spki-pins",
+                        "sha256:" + "b".repeat(64));
+        environment.setActiveProfiles("test");
+        TestRuntimeDatabase database = mock(TestRuntimeDatabase.class);
+        ControlPlaneHttpTransport.SecretResolver resolver = reference -> {
+            throw new AssertionError("secret resolution must follow identity isolation");
+        };
+
+        assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
+                objectMapper, environment, database, "secret-fleet",
+                "secret-transparency", "notary-set-a", 3, 1, 1,
+                "[]", "[]", 3000, 5, 15, false, resolver))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("independent client identities");
+        verify(database, never()).jdbc();
     }
 
     @Test
@@ -193,7 +253,7 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
         assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
                 objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
                 "secret-transparency", "notary-set-a", 3, 1, 1,
-                "[]", "[]", 3000, 5, 15, false))
+                "[]", "[]", 3000, 5, 15, false, secretResolver()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("requires managed notary trust");
     }
@@ -219,7 +279,7 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
         assertThatThrownBy(() -> configuration.testSecretAuthorityExternalSequenceAnchor(
                 objectMapper, environment, mock(TestRuntimeDatabase.class), "secret-fleet",
                 "secret-transparency", "notary-set-a", 3, 1, 1,
-                "[]", "[]", 3000, 5, 15, false))
+                "[]", "[]", 3000, 5, 15, false, secretResolver()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("forbids legacy static bootstrap keys");
     }
@@ -229,6 +289,10 @@ class TestSecretAuthorityExternalNonEquivocationConfigurationTest {
                 "jdbc:h2:mem:test-secret-external-" + suffix + '-' + UUID.randomUUID()
                         + ";DB_CLOSE_DELAY=-1",
                 "sa", "", 2));
+    }
+
+    private static ControlPlaneHttpTransport.SecretResolver secretResolver() {
+        return reference -> "unused-test-secret".toCharArray();
     }
 
     private static TestSecretAuthorityExternalSequenceAnchor anchor(
