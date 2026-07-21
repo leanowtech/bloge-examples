@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-floor-snapshot-v1.schema.json",
+  "title": "Resource Gateway Control-Plane Certificate Rotation Floor Snapshot v1",
+  "description": "Strict payload- and credential-free durable head for one deployment-bound TLS target.",
+  "$ref": "#/$defs/snapshot",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "materialId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$"
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "deploymentScopeId", "targetId", "activeGeneration",
+        "activeMaterialId", "activeSettingsFingerprint", "activeEventId",
+        "activeEventFingerprint", "activatedAt", "pendingGeneration",
+        "pendingMaterialId", "pendingSettingsFingerprint", "pendingEventId",
+        "pendingEventFingerprint", "pendingActivateAt", "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.controlPlaneCertificateRotationFloorSnapshot.v1"
+        },
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "targetId": { "$ref": "#/$defs/identifier" },
+        "activeGeneration": { "type": "integer", "minimum": 1 },
+        "activeMaterialId": { "$ref": "#/$defs/materialId" },
+        "activeSettingsFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "activeEventId": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/identifier" }
+          ]
+        },
+        "activeEventFingerprint": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/fingerprint" }
+          ]
+        },
+        "activatedAt": { "type": "string", "format": "date-time" },
+        "pendingGeneration": { "type": "integer", "minimum": 0 },
+        "pendingMaterialId": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/materialId" }
+          ]
+        },
+        "pendingSettingsFingerprint": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/fingerprint" }
+          ]
+        },
+        "pendingEventId": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/identifier" }
+          ]
+        },
+        "pendingEventFingerprint": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/fingerprint" }
+          ]
+        },
+        "pendingActivateAt": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "format": "date-time" }
+          ]
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "activeEventId": { "const": "" } } },
+          "then": { "properties": { "activeEventFingerprint": { "const": "" } } },
+          "else": { "properties": { "activeEventFingerprint": { "$ref": "#/$defs/fingerprint" } } }
+        },
+        {
+          "if": { "properties": { "pendingGeneration": { "const": 0 } } },
+          "then": {
+            "properties": {
+              "pendingMaterialId": { "const": "" },
+              "pendingSettingsFingerprint": { "const": "" },
+              "pendingEventId": { "const": "" },
+              "pendingEventFingerprint": { "const": "" },
+              "pendingActivateAt": { "type": "null" }
+            }
+          },
+          "else": {
+            "properties": {
+              "pendingGeneration": { "type": "integer", "minimum": 2 },
+              "pendingMaterialId": { "$ref": "#/$defs/materialId" },
+              "pendingSettingsFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "pendingEventId": { "$ref": "#/$defs/identifier" },
+              "pendingEventFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "pendingActivateAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

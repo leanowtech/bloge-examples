@@ -15,6 +15,12 @@
 
 ### 实施快照（2026-07-21）
 
+> Stage 4 证书轮换状态校正：签名控制器之后新增 database-clock durable generation floor，
+> 以 deployment/target 锁、exact event journal、双唯一约束、whole-record fingerprint 和到期原子晋升
+> 关闭跨重启回退、同代分叉及副本竞争。严格 floor snapshot v1 不携带路径或 credential。该 floor 尚未
+> 与 12 条 live transport 串成 floor-first 状态机，也没有逐副本 convergence proof，因此 capability 与
+> production readiness 必须继续关闭。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |

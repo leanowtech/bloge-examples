@@ -14,8 +14,10 @@
 test/staging 配置、demo preflight、严格 Schema、固定基数 health/capability 与 Tool Studio
 feature projection。证书轮换在原子 TLS 内核之上新增了可嵌入的签名控制模块：严格事件
 协议、独立 M-of-N Ed25519 信任、deployment/target/predecessor/candidate 精确绑定、材料
-解析隔离、并发幂等和状态漂移封闭。该模块尚未接入 12 条产品配置、事件 watcher、持久
-journal 或跨副本协调，因此不能被解释为企业 PKI 或生产证书轮换已经开放。
+解析隔离、并发幂等和状态漂移封闭。新增 database-clock durable floor 已能跨副本线性化
+generation、持久化 exact event journal、防止重启回退/同代分叉并自动晋升到期 successor；但它尚未与
+12 条产品配置和 live staging 原子接线，也没有事件 watcher 或逐副本收敛证明，因此不能被解释为企业
+PKI 或生产证书轮换已经开放。
 
 ## 2. 根因模型
 
@@ -74,9 +76,15 @@ pending settings fingerprint 提升为新的 predecessor；live target 若在控
 pending 漂移，则进入 `STATE_OUT_OF_SYNC`。结果协议不携带 material id、settings/policy
 fingerprint、异常、路径或 secret reference。
 
-该控制器的接受日志仍是 process-local。生产接线必须从权威 inventory 恢复初始 generation 与
-settings fingerprint，并提供 durable event journal、跨副本同一事件传播和收敛证明；当前实现不以
-内存状态冒充这些能力。
+该控制器的接受日志仍是 process-local；`DatabaseControlPlaneCertificateRotationFloor` 是独立的持久化
+授权后置门禁。它以 deployment/target 稳定锁、数据库时钟和同事务 floor/event journal 保证 exact replay
+幂等、event-id 与 target-generation 双重唯一、连续前代校验、future successor 单 pending、到期原子
+晋升，以及 whole-record fingerprint 篡改失败关闭。启动清单只能建立空 floor 或精确重建当前 active
+head；旧代、跳代和同代不同材料均拒绝。该 floor 不存放路径、secret ref、密码或证书内容。
+
+生产接线仍必须先完成签名验证，再 durable accept，最后把同一 generation/material stage 到 live target，
+并证明每个副本都与 durable head 收敛。当前 controller 与 floor 尚未串成该状态机，不能把“数据库已经
+接受”解释为“所有副本已经切换”。
 
 ## 5. 代码证据
 
@@ -93,6 +101,8 @@ settings fingerprint，并提供 durable event journal、跨副本同一事件�
   event-id 冲突、激活推进与状态漂移封闭。
 - `ControlPlaneCertificateRotationMaterialSource`：把不受信事件与 deployment-owned
   certificate/secret material 隔离。
+- `DatabaseControlPlaneCertificateRotationFloor`：数据库时钟、稳定 target 锁、exact event journal、
+  whole-record fingerprint、重启防回退与同代分叉拒绝。
 - `RecoveryFleetPublicationTransportProperties`：对六个身份字段执行全有或全无校验，
   disabled residual、partial binding 和 required-without-binding 均在 secret resolution 前失败。
 - `TestRuntimeConfiguration` 与
@@ -104,6 +114,8 @@ settings fingerprint，并提供 durable event journal、跨副本同一事件�
   配置或布尔真值，v2/v1/v3 旧 Schema 保持冻结。
 - certificate rotation event v1 与 apply result v1 严格 Schema：字段与 Java protocol 对齐，
   apply result 不投影 TLS material 或 resolver failure details。
+- certificate rotation floor snapshot v1 严格 Schema：仅投影代次、opaque material id、事件 identity、
+  fingerprint 与时间，不携带 TLS material location 或 credential。
 - health/capability/Tool Studio：只投影 `certificateIdentityBound` 及两个 source 级聚合
   布尔值，不返回 Subject、SAN、issuer pin、路径或 secret reference。
 - `RecoveryFleetPublicationTlsFixture`：真实 CA、server/client 证书、双向 TLS server 和 client identity
@@ -140,6 +152,10 @@ RotatingControlPlaneHttpTransportTest test
 - resolver/stage 失败保持旧代可重试，错误文本不进入结果；
 - 激活后 predecessor fingerprint 随 generation 推进，live target 漂移后 fail closed。
 
+durable floor 另执行 6 项数据库测试，0 failures、0 errors、0 skips；覆盖跨实例精确重建、旧启动清单
+回退/跳代/分叉拒绝、future staged 与 database-time 到期晋升、exact replay、event-id reuse、scope/
+predecessor 漂移、floor/event journal 篡改失败关闭，以及同一 target/generation 双副本竞争只有一个赢家。
+
 另执行复用 transport 的 79 项联合协议回归，0 failures、0 errors、0 skips；
 产品接线的 87 项聚焦测试亦全绿，覆盖 typed properties、Spring 组装、真实 TLS、
 Schema 冻结、health/capability、Tool Studio projection 与 demo preflight。
@@ -155,8 +171,8 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 7. 下一门禁
 
-下一门禁不再是定义签名事件，而是把已验证的 Java 控制模块收口到产品：12 条稳定 target id、
-typed rotation properties、初始 generation/settings fingerprint、受控 material catalog、事件接入、
-固定基数 health/capability 和 demo preflight。其后仍需 durable journal、跨副本一致激活与受控
-switch-forward rollback。尚未闭合的外部生产责任包括企业 CA 签发/吊销事件源、OCSP/CRL、
+下一门禁是把已验证的签名控制器、durable floor 与 live target 收口成单一产品状态机：12 条稳定
+target id、typed rotation properties、受控 material catalog、floor-first 事件接入、重启恢复、逐副本
+convergence、固定基数 health/capability 和 demo preflight。其后仍需受控 switch-forward recovery。
+尚未闭合的外部生产责任包括企业 CA 签发/吊销事件源、OCSP/CRL、
 HSM 私钥 custody、secret-manager lease、HA/DR/chaos 和目标数据库认证。

@@ -84,7 +84,8 @@ public record ControlPlaneCertificateRotationEvent(
      * @param issuedAt external event issuance time
      * @param notBefore inclusive event acceptance time
      * @param activateAt deterministic cross-replica activation time
-     * @param expiresAt exclusive event acceptance and activation deadline
+     * @param expiresAt exclusive event acceptance deadline; an already accepted staged event may
+     *                  activate later at its signed {@code activateAt}
      */
     @JsonIgnoreProperties(ignoreUnknown = false)
     public record Material(

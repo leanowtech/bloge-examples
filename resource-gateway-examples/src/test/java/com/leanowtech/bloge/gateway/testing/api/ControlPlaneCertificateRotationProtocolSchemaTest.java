@@ -24,11 +24,19 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         JsonNode eventSchema = schema("control-plane-certificate-rotation-event-v1.schema.json");
         JsonNode resultSchema = schema(
                 "control-plane-certificate-rotation-apply-result-v1.schema.json");
+        JsonNode floorSchema = schema(
+                "control-plane-certificate-rotation-floor-snapshot-v1.schema.json");
         ControlPlaneCertificateRotationEvent event = event();
         var result = new ControlPlaneCertificateRotationController.ApplyResult(
                 ControlPlaneCertificateRotationController.ApplyResult.SCHEMA_VERSION,
                 ControlPlaneCertificateRotationController.ApplyStatus.APPLIED,
                 "APPLIED", "rotation-002", FINGERPRINT, 1, 2);
+        Instant now = Instant.parse("2026-07-21T12:00:00Z");
+        var floor = new ControlPlaneCertificateRotationFloor.Snapshot(
+                ControlPlaneCertificateRotationFloor.Snapshot.SCHEMA_VERSION,
+                "rg-staging-sg", "recovery-fleet.publisher", 1, "initial-a",
+                FINGERPRINT, "", "", now, 2, "candidate-b", FINGERPRINT,
+                "rotation-002", FINGERPRINT, now.plusSeconds(300), now);
 
         assertProperties(objectMapper.valueToTree(event),
                 eventSchema.at("/$defs/event/properties"));
@@ -37,12 +45,16 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         assertProperties(objectMapper.valueToTree(event.signatures().getFirst()),
                 eventSchema.at("/$defs/authoritySignature/properties"));
         assertProperties(objectMapper.valueToTree(result), resultSchema.path("properties"));
+        assertProperties(objectMapper.valueToTree(floor),
+                floorSchema.at("/$defs/snapshot/properties"));
         assertThat(eventSchema.at("/$defs/event/additionalProperties").asBoolean(true)).isFalse();
         assertThat(eventSchema.at("/$defs/material/additionalProperties").asBoolean(true))
                 .isFalse();
         assertThat(eventSchema.at(
                 "/$defs/authoritySignature/additionalProperties").asBoolean(true)).isFalse();
         assertThat(resultSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(floorSchema.at("/$defs/snapshot/additionalProperties")
+                .asBoolean(true)).isFalse();
     }
 
     @Test
@@ -50,6 +62,8 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         JsonNode eventSchema = schema("control-plane-certificate-rotation-event-v1.schema.json");
         JsonNode resultSchema = schema(
                 "control-plane-certificate-rotation-apply-result-v1.schema.json");
+        JsonNode floorSchema = schema(
+                "control-plane-certificate-rotation-floor-snapshot-v1.schema.json");
 
         assertThat(eventSchema.at("/$defs/event/properties/schemaVersion/const").asText())
                 .isEqualTo(ControlPlaneCertificateRotationEvent.SCHEMA_VERSION);
@@ -57,6 +71,9 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 .isEqualTo(ControlPlaneCertificateRotationEvent.Material.SCHEMA_VERSION);
         assertThat(resultSchema.at("/properties/schemaVersion/const").asText())
                 .isEqualTo(ControlPlaneCertificateRotationController.ApplyResult.SCHEMA_VERSION);
+        assertThat(floorSchema.at(
+                "/$defs/snapshot/properties/schemaVersion/const").asText())
+                .isEqualTo(ControlPlaneCertificateRotationFloor.Snapshot.SCHEMA_VERSION);
         assertThat(resultSchema.at("/properties/status/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactlyInAnyOrder(Arrays.stream(
@@ -67,6 +84,8 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         assertThat(eventSchema.at("/$defs/material/properties/generation/minimum").asLong())
                 .isEqualTo(2);
         assertThat(eventSchema.at("/$defs/materialId/pattern").asText())
+                .doesNotContain(":", "/", "#");
+        assertThat(floorSchema.at("/$defs/materialId/pattern").asText())
                 .doesNotContain(":", "/", "#");
     }
 
@@ -79,6 +98,18 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 "materialId", "settingsFingerprint", "policyFingerprint", "certificate",
                 "privateKey", "password", "secretRef", "keyStore", "trustStore", "path",
                 "exception", "errorMessage", "stackTrace"}) {
+            assertThat(source).doesNotContain("\"" + forbidden + "\"");
+        }
+    }
+
+    @Test
+    void floorSnapshotSchemaCannotCarryTlsMaterialLocationsOrCredentials() throws Exception {
+        String source = Files.readString(schemaPath(
+                "control-plane-certificate-rotation-floor-snapshot-v1.schema.json"));
+
+        for (String forbidden : new String[]{
+                "certificate", "privateKey", "password", "secretRef", "keyStore",
+                "trustStore", "path", "exception", "errorMessage", "stackTrace"}) {
             assertThat(source).doesNotContain("\"" + forbidden + "\"");
         }
     }
