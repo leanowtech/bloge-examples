@@ -121,6 +121,11 @@ VisualCanvasDemoScriptTest test
 apply/replay repair、Spring profile/依赖降级、health 闭集、Schema/metadata/YAML 精确字段、capability
 故障脱敏，以及 staging build 前预检。
 
+最终全量回归在提交 `d37fc515` 的独立源码与 `target` 快照中通过：Resource Gateway
+`clean verify` 执行 3817 tests，0 failures、0 errors、2 个条件浏览器跳过，并生成 Spring Boot
+可执行 JAR；独立 test-kit `clean verify` 执行 230 tests，0 failures、0 errors、0 skips，且通过
+权威 Schema 打包、普通/shaded JAR 与 public JavaDoc 门禁。
+
 ## 7. 未完成边界
 
 本子步不声明企业 PKI production ready，后续仍需：

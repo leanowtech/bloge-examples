@@ -138,7 +138,7 @@ capability v4、固定基数 health 与 Tool Studio projection 同步闭合。87
 generation、重启恢复、固定基数 health/capability 和 demo preflight；后续子步又把受治理 replica
 inventory、逐副本 ACK、all-replica threshold、短租约 heartbeat、durable-before-live activation、
 restart ACTIVE re-proof 和 serving fence 接入产品 runtime。当前轮换聚焦门禁 74 项、demo preflight
-12 项以及 3700 项全量测试全绿。企业 CA 事件分发、撤销/OCSP/CRL、HSM
+12 项以及 3817 项全量测试全绿。企业 CA 事件分发、撤销/OCSP/CRL、HSM
 custody 与生产数据库/HA/DR/chaos 认证仍未闭合，不能据此宣称企业 PKI 已开放。验证见
 [certificate identity and rotation kernel verification](resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md)。
 紧随其后的事件分发第一子步已冻结 fingerprint-chained page 和每 stable serving-slot 的 durable
@@ -152,7 +152,9 @@ preflight 形成产品路径。source transport 只授权页面交付，每个 e
 部分 apply 保持 staged，exact replay 修复，gap/fork/protocol downgrade 永不推进 cursor。CA source
 HA/retention、source identity 热轮换、外部 freshness/backlog SLO 告警、生产数据库与 DR/chaos 认证仍未
 闭合，因此 production readiness 不变。page/cursor、HTTP watcher、Spring/TLS、Schema/metadata/YAML、
-capability 与 demo preflight 的 76 项联合门禁全绿。验证见
+capability 与 demo preflight 的 76 项联合门禁全绿；最终隔离全量基线为 Resource Gateway 3817 tests
+与 test-kit 230 tests，除 2 个条件浏览器跳过外全部执行且全绿，并通过可执行/普通/shaded JAR 与 public
+JavaDoc 门禁。验证见
 [certificate rotation event cursor verification](resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-cursor-verification.md)、
 [certificate rotation event watcher kernel verification](resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-watcher-kernel-verification.md) 和
 [certificate rotation event watcher product verification](resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-watcher-product-verification.md)。
