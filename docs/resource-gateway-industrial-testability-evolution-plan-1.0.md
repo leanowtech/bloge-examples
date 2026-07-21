@@ -34,7 +34,7 @@
 > 和 [source-head protocol verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-source-head-protocol-verification.md)。
 > 截至 physical-attempt durable start journal、provider-signed start proof kernel、positive queue lease
 > epoch、attempt cancellation coordinator、调用前数据库时间栅栏与浏览器生命周期修复的最终全量基线为
-> Resource Gateway 3972 tests（0 failures、
+> Resource Gateway 3985 tests（0 failures、
 > 0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
@@ -124,7 +124,9 @@
 > prepare -> database-time authorization -> bounded start -> verified accept`。terminal replay 零 provider I/O，
 > prepared recovery 重验 descriptor 与 live reservation；timeout/adapter/attestation failure 均保持
 > `PREPARED`。10 项单元、3 项真实组合与 141 项完整聚焦门禁全绿，公共类型 strict JavaDoc 零告警。
-> queue/slot/cancellation/natural-terminal 投影和 worker provider 切换未实现，capability 继续关闭。验证见
+> queue/slot/cancellation/natural-terminal 投影和 worker provider 切换未实现，capability 继续关闭。实现提交
+> 的隔离快照完整 `clean verify` 执行 3985 tests（0 failures、0 errors、2 skips），并通过 Surefire XML、
+> 可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-coordinator-verification.md)。
 
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability

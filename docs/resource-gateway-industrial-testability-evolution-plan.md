@@ -45,7 +45,7 @@
 > 和 [source-head protocol verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-source-head-protocol-verification.md)。
 > 截至 physical-attempt durable start journal、provider-signed start proof kernel、positive queue lease
 > epoch、attempt cancellation coordinator、调用前数据库时间栅栏与浏览器生命周期修复的最终全量基线为
-> Resource Gateway 3972 tests（0 failures、
+> Resource Gateway 3985 tests（0 failures、
 > 0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
@@ -145,7 +145,8 @@
 > reservation，timeout/adapter/attestation failure 保持 `PREPARED`。10 项单元与 3 项真实 H2/Ed25519/
 > supervisor 组合测试全绿，完整 physical-attempt/queue 聚焦门禁 141 tests 全绿，公共类型 strict JavaDoc
 > 零告警。coordinator 不投影 queue/slot/cancellation/natural terminal，现有 worker 也未切换到物理 provider；
-> capability 继续关闭。验证见
+> capability 继续关闭。实现提交的隔离快照完整 `clean verify` 执行 3985 tests（0 failures、0 errors、
+> 2 skips），并通过 Surefire XML、可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-coordinator-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |

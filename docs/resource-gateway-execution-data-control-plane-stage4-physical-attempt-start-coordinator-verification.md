@@ -62,6 +62,23 @@ DatabaseTestSuiteStabilityPhysicalAttemptStartJournalTest test
 完整 physical-attempt/queue 聚焦门禁执行 141 tests，0 failures、0 errors、0 skips。coordinator 公共类型
 通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
 
+### 4.1 Immutable full gate
+
+实现提交 `affcdae1` 的 immutable `git archive` 快照执行完整发布门禁：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml clean verify
+```
+
+- Maven：3985 tests，0 failures，0 errors，2 skips，`BUILD SUCCESS`；
+- structured cross-check：451 份 Surefire XML 合计 3985 tests，0 failures，0 errors，2 skips；
+- artifact：Spring Boot executable JAR 成功生成，39,444,287 bytes；
+- lifecycle：门禁退出后没有快照 Maven、ChromeDriver 或 Chrome for Testing 残留进程；
+- wall time：7 分 22 秒。
+
+该结果证明 coordinator 与完整数据库/API/真实浏览器回归、线程生命周期和可执行打包兼容，不证明尚未
+实现的真实 isolated provider、worker dispatch 或 orphan reconciliation 已具备生产能力。
+
 ## 5. 尚未开放
 
 本增量没有 Spring bean、HTTP route、Schema、test-kit 或 capability advertisement。尚未实现：
