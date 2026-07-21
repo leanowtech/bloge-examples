@@ -117,7 +117,7 @@ JavaDoc 门禁。验证见 [Stage 4 external notary trust rotation verification]
 dynamic inventory、managed trust-root 与九条 external-anchor 读侧，共 12 组 transport；typed
 properties、test/staging 配置、demo preflight、dynamic inventory v3、external anchor v2、
 capability v4、固定基数 health 与 Tool Studio projection 同步闭合。87 项产品聚焦测试与
-3619 项全量测试全绿。静态证书身份绑定已产品化；restart-free rotation 已从原子 TLS kernel
+3669 项全量测试全绿。静态证书身份绑定已产品化；restart-free rotation 已从原子 TLS kernel
 推进到 12 条 test/staging 产品链路的严格事件、M-of-N 信任、受控材料目录、floor-first durable
 generation、重启恢复、固定基数 health/capability 和 demo preflight，本轮 56 项聚焦验证全绿。
 企业 CA 事件分发、逐副本 acknowledgement/convergence、吊销/OCSP/CRL、HSM custody 与生产

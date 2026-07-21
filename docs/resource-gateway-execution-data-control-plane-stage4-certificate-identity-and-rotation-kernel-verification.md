@@ -180,8 +180,11 @@ projection 与 demo preflight。
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-验收结果：3619 tests，0 failures、0 errors、2 skips；并成功生成 Spring Boot
+验收结果：3669 tests，0 failures、0 errors、2 skips；并成功生成 Spring Boot
 可执行产物 `bloge-examples-resource-gateway-1.0.0.jar`。
+
+独立协议客户端门禁 `mvn -f resource-gateway-test-kit/pom.xml clean verify` 同轮执行 230 tests，
+0 failures、0 errors、0 skips，并通过普通/shaded JAR、权威 Schema 打包与 public JavaDoc 验证。
 
 ## 7. 下一门禁
 
