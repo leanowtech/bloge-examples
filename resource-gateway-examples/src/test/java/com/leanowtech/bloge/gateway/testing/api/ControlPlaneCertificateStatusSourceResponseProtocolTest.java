@@ -102,10 +102,16 @@ class ControlPlaneCertificateStatusSourceResponseProtocolTest {
                 SCOPE, 0, fingerprint('0'), 8, fingerprint('8'), "head-008",
                 fingerprint('a'), NOW, NOW.plusSeconds(60), NOW.plusSeconds(1));
 
-        assertThat(snapshot.exactLagFrom(3, NOW.plusSeconds(2))).isEqualTo(5);
-        assertThat(snapshot.exactLagFrom(9, NOW.plusSeconds(2))).isEqualTo(-1);
-        assertThat(snapshot.exactLagFrom(-1, NOW.plusSeconds(2))).isEqualTo(-1);
-        assertThat(snapshot.exactLagFrom(3, NOW.plusSeconds(60))).isEqualTo(-1);
+        assertThat(snapshot.exactLagFrom(3, fingerprint('3'), NOW.plusSeconds(2)))
+                .isEqualTo(5);
+        assertThat(snapshot.exactLagFrom(8, fingerprint('9'), NOW.plusSeconds(2)))
+                .isEqualTo(-1);
+        assertThat(snapshot.exactLagFrom(9, fingerprint('9'), NOW.plusSeconds(2)))
+                .isEqualTo(-1);
+        assertThat(snapshot.exactLagFrom(-1, fingerprint('9'), NOW.plusSeconds(2)))
+                .isEqualTo(-1);
+        assertThat(snapshot.exactLagFrom(3, fingerprint('3'), NOW.plusSeconds(60)))
+                .isEqualTo(-1);
     }
 
     private static ControlPlaneCertificateStatusPublication publication(

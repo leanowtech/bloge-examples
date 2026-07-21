@@ -78,9 +78,14 @@ class DatabaseControlPlaneCertificateStatusSourceHeadFloorTest {
             assertThat(snapshot.attestationId()).isEqualTo("head-002");
             assertThat(snapshot.attestationFingerprint())
                     .isEqualTo(head.materialFingerprint());
-            assertThat(snapshot.exactLagFrom(0, now.plusSeconds(1))).isEqualTo(2);
-            assertThat(snapshot.exactLagFrom(2, now.plusSeconds(1))).isZero();
-            assertThat(snapshot.exactLagFrom(0, now.plusSeconds(1800))).isEqualTo(-1);
+            assertThat(snapshot.exactLagFrom(0, BASELINE, now.plusSeconds(1)))
+                    .isEqualTo(2);
+            assertThat(snapshot.exactLagFrom(2, fingerprint('2'), now.plusSeconds(1)))
+                    .isZero();
+            assertThat(snapshot.exactLagFrom(2, fingerprint('8'), now.plusSeconds(1)))
+                    .isEqualTo(-1);
+            assertThat(snapshot.exactLagFrom(0, BASELINE, now.plusSeconds(1800)))
+                    .isEqualTo(-1);
             assertThat(snapshot.freshAt(now.plusSeconds(1))).isTrue();
         });
         assertThat(database.jdbc().queryForObject(

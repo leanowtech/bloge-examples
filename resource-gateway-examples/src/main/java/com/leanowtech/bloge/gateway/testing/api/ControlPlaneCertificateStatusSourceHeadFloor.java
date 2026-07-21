@@ -103,12 +103,22 @@ public interface ControlPlaneCertificateStatusSourceHeadFloor {
          * Computes exact external backlog only while this attestation remains fresh.
          *
          * @param appliedSequence locally applied durable publication sequence
+         * @param appliedPublicationFingerprint local durable publication or baseline fingerprint
          * @param now observation time
          * @return exact non-negative lag, or {@code -1} when no current proof exists
          */
-        public long exactLagFrom(long appliedSequence, Instant now) {
+        public long exactLagFrom(
+                long appliedSequence,
+                String appliedPublicationFingerprint,
+                Instant now) {
+            String appliedFingerprint = normalized(appliedPublicationFingerprint);
             return freshAt(now) && appliedSequence >= baselineSequence
                     && appliedSequence <= headSequence
+                    && FINGERPRINT.matcher(appliedFingerprint).matches()
+                    && (appliedSequence != baselineSequence
+                    || appliedFingerprint.equals(baselinePublicationFingerprint))
+                    && (appliedSequence != headSequence
+                    || appliedFingerprint.equals(headPublicationFingerprint))
                     ? headSequence - appliedSequence : -1L;
         }
     }
