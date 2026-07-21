@@ -32,7 +32,8 @@ import java.util.concurrent.Executor;
  * class owns atomic activation and fail-closed certificate timing, not PKI issuance or event
  * authorization.</p>
  */
-public final class RotatingControlPlaneHttpTransport implements ControlPlaneHttpTransport {
+public final class RotatingControlPlaneHttpTransport
+        implements ControlPlaneHttpTransport, ControlPlaneCertificateRotationTarget {
 
     private static final Duration MINIMUM_LEAD = Duration.ofSeconds(1);
     private static final Duration MAXIMUM_LEAD = Duration.ofDays(30);

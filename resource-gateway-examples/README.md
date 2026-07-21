@@ -482,9 +482,15 @@ overlap, and lets a cached client atomically select one complete TLS generation 
 static identity policy is wired through all control-plane transport properties, both Spring
 profiles, strict configuration schemas, health, recovery-fleet capability v4, and Tool Studio
 features. Staging therefore rejects an enabled publisher, inventory, trust-root, notary,
-managed-trust, or root-bundle link without complete workload identities. The rotation controller
-remains an embedding interface: a product CA-event watcher, signed event protocol, revocation
-status, HSM custody, and rotation health/capability projection remain follow-up gates. See the
+managed-trust, or root-bundle link without complete workload identities. Embedders can now place
+`ControlPlaneCertificateRotationController` in front of that kernel. Its strict v1 event is bound
+to deployment scope, target, active settings fingerprint, contiguous generation, candidate
+settings fingerprint and activation window; an independent public-key-only M-of-N Ed25519 policy
+must verify before an opaque material id can be resolved. Exact concurrent replay resolves and
+stages once, failures preserve the old generation, and target drift fails closed without exposing
+paths, secret references or resolver errors. This remains an embedding module: product wiring for
+the 12 transports, durable event journaling, CA-event ingestion, cross-replica convergence,
+revocation status, HSM custody, and rotation health/capability projection remain follow-up gates. See the
 [certificate identity and rotation kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md).
 
 The same single-root journal can run unattended ceremony recovery by also setting

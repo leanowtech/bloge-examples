@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-apply-result-v1.schema.json",
+  "title": "Resource Gateway Control-Plane Certificate Rotation Apply Result v1",
+  "description": "Material-free deterministic outcome of applying one signed certificate rotation event.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "status", "reasonCode", "eventId", "eventFingerprint",
+    "activeGeneration", "pendingGeneration"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateRotationApplyResult.v1"
+    },
+    "status": {
+      "enum": [
+        "APPLIED", "REPLAYED", "AUTHORIZATION_REJECTED", "TARGET_UNKNOWN",
+        "GENERATION_CONFLICT", "STATE_OUT_OF_SYNC", "MATERIAL_UNAVAILABLE",
+        "MATERIAL_MISMATCH", "STAGING_REJECTED"
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+    },
+    "eventId": {
+      "type": "string",
+      "maxLength": 255
+    },
+    "eventFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    },
+    "activeGeneration": { "type": "integer", "minimum": 0 },
+    "pendingGeneration": { "type": "integer", "minimum": 0 }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "enum": ["APPLIED", "REPLAYED"] } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "eventId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+          },
+          "eventFingerprint": {
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "activeGeneration": { "minimum": 1 }
+        }
+      },
+      "else": {
+        "properties": {
+          "eventId": { "const": "" },
+          "eventFingerprint": { "const": "" }
+        }
+      }
+    }
+  ]
+}

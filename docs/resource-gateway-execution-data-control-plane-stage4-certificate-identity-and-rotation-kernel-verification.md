@@ -12,8 +12,10 @@
 精确静态证书身份已接入 publisher 写侧、dynamic inventory、managed trust-root 与
 九条 external-anchor 读侧，共 12 组 control-plane transport；并已进入 typed properties、
 test/staging 配置、demo preflight、严格 Schema、固定基数 health/capability 与 Tool Studio
-feature projection。证书轮换则仍只交付可复用 Java 内核，尚未接入产品配置和受信
-事件源。因此本增量不能被解释为企业 PKI 或生产证书轮换已经开放。
+feature projection。证书轮换在原子 TLS 内核之上新增了可嵌入的签名控制模块：严格事件
+协议、独立 M-of-N Ed25519 信任、deployment/target/predecessor/candidate 精确绑定、材料
+解析隔离、并发幂等和状态漂移封闭。该模块尚未接入 12 条产品配置、事件 watcher、持久
+journal 或跨副本协调，因此不能被解释为企业 PKI 或生产证书轮换已经开放。
 
 ## 2. 根因模型
 
@@ -58,8 +60,23 @@ pending successor：
    SSLContext，新请求在激活后获得新代 client。
 7. active 已过期且没有可激活 successor 时，在网络 I/O 前 fail closed。
 
-轮换入口当前是 Java API。调用方必须先认证签名 inventory 或 secret-manager event；内核不把未经认证
-的文件变更当作轮换授权。
+`ControlPlaneCertificateRotationController` 只接受
+`ControlPlaneCertificateRotationEvent`：外部 authority 必须对 canonical material fingerprint
+形成独立 M-of-N Ed25519 quorum，事件同时绑定 deployment scope、target、前代 settings
+fingerprint、连续 generation、候选 settings fingerprint、policy 与时间窗。`materialId` 只能是
+不含 URI/path 分隔符的 opaque identifier；路径、secret reference、密码和证书内容留在
+`ControlPlaneCertificateRotationMaterialSource` 后方。解析结果的 fingerprint 与签名值不一致时
+不会调用 transport。
+
+同一 target 的同一事件并发只执行一次解析和 stage，等待者得到 `REPLAYED`；相同 event id
+承载不同 fingerprint、同代冲突、跳代、回退或已有 pending 均 fail closed。激活后控制器把
+pending settings fingerprint 提升为新的 predecessor；live target 若在控制器外发生代次或
+pending 漂移，则进入 `STATE_OUT_OF_SYNC`。结果协议不携带 material id、settings/policy
+fingerprint、异常、路径或 secret reference。
+
+该控制器的接受日志仍是 process-local。生产接线必须从权威 inventory 恢复初始 generation 与
+settings fingerprint，并提供 durable event journal、跨副本同一事件传播和收敛证明；当前实现不以
+内存状态冒充这些能力。
 
 ## 5. 代码证据
 
@@ -68,6 +85,14 @@ pending successor：
   descriptor 和可供轮换判定的 client certificate lifetime。
 - `RotatingControlPlaneHttpTransport`：两阶段 stage、连续 generation、重叠窗口、
   request-level 原子选择和过期 fail-closed。
+- `ControlPlaneCertificateRotationEvent`：严格、payload-free、deployment/target/material-bound
+  签名命令；`materialId` 不能成为 URI、路径或 secret reference。
+- `ConfiguredControlPlaneCertificateRotationTrustStore`：独立 public-key-only M-of-N Ed25519
+  policy、key lifecycle、时间窗与 canonical fingerprint 校验。
+- `ControlPlaneCertificateRotationController`：授权结果二次绑定、前代/候选指纹校验、并发幂等、
+  event-id 冲突、激活推进与状态漂移封闭。
+- `ControlPlaneCertificateRotationMaterialSource`：把不受信事件与 deployment-owned
+  certificate/secret material 隔离。
 - `RecoveryFleetPublicationTransportProperties`：对六个身份字段执行全有或全无校验，
   disabled residual、partial binding 和 required-without-binding 均在 secret resolution 前失败。
 - `TestRuntimeConfiguration` 与
@@ -77,6 +102,8 @@ pending successor：
   `application-test.yml` 仅保留显式兼容路径。
 - dynamic inventory v3、external anchor v2 与 capability v4 严格 Schema：新版本接收身份
   配置或布尔真值，v2/v1/v3 旧 Schema 保持冻结。
+- certificate rotation event v1 与 apply result v1 严格 Schema：字段与 Java protocol 对齐，
+  apply result 不投影 TLS material 或 resolver failure details。
 - health/capability/Tool Studio：只投影 `certificateIdentityBound` 及两个 source 级聚合
   布尔值，不返回 Subject、SAN、issuer pin、路径或 secret reference。
 - `RecoveryFleetPublicationTlsFixture`：真实 CA、server/client 证书、双向 TLS server 和 client identity
@@ -103,6 +130,16 @@ RotatingControlPlaneHttpTransportTest test
 - 候选 credential 加载被阻塞时旧代真实 TLS 请求仍成功；
 - active identity 过期后请求在 handler 前 fail closed。
 
+签名轮换控制模块另执行 20 项协议/信任/并发/状态测试，0 failures、0 errors、0 skips；与
+真实 mTLS rotating transport 的 6 项合计 26 项。新增覆盖：
+
+- 2-of-N 独立 authority quorum、unknown/revoked key、wrong policy/scope/target、签名和
+  canonical fingerprint 篡改、严格 not-before/expiry/lifetime；
+- opaque material id 拒绝 URI/path，public trust descriptor 与 apply result 不泄漏 material；
+- exact concurrent replay 只解析/stage 一次，event-id/generation 冲突不穿透；
+- resolver/stage 失败保持旧代可重试，错误文本不进入结果；
+- 激活后 predecessor fingerprint 随 generation 推进，live target 漂移后 fail closed。
+
 另执行复用 transport 的 79 项联合协议回归，0 failures、0 errors、0 skips；
 产品接线的 87 项聚焦测试亦全绿，覆盖 typed properties、Spring 组装、真实 TLS、
 Schema 冻结、health/capability、Tool Studio projection 与 demo preflight。
@@ -118,8 +155,8 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 7. 下一门禁
 
-下一门禁不再是静态身份接线，而是将轮换内核收口到受信的产品协议：已认证且
-已签名的 CA/secret-manager inventory event、连续 generation、可观测 activation/overlap、
-失败不扰动旧代、跨副本一致激活和受控 rollback。仍未闭合的是企业 CA 签发/
-吊销事件认证、OCSP/CRL 策略、HSM 私钥 custody、secret manager lease、跨副本协调、
-生产 HA/DR/chaos 和目标数据库认证。
+下一门禁不再是定义签名事件，而是把已验证的 Java 控制模块收口到产品：12 条稳定 target id、
+typed rotation properties、初始 generation/settings fingerprint、受控 material catalog、事件接入、
+固定基数 health/capability 和 demo preflight。其后仍需 durable journal、跨副本一致激活与受控
+switch-forward rollback。尚未闭合的外部生产责任包括企业 CA 签发/吊销事件源、OCSP/CRL、
+HSM 私钥 custody、secret-manager lease、HA/DR/chaos 和目标数据库认证。

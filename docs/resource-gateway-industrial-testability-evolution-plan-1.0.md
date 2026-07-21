@@ -108,9 +108,10 @@ JavaDoc 门禁。验证见 [Stage 4 external notary trust rotation verification]
 dynamic inventory、managed trust-root 与九条 external-anchor 读侧，共 12 组 transport；typed
 properties、test/staging 配置、demo preflight、dynamic inventory v3、external anchor v2、
 capability v4、固定基数 health 与 Tool Studio projection 同步闭合。87 项产品聚焦测试与
-3619 项全量测试全绿。静态证书身份绑定已产品化；但 restart-free rotation 仍只有 Java
-kernel，且企业 CA 事件认证、吊销/OCSP/CRL、HSM custody 与跨副本激活未闭合，不能据此
-宣称企业 PKI 已开放。验证见
+3619 项全量测试全绿。静态证书身份绑定已产品化；restart-free rotation 已从原子 TLS kernel
+推进到可嵌入的严格事件、M-of-N 信任、材料隔离和幂等控制模块，新增 26 项聚焦验证全绿。
+12 条产品链路配置、durable event journal、企业 CA 事件接入、吊销/OCSP/CRL、HSM custody
+与跨副本激活仍未闭合，不能据此宣称企业 PKI 已开放。验证见
 [certificate identity and rotation kernel verification](resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md)。
 
 Stage 2 本轮审计继续关闭 stored fixture 的对象稳定性和仓储替换断点：数据库 create/read 与
