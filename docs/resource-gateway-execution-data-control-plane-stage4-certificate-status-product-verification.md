@@ -149,9 +149,9 @@ mvn -f resource-gateway-examples/pom.xml test \
   -Dtest='ControlPlaneCertificateStatusSourceHeadTest,ControlPlaneCertificateStatusSourceHeadProtocolSchemaTest,ControlPlaneCertificateStatusSourceResponseProtocolTest,DatabaseControlPlaneCertificateStatusSourceHeadFloorTest,HttpControlPlaneCertificateStatusSourceTest,ControlPlaneCertificateStatusMonitorTest,ControlPlaneCertificateStatusTelemetryTest,ControlPlaneCertificateStatusSloMonitorTest,ControlPlaneCertificateStatusHealthTest,ControlPlaneCertificateStatusRuntimeConfigurationTest,ControlPlaneCertificateStatusProductSchemaTest,ToolStudioControlPlaneCertificateRotationCapabilityTest,VisualCanvasDemoScriptTest'
 ```
 
-上一轮全量回归基线为：Resource Gateway `clean verify` 执行 3834 tests，0 failures、0 errors、
+本轮最终全量回归基线为：Resource Gateway `clean verify` 执行 3855 tests，0 failures、0 errors、
 2 个条件浏览器跳过，并生成 Spring Boot 可执行 JAR；独立 test-kit `clean verify` 执行 230 tests，
-0 failures、0 errors、0 skips，且将 57 份 testing Schema 与 5 份 Tool Studio Schema 打入发布 JAR，
+0 failures、0 errors、0 skips，且将 64 份 testing Schema 与 5 份 Tool Studio Schema 打入发布 JAR，
 普通 JAR、shaded JAR 和 public JavaDoc 门禁全部通过。
 
 本次构建仍有三类非阻断工程告警：BLOGE `0.8.9-RC2` 的已发布 POM 缺少一项传递依赖版本、Mockito
