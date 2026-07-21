@@ -185,6 +185,9 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSP
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
+验收结果：3582 tests，0 failures、0 errors、2 个条件浏览器跳过；Browser DOM 34 项中
+32 项真实执行，browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
+
 ## 8. 尚未闭合
 
 1. external notary、notary trust publication 和 bootstrap-root bundle 尚未复用本增量的 pinned mTLS

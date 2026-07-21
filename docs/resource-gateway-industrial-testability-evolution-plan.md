@@ -79,7 +79,7 @@ capability v3、dynamic configuration v2、严格 external-anchor Schema、Sprin
 preflight 已同步。该能力不覆盖 notary/trust/bootstrap-root endpoint 自身的 pinned mTLS、HSM/KMS、
 publisher/notary HA/gossip 与目标数据库/DR/chaos 认证；验证见
 [recovery fleet transport and non-equivocation verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-transport-and-non-equivocation-verification.md)。
-完整 Resource Gateway `clean verify` 执行 3493 tests，0 failures、0 errors、2 个条件浏览器跳过；
+完整 Resource Gateway `clean verify` 执行 3582 tests，0 failures、0 errors、2 个条件浏览器跳过；
 Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功生成 Spring Boot 可执行 JAR；
 独立 test-kit `clean verify`
 执行 230 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR 与 public
