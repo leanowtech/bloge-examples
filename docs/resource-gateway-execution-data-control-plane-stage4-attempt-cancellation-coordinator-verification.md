@@ -39,6 +39,13 @@ find exact command
 它；prepared command 的旧 deployment 也不会由当前 authority 猜测解析。两者必须进入后续有界
 reconciliation/orphan lane，由动态 provider inventory、旧 generation resolver 和人工升级策略处理。
 
+`authorizeInvocation` 只是一道调用前的数据库时钟栅栏：它锁定 `PREPARED` entry，确认当前 database time
+尚未越过 command deadline，并要求剩余窗口至少覆盖 frozen descriptor 的最大 provider latency。该事务会在
+provider I/O 前结束，因此它不是 durable invocation permit，也没有把外部终止副作用与数据库提交原子化。
+若进程在授权后发生长时间 stop-the-world、调度冻结或网络栈停顿，provider 调用仍可能跨过 deadline；后续
+`accept` 会拒绝迟到 receipt 并保留 `PREPARED`，但外部副作用已经可能发生。根治需要 provider 可消费的
+single-use fence/lease、到期自拒绝语义或受事务消息驱动的调用代理，并由 reconciliation 处理未知结果。
+
 ## 3. 验证证据
 
 ```bash
@@ -74,6 +81,7 @@ javadoc --release 25 -Werror -Xdoclint:all
 4. 动态 signed provider inventory、旧 deployment 定址、trust revocation 追溯策略；
 5. Spring bean、HTTP/Schema/test-kit/capability、retention/tombstone、telemetry/readiness；
 6. 真实 process/container/VM provider、OS process-tree 终止证明和 crash/DR/HA/chaos 认证。
+7. database authorization 与 provider side effect 之间的 durable single-use invocation permit/expiry fence。
 
 因此准确结论是“provider cancellation 已有可组合、可恢复的调用顺序内核”，不是“Resource Gateway 已具备
 可启用的强制取消产品能力”。

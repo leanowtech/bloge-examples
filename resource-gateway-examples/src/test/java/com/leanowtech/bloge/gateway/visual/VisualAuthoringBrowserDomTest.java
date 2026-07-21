@@ -98,6 +98,7 @@ class VisualAuthoringBrowserDomTest {
 
     private WebDriver driver;
     private ChromeDriverService driverService;
+    private ScopedProcessTree driverProcessTree;
 
     @BeforeEach
     void seedDemoDescriptorsForRandomPort() {
@@ -124,17 +125,22 @@ class VisualAuthoringBrowserDomTest {
     void closeBrowser() {
         WebDriver browser = driver;
         ChromeDriverService service = driverService;
+        ScopedProcessTree processTree = driverProcessTree;
         driver = null;
         driverService = null;
+        driverProcessTree = null;
         if (browser != null) {
-            BoundedBrowserSessionLauncher.launch(
+            BoundedBrowserSessionCloser.close(
                     WEBDRIVER_TIMEOUT,
                     () -> {
                         browser.quit();
-                        return Boolean.TRUE;
+                        if (processTree != null) {
+                            processTree.verifyTerminated();
+                        }
                     },
-                    service == null ? () -> { } : service::stop,
-                    ignored -> { });
+                    processTree != null
+                            ? processTree::terminate
+                            : service == null ? () -> { } : service::stop);
         }
     }
 
@@ -2262,6 +2268,9 @@ class VisualAuthoringBrowserDomTest {
                     .pageLoadTimeout(WEBDRIVER_TIMEOUT)
                     .scriptTimeout(WEBDRIVER_TIMEOUT)
                     .implicitlyWait(Duration.ZERO);
+            driverProcessTree = ScopedProcessTree.captureUnique(
+                    Path.of(service.getExecutable()),
+                    "--port=" + service.getUrl().getPort());
             driverService = service;
             return browser;
         } catch (BoundedBrowserSessionLauncher.LaunchException ex) {
@@ -2269,7 +2278,7 @@ class VisualAuthoringBrowserDomTest {
                     + ex.disposition();
             Assumptions.abort(chromeWebDriverUnavailableReason);
             return null;
-        } catch (WebDriverException ex) {
+        } catch (WebDriverException | ScopedProcessTree.ScopeException ex) {
             BoundedBrowserSessionLauncher.cleanupAfterFailedLaunch(
                     browser, service::stop, VisualAuthoringBrowserDomTest::quitQuietly);
             chromeWebDriverUnavailableReason = "Chrome/WebDriver session setup is unavailable";

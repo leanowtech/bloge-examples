@@ -57,6 +57,11 @@ trust key 完整复验 attestation；`find` 校验的是已接受记录、immuta
 声称更早已完成终止。这样关闭离线迟到回执无限改写状态的窗口；需要接纳延迟证明时，应进入独立、受审计的
 reconciliation 协议，而不是放宽主 journal。
 
+调用前 `authorizeInvocation` 会再次使用数据库时间检查 `PREPARED` 与剩余 provider latency window，避免
+明显过期的 retained command 仍触发副作用。但授权事务在 provider I/O 前结束，二者仍有 TOCTOU：长暂停可在
+授权后耗尽窗口。`accept` 的严格到达时限只能阻止迟到 receipt 改写 journal，不能撤销已经发生的 provider
+副作用；durable single-use permit 与 provider-side expiry fence 仍是后续必做项。
+
 ## 4. 失败语义
 
 | 场景 | 结果 |
