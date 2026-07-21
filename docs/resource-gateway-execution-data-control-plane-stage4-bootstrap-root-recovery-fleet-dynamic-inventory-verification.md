@@ -15,13 +15,15 @@ Resource Gateway 的运行期 authority：
 - floor-before-publish 原子本地可见性、maximum snapshot age 与 refresh failure hard fence；
 - aggregate-only descriptor、refresh telemetry 和 Actuator health 真值；
 - 复用既有 worker 的 lane 前后、heartbeat 后、cursor commit 前 generation/availability 围栏。
+- test/staging strict Spring properties 自动装配、默认 durable database floor 和唯一 reviewed resolver；
+- staging 强制 certified dynamic mode，production 物理隔离。
 
-实现类是
-`DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority`。它是 embedding API，不是
-自动发现服务：调用方仍负责提供 public trust keys、reviewed lane resolver、固定 deployment binding、
-durable publication floor 和唯一 Spring inventory bean。本步不宣称 production profile、动态 trust-root
-轮换、publisher mTLS/pinning、外部 transparency、跨区 Byzantine anchor、非 H2 数据库、HA/DR/chaos 或
-容量认证。
+核心实现是 `DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority`；
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration` 提供可选的 test/staging
+composition。调用方仍负责提供 public trust keys、唯一 reviewed lane resolver 和固定 deployment binding；
+可以接受默认 database floor，也可以替换为唯一 custom durable floor。本步不宣称 production profile、动态
+trust-root 轮换、publisher mTLS/pinning、外部 transparency、跨区 Byzantine anchor、非 H2 数据库、
+HA/DR/chaos 或容量认证。
 
 ## 2. 根因与不变量
 
@@ -128,9 +130,42 @@ source type 完全一致。refresh 恰好发生在两次读取之间时，本次
 `REMOTE_REFRESH_FAILED`。它足以避免泄密和高基数，但生产接线前仍应增加外部指标/告警路由、SLO、
 连续失败窗口和 authority-side correlation，而不是把异常文本暴露到 Actuator。
 
-## 7. Embedding 用法
+## 7. Spring 自动装配与 Embedding 用法
 
-调用方构造并注册唯一 inventory bean：
+推荐的 test/staging 路径只注册一个 caller-owned `LaneResolver`，然后显式启用 dynamic inventory：
+
+```bash
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED=true
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ID=bootstrap-root-recovery-v1
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_PARTITIONS=8
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID="${HOSTNAME}"
+
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED=true
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_REQUIRED=true
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_SCOPE_ID=tenant-a/staging
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ARTIFACT_FINGERPRINT=sha256:<64-lowercase-hex>
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_DOMAIN=tenant-a-recovery-fleet
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ACCEPTED_POLICY_FINGERPRINTS=sha256:<64-lowercase-hex>
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_SIGNATURE_THRESHOLD=2
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_AUTHORITY_KEYS_JSON='<public-key-array>'
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_PUBLICATION_URI=https://governance.example/recovery-fleet/publication
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_DOMAIN=tenant-a-recovery-fleet-witness
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_SIGNATURE_THRESHOLD=2
+export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON='<public-key-array>'
+```
+
+`application-staging.yml` 默认 `REQUIRED=true`，且启动 preflight 不允许环境变量把它降为 false；test 默认
+`REQUIRED=false`，便于 isolated fallback 测试。`allow-insecure-loopback=true` 只允许 test profile 的
+localhost HTTP，staging 即使显式配置也拒绝。unknown、duplicate、trailing、private-key-like 字段以及半配置
+的 disabled source 都在 floor DDL 和网络调用前失败。系统要求唯一 inventory、resolver 和 floor 候选；
+不会用 bean 顺序静默选择或回退。
+
+默认 floor 使用共享 `TestRuntimeDatabase`。需要自定义存储时，只能提供一个
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor`，且 `durable()` 必须为 true。
+Spring 拥有 dynamic authority 的 refresh scheduler 并在 context 关闭时调用 `close()`；resolver 和 database
+继续由 embedding application 持有。
+
+保留的低层 embedding API 适合已有 composition root 的宿主。调用方构造并注册唯一 inventory bean：
 
 ```java
 @Bean(destroyMethod = "close")
@@ -155,15 +190,6 @@ DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority recove
 }
 ```
 
-随后继续启用既有 test/staging fleet composition：
-
-```bash
-export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED=true
-export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ID=bootstrap-root-recovery-v1
-export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_PARTITIONS=8
-export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID="${HOSTNAME}"
-```
-
 `fleetId` 与 partition count 必须和 signed binding 精确相同。dynamic authority、resolver 和 database 都由
 embedding application 持有；Spring fleet composition 持有 coordinator、worker、scheduler 和 health。
 必须为 authority 声明 `destroyMethod="close"` 或等价 lifecycle，避免 application context 关闭后刷新线程
@@ -171,7 +197,7 @@ embedding application 持有；Spring fleet composition 持有 coordinator、wor
 
 ## 8. 验证矩阵
 
-新增 13 项 dynamic authority 测试，使用真实 Ed25519 和真实 JDK `HttpServer` transport，覆盖：
+dynamic authority 的 13 项测试使用真实 Ed25519 和真实 JDK `HttpServer` transport，覆盖：
 
 - `ACTIVE` bootstrap、runtime exact resolution、dynamic descriptor、health 和 floor；
 - strong ETag、conditional request、严格 `304` 缓存重验、304 换 ETag 与同 ETag 换内容拒绝；
@@ -182,16 +208,21 @@ embedding application 持有；Spring fleet composition 持有 coordinator、wor
 - unknown/duplicate/trailing JSON、unsafe URI、weak ETag、oversize body；
 - media/protocol downgrade rejection，以及 refresh 失败后合法 successor 原子恢复。
 
+新增 Spring composition 测试覆盖：真实签名 HTTP bootstrap、默认 database floor、worker/scheduler/health、
+context close；disabled fallback；production 物理隔离；staging required 与 insecure-loopback fence；未知/半配置、
+缺失或重复 resolver、non-durable custom floor、重复 inventory 候选均在网络或 recovery state 前失败；
+inventory health 在两种 configuration 注册顺序下都只装配一个。
+
 recovery-fleet 的 protocol、Schema、floor v2/legacy、worker、coordinator、scheduler、health、Spring
-composition 与 dynamic authority 共 15 类联合门禁执行 118 tests，0 failures、0 errors、0 skips。动态
+composition 与 dynamic authority 共 16 类联合门禁执行 128 tests，0 failures、0 errors、0 skips。动态
 authority、authority SPI、health 与 configured verifier 四个公共类型通过
-`javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
-`mvn -f resource-gateway-examples/pom.xml clean verify` 全量门禁执行 3462 tests，0 failures、0 errors、
-2 条环境条件跳过，并成功生成 Spring Boot 可执行 JAR。
+`javadoc --release 25 -Werror -Xdoclint:all`；新增 configuration 也纳入相同严格门禁，0 warnings、
+0 errors。`mvn -f resource-gateway-examples/pom.xml clean verify` 全量门禁执行 3472 tests，0 failures、
+0 errors、2 条环境条件跳过，并成功生成 Spring Boot 可执行 JAR。
 
 ## 9. 剩余工业化门禁
 
-1. dynamic authority 尚未由严格 Spring properties 自动装配，也没有 capability discovery endpoint；
+1. 尚没有 capability discovery endpoint 与运维配置 metadata；
 2. deployment/witness trust roots 固定在构造期，未实现 restart-free 双根发布、撤销和 durable key floor；
 3. publication floor 只在本地数据库持久化，`externallyAnchored=false`、`byzantineQuorumAnchored=false`；
 4. HTTPS 未声明 client mTLS、certificate pinning、代理策略、DNS rebinding 防护和 response-key 热轮换；

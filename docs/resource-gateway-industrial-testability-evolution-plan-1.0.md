@@ -49,11 +49,11 @@ recovery fleet 的 witnessed `ACTIVE/REVOKED` publication machine protocol、双
 publication floor、严格 HTTPS/ETag 动态 authority、独立双域 M-of-N 验证、撤销传播、refresh/age hard
 fence、floor-before-publish 与 worker generation fence 亦已闭合；
 provider-confirmed cancellation/process isolation、动态 trust-root 轮换、动态 rebalance、dynamic authority
-自动装配/capability/production
+capability/production
 产品接线、publisher
 mTLS/pinning、response-key 热轮换、根源 anti-equivocation 与生产认证、HA/chaos/外部 SLO
 仍待完成。
-完整 Resource Gateway `clean verify` 执行 3462 tests，0 failures、0 errors、2 个条件浏览器跳过；
+完整 Resource Gateway `clean verify` 执行 3472 tests，0 failures、0 errors、2 个条件浏览器跳过；
 Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功生成 Spring Boot 可执行 JAR；
 独立 test-kit `clean verify`
 执行 230 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR 与 public
@@ -624,7 +624,7 @@ authenticated-conflict quarantine、test/staging 单 root-set Spring publication
 跨 root-set recovery 的进程内强绑定 inventory/generation/fair-worker/scheduler/health runtime、固定分区
 durable cursor/sharding/cross-replica fairness 内核和 static signed inventory authority/hard-expiry/runtime
 reverse-binding 入口已闭合；企业 IAM/PDP、provider-confirmed cancellation/process isolation、signed
-dynamic inventory publication/revocation/floor、dynamic authority 自动装配/capability/production 产品接线、
+dynamic inventory publication/revocation/floor、dynamic authority capability/production 产品接线、
 publisher mTLS/pinning、
 response-key 热轮换、根源 anti-equivocation、KMS/HSM/HA 与跨数据库/DR 认证仍是后续工作。验证见
 [Stage 4 test-secret signed serving-inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-signed-serving-inventory-verification.md)。
@@ -1099,10 +1099,39 @@ lane 前后、heartbeat 后和 cursor commit 前复核 availability + exact gene
 本子步新增 dynamic authority 13 项和 health torn-read 1 项测试；连同 protocol、Schema、floor v2/legacy、
 worker、coordinator 与 Spring composition 的 15 类聚焦门禁执行 118 tests，0 failures、0 errors、0 skips，
 七个相关公共类型通过严格 JavaDoc 门禁；全量 `clean verify` 执行 3462 tests，0 failures、0 errors、2 条
-环境条件跳过，并成功重打包 Spring Boot 可执行 JAR。当前仍缺 Spring properties 自动装配、restart-free deployment/
+环境条件跳过，并成功重打包 Spring Boot 可执行 JAR。该子步当时仍缺 Spring properties 自动装配、restart-free deployment/
 witness trust-root 轮换、外部 Byzantine floor、publisher mTLS/pinning、production profile、目标数据库/HA/
 DR/chaos 与外部 SLO 认证。验证见
 [bootstrap-root recovery fleet dynamic inventory verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-verification.md)。
+
+Stage 4 该增量第二十一子步关闭第二十子步只提供 embedding API 的产品接线缺口，根治“每个业务宿主
+手写 trust/floor/authority bean 顺序，导致 staging 可静默降级、网络或 DDL 早于配置验证、refresh thread
+ownership 不一致”的组合根因。新增
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration`，只在无
+`production` 且 active `test`/`staging`、fleet 显式启用时出现。配置只绑定 public trust、exact
+deployment/artifact/fleet topology、M-of-N threshold、bounded HTTPS refresh policy 和独立 witness；不接受
+signer private key 或 provider credential。caller 必须提供唯一 reviewed `LaneResolver`。默认使用共享
+`TestRuntimeDatabase` 创建 durable publication/witness floor，也允许替换为唯一 custom durable floor。
+
+启动被拆成无副作用 `ValidatedFleetConfiguration`、无副作用
+`ValidatedDynamicInventoryConfiguration`、floor DDL、remote bootstrap、最终
+`ValidatedFleetRuntime` 五级依赖。unknown/duplicate/trailing/half configuration、trust-domain/public-key
+重叠、错误 binding/URI/duration、零或多个 resolver 均在 DDL/HTTP 前失败；重复 inventory 候选不按 bean
+顺序选择；non-durable floor 在 HTTP 前失败。staging 从 YAML 默认和代码 preflight 两层强制
+`required=true`，且拒绝 insecure loopback；最终 preflight 还复核 dynamic source type、coherent
+observation/descriptor 以及 automatic refresh、signed revocation、durable floor、witness 四项能力，不能用
+custom static authority 冒充。Spring 明确拥有 authority 并在 context 关闭时停止 refresh，caller-owned
+resolver/database 不被越权关闭。
+
+新增真实 Spring context、JDK HTTP、Ed25519 deployment/witness 和 H2 的 composition 测试，覆盖完整启动、
+run/health/close、test fallback、production isolation、staging required、strict properties、resolver/floor/
+inventory ambiguity 与 pre-state/pre-network 失败顺序。验证见
+[bootstrap-root recovery fleet dynamic inventory Spring composition verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-spring-composition-verification.md)。该步只关闭
+test/staging 自动装配；restart-free trust-root、capability discovery、mTLS/pinning、external Byzantine
+anchor、目标数据库/HA/DR/chaos、online rebalance、enterprise IAM/HSM 与 production composition 仍是硬门禁。
+Spring composition 21 tests（含双 configuration 注册顺序）与 recovery-fleet 128 tests 全绿，严格 JavaDoc
+0 warnings/0 errors；全量
+`clean verify` 执行 3472 tests，0 failures、0 errors、2 条环境条件跳过并重打包可执行 JAR。
 
 第五十三增量第十八子步把 exact cohort 的 expected set 从 replica-local 配置提升为外部可验签事实。
 deployment governance 生成 strict `bloge.testSuiteStabilityServingInventory.v1`，以 canonical material 绑定

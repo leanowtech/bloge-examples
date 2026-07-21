@@ -651,7 +651,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                         key.revoked())).toList();
     }
 
-    private static boolean independentAuthorities(
+    static boolean independentAuthorities(
             List<AuthorityKey> deployment,
             List<AuthorityKey> witness) {
         Set<String> deploymentAuthorities = new HashSet<>();

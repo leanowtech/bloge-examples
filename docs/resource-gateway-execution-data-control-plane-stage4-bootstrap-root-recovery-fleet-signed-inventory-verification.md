@@ -202,7 +202,7 @@ browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JA
 - 数据库权威 generation/publication/witness floor、回滚/fork 拒绝与备份回滚外部锚；
 - 全副本 inventory generation convergence gate 与 refresh SLO；
 - enterprise IAM/PDP 对 lane membership、worker 与 resolver closure 的授权；
-- capability/HTTP、动态 authority 自动装配与 production profile（test/staging fleet composition 已闭合）；
+- capability/HTTP 与 production profile（test/staging dynamic authority 自动装配已由后续子步闭合）；
 - 在线 partition-count migration、rebalance、priority、weighted fairness；
 - PostgreSQL/MySQL、multi-region HA、DR/chaos/soak 和 production SLO 认证。
 

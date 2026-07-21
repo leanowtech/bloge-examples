@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 
 import java.time.Duration;
 import java.util.Objects;
@@ -22,28 +23,31 @@ import java.util.Objects;
 /**
  * Explicit test/staging Spring composition root for durable bootstrap-root recovery fleets.
  *
- * <p>The embedder owns discovery, authorization, signature verification, and atomic publication of
- * an already-local {@link ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory}. This
- * configuration owns only the runtime path from that snapshot to a database-clock coordinator,
- * bounded worker, fixed-delay scheduler, and aggregate health indicator. A caller-supplied signed
- * inventory authority is additionally preflighted and receives an independent aggregate health
- * indicator. This configuration never binds signer credentials, provider endpoints, private keys,
- * or remote inventory transport.</p>
+ * <p>The runtime consumes exactly one locally available
+ * {@link ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory} and owns the path from that
+ * snapshot to a database-clock coordinator, bounded worker, fixed-delay scheduler, and aggregate
+ * health indicator. The companion dynamic configuration can construct that inventory from a
+ * public-only witnessed HTTPS source; otherwise the embedder owns discovery, authorization,
+ * signature verification, and atomic publication. Neither configuration accepts signer private
+ * keys or provider credentials.</p>
  *
  * <p>The runtime is physically absent whenever a {@code production} profile is active and remains
  * disabled by default in {@code test}/{@code staging}. Fleet mode and the legacy single-root lane
  * are mutually exclusive because running both would duplicate polling without adding a new write
  * fence. Spring dependency destruction closes the scheduler before the worker; the caller-owned
- * inventory, lane services, authority resolvers, and isolated database remain outside their
- * ownership boundary.</p>
+ * lane services, authority resolvers, isolated database, and any caller-supplied inventory remain
+ * outside their ownership boundary. The companion configuration owns only the dynamic authority
+ * that it creates.</p>
  */
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
 @ConditionalOnProperty(prefix = ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
         .FleetProperties.PREFIX, name = "enabled", havingValue = "true")
 @EnableConfigurationProperties(
-        ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
-                .FleetProperties.class)
+        {ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
+                .FleetProperties.class,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                        .DynamicInventoryProperties.class})
 public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration {
 
     /** Creates the profile-gated durable fleet composition root. */
@@ -51,18 +55,19 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
     }
 
     /**
-     * Freezes startup invariants before any coordinator table or background scheduler is created.
+     * Rejects local topology and mode conflicts before any floor table or remote source is used.
      *
      * @param environment active profile and mutually exclusive single-lane configuration
-     * @param inventory caller-owned, already-authorized bounded local inventory
      * @param properties strict durable fleet runtime policy
-     * @return validated startup token consumed by every stateful bean
+     * @param dynamicInventory strict dynamic-source policy and staging requirement
+     * @return immutable token required by dynamic inventory and stateful runtime beans
      */
     @Bean
-    ValidatedFleetRuntime externalSequenceAnchorBootstrapRootRecoveryFleetPreflight(
+    ValidatedFleetConfiguration externalSequenceAnchorBootstrapRootRecoveryFleetConfiguration(
             Environment environment,
-            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
-            FleetProperties properties) {
+            FleetProperties properties,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                    .DynamicInventoryProperties dynamicInventory) {
         try {
             Boolean singleLaneEnabled = environment.getProperty(
                     ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfiguration
@@ -71,6 +76,35 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
             if (Boolean.TRUE.equals(singleLaneEnabled)) {
                 throw FleetProperties.invalid();
             }
+            if (environment.acceptsProfiles(Profiles.of("staging"))
+                    && !dynamicInventory.required()) {
+                throw FleetProperties.invalid();
+            }
+            return new ValidatedFleetConfiguration(
+                    properties.fleetId(), properties.partitionCount());
+        } catch (RuntimeException invalid) {
+            throw FleetProperties.invalid();
+        }
+    }
+
+    /**
+     * Freezes startup invariants before any coordinator table or background scheduler is created.
+     *
+     * @param inventory caller-owned, already-authorized bounded local inventory
+     * @param properties strict durable fleet runtime policy
+     * @param dynamicInventory strict dynamic-source policy and staging requirement
+     * @param configured successful stateless fleet configuration preflight
+     * @return validated startup token consumed by every stateful bean
+     */
+    @Bean
+    ValidatedFleetRuntime externalSequenceAnchorBootstrapRootRecoveryFleetPreflight(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
+            FleetProperties properties,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                    .DynamicInventoryProperties dynamicInventory,
+            ValidatedFleetConfiguration configured) {
+        try {
+            Objects.requireNonNull(configured, "configured");
             Snapshot snapshot = Objects.requireNonNull(
                     inventory.snapshot(), "fleet inventory snapshot");
             if (inventory instanceof
@@ -86,6 +120,12 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
                         || properties.partitionCount() != binding.partitionCount()) {
                     throw FleetProperties.invalid();
                 }
+                if (dynamicInventory.required()
+                        && !dynamicAuthority(observed, authority.descriptor())) {
+                    throw FleetProperties.invalid();
+                }
+            } else if (dynamicInventory.required()) {
+                throw FleetProperties.invalid();
             }
             FleetManifest manifest = FleetManifest.from(
                     properties.fleetId(), snapshot, properties.partitionCount());
@@ -93,6 +133,25 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
         } catch (RuntimeException invalid) {
             throw FleetProperties.invalid();
         }
+    }
+
+    private static boolean dynamicAuthority(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Observation
+                    observation,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor
+                    descriptor) {
+        var properties = descriptor.properties();
+        return observation.sourceType().equals(
+                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                        .SOURCE_TYPE)
+                && descriptor.available() == observation.available()
+                && descriptor.status().equals(observation.status())
+                && descriptor.generation() == observation.generation()
+                && descriptor.laneCount() == observation.laneCount()
+                && Boolean.TRUE.equals(properties.get("automaticRefresh"))
+                && Boolean.TRUE.equals(properties.get("signedRevocation"))
+                && Boolean.TRUE.equals(properties.get("durableGenerationFloor"))
+                && Boolean.TRUE.equals(properties.get("witnessedPublications"));
     }
 
     /** Creates the shared database-clock partition coordinator unless supplied by the embedder. */
@@ -161,6 +220,16 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
 
         private ValidatedFleetRuntime {
             startupManifest = Objects.requireNonNull(startupManifest, "startupManifest");
+        }
+    }
+
+    record ValidatedFleetConfiguration(String fleetId, int partitionCount) {
+
+        ValidatedFleetConfiguration {
+            fleetId = Objects.requireNonNull(fleetId, "fleetId");
+            if (fleetId.isBlank() || partitionCount < 1) {
+                throw FleetProperties.invalid();
+            }
         }
     }
 

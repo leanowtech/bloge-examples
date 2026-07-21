@@ -5,18 +5,19 @@
 本增量把 durable recovery fleet 从 Java embedding kernel 提升为可部署的 test/staging Spring
 composition root。它装配：
 
-- caller-owned local `ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory`；
+- caller-owned local `ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory`，或 strict properties
+  自动装配的 witnessed dynamic authority；
 - database-clock `DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator`；
 - bounded `ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker`；
 - fixed-delay `ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler`；
 - aggregate fleet health；
-- 当 inventory 是 signed authority 时，额外装配 aggregate inventory health。
+- 当 inventory 是 signed authority 时，额外装配 aggregate inventory health；
+- dynamic 模式默认装配 durable database publication/witness floor。
 
-它仍不是 production fleet service，也不负责 inventory discovery、签名生成、IAM、secret、capability 或
-HTTP endpoint。远端 refresh 可由调用方构造的
-`DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority` 完成；composition root 仍只
-消费一个已经本地化的 inventory bean。这个 ownership 边界使信任根、HTTPS client、lane resolver 和
-publication floor 的生命周期不会被隐式环境变量拼装。
+它仍不是 production fleet service，也不负责签名生成、lane discovery、IAM、secret、capability 或 HTTP
+endpoint。dynamic composition 只绑定 public trust、exact deployment/fleet binding 和 bounded transport
+policy；lane resolver 仍是 caller-reviewed 唯一本地 catalog。这个 ownership 边界不会把 signer private key
+或 provider credential 引入 Resource Gateway。
 
 ## 2. 根因
 
@@ -34,11 +35,12 @@ mutual exclusion 和失败顺序。
 
 ## 3. 启用方式
 
-调用方必须先提供唯一 inventory bean。普通实现必须返回 immutable、bounded、non-blocking local snapshot；
+调用方可以提供唯一 inventory bean。普通实现必须返回 immutable、bounded、non-blocking local snapshot；
 更强模式可提供
 `ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority`，由 composition preflight 额外校验其
-observation 与 signed topology。dynamic authority 同样实现该接口，因此可直接作为唯一 inventory bean；
-其构造阶段必须先成功取得一个可用的 `ACTIVE` publication，随后才启动后台 fixed-delay refresh。
+observation 与 signed topology。也可以注册唯一 `LaneResolver`，并通过
+`bootstrap-root-recovery-fleet-dynamic-inventory` properties 自动构造 dynamic authority。构造阶段必须先
+成功取得一个可用的 `ACTIVE` publication，随后才启动后台 fixed-delay refresh。
 
 最小配置：
 
@@ -65,7 +67,8 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID="${HOSTNAME}"
 
 配置源位于 `application-test.yml` 与 `application-staging.yml`。对应
 `FleetProperties` 使用 `ignoreUnknownFields=false`；拼错字段和试图注入 signer private key 的未知字段都
-直接阻断启动。
+直接阻断启动。dynamic inventory 的完整环境变量表与示例见
+[dynamic inventory verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-verification.md)。
 
 ## 4. Profile 与互斥
 
@@ -77,19 +80,30 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID="${HOSTNAME}"
 - 默认配置不创建 coordinator table、worker、thread 或 health；
 - fleet mode 与
   `gateway.testing.external-sequence-anchor.bootstrap-root-recovery.enabled=true` 启动前互斥。
+- staging fleet 强制 `dynamic-inventory.required=true`，不能用环境变量降级到 static fallback；
+- `allow-insecure-loopback=true` 只允许 test，staging 拒绝 localhost HTTP 逃生口。
 
 互斥的病根是两套 scheduler 没有共享外层扫描 fence；允许同时运行不会增加安全性，只会增加重复 poll 和
 运行解释歧义。
 
 ## 5. Stateful preflight
 
-所有 stateful beans 都依赖一个私有 `ValidatedFleetRuntime` token。preflight 先完成：
+preflight 拆成两个有依赖顺序的 token。`ValidatedFleetConfiguration` 不读取 inventory、不建表、不访问网络，
+先完成：
 
 1. 单 lane/fleet 互斥检查；
-2. inventory snapshot 非阻塞读取与 DTO validation；
-3. `fleetId + generation + inventory fingerprint + partitionCount` manifest 计算；
-4. signed authority 可选校验：available、snapshot/observation generation、lane count、fleet id 和
+2. staging required policy；
+3. fleet identity、partition 和 strict property validation；
+4. dynamic 模式的 public key、独立 trust domain、resolver 唯一性、binding、URI 与 duration validation。
+
+随后才允许默认 floor DDL 和 dynamic remote bootstrap。最终 `ValidatedFleetRuntime` 再完成：
+
+1. inventory snapshot 非阻塞读取与 DTO validation；
+2. `fleetId + generation + inventory fingerprint + partitionCount` manifest 计算；
+3. signed authority 校验：available、snapshot/observation generation、lane count、fleet id 和
    partition count 必须完全一致。
+4. required 模式还要求 dynamic source type、coherent descriptor，以及 automatic refresh、signed
+   revocation、durable generation floor、witnessed publication 四个能力真值。
 
 任何错误都折叠为固定消息
 `Bootstrap-root recovery fleet runtime configuration is invalid`。inventory/provider diagnostics 不进入启动
@@ -97,18 +111,19 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID="${HOSTNAME}"
 
 ## 6. Bean ownership 与关闭顺序
 
-composition root 拥有默认 coordinator、worker、scheduler 和两个 health indicator。inventory、lane
-service、authority resolver、`TestRuntimeDatabase`、`ObjectMapper` 由调用方拥有。
+composition root 拥有默认 coordinator、worker、scheduler 和两个 health indicator。启用内置 dynamic
+模式时，它还拥有 authority refresh scheduler 和默认 database floor；inventory、lane service、authority
+resolver、`TestRuntimeDatabase`、`ObjectMapper` 仍由调用方拥有。
 
 Spring dependency graph 使 scheduler 依赖 worker，worker 依赖 coordinator 和 preflight；销毁顺序因而是：
 
 ```text
-scheduler.close -> worker.close -> caller closes lane services/resolvers/database
+scheduler.close -> worker.close -> dynamic authority.close -> caller closes resolver/database
 ```
 
 `scheduler.close()` 停止新 poll 并等待 admitted scheduler cycle；`worker.close()` 再关闭新 worker admission
-并等待已进入 cycle。composition 不调用 inventory/service/resolver/database 的 close，避免跨 ownership
-重复释放。
+并等待已进入 cycle；dynamic authority 最后停止 refresh。composition 不关闭 caller-owned
+service/resolver/database，避免跨 ownership 重复释放。
 
 ## 7. 可替换点与 fail-closed 约束
 
@@ -123,7 +138,7 @@ observation 与 descriptor，若刷新恰好跨越两次读取导致 generation/
 
 ## 8. 验证矩阵
 
-`ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest` 的 11 项测试覆盖：
+runtime configuration 的 11 项既有测试，加上 dynamic composition 的真实签名 HTTP/Spring 测试，覆盖：
 
 - default-disabled、production-only 和 production+test 物理隔离；
 - test/staging 完整组装、手工 run、aggregate health 与 close 后 quiescence；
@@ -132,6 +147,9 @@ observation 与 descriptor，若刷新恰好跨越两次读取导致 generation/
 - invalid partition/schedule、unknown private-like property；
 - inventory exception 脱敏且 stateful table 尚未创建；
 - signed authority health 自动装配与 topology/generation preflight 失败。
+- 默认 database floor、staging required、test fallback、insecure-loopback profile fence；
+- malformed/unknown/half configuration、缺失/重复 resolver、non-durable floor 和重复 inventory 均在
+  网络或 recovery state 前 fail closed。
 
 聚焦命令：
 
@@ -141,18 +159,17 @@ mvn -f resource-gateway-examples/pom.xml \
   test
 ```
 
-该命令执行 11 tests，0 failures、0 errors、0 skips。fleet 与既有 single-lane configuration 的联合门禁
-执行 95 tests；其中 fleet 范围 86 tests，均为 0 failures、0 errors、0 skips。inventory、coordinator、
-database coordinator、worker、scheduler、fleet health、attestation、authority、configured authority、
-inventory health 与 runtime configuration 共 11 个公共类型通过
-`javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
-
-完整 Resource Gateway `clean verify` 执行 3430 tests，0 failures、0 errors、2 skips；Browser DOM 34 项中
-32 项及 browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest` 11 项与
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurationTest` 10 项联合执行 21 tests，
+0 failures、0 errors、0 skips；后者显式覆盖两种 configuration 注册顺序。完整 recovery-fleet 16 类门禁执行
+128 tests，0 failures、0 errors、
+0 skips；相关公共类型通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。完整
+Resource Gateway `clean verify` 执行 3472 tests，0 failures、0 errors、2 条环境条件跳过，并成功重打包
+Spring Boot 可执行 JAR。
 
 ## 9. 未完成的生产门禁
 
-- dynamic authority 的 Spring 属性化自动装配、信任根在线轮换与 capability discovery；
+- dynamic authority 的信任根在线轮换与 capability discovery；
 - capability/schema discovery endpoint 和运维配置 metadata；
 - enterprise IAM 对 worker/inventory/lane membership 的授权；
 - production profile、PostgreSQL/MySQL 方言、连接池/锁超时与 rolling-upgrade certification；

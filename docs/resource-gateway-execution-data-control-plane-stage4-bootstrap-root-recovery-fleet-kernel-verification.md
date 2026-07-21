@@ -26,7 +26,7 @@
 本步已有可选 static signed inventory 入口，但不是签名动态 publication、远端 refresh/discovery、撤销链、
 durable inventory floor、动态 rebalance 或生产 fleet 产品。默认关闭的 test/staging Spring composition 已能
 消费 caller-owned local inventory 并装配 authority/coordinator/worker/scheduler/health；它尚未形成
-dynamic inventory 自动装配、capability/HTTP 或 production 交付面。
+dynamic inventory capability/HTTP 或 production 交付面。test/staging 自动装配已由后续子步闭合。
 
 ## 2. 根因
 
@@ -277,7 +277,7 @@ ownership。fleet 与既有 single-lane configuration 的联合门禁执行 95 t
   witnessed publication protocol 和数据库 durable floor kernel 已闭合）；
 - enterprise IAM/PDP 对 lane membership、worker、resolver 和 runtime fingerprint 的授权；
 - 在线 partition-count 变更、自动 rebalance、priority、带权 fleet-wide fairness 与 rollout jitter；
-- dynamic inventory 自动装配、capability/HTTP 和 production profile（test/staging composition 已闭合）；
+- dynamic inventory capability/HTTP 和 production profile（test/staging 自动 composition 已闭合）；
 - publication fleet、publisher mTLS/pinning、response-key hot rotation 与 anti-equivocation；
 - HSM/KMS custody、provider-confirmed cancellation/process isolation；
 - PostgreSQL/MySQL 并发、multi-region HA、DR/chaos/soak 和外部 SLO 认证。

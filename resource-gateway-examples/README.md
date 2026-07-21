@@ -543,12 +543,18 @@ failure abandonment, and durable per-partition cursors; the worker heartbeats in
 lane execution. A busy coordinator is reported separately from an empty completed inventory. The
 lane journal remains the only execution/write fence.
 
-The Spring path still consumes a caller-supplied inventory bean; it does not generate trust roots,
-discover lane runtimes, or construct the dynamic authority from properties. Embedders may supply
-either the static configured authority or the dynamic authority, and the existing worker fences
-every lane and cursor commit against its current generation and availability. Dynamic authority
-automatic Spring wiring, online partition rebalance, capability/HTTP discovery,
-production-profile wiring, publisher
+The test/staging Spring path now supports two explicit inventory modes. Embedders may continue to
+supply one static or custom authority bean. Alternatively, enabling
+`bootstrap-root-recovery-fleet-dynamic-inventory` constructs the witnessed HTTPS authority from
+public-only strict properties, requires exactly one caller-owned reviewed lane resolver, and uses a
+database publication/witness floor unless one custom durable floor is supplied. Stateless topology,
+trust-domain, public-key, binding, URI, and duration validation completes before floor DDL or remote
+I/O. Staging additionally requires the certified dynamic mode and rejects static fallback; test keeps
+it optional. Both configurations are physically absent when `production` is active. The existing
+worker fences every lane and cursor commit against current authority generation and availability.
+
+The Spring path does not generate trust roots or discover lane runtimes. Online partition rebalance,
+capability/HTTP discovery, production-profile wiring, publisher
 mTLS/client identity and certificate pinning, response-key hot rotation,
 publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
@@ -569,6 +575,9 @@ The dynamic consumer, revocation, refresh, runtime-fence, health, and failure se
 [dynamic fleet inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-verification.md).
 The profile/configuration/lifecycle contract and H2 context-rebuild proof are in the
 [recovery fleet runtime composition verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-runtime-composition-verification.md).
+The strict dynamic properties, startup ordering, staging downgrade fence, ownership contract, and
+real signed-HTTP Spring proof are in the
+[dynamic fleet inventory Spring composition verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-spring-composition-verification.md).
 
 Scope, cohort, inventory/witness trust, managed-root freshness, external-anchor quorum/timing, and
 lease settings are checked by

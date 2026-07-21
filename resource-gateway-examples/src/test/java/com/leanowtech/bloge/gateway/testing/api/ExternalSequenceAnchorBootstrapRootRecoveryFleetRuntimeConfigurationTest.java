@@ -100,7 +100,7 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest {
         var authority = signedAuthority(1L, 0, 4);
         try (var database = database();
              var context = context(enabledProperties(), authority, database,
-                     null, "staging")) {
+                     null, "test")) {
             var health = context.getBean(
                     ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth.class)
                     .health();
