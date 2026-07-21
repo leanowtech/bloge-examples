@@ -27,9 +27,13 @@ class ControlPlaneCertificateStatusTelemetryTest {
                 ControlPlaneCertificateStatusTelemetry.AdmissionDecision.REVOKED);
         telemetry.observe(violated());
 
-        assertThat(meters.getMeters()).hasSize(44);
+        assertThat(meters.getMeters()).hasSize(51);
         assertThat(gauge(meters, "sequence")).isEqualTo(17D);
         assertThat(gauge(meters, "source.available")).isZero();
+        assertThat(gauge(meters, "source.head.verified")).isOne();
+        assertThat(gauge(meters, "source.head.sequence")).isEqualTo(17D);
+        assertThat(gauge(meters, "source.head.lag")).isZero();
+        assertThat(gauge(meters, "source.head.seconds.to.expiry")).isEqualTo(60D);
         assertThat(gauge(meters, "admission.fresh")).isOne();
         assertThat(gauge(meters, "admission.seconds.to.expiry")).isEqualTo(45D);
         assertThat(gauge(meters, "targets", "status", "good")).isEqualTo(10D);
@@ -102,6 +106,7 @@ class ControlPlaneCertificateStatusTelemetryTest {
         return new ControlPlaneCertificateStatusMonitor.Descriptor(
                 ControlPlaneCertificateStatusMonitor.Descriptor.SCHEMA_VERSION,
                 status, true, sourceAvailable, true, sequence, 0, observedAt,
+                observedAt.plusSeconds(60), true, sequence, 0,
                 observedAt.plusSeconds(60));
     }
 
@@ -126,7 +131,8 @@ class ControlPlaneCertificateStatusTelemetryTest {
                 ControlPlaneCertificateStatusSloMonitor.Assessment.SCHEMA_VERSION,
                 ControlPlaneCertificateStatusSloMonitor.State.SLO_VIOLATED,
                 List.of(ControlPlaneCertificateStatusSloMonitor.Violation.SOURCE_UNAVAILABLE),
-                NOW, "SOURCE_UNAVAILABLE", false, true, 17, 45,
+                NOW, "SOURCE_UNAVAILABLE", false, true, 17,
+                true, 17, 0, 45,
                 1, 1, 10_000, 1, 1, 10_000, 0, -1, policy.descriptor());
     }
 

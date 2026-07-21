@@ -102,6 +102,9 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
                 .withDetail("sourceAvailable", assessment.sourceAvailable())
                 .withDetail("admissionFresh", assessment.admissionFresh())
                 .withDetail("sequence", assessment.sequence())
+                .withDetail("sourceHeadVerified", assessment.sourceHeadVerified())
+                .withDetail("sourceHeadSequence", assessment.sourceHeadSequence())
+                .withDetail("sourceHeadLag", assessment.sourceHeadLag())
                 .withDetail("secondsToExpiry", assessment.secondsToExpiry())
                 .withDetail("refreshAttempts", assessment.refreshAttempts())
                 .withDetail("refreshFailures", assessment.refreshFailures())
@@ -143,6 +146,9 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
         if (!initializing && !watcher.sourceAvailable()) {
             violations.add(Violation.SOURCE_UNAVAILABLE);
         }
+        if (!initializing && !watcher.sourceHeadVerified()) {
+            violations.add(Violation.SOURCE_HEAD_UNAVAILABLE);
+        }
 
         long successAge = ageSeconds(counters.lastSuccessfulRefreshAt(), observedAt);
         if (!initializing && counters.lastSuccessfulRefreshAt() == null) {
@@ -163,8 +169,8 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
                 && admissionDenialRate > policy.maximumAdmissionDenialBasisPoints()) {
             violations.add(Violation.ADMISSION_DENIAL_RATE_EXCEEDED);
         }
-        if (counters.consecutiveBatchLimitCycles()
-                > policy.maximumConsecutiveBatchLimitCycles()) {
+        if (watcher.sourceHeadVerified()
+                && watcher.sourceHeadLag() > policy.maximumSourceHeadLag()) {
             violations.add(Violation.CATCH_UP_BACKLOG);
         }
 
@@ -174,9 +180,10 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
                 : initializing ? State.INITIALIZING : State.HEALTHY;
         return new Assessment(Assessment.SCHEMA_VERSION, state, canonical, observedAt,
                 watcher.status().name(), watcher.sourceAvailable(), cache.fresh(),
-                watcher.sequence(), cache.secondsToExpiry(), counters.refreshAttempts(),
-                counters.refreshFailures(), refreshFailureRate, counters.admissionChecks(),
-                counters.admissionDenials(), admissionDenialRate,
+                watcher.sequence(), watcher.sourceHeadVerified(), watcher.sourceHeadSequence(),
+                watcher.sourceHeadLag(), cache.secondsToExpiry(),
+                counters.refreshAttempts(), counters.refreshFailures(), refreshFailureRate,
+                counters.admissionChecks(), counters.admissionDenials(), admissionDenialRate,
                 counters.consecutiveBatchLimitCycles(), successAge, policy.descriptor());
     }
 
@@ -219,6 +226,8 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
         EXPIRY_HEADROOM_LOW,
         /** The latest source interaction is unavailable or failed before source success. */
         SOURCE_UNAVAILABLE,
+        /** No fresh exact signed source head currently proves catch-up progress. */
+        SOURCE_HEAD_UNAVAILABLE,
         /** No successful refresh occurred before startup grace elapsed. */
         REFRESH_NEVER_SUCCEEDED,
         /** Time since the last successful refresh exceeds policy. */
@@ -227,7 +236,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
         REFRESH_FAILURE_RATE_EXCEEDED,
         /** Mature request admission denial ratio exceeds policy. */
         ADMISSION_DENIAL_RATE_EXCEEDED,
-        /** Repeated batch-limit cycles indicate the source cannot be caught up in policy. */
+        /** Exact source-head lag exceeds the accepted policy bound. */
         CATCH_UP_BACKLOG,
         /** Descriptor or telemetry observation failed. */
         OBSERVATION_UNAVAILABLE
@@ -243,7 +252,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
      * @param maximumRefreshFailureBasisPoints accepted mature refresh failure ratio
      * @param minimumAdmissionSamples samples required before admission ratio enforcement
      * @param maximumAdmissionDenialBasisPoints accepted mature admission denial ratio
-     * @param maximumConsecutiveBatchLimitCycles accepted possible-backlog streak
+     * @param maximumSourceHeadLag maximum accepted exact publication backlog
      */
     public record Policy(
             long startupGraceSeconds,
@@ -253,7 +262,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
             int maximumRefreshFailureBasisPoints,
             int minimumAdmissionSamples,
             int maximumAdmissionDenialBasisPoints,
-            int maximumConsecutiveBatchLimitCycles) {
+            int maximumSourceHeadLag) {
 
         /** Validates finite alert thresholds. */
         public Policy {
@@ -261,7 +270,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
                     minimumExpiryHeadroomSeconds, minimumRefreshSamples,
                     maximumRefreshFailureBasisPoints, minimumAdmissionSamples,
                     maximumAdmissionDenialBasisPoints,
-                    maximumConsecutiveBatchLimitCycles);
+                    maximumSourceHeadLag);
         }
 
         /** @return startup grace duration */
@@ -285,7 +294,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
                     maximumRefreshSuccessAgeSeconds, minimumExpiryHeadroomSeconds,
                     minimumRefreshSamples, maximumRefreshFailureBasisPoints,
                     minimumAdmissionSamples, maximumAdmissionDenialBasisPoints,
-                    maximumConsecutiveBatchLimitCycles);
+                    maximumSourceHeadLag);
         }
     }
 
@@ -298,7 +307,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
             int maximumRefreshFailureBasisPoints,
             int minimumAdmissionSamples,
             int maximumAdmissionDenialBasisPoints,
-            int maximumConsecutiveBatchLimitCycles) {
+            int maximumSourceHeadLag) {
 
         /** Rejects descriptors that could not have been emitted by a valid policy. */
         public PolicyDescriptor {
@@ -306,7 +315,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
                     minimumExpiryHeadroomSeconds, minimumRefreshSamples,
                     maximumRefreshFailureBasisPoints, minimumAdmissionSamples,
                     maximumAdmissionDenialBasisPoints,
-                    maximumConsecutiveBatchLimitCycles);
+                    maximumSourceHeadLag);
         }
     }
 
@@ -321,6 +330,9 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
      * @param sourceAvailable latest source interaction posture
      * @param admissionFresh current local hard-expiry posture
      * @param sequence latest durable sequence
+     * @param sourceHeadVerified whether a fresh exact head proves current backlog
+     * @param sourceHeadSequence highest durably verified external sequence
+     * @param sourceHeadLag exact non-negative backlog, or -1 without a fresh proof
      * @param secondsToExpiry remaining signed admission lifetime
      * @param refreshAttempts cumulative refresh attempts
      * @param refreshFailures cumulative refresh failures
@@ -341,6 +353,9 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
             boolean sourceAvailable,
             boolean admissionFresh,
             long sequence,
+            boolean sourceHeadVerified,
+            long sourceHeadSequence,
+            long sourceHeadLag,
             long secondsToExpiry,
             long refreshAttempts,
             long refreshFailures,
@@ -354,7 +369,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
 
         /** Current SLO assessment protocol version. */
         public static final String SCHEMA_VERSION =
-                "bloge.controlPlaneCertificateStatusSloAssessment.v1";
+                "bloge.controlPlaneCertificateStatusSloAssessment.v2";
 
         /** Rejects contradictory or unbounded SLO projections. */
         public Assessment {
@@ -369,6 +384,10 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
                     .sorted(Comparator.comparingInt(Enum::ordinal)).toList())
                     || !monitorStatus.matches("[A-Z][A-Z0-9_]{0,127}")
                     || sequence < 0 || secondsToExpiry < 0 || secondsToExpiry > 86_400
+                    || sourceHeadSequence < 0 || sourceHeadLag < -1
+                    || sourceHeadVerified != (sourceHeadLag >= 0)
+                    || sourceHeadVerified && (sourceHeadSequence < sequence
+                    || sourceHeadLag != sourceHeadSequence - sequence)
                     || refreshAttempts < 0 || refreshFailures < 0
                     || refreshFailures > refreshAttempts
                     || refreshFailureBasisPoints < 0 || refreshFailureBasisPoints > 10_000
@@ -396,8 +415,8 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
         private static Assessment initializing(
                 Instant observedAt, PolicyDescriptor policy) {
             return new Assessment(SCHEMA_VERSION, State.INITIALIZING, List.of(), observedAt,
-                    UNAVAILABLE_MONITOR_STATUS, false, false, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, -1, policy);
+                    UNAVAILABLE_MONITOR_STATUS, false, false, 0, false, 0, -1,
+                    0, 0, 0, 0, 0, 0, 0, 0, -1, policy);
         }
 
         private static Assessment unavailable(
@@ -405,7 +424,8 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
             return new Assessment(SCHEMA_VERSION, State.OBSERVATION_UNAVAILABLE,
                     List.of(Violation.OBSERVATION_UNAVAILABLE), observedAt,
                     UNAVAILABLE_MONITOR_STATUS,
-                    false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, policy);
+                    false, false, 0, false, 0, -1,
+                    0, 0, 0, 0, 0, 0, 0, 0, -1, policy);
         }
     }
 
@@ -417,7 +437,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
             int maximumRefreshFailureBasisPoints,
             int minimumAdmissionSamples,
             int maximumAdmissionDenialBasisPoints,
-            int maximumConsecutiveBatchLimitCycles) {
+            int maximumSourceHeadLag) {
         if (startupGraceSeconds < 0 || startupGraceSeconds > 3_600
                 || maximumRefreshSuccessAgeSeconds < 1
                 || maximumRefreshSuccessAgeSeconds > 86_400
@@ -429,8 +449,8 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
                 || minimumAdmissionSamples < 1 || minimumAdmissionSamples > 1_000_000
                 || maximumAdmissionDenialBasisPoints < 0
                 || maximumAdmissionDenialBasisPoints > 10_000
-                || maximumConsecutiveBatchLimitCycles < 0
-                || maximumConsecutiveBatchLimitCycles > 100) {
+                || maximumSourceHeadLag < 0
+                || maximumSourceHeadLag > 1_000_000) {
             throw new IllegalArgumentException("Certificate status SLO policy is invalid");
         }
     }

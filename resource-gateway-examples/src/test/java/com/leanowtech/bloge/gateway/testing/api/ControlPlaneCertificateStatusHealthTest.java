@@ -26,9 +26,12 @@ class ControlPlaneCertificateStatusHealthTest {
                 .containsEntry("trustAvailable", true)
                 .containsEntry("strictSourceAvailable", true)
                 .containsEntry("durableFloorIntegrated", true)
+                .containsEntry("sourceHeadVerified", true)
+                .containsEntry("sourceHeadSequence", 1L)
+                .containsEntry("sourceHeadLag", 0L)
                 .containsEntry("admissionFresh", true)
                 .containsEntry("productionReady", false)
-                .hasSize(16);
+                .hasSize(19);
     }
 
     @Test
@@ -73,8 +76,9 @@ class ControlPlaneCertificateStatusHealthTest {
                 .containsEntry("monitorStatus", "UNAVAILABLE")
                 .containsKeys("sourcePrivateTrust", "sourceSpkiPinned", "sourceMutualTls",
                         "sourceCertificateIdentityBound", "targetCount", "goodTargetCount",
-                        "revokedTargetCount", "unknownTargetCount", "productionReady")
-                .hasSize(16);
+                        "revokedTargetCount", "unknownTargetCount", "sourceHeadVerified",
+                        "sourceHeadSequence", "sourceHeadLag", "productionReady")
+                .hasSize(19);
         assertThat(health.getDetails().toString())
                 .doesNotContain("vault://", "status-client-password");
     }
@@ -88,7 +92,8 @@ class ControlPlaneCertificateStatusHealthTest {
         when(monitor.descriptor()).thenReturn(new ControlPlaneCertificateStatusMonitor.Descriptor(
                 ControlPlaneCertificateStatusMonitor.Descriptor.SCHEMA_VERSION,
                 ControlPlaneCertificateStatusMonitor.RefreshStatus.CURRENT,
-                true, true, admission.fresh(), 1, 0, NOW, NOW.plusSeconds(60)));
+                true, true, admission.fresh(), 1, 0, NOW, NOW.plusSeconds(60),
+                true, 1, 0, NOW.plusSeconds(60)));
         ControlPlaneCertificateStatusAdmission admissionCache = mock(
                 ControlPlaneCertificateStatusAdmission.class);
         when(admissionCache.descriptor()).thenReturn(admission);

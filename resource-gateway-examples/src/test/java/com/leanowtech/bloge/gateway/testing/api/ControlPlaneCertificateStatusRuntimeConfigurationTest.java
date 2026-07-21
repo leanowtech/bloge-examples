@@ -40,6 +40,9 @@ class ControlPlaneCertificateStatusRuntimeConfigurationTest {
             ControlPlaneCertificateStatusFloor floor =
                     configuration.controlPlaneCertificateStatusFloor(
                             database, objectMapper, trust, properties);
+            ControlPlaneCertificateStatusSourceHeadFloor sourceHeadFloor =
+                    configuration.controlPlaneCertificateStatusSourceHeadFloor(
+                            database, objectMapper, trust, properties);
             ControlPlaneCertificateStatusTelemetry telemetry =
                     configuration.controlPlaneCertificateStatusTelemetry(
                             new SimpleMeterRegistry());
@@ -51,7 +54,7 @@ class ControlPlaneCertificateStatusRuntimeConfigurationTest {
                             properties);
             ControlPlaneCertificateStatusMonitor monitor =
                     configuration.controlPlaneCertificateStatusMonitor(
-                            floor, source, admission, properties, telemetry);
+                            floor, sourceHeadFloor, source, admission, properties, telemetry);
             ControlPlaneCertificateStatusSloMonitor sloMonitor =
                     configuration.controlPlaneCertificateStatusSloMonitor(
                             monitor, admission, telemetry, properties);
@@ -64,6 +67,8 @@ class ControlPlaneCertificateStatusRuntimeConfigurationTest {
             assertThat(trust.descriptor().available()).isTrue();
             assertThat(floor.durable()).isTrue();
             assertThat(floor.snapshot().initialized()).isFalse();
+            assertThat(sourceHeadFloor.durable()).isTrue();
+            assertThat(sourceHeadFloor.snapshot().initialized()).isFalse();
             assertThat(source.descriptor()).satisfies(descriptor -> {
                 assertThat(descriptor.available()).isTrue();
                 assertThat(descriptor.privateTrustStore()).isTrue();
@@ -77,7 +82,7 @@ class ControlPlaneCertificateStatusRuntimeConfigurationTest {
                     ControlPlaneCertificateStatusSloMonitor.State.INITIALIZING);
             assertThat(health.health().getStatus()).isEqualTo(Status.DOWN);
             assertThat(health.health().getDetails())
-                    .containsEntry("runtimeStatus", "ADMISSION_STALE")
+                    .containsEntry("runtimeStatus", "SOURCE_HEAD_UNAVAILABLE")
                     .containsEntry("productionReady", false);
         }
     }

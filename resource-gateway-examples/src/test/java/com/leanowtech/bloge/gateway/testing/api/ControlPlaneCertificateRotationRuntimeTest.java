@@ -97,7 +97,14 @@ class ControlPlaneCertificateRotationRuntimeTest {
         var admission = new ControlPlaneCertificateStatusAdmission(clock, System::nanoTime);
         var statusFloor = new FixedStatusFloor(statusSnapshot(
                 now, currentFingerprint, goodTargetStatus(41, currentFingerprint)));
-        var statusMonitor = new ControlPlaneCertificateStatusMonitor(statusFloor,
+        String statusBaseline = "sha256:" + "0".repeat(64);
+        var statusHeadFloor = new FixedStatusSourceHeadFloor(
+                new ControlPlaneCertificateStatusSourceHeadFloor.Snapshot(
+                        ControlPlaneCertificateStatusSourceHeadFloor.Snapshot.SCHEMA_VERSION,
+                        "rg-staging", 0, statusBaseline, 0, statusBaseline,
+                        "", "", null, null, null));
+        var statusMonitor = new ControlPlaneCertificateStatusMonitor(
+                statusFloor, statusHeadFloor,
                 cursor -> ControlPlaneCertificateStatusSource.FetchResult.unavailable(
                         "STATUS_AUTHORITY_UNAVAILABLE"), admission, clock, 1);
         var runtime = new ControlPlaneCertificateRotationRuntime(
@@ -466,6 +473,21 @@ class ControlPlaneCertificateRotationRuntimeTest {
         @Override
         public Acceptance accept(ControlPlaneCertificateStatusPublication publication) {
             throw new AssertionError("source returned no publication");
+        }
+
+        @Override
+        public boolean durable() {
+            return true;
+        }
+    }
+
+    private record FixedStatusSourceHeadFloor(
+            ControlPlaneCertificateStatusSourceHeadFloor.Snapshot snapshot)
+            implements ControlPlaneCertificateStatusSourceHeadFloor {
+
+        @Override
+        public Acceptance accept(ControlPlaneCertificateStatusSourceHead sourceHead) {
+            throw new AssertionError("source returned no source head");
         }
 
         @Override

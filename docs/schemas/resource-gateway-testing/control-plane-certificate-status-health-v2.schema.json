@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-health-v2.schema.json",
+  "title": "Resource Gateway Certificate Status Health v2",
+  "description": "Fixed-cardinality Actuator details requiring strict transport, durable floors, fresh exact source-head proof and fresh admission.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "runtimeStatus", "monitorStatus", "trustAvailable",
+    "strictSourceAvailable", "sourcePrivateTrust", "sourceSpkiPinned",
+    "sourceMutualTls", "sourceCertificateIdentityBound", "durableFloorIntegrated",
+    "sourceHeadVerified", "sourceHeadSequence", "sourceHeadLag", "admissionFresh",
+    "targetCount", "goodTargetCount", "revokedTargetCount", "unknownTargetCount",
+    "productionReady"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.controlPlaneCertificateStatusHealth.v2" },
+    "runtimeStatus": {
+      "enum": [
+        "READY", "TRUST_UNAVAILABLE", "SOURCE_SECURITY_UNAVAILABLE",
+        "FLOOR_UNAVAILABLE", "SOURCE_HEAD_UNAVAILABLE", "ADMISSION_STALE",
+        "UNAVAILABLE"
+      ]
+    },
+    "monitorStatus": {
+      "enum": [
+        "CURRENT", "APPLIED", "BATCH_LIMIT", "SOURCE_UNAVAILABLE",
+        "SOURCE_REJECTED", "SOURCE_HEAD_REJECTED", "FLOOR_UNAVAILABLE",
+        "PUBLICATION_REJECTED", "CACHE_REJECTED", "UNAVAILABLE"
+      ]
+    },
+    "trustAvailable": { "type": "boolean" },
+    "strictSourceAvailable": { "type": "boolean" },
+    "sourcePrivateTrust": { "type": "boolean" },
+    "sourceSpkiPinned": { "type": "boolean" },
+    "sourceMutualTls": { "type": "boolean" },
+    "sourceCertificateIdentityBound": { "type": "boolean" },
+    "durableFloorIntegrated": { "type": "boolean" },
+    "sourceHeadVerified": { "type": "boolean" },
+    "sourceHeadSequence": { "type": "integer", "minimum": 0 },
+    "sourceHeadLag": { "type": "integer", "minimum": -1 },
+    "admissionFresh": { "type": "boolean" },
+    "targetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "goodTargetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "revokedTargetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "unknownTargetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "productionReady": { "const": false }
+  }
+}

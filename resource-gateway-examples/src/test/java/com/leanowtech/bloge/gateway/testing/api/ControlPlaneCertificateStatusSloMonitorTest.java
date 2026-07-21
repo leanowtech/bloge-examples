@@ -111,6 +111,7 @@ class ControlPlaneCertificateStatusSloMonitorTest {
         assertThat(never.slo().assess().violations()).containsExactly(
                 ControlPlaneCertificateStatusSloMonitor.Violation.NO_PUBLICATION,
                 ControlPlaneCertificateStatusSloMonitor.Violation.SOURCE_UNAVAILABLE,
+                ControlPlaneCertificateStatusSloMonitor.Violation.SOURCE_HEAD_UNAVAILABLE,
                 ControlPlaneCertificateStatusSloMonitor.Violation.REFRESH_NEVER_SUCCEEDED);
 
         MutableClock staleClock = new MutableClock(NOW);
@@ -142,11 +143,12 @@ class ControlPlaneCertificateStatusSloMonitorTest {
         assertThat(harness.slo().health().getDetails())
                 .containsKeys("schemaVersion", "state", "violations", "observedAt",
                         "monitorStatus", "sourceAvailable", "admissionFresh", "sequence",
+                        "sourceHeadVerified", "sourceHeadSequence", "sourceHeadLag",
                         "secondsToExpiry", "refreshAttempts", "refreshFailures",
                         "refreshFailureBasisPoints", "admissionChecks", "admissionDenials",
                         "admissionDenialBasisPoints", "consecutiveBatchLimitCycles",
                         "lastRefreshSuccessAgeSeconds", "policy")
-                .hasSize(18);
+                .hasSize(21);
     }
 
     @Test
@@ -199,17 +201,19 @@ class ControlPlaneCertificateStatusSloMonitorTest {
         assertThatThrownBy(() -> new ControlPlaneCertificateStatusSloMonitor.Assessment(
                 ControlPlaneCertificateStatusSloMonitor.Assessment.SCHEMA_VERSION,
                 ControlPlaneCertificateStatusSloMonitor.State.HEALTHY,
-                java.util.List.of(), NOW, "CURRENT", true, true, 1, 120,
+                java.util.List.of(), NOW, "CURRENT", true, true, 1,
+                true, 1, 0, 120,
                 4, 1, 2_501, 4, 1, 2_500, 0, 0, policy))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ControlPlaneCertificateStatusSloMonitor.Assessment(
                 ControlPlaneCertificateStatusSloMonitor.Assessment.SCHEMA_VERSION,
                 ControlPlaneCertificateStatusSloMonitor.State.HEALTHY,
-                java.util.List.of(), NOW, "PROVIDER_SECRET", true, true, 1, 120,
+                java.util.List.of(), NOW, "PROVIDER_SECRET", true, true, 1,
+                true, 1, 0, 120,
                 4, 1, 2_500, 4, 1, 2_500, 0, 0, policy))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ControlPlaneCertificateStatusSloMonitor.PolicyDescriptor(
-                30, 60, 20, 4, 2_500, 4, 2_500, 101))
+                30, 60, 20, 4, 2_500, 4, 2_500, 1_000_001))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -235,10 +239,19 @@ class ControlPlaneCertificateStatusSloMonitorTest {
             long sequence,
             int applied,
             Instant observedAt) {
+        boolean sourceHeadVerified = sequence > 0 || admissionFresh;
         return new ControlPlaneCertificateStatusMonitor.Descriptor(
                 ControlPlaneCertificateStatusMonitor.Descriptor.SCHEMA_VERSION,
                 status, true, sourceAvailable, admissionFresh, sequence, applied,
-                observedAt, admissionFresh ? observedAt.plusSeconds(120) : null);
+                observedAt, admissionFresh ? observedAt.plusSeconds(120) : null,
+                sourceHeadVerified,
+                status == ControlPlaneCertificateStatusMonitor.RefreshStatus.BATCH_LIMIT
+                        ? sequence + 3 : sequence,
+                !sourceHeadVerified
+                        ? -1 : status
+                        == ControlPlaneCertificateStatusMonitor.RefreshStatus.BATCH_LIMIT ? 3 : 0,
+                !sourceHeadVerified
+                        ? null : observedAt.plusSeconds(120));
     }
 
     private static ControlPlaneCertificateStatusAdmission.Descriptor admission(

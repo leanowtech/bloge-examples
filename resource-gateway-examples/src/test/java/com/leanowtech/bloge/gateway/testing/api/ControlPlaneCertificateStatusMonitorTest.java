@@ -6,12 +6,14 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,8 +32,9 @@ class ControlPlaneCertificateStatusMonitorTest {
         ControlPlaneCertificateStatusPublication publication = publication(
                 1, "", 1, SETTINGS);
         floor.accept(publication);
+        MutableSourceHeadFloor sourceHeadFloor = new MutableSourceHeadFloor();
         var admission = admission();
-        var monitor = new ControlPlaneCertificateStatusMonitor(floor,
+        var monitor = new ControlPlaneCertificateStatusMonitor(floor, sourceHeadFloor,
                 cursor -> {
                     throw new IllegalStateException("source unavailable");
                 }, admission, Clock.fixed(NOW, ZoneOffset.UTC), 4);
@@ -52,12 +55,15 @@ class ControlPlaneCertificateStatusMonitorTest {
                 2, first.materialFingerprint(), 2, fingerprint('b'));
         Queue<ControlPlaneCertificateStatusPublication> publications =
                 new ArrayDeque<>(List.of(first, second));
+        ControlPlaneCertificateStatusSourceHead sourceHead = sourceHead(
+                2, second.materialFingerprint());
         var admission = admission();
-        var monitor = new ControlPlaneCertificateStatusMonitor(floor,
+        var monitor = new ControlPlaneCertificateStatusMonitor(
+                floor, new MutableSourceHeadFloor(),
                 cursor -> publications.isEmpty()
-                        ? ControlPlaneCertificateStatusSource.FetchResult.unchanged()
+                        ? ControlPlaneCertificateStatusSource.FetchResult.unchanged(sourceHead)
                         : ControlPlaneCertificateStatusSource.FetchResult.publication(
-                        publications.remove()), admission,
+                        publications.remove(), sourceHead), admission,
                 Clock.fixed(NOW, ZoneOffset.UTC), 4);
 
         var descriptor = monitor.refresh();
@@ -66,6 +72,8 @@ class ControlPlaneCertificateStatusMonitorTest {
                 ControlPlaneCertificateStatusMonitor.RefreshStatus.APPLIED);
         assertThat(descriptor.appliedCount()).isEqualTo(2);
         assertThat(descriptor.sequence()).isEqualTo(2);
+        assertThat(descriptor.sourceHeadVerified()).isTrue();
+        assertThat(descriptor.sourceHeadLag()).isZero();
         assertThat(admission.servingPermitted(TARGET, 2, fingerprint('b'))).isTrue();
     }
 
@@ -79,12 +87,15 @@ class ControlPlaneCertificateStatusMonitorTest {
                 3, second.materialFingerprint(), 3, fingerprint('c'));
         Queue<ControlPlaneCertificateStatusPublication> publications =
                 new ArrayDeque<>(List.of(first, second, third));
+        ControlPlaneCertificateStatusSourceHead sourceHead = sourceHead(
+                3, third.materialFingerprint());
         var admission = admission();
-        var monitor = new ControlPlaneCertificateStatusMonitor(floor,
+        var monitor = new ControlPlaneCertificateStatusMonitor(
+                floor, new MutableSourceHeadFloor(),
                 cursor -> publications.isEmpty()
-                        ? ControlPlaneCertificateStatusSource.FetchResult.unchanged()
+                        ? ControlPlaneCertificateStatusSource.FetchResult.unchanged(sourceHead)
                         : ControlPlaneCertificateStatusSource.FetchResult.publication(
-                        publications.remove()), admission,
+                        publications.remove(), sourceHead), admission,
                 Clock.fixed(NOW, ZoneOffset.UTC), 2);
 
         var firstCycle = monitor.refresh();
@@ -94,11 +105,37 @@ class ControlPlaneCertificateStatusMonitorTest {
                 ControlPlaneCertificateStatusMonitor.RefreshStatus.BATCH_LIMIT);
         assertThat(firstCycle.sequence()).isEqualTo(2);
         assertThat(firstCycle.appliedCount()).isEqualTo(2);
+        assertThat(firstCycle.sourceHeadLag()).isEqualTo(1);
         assertThat(secondCycle.status()).isEqualTo(
                 ControlPlaneCertificateStatusMonitor.RefreshStatus.APPLIED);
         assertThat(secondCycle.sequence()).isEqualTo(3);
         assertThat(secondCycle.appliedCount()).isEqualTo(1);
         assertThat(admission.servingPermitted(TARGET, 3, fingerprint('c'))).isTrue();
+    }
+
+    @Test
+    void exactHeadPreventsFalseBatchLimitWhenTheBoundIsExactlyEnough() throws Exception {
+        MutableFloor floor = new MutableFloor();
+        ControlPlaneCertificateStatusPublication first = publication(1, "", 1, SETTINGS);
+        ControlPlaneCertificateStatusPublication second = publication(
+                2, first.materialFingerprint(), 2, fingerprint('b'));
+        Queue<ControlPlaneCertificateStatusPublication> publications =
+                new ArrayDeque<>(List.of(first, second));
+        ControlPlaneCertificateStatusSourceHead sourceHead = sourceHead(
+                2, second.materialFingerprint());
+        var monitor = new ControlPlaneCertificateStatusMonitor(
+                floor, new MutableSourceHeadFloor(),
+                cursor -> ControlPlaneCertificateStatusSource.FetchResult.publication(
+                        publications.remove(), sourceHead), admission(),
+                Clock.fixed(NOW, ZoneOffset.UTC), 2);
+
+        var descriptor = monitor.refresh();
+
+        assertThat(descriptor.status()).isEqualTo(
+                ControlPlaneCertificateStatusMonitor.RefreshStatus.APPLIED);
+        assertThat(descriptor.appliedCount()).isEqualTo(2);
+        assertThat(descriptor.sourceHeadLag()).isZero();
+        assertThat(publications).isEmpty();
     }
 
     @Test
@@ -108,9 +145,13 @@ class ControlPlaneCertificateStatusMonitorTest {
         floor.accept(first);
         ControlPlaneCertificateStatusPublication fork = publication(
                 2, fingerprint('9'), 2, fingerprint('b'));
+        ControlPlaneCertificateStatusSourceHead sourceHead = sourceHead(
+                2, fork.materialFingerprint());
         var admission = admission();
-        var monitor = new ControlPlaneCertificateStatusMonitor(floor,
-                cursor -> ControlPlaneCertificateStatusSource.FetchResult.publication(fork),
+        var monitor = new ControlPlaneCertificateStatusMonitor(
+                floor, new MutableSourceHeadFloor(),
+                cursor -> ControlPlaneCertificateStatusSource.FetchResult.publication(
+                        fork, sourceHead),
                 admission, Clock.fixed(NOW, ZoneOffset.UTC), 2);
 
         var descriptor = monitor.refresh();
@@ -123,22 +164,71 @@ class ControlPlaneCertificateStatusMonitorTest {
     }
 
     @Test
-    void exactReplayCannotSpinTheBoundedWatcher() throws Exception {
+    void nonSuccessorReplayIsRejectedBeforeItCanSpinTheBoundedWatcher() throws Exception {
         MutableFloor floor = new MutableFloor();
         ControlPlaneCertificateStatusPublication first = publication(1, "", 1, SETTINGS);
         floor.accept(first);
+        ControlPlaneCertificateStatusSourceHead sourceHead = sourceHead(
+                1, first.materialFingerprint());
         AtomicLong fetches = new AtomicLong();
-        var monitor = new ControlPlaneCertificateStatusMonitor(floor,
+        var monitor = new ControlPlaneCertificateStatusMonitor(
+                floor, new MutableSourceHeadFloor(),
                 cursor -> {
                     fetches.incrementAndGet();
-                    return ControlPlaneCertificateStatusSource.FetchResult.publication(first);
+                    return ControlPlaneCertificateStatusSource.FetchResult.publication(
+                            first, sourceHead);
                 }, admission(), Clock.fixed(NOW, ZoneOffset.UTC), 32);
 
         var descriptor = monitor.refresh();
 
         assertThat(descriptor.status()).isEqualTo(
-                ControlPlaneCertificateStatusMonitor.RefreshStatus.CURRENT);
+                ControlPlaneCertificateStatusMonitor.RefreshStatus.SOURCE_HEAD_REJECTED);
         assertThat(fetches).hasValue(1);
+    }
+
+    @Test
+    void missingExactHeadFailsClosedWithoutDiscardingFreshAdmission() throws Exception {
+        MutableFloor floor = new MutableFloor();
+        ControlPlaneCertificateStatusPublication first = publication(1, "", 1, SETTINGS);
+        floor.accept(first);
+        var admission = admission();
+        var monitor = new ControlPlaneCertificateStatusMonitor(
+                floor, new MutableSourceHeadFloor(),
+                cursor -> ControlPlaneCertificateStatusSource.FetchResult.unchanged(),
+                admission, Clock.fixed(NOW, ZoneOffset.UTC), 4);
+
+        var descriptor = monitor.refresh();
+
+        assertThat(descriptor.status()).isEqualTo(
+                ControlPlaneCertificateStatusMonitor.RefreshStatus.SOURCE_HEAD_REJECTED);
+        assertThat(descriptor.sourceHeadVerified()).isFalse();
+        assertThat(descriptor.sourceHeadLag()).isEqualTo(-1);
+        assertThat(admission.servingPermitted(TARGET, 1, SETTINGS)).isTrue();
+    }
+
+    @Test
+    void descriptorFailsClosedWhenTheLastExactSourceHeadExpires() throws Exception {
+        MutableFloor floor = new MutableFloor();
+        ControlPlaneCertificateStatusPublication first = publication(1, "", 1, SETTINGS);
+        MutableClock clock = new MutableClock(NOW);
+        ControlPlaneCertificateStatusSourceHead sourceHead = sourceHead(
+                1, first.materialFingerprint());
+        var monitor = new ControlPlaneCertificateStatusMonitor(
+                floor, new MutableSourceHeadFloor(),
+                cursor -> cursor.sequence() == 0
+                        ? ControlPlaneCertificateStatusSource.FetchResult.publication(
+                                first, sourceHead)
+                        : ControlPlaneCertificateStatusSource.FetchResult.unchanged(sourceHead),
+                admission(), clock, 4);
+
+        assertThat(monitor.refresh().sourceHeadVerified()).isTrue();
+        clock.set(NOW.plusSeconds(3_601));
+
+        assertThat(monitor.descriptor()).satisfies(descriptor -> {
+            assertThat(descriptor.sourceHeadVerified()).isFalse();
+            assertThat(descriptor.sourceHeadLag()).isEqualTo(-1);
+            assertThat(descriptor.sourceHeadExpiresAt()).isEqualTo(NOW.plusSeconds(3_600));
+        });
     }
 
     private static ControlPlaneCertificateStatusAdmission admission() {
@@ -180,6 +270,23 @@ class ControlPlaneCertificateStatusMonitorTest {
                 NOW, NOW, NOW.plusSeconds(7200));
     }
 
+    private ControlPlaneCertificateStatusSourceHead sourceHead(
+            long sequence, String publicationFingerprint) {
+        var material = new ControlPlaneCertificateStatusSourceHead.Material(
+                ControlPlaneCertificateStatusSourceHead.Material.SCHEMA_VERSION,
+                "enterprise-pki", "head-%d-%s".formatted(
+                sequence, publicationFingerprint.substring(7, 8)), "rg-staging", sequence,
+                publicationFingerprint, fingerprint('f'), NOW.minusSeconds(1),
+                NOW.plusSeconds(3600));
+        String materialFingerprint = ProtocolFingerprint.of(objectMapper, material);
+        var signature = new ControlPlaneCertificateStatusPublication.AuthoritySignature(
+                "authority-a", "key-a", "Ed25519", NOW,
+                Base64.getEncoder().encodeToString(new byte[64]));
+        return new ControlPlaneCertificateStatusSourceHead(
+                ControlPlaneCertificateStatusSourceHead.SCHEMA_VERSION, material,
+                materialFingerprint, List.of(signature));
+    }
+
     private static String fingerprint(char value) {
         return "sha256:" + String.valueOf(value).repeat(64);
     }
@@ -219,6 +326,75 @@ class ControlPlaneCertificateStatusMonitorTest {
         @Override
         public boolean durable() {
             return true;
+        }
+    }
+
+    private static final class MutableSourceHeadFloor
+            implements ControlPlaneCertificateStatusSourceHeadFloor {
+        private Snapshot current = new Snapshot(Snapshot.SCHEMA_VERSION, "rg-staging",
+                0, BASELINE, 0, BASELINE, "", "", null, null, null);
+
+        @Override
+        public synchronized Acceptance accept(ControlPlaneCertificateStatusSourceHead sourceHead) {
+            var material = sourceHead.material();
+            if (current.initialized()
+                    && current.attestationId().equals(material.attestationId())
+                    && current.attestationFingerprint().equals(
+                    sourceHead.materialFingerprint())) {
+                return new Acceptance(AcceptanceStatus.REPLAYED, current);
+            }
+            if (material.headSequence() < current.headSequence()
+                    || material.headSequence() == current.headSequence()
+                    && !material.headPublicationFingerprint().equals(
+                    current.headPublicationFingerprint())) {
+                throw new IllegalArgumentException("test source-head conflict");
+            }
+            AcceptanceStatus status = !current.initialized()
+                    ? AcceptanceStatus.INITIALIZED
+                    : material.headSequence() == current.headSequence()
+                    ? AcceptanceStatus.RENEWED : AcceptanceStatus.ADVANCED;
+            current = new Snapshot(Snapshot.SCHEMA_VERSION, "rg-staging", 0, BASELINE,
+                    material.headSequence(), material.headPublicationFingerprint(),
+                    material.attestationId(), sourceHead.materialFingerprint(),
+                    material.issuedAt(), material.expiresAt(), NOW);
+            return new Acceptance(status, current);
+        }
+
+        @Override
+        public synchronized Snapshot snapshot() {
+            return current;
+        }
+
+        @Override
+        public boolean durable() {
+            return true;
+        }
+    }
+
+    private static final class MutableClock extends Clock {
+        private final AtomicReference<Instant> current;
+
+        private MutableClock(Instant current) {
+            this.current = new AtomicReference<>(current);
+        }
+
+        private void set(Instant instant) {
+            current.set(instant);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return current.get();
         }
     }
 }

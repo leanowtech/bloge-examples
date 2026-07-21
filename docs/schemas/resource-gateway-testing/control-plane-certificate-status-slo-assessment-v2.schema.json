@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-slo-assessment-v2.schema.json",
+  "title": "Resource Gateway Certificate Status SLO Assessment v2",
+  "description": "Fixed-cardinality service-level assessment using a fresh exact source-head proof for availability and backlog policy.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "state", "violations", "observedAt", "monitorStatus",
+    "sourceAvailable", "admissionFresh", "sequence", "sourceHeadVerified",
+    "sourceHeadSequence", "sourceHeadLag", "secondsToExpiry", "refreshAttempts",
+    "refreshFailures", "refreshFailureBasisPoints", "admissionChecks",
+    "admissionDenials", "admissionDenialBasisPoints",
+    "consecutiveBatchLimitCycles", "lastRefreshSuccessAgeSeconds", "policy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateStatusSloAssessment.v2"
+    },
+    "state": {
+      "enum": ["HEALTHY", "INITIALIZING", "SLO_VIOLATED", "OBSERVATION_UNAVAILABLE"]
+    },
+    "violations": {
+      "type": "array",
+      "maxItems": 11,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "NO_PUBLICATION", "ADMISSION_STALE", "EXPIRY_HEADROOM_LOW",
+          "SOURCE_UNAVAILABLE", "SOURCE_HEAD_UNAVAILABLE",
+          "REFRESH_NEVER_SUCCEEDED", "REFRESH_SUCCESS_STALE",
+          "REFRESH_FAILURE_RATE_EXCEEDED", "ADMISSION_DENIAL_RATE_EXCEEDED",
+          "CATCH_UP_BACKLOG", "OBSERVATION_UNAVAILABLE"
+        ]
+      }
+    },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "monitorStatus": {
+      "enum": [
+        "CURRENT", "APPLIED", "BATCH_LIMIT", "SOURCE_UNAVAILABLE",
+        "SOURCE_REJECTED", "SOURCE_HEAD_REJECTED", "FLOOR_UNAVAILABLE",
+        "PUBLICATION_REJECTED", "CACHE_REJECTED", "UNAVAILABLE"
+      ]
+    },
+    "sourceAvailable": { "type": "boolean" },
+    "admissionFresh": { "type": "boolean" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "sourceHeadVerified": { "type": "boolean" },
+    "sourceHeadSequence": { "type": "integer", "minimum": 0 },
+    "sourceHeadLag": { "type": "integer", "minimum": -1 },
+    "secondsToExpiry": { "type": "integer", "minimum": 0, "maximum": 86400 },
+    "refreshAttempts": { "type": "integer", "minimum": 0 },
+    "refreshFailures": { "type": "integer", "minimum": 0 },
+    "refreshFailureBasisPoints": { "$ref": "#/$defs/basisPoints" },
+    "admissionChecks": { "type": "integer", "minimum": 0 },
+    "admissionDenials": { "type": "integer", "minimum": 0 },
+    "admissionDenialBasisPoints": { "$ref": "#/$defs/basisPoints" },
+    "consecutiveBatchLimitCycles": { "type": "integer", "minimum": 0 },
+    "lastRefreshSuccessAgeSeconds": { "type": "integer", "minimum": -1 },
+    "policy": { "$ref": "#/$defs/policy" }
+  },
+  "$defs": {
+    "basisPoints": { "type": "integer", "minimum": 0, "maximum": 10000 },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startupGraceSeconds", "maximumRefreshSuccessAgeSeconds",
+        "minimumExpiryHeadroomSeconds", "minimumRefreshSamples",
+        "maximumRefreshFailureBasisPoints", "minimumAdmissionSamples",
+        "maximumAdmissionDenialBasisPoints", "maximumSourceHeadLag"
+      ],
+      "properties": {
+        "startupGraceSeconds": { "type": "integer", "minimum": 0, "maximum": 3600 },
+        "maximumRefreshSuccessAgeSeconds": {
+          "type": "integer", "minimum": 1, "maximum": 86400
+        },
+        "minimumExpiryHeadroomSeconds": {
+          "type": "integer", "minimum": 0, "maximum": 86400
+        },
+        "minimumRefreshSamples": {
+          "type": "integer", "minimum": 1, "maximum": 1000000
+        },
+        "maximumRefreshFailureBasisPoints": { "$ref": "#/$defs/basisPoints" },
+        "minimumAdmissionSamples": {
+          "type": "integer", "minimum": 1, "maximum": 1000000
+        },
+        "maximumAdmissionDenialBasisPoints": { "$ref": "#/$defs/basisPoints" },
+        "maximumSourceHeadLag": {
+          "type": "integer", "minimum": 0, "maximum": 1000000
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "sourceHeadVerified": { "const": true } } },
+      "then": { "properties": { "sourceHeadLag": { "minimum": 0 } } },
+      "else": { "properties": { "sourceHeadLag": { "const": -1 } } }
+    }
+  ]
+}

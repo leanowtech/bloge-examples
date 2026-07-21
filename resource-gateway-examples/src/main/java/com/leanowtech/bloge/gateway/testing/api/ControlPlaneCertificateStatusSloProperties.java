@@ -14,7 +14,7 @@ package com.leanowtech.bloge.gateway.testing.api;
  * @param maximumRefreshFailureBasisPoints accepted mature refresh failure ratio
  * @param minimumAdmissionSamples samples required before admission-ratio enforcement
  * @param maximumAdmissionDenialBasisPoints accepted mature admission denial ratio
- * @param maximumConsecutiveBatchLimitCycles accepted possible-backlog streak
+ * @param maximumSourceHeadLag maximum accepted exact publication backlog
  */
 public record ControlPlaneCertificateStatusSloProperties(
         Long startupGraceSeconds,
@@ -24,7 +24,7 @@ public record ControlPlaneCertificateStatusSloProperties(
         Integer maximumRefreshFailureBasisPoints,
         Integer minimumAdmissionSamples,
         Integer maximumAdmissionDenialBasisPoints,
-        Integer maximumConsecutiveBatchLimitCycles) {
+        Integer maximumSourceHeadLag) {
 
     private static final long DEFAULT_STARTUP_GRACE_SECONDS = 60L;
     private static final long DEFAULT_MAXIMUM_REFRESH_SUCCESS_AGE_SECONDS = 120L;
@@ -33,7 +33,7 @@ public record ControlPlaneCertificateStatusSloProperties(
     private static final int DEFAULT_MAXIMUM_REFRESH_FAILURE_BASIS_POINTS = 500;
     private static final int DEFAULT_MINIMUM_ADMISSION_SAMPLES = 100;
     private static final int DEFAULT_MAXIMUM_ADMISSION_DENIAL_BASIS_POINTS = 1_000;
-    private static final int DEFAULT_MAXIMUM_CONSECUTIVE_BATCH_LIMIT_CYCLES = 3;
+    private static final int DEFAULT_MAXIMUM_SOURCE_HEAD_LAG = 0;
 
     /** Applies bounded defaults and delegates exact range validation to the SLO policy. */
     public ControlPlaneCertificateStatusSloProperties {
@@ -54,13 +54,12 @@ public record ControlPlaneCertificateStatusSloProperties(
         maximumAdmissionDenialBasisPoints = maximumAdmissionDenialBasisPoints == null
                 ? DEFAULT_MAXIMUM_ADMISSION_DENIAL_BASIS_POINTS
                 : maximumAdmissionDenialBasisPoints;
-        maximumConsecutiveBatchLimitCycles = maximumConsecutiveBatchLimitCycles == null
-                ? DEFAULT_MAXIMUM_CONSECUTIVE_BATCH_LIMIT_CYCLES
-                : maximumConsecutiveBatchLimitCycles;
+        maximumSourceHeadLag = maximumSourceHeadLag == null
+                ? DEFAULT_MAXIMUM_SOURCE_HEAD_LAG : maximumSourceHeadLag;
         policy(startupGraceSeconds, maximumRefreshSuccessAgeSeconds,
                 minimumExpiryHeadroomSeconds, minimumRefreshSamples,
                 maximumRefreshFailureBasisPoints, minimumAdmissionSamples,
-                maximumAdmissionDenialBasisPoints, maximumConsecutiveBatchLimitCycles);
+                maximumAdmissionDenialBasisPoints, maximumSourceHeadLag);
     }
 
     /** @return validated runtime policy */
@@ -68,7 +67,7 @@ public record ControlPlaneCertificateStatusSloProperties(
         return policy(startupGraceSeconds, maximumRefreshSuccessAgeSeconds,
                 minimumExpiryHeadroomSeconds, minimumRefreshSamples,
                 maximumRefreshFailureBasisPoints, minimumAdmissionSamples,
-                maximumAdmissionDenialBasisPoints, maximumConsecutiveBatchLimitCycles);
+                maximumAdmissionDenialBasisPoints, maximumSourceHeadLag);
     }
 
     /** @return canonical default policy */
@@ -89,8 +88,7 @@ public record ControlPlaneCertificateStatusSloProperties(
                 || minimumAdmissionSamples != DEFAULT_MINIMUM_ADMISSION_SAMPLES
                 || maximumAdmissionDenialBasisPoints
                 != DEFAULT_MAXIMUM_ADMISSION_DENIAL_BASIS_POINTS
-                || maximumConsecutiveBatchLimitCycles
-                != DEFAULT_MAXIMUM_CONSECUTIVE_BATCH_LIMIT_CYCLES;
+                || maximumSourceHeadLag != DEFAULT_MAXIMUM_SOURCE_HEAD_LAG;
     }
 
     private static ControlPlaneCertificateStatusSloMonitor.Policy policy(
@@ -101,12 +99,11 @@ public record ControlPlaneCertificateStatusSloProperties(
             int maximumRefreshFailureBasisPoints,
             int minimumAdmissionSamples,
             int maximumAdmissionDenialBasisPoints,
-            int maximumConsecutiveBatchLimitCycles) {
+            int maximumSourceHeadLag) {
         return new ControlPlaneCertificateStatusSloMonitor.Policy(
                 startupGraceSeconds, maximumRefreshSuccessAgeSeconds,
                 minimumExpiryHeadroomSeconds, minimumRefreshSamples,
                 maximumRefreshFailureBasisPoints, minimumAdmissionSamples,
-                maximumAdmissionDenialBasisPoints,
-                maximumConsecutiveBatchLimitCycles);
+                maximumAdmissionDenialBasisPoints, maximumSourceHeadLag);
     }
 }

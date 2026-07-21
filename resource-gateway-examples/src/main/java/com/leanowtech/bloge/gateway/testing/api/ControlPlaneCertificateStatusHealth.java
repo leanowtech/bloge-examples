@@ -18,7 +18,7 @@ public final class ControlPlaneCertificateStatusHealth implements HealthIndicato
 
     /** Current health-detail protocol version. */
     public static final String SCHEMA_VERSION =
-            "bloge.controlPlaneCertificateStatusHealth.v1";
+            "bloge.controlPlaneCertificateStatusHealth.v2";
 
     private final ControlPlaneCertificateStatusMonitor monitor;
     private final ControlPlaneCertificateStatusSource source;
@@ -55,7 +55,8 @@ public final class ControlPlaneCertificateStatusHealth implements HealthIndicato
             boolean ready = watcher.durable() && trust.available() && transport.available()
                     && transport.privateTrustStore() && transport.serverSpkiPinned()
                     && transport.mutualTls() && transport.certificateIdentityBound()
-                    && transport.strictProtocol() && cache.fresh();
+                    && transport.strictProtocol() && watcher.sourceHeadVerified()
+                    && cache.fresh();
             Map<String, Object> details = details(watcher, transport, trust, cache,
                     runtimeStatus(watcher, transport, trust, cache, ready));
             return (ready ? Health.up() : Health.down()).withDetails(details).build();
@@ -71,6 +72,9 @@ public final class ControlPlaneCertificateStatusHealth implements HealthIndicato
                     .withDetail("sourceMutualTls", false)
                     .withDetail("sourceCertificateIdentityBound", false)
                     .withDetail("durableFloorIntegrated", false)
+                    .withDetail("sourceHeadVerified", false)
+                    .withDetail("sourceHeadSequence", 0)
+                    .withDetail("sourceHeadLag", -1)
                     .withDetail("admissionFresh", false)
                     .withDetail("targetCount", 0)
                     .withDetail("goodTargetCount", 0)
@@ -98,6 +102,9 @@ public final class ControlPlaneCertificateStatusHealth implements HealthIndicato
         details.put("sourceMutualTls", source.mutualTls());
         details.put("sourceCertificateIdentityBound", source.certificateIdentityBound());
         details.put("durableFloorIntegrated", watcher.durable());
+        details.put("sourceHeadVerified", watcher.sourceHeadVerified());
+        details.put("sourceHeadSequence", watcher.sourceHeadSequence());
+        details.put("sourceHeadLag", watcher.sourceHeadLag());
         details.put("admissionFresh", cache.fresh());
         details.put("targetCount", cache.targetCount());
         details.put("goodTargetCount", cache.goodTargetCount());
@@ -126,6 +133,9 @@ public final class ControlPlaneCertificateStatusHealth implements HealthIndicato
         }
         if (!watcher.durable()) {
             return "FLOOR_UNAVAILABLE";
+        }
+        if (!watcher.sourceHeadVerified()) {
+            return "SOURCE_HEAD_UNAVAILABLE";
         }
         if (!cache.fresh()) {
             return "ADMISSION_STALE";

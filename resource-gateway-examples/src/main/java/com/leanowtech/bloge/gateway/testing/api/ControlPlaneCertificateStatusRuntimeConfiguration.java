@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseControlPlaneCertificateStatusFloor;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseControlPlaneCertificateStatusSourceHeadFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -56,6 +57,22 @@ public class ControlPlaneCertificateStatusRuntimeConfiguration {
         return floor;
     }
 
+    /** Creates the database-time exact source-head anti-rollback floor. */
+    @Bean
+    @ConditionalOnMissingBean(ControlPlaneCertificateStatusSourceHeadFloor.class)
+    ControlPlaneCertificateStatusSourceHeadFloor controlPlaneCertificateStatusSourceHeadFloor(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            ControlPlaneCertificateStatusTrustStore trustStore,
+            ControlPlaneCertificateStatusRuntimeProperties properties) {
+        var floor = new DatabaseControlPlaneCertificateStatusSourceHeadFloor(
+                database.jdbc(), objectMapper, trustStore, properties.deploymentScopeId(),
+                properties.baselineSequence(), properties.baselinePublicationFingerprint(),
+                database.transactionManager());
+        floor.init();
+        return floor;
+    }
+
     /** Registers fixed-cardinality refresh, admission, freshness, and SLO metrics. */
     @Bean
     @ConditionalOnMissingBean(ControlPlaneCertificateStatusTelemetry.class)
@@ -91,11 +108,13 @@ public class ControlPlaneCertificateStatusRuntimeConfiguration {
     @ConditionalOnMissingBean(ControlPlaneCertificateStatusMonitor.class)
     ControlPlaneCertificateStatusMonitor controlPlaneCertificateStatusMonitor(
             ControlPlaneCertificateStatusFloor floor,
+            ControlPlaneCertificateStatusSourceHeadFloor sourceHeadFloor,
             ControlPlaneCertificateStatusSource source,
             ControlPlaneCertificateStatusAdmission admission,
             ControlPlaneCertificateStatusRuntimeProperties properties,
             ControlPlaneCertificateStatusTelemetry telemetry) {
-        return new ControlPlaneCertificateStatusMonitor(floor, source, admission,
+        return new ControlPlaneCertificateStatusMonitor(floor, sourceHeadFloor,
+                source, admission,
                 Clock.systemUTC(), properties.maximumBatch(), telemetry);
     }
 

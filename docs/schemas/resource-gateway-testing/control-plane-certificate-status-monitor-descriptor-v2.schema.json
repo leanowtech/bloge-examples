@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-monitor-descriptor-v2.schema.json",
+  "title": "Resource Gateway Certificate Status Monitor Descriptor v2",
+  "description": "Bounded refresh posture with a durable, freshness-bound exact source-head proof and exact backlog.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "status", "durable", "sourceAvailable", "admissionFresh",
+    "sequence", "appliedCount", "observedAt", "publicationExpiresAt",
+    "sourceHeadVerified", "sourceHeadSequence", "sourceHeadLag",
+    "sourceHeadExpiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateStatusMonitorDescriptor.v2"
+    },
+    "status": {
+      "enum": [
+        "CURRENT", "APPLIED", "BATCH_LIMIT", "SOURCE_UNAVAILABLE",
+        "SOURCE_REJECTED", "SOURCE_HEAD_REJECTED", "FLOOR_UNAVAILABLE",
+        "PUBLICATION_REJECTED", "CACHE_REJECTED"
+      ]
+    },
+    "durable": { "const": true },
+    "sourceAvailable": { "type": "boolean" },
+    "admissionFresh": { "type": "boolean" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "appliedCount": { "type": "integer", "minimum": 0, "maximum": 32 },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "publicationExpiresAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    },
+    "sourceHeadVerified": { "type": "boolean" },
+    "sourceHeadSequence": { "type": "integer", "minimum": 0 },
+    "sourceHeadLag": { "type": "integer", "minimum": -1 },
+    "sourceHeadExpiresAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "sourceHeadVerified": { "const": true } } },
+      "then": {
+        "properties": {
+          "sourceHeadLag": { "minimum": 0 },
+          "sourceHeadExpiresAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "else": { "properties": { "sourceHeadLag": { "const": -1 } } }
+    }
+  ]
+}

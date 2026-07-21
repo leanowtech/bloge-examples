@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumMap;
 import java.util.Locale;
@@ -60,6 +61,10 @@ public final class ControlPlaneCertificateStatusTelemetry {
     private final AtomicLong lastRefreshSuccessEpochMillis = unknown();
     private final AtomicLong durableSequence = unknown();
     private final AtomicLong sourceAvailable = unknown();
+    private final AtomicLong sourceHeadVerified = unknown();
+    private final AtomicLong sourceHeadSequence = unknown();
+    private final AtomicLong sourceHeadLag = unknown();
+    private final AtomicLong sourceHeadSecondsToExpiry = unknown();
     private final AtomicLong admissionFresh = unknown();
     private final AtomicLong secondsToExpiry = unknown();
     private final AtomicLong targetCount = unknown();
@@ -88,6 +93,15 @@ public final class ControlPlaneCertificateStatusTelemetry {
                 "Latest durable certificate-status sequence, or -1 before observation");
         gauge(meters, PREFIX + "source.available", sourceAvailable,
                 "Latest source availability: 1 available, 0 unavailable, -1 unknown");
+        gauge(meters, PREFIX + "source.head.verified", sourceHeadVerified,
+                "Fresh exact source-head proof: 1 verified, 0 unavailable, -1 unknown");
+        gauge(meters, PREFIX + "source.head.sequence", sourceHeadSequence,
+                "Highest durably verified certificate-status source sequence");
+        gauge(meters, PREFIX + "source.head.lag", sourceHeadLag,
+                "Exact publication backlog, or -1 without a fresh source-head proof");
+        gauge(meters, PREFIX + "source.head.seconds.to.expiry",
+                sourceHeadSecondsToExpiry,
+                "Remaining exact source-head proof lifetime, or -1 before observation");
         gauge(meters, PREFIX + "admission.fresh", admissionFresh,
                 "Latest request admission freshness: 1 fresh, 0 stale, -1 unknown");
         gauge(meters, PREFIX + "admission.seconds.to.expiry", secondsToExpiry,
@@ -153,6 +167,12 @@ public final class ControlPlaneCertificateStatusTelemetry {
         }
         durableSequence.set(observed.sequence());
         sourceAvailable.set(observed.sourceAvailable() ? 1L : 0L);
+        sourceHeadVerified.set(observed.sourceHeadVerified() ? 1L : 0L);
+        sourceHeadSequence.set(observed.sourceHeadSequence());
+        sourceHeadLag.set(observed.sourceHeadLag());
+        sourceHeadSecondsToExpiry.set(observed.sourceHeadExpiresAt() == null ? -1L
+                : Math.max(0L, Duration.between(observed.observedAt(),
+                observed.sourceHeadExpiresAt()).toSeconds()));
         observeAdmission(cache);
     }
 

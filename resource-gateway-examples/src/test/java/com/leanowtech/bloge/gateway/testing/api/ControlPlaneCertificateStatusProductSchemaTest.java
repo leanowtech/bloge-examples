@@ -40,7 +40,8 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         var monitor = new ControlPlaneCertificateStatusMonitor.Descriptor(
                 ControlPlaneCertificateStatusMonitor.Descriptor.SCHEMA_VERSION,
                 ControlPlaneCertificateStatusMonitor.RefreshStatus.CURRENT,
-                true, true, true, 1, 0, NOW, NOW.plusSeconds(60));
+                true, true, true, 1, 0, NOW, NOW.plusSeconds(60),
+                true, 1, 0, NOW.plusSeconds(60));
         var trust = new ControlPlaneCertificateStatusTrustStore.Descriptor("", true,
                 "enterprise-ca", 1, 1, 1, 1,
                 Map.of("privateMaterialPresent", false));
@@ -49,7 +50,7 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         assertRecord(admission,
                 "control-plane-certificate-status-admission-descriptor-v1.schema.json");
         assertRecord(monitor,
-                "control-plane-certificate-status-monitor-descriptor-v1.schema.json");
+                "control-plane-certificate-status-monitor-descriptor-v2.schema.json");
         assertRecord(trust,
                 "control-plane-certificate-status-trust-store-descriptor-v1.schema.json");
         var policy = new ControlPlaneCertificateStatusSloMonitor.Policy(
@@ -57,10 +58,10 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         var assessment = new ControlPlaneCertificateStatusSloMonitor.Assessment(
                 ControlPlaneCertificateStatusSloMonitor.Assessment.SCHEMA_VERSION,
                 ControlPlaneCertificateStatusSloMonitor.State.HEALTHY, java.util.List.of(),
-                NOW, "CURRENT", true, true, 1, 60,
+                NOW, "CURRENT", true, true, 1, true, 1, 0, 60,
                 20, 0, 0, 100, 0, 0, 0, 1, policy.descriptor());
         assertRecord(assessment,
-                "control-plane-certificate-status-slo-assessment-v1.schema.json");
+                "control-plane-certificate-status-slo-assessment-v2.schema.json");
 
         ControlPlaneCertificateStatusMonitor watcher = mock(
                 ControlPlaneCertificateStatusMonitor.class);
@@ -74,7 +75,7 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         var slo = new ControlPlaneCertificateStatusSloMonitor(
                 watcher, cache, telemetry, Clock.fixed(NOW, ZoneOffset.UTC), policy);
         JsonNode sloSchema = schema(
-                "control-plane-certificate-status-slo-assessment-v1.schema.json");
+                "control-plane-certificate-status-slo-assessment-v2.schema.json");
         assertProperties(objectMapper.valueToTree(slo.health().getDetails()),
                 sloSchema.path("properties"));
         assertThat(sloSchema.path("additionalProperties").asBoolean(true)).isFalse();
@@ -102,10 +103,11 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         when(monitor.descriptor()).thenReturn(new ControlPlaneCertificateStatusMonitor.Descriptor(
                 ControlPlaneCertificateStatusMonitor.Descriptor.SCHEMA_VERSION,
                 ControlPlaneCertificateStatusMonitor.RefreshStatus.CURRENT,
-                true, true, true, 1, 0, NOW, NOW.plusSeconds(60)));
+                true, true, true, 1, 0, NOW, NOW.plusSeconds(60),
+                true, 1, 0, NOW.plusSeconds(60)));
         var health = new ControlPlaneCertificateStatusHealth(
                 monitor, source, trust, admission);
-        JsonNode schema = schema("control-plane-certificate-status-health-v1.schema.json");
+        JsonNode schema = schema("control-plane-certificate-status-health-v2.schema.json");
 
         assertProperties(objectMapper.valueToTree(health.health().getDetails()),
                 schema.path("properties"));
@@ -120,7 +122,7 @@ class ControlPlaneCertificateStatusProductSchemaTest {
     void configurationSchemaTracksBothSpringPropertyRecordsAndRuntimeBounds()
             throws Exception {
         JsonNode schema = schema(
-                "control-plane-certificate-status-configuration-v1.schema.json");
+                "control-plane-certificate-status-configuration-v2.schema.json");
 
         assertThat(propertyNames(schema.path("properties")))
                 .containsExactlyInAnyOrderElementsOf(configurationPropertyNames(
@@ -151,7 +153,7 @@ class ControlPlaneCertificateStatusProductSchemaTest {
     void schemasUseClosedMonitorVocabularyAndCannotCarrySensitiveMaterial()
             throws Exception {
         JsonNode monitor = schema(
-                "control-plane-certificate-status-monitor-descriptor-v1.schema.json");
+                "control-plane-certificate-status-monitor-descriptor-v2.schema.json");
         assertThat(monitor.at("/properties/status/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactlyInAnyOrder(Arrays.stream(
@@ -159,7 +161,7 @@ class ControlPlaneCertificateStatusProductSchemaTest {
                         .map(Enum::name).toArray(String[]::new));
 
         JsonNode slo = schema(
-                "control-plane-certificate-status-slo-assessment-v1.schema.json");
+                "control-plane-certificate-status-slo-assessment-v2.schema.json");
         assertThat(slo.at("/properties/state/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactlyInAnyOrder(Arrays.stream(
@@ -199,7 +201,7 @@ class ControlPlaneCertificateStatusProductSchemaTest {
     void testAndStagingProfilesExactlyPublishTheFrozenConfigurationKeys()
             throws Exception {
         JsonNode schema = schema(
-                "control-plane-certificate-status-configuration-v1.schema.json");
+                "control-plane-certificate-status-configuration-v2.schema.json");
         Set<String> expected = propertyNames(schema.path("properties"));
         Set<String> expectedTransport = propertyNames(
                 schema.at("/$defs/transport/properties"));
@@ -327,9 +329,13 @@ class ControlPlaneCertificateStatusProductSchemaTest {
                 "control-plane-certificate-status-source-descriptor-v1.schema.json",
                 "control-plane-certificate-status-admission-descriptor-v1.schema.json",
                 "control-plane-certificate-status-monitor-descriptor-v1.schema.json",
+                "control-plane-certificate-status-monitor-descriptor-v2.schema.json",
                 "control-plane-certificate-status-trust-store-descriptor-v1.schema.json",
                 "control-plane-certificate-status-health-v1.schema.json",
+                "control-plane-certificate-status-health-v2.schema.json",
                 "control-plane-certificate-status-slo-assessment-v1.schema.json",
-                "control-plane-certificate-status-configuration-v1.schema.json");
+                "control-plane-certificate-status-slo-assessment-v2.schema.json",
+                "control-plane-certificate-status-configuration-v1.schema.json",
+                "control-plane-certificate-status-configuration-v2.schema.json");
     }
 }

@@ -35,6 +35,7 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 .containsEntry("controlPlaneCertificateRevocationAdmission", false)
                 .containsEntry("controlPlaneCertificateStatusSloIntegrated", false)
                 .containsEntry("controlPlaneCertificateStatusSloHealthy", false)
+                .containsEntry("controlPlaneCertificateStatusExactSourceHead", false)
                 .containsEntry("controlPlaneCertificateStatusFixedCardinalityTelemetry", false)
                 .containsEntry("controlPlaneCertificateRotationEventDeliveryIntegrated", false)
                 .containsEntry("controlPlaneCertificateRotationEventDeliveryReady", false)
@@ -173,6 +174,7 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
         assertThat(service.capabilities().payload().features())
                 .containsEntry("controlPlaneCertificateStatusSloIntegrated", true)
                 .containsEntry("controlPlaneCertificateStatusSloHealthy", true)
+                .containsEntry("controlPlaneCertificateStatusExactSourceHead", true)
                 .containsEntry("controlPlaneCertificateStatusFixedCardinalityTelemetry", true)
                 .containsEntry("controlPlaneCertificateRotationProductionReady", false);
 
@@ -182,6 +184,7 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
         assertThat(capabilities.features())
                 .containsEntry("controlPlaneCertificateStatusSloIntegrated", true)
                 .containsEntry("controlPlaneCertificateStatusSloHealthy", false)
+                .containsEntry("controlPlaneCertificateStatusExactSourceHead", false)
                 .containsEntry("controlPlaneCertificateStatusFixedCardinalityTelemetry", true);
         assertThat(capabilities.toString()).doesNotContain("ca.internal", "secret=value");
     }
@@ -231,6 +234,7 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 ControlPlaneCertificateStatusSloMonitor.Assessment.SCHEMA_VERSION,
                 ControlPlaneCertificateStatusSloMonitor.State.HEALTHY, List.of(),
                 Instant.parse("2026-07-22T00:00:00Z"), "CURRENT", true, true,
-                7, 120, 20, 0, 0, 100, 0, 0, 0, 1, policy.descriptor());
+                7, true, 7, 0, 120,
+                20, 0, 0, 100, 0, 0, 0, 1, policy.descriptor());
     }
 }

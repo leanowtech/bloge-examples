@@ -598,6 +598,8 @@ public class ToolStudioIntegrationService {
         CertificateStatusSloCapability statusSlo = currentCertificateStatusSlo();
         features.put("controlPlaneCertificateStatusSloIntegrated", statusSlo.integrated());
         features.put("controlPlaneCertificateStatusSloHealthy", statusSlo.healthy());
+        features.put("controlPlaneCertificateStatusExactSourceHead",
+                statusSlo.exactSourceHead());
         features.put("controlPlaneCertificateStatusFixedCardinalityTelemetry",
                 statusSlo.integrated());
         CertificateRotationEventDeliveryCapability eventDelivery =
@@ -663,18 +665,21 @@ public class ToolStudioIntegrationService {
 
     private CertificateStatusSloCapability currentCertificateStatusSlo() {
         if (controlPlaneCertificateStatusSloMonitor == null) {
-            return new CertificateStatusSloCapability(false, false);
+            return new CertificateStatusSloCapability(false, false, false);
         }
         try {
+            ControlPlaneCertificateStatusSloMonitor.Assessment assessment =
+                    controlPlaneCertificateStatusSloMonitor.descriptor();
             return new CertificateStatusSloCapability(true,
-                    controlPlaneCertificateStatusSloMonitor.descriptor().state()
-                            == ControlPlaneCertificateStatusSloMonitor.State.HEALTHY);
+                    assessment.state() == ControlPlaneCertificateStatusSloMonitor.State.HEALTHY,
+                    assessment.sourceHeadVerified());
         } catch (RuntimeException unavailable) {
-            return new CertificateStatusSloCapability(true, false);
+            return new CertificateStatusSloCapability(true, false, false);
         }
     }
 
-    private record CertificateStatusSloCapability(boolean integrated, boolean healthy) {
+    private record CertificateStatusSloCapability(
+            boolean integrated, boolean healthy, boolean exactSourceHead) {
     }
 
     private record CertificateRotationEventDeliveryCapability(
