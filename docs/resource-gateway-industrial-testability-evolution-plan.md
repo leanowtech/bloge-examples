@@ -54,6 +54,12 @@
 > 8 项聚焦测试全绿。该机制保证测试调用线程收敛，不等于 OS process kill 或生产运行时 hard
 > cancellation。验证见 [browser session supervision verification](resource-gateway-test-quality-gate-browser-session-supervision-verification.md)。
 
+> 测试门禁活性补强关闭了一次真实观测到的 admission concurrency 永久挂起：ready/start barrier、
+> Future 与 executor teardown 全部具有 caller-owned deadline，worker 为命名 daemon platform thread，
+> 并新增“barrier 参与者永不到达、future 永不完成”的故障注入。8 项聚焦测试全绿。该结论不外推为
+> 全仓历史无界等待已清零，也不提供同一 worktree 的跨进程 Maven build lock。验证见
+> [admission concurrency liveness verification](resource-gateway-test-quality-gate-admission-concurrency-liveness-verification.md)。
+
 > Stage 4 attempt cancellation 第一增量冻结了 provider-confirmed proof kernel：内容寻址 command
 > 精确绑定 tenant/environment/job/attempt/owner/lease epoch/runtime binding/stop reason/deadline 与
 > 32-byte challenge；PROCESS/CONTAINER/VM receipt 只承载 opaque identity/state commitment，Ed25519

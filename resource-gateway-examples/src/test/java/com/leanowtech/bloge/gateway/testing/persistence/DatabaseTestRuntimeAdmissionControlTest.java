@@ -19,13 +19,21 @@ import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DatabaseTestRuntimeAdmissionControlTest {
+
+    private static final long CONCURRENCY_TIMEOUT_SECONDS = 5L;
+    private static final AtomicLong THREAD_SEQUENCE = new AtomicLong();
 
     private DataSource dataSource;
     private JdbcTemplate jdbc;
@@ -76,15 +84,18 @@ class DatabaseTestRuntimeAdmissionControlTest {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
 
-        try (var executor = Executors.newFixedThreadPool(2)) {
+        ExecutorService executor = concurrencyExecutor();
+        try {
             var first = executor.submit(() -> acquireAfterBarrier(control,
                     request("replica-a", "intent-a", 1, 1, 10, "operator-a"), ready, start));
             var second = executor.submit(() -> acquireAfterBarrier(competing,
                     request("replica-b", "intent-b", 1, 1, 10, "operator-b"), ready, start));
-            ready.await();
+            assertThat(ready.await(CONCURRENCY_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                    .as("both admission competitors reached the start barrier")
+                    .isTrue();
             start.countDown();
 
-            List<AcquireResult> results = List.of(first.get(), second.get());
+            List<AcquireResult> results = List.of(await(first), await(second));
             assertThat(results).extracting(AcquireResult::state)
                     .containsExactlyInAnyOrder(AcquireState.ACQUIRED, AcquireState.REJECTED);
             AcquireResult rejected = results.stream()
@@ -97,6 +108,8 @@ class DatabaseTestRuntimeAdmissionControlTest {
             AcquireResult acquired = results.stream()
                     .filter(result -> result.state() == AcquireState.ACQUIRED).findFirst().orElseThrow();
             assertThat(control.release(acquired.lease())).isTrue();
+        } finally {
+            shutdown(executor, start);
         }
     }
 
@@ -130,22 +143,25 @@ class DatabaseTestRuntimeAdmissionControlTest {
             expire(request);
             CountDownLatch start = new CountDownLatch(1);
 
-            try (var executor = Executors.newFixedThreadPool(2)) {
+            ExecutorService executor = concurrencyExecutor();
+            try {
                 var staleRelease = executor.submit(() -> {
-                    start.await();
+                    awaitStart(start);
                     return control.release(original.lease());
                 });
                 var reacquire = executor.submit(() -> {
-                    start.await();
+                    awaitStart(start);
                     return competing.acquire(request);
                 });
                 start.countDown();
 
-                staleRelease.get();
-                AcquireResult replacement = reacquire.get();
+                await(staleRelease);
+                AcquireResult replacement = await(reacquire);
                 assertThat(replacement.state()).isEqualTo(AcquireState.ACQUIRED);
                 assertLivePermitHasEveryClaim(request);
                 assertThat(control.release(replacement.lease())).isTrue();
+            } finally {
+                shutdown(executor, start);
             }
         }
     }
@@ -160,22 +176,25 @@ class DatabaseTestRuntimeAdmissionControlTest {
             expire(request);
             CountDownLatch start = new CountDownLatch(1);
 
-            try (var executor = Executors.newFixedThreadPool(2)) {
+            ExecutorService executor = concurrencyExecutor();
+            try {
                 var purge = executor.submit(() -> {
-                    start.await();
+                    awaitStart(start);
                     return control.purgeExpired(100);
                 });
                 var reacquire = executor.submit(() -> {
-                    start.await();
+                    awaitStart(start);
                     return competing.acquire(request);
                 });
                 start.countDown();
 
-                purge.get();
-                AcquireResult replacement = reacquire.get();
+                await(purge);
+                AcquireResult replacement = await(reacquire);
                 assertThat(replacement.state()).isEqualTo(AcquireState.ACQUIRED);
                 assertLivePermitHasEveryClaim(request);
                 assertThat(control.release(replacement.lease())).isTrue();
+            } finally {
+                shutdown(executor, start);
             }
         }
     }
@@ -193,6 +212,29 @@ class DatabaseTestRuntimeAdmissionControlTest {
                 fingerprint("admission:stable")))
                 .isEqualTo(DatabaseTestRuntimeAdmissionControl.admissionLockStripe(
                         fingerprint("admission:stable")));
+    }
+
+    @Test
+    void concurrencyWaitsFailWithinTheirCallerOwnedDeadline() throws Exception {
+        assertThatThrownBy(() -> awaitStart(
+                new CountDownLatch(1), 10L, TimeUnit.MILLISECONDS))
+                .isInstanceOf(TimeoutException.class);
+
+        ExecutorService executor = concurrencyExecutor();
+        CountDownLatch taskStarted = new CountDownLatch(1);
+        try {
+            Future<Boolean> blocked = executor.submit(() -> {
+                taskStarted.countDown();
+                new CountDownLatch(1).await();
+                return true;
+            });
+            assertThat(taskStarted.await(1L, TimeUnit.SECONDS)).isTrue();
+
+            assertThatThrownBy(() -> await(blocked, 10L, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(TimeoutException.class);
+        } finally {
+            shutdown(executor, new CountDownLatch(0));
+        }
     }
 
     @Test
@@ -249,10 +291,47 @@ class DatabaseTestRuntimeAdmissionControlTest {
             DatabaseTestRuntimeAdmissionControl authority,
             AdmissionRequest request,
             CountDownLatch ready,
-            CountDownLatch start) throws InterruptedException {
+            CountDownLatch start) throws InterruptedException, TimeoutException {
         ready.countDown();
-        start.await();
+        awaitStart(start);
         return authority.acquire(request);
+    }
+
+    private static ExecutorService concurrencyExecutor() {
+        return Executors.newFixedThreadPool(2, task -> Thread.ofPlatform()
+                .daemon(true)
+                .name("resource-gateway-admission-race-" + THREAD_SEQUENCE.incrementAndGet())
+                .unstarted(task));
+    }
+
+    private static void awaitStart(CountDownLatch start)
+            throws InterruptedException, TimeoutException {
+        awaitStart(start, CONCURRENCY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private static void awaitStart(CountDownLatch start, long timeout, TimeUnit unit)
+            throws InterruptedException, TimeoutException {
+        if (!start.await(timeout, unit)) {
+            throw new TimeoutException("Admission race start barrier timed out");
+        }
+    }
+
+    private static <T> T await(Future<T> future) throws Exception {
+        return await(future, CONCURRENCY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private static <T> T await(Future<T> future, long timeout, TimeUnit unit)
+            throws Exception {
+        return future.get(timeout, unit);
+    }
+
+    private static void shutdown(ExecutorService executor, CountDownLatch start)
+            throws InterruptedException {
+        start.countDown();
+        executor.shutdownNow();
+        assertThat(executor.awaitTermination(CONCURRENCY_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                .as("admission race workers terminated after cancellation")
+                .isTrue();
     }
 
     private static AdmissionRequest request(
