@@ -123,13 +123,13 @@ class ControlPlaneCertificateStatusProductSchemaTest {
                 "control-plane-certificate-status-configuration-v1.schema.json");
 
         assertThat(propertyNames(schema.path("properties")))
-                .containsExactlyInAnyOrderElementsOf(recordPropertyNames(
+                .containsExactlyInAnyOrderElementsOf(configurationPropertyNames(
                         ControlPlaneCertificateStatusRuntimeProperties.class));
         assertThat(propertyNames(schema.at("/$defs/transport/properties")))
-                .containsExactlyInAnyOrderElementsOf(recordPropertyNames(
+                .containsExactlyInAnyOrderElementsOf(configurationPropertyNames(
                         RecoveryFleetPublicationTransportProperties.class));
         assertThat(propertyNames(schema.at("/$defs/slo/properties")))
-                .containsExactlyInAnyOrderElementsOf(recordPropertyNames(
+                .containsExactlyInAnyOrderElementsOf(configurationPropertyNames(
                         ControlPlaneCertificateStatusSloProperties.class));
         assertThat(schema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(schema.at("/$defs/transport/additionalProperties").asBoolean(true))
@@ -170,13 +170,17 @@ class ControlPlaneCertificateStatusProductSchemaTest {
                 .containsExactlyInAnyOrder(Arrays.stream(
                                 ControlPlaneCertificateStatusSloMonitor.Violation.values())
                         .map(Enum::name).toArray(String[]::new));
+        Set<String> expectedMonitorStatuses = Arrays.stream(
+                        ControlPlaneCertificateStatusMonitor.RefreshStatus.values())
+                .map(Enum::name)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        expectedMonitorStatuses.add(
+                ControlPlaneCertificateStatusSloMonitor.UNAVAILABLE_MONITOR_STATUS);
         assertThat(slo.at("/properties/monitorStatus/enum"))
                 .extracting(JsonNode::asText)
-                .containsExactlyInAnyOrder(Arrays.stream(
-                                ControlPlaneCertificateStatusMonitor.RefreshStatus.values())
-                        .map(Enum::name).toArray(String[]::new));
+                .containsExactlyInAnyOrderElementsOf(expectedMonitorStatuses);
         assertThat(propertyNames(slo.at("/$defs/policy/properties")))
-                .containsExactlyInAnyOrderElementsOf(recordPropertyNames(
+                .containsExactlyInAnyOrderElementsOf(wirePropertyNames(
                         ControlPlaneCertificateStatusSloMonitor.PolicyDescriptor.class));
 
         String combined = "";
@@ -229,14 +233,14 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         JsonNode metadata = projectConfigurationMetadata();
         String prefix = ControlPlaneCertificateStatusRuntimeProperties.PREFIX;
         Set<String> expected = new LinkedHashSet<>();
-        recordPropertyNames(ControlPlaneCertificateStatusRuntimeProperties.class).stream()
+        configurationPropertyNames(ControlPlaneCertificateStatusRuntimeProperties.class).stream()
                 .filter(name -> !"transport".equals(name) && !"slo".equals(name))
                 .map(name -> prefix + "." + name)
                 .forEach(expected::add);
-        recordPropertyNames(ControlPlaneCertificateStatusSloProperties.class).stream()
+        configurationPropertyNames(ControlPlaneCertificateStatusSloProperties.class).stream()
                 .map(name -> prefix + ".slo." + name)
                 .forEach(expected::add);
-        recordPropertyNames(RecoveryFleetPublicationTransportProperties.class).stream()
+        configurationPropertyNames(RecoveryFleetPublicationTransportProperties.class).stream()
                 .map(name -> prefix + ".transport." + name)
                 .forEach(expected::add);
 
@@ -258,9 +262,15 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         assertThat(schema.path("additionalProperties").asBoolean(true)).isFalse();
     }
 
-    private static Set<String> recordPropertyNames(Class<?> recordType) {
+    private static Set<String> configurationPropertyNames(Class<?> recordType) {
         return Arrays.stream(recordType.getRecordComponents())
                 .map(component -> kebab(component.getName()))
+                .collect(Collectors.toSet());
+    }
+
+    private static Set<String> wirePropertyNames(Class<?> recordType) {
+        return Arrays.stream(recordType.getRecordComponents())
+                .map(component -> component.getName())
                 .collect(Collectors.toSet());
     }
 

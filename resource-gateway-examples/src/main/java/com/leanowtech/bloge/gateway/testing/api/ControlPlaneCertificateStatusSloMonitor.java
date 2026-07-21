@@ -24,6 +24,9 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndicator {
 
+    /** SLO-layer status used when the underlying refresh descriptor cannot be observed. */
+    public static final String UNAVAILABLE_MONITOR_STATUS = "UNAVAILABLE";
+
     private final ControlPlaneCertificateStatusMonitor monitor;
     private final ControlPlaneCertificateStatusAdmission admission;
     private final ControlPlaneCertificateStatusTelemetry telemetry;
@@ -393,14 +396,15 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
         private static Assessment initializing(
                 Instant observedAt, PolicyDescriptor policy) {
             return new Assessment(SCHEMA_VERSION, State.INITIALIZING, List.of(), observedAt,
-                    "UNAVAILABLE", false, false, 0, 0, 0, 0, 0,
+                    UNAVAILABLE_MONITOR_STATUS, false, false, 0, 0, 0, 0, 0,
                     0, 0, 0, 0, -1, policy);
         }
 
         private static Assessment unavailable(
                 Instant observedAt, PolicyDescriptor policy) {
             return new Assessment(SCHEMA_VERSION, State.OBSERVATION_UNAVAILABLE,
-                    List.of(Violation.OBSERVATION_UNAVAILABLE), observedAt, "UNAVAILABLE",
+                    List.of(Violation.OBSERVATION_UNAVAILABLE), observedAt,
+                    UNAVAILABLE_MONITOR_STATUS,
                     false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, policy);
         }
     }
@@ -432,7 +436,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
     }
 
     private static boolean validMonitorStatus(String value) {
-        if ("UNAVAILABLE".equals(value)) {
+        if (UNAVAILABLE_MONITOR_STATUS.equals(value)) {
             return true;
         }
         try {
