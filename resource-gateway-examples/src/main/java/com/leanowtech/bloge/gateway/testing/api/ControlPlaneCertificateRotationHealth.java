@@ -61,7 +61,11 @@ public final class ControlPlaneCertificateRotationHealth implements HealthIndica
                     .withDetail("registeredTargetCount", 0)
                     .withDetail("synchronizedState", false)
                     .withDetail("durableGenerationFloorIntegrated", false)
+                    .withDetail("replicaConvergenceIntegrated", false)
+                    .withDetail("replicaConvergenceAvailable", false)
                     .withDetail("replicaConvergenceProven", false)
+                    .withDetail("servingReady", false)
+                    .withDetail("convergenceStatus", "UNAVAILABLE")
                     .withDetail("productionReady", false)
                     .build();
         }
@@ -84,6 +88,12 @@ public final class ControlPlaneCertificateRotationHealth implements HealthIndica
         if (!current.synchronizedState()) {
             return RuntimeStatus.STATE_OUT_OF_SYNC;
         }
+        if (current.convergenceIntegrated() && !current.convergenceAvailable()) {
+            return RuntimeStatus.CONVERGENCE_UNAVAILABLE;
+        }
+        if (current.convergenceIntegrated() && !current.servingReady()) {
+            return RuntimeStatus.SERVING_FENCED;
+        }
         return current.ready() ? RuntimeStatus.LOCAL_READY
                 : RuntimeStatus.INCOMPLETE_REGISTRATION;
     }
@@ -102,8 +112,12 @@ public final class ControlPlaneCertificateRotationHealth implements HealthIndica
         details.put("synchronizedState", current.synchronizedState());
         details.put("durableGenerationFloorIntegrated",
                 current.enabled() && current.durableState());
-        details.put("replicaConvergenceProven", false);
-        details.put("productionReady", false);
+        details.put("replicaConvergenceIntegrated", current.convergenceIntegrated());
+        details.put("replicaConvergenceAvailable", current.convergenceAvailable());
+        details.put("replicaConvergenceProven", current.replicaConvergenceProven());
+        details.put("servingReady", current.servingReady());
+        details.put("convergenceStatus", current.convergenceStatus());
+        details.put("productionReady", current.productionReady());
         return Map.copyOf(details);
     }
 
@@ -121,6 +135,10 @@ public final class ControlPlaneCertificateRotationHealth implements HealthIndica
         INCOMPLETE_REGISTRATION,
         /** A live transport diverged from controller-observed generation state. */
         STATE_OUT_OF_SYNC,
+        /** The configured replica authority has no current bounded decision lease. */
+        CONVERGENCE_UNAVAILABLE,
+        /** Certificate generation serving is fenced pending exact replica proof. */
+        SERVING_FENCED,
         /** The bounded descriptor could not be read. */
         UNAVAILABLE
     }

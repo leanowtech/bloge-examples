@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-runtime-descriptor-v2.schema.json",
+  "title": "Resource Gateway Certificate Rotation Runtime Descriptor v2",
+  "description": "Fixed-cardinality product projection separating local rotation readiness, replica convergence, serving admission and still-unmet enterprise PKI readiness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "enabled", "ready", "trustAvailable", "durableState",
+    "inventoriedTargetCount", "registeredTargetCount", "synchronizedState",
+    "convergenceIntegrated", "convergenceAvailable", "replicaConvergenceProven",
+    "servingReady", "productionReady", "convergenceStatus"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateRotationRuntimeDescriptor.v2"
+    },
+    "enabled": { "type": "boolean" },
+    "ready": { "type": "boolean" },
+    "trustAvailable": { "type": "boolean" },
+    "durableState": { "type": "boolean" },
+    "inventoriedTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
+    "registeredTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
+    "synchronizedState": { "type": "boolean" },
+    "convergenceIntegrated": { "type": "boolean" },
+    "convergenceAvailable": { "type": "boolean" },
+    "replicaConvergenceProven": { "type": "boolean" },
+    "servingReady": { "type": "boolean" },
+    "productionReady": {
+      "const": false,
+      "description": "Remains false until enterprise event distribution, revocation and production operations gates are independently proven."
+    },
+    "convergenceStatus": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+    }
+  }
+}

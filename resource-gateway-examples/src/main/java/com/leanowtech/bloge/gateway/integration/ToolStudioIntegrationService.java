@@ -560,8 +560,16 @@ public class ToolStudioIntegrationService {
                 rotation.enabled() && rotation.ready());
         features.put("controlPlaneCertificateRotationDurableFloorIntegrated",
                 rotation.enabled() && rotation.durableState());
-        features.put("controlPlaneCertificateRotationReplicaConvergenceProven", false);
-        features.put("controlPlaneCertificateRotationProductionReady", false);
+        features.put("controlPlaneCertificateRotationReplicaConvergenceIntegrated",
+                rotation.convergenceIntegrated());
+        features.put("controlPlaneCertificateRotationReplicaConvergenceAvailable",
+                rotation.convergenceAvailable());
+        features.put("controlPlaneCertificateRotationReplicaConvergenceProven",
+                rotation.replicaConvergenceProven());
+        features.put("controlPlaneCertificateRotationServingReady",
+                rotation.servingReady());
+        features.put("controlPlaneCertificateRotationProductionReady",
+                rotation.productionReady());
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),
@@ -577,14 +585,16 @@ public class ToolStudioIntegrationService {
         if (controlPlaneCertificateRotationRuntime == null) {
             return new ControlPlaneCertificateRotationRuntime.Descriptor(
                     ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
-                    false, true, false, false, 0, 0, true);
+                    false, true, false, false, 0, 0, true,
+                    false, false, false, false, false, "DISABLED");
         }
         try {
             return controlPlaneCertificateRotationRuntime.descriptor();
         } catch (RuntimeException unavailable) {
             return new ControlPlaneCertificateRotationRuntime.Descriptor(
                     ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
-                    true, false, false, false, 0, 0, false);
+                    true, false, false, false, 0, 0, false,
+                    false, false, false, false, false, "UNAVAILABLE");
         }
     }
 

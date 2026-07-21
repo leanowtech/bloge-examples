@@ -19,9 +19,11 @@ generation、持久化 exact event journal、防止重启回退/同代分叉并�
 稳定 target id 通过统一 runtime 恢复 active/pending generation。后续 convergence kernel 已冻结精确
 replica inventory、process-start lease、`STAGED/ACTIVE/FAILED` ACK、all-replica/fenced-quorum 阈值与
 aggregate-only proof；数据库实现以单 active fleet、外部 inventory revision floor、严格 sequence 和
-whole-record fingerprint 阻断重复副本、回退、分叉、篡改与 authority downgrade。它尚未接入 runtime
-heartbeat、CA event watcher 或 activation/serving fence，因此 capability 明确保持
-`replicaConvergenceProven=false`、`productionReady=false`，不能被解释为企业 PKI 或生产证书轮换已经开放。
+whole-record fingerprint 阻断重复副本、回退、分叉、篡改与 authority downgrade。现在它已通过同一
+`ControlPlaneCertificateRotationConvergenceMonitor` 接入 runtime heartbeat、durable activation fence 与
+live serving fence：数据库时间到达签名时刻且全副本 `STAGED` 后，严格按 durable floor 先、live transport
+后晋级；新代必须等全副本 `ACTIVE` 才能出站。capability 可如实报告当前 convergence proof，但
+`productionReady=false` 仍保持关闭，因为 CA event watcher、撤销、企业 custody 与生产 HA/DR 尚未闭合。
 
 ## 2. 根因模型
 
@@ -98,9 +100,12 @@ stage 到本副本 live target；durable accept 后本地 staging 失败时，�
 不是 discovery 结果；同一 scope 只有一个 live fleet；每个 serving slot/process-start/target 以严格 sequence
 报告 exact generation/event/settings/activation identity；重复 startup 不能制造 quorum；外部 inventory
 attestation 有 hard expiry、revision floor 与 local downgrade fence。`activationPermitted` 只表示无 live
-冲突且 staged/active 唯一 slot 达到 `ALL_REPLICAS` 或 `FENCED_QUORUM` 阈值，`converged` 则必须是清单内
-每个 slot 恰有一个 exact `ACTIVE`。当前 runtime 尚未自动发布这些 ACK，durable generation floor 也尚未
-消费 activation fence；尤其 `FENCED_QUORUM` 在 serving admission fence 接入前只是冻结协议，不可启用。
+冲突且 staged/active 唯一 slot 达到 `ALL_REPLICAS` 阈值，`converged` 则必须是清单内每个 slot 恰有一个
+exact `ACTIVE`。runtime 为每个受控 target 发布/续租 ACK，并把数据库剩余 lease 截断为最多两个本地
+heartbeat 周期的 cached decision；请求路径和 floor 只读本地 gate，不在状态锁中访问数据库。due 事件先由
+floor 消费 cached activation proof，monitor 确认 durable active 后才允许 live transport 晋级；重启恢复的
+signed active head 也必须重新形成全副本 ACTIVE proof。`FENCED_QUORUM` 在外部 traffic fence 接入前由
+配置和 monitor 构造器直接拒绝，而不是作为可误用的运行选项。
 
 ## 5. 代码证据
 
@@ -126,8 +131,12 @@ attestation 有 hard expiry、revision floor 与 local downgrade fence。`activa
 - `DatabaseControlPlaneCertificateRotationConvergenceRepository`：database-clock process-start ACK、单 active
   fleet、唯一 slot 计数、严格 sequence、inventory revision/downgrade floor、篡改检测，以及
   activation/convergence 双判定。
-- `ControlPlaneCertificateRotationHealth`：只投影 bounded local readiness、durable state 和目标计数；
-  replica convergence 与 production readiness 永远不由本地事实推导。
+- `ControlPlaneCertificateRotationConvergenceMonitor`：自动 ACK/续租、local decision expiry、
+  durable-before-live activation、restart ACTIVE re-proof 与 request serving fence。
+- `ControlPlaneCertificateRotationActivationAuthority`：floor 事务内只消费本地 cached proof，禁止网络或
+  数据库 provider I/O。
+- `ControlPlaneCertificateRotationHealth`：投影 bounded local readiness、durable state、convergence
+  integration/availability/proof 与 serving readiness；enterprise `productionReady` 继续保持 false。
 - `RecoveryFleetPublicationTransportProperties`：对六个身份字段执行全有或全无校验，
   disabled residual、partial binding 和 required-without-binding 均在 secret resolution 前失败。
 - `TestRuntimeConfiguration` 与
@@ -146,9 +155,11 @@ attestation 有 hard expiry、revision floor 与 local downgrade fence。`activa
 - certificate rotation replica acknowledgement v1 与 convergence snapshot v1 严格 Schema：前者是绑定
   exact rotation identity 的私有 ACK，后者只输出固定基数 aggregate counts/blockers，不携带副本清单、
   TLS material location 或 provider diagnostics。
+- convergence configuration v1、monitor descriptor v1 与 runtime descriptor v2 严格 Schema：冻结
+  all-replica、外部 inventory、lease bounds、aggregate readiness，并强制 production readiness 为 false。
 - health/capability/Tool Studio：投影 `certificateIdentityBound`、signed rotation、durable local readiness
   和固定计数，不返回 Subject、SAN、issuer pin、fingerprint、路径或 secret reference；fleet convergence
-  和 production readiness 固定为 false。
+  由真实 monitor 状态驱动，production readiness 固定为 false。
 - `RecoveryFleetPublicationTlsFixture`：真实 CA、server/client 证书、双向 TLS server 和 client identity
   轮换材料。
 
@@ -161,7 +172,8 @@ RecoveryFleetPublicationTransportTest,\
 RotatingControlPlaneHttpTransportTest test
 ```
 
-验收结果由本轮 56 项 rotation 聚焦门禁覆盖，0 failures、0 errors、0 skips。其核心覆盖：
+验收门禁覆盖 controller、transport、durable floor、fleet repository、monitor、strict properties/Schema、
+health 与 Tool Studio capability。其核心覆盖：
 
 - 真实 mTLS 下精确 client/server workload identity 成功；
 - client Subject、URI SAN、额外 workload URI、issuer、`clientAuth` 缺失在 transport 创建期失败；
@@ -171,7 +183,11 @@ RotatingControlPlaneHttpTransportTest test
 - rollback、超前激活、第二 pending 在 secret resolution 前失败；
 - 非法候选不扰动 active generation；
 - 候选 credential 加载被阻塞时旧代真实 TLS 请求仍成功；
-- active identity 过期后请求在 handler 前 fail closed。
+- active identity 过期后请求在 handler 前 fail closed；
+- database time 未到、全副本 staged 未满足、durable floor 未晋级时 live generation 均不能切换；
+- 新代未形成全副本 ACTIVE proof、restart proof 或 cached lease 已过期时，请求 admission 失败关闭；
+- multi-replica local inventory 与无 traffic fence 的 `FENCED_QUORUM` 启动即拒绝；
+- ACK 失败、进程关闭、重复 startup、rotation/artifact/policy/protocol 漂移不产生虚假 convergence。
 
 签名轮换控制模块与真实 mTLS rotating transport 进一步覆盖：
 
@@ -185,18 +201,20 @@ RotatingControlPlaneHttpTransportTest test
 - durable accept 后 local stage 失败可由 exact replay 修复；到期 successor 可安全 reconcile；
 - 真实数据库重启从受验证祖先链恢复 active generation 和对应 mTLS client identity。
 
-durable floor 另执行 6 项数据库测试，0 failures、0 errors、0 skips；覆盖跨实例精确重建、旧启动清单
+durable floor 另执行 7 项数据库测试；覆盖跨实例精确重建、旧启动清单
 回退/跳代/分叉拒绝、future staged 与 database-time 到期晋升、exact replay、event-id reuse、scope/
-predecessor 漂移、floor/event journal 篡改失败关闭，以及同一 target/generation 双副本竞争只有一个赢家。
+predecessor 漂移、floor/event journal 篡改失败关闭、同一 target/generation 双副本竞争只有一个赢家，
+以及没有 cached fleet admission 时 database time 不能独自推进 floor。
 
-convergence kernel 执行 9 项真实数据库测试，并与扩展后的 6 项 rotation Schema 门禁合计 15 tests，
-0 failures、0 errors、0 skips。覆盖 all-replica 与 fenced-quorum 双判定、重复 process-start 不制造阈值、
+convergence repository 执行 9 项真实数据库测试，monitor 另覆盖 lease expiry、durable-before-live、
+restart proof 和 serving gate。覆盖 all-replica 与 fenced-quorum 协议判定、重复 process-start 不制造阈值、
 严格 ACK sequence/状态推进、database-time 提前激活拒绝、单 active fleet 并发竞争、外部 inventory
 revision 回退/同代分叉/过期/篡改/local downgrade、租约过期、whole-record corruption 与 bounded cleanup。
 
-此前复用 transport 的 79 项联合协议回归和产品接线的 87 项聚焦测试亦全绿；本轮 56 项覆盖 typed
-properties、Spring 组装、真实 TLS、durable restart、Schema 冻结、health/capability、Tool Studio
-projection 与 demo preflight。
+此前复用 transport 的 79 项联合协议回归和产品接线的 87 项聚焦测试亦全绿；当前轮换聚焦门禁共
+74 项，覆盖 typed properties、Spring 组装、真实 TLS、durable restart、Schema 冻结、
+health/capability、Tool Studio projection、fleet convergence 与 serving fence。另有 12 项 demo
+preflight 验证启停配置和外部 fleet proof 约束。
 
 最终全量门禁：
 
@@ -204,7 +222,7 @@ projection 与 demo preflight。
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-验收结果：3669 tests，0 failures、0 errors、2 skips；并成功生成 Spring Boot
+验收结果：3700 tests，0 failures、0 errors、2 skips；并成功生成 Spring Boot
 可执行产物 `bloge-examples-resource-gateway-1.0.0.jar`。
 
 独立协议客户端门禁 `mvn -f resource-gateway-test-kit/pom.xml clean verify` 同轮执行 230 tests，
@@ -212,10 +230,8 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 7. 下一门禁
 
-下一门禁把已验证的 ACK 事实面接入产品状态机：runtime heartbeat/withdraw、事件分发 cursor、
-floor activation fence、请求侧 serving admission fence、离线副本隔离、固定基数 health/telemetry 与
-convergence SLO。只有独立 verifier 证明 exact target/generation/material cohort 收敛后，
-`replicaConvergenceProven` 才能为 true；`FENCED_QUORUM` 只有在缺失副本无法继续服务旧 generation 后才
-可开放。其后仍需受控 switch-forward recovery。尚未闭合的外部生产责任
+下一门禁不再重复实现 ACK 接线，而是补齐 CA event watcher/cursor、撤销/OCSP/CRL、convergence SLO/
+alert、受控 switch-forward recovery 与独立运维演练。`FENCED_QUORUM` 只有在部署权威能证明缺失副本已
+无法继续服务旧 generation 后才可开放。尚未闭合的外部生产责任
 包括企业 CA 签发/吊销事件源、OCSP/CRL、HSM 私钥 custody、secret-manager lease、生产数据库迁移与
 备份恢复、HA/DR/chaos 和长周期证书生命周期认证。

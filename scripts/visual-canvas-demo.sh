@@ -68,6 +68,10 @@ Environment:
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_AUTHORITY_KEYS_JSON  required public Ed25519 keys
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INITIAL_GENERATIONS_JSON  required target baseline generations/material ids
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_MATERIAL_CATALOG_JSON  required public material catalog
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_ENABLED  optional all-replica activation/serving fence
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_FLEET_ID  required immutable rollout generation
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INSTANCE_ID  required stable serving slot
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EXPECTED_INSTANCE_IDS  required exact comma-separated inventory
   RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED  optional; exact dynamic-JWKS test-secret replica gate
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED  required true for staging cohort
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN  required external trust domain
@@ -532,6 +536,93 @@ validate_control_plane_certificate_rotation() {
     if printf '%s\n%s\n' "${authorities}" "${catalog}" |
         grep -Eqi '"(privateKey|privateKeyBase64|password)"[[:space:]]*:'; then
         echo "Signed certificate rotation configuration must not contain private keys or resolved passwords." >&2
+        return 1
+    fi
+}
+
+validate_control_plane_certificate_rotation_convergence() {
+    if ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_ENABLED:-false}"; then
+        if truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_REQUIRED:-false}"; then
+            echo "Required certificate rotation convergence cannot be disabled." >&2
+            return 1
+        fi
+        return 0
+    fi
+    if ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED:-false}"; then
+        echo "Certificate rotation convergence requires the signed rotation runtime." >&2
+        return 1
+    fi
+    local fleet_id="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_FLEET_ID:-}"
+    local instance_id="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INSTANCE_ID:-}"
+    local startup_id="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_STARTUP_ID:-}"
+    local artifact="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ARTIFACT_FINGERPRINT:-}"
+    local instances="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EXPECTED_INSTANCE_IDS:-}"
+    local mode="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ACTIVATION_MODE:-ALL_REPLICAS}"
+    local threshold="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_REQUIRED_STAGED_REPLICAS:-0}"
+    if printf '%s\n%s\n' "${fleet_id}" "${instance_id}" |
+        grep -Eqv '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        ! printf '%s' "${startup_id}" |
+        grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' ||
+        ! printf '%s' "${artifact}" | grep -Eq '^sha256:[a-f0-9]{64}$' ||
+        ! printf '%s' "${instances}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}(,[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}){0,63}$' ||
+        [ "${mode}" != "ALL_REPLICAS" ] ||
+        ! printf '%s' "${threshold}" | grep -Eq '^[1-9][0-9]*$'; then
+        echo "Certificate rotation convergence identity, inventory, or activation mode is invalid." >&2
+        return 1
+    fi
+    local count=0
+    local seen=","
+    local member
+    local local_present=false
+    local -a members
+    IFS=',' read -r -a members <<< "${instances}"
+    for member in "${members[@]}"; do
+        if [[ "${seen}" == *",${member},"* ]]; then
+            echo "Certificate rotation convergence inventory contains a duplicate slot." >&2
+            return 1
+        fi
+        seen="${seen}${member},"
+        count=$((count + 1))
+        if [ "${member}" = "${instance_id}" ]; then
+            local_present=true
+        fi
+    done
+    if [ "${local_present}" != true ] || [ "${threshold}" -ne "${count}" ]; then
+        echo "Certificate rotation convergence requires the local slot and an all-replica threshold." >&2
+        return 1
+    fi
+    local heartbeat="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_HEARTBEAT_SECONDS:-5}"
+    local lease="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_LEASE_SECONDS:-15}"
+    local retention="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_RECORD_RETENTION_SECONDS:-3600}"
+    if printf '%s\n%s\n%s\n' "${heartbeat}" "${lease}" "${retention}" |
+        grep -Eqv '^[1-9][0-9]*$' ||
+        [ "${heartbeat}" -gt 300 ] || [ "${lease}" -lt 3 ] || [ "${lease}" -gt 900 ] ||
+        [ "${lease}" -lt $((heartbeat * 3)) ] || [ "${retention}" -lt 3600 ] ||
+        [ "${retention}" -gt 2592000 ] || [ "${retention}" -lt "${lease}" ]; then
+        echo "Certificate rotation convergence heartbeat, lease, or retention bounds are invalid." >&2
+        return 1
+    fi
+    local inventory_type="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INVENTORY_SOURCE_TYPE:-LOCAL_CONFIGURED}"
+    if [ "${inventory_type}" = "LOCAL_CONFIGURED" ]; then
+        if [ "${count}" -ne 1 ]; then
+            echo "Multi-replica certificate rotation convergence requires external inventory attestation." >&2
+            return 1
+        fi
+        return 0
+    fi
+    local revision="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INVENTORY_REVISION:-0}"
+    local material="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INVENTORY_MATERIAL_FINGERPRINT:-}"
+    local policy="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INVENTORY_POLICY_FINGERPRINT:-}"
+    local expiry="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INVENTORY_EXPIRES_AT:-}"
+    if ! printf '%s' "${inventory_type}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        ! printf '%s' "${revision}" | grep -Eq '^[1-9][0-9]*$' ||
+        printf '%s\n%s\n' "${material}" "${policy}" |
+        grep -Eqv '^sha256:[a-f0-9]{64}$' ||
+        ! printf '%s' "${expiry}" |
+        grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.+-]+Z$'; then
+        echo "External certificate rotation inventory attestation is incomplete." >&2
         return 1
     fi
 }
@@ -1334,6 +1425,7 @@ validate_profile_secrets() {
     validate_external_anchor_domain_isolation
     validate_control_plane_identity_isolation
     validate_control_plane_certificate_rotation
+    validate_control_plane_certificate_rotation_convergence
 }
 
 pid_file() {

@@ -6,9 +6,11 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -129,6 +131,36 @@ class ControlPlaneCertificateRotationProductConfigurationTest {
                         ControlPlaneCertificateRotationTargets.RECOVERY_FLEET_BOOTSTRAP_ROOTS);
     }
 
+    @Test
+    void convergencePropertiesRejectPartialLocalAndUnfencedFleetPolicies() {
+        String startup = UUID.randomUUID().toString();
+        var local = convergence(true, "replica-a", startup, "replica-a", 1,
+                "ALL_REPLICAS", "LOCAL_CONFIGURED", 0, "", "", "");
+
+        assertThat(local.policy("rg-staging").expectedInstanceIds())
+                .containsExactly("replica-a");
+        assertThatThrownBy(() -> convergence(false, "replica-a", startup,
+                "replica-a", 0, "ALL_REPLICAS", "LOCAL_CONFIGURED", 0,
+                "", "", "")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> convergence(true, "replica-a", startup,
+                "replica-a,replica-b", 2, "ALL_REPLICAS", "LOCAL_CONFIGURED", 0,
+                "", "", "")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> convergence(true, "replica-a", startup,
+                "replica-a,replica-b,replica-c", 2, "FENCED_QUORUM",
+                "SIGNED_INVENTORY", 7, fingerprint('b'), fingerprint('c'),
+                Instant.now().plusSeconds(300).toString()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        var external = convergence(true, "replica-a", startup,
+                "replica-a,replica-b", 2, "ALL_REPLICAS", "SIGNED_INVENTORY", 7,
+                fingerprint('b'), fingerprint('c'),
+                Instant.now().plusSeconds(300).toString());
+        assertThat(external.policy("rg-staging").inventoryAttestation()
+                .externallyAttested()).isTrue();
+        assertThat(ControlPlaneCertificateRotationConvergenceProperties.disabled().enabled())
+                .isFalse();
+    }
+
     private static ControlPlaneCertificateRotationRuntimeProperties properties(
             String generations) {
         return new ControlPlaneCertificateRotationRuntimeProperties(true, true,
@@ -167,5 +199,28 @@ class ControlPlaneCertificateRotationProductConfigurationTest {
                         material.serverCertificate()), true,
                 material.clientCertificate().getSubjectX500Principal().getName(),
                 material.clientUriSan(), issuer, material.serverUriSan(), issuer);
+    }
+
+    private static ControlPlaneCertificateRotationConvergenceProperties convergence(
+            boolean enabled,
+            String instanceId,
+            String startupId,
+            String instances,
+            int required,
+            String mode,
+            String inventoryType,
+            long revision,
+            String inventoryFingerprint,
+            String inventoryPolicy,
+            String inventoryExpiry) {
+        return new ControlPlaneCertificateRotationConvergenceProperties(
+                enabled, enabled, "fleet-2026-07", instanceId, startupId,
+                fingerprint('d'), instances, "convergence-v1", mode, required,
+                5L, 15L, 3_600L, inventoryType, revision, inventoryFingerprint,
+                inventoryPolicy, inventoryExpiry);
+    }
+
+    private static String fingerprint(char value) {
+        return "sha256:" + String.valueOf(value).repeat(64);
     }
 }

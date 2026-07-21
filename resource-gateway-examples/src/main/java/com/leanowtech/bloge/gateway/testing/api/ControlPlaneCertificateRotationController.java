@@ -147,6 +147,7 @@ public final class ControlPlaneCertificateRotationController {
     private final String deploymentScopeId;
     private final Map<String, MutableTargetState> targets;
     private final ControlPlaneCertificateRotationFloor floor;
+    private final ControlPlaneCertificateRotationLifecycle lifecycle;
     private final Map<String, Attempt> attempts = new HashMap<>();
     private final Object monitor = new Object();
 
@@ -165,7 +166,8 @@ public final class ControlPlaneCertificateRotationController {
             Clock clock,
             String deploymentScopeId,
             Map<String, TargetRegistration> registrations) {
-        this(trustStore, materialSource, clock, deploymentScopeId, registrations, null);
+        this(trustStore, materialSource, clock, deploymentScopeId, registrations, null,
+                ControlPlaneCertificateRotationLifecycle.noop());
     }
 
     /**
@@ -185,11 +187,35 @@ public final class ControlPlaneCertificateRotationController {
             String deploymentScopeId,
             Map<String, TargetRegistration> registrations,
             ControlPlaneCertificateRotationFloor floor) {
+        this(trustStore, materialSource, clock, deploymentScopeId, registrations, floor,
+                ControlPlaneCertificateRotationLifecycle.noop());
+    }
+
+    /**
+     * Creates one durable controller with an exact post-verification staging lifecycle.
+     *
+     * @param trustStore independent public-key authorization trust
+     * @param materialSource deployment-owned material resolver
+     * @param clock authoritative local staging clock
+     * @param deploymentScopeId exact local deployment scope
+     * @param registrations one through 64 independently governed targets
+     * @param floor durable monotonic generation authority for the same target inventory
+     * @param lifecycle verified local stage and failure observer
+     */
+    public ControlPlaneCertificateRotationController(
+            ControlPlaneCertificateRotationTrustStore trustStore,
+            ControlPlaneCertificateRotationMaterialSource materialSource,
+            Clock clock,
+            String deploymentScopeId,
+            Map<String, TargetRegistration> registrations,
+            ControlPlaneCertificateRotationFloor floor,
+            ControlPlaneCertificateRotationLifecycle lifecycle) {
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
         this.materialSource = Objects.requireNonNull(materialSource, "materialSource");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.deploymentScopeId = normalized(deploymentScopeId);
         this.floor = floor;
+        this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         if (!IDENTIFIER.matcher(this.deploymentScopeId).matches()
                 || registrations == null || registrations.isEmpty()
                 || registrations.size() > MAXIMUM_TARGETS) {
@@ -368,32 +394,66 @@ public final class ControlPlaneCertificateRotationController {
             }
         }
         try {
+            lifecycle.prepare(event);
+        } catch (RuntimeException unavailable) {
+            return rejected(ApplyStatus.STAGING_REJECTED,
+                    "CERTIFICATE_ROTATION_CONVERGENCE_UNAVAILABLE", state);
+        }
+        try {
             if (durableAcceptance != null
                     && durableAcceptance.snapshot().activeGeneration()
                     == material.generation()) {
                 state.target.reconcileActive(material.generation(),
                         durableAcceptance.snapshot().activatedAt(), resolved.settings());
+            } else if (durableAcceptance != null
+                    && durableAcceptance.snapshot().pendingGeneration()
+                    == material.generation()
+                    && !clock.instant().isBefore(material.activateAt())) {
+                state.target.restorePending(material.generation(), material.activateAt(),
+                        resolved.settings());
             } else {
                 state.target.stage(material.generation(), material.activateAt(),
                         resolved.settings());
             }
         } catch (RuntimeException rejected) {
+            lifecycleFailed(event, "LOCAL_STAGING_REJECTED");
             return rejected(ApplyStatus.STAGING_REJECTED,
                     "CERTIFICATE_ROTATION_STAGING_REJECTED", state);
         }
         long active = state.target.activeGeneration();
         OptionalLong pending = state.target.pendingGeneration();
         if (active == material.generation() && pending.isEmpty()) {
+            lifecycleApplied(event);
             return accepted(ApplyStatus.APPLIED, "APPLIED", event, state,
                     material.generation(), 0);
         }
         if (active != state.activeGeneration || pending.isEmpty()
                 || pending.getAsLong() != material.generation()) {
+            lifecycleFailed(event, "LOCAL_STATE_DIVERGED");
             return rejected(ApplyStatus.STATE_OUT_OF_SYNC,
                     "CERTIFICATE_ROTATION_STATE_OUT_OF_SYNC", state);
         }
+        lifecycleApplied(event);
         return accepted(ApplyStatus.APPLIED, "APPLIED", event, state,
                 state.activeGeneration, material.generation());
+    }
+
+    private void lifecycleApplied(ControlPlaneCertificateRotationEvent event) {
+        try {
+            lifecycle.applied(event);
+        } catch (RuntimeException ignored) {
+            // The transport gate remains fail-closed until a later heartbeat succeeds.
+        }
+    }
+
+    private void lifecycleFailed(
+            ControlPlaneCertificateRotationEvent event,
+            String failureCode) {
+        try {
+            lifecycle.failed(event, failureCode);
+        } catch (RuntimeException ignored) {
+            // Failure evidence never grants permission to weaken local staging policy.
+        }
     }
 
     private void refresh(MutableTargetState state) {

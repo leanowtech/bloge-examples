@@ -51,7 +51,7 @@ public interface ControlPlaneCertificateRotationConvergenceRepository {
             eventId = normalized(eventId);
             eventFingerprint = normalized(eventFingerprint);
             settingsFingerprint = normalized(settingsFingerprint);
-            if (!ControlPlaneCertificateRotationTargets.contains(targetId)
+            if (!IDENTIFIER.matcher(targetId).matches()
                     || generation < 1 || !IDENTIFIER.matcher(eventId).matches()
                     || !FINGERPRINT.matcher(eventFingerprint).matches()
                     || !FINGERPRINT.matcher(settingsFingerprint).matches()

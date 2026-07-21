@@ -35,6 +35,28 @@ import java.util.concurrent.Executor;
 public final class RotatingControlPlaneHttpTransport
         implements RecoveryFleetPublicationTransport, ControlPlaneCertificateRotationTarget {
 
+    /**
+     * Process-local, non-blocking fleet admission decision used inside the request-state lock.
+     *
+     * <p>Implementations must return only locally cached decisions. Database or network I/O in
+     * either method would put every control-plane request behind the convergence authority.</p>
+     */
+    public interface ActivationGate {
+
+        /** @return whether the exact successor may atomically replace the active generation */
+        boolean activationPermitted(long generation, Instant activateAt);
+
+        /** @return whether an already selected generation may serve a new request */
+        default boolean servingPermitted(long generation) {
+            return true;
+        }
+
+        /** @return a compatibility gate for deployments without fleet convergence */
+        static ActivationGate permitAll() {
+            return (generation, activateAt) -> true;
+        }
+    }
+
     private static final Duration MINIMUM_LEAD = Duration.ofSeconds(1);
     private static final Duration MAXIMUM_LEAD = Duration.ofDays(30);
     private static final Duration MAXIMUM_OVERLAP = Duration.ofDays(30);
@@ -43,6 +65,7 @@ public final class RotatingControlPlaneHttpTransport
     private final Clock clock;
     private final Duration minimumOverlap;
     private final Duration maximumLeadTime;
+    private final ActivationGate activationGate;
     private final Object monitor = new Object();
 
     private volatile ActiveGeneration active;
@@ -65,6 +88,29 @@ public final class RotatingControlPlaneHttpTransport
             Clock clock,
             Duration minimumOverlap,
             Duration maximumLeadTime) {
+        this(initialGeneration, initialSettings, secretResolver, clock, minimumOverlap,
+                maximumLeadTime, ActivationGate.permitAll());
+    }
+
+    /**
+     * Loads an active generation behind an explicit process-local fleet admission gate.
+     *
+     * @param initialGeneration positive initial generation
+     * @param initialSettings complete pinned mutual-TLS settings with a bound identity policy
+     * @param secretResolver resolver returning fresh caller-owned credential characters
+     * @param clock authoritative local activation clock
+     * @param minimumOverlap minimum time the old identity remains valid after activation
+     * @param maximumLeadTime maximum allowed delay between staging and activation
+     * @param activationGate non-blocking cached fleet admission decision
+     */
+    public RotatingControlPlaneHttpTransport(
+            long initialGeneration,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings initialSettings,
+            SecretResolver secretResolver,
+            Clock clock,
+            Duration minimumOverlap,
+            Duration maximumLeadTime,
+            ActivationGate activationGate) {
         if (initialGeneration < 1) {
             throw invalid();
         }
@@ -72,6 +118,7 @@ public final class RotatingControlPlaneHttpTransport
         this.clock = Objects.requireNonNull(clock, "clock");
         this.minimumOverlap = bounded(minimumOverlap, Duration.ZERO, MAXIMUM_OVERLAP);
         this.maximumLeadTime = bounded(maximumLeadTime, MINIMUM_LEAD, MAXIMUM_LEAD);
+        this.activationGate = Objects.requireNonNull(activationGate, "activationGate");
         Instant now = clock.instant();
         var transport = load(initialSettings, now);
         requireBound(transport);
@@ -170,7 +217,11 @@ public final class RotatingControlPlaneHttpTransport
                     observedAt.plus(minimumOverlap))) {
                 throw invalid();
             }
-            active = new ActiveGeneration(generation, activatedAt, candidate);
+            if (activationGate.activationPermitted(generation, activatedAt)) {
+                active = new ActiveGeneration(generation, activatedAt, candidate);
+            } else {
+                pending = new PendingGeneration(generation, activatedAt, candidate);
+            }
         }
     }
 
@@ -209,8 +260,11 @@ public final class RotatingControlPlaneHttpTransport
             }
             if (now.isBefore(activateAt)) {
                 pending = new PendingGeneration(generation, activateAt, candidate);
-            } else if (candidate.clientIdentityExpiresAt().isAfter(now.plus(minimumOverlap))) {
+            } else if (candidate.clientIdentityExpiresAt().isAfter(now.plus(minimumOverlap))
+                    && activationGate.activationPermitted(generation, activateAt)) {
                 active = new ActiveGeneration(generation, activateAt, candidate);
+            } else if (candidate.clientIdentityExpiresAt().isAfter(now.plus(minimumOverlap))) {
+                pending = new PendingGeneration(generation, activateAt, candidate);
             } else {
                 throw invalidMaterial();
             }
@@ -219,7 +273,7 @@ public final class RotatingControlPlaneHttpTransport
 
     /** @return current active generation after applying any due successor */
     public long activeGeneration() {
-        return activeForRequest().generation();
+        return reconcileGeneration();
     }
 
     /** @return staged successor generation, or empty when no rotation is pending */
@@ -227,6 +281,22 @@ public final class RotatingControlPlaneHttpTransport
         PendingGeneration observed = pending;
         return observed == null ? OptionalLong.empty()
                 : OptionalLong.of(observed.generation());
+    }
+
+    /**
+     * Evaluates a due successor against the cached fleet gate without selecting it for a request.
+     *
+     * @return locally active generation after the reconciliation attempt
+     */
+    public long reconcileGeneration() {
+        synchronized (monitor) {
+            return promoteIfDue(clock.instant()).generation();
+        }
+    }
+
+    /** @return locally loaded active generation without promotion or serving admission */
+    public long localActiveGeneration() {
+        return active.generation();
     }
 
     /** {@inheritDoc} */
@@ -252,6 +322,10 @@ public final class RotatingControlPlaneHttpTransport
         synchronized (monitor) {
             Instant now = clock.instant();
             ActiveGeneration selected = promoteIfDue(now);
+            if (!activationGate.servingPermitted(selected.generation())) {
+                throw new IllegalStateException(
+                        "Control-plane client identity is not fleet-admitted");
+            }
             if (!selected.transport().clientIdentityExpiresAt().isAfter(now)) {
                 throw new IllegalStateException(
                         "Control-plane client identity has no active certificate generation");
@@ -262,7 +336,9 @@ public final class RotatingControlPlaneHttpTransport
 
     private ActiveGeneration promoteIfDue(Instant now) {
         PendingGeneration candidate = pending;
-        if (candidate != null && !now.isBefore(candidate.activateAt())) {
+        if (candidate != null && !now.isBefore(candidate.activateAt())
+                && activationGate.activationPermitted(
+                candidate.generation(), candidate.activateAt())) {
             active = new ActiveGeneration(candidate.generation(), candidate.activateAt(),
                     candidate.transport());
             pending = null;

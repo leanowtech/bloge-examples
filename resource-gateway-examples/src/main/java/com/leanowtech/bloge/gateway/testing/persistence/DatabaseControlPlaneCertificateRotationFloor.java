@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEvent;
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationActivationAuthority;
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationConvergenceRepository;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationFloor;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
@@ -45,6 +47,7 @@ public final class DatabaseControlPlaneCertificateRotationFloor
     private final ObjectMapper objectMapper;
     private final String deploymentScopeId;
     private final Map<String, InitialTarget> initialTargets;
+    private final ControlPlaneCertificateRotationActivationAuthority activationAuthority;
     private final TransactionTemplate mutations;
 
     /**
@@ -62,6 +65,27 @@ public final class DatabaseControlPlaneCertificateRotationFloor
             String deploymentScopeId,
             Map<String, InitialTarget> initialTargets,
             PlatformTransactionManager transactionManager) {
+        this(jdbc, objectMapper, deploymentScopeId, initialTargets, transactionManager,
+                ControlPlaneCertificateRotationActivationAuthority.localOnly());
+    }
+
+    /**
+     * Creates one durable floor whose due transitions require a cached fleet authorization.
+     *
+     * @param jdbc isolated testing-control-plane JDBC facade
+     * @param objectMapper canonical record fingerprint mapper
+     * @param deploymentScopeId stable deployment scope
+     * @param initialTargets non-empty out-of-band active target inventory
+     * @param transactionManager manager for the same isolated datasource
+     * @param activationAuthority non-blocking convergence decision shared with live transports
+     */
+    public DatabaseControlPlaneCertificateRotationFloor(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            String deploymentScopeId,
+            Map<String, InitialTarget> initialTargets,
+            PlatformTransactionManager transactionManager,
+            ControlPlaneCertificateRotationActivationAuthority activationAuthority) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.deploymentScopeId = normalized(deploymentScopeId);
@@ -79,6 +103,8 @@ public final class DatabaseControlPlaneCertificateRotationFloor
             }
         });
         this.initialTargets = Map.copyOf(sorted);
+        this.activationAuthority = Objects.requireNonNull(
+                activationAuthority, "activationAuthority");
         this.mutations = new TransactionTemplate(Objects.requireNonNull(
                 transactionManager, "transactionManager"));
         this.mutations.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -235,7 +261,8 @@ public final class DatabaseControlPlaneCertificateRotationFloor
             throw invalid("Control-plane certificate rotation floor rejected predecessor");
         }
 
-        boolean due = !material.activateAt().isAfter(now);
+        boolean due = !material.activateAt().isAfter(now)
+                && activationAuthority.activationPermitted(expected(event));
         EventRecord accepted = EventRecord.accepted(event, now, due);
         insertEvent(accepted);
         FloorRecord next = due
@@ -259,11 +286,30 @@ public final class DatabaseControlPlaneCertificateRotationFloor
             throw new IllegalStateException(
                     "Control-plane certificate rotation pending event journal is corrupt");
         }
+        if (!activationAuthority.activationPermitted(expected(pending))) {
+            return current;
+        }
         EventRecord activated = pending.activate(now);
         updateEvent(activated);
         FloorRecord next = current.activatePending(now);
         persistFloor(next);
         return next;
+    }
+
+    private static ControlPlaneCertificateRotationConvergenceRepository.ExpectedRotation expected(
+            ControlPlaneCertificateRotationEvent event) {
+        ControlPlaneCertificateRotationEvent.Material material = event.material();
+        return new ControlPlaneCertificateRotationConvergenceRepository.ExpectedRotation(
+                material.targetId(), material.generation(), material.eventId(),
+                event.materialFingerprint(), material.settingsFingerprint(),
+                material.activateAt());
+    }
+
+    private static ControlPlaneCertificateRotationConvergenceRepository.ExpectedRotation expected(
+            EventRecord event) {
+        return new ControlPlaneCertificateRotationConvergenceRepository.ExpectedRotation(
+                event.targetId(), event.generation(), event.eventId(),
+                event.eventFingerprint(), event.settingsFingerprint(), event.activateAt());
     }
 
     private FloorRecord requiredCurrent(String targetId) {

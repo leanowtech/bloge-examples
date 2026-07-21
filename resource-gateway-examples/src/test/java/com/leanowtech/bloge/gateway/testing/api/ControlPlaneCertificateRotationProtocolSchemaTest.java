@@ -31,6 +31,10 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 "control-plane-certificate-rotation-replica-acknowledgement-v1.schema.json");
         JsonNode convergenceSchema = schema(
                 "control-plane-certificate-rotation-convergence-snapshot-v1.schema.json");
+        JsonNode monitorSchema = schema(
+                "control-plane-certificate-rotation-convergence-monitor-descriptor-v1.schema.json");
+        JsonNode runtimeSchema = schema(
+                "control-plane-certificate-rotation-runtime-descriptor-v2.schema.json");
         ControlPlaneCertificateRotationEvent event = event();
         var result = new ControlPlaneCertificateRotationController.ApplyResult(
                 ControlPlaneCertificateRotationController.ApplyResult.SCHEMA_VERSION,
@@ -58,6 +62,14 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 true, false, "ACTIVATION_PERMITTED", 2, 2, 2, 2, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, now, now.plusSeconds(30),
                 List.of(), List.of("REPLICA_NOT_ACTIVE", "ACTIVE_REPLICA_MISSING"));
+        var monitor = new ControlPlaneCertificateRotationConvergenceMonitor.Descriptor(
+                ControlPlaneCertificateRotationConvergenceMonitor.Descriptor.SCHEMA_VERSION,
+                true, true, false, true, 2, 1, 1, 0, 0,
+                "ACTIVATION_PERMITTED");
+        var runtime = new ControlPlaneCertificateRotationRuntime.Descriptor(
+                ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
+                true, true, true, true, 2, 2, true,
+                true, true, true, true, false, "CONVERGED");
 
         assertProperties(objectMapper.valueToTree(event),
                 eventSchema.at("/$defs/event/properties"));
@@ -74,6 +86,8 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 acknowledgementSchema.at("/$defs/expectedRotation/properties"));
         assertProperties(objectMapper.valueToTree(convergence),
                 convergenceSchema.path("properties"));
+        assertProperties(objectMapper.valueToTree(monitor), monitorSchema.path("properties"));
+        assertProperties(objectMapper.valueToTree(runtime), runtimeSchema.path("properties"));
         assertThat(eventSchema.at("/$defs/event/additionalProperties").asBoolean(true)).isFalse();
         assertThat(eventSchema.at("/$defs/material/additionalProperties").asBoolean(true))
                 .isFalse();
@@ -87,6 +101,8 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         assertThat(acknowledgementSchema.at("/$defs/expectedRotation/additionalProperties")
                 .asBoolean(true)).isFalse();
         assertThat(convergenceSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(monitorSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(runtimeSchema.path("additionalProperties").asBoolean(true)).isFalse();
     }
 
     @Test
@@ -100,6 +116,10 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 "control-plane-certificate-rotation-replica-acknowledgement-v1.schema.json");
         JsonNode convergenceSchema = schema(
                 "control-plane-certificate-rotation-convergence-snapshot-v1.schema.json");
+        JsonNode monitorSchema = schema(
+                "control-plane-certificate-rotation-convergence-monitor-descriptor-v1.schema.json");
+        JsonNode runtimeSchema = schema(
+                "control-plane-certificate-rotation-runtime-descriptor-v2.schema.json");
 
         assertThat(eventSchema.at("/$defs/event/properties/schemaVersion/const").asText())
                 .isEqualTo(ControlPlaneCertificateRotationEvent.SCHEMA_VERSION);
@@ -117,6 +137,13 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         assertThat(convergenceSchema.at("/properties/schemaVersion/const").asText())
                 .isEqualTo(ControlPlaneCertificateRotationConvergenceRepository
                         .Snapshot.SCHEMA_VERSION);
+        assertThat(monitorSchema.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(ControlPlaneCertificateRotationConvergenceMonitor.Descriptor
+                        .SCHEMA_VERSION);
+        assertThat(runtimeSchema.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION);
+        assertThat(runtimeSchema.at("/properties/productionReady/const").asBoolean())
+                .isFalse();
         assertThat(resultSchema.at("/properties/status/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactlyInAnyOrder(Arrays.stream(
@@ -190,7 +217,9 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         String source = Files.readString(schemaPath(
                 "control-plane-certificate-rotation-replica-acknowledgement-v1.schema.json"))
                 + Files.readString(schemaPath(
-                "control-plane-certificate-rotation-convergence-snapshot-v1.schema.json"));
+                "control-plane-certificate-rotation-convergence-snapshot-v1.schema.json"))
+                + Files.readString(schemaPath(
+                "control-plane-certificate-rotation-convergence-monitor-descriptor-v1.schema.json"));
 
         for (String forbidden : new String[]{
                 "materialId", "certificate", "privateKey", "password", "secretRef",
@@ -198,6 +227,30 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
                 "stackTrace", "instanceIds", "eventIds"}) {
             assertThat(source).doesNotContain("\"" + forbidden + "\"");
         }
+    }
+
+    @Test
+    void convergenceConfigurationSchemaFreezesFailClosedProductBounds() throws Exception {
+        JsonNode schema = schema(
+                "control-plane-certificate-rotation-convergence-configuration-v1.schema.json");
+        String source = Files.readString(schemaPath(
+                "control-plane-certificate-rotation-convergence-configuration-v1.schema.json"));
+
+        assertThat(schema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(schema.path("required")).extracting(JsonNode::asText)
+                .contains("enabled", "required", "fleet-id", "instance-id", "startup-id",
+                        "artifact-fingerprint", "expected-instance-ids", "activation-mode",
+                        "heartbeat-interval-seconds", "lease-duration-seconds",
+                        "inventory-source-type", "inventory-revision",
+                        "inventory-expires-at");
+        assertThat(schema.at("/properties/activation-mode/const").asText())
+                .isEqualTo("ALL_REPLICAS");
+        assertThat(schema.at("/properties/required-staged-replicas/maximum").asInt())
+                .isEqualTo(ControlPlaneCertificateRotationFleetPolicy.maximumReplicas());
+        assertThat(source)
+                .contains("Multi-replica inventories require an external attestation")
+                .contains("quorum activation is intentionally unavailable")
+                .doesNotContain("privateKey", "password", "secretRef");
     }
 
     private ControlPlaneCertificateRotationEvent event() {

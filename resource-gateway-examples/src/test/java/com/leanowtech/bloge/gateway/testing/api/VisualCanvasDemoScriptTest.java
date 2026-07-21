@@ -51,6 +51,54 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void convergenceCanBeEnabledWithoutRequiredModeButStillRequiresExternalFleetProof()
+            throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().putAll(stagingBase());
+        builder.environment().putAll(Map.ofEntries(
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED", "true"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_REQUIRED", "true"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SCOPE_ID",
+                        "rg-staging"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_TRUST_DOMAIN",
+                        "enterprise-pki"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ACCEPTED_POLICIES",
+                        "sha256:" + "c".repeat(64)),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SIGNATURE_THRESHOLD", "1"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_AUTHORITY_KEYS_JSON", "[{}]"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INITIAL_GENERATIONS_JSON",
+                        "{\"test.secret.notary.transport\":1}"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_MATERIAL_CATALOG_JSON",
+                        "[{}]"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_ENABLED", "true"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_FLEET_ID", "fleet-a"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INSTANCE_ID", "replica-a"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_STARTUP_ID",
+                        "6f5fe859-b55d-4bd2-b5bf-5cc54356e03d"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ARTIFACT_FINGERPRINT",
+                        "sha256:" + "d".repeat(64)),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EXPECTED_INSTANCE_IDS",
+                        "replica-a,replica-b"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_REQUIRED_STAGED_REPLICAS",
+                        "2"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INVENTORY_SOURCE_TYPE",
+                        "DEPLOYMENT_SIGNED")));
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "External certificate rotation inventory attestation is incomplete.");
+        assertThat(output).doesNotContain("required=true", "Building Resource Gateway",
+                "Starting visual canvas");
+    }
+
+    @Test
     void stagingTestSecretCohortFailsBeforeBuildWhenTrustChainIsPartial() throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
                 "bash", SCRIPT.toString(), "start", "--no-build")

@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -231,6 +232,82 @@ class RotatingControlPlaneHttpTransportTest {
         assertThatThrownBy(() -> late.reconcileActive(
                 24, now.minusSeconds(5), settings(successor)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void dueSuccessorRemainsPendingUntilTheCachedFleetGateAdmitsIt() throws Exception {
+        var current = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "rotation-gated-current");
+        var successor = current.rotateClient(temporaryDirectory, "rotation-gated-next");
+        Instant now = Instant.now();
+        MutableClock clock = new MutableClock(now);
+        AtomicBoolean admitted = new AtomicBoolean();
+        var transport = new RotatingControlPlaneHttpTransport(
+                31, settings(current), secretResolver(new AtomicInteger()), clock,
+                Duration.ofMinutes(1), Duration.ofHours(1),
+                (generation, activateAt) -> admitted.get());
+
+        transport.stage(32, now.plusSeconds(10), settings(successor));
+        clock.advance(Duration.ofSeconds(10));
+
+        assertThat(transport.reconcileGeneration()).isEqualTo(31);
+        assertThat(transport.pendingGeneration()).hasValue(32);
+        admitted.set(true);
+        assertThat(transport.reconcileGeneration()).isEqualTo(32);
+        assertThat(transport.pendingGeneration()).isEmpty();
+    }
+
+    @Test
+    void dueDurableReconciliationPreloadsButDoesNotBypassFleetAdmission()
+            throws Exception {
+        var current = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "rotation-reconcile-gated-current");
+        var successor = current.rotateClient(
+                temporaryDirectory, "rotation-reconcile-gated-next");
+        Instant now = Instant.now();
+        MutableClock clock = new MutableClock(now);
+        AtomicBoolean admitted = new AtomicBoolean();
+        var transport = new RotatingControlPlaneHttpTransport(
+                61, settings(current), secretResolver(new AtomicInteger()), clock,
+                Duration.ofMinutes(1), Duration.ofHours(1),
+                (generation, activateAt) -> admitted.get());
+
+        transport.reconcileActive(62, now.minusSeconds(1), settings(successor));
+
+        assertThat(transport.localActiveGeneration()).isEqualTo(61);
+        assertThat(transport.pendingGeneration()).hasValue(62);
+        admitted.set(true);
+        assertThat(transport.reconcileGeneration()).isEqualTo(62);
+    }
+
+    @Test
+    void restoredSignedGenerationCannotServeUntilFreshFleetProofIsCached()
+            throws Exception {
+        var current = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "rotation-serving-gate");
+        AtomicBoolean serving = new AtomicBoolean();
+        var gate = new RotatingControlPlaneHttpTransport.ActivationGate() {
+            @Override
+            public boolean activationPermitted(long generation, Instant activateAt) {
+                return false;
+            }
+
+            @Override
+            public boolean servingPermitted(long generation) {
+                return serving.get();
+            }
+        };
+        var transport = new RotatingControlPlaneHttpTransport(
+                72, settings(current), secretResolver(new AtomicInteger()), Clock.systemUTC(),
+                Duration.ofMinutes(1), Duration.ofHours(1), gate);
+
+        assertThatThrownBy(() -> transport.client(Duration.ofSeconds(1))
+                .sendAsync(HttpRequest.newBuilder(java.net.URI.create("https://localhost"))
+                                .GET().build(), HttpResponse.BodyHandlers.discarding())
+                .join()).hasRootCauseMessage(
+                "Control-plane client identity is not fleet-admitted");
+        serving.set(true);
+        assertThat(transport.activeGeneration()).isEqualTo(72);
     }
 
     private static String send(java.net.http.HttpClient client, java.net.URI uri)

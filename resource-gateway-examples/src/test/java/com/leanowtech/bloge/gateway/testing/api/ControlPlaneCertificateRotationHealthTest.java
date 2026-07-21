@@ -59,10 +59,32 @@ class ControlPlaneCertificateRotationHealthTest {
                 .containsKeys("enabled", "localReady", "trustAvailable",
                         "inventoriedTargetCount", "registeredTargetCount",
                         "synchronizedState", "durableGenerationFloorIntegrated",
-                        "replicaConvergenceProven", "productionReady")
+                        "replicaConvergenceIntegrated", "replicaConvergenceAvailable",
+                        "replicaConvergenceProven", "servingReady",
+                        "convergenceStatus", "productionReady")
                 .doesNotContainValue("vault://certificate-secret");
         assertThat(health.getDetails().toString())
                 .doesNotContain("certificate-secret", "vault://");
+    }
+
+    @Test
+    void convergenceLeaseAndServingFenceAreReportedWithoutInflatingProof() {
+        var unavailable = health(convergedDescriptor(false, false, false,
+                "CONVERGENCE_LEASE_UNAVAILABLE"));
+        var fenced = health(convergedDescriptor(true, false, false,
+                "REPLICA_NOT_ACTIVE"));
+        var converged = health(convergedDescriptor(true, true, true, "CONVERGED"));
+
+        assertThat(unavailable.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(unavailable.getDetails()).containsEntry(
+                "runtimeStatus", "CONVERGENCE_UNAVAILABLE");
+        assertThat(fenced.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(fenced.getDetails()).containsEntry("runtimeStatus", "SERVING_FENCED");
+        assertThat(converged.getStatus()).isEqualTo(Status.UP);
+        assertThat(converged.getDetails())
+                .containsEntry("replicaConvergenceIntegrated", true)
+                .containsEntry("replicaConvergenceProven", true)
+                .containsEntry("productionReady", false);
     }
 
     private static org.springframework.boot.actuate.health.Health health(
@@ -93,5 +115,16 @@ class ControlPlaneCertificateRotationHealthTest {
                 ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
                 enabled, ready, trustAvailable, durableState, inventoried, registered,
                 synchronizedState);
+    }
+
+    private static ControlPlaneCertificateRotationRuntime.Descriptor convergedDescriptor(
+            boolean available,
+            boolean servingReady,
+            boolean proven,
+            String status) {
+        return new ControlPlaneCertificateRotationRuntime.Descriptor(
+                ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
+                true, servingReady, true, true, 2, 2, true,
+                true, available, proven, servingReady, false, status);
     }
 }

@@ -18,7 +18,12 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 .containsEntry("restartFreeControlPlaneCertificateRotation", false)
                 .containsEntry("controlPlaneCertificateRotationLocalReady", false)
                 .containsEntry("controlPlaneCertificateRotationDurableFloorIntegrated", false)
+                .containsEntry(
+                        "controlPlaneCertificateRotationReplicaConvergenceIntegrated", false)
+                .containsEntry(
+                        "controlPlaneCertificateRotationReplicaConvergenceAvailable", false)
                 .containsEntry("controlPlaneCertificateRotationReplicaConvergenceProven", false)
+                .containsEntry("controlPlaneCertificateRotationServingReady", false)
                 .containsEntry("controlPlaneCertificateRotationProductionReady", false);
     }
 
@@ -37,6 +42,8 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 .containsEntry("restartFreeControlPlaneCertificateRotation", true)
                 .containsEntry("controlPlaneCertificateRotationLocalReady", true)
                 .containsEntry("controlPlaneCertificateRotationDurableFloorIntegrated", true)
+                .containsEntry(
+                        "controlPlaneCertificateRotationReplicaConvergenceIntegrated", false)
                 .containsEntry("controlPlaneCertificateRotationReplicaConvergenceProven", false)
                 .containsEntry("controlPlaneCertificateRotationProductionReady", false);
     }
@@ -58,6 +65,28 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 .containsEntry("controlPlaneCertificateRotationProductionReady", false);
         assertThat(capabilities.toString())
                 .doesNotContain("rotation-private-material", "vault://");
+    }
+
+    @Test
+    void integratedConvergenceAdvertisesProofWithoutInflatingEnterpriseReadiness() {
+        ToolStudioIntegrationService service = service();
+        ControlPlaneCertificateRotationRuntime runtime = mock(
+                ControlPlaneCertificateRotationRuntime.class);
+        when(runtime.descriptor()).thenReturn(
+                new ControlPlaneCertificateRotationRuntime.Descriptor(
+                        ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
+                        true, true, true, true, 12, 12, true,
+                        true, true, true, true, false, "CONVERGED"));
+        service.configureControlPlaneCertificateRotation(runtime);
+
+        assertThat(service.capabilities().payload().features())
+                .containsEntry(
+                        "controlPlaneCertificateRotationReplicaConvergenceIntegrated", true)
+                .containsEntry(
+                        "controlPlaneCertificateRotationReplicaConvergenceAvailable", true)
+                .containsEntry("controlPlaneCertificateRotationReplicaConvergenceProven", true)
+                .containsEntry("controlPlaneCertificateRotationServingReady", true)
+                .containsEntry("controlPlaneCertificateRotationProductionReady", false);
     }
 
     private static ToolStudioIntegrationService service() {

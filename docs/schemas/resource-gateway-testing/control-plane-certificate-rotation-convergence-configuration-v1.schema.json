@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-convergence-configuration-v1.schema.json",
+  "title": "Resource Gateway Certificate Rotation Convergence Configuration v1",
+  "description": "Strict test/staging configuration for database-clock all-replica heartbeat, activation and serving admission fencing. Multi-replica inventories require an external attestation; quorum activation is intentionally unavailable until an external traffic fence is composed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled", "required", "fleet-id", "instance-id", "startup-id",
+    "artifact-fingerprint", "expected-instance-ids", "protocol-version",
+    "activation-mode", "required-staged-replicas", "heartbeat-interval-seconds",
+    "lease-duration-seconds", "record-retention-seconds", "inventory-source-type",
+    "inventory-revision", "inventory-material-fingerprint",
+    "inventory-policy-fingerprint", "inventory-expires-at"
+  ],
+  "properties": {
+    "enabled": { "type": "boolean" },
+    "required": { "type": "boolean" },
+    "fleet-id": { "$ref": "#/$defs/optionalIdentifier" },
+    "instance-id": { "$ref": "#/$defs/optionalIdentifier" },
+    "startup-id": {
+      "type": "string",
+      "pattern": "^(|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"
+    },
+    "artifact-fingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+    "expected-instance-ids": {
+      "type": "string",
+      "pattern": "^(|[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}(,[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}){0,63})$",
+      "maxLength": 16383
+    },
+    "protocol-version": { "$ref": "#/$defs/identifier" },
+    "activation-mode": { "const": "ALL_REPLICAS" },
+    "required-staged-replicas": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    },
+    "heartbeat-interval-seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 300
+    },
+    "lease-duration-seconds": {
+      "type": "integer",
+      "minimum": 3,
+      "maximum": 900
+    },
+    "record-retention-seconds": {
+      "type": "integer",
+      "minimum": 3600,
+      "maximum": 2592000
+    },
+    "inventory-source-type": { "$ref": "#/$defs/identifier" },
+    "inventory-revision": { "type": "integer", "minimum": 0 },
+    "inventory-material-fingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+    "inventory-policy-fingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+    "inventory-expires-at": {
+      "type": "string",
+      "anyOf": [
+        { "const": "" },
+        { "format": "date-time" }
+      ]
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "optionalIdentifier": {
+      "type": "string",
+      "pattern": "^(|[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254})$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "required": { "const": true } },
+        "required": ["required"]
+      },
+      "then": { "properties": { "enabled": { "const": true } } }
+    },
+    {
+      "if": {
+        "properties": { "enabled": { "const": false } },
+        "required": ["enabled"]
+      },
+      "then": {
+        "properties": {
+          "required": { "const": false },
+          "fleet-id": { "const": "" },
+          "instance-id": { "const": "" },
+          "startup-id": { "const": "" },
+          "artifact-fingerprint": { "const": "" },
+          "expected-instance-ids": { "const": "" },
+          "protocol-version": { "const": "certificate-rotation-convergence-v1" },
+          "activation-mode": { "const": "ALL_REPLICAS" },
+          "required-staged-replicas": { "const": 0 },
+          "heartbeat-interval-seconds": { "const": 5 },
+          "lease-duration-seconds": { "const": 15 },
+          "record-retention-seconds": { "const": 3600 },
+          "inventory-source-type": { "const": "LOCAL_CONFIGURED" },
+          "inventory-revision": { "const": 0 },
+          "inventory-material-fingerprint": { "const": "" },
+          "inventory-policy-fingerprint": { "const": "" },
+          "inventory-expires-at": { "const": "" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "enabled": { "const": true } },
+        "required": ["enabled"]
+      },
+      "then": {
+        "properties": {
+          "fleet-id": { "minLength": 1 },
+          "instance-id": { "minLength": 1 },
+          "startup-id": { "minLength": 36 },
+          "artifact-fingerprint": { "minLength": 71 },
+          "expected-instance-ids": { "minLength": 1 },
+          "required-staged-replicas": { "minimum": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "inventory-source-type": { "const": "LOCAL_CONFIGURED" } },
+        "required": ["inventory-source-type"]
+      },
+      "then": {
+        "properties": {
+          "expected-instance-ids": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+          },
+          "inventory-revision": { "const": 0 },
+          "inventory-material-fingerprint": { "const": "" },
+          "inventory-policy-fingerprint": { "const": "" },
+          "inventory-expires-at": { "const": "" }
+        }
+      },
+      "else": {
+        "properties": {
+          "inventory-revision": { "minimum": 1 },
+          "inventory-material-fingerprint": { "pattern": "^sha256:[a-f0-9]{64}$" },
+          "inventory-policy-fingerprint": { "pattern": "^sha256:[a-f0-9]{64}$" },
+          "inventory-expires-at": { "format": "date-time", "minLength": 1 }
+        }
+      }
+    }
+  ]
+}

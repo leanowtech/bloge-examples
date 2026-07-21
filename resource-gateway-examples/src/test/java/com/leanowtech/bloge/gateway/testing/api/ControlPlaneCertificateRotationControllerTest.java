@@ -356,6 +356,31 @@ class ControlPlaneCertificateRotationControllerTest {
         assertThat(resolutions).hasValue(0);
     }
 
+    @Test
+    void convergenceLifecycleRunsOnlyAfterVerificationAndReportsLocalStageFailure() {
+        RecordingLifecycle lifecycle = new RecordingLifecycle();
+        var rejected = controller(rejectedTrust(), materialSource, lifecycle);
+        var event = event(7, 8, EVENT_FINGERPRINT, MATERIAL_FINGERPRINT);
+
+        rejected.apply(event);
+        assertThat(lifecycle.calls).isEmpty();
+
+        lifecycle = new RecordingLifecycle();
+        var accepted = controller(verifiedTrust(), materialSource, lifecycle);
+        assertThat(accepted.apply(event).status()).isEqualTo(
+                ControlPlaneCertificateRotationController.ApplyStatus.APPLIED);
+        assertThat(lifecycle.calls).containsExactly("PREPARE", "APPLIED");
+
+        target = new FakeTarget(7);
+        target.failStage = true;
+        lifecycle = new RecordingLifecycle();
+        var failed = controller(verifiedTrust(), materialSource, lifecycle);
+        assertThat(failed.apply(event).status()).isEqualTo(
+                ControlPlaneCertificateRotationController.ApplyStatus.STAGING_REJECTED);
+        assertThat(lifecycle.calls).containsExactly(
+                "PREPARE", "FAILED:LOCAL_STAGING_REJECTED");
+    }
+
     private ControlPlaneCertificateRotationController controller(
             ControlPlaneCertificateRotationTrustStore trustStore,
             ControlPlaneCertificateRotationMaterialSource source) {
@@ -364,6 +389,17 @@ class ControlPlaneCertificateRotationControllerTest {
                 "resource-gateway-prod", Map.of("external-notary",
                 new ControlPlaneCertificateRotationController.TargetRegistration(
                         target, INITIAL_FINGERPRINT)));
+    }
+
+    private ControlPlaneCertificateRotationController controller(
+            ControlPlaneCertificateRotationTrustStore trustStore,
+            ControlPlaneCertificateRotationMaterialSource source,
+            ControlPlaneCertificateRotationLifecycle lifecycle) {
+        return new ControlPlaneCertificateRotationController(
+                trustStore, source, Clock.fixed(NOW, ZoneOffset.UTC),
+                "resource-gateway-prod", Map.of("external-notary",
+                new ControlPlaneCertificateRotationController.TargetRegistration(
+                        target, INITIAL_FINGERPRINT)), null, lifecycle);
     }
 
     private ControlPlaneCertificateRotationController durableController(
@@ -546,6 +582,28 @@ class ControlPlaneCertificateRotationControllerTest {
             return new Descriptor("", verified, "enterprise-pki-governance",
                     verified ? 2 : 0, verified ? 2 : 0, verified ? 2 : 0,
                     verified ? 1 : 0, Map.of());
+        }
+    }
+
+    private static final class RecordingLifecycle
+            implements ControlPlaneCertificateRotationLifecycle {
+        private final List<String> calls = new java.util.ArrayList<>();
+
+        @Override
+        public void prepare(ControlPlaneCertificateRotationEvent event) {
+            calls.add("PREPARE");
+        }
+
+        @Override
+        public void applied(ControlPlaneCertificateRotationEvent event) {
+            calls.add("APPLIED");
+        }
+
+        @Override
+        public void failed(
+                ControlPlaneCertificateRotationEvent event,
+                String failureCode) {
+            calls.add("FAILED:" + failureCode);
         }
     }
 }

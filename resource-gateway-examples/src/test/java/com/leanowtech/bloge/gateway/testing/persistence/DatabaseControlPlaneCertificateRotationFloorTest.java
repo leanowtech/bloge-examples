@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEvent;
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationActivationAuthority;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationFloor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -136,6 +138,29 @@ class DatabaseControlPlaneCertificateRotationFloorTest {
     }
 
     @Test
+    void databaseTimeCannotAdvanceTheDurableFloorWithoutFleetAdmission() {
+        AtomicBoolean admitted = new AtomicBoolean();
+        var floor = repository(initial(1, INITIAL_MATERIAL, INITIAL_FINGERPRINT),
+                ignored -> admitted.get());
+        Instant now = now();
+        var event = event("rotation-002", 2, INITIAL_FINGERPRINT,
+                "candidate-b", fingerprint('b'), now.minusSeconds(1),
+                now.plusSeconds(60));
+
+        assertThat(floor.accept(event).status()).isEqualTo(
+                ControlPlaneCertificateRotationFloor.AcceptanceStatus.STAGED);
+        assertThat(floor.snapshot(TARGET).pendingGeneration()).isEqualTo(2);
+
+        admitted.set(true);
+        assertThat(floor.snapshot(TARGET)).satisfies(snapshot -> {
+            assertThat(snapshot.activeGeneration()).isEqualTo(2);
+            assertThat(snapshot.pendingGeneration()).isZero();
+            assertThat(snapshot.activeEventFingerprint())
+                    .isEqualTo(event.materialFingerprint());
+        });
+    }
+
+    @Test
     void rejectsEventReuseGenerationForkScopeDriftAndInvalidPredecessor() {
         var floor = repository(initial(1, INITIAL_MATERIAL, INITIAL_FINGERPRINT));
         Instant now = now();
@@ -228,6 +253,16 @@ class DatabaseControlPlaneCertificateRotationFloorTest {
     private DatabaseControlPlaneCertificateRotationFloor repository(
             ControlPlaneCertificateRotationFloor.InitialTarget initial) {
         return repository(SCOPE, TARGET, initial);
+    }
+
+    private DatabaseControlPlaneCertificateRotationFloor repository(
+            ControlPlaneCertificateRotationFloor.InitialTarget initial,
+            ControlPlaneCertificateRotationActivationAuthority activationAuthority) {
+        var result = new DatabaseControlPlaneCertificateRotationFloor(database.jdbc(),
+                objectMapper, SCOPE, Map.of(TARGET, initial), database.transactionManager(),
+                activationAuthority);
+        result.init();
+        return result;
     }
 
     private DatabaseControlPlaneCertificateRotationFloor repository(

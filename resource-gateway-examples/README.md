@@ -505,13 +505,21 @@ fleet-convergence primitives now also define an exact replica inventory, process
 strict `STAGED/ACTIVE/FAILED` acknowledgements, all-replica or fenced-quorum stage thresholds, one
 database-authoritative active fleet, and an external inventory revision/downgrade floor. Their
 aggregate snapshot separates `activationPermitted` from exact all-replica `converged` and never
-returns replica ids or TLS material locations. These primitives are not yet wired to runtime
-heartbeats or the durable activation/serving fence; `FENCED_QUORUM` therefore remains a
-protocol-only option and must not be enabled on a serving path. Local Actuator health and Tool
-Studio capability expose only bounded readiness/durability booleans and
-target counts. They deliberately keep replica convergence and production readiness false: CA-event
-distribution, per-replica acknowledgements, revocation/OCSP/CRL, HSM custody, production database
-certification, and HA/DR/chaos remain follow-up gates. See the
+returns replica ids or TLS material locations. The test/staging runtime now runs the exact
+process-start heartbeat, caches every database decision for at most two heartbeat intervals, and
+uses the same monitor to fence both the durable floor and live transport. A due successor first
+requires a fresh all-replica `STAGED` proof at or after signed database time, then advances the
+durable floor, then activates locally; the new generation cannot serve until every configured slot
+reports exact `ACTIVE`. Restarted signed generations must republish that proof, database loss or
+lease expiry closes admission, and a failed candidate leaves the old generation usable while health
+stays degraded. Multi-replica mode requires externally attested inventory;
+`FENCED_QUORUM` is rejected at startup until a real traffic fence exists. Enable the sibling
+`gateway.testing.control-plane-certificate-rotation-convergence` policy with the adjacent
+`RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_*`, fleet, process, artifact, inventory and
+lease variables. Actuator and Tool Studio now report bounded convergence integration,
+availability, current proof and serving readiness. `productionReady` deliberately remains false:
+CA-event distribution, revocation/OCSP/CRL, HSM custody, production database certification, and
+HA/DR/chaos remain follow-up gates. See the
 [certificate identity and rotation kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md).
 
 The same single-root journal can run unattended ceremony recovery by also setting

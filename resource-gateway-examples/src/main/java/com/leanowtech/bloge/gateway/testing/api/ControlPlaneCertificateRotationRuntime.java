@@ -26,11 +26,56 @@ public final class ControlPlaneCertificateRotationRuntime {
             boolean durableState,
             int inventoriedTargetCount,
             int registeredTargetCount,
-            boolean synchronizedState) {
+            boolean synchronizedState,
+            boolean convergenceIntegrated,
+            boolean convergenceAvailable,
+            boolean replicaConvergenceProven,
+            boolean servingReady,
+            boolean productionReady,
+            String convergenceStatus) {
 
         /** Current runtime descriptor protocol version. */
         public static final String SCHEMA_VERSION =
-                "bloge.controlPlaneCertificateRotationRuntimeDescriptor.v1";
+                "bloge.controlPlaneCertificateRotationRuntimeDescriptor.v2";
+
+        /** Rejects contradictory readiness and convergence projections. */
+        public Descriptor {
+            schemaVersion = Objects.requireNonNullElse(schemaVersion, "").trim();
+            convergenceStatus = Objects.requireNonNullElse(
+                    convergenceStatus, "").trim();
+            int maximum = ControlPlaneCertificateRotationTargets.values().size();
+            if (!SCHEMA_VERSION.equals(schemaVersion)
+                    || !convergenceStatus.matches("[A-Z][A-Z0-9_]{0,63}")
+                    || inventoriedTargetCount < 0 || inventoriedTargetCount > maximum
+                    || registeredTargetCount < 0
+                    || registeredTargetCount > inventoriedTargetCount
+                    || convergenceAvailable && !convergenceIntegrated
+                    || replicaConvergenceProven
+                    && (!convergenceIntegrated || !convergenceAvailable || !servingReady)
+                    || servingReady && (!convergenceIntegrated || !convergenceAvailable)
+                    || !convergenceIntegrated && (!("DISABLED".equals(convergenceStatus)
+                    || "UNAVAILABLE".equals(convergenceStatus))
+                    || convergenceAvailable || replicaConvergenceProven || servingReady)
+                    || productionReady) {
+                throw new IllegalArgumentException(
+                        "Control-plane certificate rotation runtime descriptor is invalid");
+            }
+        }
+
+        /** Compatibility projection for local-only composition. */
+        public Descriptor(
+                String schemaVersion,
+                boolean enabled,
+                boolean ready,
+                boolean trustAvailable,
+                boolean durableState,
+                int inventoriedTargetCount,
+                int registeredTargetCount,
+                boolean synchronizedState) {
+            this(schemaVersion, enabled, ready, trustAvailable, durableState,
+                    inventoriedTargetCount, registeredTargetCount, synchronizedState,
+                    false, false, false, false, false, "DISABLED");
+        }
     }
 
     private final ControlPlaneCertificateRotationRuntimeProperties properties;
@@ -42,6 +87,7 @@ public final class ControlPlaneCertificateRotationRuntime {
     private final ControlPlaneCertificateSettingsFingerprint fingerprinter;
     private final ControlPlaneCertificateRotationFloorFactory floorFactory;
     private final Clock clock;
+    private final ControlPlaneCertificateRotationConvergenceMonitor convergenceMonitor;
     private final Map<String, ControlPlaneCertificateRotationController> controllers =
             new LinkedHashMap<>();
     private final Map<String, ControlPlaneCertificateRotationFloor> floors =
@@ -58,6 +104,34 @@ public final class ControlPlaneCertificateRotationRuntime {
             ControlPlaneCertificateSettingsFingerprint fingerprinter,
             ControlPlaneCertificateRotationFloorFactory floorFactory,
             Clock clock) {
+        this(properties, initialTargets, trustStore, materialSource, secretResolver,
+                fingerprinter, floorFactory, clock, null);
+    }
+
+    /**
+     * Creates a deployment runtime behind an exact fleet-convergence authority.
+     *
+     * @param properties immutable certificate rotation policy
+     * @param initialTargets exact baseline target inventory
+     * @param trustStore external signed-event authorization trust
+     * @param materialSource deployment-owned material catalog
+     * @param secretResolver caller-owned credential resolver
+     * @param fingerprinter canonical settings fingerprinter
+     * @param floorFactory durable floor factory already bound to the same activation authority
+     * @param clock local certificate-validity clock
+     * @param convergenceMonitor process heartbeat, activation and serving fence
+     */
+    public ControlPlaneCertificateRotationRuntime(
+            ControlPlaneCertificateRotationRuntimeProperties properties,
+            Map<String, ControlPlaneCertificateRotationRuntimeProperties.InitialTargetSpec>
+                    initialTargets,
+            ControlPlaneCertificateRotationTrustStore trustStore,
+            ControlPlaneCertificateRotationMaterialSource materialSource,
+            ControlPlaneHttpTransport.SecretResolver secretResolver,
+            ControlPlaneCertificateSettingsFingerprint fingerprinter,
+            ControlPlaneCertificateRotationFloorFactory floorFactory,
+            Clock clock,
+            ControlPlaneCertificateRotationConvergenceMonitor convergenceMonitor) {
         this.properties = Objects.requireNonNull(properties, "properties");
         this.initialTargets = Map.copyOf(Objects.requireNonNull(initialTargets,
                 "initialTargets"));
@@ -67,7 +141,9 @@ public final class ControlPlaneCertificateRotationRuntime {
         this.fingerprinter = Objects.requireNonNull(fingerprinter, "fingerprinter");
         this.floorFactory = Objects.requireNonNull(floorFactory, "floorFactory");
         this.clock = Objects.requireNonNull(clock, "clock");
-        if (properties.enabled() != !this.initialTargets.isEmpty()) {
+        this.convergenceMonitor = convergenceMonitor;
+        if (properties.enabled() != !this.initialTargets.isEmpty()
+                || convergenceMonitor != null && !properties.enabled()) {
             throw invalid();
         }
     }
@@ -111,21 +187,35 @@ public final class ControlPlaneCertificateRotationRuntime {
                 ? baselineSettings : resolvedSettings(normalizedTarget,
                 snapshot.activeGeneration(), snapshot.activeMaterialId(),
                 snapshot.activeSettingsFingerprint());
+        RotatingControlPlaneHttpTransport.ActivationGate activationGate =
+                convergenceMonitor == null
+                        ? RotatingControlPlaneHttpTransport.ActivationGate.permitAll()
+                        : convergenceMonitor.activationGate(normalizedTarget);
         var rotating = new RotatingControlPlaneHttpTransport(snapshot.activeGeneration(),
                 activeSettings,
                 secretResolver, clock, properties.minimumOverlap(),
-                properties.maximumLeadTime());
+                properties.maximumLeadTime(), activationGate);
+        if (convergenceMonitor != null) {
+            convergenceMonitor.registerTarget(normalizedTarget, rotating, floor);
+        }
         if (snapshot.hasPending()) {
             rotating.restorePending(snapshot.pendingGeneration(), snapshot.pendingActivateAt(),
                     resolvedSettings(normalizedTarget, snapshot.pendingGeneration(),
                             snapshot.pendingMaterialId(),
                             snapshot.pendingSettingsFingerprint()));
         }
+        if (convergenceMonitor != null) {
+            restoreConvergence(snapshot);
+            snapshot = floor.snapshot(normalizedTarget);
+        }
         var controller = new ControlPlaneCertificateRotationController(
                 trustStore, materialSource, clock, properties.deploymentScopeId(),
                 Map.of(normalizedTarget,
                         new ControlPlaneCertificateRotationController.TargetRegistration(
-                                rotating, snapshot.activeSettingsFingerprint())), floor);
+                                rotating, snapshot.activeSettingsFingerprint())), floor,
+                convergenceMonitor == null
+                        ? ControlPlaneCertificateRotationLifecycle.noop()
+                        : convergenceMonitor);
         controllers.put(normalizedTarget, controller);
         floors.put(normalizedTarget, floor);
         return rotating;
@@ -162,12 +252,49 @@ public final class ControlPlaneCertificateRotationRuntime {
         boolean durableState = !properties.enabled()
                 || floors.size() == initialTargets.size() && floors.values().stream()
                 .allMatch(ControlPlaneCertificateRotationFloor::durable);
-        boolean ready = !properties.enabled() || trustAvailable
+        boolean localReady = !properties.enabled() || trustAvailable
                 && durableState && controllers.size() == initialTargets.size()
                 && synchronizedState;
+        ControlPlaneCertificateRotationConvergenceMonitor.Descriptor convergence =
+                convergenceMonitor == null ? null : convergenceMonitor.descriptor();
+        boolean servingReady = localReady && convergence != null && convergence.servingReady();
+        boolean convergenceHealthy = convergence == null
+                || convergence.blockedTargetCount() == 0;
+        boolean ready = localReady && (convergence == null
+                || servingReady && convergenceHealthy);
+        // Enterprise PKI readiness also requires event distribution, revocation and DR gates.
+        boolean productionReady = false;
         return new Descriptor(Descriptor.SCHEMA_VERSION, properties.enabled(), ready,
                 trustAvailable, durableState, initialTargets.size(), controllers.size(),
-                synchronizedState);
+                synchronizedState, convergence != null,
+                convergence != null && convergence.available(),
+                convergence != null && convergence.replicaConvergenceProven(),
+                servingReady, productionReady,
+                convergence == null ? "DISABLED" : convergence.status());
+    }
+
+    private void restoreConvergence(ControlPlaneCertificateRotationFloor.Snapshot snapshot) {
+        if (snapshot.hasPending()) {
+            convergenceMonitor.restorePending(expectedPending(snapshot));
+        } else if (!snapshot.activeEventId().isBlank()) {
+            convergenceMonitor.restoreActive(expectedActive(snapshot));
+        }
+    }
+
+    private static ControlPlaneCertificateRotationConvergenceRepository.ExpectedRotation
+            expectedPending(ControlPlaneCertificateRotationFloor.Snapshot snapshot) {
+        return new ControlPlaneCertificateRotationConvergenceRepository.ExpectedRotation(
+                snapshot.targetId(), snapshot.pendingGeneration(), snapshot.pendingEventId(),
+                snapshot.pendingEventFingerprint(), snapshot.pendingSettingsFingerprint(),
+                snapshot.pendingActivateAt());
+    }
+
+    private static ControlPlaneCertificateRotationConvergenceRepository.ExpectedRotation
+            expectedActive(ControlPlaneCertificateRotationFloor.Snapshot snapshot) {
+        return new ControlPlaneCertificateRotationConvergenceRepository.ExpectedRotation(
+                snapshot.targetId(), snapshot.activeGeneration(), snapshot.activeEventId(),
+                snapshot.activeEventFingerprint(), snapshot.activeSettingsFingerprint(),
+                snapshot.activatedAt());
     }
 
     private PinnedMutualTlsRecoveryFleetPublicationTransport.Settings resolvedSettings(

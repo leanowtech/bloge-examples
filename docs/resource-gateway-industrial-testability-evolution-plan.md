@@ -16,12 +16,13 @@
 ### 实施快照（2026-07-21）
 
 > Stage 4 证书轮换状态校正：database-clock durable generation floor 已通过统一 runtime 接入 12 条
-> stable live transport，严格执行“签名/材料验真 -> durable accept -> local stage”，并支持 baseline ancestry
-> 验证、active/pending 重启恢复和 exact replay 修复。固定基数 health/capability 只声明 durable local
-> readiness。后续已补齐精确 replica inventory/process-start lease、`STAGED/ACTIVE/FAILED` ACK、
-> all-replica/fenced-quorum 双判定、单 active fleet、外部 inventory revision/downgrade floor 与严格 Schema
-> 的数据库 convergence kernel；runtime heartbeat、事件分发、activation/serving fence 和独立 convergence
-> proof 尚未接线，因此 production readiness 继续关闭。
+> stable live transport；精确 replica inventory/process-start lease、`STAGED/ACTIVE/FAILED` ACK、单 active
+> fleet、外部 inventory revision/downgrade floor 与严格 Schema 已形成 test/staging 产品闭环。runtime 现自动 heartbeat/
+> withdraw，以短租约 cached proof 在 database time 到达签名时刻后执行 `ALL_REPLICAS STAGED -> durable
+> floor -> live transport -> ALL_REPLICAS ACTIVE -> serving`，并对重启 active generation 重新证明；health/
+> capability 如实投影 convergence。多副本必须使用外部 attested inventory，`FENCED_QUORUM` 在没有真实
+> traffic fence 时启动即拒绝。CA event watcher、撤销/OCSP/CRL、enterprise custody、生产 HA/DR/chaos
+> 仍未闭合，因此 production readiness 继续关闭。
 
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
@@ -39,8 +40,9 @@
 > 已开放。默认 external/Byzantine publication/root floor、两个业务 source、bootstrap-root publisher
 > 写侧，以及 external notary、managed trust publication、bootstrap-root bundle 三条读侧链路的 pinned
 > mTLS 与精确静态 certificate workload identity 已闭合；表内旧的
-> “publisher/读侧 mTLS/pinning 待完成”与“身份绑定未接线”均已被后续增量取代。受信证书
-> 轮换事件、吊销/OCSP/CRL、跨副本激活、HSM/KMS、根源 anti-equivocation 与生产数据库/
+> “publisher/读侧 mTLS/pinning 待完成”与“身份绑定未接线”均已被后续增量取代。证书跨副本
+> activation/serving fence 已接入 test/staging；CA 事件分发、吊销/OCSP/CRL、HSM/KMS、根源
+> anti-equivocation 与生产数据库/
 > HA/DR/chaos 认证仍未闭合，因此
 > 不能把 test/staging 路径解读为 production readiness。
 
@@ -118,14 +120,14 @@ JavaDoc 门禁。验证见 [Stage 4 external notary trust rotation verification]
 测试和 79 项联合协议回归全绿。后续产品子步已把精确静态身份策略接入 publisher、
 dynamic inventory、managed trust-root 与九条 external-anchor 读侧，共 12 组 transport；typed
 properties、test/staging 配置、demo preflight、dynamic inventory v3、external anchor v2、
-capability v4、固定基数 health 与 Tool Studio projection 同步闭合。87 项产品聚焦测试与
-3669 项全量测试全绿。静态证书身份绑定已产品化；restart-free rotation 已从原子 TLS kernel
+capability v4、固定基数 health 与 Tool Studio projection 同步闭合。87 项静态产品接线聚焦测试
+全绿。静态证书身份绑定已产品化；restart-free rotation 已从原子 TLS kernel
 推进到 12 条 test/staging 产品链路的严格事件、M-of-N 信任、受控材料目录、floor-first durable
-generation、重启恢复、固定基数 health/capability 和 demo preflight，本轮 56 项聚焦验证全绿；下一子步
-又冻结受治理 replica inventory、逐副本 ACK、quorum/all-replica threshold 与数据库 convergence kernel，
-9 项真实数据库测试和扩展后的 6 项 Schema 门禁全绿。企业 CA 事件分发、runtime ACK heartbeat、
-activation/serving fence、最终 convergence proof、吊销/OCSP/CRL、HSM custody 与生产
-数据库/HA/DR/chaos 认证仍未闭合，不能据此宣称企业 PKI 已开放。验证见
+generation、重启恢复、固定基数 health/capability 和 demo preflight；后续子步又把受治理 replica
+inventory、逐副本 ACK、all-replica threshold、短租约 heartbeat、durable-before-live activation、
+restart ACTIVE re-proof 和 serving fence 接入产品 runtime。当前轮换聚焦门禁 74 项、demo preflight
+12 项以及 3700 项全量测试全绿。企业 CA 事件分发、撤销/OCSP/CRL、HSM
+custody 与生产数据库/HA/DR/chaos 认证仍未闭合，不能据此宣称企业 PKI 已开放。验证见
 [certificate identity and rotation kernel verification](resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md)。
 
 Stage 2 本轮审计继续关闭 stored fixture 的对象稳定性和仓储替换断点：数据库 create/read 与

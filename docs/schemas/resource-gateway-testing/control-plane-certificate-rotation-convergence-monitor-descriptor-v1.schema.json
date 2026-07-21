@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-convergence-monitor-descriptor-v1.schema.json",
+  "title": "Resource Gateway Certificate Rotation Convergence Monitor Descriptor v1",
+  "description": "Fixed-cardinality aggregate of locally cached database-clock activation and serving decisions. Replica, event, material and certificate identities are intentionally absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "available", "activationModeSupported",
+    "replicaConvergenceProven", "servingReady", "registeredTargetCount",
+    "trackedRotationCount", "stagedTargetCount", "activeTargetCount",
+    "blockedTargetCount", "status"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateRotationConvergenceMonitorDescriptor.v1"
+    },
+    "available": { "type": "boolean" },
+    "activationModeSupported": { "type": "boolean" },
+    "replicaConvergenceProven": { "type": "boolean" },
+    "servingReady": { "type": "boolean" },
+    "registeredTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
+    "trackedRotationCount": { "type": "integer", "minimum": 0, "maximum": 12 },
+    "stagedTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
+    "activeTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
+    "blockedTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
+    "status": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+    }
+  }
+}
