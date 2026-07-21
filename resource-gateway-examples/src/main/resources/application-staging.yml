@@ -51,6 +51,17 @@ gateway:
         initial-delay-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_INITIAL_DELAY_MS:5000}
         poll-interval-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_POLL_INTERVAL_MS:5000}
         drain-timeout-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_DRAIN_TIMEOUT_MS:5000}
+      bootstrap-root-recovery-fleet:
+        enabled: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED:false}
+        fleet-id: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ID:}
+        worker-id: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID:}
+        partition-count: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_PARTITIONS:8}
+        lease-duration-seconds: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_LEASE_SECONDS:30}
+        maximum-lanes-per-cycle: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_MAX_LANES:16}
+        initial-delay-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_INITIAL_DELAY_MS:5000}
+        poll-interval-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_POLL_INTERVAL_MS:5000}
+        maximum-cycle-duration-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_MAX_CYCLE_MS:600000}
+        drain-timeout-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DRAIN_TIMEOUT_MS:5000}
     admission:
       policy-generation: ${RG_TEST_ADMISSION_POLICY_GENERATION:1}
       tenant-max-active: ${RG_TEST_ADMISSION_TENANT_MAX_ACTIVE:16}

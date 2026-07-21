@@ -1,0 +1,261 @@
+package com.leanowtech.bloge.gateway.testing.api;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.AcquisitionCommand;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.FleetManifest;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory.Snapshot;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator;
+import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
+
+import java.time.Duration;
+import java.util.Objects;
+
+/**
+ * Explicit test/staging Spring composition root for durable bootstrap-root recovery fleets.
+ *
+ * <p>The embedder owns discovery, authorization, signature verification, and atomic publication of
+ * an already-local {@link ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory}. This
+ * configuration owns only the runtime path from that snapshot to a database-clock coordinator,
+ * bounded worker, fixed-delay scheduler, and aggregate health indicator. A caller-supplied signed
+ * inventory authority is additionally preflighted and receives an independent aggregate health
+ * indicator. This configuration never binds signer credentials, provider endpoints, private keys,
+ * or remote inventory transport.</p>
+ *
+ * <p>The runtime is physically absent whenever a {@code production} profile is active and remains
+ * disabled by default in {@code test}/{@code staging}. Fleet mode and the legacy single-root lane
+ * are mutually exclusive because running both would duplicate polling without adding a new write
+ * fence. Spring dependency destruction closes the scheduler before the worker; the caller-owned
+ * inventory, lane services, authority resolvers, and isolated database remain outside their
+ * ownership boundary.</p>
+ */
+@Configuration(proxyBeanMethods = false)
+@Profile("!production & (test | staging)")
+@ConditionalOnProperty(prefix = ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
+        .FleetProperties.PREFIX, name = "enabled", havingValue = "true")
+@EnableConfigurationProperties(
+        ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
+                .FleetProperties.class)
+public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration {
+
+    /** Creates the profile-gated durable fleet composition root. */
+    public ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration() {
+    }
+
+    /**
+     * Freezes startup invariants before any coordinator table or background scheduler is created.
+     *
+     * @param environment active profile and mutually exclusive single-lane configuration
+     * @param inventory caller-owned, already-authorized bounded local inventory
+     * @param properties strict durable fleet runtime policy
+     * @return validated startup token consumed by every stateful bean
+     */
+    @Bean
+    ValidatedFleetRuntime externalSequenceAnchorBootstrapRootRecoveryFleetPreflight(
+            Environment environment,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
+            FleetProperties properties) {
+        try {
+            Boolean singleLaneEnabled = environment.getProperty(
+                    ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfiguration
+                            .RecoveryProperties.PREFIX + ".enabled",
+                    Boolean.class, false);
+            if (Boolean.TRUE.equals(singleLaneEnabled)) {
+                throw FleetProperties.invalid();
+            }
+            Snapshot snapshot = Objects.requireNonNull(
+                    inventory.snapshot(), "fleet inventory snapshot");
+            if (inventory instanceof
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority authority) {
+                var observed = Objects.requireNonNull(
+                        authority.observation(), "fleet inventory authority observation");
+                var binding = Objects.requireNonNull(
+                        authority.verifiedBinding(), "fleet inventory authority binding");
+                if (!observed.available()
+                        || observed.generation() != snapshot.generation()
+                        || observed.laneCount() != snapshot.lanes().size()
+                        || !properties.fleetId().equals(binding.fleetId())
+                        || properties.partitionCount() != binding.partitionCount()) {
+                    throw FleetProperties.invalid();
+                }
+            }
+            FleetManifest manifest = FleetManifest.from(
+                    properties.fleetId(), snapshot, properties.partitionCount());
+            return new ValidatedFleetRuntime(manifest);
+        } catch (RuntimeException invalid) {
+            throw FleetProperties.invalid();
+        }
+    }
+
+    /** Creates the shared database-clock partition coordinator unless supplied by the embedder. */
+    @Bean
+    @ConditionalOnMissingBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.class)
+    DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator
+            externalSequenceAnchorBootstrapRootRecoveryFleetCoordinator(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            ValidatedFleetRuntime validated) {
+        Objects.requireNonNull(validated, "validated");
+        return new DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator(
+                database.jdbc(), objectMapper, database.transactionManager());
+    }
+
+    /** Creates the bounded fixed-partition worker over the caller-owned inventory. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.class)
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
+            externalSequenceAnchorBootstrapRootRecoveryFleetWorker(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator,
+            FleetProperties properties,
+            ValidatedFleetRuntime validated) {
+        Objects.requireNonNull(validated, "validated");
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker(
+                inventory, properties.workerId(), properties.workerPolicy(), coordinator,
+                properties.fleetId(), properties.partitionCount());
+    }
+
+    /** Starts one local fixed-delay scheduler for the durable fleet worker. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler.class)
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler
+            externalSequenceAnchorBootstrapRootRecoveryFleetScheduler(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker worker,
+            FleetProperties properties) {
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler(
+                worker, properties.schedulePolicy());
+    }
+
+    /** Exposes aggregate-only readiness for the configured durable fleet runtime. */
+    @Bean
+    @ConditionalOnMissingBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetHealth.class)
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetHealth
+            externalSequenceAnchorBootstrapRootRecoveryFleetHealth(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker worker,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler scheduler) {
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetHealth(worker, scheduler);
+    }
+
+    /** Exposes signed-inventory validity separately from fleet execution readiness. */
+    @Bean
+    @ConditionalOnBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.class)
+    @ConditionalOnMissingBean(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth.class)
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth
+            externalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority authority,
+            ValidatedFleetRuntime validated) {
+        Objects.requireNonNull(validated, "validated");
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth(authority);
+    }
+
+    private record ValidatedFleetRuntime(FleetManifest startupManifest) {
+
+        private ValidatedFleetRuntime {
+            startupManifest = Objects.requireNonNull(startupManifest, "startupManifest");
+        }
+    }
+
+    /**
+     * Strict durable recovery-fleet runtime policy.
+     *
+     * @param enabled explicit test/staging activation switch
+     * @param fleetId stable deployment-wide fleet and topology identity
+     * @param workerId stable pre-authenticated replica worker identity
+     * @param partitionCount immutable fixed partition count for this fleet identity
+     * @param leaseDurationSeconds database-clock partition lease and heartbeat duration
+     * @param maximumLanesPerCycle bounded number of lanes visited by one acquired partition cycle
+     * @param initialDelayMillis delay before the first background cycle
+     * @param pollIntervalMillis fixed delay after each completed background cycle
+     * @param maximumCycleDurationMillis readiness budget for one bounded cycle
+     * @param drainTimeoutMillis bounded scheduler-thread shutdown wait
+     */
+    @ConfigurationProperties(prefix = FleetProperties.PREFIX, ignoreUnknownFields = false)
+    public record FleetProperties(
+            Boolean enabled,
+            String fleetId,
+            String workerId,
+            Integer partitionCount,
+            Long leaseDurationSeconds,
+            Integer maximumLanesPerCycle,
+            Long initialDelayMillis,
+            Long pollIntervalMillis,
+            Long maximumCycleDurationMillis,
+            Long drainTimeoutMillis) {
+
+        /** Prefix shared by profile configuration, startup tests, and operator documentation. */
+        public static final String PREFIX =
+                "gateway.testing.external-sequence-anchor.bootstrap-root-recovery-fleet";
+
+        /** Applies finite defaults and rejects every enabled partial or unsafe policy. */
+        public FleetProperties {
+            enabled = Boolean.TRUE.equals(enabled);
+            fleetId = normalized(fleetId);
+            workerId = normalized(workerId);
+            partitionCount = partitionCount == null ? 8 : partitionCount;
+            leaseDurationSeconds = defaulted(leaseDurationSeconds, 30L);
+            maximumLanesPerCycle = maximumLanesPerCycle == null
+                    ? 16 : maximumLanesPerCycle;
+            initialDelayMillis = defaulted(initialDelayMillis, 5_000L);
+            pollIntervalMillis = defaulted(pollIntervalMillis, 5_000L);
+            maximumCycleDurationMillis = defaulted(
+                    maximumCycleDurationMillis, 600_000L);
+            drainTimeoutMillis = defaulted(drainTimeoutMillis, 5_000L);
+            try {
+                var manifest = new FleetManifest(FleetManifest.SCHEMA_VERSION,
+                        enabled ? fleetId : "disabled-fleet", 1L,
+                        "sha256:" + "0".repeat(64), partitionCount);
+                var workerPolicy = new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
+                        .Policy(leaseDurationSeconds, maximumLanesPerCycle);
+                new AcquisitionCommand(AcquisitionCommand.SCHEMA_VERSION, manifest,
+                        enabled ? workerId : "disabled-worker", "0".repeat(32),
+                        workerPolicy.leaseDurationSeconds());
+                new ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler.SchedulePolicy(
+                        Duration.ofMillis(initialDelayMillis),
+                        Duration.ofMillis(pollIntervalMillis),
+                        Duration.ofMillis(maximumCycleDurationMillis),
+                        Duration.ofMillis(drainTimeoutMillis));
+                if (enabled && (fleetId.isEmpty() || workerId.isEmpty())) {
+                    throw invalid();
+                }
+            } catch (RuntimeException invalid) {
+                throw invalid();
+            }
+        }
+
+        private ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.Policy workerPolicy() {
+            return new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.Policy(
+                    leaseDurationSeconds, maximumLanesPerCycle);
+        }
+
+        private ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler.SchedulePolicy
+                schedulePolicy() {
+            return new ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler.SchedulePolicy(
+                    Duration.ofMillis(initialDelayMillis),
+                    Duration.ofMillis(pollIntervalMillis),
+                    Duration.ofMillis(maximumCycleDurationMillis),
+                    Duration.ofMillis(drainTimeoutMillis));
+        }
+
+        private static long defaulted(Long value, long fallback) {
+            return value == null ? fallback : value;
+        }
+
+        private static String normalized(String value) {
+            return Objects.requireNonNullElse(value, "").trim();
+        }
+
+        private static IllegalArgumentException invalid() {
+            return new IllegalArgumentException(
+                    "Bootstrap-root recovery fleet runtime configuration is invalid");
+        }
+    }
+}

@@ -493,9 +493,31 @@ scheduler, worker, then caller-owned services/resolvers. Reentrant scheduler clo
 cycle is rejected; concurrent close callers share a completion barrier without holding the cycle
 monitor, preventing shutdown lock inversion.
 
-The default Spring composition remains a single-root authoring runtime, not a new Resource Gateway
-endpoint or deployment-wide worker registry. Local fleet workers retain a process-local cursor.
-Embedders that share the test-runtime database can instead construct a
+The test/staging Spring composition can now install the durable fleet runtime, but it is disabled by
+default and is not a new HTTP endpoint or deployment-wide inventory registry. Contribute exactly one
+caller-owned `ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory` bean, then set
+`RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED=true`, a stable
+`RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ID`, and a per-replica
+`RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID`. Partition count, lease, lane budget, initial delay,
+poll interval, cycle budget, and drain timeout use the adjacent
+`RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_*` settings in `application-test.yml` and
+`application-staging.yml`. The composition preflights inventory/topology before coordinator tables,
+then owns database coordinator, worker, scheduler, and aggregate health. Spring closes scheduler
+before worker and never closes the caller-owned inventory, lane services, resolvers, or database.
+Fleet mode and `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_ENABLED=true` are mutually exclusive; any active
+`production` profile physically removes the fleet composition.
+
+Deployments can replace a self-asserted local lane list with
+`ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority`. Its strict signed
+attestation binds the complete canonical lane descriptors to deployment scope, artifact,
+`fleetId`, fixed partition count, generation, policy, and hard validity window under distinct-authority
+Ed25519 M-of-N verification. Only then are signed lane keys resolved from a reviewed local in-memory
+catalog, and every resolved descriptor must match exactly. Worker admission rechecks the same signed
+generation around each lane and before durable cursor commit; expiry or generation change fails the
+cycle closed. The separate inventory health projection remains aggregate-only and honestly advertises
+that this static mode has no automatic refresh, signed revocation, or durable generation floor.
+
+Embedders that share the test-runtime database can also construct a
 `DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator` and pass it, one stable
 `fleetId`, and one fixed partition count to every worker replica. The coordinator uses database-clock
 partition leases, active-command retry deduplication, generation fencing, exact renewal/completion,
@@ -503,8 +525,9 @@ failure abandonment, and durable per-partition cursors; the worker heartbeats in
 lane execution. A busy coordinator is reported separately from an empty completed inventory. The
 lane journal remains the only execution/write fence.
 
-This is still an explicit Java embedding surface. Signed dynamic resolver inventory
-publication/revocation, online partition rebalance, multi-lane Spring/capability wiring, publisher
+The Spring path still consumes a caller-supplied local inventory; it does not generate or discover
+one. Signed dynamic inventory publication/revocation, online partition rebalance, capability/HTTP
+discovery, production-profile wiring, publisher
 mTLS/client identity and certificate pinning, response-key hot rotation,
 publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
@@ -512,6 +535,13 @@ bundle, and publication HTTP Schemas, failure matrix, runtime wiring, and remain
 are documented in the
 [bootstrap-root ceremony verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md)
 and [recovery fleet kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-kernel-verification.md).
+The signed lane-inventory protocol, runtime reverse binding, hard-expiry fence, health projection, and
+remaining dynamic-control-plane gates are in the
+[recovery fleet signed inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-signed-inventory-verification.md).
+The import/export wire contract is the strict
+[fleet inventory JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-v1.schema.json).
+The profile/configuration/lifecycle contract and H2 context-rebuild proof are in the
+[recovery fleet runtime composition verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-runtime-composition-verification.md).
 
 Scope, cohort, inventory/witness trust, managed-root freshness, external-anchor quorum/timing, and
 lease settings are checked by

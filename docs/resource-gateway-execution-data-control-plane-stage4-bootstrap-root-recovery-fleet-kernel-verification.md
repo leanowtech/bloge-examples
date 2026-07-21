@@ -17,11 +17,16 @@
 - `ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator` 固定分区租约协议；
 - 数据库时钟、整行指纹、fleet/lease 双 epoch 与持久化 per-partition cursor；
 - active acquire command 重试去重、精确 renewal revision、complete/abandon 栅栏；
-- 慢 lane 执行期间的独立 heartbeat，以及跨副本/重建后公平续跑。
+- 慢 lane 执行期间的独立 heartbeat，以及跨副本/重建后公平续跑；
+- deployment-signed inventory attestation、M-of-N Ed25519 static authority 与 exact runtime catalog
+  reverse binding；
+- signed `fleetId/partitionCount` 构造 fence、cycle 内 hard-expiry/generation fence 与 aggregate-only
+  inventory health。
 
-本步不是签名动态 inventory、远端 discovery、动态 rebalance 或生产 fleet 产品。默认 test/staging
-Spring composition 仍只装配一个 root-set lane；coordinator/worker/scheduler/health 是供 embedder 显式
-组合的公共 Java 运行面，尚未形成默认 Spring/capability/配置交付面。
+本步已有可选 static signed inventory 入口，但不是签名动态 publication、远端 refresh/discovery、撤销链、
+durable inventory floor、动态 rebalance 或生产 fleet 产品。默认关闭的 test/staging Spring composition 已能
+消费 caller-owned local inventory 并装配 authority/coordinator/worker/scheduler/health；它尚未形成
+dynamic inventory 自动装配、capability/HTTP 或 production 交付面。
 
 ## 2. 根因
 
@@ -35,6 +40,9 @@ Spring composition 仍只装配一个 root-set lane；coordinator/worker/schedul
 5. 进程内 cursor 在重启后归零，多副本各自轮转会重复扫描热分区并长期遗漏冷分区；
 6. acquire 响应丢失若没有 active-command 重试身份，调用方重试可能再占一个分区；
 7. 只在 lane 之间续租会让单个慢 lane 穿透外层 lease，随后以过期 revision 错误推进 cursor。
+8. replica-local lane 集合仍可被受损副本缩小后自证，无法证明哪一代 inventory 来自部署治理权威；
+9. inventory 与 fleet topology 分开配置会把正确 lane 集接到错误 `fleetId/partitionCount`；
+10. 没有 hard expiry 与 cycle 内代际复核时，旧授权可永久运行或在换代中继续推进旧 cursor。
 
 因此本步先建立强绑定、代际和公平内核，再接签名 inventory 与跨副本控制面；把远端发现直接塞进 worker
 只会重新引入无界 I/O、凭据泄漏和不可审计漂移。
@@ -64,6 +72,19 @@ provider endpoint；它是上层 inventory authority 对已审核 runtime closur
 
 SPI 的 `snapshot()` 必须是已认证、非阻塞、进程内读取。HTTPS 拉取、签名验证、撤销、IAM 和 refresh
 属于 inventory publisher/authority，不允许隐藏在 worker poll 的调用栈中。
+
+### 4.1 Static signed inventory authority
+
+`bloge.externalSequenceAnchorBootstrapRootRecoveryFleetInventoryAttestation.v1` 以 canonical material
+同时绑定 deployment scope、artifact fingerprint、`fleetId`、partition count、generation、0..256 个完整
+sorted `LaneDescriptor`、policy 和 whole-second validity window。distinct authority 使用 Ed25519 M-of-N
+签名；错误/撤销 key、重复 authority、阈值不足、material fingerprint 漂移、非 canonical JSON 与超过
+30 天 lifetime 均 fail closed。
+
+验签完成后只按 signed lane key 从 caller-owned non-blocking local catalog 解析 `Lane`，并把解析结果的
+完整 descriptor 与签名值反向比较。authority 每次 snapshot 重检 hard expiry；worker 构造时绑定 signed
+topology，并在 lane 前后和 durable cursor commit 前复核 exact signed generation。详细协议、嵌入方式和
+反例见 [signed inventory verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-signed-inventory-verification.md)。
 
 ## 5. 公平与有界性
 
@@ -140,6 +161,10 @@ provider cancel；真正的 signer deadline、数据库 lease/fence 和 process 
 no-work 和干净 cycle 均 UP。details 只有固定基数计数、状态和容量参数，不包含 lane key、scope、root-set、
 worker、resolver、fingerprint、endpoint、payload 或 exception。
 
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth` 独立读取 signed authority 的 immutable
+observation，使清单在尚无下一次 scheduler poll 时也能因 expiry 立即 DOWN。它只输出 generation、lane
+count、signature count 和真假 capability，不输出 fleet/lane/policy/fingerprint/key/expiry identity。
+
 ## 8. 嵌入方式
 
 应用先为每个 root-set 独立构造 durable service 与 resolver，再发布 immutable generation：
@@ -185,6 +210,15 @@ try (var worker = new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker(
 
 所有副本必须使用同一 `fleetId`、partition count 和 inventory generation/fingerprint。协调表只存公开
 lane cursor、owner、命令/租约标识和时间，不存 resolver、credential、provider payload 或异常文本。
+若启用 signed authority，worker 构造还会把这两个 topology 值与签名 material 精确比较；完整 JSON
+配置示例见 signed inventory verification。
+
+test/staging 应用可注册一个 local inventory bean，并通过
+`RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED=true` 启用严格 Spring composition。配置会在建表和启动
+scheduler 前完成 inventory/topology preflight，与单 root-set scheduler 互斥，且任何 active
+`production` profile 都会物理移除这些 beans。完整环境变量、ownership、关闭顺序和 H2 context-rebuild
+证明见
+[runtime composition verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-runtime-composition-verification.md)。
 
 ## 9. 验证
 
@@ -223,15 +257,27 @@ test 的隔离数据库建立后读取 `CURRENT_TIMESTAMP`，规整为协议允�
 key lifecycle、proposal、approval、preflight 与 outcome；原 15 项 service 和 27 项 journal 测试因此可在
 任意日期重复执行，生产数据库仍是 lease/deadline 唯一时间权威。
 
-冻结源码的完整 Resource Gateway `clean verify` 执行 3398 tests，0 failures、0 errors、2 skips；
+第十六子步冻结源码的完整 Resource Gateway `clean verify` 执行 3398 tests，0 failures、0 errors、2 skips；
 Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
+
+signed inventory 子步新增 authority 10 项、inventory health 4 项、strict Schema 3 项与 worker 4 项测试，
+共 21 项；signed-inventory/worker 四类聚焦门禁执行 37 tests，0 failures、0 errors、0 skips。新增四个
+public inventory-authority 类型与修改后的 worker 进入严格 JavaDoc 门禁。
+
+runtime composition 子步新增 11 项 Spring/H2 测试，覆盖 profile/default isolation、strict properties、
+mutual exclusion、state-before-table preflight、durable context rebuild、signed authority health 和 close
+ownership。fleet 与既有 single-lane configuration 的联合门禁执行 95 tests；其中 fleet 范围 86 tests，
+均为 0 failures、0 errors、0 skips。11 个相关公共类型通过严格 JavaDoc 门禁，0 warnings、0 errors。
+本增量最终完整 Resource Gateway `clean verify` 执行 3430 tests，0 failures、0 errors、2 skips；Browser DOM
+34 项中 32 项及 browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
 
 ## 10. 仍未宣称
 
-- signed dynamic inventory publication、witness、revocation、hard expiry 与 durable generation floor；
+- signed dynamic inventory publication、witness、revocation、refresh convergence 与 durable generation floor
+  （static signed attestation 与 hard expiry 已闭合）；
 - enterprise IAM/PDP 对 lane membership、worker、resolver 和 runtime fingerprint 的授权；
 - 在线 partition-count 变更、自动 rebalance、priority、带权 fleet-wide fairness 与 rollout jitter；
-- 多 lane Spring composition、capability/Schema/HTTP 和 production profile；
+- dynamic inventory 自动装配、capability/HTTP 和 production profile（test/staging composition 已闭合）；
 - publication fleet、publisher mTLS/pinning、response-key hot rotation 与 anti-equivocation；
 - HSM/KMS custody、provider-confirmed cancellation/process isolation；
 - PostgreSQL/MySQL 并发、multi-region HA、DR/chaos/soak 和外部 SLO 认证。

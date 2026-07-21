@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.CompletionStatus;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.FleetManifest;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.Lease;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.VerifiedBinding;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -39,7 +40,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * coordinator, resumes after that partition's durable cursor, and heartbeats independently of slow
  * lane execution. A fenced completion fails the cycle and leaves the prior cursor for at-least-once
  * replay; a fatal cycle explicitly abandons its latest lease without moving that cursor. Each
- * lane's own ceremony journal remains the execution and write-fencing authority.</p>
+ * lane's own ceremony journal remains the execution and write-fencing authority. When inventory is
+ * supplied by an external signed authority, the worker binds its durable topology and rechecks the
+ * exact authorized generation around every lane and before cursor commit.</p>
  */
 public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
         implements AutoCloseable {
@@ -50,6 +53,7 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
     private final ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator;
     private final String fleetId;
     private final int partitionCount;
+    private final VerifiedBinding inventoryAuthorityBinding;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong cycleCount = new AtomicLong();
     private final AtomicLong cycleFailureCount = new AtomicLong();
@@ -114,6 +118,10 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
         this.inventory = Objects.requireNonNull(inventory, "inventory");
         this.workerId = Objects.requireNonNull(workerId, "workerId");
         this.policy = Objects.requireNonNull(policy, "policy");
+        this.inventoryAuthorityBinding = inventory instanceof
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority authority
+                ? Objects.requireNonNull(authority.verifiedBinding(),
+                "fleet inventory authority binding") : null;
         new ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryAcquisitionCommand(
                 ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryAcquisitionCommand
                         .SCHEMA_VERSION,
@@ -139,6 +147,12 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
                     fleetId, 1L, "sha256:" + "0".repeat(64), partitionCount);
             this.fleetId = validated.fleetId();
             this.partitionCount = validated.partitionCount();
+            if (inventoryAuthorityBinding != null
+                    && (!this.fleetId.equals(inventoryAuthorityBinding.fleetId())
+                    || this.partitionCount != inventoryAuthorityBinding.partitionCount())) {
+                throw new IllegalArgumentException(
+                        "Recovery fleet topology does not match signed inventory authority");
+            }
         }
     }
 
@@ -154,8 +168,10 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
         try {
             Snapshot current = Objects.requireNonNull(inventory.snapshot(), "inventory snapshot");
             accept(current);
+            assertInventoryAuthority(current.generation());
             CycleExecution execution = coordinator == null
                     ? runLocal(current) : runDurable(current);
+            assertInventoryAuthority(current.generation());
             CycleResult completed = new CycleResult(CycleResult.SCHEMA_VERSION,
                     current.generation(), execution.disposition(), execution.lanes());
             lastInventoryGeneration = current.generation();
@@ -177,9 +193,11 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
         int visits = Math.min(policy.maximumLanesPerCycle(), lanes.size());
         int start = indexAfter(lanes, cursorExclusive);
         for (int offset = 0; offset < visits; offset++) {
+            assertInventoryAuthority(current.generation());
             Lane lane = lanes.get((start + offset) % lanes.size());
             try {
                 visit(lane, results);
+                assertInventoryAuthority(current.generation());
             } finally {
                 cursorExclusive = lane.key();
             }
@@ -206,6 +224,7 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
         int start = indexAfter(partitionLanes, acquiredLease.cursorExclusive());
         LeaseHeartbeat heartbeat;
         try {
+            assertInventoryAuthority(current.generation());
             heartbeat = new LeaseHeartbeat(coordinator, acquiredLease);
         } catch (RuntimeException | Error startupFailure) {
             try {
@@ -222,12 +241,15 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
                     heartbeat.renewNow();
                 }
                 heartbeat.assertHealthy();
+                assertInventoryAuthority(current.generation());
                 Lane lane = partitionLanes.get((start + offset) % partitionLanes.size());
                 visit(lane, results);
                 lastAttempted = lane.key();
+                assertInventoryAuthority(current.generation());
                 heartbeat.assertHealthy();
             }
             Lease latest = heartbeat.stop();
+            assertInventoryAuthority(current.generation());
             if (coordinator.complete(latest, lastAttempted) != CompletionStatus.COMPLETED) {
                 throw new IllegalStateException(
                         "Recovery fleet partition completion was fenced");
@@ -241,6 +263,22 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
                 failure.addSuppressed(cleanupFailure);
             }
             throw failure;
+        }
+    }
+
+    private void assertInventoryAuthority(long expectedGeneration) {
+        if (inventory instanceof
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority authority) {
+            var observed = Objects.requireNonNull(
+                    authority.observation(), "fleet inventory authority observation");
+            VerifiedBinding currentBinding = Objects.requireNonNull(
+                    authority.verifiedBinding(), "fleet inventory authority binding");
+            if (!inventoryAuthorityBinding.equals(currentBinding)
+                    || !observed.available()
+                    || observed.generation() != expectedGeneration) {
+                throw new IllegalStateException(
+                        "Recovery fleet signed inventory authorization changed during cycle");
+            }
         }
     }
 

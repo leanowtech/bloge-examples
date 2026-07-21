@@ -47,12 +47,15 @@ publication outbox、顺序 claim/receipt fence、失败退避预算与旧行回
 machine Schema、固定容量调用监督、database-fenced consumer/scheduler 和 authenticated-conflict quarantine
 及 test/staging 单 root-set Spring publication/recovery composition/aggregate health、跨 root-set recovery 的
 进程内强绑定 inventory、generation 防回滚/同代漂移、有界公平 worker、fixed-delay scheduler、停滞预算和
-aggregate health，以及固定分区 durable cursor/sharding/cross-replica fairness 内核现已闭合；企业 IAM/PDP、
-HSM/KMS custody、provider-confirmed cancellation/process isolation、signed dynamic resolver inventory、
-动态 rebalance、多 lane Spring/capability 产品接线、publisher mTLS/pinning、
+aggregate health、固定分区 durable cursor/sharding/cross-replica fairness 内核，以及绑定 deployment/
+artifact/fleet topology/完整 lane descriptor 的 M-of-N static signed inventory authority、hard expiry、runtime
+reverse binding、aggregate inventory health 与 test/staging durable fleet Spring composition 现已闭合；
+企业 IAM/PDP、HSM/KMS custody、provider-confirmed cancellation/process isolation、signed dynamic inventory
+publication/revocation/floor、动态 rebalance、dynamic authority 自动装配/
+capability/production 产品接线、publisher mTLS/pinning、
 response-key 热轮换、根源
 anti-equivocation 与生产认证、HA/chaos/外部 SLO 仍待完成。
-完整 Resource Gateway `clean verify` 执行 3398 tests，0 failures、0 errors、2 个条件浏览器跳过；
+完整 Resource Gateway `clean verify` 执行 3430 tests，0 failures、0 errors、2 个条件浏览器跳过；
 Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功生成 Spring Boot 可执行 JAR；
 独立 test-kit `clean verify`
 执行 230 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR 与 public
@@ -625,9 +628,11 @@ maker/checker journal/coordinator、自动 execution heartbeat、本地 signer/r
 publication outbox、strict signed HTTPS publisher/machine Schema、固定容量调用监督、database-fenced
 consumer/scheduler、authenticated-conflict quarantine 和 test/staging 单 root-set Spring publication/recovery
 composition，以及跨 root-set recovery 的进程内强绑定 inventory/generation/fair-worker/scheduler/health
-runtime 和固定分区 durable cursor/sharding/cross-replica fairness 内核已闭合；
-企业 IAM/PDP、provider-confirmed cancellation/process isolation、signed dynamic resolver inventory、
-动态 rebalance 与多 lane Spring/capability 产品接线、publisher
+runtime、固定分区 durable cursor/sharding/cross-replica fairness 内核和 static signed inventory authority/
+hard-expiry/runtime reverse-binding 入口已闭合；
+企业 IAM/PDP、provider-confirmed cancellation/process isolation、signed dynamic inventory
+publication/revocation/floor、
+动态 rebalance 与 dynamic authority 自动装配/capability/production 产品接线、publisher
 mTLS/pinning、response-key 热轮换、根源 anti-equivocation、KMS/HSM/HA 与跨数据库/DR 认证仍是后续工作。验证见
 [Stage 4 test-secret signed serving-inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-signed-serving-inventory-verification.md)。
 
@@ -1013,6 +1018,58 @@ fail closed、abandon 和慢 lane heartbeat。inventory、coordinator、database
 signed dynamic inventory/floor、在线 rebalance、Spring/capability 产品接线、目标数据库/HA/DR/chaos 或
 生产 SLO 认证。验证见
 [bootstrap-root recovery fleet kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-kernel-verification.md)。
+
+Stage 4 该增量第十七子步根治“cross-replica coordinator 已经可信，但 inventory 仍可由单副本本地缩小、
+换绑或无限期复用”的清单信任根因。新增 strict
+`bloge.externalSequenceAnchorBootstrapRootRecoveryFleetInventoryAttestation.v1`：canonical material 同时
+绑定 independent trust domain、inventory id、单调 generation、deployment scope、artifact fingerprint、
+`fleetId`、固定 partition count、完整 sorted lane descriptor 集、policy 与 hard validity window；0-lane
+清单作为治理 drain 合法。1..32 个 distinct authority 以 Ed25519 M-of-N 签名，material fingerprint、
+canonical order、duplicate/null、signature/key lifecycle、revocation、threshold、signed-at、最多 30 天
+lifetime 和 5 分钟 clock skew 均严格验证；strict JSON 拒绝 unknown/private/duplicate/trailing material。
+
+验签后不从 JSON 构造 runtime port，而是仅按 signed `LaneKey` 查询 caller-owned non-blocking reviewed
+catalog，再把 local `Lane` 的 expected binding、service binding 与 runtime closure fingerprint 全字段反向
+比对。configured authority 每次 observation/snapshot 重检 hard expiry；durable worker 构造时强制 signed
+`fleetId/partitionCount` 与本地 topology 相等，并在每个 lane 前后、heartbeat stop 后 cursor commit 前以及
+空/busy cycle 返回前复核 exact signed generation。过期或换代使 local cycle 在下一 lane 前失败，durable
+cycle 则 abandon 最新 lease 且不推进 cursor。独立 inventory health 只输出 aggregate generation/lane/
+signature count 和真假能力，明确 `automaticRefresh/signedRevocation/durableGenerationFloor=false`。
+
+本子步新增 authority 10 项、inventory health 4 项、strict Schema 3 项和 worker 4 项测试，共 21 项；
+signed-inventory/worker 四类聚焦门禁执行 37 tests，0 failures、0 errors、0 skips。新增 attestation、authority、
+configured authority、inventory health 与修改后的 worker 五个公共类型通过严格 JavaDoc 门禁，0 warnings、
+0 errors。该步只闭合 static signed trust entry，不宣称 strict HTTPS/ETag refresh、`ACTIVE/REVOKED`
+publication chain、independent witness、durable generation/publication floor、全副本 refresh convergence、
+dynamic authority 自动装配、capability/production 接线或生产数据库/HA/DR/chaos 认证。机器合同见
+`external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-v1.schema.json`，验证见
+[bootstrap-root recovery fleet signed inventory verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-signed-inventory-verification.md)。
+
+Stage 4 该增量第十八子步根治“durable fleet 只有 Java embedding API，部署方必须手写 bean 顺序，
+profile、互斥、preflight 与 shutdown ownership 无法统一证明”的产品接线根因。新增严格
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration`：仅在无 `production` 且 active
+`test`/`staging`、显式 fleet `enabled=true` 时出现，默认关闭；fleet mode 与既有单 root-set recovery
+mode 强制互斥。业务必须提供唯一 caller-owned local inventory；配置在创建 coordinator table 和后台线程
+前读取 snapshot，并冻结 `fleetId/generation/fingerprint/partitionCount` manifest。若 inventory 是 signed
+authority，preflight 进一步要求 available、snapshot/observation generation、lane count、fleet id 和
+partition count 精确一致，失败统一脱敏且不留下 stateful table。
+
+默认 bean graph 依次装配 database-clock coordinator、durable worker、fixed-delay scheduler 与 aggregate
+fleet health；signed authority 额外获得独立 inventory health。custom coordinator 必须声明 durable，strict
+properties 拒绝 unknown/private-like 字段和不安全 duration/capacity。Spring dependency destruction 保证
+scheduler 先于 worker 关闭；inventory、lane service/resolver、database 和 mapper 仍由 caller 拥有。真实
+共享 H2 测试证明完整 Spring context 关闭并重建后，per-partition cursor 从下一 lane 续跑，而不是回到头部。
+
+本子步新增 11 项 Spring/H2 测试，覆盖 default/production/mixed-profile isolation、完整 run/health/close、
+context rebuild、缺 inventory、single-lane 冲突、non-durable coordinator、strict property、pre-table
+sanitized failure 和 signed authority preflight。fleet 与既有 single-lane configuration 的联合门禁执行
+95 tests；其中 fleet 范围 86 tests，均为
+0 failures、0 errors、0 skips。11 个相关公共类型通过 `javadoc --release 25 -Werror -Xdoclint:all`；
+完整 Resource Gateway `clean verify` 执行 3430 tests，0 failures、0 errors、2 skips，Browser DOM 34 项中
+32 项及 browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。该步闭合 test/staging
+multi-lane composition，不宣称 dynamic inventory discovery/publication、capability/HTTP、production profile、
+目标数据库/HA/DR/chaos 或外部 SLO 认证。验证见
+[bootstrap-root recovery fleet runtime composition verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-runtime-composition-verification.md)。
 
 第五十三增量第十八子步根治 exact configured cohort 可被本地缩窄后自证的问题。staging cohort 必须
 消费 deployment-owned `bloge.testSuiteStabilityServingInventory.v1`：canonical material 把 trust domain、

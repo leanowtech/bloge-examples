@@ -11,6 +11,8 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.AbandonStatus;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.CompletionStatus;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.Lease;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Observation;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.VerifiedBinding;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.CycleDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.Policy;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTest.lane;
@@ -321,6 +324,106 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest {
     }
 
     @Test
+    void durableWorkerRejectsTopologyThatDoesNotMatchSignedInventoryAuthority() {
+        var authority = mock(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.class);
+        when(authority.verifiedBinding()).thenReturn(new VerifiedBinding(
+                "recovery-prod", "bootstrap-recovery", "sha256:" + "a".repeat(64), 3));
+        var coordinator = durableCoordinator();
+
+        assertThatThrownBy(() -> durableWorker(authority, coordinator, 2, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("signed inventory authority");
+
+        verify(authority, never()).snapshot();
+        verify(coordinator, never()).acquire(any());
+    }
+
+    @Test
+    void signedInventoryExpiryBeforeLocalLanePreventsAnyRecoveryCall() {
+        Lane lane = lane("tenant", "roots-a", 'a');
+        var authority = mock(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.class);
+        when(authority.verifiedBinding()).thenReturn(new VerifiedBinding(
+                "recovery-prod", "bootstrap-recovery", "sha256:" + "a".repeat(64), 1));
+        when(authority.snapshot()).thenReturn(snapshot(7L, lane));
+        AtomicInteger observations = new AtomicInteger();
+        when(authority.observation()).thenAnswer(ignored ->
+                signedObservation(observations.getAndIncrement() == 0, 7L));
+        var worker = worker(authority, 1);
+
+        assertThatThrownBy(worker::runCycle).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("authorization changed");
+
+        verify(lane.service(), never()).recover(anyString(), anyLong(), any());
+        assertThat(worker.runtimeSnapshot()).satisfies(runtime -> {
+            assertThat(runtime.cycleFailureCount()).isOne();
+            assertThat(runtime.laneAttemptCount()).isZero();
+            assertThat(runtime.lastInventoryGeneration()).isZero();
+        });
+    }
+
+    @Test
+    void signedInventoryGenerationChangeDuringLaneAbandonsWithoutAdvancingCursor() {
+        Lane lane = lane("tenant", "roots-a", 'a');
+        var authority = mock(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.class);
+        when(authority.verifiedBinding()).thenReturn(new VerifiedBinding(
+                "recovery-prod", "bootstrap-recovery", "sha256:" + "a".repeat(64), 1));
+        when(authority.snapshot()).thenReturn(snapshot(7L, lane));
+        AtomicReference<Observation> observation = new AtomicReference<>(
+                signedObservation(true, 7L));
+        when(authority.observation()).thenAnswer(ignored -> observation.get());
+        when(lane.service().recover(anyString(), anyLong(), any())).thenAnswer(invocation -> {
+            observation.set(signedObservation(true, 8L));
+            return noWork();
+        });
+        var coordinator = durableCoordinator();
+        when(coordinator.acquire(any(AcquisitionCommand.class))).thenAnswer(invocation ->
+                Acquisition.acquired(lease(invocation.getArgument(0), 0, null)));
+        var worker = durableWorker(authority, coordinator, 1, 1);
+
+        assertThatThrownBy(worker::runCycle).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("authorization changed");
+
+        verify(lane.service()).recover(anyString(), anyLong(), any());
+        verify(coordinator).abandon(any(Lease.class));
+        verify(coordinator, never()).complete(any(), nullable(LaneKey.class));
+        assertThat(worker.runtimeSnapshot()).satisfies(runtime -> {
+            assertThat(runtime.cycleFailureCount()).isOne();
+            assertThat(runtime.lastInventoryGeneration()).isZero();
+        });
+    }
+
+    @Test
+    void signedInventoryBindingChangeAlsoFencesLocalModeBeforePublishingProgress() {
+        Lane lane = lane("tenant", "roots-a", 'a');
+        var authority = mock(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.class);
+        VerifiedBinding initial = new VerifiedBinding(
+                "recovery-prod", "bootstrap-recovery", "sha256:" + "a".repeat(64), 1);
+        AtomicReference<VerifiedBinding> binding = new AtomicReference<>(initial);
+        when(authority.verifiedBinding()).thenAnswer(ignored -> binding.get());
+        when(authority.snapshot()).thenReturn(snapshot(7L, lane));
+        when(authority.observation()).thenReturn(signedObservation(true, 7L));
+        when(lane.service().recover(anyString(), anyLong(), any())).thenAnswer(invocation -> {
+            binding.set(new VerifiedBinding("recovery-prod", "bootstrap-recovery",
+                    "sha256:" + "b".repeat(64), 1));
+            return noWork();
+        });
+        var worker = worker(authority, 1);
+
+        assertThatThrownBy(worker::runCycle).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("authorization changed");
+
+        assertThat(worker.runtimeSnapshot()).satisfies(runtime -> {
+            assertThat(runtime.cycleFailureCount()).isOne();
+            assertThat(runtime.laneAttemptCount()).isOne();
+            assertThat(runtime.lastInventoryGeneration()).isZero();
+        });
+    }
+
+    @Test
     void durableAcquisitionRejectsCoordinatorIdentityDriftBeforePolling() {
         Lane lane = lane("tenant", "roots-a", 'a');
         var coordinator = durableCoordinator();
@@ -511,6 +614,12 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest {
                 current.fleetEpoch(), current.leaseEpoch(), current.leaseToken(),
                 current.workerId(), current.commandId(), current.leaseDurationSeconds(),
                 current.leaseExpiresAt().plusSeconds(1L), current.cursorExclusive());
+    }
+
+    private static Observation signedObservation(boolean available, long generation) {
+        return new Observation(Observation.SCHEMA_VERSION, available,
+                available ? "VERIFIED" : "EXPIRED", "STATIC_SIGNED_ED25519_M_OF_N",
+                generation, 1, java.time.Instant.parse("2026-07-21T01:00:00Z"), 2, 2);
     }
 
     private static Lane partitionLane(
