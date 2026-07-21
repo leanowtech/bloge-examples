@@ -21,9 +21,10 @@
 > Stage 4 recovery-fleet trust-root 状态校正：日常 deployment/witness 运行密钥的原子双根
 > publication、双 bootstrap quorum verifier、数据库 durable generation floor、strict HTTPS/ETag
 > refresh、unknown-key single-flight、aggregate health、dynamic inventory consumer、strict Spring
-> 配置、staging downgrade fence、capability v2、配置 Schema 与 metadata 已闭合，test/staging 产品路径
-> 已开放。默认 external/Byzantine root floor、mTLS/pinning、HSM/KMS、生产数据库/HA/DR/chaos 认证仍未
-> 闭合，因此不能把 test/staging 路径解读为 production readiness。
+> 配置、staging downgrade fence、capability v3、配置 Schema 与 metadata 已闭合，test/staging 产品路径
+> 已开放。默认 external/Byzantine publication/root floor 与两个业务 source 的 pinned mTLS 已闭合；
+> notary/trust/bootstrap-root transport pinning、HSM/KMS、生产数据库/HA/DR/chaos 认证仍未闭合，因此
+> 不能把 test/staging 路径解读为 production readiness。
 
 本轮将 `bloge.fixtureExecutionServices.v1` 作为 `metadata.executionServices` 的严格保留子协议
 落地，在不改变既有 fixture v1 顶层形状的前提下，让调用方以有界 identity scalar map 和 flag
@@ -65,6 +66,16 @@ provider-confirmed cancellation/process isolation、动态 rebalance、productio
 composition、运维配置 metadata/外部告警 SLO、publisher
 mTLS/pinning、response-key 热轮换、根源 anti-equivocation 与生产认证、HA/chaos/外部 SLO
 仍待完成。
+
+本轮进一步把 recovery-fleet 的 publication/witness composite head 与 atomic dual-root head 接入同一
+domain-isolated external sequence anchor port，强制 external-first 后再推进本地 durable floor；staging
+要求 challenge-bound Byzantine quorum、managed notary trust 与 complete-chain bootstrap roots。inventory
+和 managed-root publication source 又分别接入 PKIX + hostname verification + SPKI pinning + mTLS，
+默认 demo resolver 只接受 `env:` secret reference，且两个 source 不得复用同一 client identity 配置。
+capability v3、dynamic configuration v2、严格 external-anchor Schema、Spring metadata/health 和 demo
+preflight 已同步。该能力不覆盖 notary/trust/bootstrap-root endpoint 自身的 pinned mTLS、HSM/KMS、
+publisher/notary HA/gossip 与目标数据库/DR/chaos 认证；验证见
+[recovery fleet transport and non-equivocation verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-transport-and-non-equivocation-verification.md)。
 完整 Resource Gateway `clean verify` 执行 3493 tests，0 failures、0 errors、2 个条件浏览器跳过；
 Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功生成 Spring Boot 可执行 JAR；
 独立 test-kit `clean verify`

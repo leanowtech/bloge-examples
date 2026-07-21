@@ -1,8 +1,10 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
@@ -13,6 +15,9 @@ class VisualCanvasDemoScriptTest {
 
     private static final Path SCRIPT = Path.of("..", "scripts", "visual-canvas-demo.sh")
             .toAbsolutePath().normalize();
+
+    @TempDir
+    private Path temporaryDirectory;
 
     @Test
     void scriptRemainsValidBash() throws Exception {
@@ -188,6 +193,87 @@ class VisualCanvasDemoScriptTest {
         assertThat(output).contains(
                 "Staging recovery fleet requires dynamic witnessed inventory and managed dual trust roots.");
         assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
+    }
+
+    @Test
+    void stagingRecoveryFleetRejectsPublicationTransportDowngradeBeforeBuild()
+            throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().putAll(stagingBase());
+        builder.environment().putAll(Map.ofEntries(
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED", "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_REQUIRED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOTS_ENABLED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOTS_REQUIRED",
+                        "true")));
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Staging recovery-fleet inventory source requires pinned mutual TLS.");
+        assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
+    }
+
+    @Test
+    void stagingRecoveryFleetRejectsSharedPublicationClientIdentityBeforeBuild()
+            throws Exception {
+        Path sharedClient = Files.createFile(temporaryDirectory.resolve("shared-client.p12"));
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().putAll(stagingBase());
+        builder.environment().putAll(Map.ofEntries(
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED", "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_REQUIRED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOTS_ENABLED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOTS_REQUIRED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_ENABLED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_REQUIRED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_CLIENT_KEY_STORE_PATH",
+                        sharedClient.toString()),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF",
+                        "env:RG_RECOVERY_SHARED_CLIENT_PASSWORD"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_SERVER_SPKI_PINS",
+                        "sha256:" + "c".repeat(64)),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_ENABLED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_REQUIRED",
+                        "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_CLIENT_KEY_STORE_PATH",
+                        sharedClient.toString()),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF",
+                        "env:RG_RECOVERY_SHARED_CLIENT_PASSWORD"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_SERVER_SPKI_PINS",
+                        "sha256:" + "d".repeat(64)),
+                Map.entry("RG_RECOVERY_SHARED_CLIENT_PASSWORD", "test-only-secret")));
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Recovery-fleet inventory and trust-root sources require independent client identities.");
+        assertThat(output).doesNotContain("test-only-secret", "Building Resource Gateway",
+                "Starting visual canvas");
     }
 
     private static Map<String, String> stagingBase() {

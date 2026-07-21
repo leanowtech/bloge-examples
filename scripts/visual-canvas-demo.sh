@@ -136,6 +136,26 @@ Environment:
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_SET_ID  required stable root-set identity
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_ROOT_DOMAIN  required bootstrap domain
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_ROOT_DOMAIN  required independent bootstrap domain
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_ENABLED  required true for staging fleet
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_REQUIRED  required true for staging fleet
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_TRUST_STORE_PATH  optional absolute PKCS#12 private roots
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_TRUST_STORE_PASSWORD_REF  required env:VARIABLE with private roots
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_CLIENT_KEY_STORE_PATH  required readable PKCS#12 client identity
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF  required env:VARIABLE reference
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_SERVER_SPKI_PINS  required canonical sha256 pins
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_ENABLED  required independent pinned mTLS source
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_REQUIRED  required true for staging fleet
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_TRUST_STORE_PATH  optional absolute PKCS#12 private roots
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_TRUST_STORE_PASSWORD_REF  required env:VARIABLE with private roots
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_CLIENT_KEY_STORE_PATH  required distinct PKCS#12 client identity
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF  required independent env:VARIABLE reference
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_SERVER_SPKI_PINS  required canonical sha256 pins
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_ENABLED  required true for staging fleet
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_TRUST_DOMAIN  required independent notary domain
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_SET_ID  required stable notary-set identity
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_ENDPOINTS_JSON  required non-empty notary array
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_MANAGED_TRUST_ENABLED  required true for staging fleet
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_BOOTSTRAP_ROOTS_ENABLED  required true for staging fleet
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS  default: 10; 1..300
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS      default: 30; 3..900 and >= 3x heartbeat
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS  default: 86400; 3600..2592000
@@ -170,7 +190,9 @@ validate_managed_external_anchor_trust() {
     local prefix="$1"
     local label="$2"
     local managed_var="${prefix}_MANAGED_TRUST_ENABLED"
+    local managed_required_var="${prefix}_MANAGED_TRUST_REQUIRED"
     local managed_roots_var="${prefix}_BOOTSTRAP_ROOTS_ENABLED"
+    local managed_roots_required_var="${prefix}_BOOTSTRAP_ROOTS_REQUIRED"
     local static_keys_var="${prefix}_AUTHORITY_KEYS_JSON"
     local notary_domain_var="${prefix}_TRUST_DOMAIN"
     local trust_uri_var="${prefix}_TRUST_URI"
@@ -185,11 +207,13 @@ validate_managed_external_anchor_trust() {
     local root_bundle_var="${prefix}_BOOTSTRAP_ROOT_BUNDLE_URI"
     local root_allow_loopback_var="${prefix}_BOOTSTRAP_ROOT_ALLOW_INSECURE_LOOPBACK"
 
-    if ! truthy "${!managed_var:-true}"; then
+    if ! truthy "${!managed_var:-true}" ||
+        ! truthy "${!managed_required_var:-true}"; then
         echo "Staging ${label} external anchor requires managed notary trust." >&2
         return 1
     fi
-    if ! truthy "${!managed_roots_var:-true}"; then
+    if ! truthy "${!managed_roots_var:-true}" ||
+        ! truthy "${!managed_roots_required_var:-true}"; then
         echo "Staging ${label} external anchor requires managed bootstrap-root trust." >&2
         return 1
     fi
@@ -334,6 +358,127 @@ validate_managed_external_anchor_trust() {
     fi
 }
 
+validate_recovery_fleet_transport() {
+    local prefix="$1"
+    local label="$2"
+    local enabled_var="${prefix}_ENABLED"
+    local required_var="${prefix}_REQUIRED"
+    local trust_path_var="${prefix}_TRUST_STORE_PATH"
+    local trust_ref_var="${prefix}_TRUST_STORE_PASSWORD_REF"
+    local client_path_var="${prefix}_CLIENT_KEY_STORE_PATH"
+    local client_ref_var="${prefix}_CLIENT_KEY_STORE_PASSWORD_REF"
+    local pins_var="${prefix}_SERVER_SPKI_PINS"
+
+    if ! truthy "${!enabled_var:-false}" || ! truthy "${!required_var:-true}"; then
+        echo "Staging recovery-fleet ${label} requires pinned mutual TLS." >&2
+        return 1
+    fi
+    if [ -z "${!client_path_var:-}" ] || [ -z "${!client_ref_var:-}" ] ||
+        [ -z "${!pins_var:-}" ] ||
+        { [ -z "${!trust_path_var:-}" ] && [ -n "${!trust_ref_var:-}" ]; } ||
+        { [ -n "${!trust_path_var:-}" ] && [ -z "${!trust_ref_var:-}" ]; }; then
+        echo "Recovery-fleet ${label} transport requires a client identity, pins, and a complete optional trust-store pair." >&2
+        return 1
+    fi
+    case "${!client_path_var}" in
+        /*) ;;
+        *) echo "Recovery-fleet ${label} client key store must use an absolute path." >&2; return 1 ;;
+    esac
+    if [ ! -f "${!client_path_var}" ] || [ ! -r "${!client_path_var}" ]; then
+        echo "Recovery-fleet ${label} client key store is not readable." >&2
+        return 1
+    fi
+    if [ -n "${!trust_path_var:-}" ]; then
+        case "${!trust_path_var}" in
+            /*) ;;
+            *) echo "Recovery-fleet ${label} trust store must use an absolute path." >&2; return 1 ;;
+        esac
+        if [ ! -f "${!trust_path_var}" ] || [ ! -r "${!trust_path_var}" ]; then
+            echo "Recovery-fleet ${label} trust store is not readable." >&2
+            return 1
+        fi
+    fi
+    local client_ref="${!client_ref_var}"
+    if ! printf '%s' "${client_ref}" | grep -Eq '^env:[A-Z][A-Z0-9_]{0,127}$'; then
+        echo "Recovery-fleet ${label} client credential must be an env:VARIABLE reference." >&2
+        return 1
+    fi
+    local client_secret="${client_ref#env:}"
+    if [ -z "${!client_secret:-}" ]; then
+        echo "Recovery-fleet ${label} client credential is unavailable." >&2
+        return 1
+    fi
+    if [ -n "${!trust_ref_var:-}" ]; then
+        local trust_ref="${!trust_ref_var}"
+        if ! printf '%s' "${trust_ref}" | grep -Eq '^env:[A-Z][A-Z0-9_]{0,127}$'; then
+            echo "Recovery-fleet ${label} trust-store credential must be an env:VARIABLE reference." >&2
+            return 1
+        fi
+        local trust_secret="${trust_ref#env:}"
+        if [ -z "${!trust_secret:-}" ]; then
+            echo "Recovery-fleet ${label} trust-store credential is unavailable." >&2
+            return 1
+        fi
+    fi
+    if ! printf '%s' "${!pins_var}" |
+        grep -Eq '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,15}$'; then
+        echo "Recovery-fleet ${label} SPKI pins are invalid." >&2
+        return 1
+    fi
+}
+
+validate_recovery_fleet_external_anchor() {
+    local prefix="RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR"
+    if ! truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_REQUIRED:-true}"; then
+        echo "Staging recovery fleet requires external Byzantine inventory non-equivocation." >&2
+        return 1
+    fi
+    if [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_TRUST_DOMAIN:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_SET_ID:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_MAXIMUM_FAULTS:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_ENDPOINTS_JSON:-}" ]; then
+        echo "Recovery-fleet external anchoring requires trust, quorum, and endpoints." >&2
+        return 1
+    fi
+    if truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_ALLOW_INSECURE_LOOPBACK:-false}"; then
+        echo "Staging recovery-fleet external anchors must use HTTPS." >&2
+        return 1
+    fi
+    if printf '%s\n%s\n' \
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_TRUST_DOMAIN}" \
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_SET_ID}" |
+        grep -Eqv '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+        echo "Recovery-fleet external anchor trust domain or set id is invalid." >&2
+        return 1
+    fi
+    if ! printf '%s' "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_ENDPOINTS_JSON}" |
+        grep -Eq '^\[.+\]$'; then
+        echo "Recovery-fleet external anchor endpoints must be a non-empty JSON array." >&2
+        return 1
+    fi
+    local threshold="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_SIGNATURE_THRESHOLD}"
+    local maximum_faults="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_MAXIMUM_FAULTS}"
+    local minimum_faults="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_MINIMUM_FAULTS:-1}"
+    local timeout_ms="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_TIMEOUT_MS:-3000}"
+    local skew="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_CLOCK_SKEW_SECONDS:-5}"
+    local lifetime="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_EXTERNAL_ANCHOR_MAXIMUM_RECEIPT_LIFETIME_SECONDS:-15}"
+    if printf '%s\n%s\n%s\n%s\n%s\n' "${threshold}" "${maximum_faults}" \
+        "${minimum_faults}" "${timeout_ms}" "${lifetime}" | grep -Eqv '^[1-9][0-9]*$' ||
+        ! printf '%s' "${skew}" | grep -Eq '^(0|[1-9][0-9]*)$' ||
+        [ "${maximum_faults}" -lt 1 ] || [ "${maximum_faults}" -gt 10 ] ||
+        [ "${minimum_faults}" -lt 1 ] || [ "${minimum_faults}" -gt "${maximum_faults}" ] ||
+        [ "${threshold}" -gt 32 ] || [ "${threshold}" -lt $((maximum_faults * 2 + 1)) ] ||
+        [ "${timeout_ms}" -lt 100 ] || [ "${timeout_ms}" -gt 30000 ] ||
+        [ "${skew}" -gt 30 ] || [ "${lifetime}" -gt 60 ] ||
+        [ "${timeout_ms}" -ge $((lifetime * 1000)) ]; then
+        echo "Recovery-fleet external anchor quorum or timing policy is invalid." >&2
+        return 1
+    fi
+    validate_managed_external_anchor_trust "${prefix}" "recovery-fleet"
+}
+
 validate_test_secret_external_anchor() {
     if ! truthy "${RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED:-false}"; then
         return 0
@@ -455,6 +600,22 @@ validate_recovery_fleet_managed_roots() {
         echo "Staging recovery fleet requires dynamic witnessed inventory and managed dual trust roots." >&2
         return 1
     fi
+    validate_recovery_fleet_transport \
+        "RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT" \
+        "inventory source" || return 1
+    validate_recovery_fleet_transport \
+        "RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT" \
+        "trust-root source" || return 1
+    local inventory_client_path="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_CLIENT_KEY_STORE_PATH}"
+    local inventory_client_ref="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF}"
+    local root_client_path="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_CLIENT_KEY_STORE_PATH}"
+    local root_client_ref="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF}"
+    if [ "${inventory_client_path}" = "${root_client_path}" ] &&
+        [ "${inventory_client_ref}" = "${root_client_ref}" ]; then
+        echo "Recovery-fleet inventory and trust-root sources require independent client identities." >&2
+        return 1
+    fi
+    validate_recovery_fleet_external_anchor || return 1
     if [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ID:-}" ] ||
         [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID:-}" ] ||
         [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_SCOPE_ID:-}" ] ||

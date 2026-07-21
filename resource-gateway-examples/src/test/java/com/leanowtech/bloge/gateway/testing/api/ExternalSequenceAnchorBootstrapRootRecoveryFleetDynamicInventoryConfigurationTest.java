@@ -15,12 +15,14 @@ import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.actuate.health.Status;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
@@ -32,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -65,6 +68,9 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
     private KeyPair witness;
     private KeyPair deploymentRoot;
     private KeyPair witnessRoot;
+
+    @TempDir
+    private Path temporaryDirectory;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -113,6 +119,83 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
             }
             assertThat(inventorySource.requests()).isEqualTo(2);
             assertThat(rootSource.requests()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void managedModeAuthenticatesIndependentPinnedMutualTlsSourcesAcrossRestart()
+            throws Exception {
+        var inventoryTls = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "inventory-source");
+        var rootTls = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "trust-root-source");
+        AtomicReference<String> inventoryPeer = new AtomicReference<>();
+        AtomicReference<String> rootPeer = new AtomicReference<>();
+        try (var inventorySource = tlsSource(activePublication(), inventoryTls,
+                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                        .MEDIA_TYPE,
+                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                        .PROTOCOL_HEADER,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication
+                        .SCHEMA_VERSION,
+                "\"publication-1\"", inventoryPeer);
+             var rootSource = tlsSource(trustRootPublication(), rootTls,
+                     DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                             .MEDIA_TYPE,
+                     DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                             .PROTOCOL_HEADER,
+                     ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication
+                             .SCHEMA_VERSION,
+                     "\"root-generation-1\"", rootPeer);
+             var database = database()) {
+            Map<String, Object> properties = managedProperties(
+                    inventorySource.uri().toString(), rootSource.uri().toString());
+            transportProperties(properties, DYNAMIC_PREFIX + "transport.", inventoryTls,
+                    "test:inventory-trust", "test:inventory-client");
+            transportProperties(properties, ROOT_PREFIX + "transport.", rootTls,
+                    "test:root-trust", "test:root-client");
+
+            try (var first = mutualTlsContext(properties, database)) {
+                assertPinnedMutualTlsProjection(first);
+            }
+            try (var rebuilt = mutualTlsContext(properties, database)) {
+                assertPinnedMutualTlsProjection(rebuilt);
+            }
+
+            assertThat(inventoryPeer.get()).contains("CN=recovery-client-inventory-source");
+            assertThat(rootPeer.get()).contains("CN=recovery-client-trust-root-source");
+            assertThat(inventoryPeer.get()).isNotEqualTo(rootPeer.get());
+            assertThat(inventorySource.requests()).isEqualTo(2);
+            assertThat(rootSource.requests()).isEqualTo(2);
+            assertThat(rootFloorTableCount(database)).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void managedModeRejectsSharedPublicationClientIdentityBeforeStateOrNetwork()
+            throws Exception {
+        Map<String, Object> properties = managedProperties(
+                "https://inventory.example/current", "https://roots.example/current");
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "shared-client");
+        transportProperties(properties, DYNAMIC_PREFIX + "transport.", material,
+                "test:shared-trust", "test:shared-client");
+        transportProperties(properties, ROOT_PREFIX + "transport.", material,
+                "test:shared-trust", "test:shared-client");
+        try (var database = database()) {
+            var context = unrefreshedContext(properties, database, null,
+                    List.of(key -> null), null, "test");
+            context.registerBean(RecoveryFleetPublicationTransport.SecretResolver.class,
+                    () -> reference -> RecoveryFleetPublicationTlsFixture.password());
+            try {
+                assertThatThrownBy(context::refresh)
+                        .rootCause().isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("Dynamic recovery-fleet inventory configuration is invalid");
+                assertThat(allRecoveryTables(database)).isZero();
+                assertThat(rootFloorTableCount(database)).isZero();
+            } finally {
+                context.close();
+            }
         }
     }
 
@@ -579,6 +662,90 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                 context.close();
             }
         }
+    }
+
+    private AnnotationConfigApplicationContext mutualTlsContext(
+            Map<String, Object> properties,
+            TestRuntimeDatabase database) {
+        var context = unrefreshedContext(properties, database, null,
+                List.of(key -> null), null, "test");
+        context.registerBean(RecoveryFleetPublicationTransport.SecretResolver.class,
+                () -> reference -> switch (reference) {
+                    case "test:inventory-trust", "test:inventory-client",
+                            "test:root-trust", "test:root-client" ->
+                            RecoveryFleetPublicationTlsFixture.password();
+                    default -> throw new IllegalArgumentException(
+                            "Unexpected publication transport secret reference");
+                });
+        context.refresh();
+        return context;
+    }
+
+    private static void assertPinnedMutualTlsProjection(
+            AnnotationConfigApplicationContext context) {
+        var inventory = context.getBean(
+                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.class);
+        assertThat(inventory.descriptor().properties())
+                .containsEntry("inventorySourceSystemTrustStore", false)
+                .containsEntry("inventorySourcePrivateTrustStore", true)
+                .containsEntry("inventorySourceServerSpkiPinned", true)
+                .containsEntry("inventorySourceMutualTls", true)
+                .containsEntry("trustRootSourceSystemTrustStore", false)
+                .containsEntry("trustRootSourcePrivateTrustStore", true)
+                .containsEntry("trustRootSourceServerSpkiPinned", true)
+                .containsEntry("trustRootSourceMutualTls", true);
+        var capability = ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.project(
+                inventory,
+                context.getBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.class),
+                context.getBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler.class));
+        assertThat(capability.inventorySourceSystemTrustStore()).isFalse();
+        assertThat(capability.inventorySourcePrivateTrustStore()).isTrue();
+        assertThat(capability.inventorySourceServerSpkiPinned()).isTrue();
+        assertThat(capability.inventorySourceMutualTls()).isTrue();
+        assertThat(capability.trustRootSourceSystemTrustStore()).isFalse();
+        assertThat(capability.trustRootSourcePrivateTrustStore()).isTrue();
+        assertThat(capability.trustRootSourceServerSpkiPinned()).isTrue();
+        assertThat(capability.trustRootSourceMutualTls()).isTrue();
+        assertThat(context.getBean(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootHealth.class)
+                .health().getDetails())
+                .containsEntry("sourceSystemTrustStore", false)
+                .containsEntry("sourcePrivateTrustStore", true)
+                .containsEntry("sourceServerSpkiPinned", true)
+                .containsEntry("sourceMutualTls", true);
+    }
+
+    private static void transportProperties(
+            Map<String, Object> properties,
+            String prefix,
+            RecoveryFleetPublicationTlsFixture.Material material,
+            String trustSecretReference,
+            String clientSecretReference) {
+        properties.put(prefix + "enabled", "true");
+        properties.put(prefix + "required", "true");
+        properties.put(prefix + "trust-store-path",
+                material.trustStore().toAbsolutePath().toString());
+        properties.put(prefix + "trust-store-password-ref", trustSecretReference);
+        properties.put(prefix + "client-key-store-path",
+                material.clientKeyStore().toAbsolutePath().toString());
+        properties.put(prefix + "client-key-store-password-ref", clientSecretReference);
+        properties.put(prefix + "server-spki-pins",
+                PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                        material.serverCertificate()));
+    }
+
+    private RecoveryFleetPublicationTlsFixture.Server tlsSource(
+            Object publication,
+            RecoveryFleetPublicationTlsFixture.Material material,
+            String mediaType,
+            String protocolHeader,
+            String protocolVersion,
+            String etag,
+            AtomicReference<String> peer) throws Exception {
+        return RecoveryFleetPublicationTlsFixture.start(
+                material, "/inventory", objectMapper.writeValueAsBytes(publication),
+                Map.of("Content-Type", mediaType, protocolHeader, protocolVersion,
+                        "ETag", etag), peer);
     }
 
     private AnnotationConfigApplicationContext context(

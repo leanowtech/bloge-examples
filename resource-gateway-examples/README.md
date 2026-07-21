@@ -548,14 +548,17 @@ inventory is reverified, including on a source `304`; disjoint replacement roots
 cached inventory instead of extending its trust. The test/staging Spring path now exposes this as a
 product mode under `bootstrap-root-recovery-fleet-dynamic-inventory.trust-roots`. Managed mode
 forbids every static runtime domain, threshold, and key; owns a separate durable root floor and
-aggregate health indicator; and closes inventory before roots. Staging requires both dynamic
-inventory and managed roots, two distinct HTTPS sources, and no insecure loopback. Test retains the
-static path for migration. The demo script checks the same downgrade invariants before build, while
-Spring remains the authoritative gate. See the
+aggregate health indicator; and closes inventory before roots. Staging requires dynamic inventory,
+managed roots, independent pinned-mTLS client identities for both sources, external Byzantine
+ordering for the publication and atomic-root streams, and no insecure loopback. Test retains the
+system-trust/static compatibility paths for migration. The demo script checks the same downgrade
+invariants before build, while Spring remains the authoritative gate. See the
 [recovery fleet trust-root kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-trust-root-kernel-verification.md)
 and [dynamic trust-root verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-trust-root-verification.md), the
 [managed trust-root Spring verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-managed-trust-root-spring-verification.md), plus the strict
-[dynamic inventory Spring configuration JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-dynamic-inventory-configuration-v1.schema.json),
+[dynamic inventory Spring configuration v2 JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-dynamic-inventory-configuration-v2.schema.json),
+[external anchor configuration JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-external-anchor-configuration-v1.schema.json),
+[transport and non-equivocation verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-transport-and-non-equivocation-verification.md),
 [trust-root publication JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-trust-root-publication-v1.schema.json)
 and [dynamic snapshot JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-dynamic-trust-root-snapshot-v1.schema.json).
 
@@ -581,11 +584,12 @@ The Spring path does not generate trust roots or discover lane runtimes. The exi
 `GET /api/integration/capabilities` endpoint now publishes an identity-free, versioned recovery-fleet
 state machine and conservative boolean projections. Capability v1 remains frozen; v2 adds managed
 root availability/status/sequence, atomic dual-root and floor strength, plus combined
-non-equivocation claims. Its probe reads only startup-frozen bean
+non-equivocation claims; v3 adds separate aggregate transport-authentication facts for inventory and
+managed-root sources. Its probe reads only startup-frozen bean
 candidates and fresh process-local snapshots; it does not perform bootstrap I/O. Online partition
-rebalance, external fleet-wide alert/convergence wiring, production-profile wiring, publisher
-mTLS/client identity and certificate pinning, response-key hot rotation,
-publisher HA/anti-equivocation, target-database/DR/chaos certification,
+rebalance, external fleet-wide alert/convergence wiring, production-profile wiring, pinned mTLS for
+notary/trust/bootstrap-root endpoints, response-key hot rotation, publisher/notary HA and gossip
+certification, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
 bundle, and publication HTTP Schemas, failure matrix, runtime wiring, and remaining ceremony limits
 are documented in the
@@ -611,7 +615,8 @@ The capability state machine, strict Schema, no-I/O projection, compatibility, a
 are in the
 [recovery fleet capability verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-capability-verification.md),
 with its current machine contract in the
-[recovery fleet capability v2 JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v2.schema.json)
+[recovery fleet capability v3 JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v3.schema.json), the frozen
+[v2 JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v2.schema.json),
 and the frozen
 [v1 JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v1.schema.json).
 
