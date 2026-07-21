@@ -336,6 +336,8 @@ public record IntegrationCapabilities(
                 TestSuiteStabilityObservationExternalArchiveReconciliationHealth.SCHEMA_VERSION_V1,
                 TestSuiteStabilityObservationExternalArchiveReconciliationHealth.SCHEMA_VERSION));
         objects.put("externalSequenceAnchorBootstrapRootRecoveryFleetCapability", List.of(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION_V1,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION_V2,
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION));
         if (testExecutionEndpointEnabled) {
             objects.put("testExecutionRequest", List.of(

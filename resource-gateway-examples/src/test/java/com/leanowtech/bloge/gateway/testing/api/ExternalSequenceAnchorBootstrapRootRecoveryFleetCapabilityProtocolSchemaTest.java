@@ -54,7 +54,7 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
         String source = Files.readString(schemaPath());
         JsonNode schema = objectMapper.readTree(source);
 
-        assertThat(schema.path("allOf")).hasSize(20);
+        assertThat(schema.path("allOf")).hasSize(26);
         assertThat(schema.at("/allOf/1/then/properties/status/const").asText())
                 .isEqualTo("READY");
         assertThat(schema.at(
@@ -83,9 +83,19 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
                 .isTrue();
         for (String forbidden : new String[]{"deploymentScopeId", "fleetId", "laneKey",
                 "endpoint", "policyFingerprint", "materialFingerprint", "privateKey",
-                "credential", "payload", "exception"}) {
+                "credential", "trustStorePath", "clientKeyStorePath", "serverSpkiPins",
+                "payload", "exception"}) {
             assertThat(source).doesNotContain("\"" + forbidden + "\"");
         }
+        assertThat(schema.at(
+                "/allOf/20/then/oneOf/0/properties/inventorySourceSystemTrustStore/const")
+                .asBoolean()).isTrue();
+        assertThat(schema.at(
+                "/allOf/21/then/properties/inventorySourceServerSpkiPinned/const")
+                .asBoolean()).isTrue();
+        assertThat(schema.at(
+                "/allOf/23/then/oneOf/1/properties/trustRootSourcePrivateTrustStore/const")
+                .asBoolean()).isTrue();
     }
 
     @Test
@@ -97,6 +107,19 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
                         .SCHEMA_VERSION_V1);
         assertThat(legacy.path("properties").has("managedTrustRootRefresh")).isFalse();
         assertThat(legacy.path("properties").has("managedTrustRootStatus")).isFalse();
+        assertThat(legacy.path("additionalProperties").asBoolean()).isFalse();
+    }
+
+    @Test
+    void legacyV2SchemaRemainsFrozenWithoutTransportAuthenticationFields() throws Exception {
+        JsonNode legacy = objectMapper.readTree(Files.readString(legacyV2SchemaPath()));
+
+        assertThat(legacy.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability
+                        .SCHEMA_VERSION_V2);
+        assertThat(legacy.path("properties").has("managedTrustRootRefresh")).isTrue();
+        assertThat(legacy.path("properties").has("inventorySourceMutualTls")).isFalse();
+        assertThat(legacy.path("properties").has("trustRootSourceServerSpkiPinned")).isFalse();
         assertThat(legacy.path("additionalProperties").asBoolean()).isFalse();
     }
 
@@ -113,6 +136,11 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
     }
 
     private static Path schemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v3.schema.json");
+    }
+
+    private static Path legacyV2SchemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v2.schema.json");
     }

@@ -60,6 +60,12 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrus
             details.put("byzantineQuorumNonEquivocation",
                     snapshot.byzantineQuorumNonEquivocation());
             details.put("automaticRefresh", snapshot.automaticRefresh());
+            RecoveryFleetPublicationTransport.Descriptor transport =
+                    authority.transportDescriptor();
+            details.put("sourceSystemTrustStore", transport.systemTrustStore());
+            details.put("sourcePrivateTrustStore", transport.privateTrustStore());
+            details.put("sourceServerSpkiPinned", transport.serverSpkiPinned());
+            details.put("sourceMutualTls", transport.mutualTls());
             return (snapshot.available() ? Health.up() : Health.down())
                     .withDetails(Map.copyOf(details)).build();
         } catch (RuntimeException unavailable) {

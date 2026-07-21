@@ -92,6 +92,10 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
                 throw FleetProperties.invalid();
             }
             if (environment.acceptsProfiles(Profiles.of("staging"))
+                    && !dynamicInventory.externalAnchor().required()) {
+                throw FleetProperties.invalid();
+            }
+            if (environment.acceptsProfiles(Profiles.of("staging"))
                     && !sloProperties.enabled()) {
                 throw FleetProperties.invalid();
             }

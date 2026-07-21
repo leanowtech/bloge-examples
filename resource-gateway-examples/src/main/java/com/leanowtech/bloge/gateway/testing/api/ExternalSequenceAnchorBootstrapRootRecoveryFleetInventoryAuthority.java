@@ -32,7 +32,11 @@ public interface ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthor
             "managedTrustRootSequence", "atomicDualTrustRootPublication",
             "durableTrustRootFloor", "externallyAnchoredTrustRootFloor",
             "byzantineQuorumAnchoredTrustRootFloor", "externalInventoryNonEquivocation",
-            "byzantineQuorumInventoryNonEquivocation");
+            "byzantineQuorumInventoryNonEquivocation",
+            "inventorySourceSystemTrustStore", "inventorySourcePrivateTrustStore",
+            "inventorySourceServerSpkiPinned", "inventorySourceMutualTls",
+            "trustRootSourceSystemTrustStore", "trustRootSourcePrivateTrustStore",
+            "trustRootSourceServerSpkiPinned", "trustRootSourceMutualTls");
 
     /**
      * Returns current verified authority state without network or database I/O.

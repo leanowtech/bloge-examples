@@ -56,6 +56,8 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
     private static final String ROOT_PREFIX =
             ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
                     .ManagedTrustRootProperties.PREFIX + ".";
+    private static final String EXTERNAL_PREFIX =
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties.PREFIX + ".";
 
     private ObjectMapper objectMapper;
     private Instant now;
@@ -111,6 +113,91 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
             }
             assertThat(inventorySource.requests()).isEqualTo(2);
             assertThat(rootSource.requests()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void customExternalAnchorWrapsBothManagedStreamsAndProjectsCombinedByzantineTruth()
+            throws Exception {
+        try (var inventorySource = source(activePublication());
+             var rootSource = rootSource(trustRootPublication());
+             var database = database()) {
+            Map<String, Object> properties = managedProperties(
+                    inventorySource.uri(), rootSource.uri());
+            externalProperties(properties, 0, 0);
+            RecordingExternalAnchor anchor = new RecordingExternalAnchor(true);
+            var context = unrefreshedContext(properties, database, null,
+                    List.of(key -> null), null, "test");
+            context.registerBean(
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor.class,
+                    () -> anchor);
+            context.refresh();
+            try {
+                var inventory = context.getBean(
+                        DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                                .class);
+                assertThat(anchor.heads).extracting(
+                        TestSuiteStabilityExternalSequenceAnchor.Head::streamKind)
+                        .containsExactly(
+                                TestSuiteStabilityExternalSequenceAnchor.StreamKind
+                                        .SERVING_INVENTORY_TRUST_ROOT,
+                                TestSuiteStabilityExternalSequenceAnchor.StreamKind
+                                        .SERVING_INVENTORY_PUBLICATION);
+                assertThat(inventory.descriptor().properties())
+                        .containsEntry("externallyAnchoredPublicationFloor", true)
+                        .containsEntry("byzantineQuorumAnchoredPublicationFloor", true)
+                        .containsEntry("externallyAnchoredTrustRootFloor", true)
+                        .containsEntry("byzantineQuorumAnchoredTrustRootFloor", true)
+                        .containsEntry("externalInventoryNonEquivocation", true)
+                        .containsEntry("byzantineQuorumInventoryNonEquivocation", true);
+                assertThat(context.getBean(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
+                                .class).externallyAnchored()).isTrue();
+                assertThat(context.getBean(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor
+                                .class).byzantineQuorumAnchored()).isTrue();
+                var anchorHealth = context.getBean(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchorHealth
+                                .class).health();
+                assertThat(anchorHealth.getStatus()).isEqualTo(Status.UP);
+                assertThat(anchorHealth.getDetails().toString())
+                        .doesNotContain("endpoint", "stream", "fingerprint", "authorityId", "key");
+                assertThat(inventorySource.requests()).isOne();
+                assertThat(rootSource.requests()).isOne();
+            } finally {
+                context.close();
+            }
+        }
+    }
+
+    @Test
+    void configuredByzantinePolicyRejectsCrashFaultOnlyCustomAnchorBeforeNetworkOrState()
+            throws Exception {
+        try (var inventorySource = source(activePublication());
+             var rootSource = rootSource(trustRootPublication());
+             var database = database()) {
+            Map<String, Object> properties = managedProperties(
+                    inventorySource.uri(), rootSource.uri());
+            externalProperties(properties, 1, 1);
+            RecordingExternalAnchor anchor = new RecordingExternalAnchor(false);
+            var context = unrefreshedContext(properties, database, null,
+                    List.of(key -> null), null, "test");
+            context.registerBean(
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor.class,
+                    () -> anchor);
+            try {
+                assertThatThrownBy(context::refresh)
+                        .rootCause().isInstanceOf(IllegalStateException.class)
+                        .hasMessage(
+                                "Recovery-fleet external non-equivocation anchor is unavailable "
+                                        + "or unsafe");
+                assertThat(anchor.heads).isEmpty();
+                assertThat(inventorySource.requests()).isZero();
+                assertThat(rootSource.requests()).isZero();
+                assertThat(allRecoveryTables(database)).isZero();
+            } finally {
+                context.close();
+            }
         }
     }
 
@@ -361,7 +448,7 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                 assertThatThrownBy(context::refresh)
                         .rootCause().isInstanceOf(IllegalArgumentException.class)
                         .hasMessage(
-                                "Dynamic recovery-fleet inventory configuration is invalid");
+                                "Bootstrap-root recovery fleet runtime configuration is invalid");
                 assertThat(rootSource.requests()).isZero();
                 assertThat(allRecoveryTables(database)).isZero();
                 assertThat(rootFloorTableCount(database)).isZero();
@@ -616,6 +703,29 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         return properties;
     }
 
+    private void externalProperties(
+            Map<String, Object> properties,
+            int maximumFaults,
+            int minimumFaults) throws Exception {
+        properties.put(EXTERNAL_PREFIX + "enabled", "true");
+        properties.put(EXTERNAL_PREFIX + "required", "true");
+        properties.put(EXTERNAL_PREFIX + "trust-domain", "recovery-notary.example");
+        properties.put(EXTERNAL_PREFIX + "anchor-set-id", "recovery-notaries");
+        properties.put(EXTERNAL_PREFIX + "signature-threshold",
+                maximumFaults > 0 ? "3" : "1");
+        properties.put(EXTERNAL_PREFIX + "maximum-faults", maximumFaults);
+        properties.put(EXTERNAL_PREFIX + "minimum-faults", minimumFaults);
+        properties.put(EXTERNAL_PREFIX + "authority-keys-json",
+                keysJson("notary", "notary-key", deploymentRoot));
+        properties.put(EXTERNAL_PREFIX + "endpoints-json",
+                "[{\"authorityId\":\"notary\",\"failureDomain\":\"zone-a\","
+                        + "\"uri\":\"http://127.0.0.1:1/checkpoint\"}]");
+        properties.put(EXTERNAL_PREFIX + "request-timeout-millis", "1000");
+        properties.put(EXTERNAL_PREFIX + "clock-skew-seconds", "5");
+        properties.put(EXTERNAL_PREFIX + "maximum-receipt-lifetime-seconds", "15");
+        properties.put(EXTERNAL_PREFIX + "allow-insecure-loopback", "true");
+    }
+
     private static void assertManagedRuntime(
             AnnotationConfigApplicationContext context,
             DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority inventory,
@@ -863,6 +973,41 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         @Override
         public void close() {
             server.stop(0);
+        }
+    }
+
+    private static final class RecordingExternalAnchor
+            implements ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor {
+
+        private final boolean byzantine;
+        private final List<TestSuiteStabilityExternalSequenceAnchor.Head> heads =
+                new java.util.ArrayList<>();
+
+        private RecordingExternalAnchor(boolean byzantine) {
+            this.byzantine = byzantine;
+        }
+
+        @Override
+        public void accept(TestSuiteStabilityExternalSequenceAnchor.Head head) {
+            heads.add(head);
+        }
+
+        @Override
+        public TestSuiteStabilityExternalSequenceAnchor.Descriptor descriptor() {
+            int authorities = byzantine ? 4 : 1;
+            return new TestSuiteStabilityExternalSequenceAnchor.Descriptor(
+                    TestSuiteStabilityExternalSequenceAnchor.Descriptor.SCHEMA_VERSION,
+                    true, true, true, byzantine, authorities, byzantine ? 3 : 1,
+                    byzantine ? 1 : 0, authorities, Map.of());
+        }
+
+        @Override
+        public TestSuiteStabilityExternalSequenceAnchor.Snapshot snapshot() {
+            int authorities = byzantine ? 4 : 1;
+            return new TestSuiteStabilityExternalSequenceAnchor.Snapshot(
+                    TestSuiteStabilityExternalSequenceAnchor.Snapshot.SCHEMA_VERSION,
+                    true, "HEALTHY", null, heads.size(), 0, 0, authorities,
+                    byzantine ? 3 : 1, byzantine ? 1 : 0, authorities);
         }
     }
 }

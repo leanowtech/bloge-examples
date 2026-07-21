@@ -73,6 +73,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
             witnessRootKeys;
     private final ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor floor;
     private final Settings settings;
+    private final RecoveryFleetPublicationTransport.Descriptor transportDescriptor;
     private final DocumentFetcher fetcher;
     private final Object refreshLock = new Object();
     private final ScheduledThreadPoolExecutor scheduler;
@@ -110,9 +111,46 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                     witnessRootKeys,
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor floor,
             Settings settings) {
+        this(objectMapper, binding, acceptedPolicyFingerprints,
+                deploymentRootSignatureThreshold, deploymentRootKeys,
+                witnessRootSignatureThreshold, witnessRootKeys, floor, settings,
+                new SystemTrustRecoveryFleetPublicationTransport());
+    }
+
+    /**
+     * Bootstraps the managed key-set source over one explicit server/client trust policy.
+     *
+     * @param objectMapper application protocol mapper
+     * @param binding exact local trust-root publication binding
+     * @param acceptedPolicyFingerprints accepted key-rotation policy revisions
+     * @param deploymentRootSignatureThreshold deployment bootstrap-root threshold
+     * @param deploymentRootKeys deployment bootstrap public keys
+     * @param witnessRootSignatureThreshold independent witness bootstrap-root threshold
+     * @param witnessRootKeys witness bootstrap public keys
+     * @param floor durable key-set publication floor
+     * @param settings bounded HTTPS refresh settings
+     * @param transport server authentication and client-identity policy
+     */
+    public DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority(
+            ObjectMapper objectMapper,
+            ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                    .ExpectedBinding binding,
+            Set<String> acceptedPolicyFingerprints,
+            int deploymentRootSignatureThreshold,
+            List<ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                    .AuthorityKey>
+                    deploymentRootKeys,
+            int witnessRootSignatureThreshold,
+            List<ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                    .AuthorityKey>
+                    witnessRootKeys,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor floor,
+            Settings settings,
+            RecoveryFleetPublicationTransport transport) {
         this(objectMapper, Clock.systemUTC(), binding, acceptedPolicyFingerprints,
                 deploymentRootSignatureThreshold, deploymentRootKeys,
-                witnessRootSignatureThreshold, witnessRootKeys, floor, settings, null, true);
+                witnessRootSignatureThreshold, witnessRootKeys, floor, settings, transport,
+                null, true);
     }
 
     DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority(
@@ -131,6 +169,31 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                     witnessRootKeys,
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor floor,
             Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler) {
+        this(objectMapper, clock, binding, acceptedPolicyFingerprints,
+                deploymentRootSignatureThreshold, deploymentRootKeys,
+                witnessRootSignatureThreshold, witnessRootKeys, floor, settings,
+                new SystemTrustRecoveryFleetPublicationTransport(), fetcher, startScheduler);
+    }
+
+    DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                    .ExpectedBinding binding,
+            Set<String> acceptedPolicyFingerprints,
+            int deploymentRootSignatureThreshold,
+            List<ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                    .AuthorityKey>
+                    deploymentRootKeys,
+            int witnessRootSignatureThreshold,
+            List<ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                    .AuthorityKey>
+                    witnessRootKeys,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor floor,
+            Settings settings,
+            RecoveryFleetPublicationTransport transport,
             DocumentFetcher fetcher,
             boolean startScheduler) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper").copy()
@@ -153,7 +216,12 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                     "Dynamic recovery-fleet inventory trust roots require a durable floor");
         }
         this.settings = Objects.requireNonNull(settings, "settings").validated();
-        this.fetcher = fetcher == null ? new HttpDocumentFetcher(this.settings) : fetcher;
+        RecoveryFleetPublicationTransport requiredTransport = Objects.requireNonNull(
+                transport, "transport");
+        this.transportDescriptor = Objects.requireNonNull(
+                requiredTransport.descriptor(), "transport descriptor");
+        this.fetcher = fetcher == null
+                ? new HttpDocumentFetcher(this.settings, requiredTransport) : fetcher;
         if (!refresh() || !usable(state, clock.instant())) {
             throw new IllegalStateException(
                     "Dynamic recovery-fleet inventory trust-root bootstrap is unavailable");
@@ -245,6 +313,15 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
      */
     public Snapshot snapshot() {
         return runtimeView().snapshot();
+    }
+
+    /**
+     * Returns aggregate source-transport trust without paths, pins, identities, or credentials.
+     *
+     * @return immutable transport security projection
+     */
+    public RecoveryFleetPublicationTransport.Descriptor transportDescriptor() {
+        return transportDescriptor;
     }
 
     /** Returns aggregate readiness and its private generation from one immutable state read. */
@@ -638,9 +715,11 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
     private static final class HttpDocumentFetcher implements DocumentFetcher {
         private final HttpClient client;
 
-        private HttpDocumentFetcher(Settings settings) {
-            client = HttpClient.newBuilder().connectTimeout(settings.requestTimeout())
-                    .followRedirects(HttpClient.Redirect.NEVER).build();
+        private HttpDocumentFetcher(
+                Settings settings,
+                RecoveryFleetPublicationTransport transport) {
+            client = Objects.requireNonNull(transport, "transport")
+                    .client(settings.requestTimeout());
         }
 
         @Override

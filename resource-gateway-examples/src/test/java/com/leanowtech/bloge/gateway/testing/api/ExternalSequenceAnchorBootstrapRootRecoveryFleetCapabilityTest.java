@@ -200,7 +200,15 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityTest {
                         Map.entry("externallyAnchoredTrustRootFloor", true),
                         Map.entry("byzantineQuorumAnchoredTrustRootFloor", true),
                         Map.entry("externalInventoryNonEquivocation", true),
-                        Map.entry("byzantineQuorumInventoryNonEquivocation", true)));
+                        Map.entry("byzantineQuorumInventoryNonEquivocation", true),
+                        Map.entry("inventorySourceSystemTrustStore", true),
+                        Map.entry("inventorySourcePrivateTrustStore", false),
+                        Map.entry("inventorySourceServerSpkiPinned", false),
+                        Map.entry("inventorySourceMutualTls", false),
+                        Map.entry("trustRootSourceSystemTrustStore", true),
+                        Map.entry("trustRootSourcePrivateTrustStore", false),
+                        Map.entry("trustRootSourceServerSpkiPinned", false),
+                        Map.entry("trustRootSourceMutualTls", false)));
     }
 
     private static RuntimeSnapshot readyWorker() {

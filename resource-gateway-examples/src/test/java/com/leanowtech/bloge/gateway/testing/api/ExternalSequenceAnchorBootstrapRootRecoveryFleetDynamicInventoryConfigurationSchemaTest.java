@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
 import java.lang.reflect.RecordComponent;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Enumeration;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -21,6 +23,16 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
     private static final String ROOT_PREFIX =
             ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
                     .ManagedTrustRootProperties.PREFIX;
+    private static final String TRANSPORT_PREFIX = PREFIX + ".transport";
+    private static final String ROOT_TRANSPORT_PREFIX = ROOT_PREFIX + ".transport";
+    private static final String EXTERNAL_PREFIX =
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties.PREFIX;
+    private static final String MANAGED_NOTARY_PREFIX =
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                    .ManagedTrustProperties.PREFIX;
+    private static final String BOOTSTRAP_ROOT_PREFIX =
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                    .BootstrapRootProperties.PREFIX;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -36,9 +48,36 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                 .containsExactlyInAnyOrderElementsOf(recordProperties(
                         ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
                                 .ManagedTrustRootProperties.class));
+        assertThat(propertyNames(schema.at("/$defs/publicationTransport/properties")))
+                .containsExactlyInAnyOrderElementsOf(recordProperties(
+                        RecoveryFleetPublicationTransportProperties.class));
         assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(schema.at("/$defs/managedTrustRoots/additionalProperties").asBoolean())
                 .isFalse();
+        assertThat(schema.at("/$defs/publicationTransport/additionalProperties").asBoolean())
+                .isFalse();
+    }
+
+    @Test
+    void externalAnchorSchemaExactlyMatchesAllThreeStrictNestedPropertyRecords()
+            throws Exception {
+        JsonNode schema = externalSchema();
+
+        assertThat(propertyNames(schema.path("properties")))
+                .containsExactlyInAnyOrderElementsOf(recordProperties(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                                .class));
+        assertThat(propertyNames(schema.at("/$defs/managedTrust/properties")))
+                .containsExactlyInAnyOrderElementsOf(recordProperties(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                                .ManagedTrustProperties.class));
+        assertThat(propertyNames(schema.at("/$defs/bootstrapRoots/properties")))
+                .containsExactlyInAnyOrderElementsOf(recordProperties(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                                .BootstrapRootProperties.class));
+        assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(schema.at("/$defs/managedTrust/additionalProperties").asBoolean()).isFalse();
+        assertThat(schema.at("/$defs/bootstrapRoots/additionalProperties").asBoolean()).isFalse();
     }
 
     @Test
@@ -47,6 +86,7 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
 
         assertThat(schema.path("allOf")).hasSize(4);
         assertThat(schema.at("/$defs/managedTrustRoots/allOf")).hasSize(2);
+        assertThat(schema.at("/$defs/publicationTransport/allOf")).hasSize(3);
         assertThat(schema.at("/allOf/2/then/properties/signature-threshold/minimum")
                 .asInt()).isOne();
         assertThat(schema.at("/allOf/3/then/properties/signature-threshold/const")
@@ -59,39 +99,78 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                 .isEqualTo(30_000);
         assertThat(schema.at("/$defs/managedTrustRoots/properties/maximum-snapshot-age-seconds/maximum")
                 .asInt()).isEqualTo(86_400);
+        assertThat(schema.at(
+                "/$defs/publicationTransport/allOf/0/then/properties/enabled/const")
+                .asBoolean()).isTrue();
+        assertThat(schema.at(
+                "/$defs/publicationTransport/allOf/1/then/properties/server-spki-pins/const")
+                .asText()).isEmpty();
+        assertThat(schema.at(
+                "/$defs/publicationTransport/allOf/2/then/properties/server-spki-pins/minLength")
+                .asInt()).isEqualTo(71);
     }
 
     @Test
     void Java25BuildPublishesDocumentedNestedSpringConfigurationMetadata() throws Exception {
-        try (InputStream input = getClass().getClassLoader().getResourceAsStream(
-                "META-INF/spring-configuration-metadata.json")) {
-            assertThat(input).as("generated Spring configuration metadata").isNotNull();
-            JsonNode metadata = objectMapper.readTree(input);
-            Set<String> groups = metadata.path("groups").valueStream()
-                    .map(value -> value.path("name").asText()).collect(Collectors.toSet());
-            assertThat(groups).contains(PREFIX, ROOT_PREFIX);
+        JsonNode metadata = projectConfigurationMetadata();
+        Set<String> groups = metadata.path("groups").valueStream()
+                .map(value -> value.path("name").asText()).collect(Collectors.toSet());
+        assertThat(groups).contains(PREFIX, ROOT_PREFIX, TRANSPORT_PREFIX,
+                ROOT_TRANSPORT_PREFIX, EXTERNAL_PREFIX,
+                MANAGED_NOTARY_PREFIX, BOOTSTRAP_ROOT_PREFIX);
 
-            var properties = metadata.path("properties").valueStream()
-                    .filter(value -> value.path("name").asText().startsWith(PREFIX + "."))
-                    .toList();
-            int expectedProperties = ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
-                    .DynamicInventoryProperties.class.getRecordComponents().length
-                    + ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
-                    .ManagedTrustRootProperties.class.getRecordComponents().length - 1;
-            assertThat(properties).hasSize(expectedProperties);
-            assertThat(properties)
-                    .allSatisfy(value -> assertThat(value.path("description").asText())
-                            .isNotBlank());
-            assertThat(properties.stream().map(value -> value.path("name").asText()))
-                    .contains(ROOT_PREFIX + ".enabled",
-                            ROOT_PREFIX + ".deployment-root-authority-keys-json",
-                            ROOT_PREFIX + ".unknown-key-refresh-interval-seconds");
+        var properties = metadata.path("properties").valueStream()
+                .filter(value -> value.path("name").asText().startsWith(PREFIX + "."))
+                .toList();
+        int expectedProperties = ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                .DynamicInventoryProperties.class.getRecordComponents().length
+                + ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                .ManagedTrustRootProperties.class.getRecordComponents().length
+                + ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                .class.getRecordComponents().length
+                + ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                .ManagedTrustProperties.class.getRecordComponents().length
+                + ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                .BootstrapRootProperties.class.getRecordComponents().length
+                + 2 * RecoveryFleetPublicationTransportProperties.class
+                .getRecordComponents().length - 6;
+        assertThat(properties).hasSize(expectedProperties);
+        assertThat(properties)
+                .allSatisfy(value -> assertThat(value.path("description").asText())
+                        .isNotBlank());
+        assertThat(properties.stream().map(value -> value.path("name").asText()))
+                .contains(ROOT_PREFIX + ".enabled",
+                        ROOT_PREFIX + ".deployment-root-authority-keys-json",
+                        ROOT_PREFIX + ".unknown-key-refresh-interval-seconds",
+                        TRANSPORT_PREFIX + ".client-key-store-password-ref",
+                        TRANSPORT_PREFIX + ".server-spki-pins",
+                        ROOT_TRANSPORT_PREFIX + ".client-key-store-path",
+                        EXTERNAL_PREFIX + ".enabled",
+                        EXTERNAL_PREFIX + ".maximum-faults",
+                        MANAGED_NOTARY_PREFIX + ".publication-uri",
+                        BOOTSTRAP_ROOT_PREFIX + ".genesis-json");
+    }
+
+    private JsonNode projectConfigurationMetadata() throws Exception {
+        Enumeration<URL> resources = getClass().getClassLoader().getResources(
+                "META-INF/spring-configuration-metadata.json");
+        while (resources.hasMoreElements()) {
+            try (InputStream input = resources.nextElement().openStream()) {
+                JsonNode candidate = objectMapper.readTree(input);
+                boolean ownsPrefix = candidate.path("groups").valueStream().anyMatch(
+                        group -> PREFIX.equals(group.path("name").asText()));
+                if (ownsPrefix) {
+                    return candidate;
+                }
+            }
         }
+        throw new IllegalStateException(
+                "Resource Gateway Spring configuration metadata is missing");
     }
 
     @Test
     void configurationContractContainsNoPrivateSignerOrBusinessPayloadField() throws Exception {
-        String source = Files.readString(schemaPath());
+        String source = Files.readString(schemaPath()) + Files.readString(externalSchemaPath());
 
         for (String forbidden : new String[]{"private-key", "signer-credential",
                 "provider-token", "business-payload", "request-payload", "response-payload"}) {
@@ -99,8 +178,22 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         }
     }
 
+    @Test
+    void legacyV1ConfigurationRemainsFrozenWithoutPublicationTransportFields()
+            throws Exception {
+        JsonNode legacy = objectMapper.readTree(Files.readString(legacySchemaPath()));
+
+        assertThat(legacy.path("properties").has("transport")).isFalse();
+        assertThat(legacy.at("/$defs/managedTrustRoots/properties").has("transport")).isFalse();
+        assertThat(legacy.path("additionalProperties").asBoolean()).isFalse();
+    }
+
     private JsonNode schema() throws Exception {
         return objectMapper.readTree(Files.readString(schemaPath()));
+    }
+
+    private JsonNode externalSchema() throws Exception {
+        return objectMapper.readTree(Files.readString(externalSchemaPath()));
     }
 
     private static Set<String> propertyNames(JsonNode properties) {
@@ -124,6 +217,18 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
     private static Path schemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-recovery-fleet-dynamic-inventory-"
+                        + "configuration-v2.schema.json");
+    }
+
+    private static Path legacySchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-recovery-fleet-dynamic-inventory-"
+                        + "configuration-v1.schema.json");
+    }
+
+    private static Path externalSchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-recovery-fleet-external-anchor-"
                         + "configuration-v1.schema.json");
     }
 }

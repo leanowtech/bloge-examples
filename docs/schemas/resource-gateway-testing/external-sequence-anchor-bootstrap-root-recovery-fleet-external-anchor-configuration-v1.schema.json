@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-external-anchor-configuration-v1.schema.json",
+  "title": "Resource Gateway Recovery Fleet External Anchor Configuration v1",
+  "description": "Public-only challenge-bound notary quorum, managed receipt trust, and complete bootstrap-root chain configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["enabled", "required", "managed-trust"],
+  "properties": {
+    "enabled": { "type": "boolean" },
+    "required": { "type": "boolean" },
+    "trust-domain": { "$ref": "#/$defs/optionalIdentifier" },
+    "anchor-set-id": { "$ref": "#/$defs/optionalIdentifier" },
+    "signature-threshold": { "type": "integer", "minimum": 0, "maximum": 32 },
+    "maximum-faults": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "minimum-faults": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "authority-keys-json": { "$ref": "#/$defs/keyArrayJson" },
+    "endpoints-json": { "$ref": "#/$defs/endpointArrayJson" },
+    "request-timeout-millis": { "type": "integer", "minimum": 100, "maximum": 30000 },
+    "clock-skew-seconds": { "type": "integer", "minimum": 0, "maximum": 300 },
+    "maximum-receipt-lifetime-seconds": { "type": "integer", "minimum": 1, "maximum": 60 },
+    "allow-insecure-loopback": { "type": "boolean" },
+    "managed-trust": { "$ref": "#/$defs/managedTrust" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "optionalIdentifier": {
+      "type": "string",
+      "pattern": "^(|[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254})$"
+    },
+    "fingerprintList": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31}$"
+    },
+    "keyArrayJson": {
+      "type": "string",
+      "description": "Strict JSON array string containing only public Ed25519 authority keys.",
+      "pattern": "^\\s*\\[.*\\]\\s*$",
+      "maxLength": 524288
+    },
+    "endpointArrayJson": {
+      "type": "string",
+      "description": "Strict JSON array string containing independent public notary endpoints and failure domains.",
+      "pattern": "^\\s*\\[.*\\]\\s*$",
+      "maxLength": 524288
+    },
+    "sourceUri": {
+      "type": "string",
+      "pattern": "^(https://[^?#]+|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]{1,5})?/[^?#]*)$",
+      "maxLength": 2048
+    },
+    "managedTrust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "required", "bootstrap-roots"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "required": { "type": "boolean" },
+        "publication-uri": { "$ref": "#/$defs/sourceUri" },
+        "trust-root-set-id": { "$ref": "#/$defs/optionalIdentifier" },
+        "bootstrap-trust-domain": { "$ref": "#/$defs/optionalIdentifier" },
+        "accepted-policy-fingerprints": { "type": "string", "maxLength": 2144 },
+        "bootstrap-signature-threshold": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "bootstrap-authority-keys-json": { "$ref": "#/$defs/keyArrayJson" },
+        "refresh-interval-seconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "request-timeout-millis": { "type": "integer", "minimum": 100, "maximum": 30000 },
+        "unknown-key-refresh-interval-seconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "maximum-snapshot-age-seconds": { "type": "integer", "minimum": 2, "maximum": 86400 },
+        "maximum-publication-lifetime-seconds": { "type": "integer", "minimum": 1, "maximum": 2592000 },
+        "clock-skew-seconds": { "type": "integer", "minimum": 0, "maximum": 300 },
+        "minimum-remaining-validity-seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "allow-insecure-loopback": { "type": "boolean" },
+        "bootstrap-roots": { "$ref": "#/$defs/bootstrapRoots" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "required": { "const": true } }, "required": ["required"] },
+          "then": { "properties": { "enabled": { "const": true } } }
+        },
+        {
+          "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+          "then": {
+            "required": [
+              "publication-uri", "trust-root-set-id", "bootstrap-trust-domain",
+              "accepted-policy-fingerprints", "refresh-interval-seconds",
+              "request-timeout-millis", "unknown-key-refresh-interval-seconds",
+              "maximum-snapshot-age-seconds", "maximum-publication-lifetime-seconds",
+              "clock-skew-seconds", "minimum-remaining-validity-seconds",
+              "allow-insecure-loopback", "bootstrap-roots"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "bootstrap-roots": {
+                "properties": { "enabled": { "const": false } },
+                "required": ["enabled"]
+              }
+            },
+            "required": ["bootstrap-roots"]
+          },
+          "then": {
+            "required": ["bootstrap-signature-threshold", "bootstrap-authority-keys-json"],
+            "properties": { "bootstrap-signature-threshold": { "minimum": 1 } }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "bootstrap-roots": {
+                "properties": { "enabled": { "const": true } },
+                "required": ["enabled"]
+              }
+            },
+            "required": ["bootstrap-roots"]
+          },
+          "then": {
+            "properties": {
+              "bootstrap-signature-threshold": { "const": 0 },
+              "bootstrap-authority-keys-json": { "enum": ["", "[]"] }
+            }
+          }
+        }
+      ]
+    },
+    "bootstrapRoots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "required"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "required": { "type": "boolean" },
+        "genesis-json": { "type": "string", "maxLength": 1048576 },
+        "accepted-policy-fingerprints": { "type": "string", "maxLength": 2144 },
+        "bundle-uri": { "$ref": "#/$defs/sourceUri" },
+        "refresh-interval-seconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "request-timeout-millis": { "type": "integer", "minimum": 100, "maximum": 30000 },
+        "unknown-key-refresh-interval-seconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "maximum-snapshot-age-seconds": { "type": "integer", "minimum": 2, "maximum": 86400 },
+        "maximum-root-lifetime-seconds": { "type": "integer", "minimum": 1, "maximum": 31536000 },
+        "clock-skew-seconds": { "type": "integer", "minimum": 0, "maximum": 300 },
+        "minimum-remaining-validity-seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "maximum-transitions": { "type": "integer", "minimum": 1, "maximum": 1024 },
+        "allow-insecure-loopback": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "required": { "const": true } }, "required": ["required"] },
+          "then": { "properties": { "enabled": { "const": true } } }
+        },
+        {
+          "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+          "then": {
+            "required": [
+              "genesis-json", "accepted-policy-fingerprints", "bundle-uri",
+              "refresh-interval-seconds", "request-timeout-millis",
+              "unknown-key-refresh-interval-seconds", "maximum-snapshot-age-seconds",
+              "maximum-root-lifetime-seconds", "clock-skew-seconds",
+              "minimum-remaining-validity-seconds", "maximum-transitions",
+              "allow-insecure-loopback"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "required": { "const": true } }, "required": ["required"] },
+      "then": { "properties": { "enabled": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+      "then": {
+        "required": [
+          "trust-domain", "anchor-set-id", "signature-threshold", "maximum-faults",
+          "minimum-faults", "endpoints-json", "request-timeout-millis",
+          "clock-skew-seconds", "maximum-receipt-lifetime-seconds",
+          "allow-insecure-loopback", "managed-trust"
+        ],
+        "properties": { "signature-threshold": { "minimum": 1 } }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "managed-trust": {
+            "properties": { "enabled": { "const": false } },
+            "required": ["enabled"]
+          }
+        },
+        "required": ["managed-trust"]
+      },
+      "then": { "required": ["authority-keys-json"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "managed-trust": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        },
+        "required": ["managed-trust"]
+      },
+      "then": { "properties": { "authority-keys-json": { "enum": ["", "[]"] } } }
+    }
+  ]
+}

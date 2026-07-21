@@ -13,9 +13,11 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseExternalSequence
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -53,6 +55,19 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
     }
 
     /**
+     * Supplies the default no-cache environment resolver unless the embedder provides a vault or
+     * workload-identity backed resolver.
+     *
+     * @return stateless resolver accepting only {@code env:VARIABLE_NAME} references
+     */
+    @Bean
+    @ConditionalOnMissingBean(RecoveryFleetPublicationTransport.SecretResolver.class)
+    RecoveryFleetPublicationTransport.SecretResolver
+            recoveryFleetPublicationTransportSecretResolver() {
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport.EnvironmentSecretResolver();
+    }
+
+    /**
      * Parses and freezes all public-only configuration before creating stateful resources.
      *
      * @param objectMapper application protocol mapper
@@ -61,6 +76,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
      * @param laneResolvers reviewed local runtime catalogs; exactly one is required
      * @param configured successful stateless fleet preflight token
      * @param environment active profile used to prohibit test-only transport in staging
+     * @param secretResolvers deployment credential resolvers; exactly one is used when mTLS is on
      * @return validated public trust, binding, and refresh settings
      */
     @Bean
@@ -73,15 +89,40 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             DynamicInventoryProperties properties,
             ObjectProvider<LaneResolver> laneResolvers,
             ValidatedFleetConfiguration configured,
-            Environment environment) {
+            Environment environment,
+            ObjectProvider<RecoveryFleetPublicationTransport.SecretResolver> secretResolvers) {
         try {
             Objects.requireNonNull(configured, "configured");
-            if (Objects.requireNonNull(environment, "environment")
-                    .acceptsProfiles(Profiles.of("staging"))
-                    && (properties.allowInsecureLoopback()
-                    || properties.trustRoots().allowInsecureLoopback())) {
+            boolean staging = Objects.requireNonNull(environment, "environment")
+                    .acceptsProfiles(Profiles.of("staging"));
+            if (staging) {
+                var anchor = properties.externalAnchor();
+                if (properties.allowInsecureLoopback()
+                        || properties.trustRoots().allowInsecureLoopback()
+                        || !properties.transport().enabled()
+                        || !properties.transport().required()
+                        || !properties.trustRoots().transport().enabled()
+                        || !properties.trustRoots().transport().required()
+                        || anchor.allowInsecureLoopback()
+                        || anchor.managedTrust().allowInsecureLoopback()
+                        || anchor.managedTrust().bootstrapRoots().allowInsecureLoopback()
+                        || !anchor.enabled() || !anchor.required()
+                        || anchor.maximumFaults() < 1
+                        || !anchor.managedTrust().enabled()
+                        || !anchor.managedTrust().required()
+                        || !anchor.managedTrust().bootstrapRoots().enabled()
+                        || !anchor.managedTrust().bootstrapRoots().required()) {
+                    throw DynamicInventoryProperties.invalid();
+                }
+            }
+            if (properties.trustRoots().enabled()
+                    && properties.transport().sharesClientIdentityWith(
+                    properties.trustRoots().transport())) {
                 throw DynamicInventoryProperties.invalid();
             }
+            RecoveryFleetPublicationTransport.SecretResolver secretResolver =
+                    secretResolver(secretResolvers, properties.transport().enabled()
+                            || properties.trustRoots().transport().enabled());
             ObjectMapper strict = Objects.requireNonNull(objectMapper, "objectMapper").copy()
                     .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                     .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -94,7 +135,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                 throw DynamicInventoryProperties.invalid();
             }
             ValidatedManagedTrustRoots managedTrustRoots = properties.trustRoots().enabled()
-                    ? validateManagedTrustRoots(strict, fleet, properties) : null;
+                    ? validateManagedTrustRoots(strict, fleet, properties, secretResolver) : null;
             List<AuthorityKey> deploymentKeys = List.of();
             List<AuthorityKey> witnessKeys = List.of();
             if (managedTrustRoots == null) {
@@ -122,11 +163,13 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                     Duration.ofMillis(properties.requestTimeoutMillis()),
                     Duration.ofSeconds(properties.maximumSnapshotAgeSeconds()),
                     properties.allowInsecureLoopback()).validated();
+            RecoveryFleetPublicationTransport transport = properties.transport().create(
+                    secretResolver);
             return new ValidatedDynamicInventoryConfiguration(
                     properties.trustDomain(), policies, properties.signatureThreshold(),
                     deploymentKeys, binding, properties.witnessDomain(),
                     properties.witnessSignatureThreshold(), witnessKeys, resolvers.getFirst(),
-                    settings, managedTrustRoots);
+                    settings, transport, managedTrustRoots);
         } catch (Exception invalid) {
             throw DynamicInventoryProperties.invalid();
         }
@@ -135,7 +178,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
     private static ValidatedManagedTrustRoots validateManagedTrustRoots(
             ObjectMapper strict,
             FleetProperties fleet,
-            DynamicInventoryProperties properties) throws Exception {
+            DynamicInventoryProperties properties,
+            RecoveryFleetPublicationTransport.SecretResolver secretResolver) throws Exception {
         ManagedTrustRootProperties roots = properties.trustRoots();
         List<AuthorityKey> deploymentRootKeys = parseKeys(
                 strict, roots.deploymentRootAuthorityKeysJson());
@@ -173,42 +217,126 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                 roots.allowInsecureLoopback()).validated();
         return new ValidatedManagedTrustRoots(binding, policies,
                 roots.deploymentRootSignatureThreshold(), deploymentRootKeys,
-                roots.witnessRootSignatureThreshold(), witnessRootKeys, settings);
+                roots.witnessRootSignatureThreshold(), witnessRootKeys, settings,
+                roots.transport().create(secretResolver));
     }
 
-    /** Creates the local cross-restart floor unless the embedder supplies one durable authority. */
+    /**
+     * Creates the built-in challenge-bound notary quorum unless the embedder supplies one
+     * recovery-fleet-domain adapter.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param environment active profile and managed trust property source
+     * @param database isolated durable testing database
+     * @param properties strict dynamic inventory and external anchor policy
+     * @param validated successful public-only preflight
+     * @return domain-isolated external sequence authority
+     */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(
+            prefix = ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                    .PREFIX,
+            name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor.class)
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor
+            externalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            Environment environment,
+            TestRuntimeDatabase database,
+            DynamicInventoryProperties properties,
+            ValidatedDynamicInventoryConfiguration validated) {
+        Objects.requireNonNull(validated, "validated");
+        var anchor = properties.externalAnchor();
+        int profileMinimumFaults = environment.acceptsProfiles(Profiles.of("staging")) ? 1 : 0;
+        if (anchor.maximumFaults() < Math.max(
+                profileMinimumFaults, anchor.minimumFaults())) {
+            throw DynamicInventoryProperties.invalid();
+        }
+        TestSuiteStabilityExternalSequenceAnchor shared =
+                TestRuntimeConfiguration.buildExternalSequenceAnchor(
+                        objectMapper, environment, database,
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                                .PREFIX,
+                        "recovery-fleet inventory", properties.deploymentScopeId(),
+                        anchor.trustDomain(), anchor.anchorSetId(), anchor.signatureThreshold(),
+                        anchor.maximumFaults(), anchor.authorityKeysJson(), anchor.endpointsJson(),
+                        anchor.requestTimeoutMillis(), anchor.clockSkewSeconds(),
+                        anchor.maximumReceiptLifetimeSeconds(),
+                        anchor.allowInsecureLoopback());
+        return ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor.adapt(
+                shared);
+    }
+
+    /** Exposes endpoint-, stream-, fingerprint-, authority-, and key-free notary health. */
+    @Bean
+    @ConditionalOnMissingBean(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchorHealth.class)
+    @ConditionalOnBean(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor.class)
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchorHealth
+            externalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchorHealth(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor anchor) {
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchorHealth(
+                anchor);
+    }
+
+    /** Creates the local floor and optionally wraps it with external-first non-equivocation. */
     @Bean
     @ConditionalOnProperty(prefix = DynamicInventoryProperties.PREFIX, name = "enabled",
             havingValue = "true")
     @ConditionalOnMissingBean(
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor.class)
-    DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
             externalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
-            ValidatedDynamicInventoryConfiguration validated) {
-        return new DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor(
+            ValidatedDynamicInventoryConfiguration validated,
+            DynamicInventoryProperties properties,
+            Environment environment,
+            ObjectProvider<
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor>
+                    externalAnchors) {
+        ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor external =
+                externalAnchor(externalAnchors, properties.externalAnchor(), environment);
+        DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor local =
+                new DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor(
                 database.jdbc(), objectMapper, validated.binding().deploymentScopeId(),
                 validated.binding().fleetId(), database.transactionManager());
+        local.init();
+        return external == null ? local : new
+                ExternallyAnchoredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor(
+                objectMapper, local, external);
     }
 
-    /** Creates the managed root generation floor unless one durable adapter is supplied. */
+    /** Creates the managed root floor and optionally adds the same external-first authority. */
     @Bean
     @ConditionalOnProperty(prefix = ManagedTrustRootProperties.PREFIX, name = "enabled",
             havingValue = "true")
     @ConditionalOnMissingBean(
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor.class)
-    DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor
             externalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
-            ValidatedDynamicInventoryConfiguration validated) {
+            ValidatedDynamicInventoryConfiguration validated,
+            DynamicInventoryProperties properties,
+            Environment environment,
+            ObjectProvider<
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor>
+                    externalAnchors) {
         ValidatedManagedTrustRoots roots = validated.requiredManagedTrustRoots();
-        return new
+        ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor external =
+                externalAnchor(externalAnchors, properties.externalAnchor(), environment);
+        DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor local = new
                 DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor(
                 database.jdbc(), objectMapper, validated.binding().deploymentScopeId(),
                 validated.binding().fleetId(), roots.binding().trustRootSetId(),
                 database.transactionManager());
+        local.init();
+        return external == null ? local : new
+                ExternallyAnchoredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor(
+                local, external);
     }
 
     /** Bootstraps and owns the atomic dual runtime-key source used by managed inventory mode. */
@@ -226,7 +354,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                 objectMapper, roots.binding(), roots.acceptedPolicies(),
                 roots.deploymentRootSignatureThreshold(), roots.deploymentRootKeys(),
                 roots.witnessRootSignatureThreshold(), roots.witnessRootKeys(), floor,
-                roots.settings());
+                roots.settings(), roots.transport());
     }
 
     /**
@@ -253,7 +381,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                 validated.signatureThreshold(), validated.authorityKeys(), validated.binding(),
                 validated.laneResolver(), floor, validated.witnessDomain(),
                 validated.witnessSignatureThreshold(), validated.witnessKeys(),
-                validated.settings());
+                validated.settings(), validated.transport());
     }
 
     /** Bootstraps the inventory consumer from one exact managed dual-key generation. */
@@ -272,7 +400,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             ValidatedDynamicInventoryConfiguration validated) {
         return new DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority(
                 objectMapper, validated.acceptedPolicies(), validated.binding(),
-                validated.laneResolver(), floor, trustRoots, validated.settings());
+                validated.laneResolver(), floor, trustRoots, validated.settings(),
+                validated.transport());
     }
 
     /** Exposes aggregate-only managed-root readiness without source or key identities. */
@@ -317,6 +446,48 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                         key.revoked())).toList();
     }
 
+    private static RecoveryFleetPublicationTransport.SecretResolver secretResolver(
+            ObjectProvider<RecoveryFleetPublicationTransport.SecretResolver> providers,
+            boolean required) {
+        List<RecoveryFleetPublicationTransport.SecretResolver> configured =
+                providers.orderedStream().toList();
+        if (required && configured.size() != 1) {
+            throw DynamicInventoryProperties.invalid();
+        }
+        return configured.size() == 1 ? configured.getFirst() : null;
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor
+            externalAnchor(
+            ObjectProvider<
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor>
+                    anchors,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties properties,
+            Environment environment) {
+        List<ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor> configured =
+                anchors.orderedStream().toList();
+        if ((properties.enabled() && configured.size() != 1)
+                || (!properties.enabled() && !configured.isEmpty())) {
+            throw new IllegalStateException(
+                    "Recovery-fleet external non-equivocation requires exactly one anchor");
+        }
+        if (!properties.enabled()) {
+            return null;
+        }
+        ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor result =
+                configured.getFirst();
+        TestSuiteStabilityExternalSequenceAnchor.Descriptor descriptor = result.descriptor();
+        boolean byzantineRequired = properties.minimumFaults() > 0
+                || environment.acceptsProfiles(Profiles.of("staging"));
+        if (!descriptor.available() || !descriptor.externallyDurable()
+                || !descriptor.challengeBound()
+                || byzantineRequired && !descriptor.byzantineQuorum()) {
+            throw new IllegalStateException(
+                    "Recovery-fleet external non-equivocation anchor is unavailable or unsafe");
+        }
+        return result;
+    }
+
     record ValidatedDynamicInventoryConfiguration(
             String trustDomain,
             Set<String> acceptedPolicies,
@@ -329,6 +500,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             LaneResolver laneResolver,
             DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Settings
                     settings,
+            RecoveryFleetPublicationTransport transport,
             ValidatedManagedTrustRoots managedTrustRoots) {
 
         ValidatedDynamicInventoryConfiguration {
@@ -340,6 +512,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             witnessKeys = List.copyOf(witnessKeys);
             laneResolver = Objects.requireNonNull(laneResolver, "laneResolver");
             settings = Objects.requireNonNull(settings, "settings");
+            transport = Objects.requireNonNull(transport, "transport");
         }
 
         private ValidatedManagedTrustRoots requiredManagedTrustRoots() {
@@ -356,7 +529,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             int witnessRootSignatureThreshold,
             List<AuthorityKey> witnessRootKeys,
             DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
-                    .Settings settings) {
+                    .Settings settings,
+            RecoveryFleetPublicationTransport transport) {
 
         ValidatedManagedTrustRoots {
             binding = Objects.requireNonNull(binding, "binding");
@@ -364,6 +538,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             deploymentRootKeys = List.copyOf(deploymentRootKeys);
             witnessRootKeys = List.copyOf(witnessRootKeys);
             settings = Objects.requireNonNull(settings, "settings");
+            transport = Objects.requireNonNull(transport, "transport");
         }
     }
 
@@ -386,6 +561,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
      * @param witnessDomain independent witness trust domain
      * @param witnessSignatureThreshold required distinct witness signatures
      * @param witnessAuthorityKeysJson strict public Ed25519 witness-key array
+     * @param transport inventory-source server/client transport trust
+     * @param externalAnchor optional externally witnessed dual-stream ordering authority
      * @param trustRoots optional managed atomic runtime-key source
      */
     @ConfigurationProperties(prefix = DynamicInventoryProperties.PREFIX,
@@ -407,6 +584,11 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             String witnessDomain,
             Integer witnessSignatureThreshold,
             String witnessAuthorityKeysJson,
+            @NestedConfigurationProperty
+            RecoveryFleetPublicationTransportProperties transport,
+            @NestedConfigurationProperty
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                    externalAnchor,
             ManagedTrustRootProperties trustRoots) {
 
         /** Prefix shared by profile files, environment variables, and deployment documentation. */
@@ -433,11 +615,18 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             witnessSignatureThreshold = witnessSignatureThreshold == null
                     ? 0 : witnessSignatureThreshold;
             witnessAuthorityKeysJson = normalized(witnessAuthorityKeysJson);
+            transport = transport == null
+                    ? RecoveryFleetPublicationTransportProperties.disabled() : transport;
+            externalAnchor = externalAnchor == null
+                    ? ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                    .disabled() : externalAnchor;
             trustRoots = trustRoots == null ? ManagedTrustRootProperties.disabled() : trustRoots;
             if (!enabled && hasSourceConfiguration(deploymentScopeId, artifactFingerprint,
                     trustDomain, acceptedPolicyFingerprints, signatureThreshold,
                     authorityKeysJson, publicationUri, allowInsecureLoopback, witnessDomain,
                     witnessSignatureThreshold, witnessAuthorityKeysJson,
+                    transport.configured(),
+                    externalAnchor.configured(),
                     trustRoots.configured())) {
                 throw invalid();
             }
@@ -471,12 +660,16 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                 String witnessDomain,
                 int witnessThreshold,
                 String witnessKeys,
+                boolean transportConfigured,
+                boolean externalAnchorConfigured,
                 boolean managedRootsConfigured) {
             return !deploymentScopeId.isBlank() || !artifactFingerprint.isBlank()
                     || !trustDomain.isBlank() || !acceptedPolicies.isBlank() || threshold != 0
                     || (!keys.isBlank() && !"[]".equals(keys)) || !uri.isBlank() || insecure
                     || !witnessDomain.isBlank() || witnessThreshold != 0
                     || (!witnessKeys.isBlank() && !"[]".equals(witnessKeys))
+                    || transportConfigured
+                    || externalAnchorConfigured
                     || managedRootsConfigured;
         }
 
@@ -517,6 +710,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
      * @param unknownKeyRefreshIntervalSeconds cooldown for synchronous unknown-key refresh
      * @param maximumSnapshotAgeSeconds hard local root-source freshness fence
      * @param allowInsecureLoopback local-test-only HTTP loopback escape hatch
+     * @param transport managed-root-source server/client transport trust
      */
     public record ManagedTrustRootProperties(
             Boolean enabled,
@@ -534,7 +728,9 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             Long requestTimeoutMillis,
             Long unknownKeyRefreshIntervalSeconds,
             Long maximumSnapshotAgeSeconds,
-            Boolean allowInsecureLoopback) {
+            Boolean allowInsecureLoopback,
+            @NestedConfigurationProperty
+            RecoveryFleetPublicationTransportProperties transport) {
 
         /** Nested prefix shared by profile files and deployment documentation. */
         public static final String PREFIX = DynamicInventoryProperties.PREFIX + ".trust-roots";
@@ -560,6 +756,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                     unknownKeyRefreshIntervalSeconds, 5L);
             maximumSnapshotAgeSeconds = defaulted(maximumSnapshotAgeSeconds, 60L);
             allowInsecureLoopback = Boolean.TRUE.equals(allowInsecureLoopback);
+            transport = transport == null
+                    ? RecoveryFleetPublicationTransportProperties.disabled() : transport;
             if (required && !enabled) {
                 throw DynamicInventoryProperties.invalid();
             }
@@ -567,7 +765,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                     deploymentRootDomain, deploymentRootSignatureThreshold,
                     deploymentRootAuthorityKeysJson, witnessRootDomain,
                     witnessRootSignatureThreshold, witnessRootAuthorityKeysJson,
-                    publicationUri, allowInsecureLoopback)) {
+                    publicationUri, allowInsecureLoopback, transport.configured())) {
                 throw DynamicInventoryProperties.invalid();
             }
             if (enabled && (trustRootSetId.isBlank()
@@ -583,7 +781,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
 
         private static ManagedTrustRootProperties disabled() {
             return new ManagedTrustRootProperties(false, false, "", "", "", 0, "[]",
-                    "", 0, "[]", "", 30L, 3_000L, 5L, 60L, false);
+                    "", 0, "[]", "", 30L, 3_000L, 5L, 60L, false,
+                    RecoveryFleetPublicationTransportProperties.disabled());
         }
 
         private boolean configured() {
@@ -591,7 +790,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                     acceptedPolicyFingerprints, deploymentRootDomain,
                     deploymentRootSignatureThreshold, deploymentRootAuthorityKeysJson,
                     witnessRootDomain, witnessRootSignatureThreshold,
-                    witnessRootAuthorityKeysJson, publicationUri, allowInsecureLoopback);
+                    witnessRootAuthorityKeysJson, publicationUri, allowInsecureLoopback,
+                    transport.configured());
         }
 
         private static boolean configured(
@@ -604,12 +804,13 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                 int witnessThreshold,
                 String witnessKeys,
                 String uri,
-                boolean insecure) {
+                boolean insecure,
+                boolean transportConfigured) {
             return !rootSetId.isBlank() || !policies.isBlank()
                     || !deploymentDomain.isBlank() || deploymentThreshold != 0
                     || !emptyKeys(deploymentKeys) || !witnessDomain.isBlank()
                     || witnessThreshold != 0 || !emptyKeys(witnessKeys) || !uri.isBlank()
-                    || insecure;
+                    || insecure || transportConfigured;
         }
 
         private static boolean emptyKeys(String value) {

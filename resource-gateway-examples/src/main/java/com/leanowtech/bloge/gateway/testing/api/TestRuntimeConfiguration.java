@@ -98,6 +98,11 @@ public class TestRuntimeConfiguration {
             "gateway.testing.test-secrets.authority.http.jwks.cohort.scope-id";
     private static final String SUITE_STABILITY_SCOPE_PROPERTY =
             "gateway.testing.stability-jobs.authority.http.jwks.cohort.scope-id";
+    private static final String RECOVERY_FLEET_EXTERNAL_ANCHOR_PREFIX =
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties.PREFIX;
+    private static final String RECOVERY_FLEET_SCOPE_PROPERTY =
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                    .DynamicInventoryProperties.PREFIX + ".deployment-scope-id";
 
     /** Creates the profile-gated Spring composition root. */
     public TestRuntimeConfiguration() {
@@ -3249,7 +3254,14 @@ public class TestRuntimeConfiguration {
         }
     }
 
-    private static HttpTestSuiteStabilityExternalSequenceAnchor buildExternalSequenceAnchor(
+    /**
+     * Builds the shared strict HTTP/quorum implementation for one isolated product domain.
+     *
+     * <p>Package visibility allows the recovery-fleet composition to reuse the exact managed
+     * receipt-trust, bootstrap-root, transport, and staging policy already exercised by the test
+     * secret and suite-stability products.</p>
+     */
+    static HttpTestSuiteStabilityExternalSequenceAnchor buildExternalSequenceAnchor(
             ObjectMapper objectMapper,
             Environment environment,
             TestRuntimeDatabase database,
@@ -3319,7 +3331,9 @@ public class TestRuntimeConfiguration {
             URI publicationUri = URI.create(environment.getProperty(
                     prefix + ".managed-trust.publication-uri", ""));
             long trustRequestTimeoutMillis = environment.getProperty(
-                    prefix + ".managed-trust.request-timeout-ms", Long.class, 3000L);
+                    prefix + ".managed-trust.request-timeout-millis", Long.class,
+                    environment.getProperty(
+                            prefix + ".managed-trust.request-timeout-ms", Long.class, 3000L));
             long refreshIntervalSeconds = environment.getProperty(
                     prefix + ".managed-trust.refresh-interval-seconds", Long.class, 30L);
             long maximumSnapshotAgeSeconds = environment.getProperty(
@@ -3432,7 +3446,8 @@ public class TestRuntimeConfiguration {
                 prefix + ".accepted-policy-fingerprints", "");
         URI bundleUri = URI.create(environment.getProperty(prefix + ".bundle-uri", ""));
         long requestTimeoutMillis = environment.getProperty(
-                prefix + ".request-timeout-ms", Long.class, 3000L);
+                prefix + ".request-timeout-millis", Long.class,
+                environment.getProperty(prefix + ".request-timeout-ms", Long.class, 3000L));
         long refreshIntervalSeconds = environment.getProperty(
                 prefix + ".refresh-interval-seconds", Long.class, 30L);
         long maximumSnapshotAgeSeconds = environment.getProperty(
@@ -3501,43 +3516,53 @@ public class TestRuntimeConfiguration {
             String rootSetId,
             String notaryTrustDomain,
             String bootstrapTrustDomain) {
-        String otherPrefix;
-        String otherScopeProperty;
-        if (TEST_SECRET_EXTERNAL_ANCHOR_PREFIX.equals(prefix)) {
-            otherPrefix = SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX;
-            otherScopeProperty = SUITE_STABILITY_SCOPE_PROPERTY;
-        } else if (SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX.equals(prefix)) {
-            otherPrefix = TEST_SECRET_EXTERNAL_ANCHOR_PREFIX;
-            otherScopeProperty = TEST_SECRET_SCOPE_PROPERTY;
-        } else {
+        List<ExternalAnchorDomain> domains = List.of(
+                new ExternalAnchorDomain(
+                        TEST_SECRET_EXTERNAL_ANCHOR_PREFIX, TEST_SECRET_SCOPE_PROPERTY),
+                new ExternalAnchorDomain(
+                        SUITE_STABILITY_EXTERNAL_ANCHOR_PREFIX,
+                        SUITE_STABILITY_SCOPE_PROPERTY),
+                new ExternalAnchorDomain(
+                        RECOVERY_FLEET_EXTERNAL_ANCHOR_PREFIX,
+                        RECOVERY_FLEET_SCOPE_PROPERTY));
+        if (domains.stream().noneMatch(domain -> domain.prefix().equals(prefix))) {
             throw new IllegalArgumentException("Unknown external-anchor product domain");
         }
-        boolean otherEnabled = Boolean.TRUE.equals(environment.getProperty(
-                otherPrefix + ".enabled", Boolean.class, false));
-        boolean otherManaged = Boolean.TRUE.equals(environment.getProperty(
-                otherPrefix + ".managed-trust.enabled", Boolean.class, false));
-        boolean otherManagedRoots = Boolean.TRUE.equals(environment.getProperty(
-                otherPrefix + ".managed-trust.bootstrap-roots.enabled",
-                Boolean.class, false));
-        if (!otherEnabled || !otherManaged || !otherManagedRoots) {
-            return;
+        for (ExternalAnchorDomain other : domains) {
+            if (other.prefix().equals(prefix)) {
+                continue;
+            }
+            boolean otherEnabled = Boolean.TRUE.equals(environment.getProperty(
+                    other.prefix() + ".enabled", Boolean.class, false));
+            boolean otherManaged = Boolean.TRUE.equals(environment.getProperty(
+                    other.prefix() + ".managed-trust.enabled", Boolean.class, false));
+            boolean otherManagedRoots = Boolean.TRUE.equals(environment.getProperty(
+                    other.prefix() + ".managed-trust.bootstrap-roots.enabled",
+                    Boolean.class, false));
+            if (!otherEnabled || !otherManaged || !otherManagedRoots) {
+                continue;
+            }
+            String otherScopeId = environment.getProperty(other.scopeProperty(), "");
+            String otherRootSetId = environment.getProperty(
+                    other.prefix() + ".managed-trust.trust-root-set-id", "");
+            String otherNotaryTrustDomain = environment.getProperty(
+                    other.prefix() + ".trust-domain", "");
+            String otherBootstrapTrustDomain = environment.getProperty(
+                    other.prefix() + ".managed-trust.bootstrap-trust-domain", "");
+            boolean sameFloor = scopeId.equals(otherScopeId)
+                    && rootSetId.equals(otherRootSetId);
+            boolean sharedTrustDomain = notaryTrustDomain.equals(otherNotaryTrustDomain)
+                    || notaryTrustDomain.equals(otherBootstrapTrustDomain)
+                    || bootstrapTrustDomain.equals(otherNotaryTrustDomain)
+                    || bootstrapTrustDomain.equals(otherBootstrapTrustDomain);
+            if (sameFloor || sharedTrustDomain) {
+                throw new IllegalStateException("External-anchor product domains must not share "
+                        + "trust domains or root floors");
+            }
         }
-        String otherScopeId = environment.getProperty(otherScopeProperty, "");
-        String otherRootSetId = environment.getProperty(
-                otherPrefix + ".managed-trust.trust-root-set-id", "");
-        String otherNotaryTrustDomain = environment.getProperty(
-                otherPrefix + ".trust-domain", "");
-        String otherBootstrapTrustDomain = environment.getProperty(
-                otherPrefix + ".managed-trust.bootstrap-trust-domain", "");
-        boolean sameFloor = scopeId.equals(otherScopeId) && rootSetId.equals(otherRootSetId);
-        boolean sharedTrustDomain = notaryTrustDomain.equals(otherNotaryTrustDomain)
-                || notaryTrustDomain.equals(otherBootstrapTrustDomain)
-                || bootstrapTrustDomain.equals(otherNotaryTrustDomain)
-                || bootstrapTrustDomain.equals(otherBootstrapTrustDomain);
-        if (sameFloor || sharedTrustDomain) {
-            throw new IllegalStateException(
-                    "External-anchor product domains must not share trust domains or root floors");
-        }
+    }
+
+    private record ExternalAnchorDomain(String prefix, String scopeProperty) {
     }
 
     private static TestSuiteStabilityExternalSequenceAnchor externalAnchor(
