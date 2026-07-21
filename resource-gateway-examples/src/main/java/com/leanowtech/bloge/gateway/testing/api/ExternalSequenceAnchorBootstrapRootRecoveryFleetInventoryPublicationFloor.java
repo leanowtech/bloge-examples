@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication.State;
+
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -8,8 +10,9 @@ import java.util.regex.Pattern;
  *
  * <p>Callers must verify the nested inventory, publication, independent witness, local runtime
  * binding, and current validity windows before invoking this authority. Implementations atomically
- * reject rollback, same-sequence fork, sequence gap, predecessor mismatch, and cross-fleet reuse.
- * Existing floors must never be silently reset or replaced.</p>
+ * reject rollback, same-sequence fork, sequence gap, predecessor mismatch, nested-inventory
+ * generation rollback or same-generation drift, revoked-inventory reactivation, and cross-fleet
+ * reuse. Existing floors must never be silently reset or replaced.</p>
  */
 public interface ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor {
 
@@ -53,8 +56,11 @@ public interface ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublic
      * @param deploymentScopeId stable deployment scope
      * @param fleetId stable durable recovery fleet identity
      * @param sequence signed publication sequence
+     * @param inventoryGeneration nested signed inventory generation
+     * @param inventoryMaterialFingerprint nested signed inventory identity
      * @param publicationMaterialFingerprint current publication identity
      * @param witnessMaterialFingerprint current independent witness identity
+     * @param state signed operational authorization state
      * @param previousPublicationFingerprint previous publication, blank at sequence one
      * @param previousWitnessFingerprint previous witness, blank at sequence one
      */
@@ -63,8 +69,11 @@ public interface ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublic
             String deploymentScopeId,
             String fleetId,
             long sequence,
+            long inventoryGeneration,
+            String inventoryMaterialFingerprint,
             String publicationMaterialFingerprint,
             String witnessMaterialFingerprint,
+            State state,
             String previousPublicationFingerprint,
             String previousWitnessFingerprint) {
 
@@ -81,6 +90,7 @@ public interface ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublic
             schemaVersion = normalized(schemaVersion);
             deploymentScopeId = normalized(deploymentScopeId);
             fleetId = normalized(fleetId);
+            inventoryMaterialFingerprint = normalized(inventoryMaterialFingerprint);
             publicationMaterialFingerprint = normalized(publicationMaterialFingerprint);
             witnessMaterialFingerprint = normalized(witnessMaterialFingerprint);
             previousPublicationFingerprint = normalized(previousPublicationFingerprint);
@@ -95,8 +105,11 @@ public interface ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublic
                     || !IDENTIFIER.matcher(deploymentScopeId).matches()
                     || !IDENTIFIER.matcher(fleetId).matches()
                     || sequence < 1
+                    || inventoryGeneration < 1
+                    || !FINGERPRINT.matcher(inventoryMaterialFingerprint).matches()
                     || !FINGERPRINT.matcher(publicationMaterialFingerprint).matches()
                     || !FINGERPRINT.matcher(witnessMaterialFingerprint).matches()
+                    || state == null
                     || !predecessorShape) {
                 throw new IllegalArgumentException(
                         "Invalid recovery-fleet inventory publication floor generation");

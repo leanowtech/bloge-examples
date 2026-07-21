@@ -1083,10 +1083,13 @@ scope/fleet/sequence/fingerprint cross-link，signature 按 authority/key canoni
 
 新增 durable
 `ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor` 与 H2 database-clock 实现，
-以 `(deploymentScopeId, fleetId)` 锁线性化多副本，whole-record fingerprint 绑定双 head 与 observed time；
+以 `(deploymentScopeId, fleetId)` 锁线性化多副本，whole-record fingerprint 绑定 nested inventory
+generation/identity/state、双 head 与 observed time；
 只允许 sequence 1 建立、exact replay 或 exact `current+1` successor，rollback、same-sequence fork、gap、
-任一 predecessor mismatch、cross-scope/fleet 和腐化行全部 fail closed。机器 Schema 通过相对 `$ref` 复用
-既有 inventory schema。本子步 protocol 5 项、Schema 3 项、floor 7 项共 15 tests 全绿，三个公共类型通过
+任一 predecessor mismatch、inventory rollback/same-generation drift、撤销后同 inventory 重激活、
+cross-scope/fleet 和腐化行全部 fail closed。v1 存储行必须先以精确已验签双 head 回放水合 v2，禁止直接
+跳 successor。机器 Schema 通过相对 `$ref` 复用既有 inventory schema。本子步 protocol 5 项、Schema 3 项、
+floor 10 项共 18 tests 全绿，三个公共类型通过
 严格 JavaDoc 门禁。它只闭合 protocol + durable floor kernel；bounded HTTPS/ETag refresh、M-of-N
 publication/witness runtime verification、atomic ACTIVE publication、signed revocation propagation、snapshot
 age fence 与 worker in-flight integration 仍由下一子步完成。验证见

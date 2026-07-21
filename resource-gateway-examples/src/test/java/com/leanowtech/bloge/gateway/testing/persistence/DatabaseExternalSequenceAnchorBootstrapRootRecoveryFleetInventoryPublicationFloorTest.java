@@ -1,12 +1,17 @@
 package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication.State;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -51,13 +56,17 @@ class DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicati
         reconstructed.accept(generation(2, 'c', 'd', first));
 
         assertThat(database.jdbc().queryForMap("""
-                SELECT sequence, publication_material_fingerprint,
-                       witness_material_fingerprint
+                SELECT sequence, inventory_generation, inventory_material_fingerprint,
+                       publication_material_fingerprint, witness_material_fingerprint,
+                       publication_state
                 FROM rg_ext_anchor_recovery_inventory_floors
                 WHERE deployment_scope_id = ? AND fleet_id = ?
                 """, SCOPE, FLEET)).containsEntry("SEQUENCE", 2L)
+                .containsEntry("INVENTORY_GENERATION", 8L)
+                .containsEntry("INVENTORY_MATERIAL_FINGERPRINT", fingerprint('2'))
                 .containsEntry("PUBLICATION_MATERIAL_FINGERPRINT", fingerprint('c'))
-                .containsEntry("WITNESS_MATERIAL_FINGERPRINT", fingerprint('d'));
+                .containsEntry("WITNESS_MATERIAL_FINGERPRINT", fingerprint('d'))
+                .containsEntry("PUBLICATION_STATE", "ACTIVE");
         assertThat(reconstructed.durable()).isTrue();
         assertThat(reconstructed.externallyAnchored()).isFalse();
     }
@@ -96,6 +105,108 @@ class DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicati
                 fingerprint('e'), fingerprint('f'))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("predecessor mismatch");
+    }
+
+    @Test
+    void validPublicationChainCannotHideInventoryRollbackOrSameGenerationDrift() {
+        var first = generation(SCOPE, FLEET, 1, 7, '1', 'a', 'b', State.ACTIVE,
+                "", "");
+        floor.accept(first);
+
+        assertThatThrownBy(() -> floor.accept(generation(SCOPE, FLEET, 2,
+                6, '0', 'c', 'd', State.ACTIVE,
+                first.publicationMaterialFingerprint(),
+                first.witnessMaterialFingerprint())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("inventory rollback");
+        assertThatThrownBy(() -> floor.accept(generation(SCOPE, FLEET, 2,
+                7, '2', 'c', 'd', State.ACTIVE,
+                first.publicationMaterialFingerprint(),
+                first.witnessMaterialFingerprint())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("inventory fork");
+    }
+
+    @Test
+    void revokedInventoryCannotReactivateUntilANewInventoryGenerationIsPublished() {
+        var active = generation(SCOPE, FLEET, 1, 7, '1', 'a', 'b', State.ACTIVE,
+                "", "");
+        var revoked = generation(SCOPE, FLEET, 2, 7, '1', 'c', 'd', State.REVOKED,
+                active.publicationMaterialFingerprint(), active.witnessMaterialFingerprint());
+        floor.accept(active);
+        floor.accept(revoked);
+
+        assertThatThrownBy(() -> floor.accept(generation(SCOPE, FLEET, 3,
+                7, '1', 'e', 'f', State.ACTIVE,
+                revoked.publicationMaterialFingerprint(),
+                revoked.witnessMaterialFingerprint())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("reactivation");
+
+        floor.accept(generation(SCOPE, FLEET, 3, 8, '2', 'e', 'f', State.ACTIVE,
+                revoked.publicationMaterialFingerprint(), revoked.witnessMaterialFingerprint()));
+        assertThat(database.jdbc().queryForMap("""
+                SELECT inventory_generation, publication_state
+                FROM rg_ext_anchor_recovery_inventory_floors
+                WHERE deployment_scope_id = ? AND fleet_id = ?
+                """, SCOPE, FLEET))
+                .containsEntry("INVENTORY_GENERATION", 8L)
+                .containsEntry("PUBLICATION_STATE", "ACTIVE");
+    }
+
+    @Test
+    void legacyFloorRequiresExactHeadReplayBeforeHydratingNestedInventoryState() {
+        database.jdbc().execute("DROP TABLE rg_ext_anchor_recovery_inventory_floors");
+        database.jdbc().execute("""
+                CREATE TABLE rg_ext_anchor_recovery_inventory_floors (
+                    deployment_scope_id VARCHAR(255) NOT NULL,
+                    fleet_id VARCHAR(255) NOT NULL,
+                    sequence BIGINT NOT NULL,
+                    publication_material_fingerprint VARCHAR(71) NOT NULL,
+                    witness_material_fingerprint VARCHAR(71) NOT NULL,
+                    observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL,
+                    PRIMARY KEY (deployment_scope_id, fleet_id)
+                )
+                """);
+        Instant observedAt = Instant.parse("2026-07-21T03:00:00Z");
+        var current = generation(1, 'a', 'b', null);
+        String legacyRecord = ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion",
+                "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor.v1",
+                "deploymentScopeId", SCOPE,
+                "fleetId", FLEET,
+                "sequence", 1L,
+                "publicationMaterialFingerprint", current.publicationMaterialFingerprint(),
+                "witnessMaterialFingerprint", current.witnessMaterialFingerprint(),
+                "observedAt", observedAt.toString()));
+        database.jdbc().update("""
+                INSERT INTO rg_ext_anchor_recovery_inventory_floors (
+                    deployment_scope_id, fleet_id, sequence,
+                    publication_material_fingerprint, witness_material_fingerprint,
+                    observed_at, record_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, SCOPE, FLEET, 1L, current.publicationMaterialFingerprint(),
+                current.witnessMaterialFingerprint(), Timestamp.from(observedAt), legacyRecord);
+        var upgraded = repository(SCOPE, FLEET);
+
+        assertThatThrownBy(() -> upgraded.accept(generation(2, 'c', 'd', current)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("exact legacy-head replay");
+
+        upgraded.accept(current);
+        upgraded.accept(generation(2, 'c', 'd', current));
+
+        assertThat(database.jdbc().queryForMap("""
+                SELECT sequence, inventory_generation, inventory_material_fingerprint,
+                       publication_state
+                FROM rg_ext_anchor_recovery_inventory_floors
+                WHERE deployment_scope_id = ? AND fleet_id = ?
+                """, SCOPE, FLEET))
+                .containsEntry("SEQUENCE", 2L)
+                .containsEntry("INVENTORY_GENERATION", 8L)
+                .containsEntry("INVENTORY_MATERIAL_FINGERPRINT", fingerprint('2'))
+                .containsEntry("PUBLICATION_STATE", "ACTIVE");
     }
 
     @Test
@@ -233,8 +344,30 @@ class DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicati
                 .Generation(
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
                         .Generation.SCHEMA_VERSION,
-                deploymentScopeId, fleetId, sequence, fingerprint(publication),
-                fingerprint(witness), previousPublication, previousWitness);
+                deploymentScopeId, fleetId, sequence, sequence + 6,
+                fingerprint((char) ('0' + sequence)), fingerprint(publication),
+                fingerprint(witness), State.ACTIVE, previousPublication, previousWitness);
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
+            .Generation generation(
+            String deploymentScopeId,
+            String fleetId,
+            long sequence,
+            long inventoryGeneration,
+            char inventory,
+            char publication,
+            char witness,
+            State state,
+            String previousPublication,
+            String previousWitness) {
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
+                .Generation(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor
+                        .Generation.SCHEMA_VERSION,
+                deploymentScopeId, fleetId, sequence, inventoryGeneration,
+                fingerprint(inventory), fingerprint(publication), fingerprint(witness), state,
+                previousPublication, previousWitness);
     }
 
     private static String fingerprint(char value) {

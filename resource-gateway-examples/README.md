@@ -523,7 +523,10 @@ fleet, policy, sequence, inventory identity, state, validity, and both publicati
 predecessors. A
 `DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor` serializes
 verified heads by scope and fleet, survives process reconstruction, and rejects rollback,
-same-sequence forks, gaps, broken predecessors, corrupt rows, and cross-fleet reuse. This increment
+same-sequence forks, gaps, broken predecessors, nested-inventory rollback or same-generation drift,
+same-inventory reactivation after revocation, corrupt rows, and cross-fleet reuse. Its v2 record
+upgrades a v1 row only after an exact cryptographically verified replay of the stored dual head;
+it never guesses missing legacy inventory state. This increment
 is the governance kernel only: the static authority does not yet fetch or consume remote
 publications, so runtime revocation still requires the dynamic authority described in the next
 stage.

@@ -7,6 +7,7 @@
 - strict `ACTIVE/REVOKED` publication；
 - 独立 witness checkpoint；
 - publication/witness 双前驱链；
+- nested inventory generation、identity 与撤销状态的单调 floor；
 - deployment scope + fleet 双重稳定作用域；
 - 数据库时钟、跨副本线性化、跨重启 durable floor；
 - strict machine JSON Schema。
@@ -24,9 +25,10 @@ static signed inventory 只能证明“这份 lane 清单在有效期内曾被�
 3. 两个副本没有接受同一 sequence 的不同事实；
 4. 数据库恢复后没有忘记曾见过的更高 publication head；
 5. publication authority 没有独自重写历史。
+6. 一个签名合法且双链连续的 successor 没有包裹更旧或同代不同身份的 inventory。
 
 因此本步不把 generation 继续塞进 replica-local 配置，而是建立两条独立签名链，并以持久 floor 记录系统
-已经接受的最高双链 head。
+已经接受的最高双链 head，并同时冻结该 head 对应的 inventory 代际、身份和治理状态。
 
 ## 3. Publication 协议
 
@@ -53,7 +55,8 @@ sequence、publication fingerprint 的交叉链接歧义；签名必须按 autho
 
 `ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor` 只接受已经完成 inventory、
 publication、witness、binding 与 freshness 验证的 private generation。candidate 同时携带 scope、fleet、
-sequence、当前 publication/witness fingerprint 和两个 predecessor。
+sequence、nested inventory generation/fingerprint、`ACTIVE/REVOKED`、当前 publication/witness fingerprint
+和两个 predecessor。
 
 `DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor` 使用
 `(deployment_scope_id, fleet_id)` 复合锁线性化所有副本：
@@ -62,9 +65,16 @@ sequence、当前 publication/witness fingerprint 和两个 predecessor。
 - 当前 exact generation 可幂等 replay；
 - successor 必须恰好 `current + 1`；
 - 两个 predecessor 必须分别等于当前双链 head；
+- nested inventory generation 不得回退，同 generation 不得替换 fingerprint；
+- `REVOKED` inventory 只有以更高 generation、不同 fingerprint 发布后才能重新激活；
 - rollback、同 sequence fork、gap、断链和跨 scope/fleet 输入全部拒绝；
-- 整行以 canonical fingerprint 绑定 scope、fleet、sequence、双 fingerprint 与数据库 observed time；
+- 整行以 canonical fingerprint 绑定 scope、fleet、sequence、inventory generation/identity/state、双 head 与数据库 observed time；
 - 腐化行不可读取，也不可被新 candidate 覆盖修复。
+
+存储记录升级为 v2。已存在的 v1 行先增补 nullable 列，但不能直接接纳 successor；调用方必须提供与旧
+sequence、publication head、witness head 完全相同且已经完成全链验签的当前 publication，事务才会用其
+nested inventory 事实水合 v2 行。旧 head 不精确、旧 whole-record fingerprint 腐化或直接跳 successor
+全部 fail closed，避免 schema migration 变成回滚旁路。
 
 表名控制在常见数据库 63 字符 identifier 限制内，但本步 SQL 仍只在仓内 H2 test-runtime 验证，不宣称
 PostgreSQL/MySQL 已认证。
@@ -77,6 +87,10 @@ PostgreSQL/MySQL 已认证。
 | 同 sequence 不同双 head | `fork`，事务回滚 |
 | 跳过 sequence | `sequence gap`，事务回滚 |
 | 任一 predecessor 不匹配 | `predecessor mismatch`，事务回滚 |
+| successor 包裹更低 inventory generation | `inventory rollback`，事务回滚 |
+| 同 inventory generation 替换 identity | `inventory fork`，事务回滚 |
+| 撤销后用同一 inventory 重新激活 | `reactivation`，事务回滚 |
+| v1 floor 未先精确回放当前 head | 拒绝迁移与 successor，不猜测旧 inventory 状态 |
 | scope/fleet 替换 | mutation 前拒绝 |
 | floor record 被部分改写 | whole-record 校验失败，禁止覆盖 |
 | 两副本竞争不同 successor | 数据库锁下仅一方成功，另一方稳定 fork |
@@ -95,9 +109,10 @@ mvn -f resource-gateway-examples/pom.xml \
   test
 ```
 
-该命令执行 15 tests，0 failures、0 errors、0 skips，覆盖 protocol cross-link、canonical signatures、
+该命令执行 18 tests，0 failures、0 errors、0 skips，覆盖 protocol cross-link、canonical signatures、
 state/reason、fingerprint tamper、Schema/DTO parity、敏感字段排除、durable rebuild、rollback/fork/gap、
-predecessor、scope/fleet isolation、row corruption、双副本竞争和数据库关闭。三个公共类型通过
+predecessor、nested inventory rollback/fork、撤销后重激活、v1→v2 精确水合、scope/fleet isolation、
+row corruption、双副本竞争和数据库关闭。三个公共类型通过
 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
 
 ## 7. 下一闭环
@@ -106,4 +121,3 @@ predecessor、scope/fleet isolation、row corruption、双副本竞争和数据�
 M-of-N publication 签名、独立 witness quorum、nested inventory 复验、ACTIVE-only runtime resolution、
 atomic last-known-good replacement、refresh failure hard fence、signed revocation、maximum snapshot age、
 floor-before-publish 和 worker in-flight fence。不得另建 unsigned revocation flag 或把 ETag 当作治理代际。
-
