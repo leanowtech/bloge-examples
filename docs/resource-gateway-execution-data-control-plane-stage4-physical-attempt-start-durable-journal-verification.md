@@ -117,6 +117,23 @@ TestSuiteStabilityJobServiceTest test
 结果为 127 tests，0 failures、0 errors、0 skips。两个新增 public 类型通过
 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
 
+### 5.1 Immutable full gate
+
+实现提交 `4142f0a9` 的 immutable `git archive` 快照执行：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml clean verify
+```
+
+- Maven：3972 tests，0 failures，0 errors，2 skips，`BUILD SUCCESS`；
+- structured cross-check：450 份 Surefire XML 合计 3972 tests，0 failures，0 errors，2 skips；
+- artifact：Spring Boot executable JAR 成功生成，39,441,632 bytes；
+- lifecycle：门禁退出后没有快照 Maven、ChromeDriver 或 Chrome for Testing 残留进程；
+- wall time：7 分 30 秒。
+
+该结果证明 journal 与完整数据库/API/真实浏览器回归、线程生命周期和可执行打包兼容，不证明尚未实现的
+真实 provider、worker dispatch、跨主机 cancellation 或 orphan reconciliation 已具备生产能力。
+
 ## 6. 尚未开放
 
 本增量没有 Spring bean、HTTP route、Schema、test-kit 或 capability advertisement。以下事项仍是启用

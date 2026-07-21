@@ -43,9 +43,9 @@
 > 因此 production readiness 继续关闭。验证见
 > [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)
 > 和 [source-head protocol verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-source-head-protocol-verification.md)。
-> 截至 physical-attempt reservation、provider-signed start proof kernel、positive queue lease epoch、
-> attempt cancellation coordinator、调用前数据库时间栅栏与浏览器生命周期修复的最终全量基线为
-> Resource Gateway 3950 tests（0 failures、
+> 截至 physical-attempt durable start journal、provider-signed start proof kernel、positive queue lease
+> epoch、attempt cancellation coordinator、调用前数据库时间栅栏与浏览器生命周期修复的最终全量基线为
+> Resource Gateway 3972 tests（0 failures、
 > 0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
@@ -135,7 +135,8 @@
 > deployment floor 和 terminal entry 原子提交；本地 unknown 保持 `PREPARED`，签名 `REJECTED` 只进入
 > `UNCONFIRMED`。22 项 H2 行为/并发/篡改测试与 127 项跨 queue/runtime 联合门禁全绿，两个公共类型
 > strict JavaDoc 零告警。start coordinator、真实 provider、queue/cancel/natural-terminal 投影、slot 延迟释放
-> 和 orphan reconciliation 仍未接线，capability 继续关闭。验证见
+> 和 orphan reconciliation 仍未接线，capability 继续关闭。实现提交的隔离快照完整 `clean verify` 执行
+> 3972 tests（0 failures、0 errors、2 skips），并通过 Surefire XML、可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start durable-journal verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-durable-journal-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |
