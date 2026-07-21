@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseControlPlaneCertificateStatusFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -55,11 +56,21 @@ public class ControlPlaneCertificateStatusRuntimeConfiguration {
         return floor;
     }
 
+    /** Registers fixed-cardinality refresh, admission, freshness, and SLO metrics. */
+    @Bean
+    @ConditionalOnMissingBean(ControlPlaneCertificateStatusTelemetry.class)
+    ControlPlaneCertificateStatusTelemetry controlPlaneCertificateStatusTelemetry(
+            MeterRegistry meterRegistry) {
+        return new ControlPlaneCertificateStatusTelemetry(meterRegistry);
+    }
+
     /** Creates the local dual-clock hard-expiry request admission cache. */
     @Bean
     @ConditionalOnMissingBean(ControlPlaneCertificateStatusAdmission.class)
-    ControlPlaneCertificateStatusAdmission controlPlaneCertificateStatusAdmission() {
-        return new ControlPlaneCertificateStatusAdmission();
+    ControlPlaneCertificateStatusAdmission controlPlaneCertificateStatusAdmission(
+            ControlPlaneCertificateStatusTelemetry telemetry) {
+        return new ControlPlaneCertificateStatusAdmission(
+                Clock.systemUTC(), System::nanoTime, telemetry);
     }
 
     /** Creates the strict private-PKIX/SPKI/mTLS normalized-publication source. */
@@ -82,17 +93,31 @@ public class ControlPlaneCertificateStatusRuntimeConfiguration {
             ControlPlaneCertificateStatusFloor floor,
             ControlPlaneCertificateStatusSource source,
             ControlPlaneCertificateStatusAdmission admission,
-            ControlPlaneCertificateStatusRuntimeProperties properties) {
+            ControlPlaneCertificateStatusRuntimeProperties properties,
+            ControlPlaneCertificateStatusTelemetry telemetry) {
         return new ControlPlaneCertificateStatusMonitor(floor, source, admission,
-                Clock.systemUTC(), properties.maximumBatch());
+                Clock.systemUTC(), properties.maximumBatch(), telemetry);
+    }
+
+    /** Creates the local fixed-policy SLO assessor and Actuator health contributor. */
+    @Bean
+    @ConditionalOnMissingBean(ControlPlaneCertificateStatusSloMonitor.class)
+    ControlPlaneCertificateStatusSloMonitor controlPlaneCertificateStatusSloMonitor(
+            ControlPlaneCertificateStatusMonitor monitor,
+            ControlPlaneCertificateStatusAdmission admission,
+            ControlPlaneCertificateStatusTelemetry telemetry,
+            ControlPlaneCertificateStatusRuntimeProperties runtimeProperties) {
+        return new ControlPlaneCertificateStatusSloMonitor(monitor, admission, telemetry,
+                Clock.systemUTC(), runtimeProperties.slo().policy());
     }
 
     /** Creates the fixed-delay autonomous refresh trigger. */
     @Bean
     @ConditionalOnMissingBean(ControlPlaneCertificateStatusScheduler.class)
     ControlPlaneCertificateStatusScheduler controlPlaneCertificateStatusScheduler(
-            ControlPlaneCertificateStatusMonitor monitor) {
-        return new ControlPlaneCertificateStatusScheduler(monitor);
+            ControlPlaneCertificateStatusMonitor monitor,
+            ControlPlaneCertificateStatusSloMonitor sloMonitor) {
+        return new ControlPlaneCertificateStatusScheduler(monitor, sloMonitor);
     }
 
     /** Creates bounded Actuator truth for the status ingestion and admission path. */

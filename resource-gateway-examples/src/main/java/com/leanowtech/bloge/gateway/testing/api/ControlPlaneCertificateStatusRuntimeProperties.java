@@ -30,6 +30,7 @@ import java.util.Objects;
  * @param refreshDelayMillis fixed delay between refresh cycles
  * @param initialDelayMillis startup delay before the first cycle
  * @param maximumBatch maximum contiguous publications per cycle
+ * @param slo finite fixed-cardinality local service-level policy
  * @param transport independent private PKIX/SPKI/mTLS/workload-identity source transport
  */
 @ConfigurationProperties(
@@ -53,6 +54,7 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
         Long refreshDelayMillis,
         Long initialDelayMillis,
         Integer maximumBatch,
+        @NestedConfigurationProperty ControlPlaneCertificateStatusSloProperties slo,
         @NestedConfigurationProperty RecoveryFleetPublicationTransportProperties transport) {
 
     /** Configuration prefix shared by YAML, environment, scheduler, and capability metadata. */
@@ -79,6 +81,8 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
         refreshDelayMillis = refreshDelayMillis == null ? 30_000L : refreshDelayMillis;
         initialDelayMillis = initialDelayMillis == null ? 1_000L : initialDelayMillis;
         maximumBatch = maximumBatch == null ? 8 : maximumBatch;
+        slo = Objects.requireNonNullElseGet(
+                slo, ControlPlaneCertificateStatusSloProperties::defaults);
         transport = Objects.requireNonNullElseGet(
                 transport, RecoveryFleetPublicationTransportProperties::disabled);
         boolean residual = !deploymentScopeId.isBlank() || !trustDomain.isBlank()
@@ -88,7 +92,7 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
                 || requestTimeoutMillis != 5_000L || maximumPublicationBytes != 512 * 1024
                 || clockSkewSeconds != 60L || maximumPublicationLifetimeSeconds != 3_600L
                 || refreshDelayMillis != 30_000L || initialDelayMillis != 1_000L
-                || maximumBatch != 8 || transport.configured();
+                || maximumBatch != 8 || slo.configured() || transport.configured();
         if (required && !enabled || !enabled && residual
                 || enabled && (!identifier(deploymentScopeId) || !identifier(trustDomain)
                 || !validPolicies(acceptedPolicyFingerprints)
@@ -106,6 +110,12 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
                 || refreshDelayMillis < 100 || refreshDelayMillis > 300_000
                 || initialDelayMillis < 0 || initialDelayMillis > 300_000
                 || maximumBatch < 1 || maximumBatch > 32
+                || secondsToMillis(slo.startupGraceSeconds())
+                < saturatedAdd(initialDelayMillis, requestTimeoutMillis)
+                || secondsToMillis(slo.maximumRefreshSuccessAgeSeconds())
+                < saturatedAdd(refreshDelayMillis, requestTimeoutMillis)
+                || slo.minimumExpiryHeadroomSeconds()
+                >= maximumPublicationLifetimeSeconds
                 || !transport.enabled() || !transport.required()
                 || transport.trustStorePath().isBlank()
                 || transport.trustStorePasswordRef().isBlank()
@@ -131,6 +141,7 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
         return new ControlPlaneCertificateStatusRuntimeProperties(false, false,
                 "", "", "", 0, "[]", 0L, "", "",
                 5_000L, 512 * 1024, 60L, 3_600L, 30_000L, 1_000L, 8,
+                ControlPlaneCertificateStatusSloProperties.defaults(),
                 RecoveryFleetPublicationTransportProperties.disabled());
     }
 
@@ -178,5 +189,21 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
     private static IllegalArgumentException invalid() {
         return new IllegalArgumentException(
                 "Control-plane certificate status runtime configuration is invalid");
+    }
+
+    private static long secondsToMillis(long seconds) {
+        try {
+            return Math.multiplyExact(seconds, 1_000L);
+        } catch (ArithmeticException overflow) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    private static long saturatedAdd(long left, long right) {
+        try {
+            return Math.addExact(left, right);
+        } catch (ArithmeticException overflow) {
+            return Long.MAX_VALUE;
+        }
     }
 }

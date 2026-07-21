@@ -65,10 +65,19 @@ export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_EXPECTED_CLIENT_URI_SA
 export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_CLIENT_ISSUER_SPKI_PINS=sha256:<64-hex>
 export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_EXPECTED_SERVER_URI_SAN=spiffe://example.test/ca/status
 export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_SERVER_ISSUER_SPKI_PINS=sha256:<64-hex>
+
+export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_STARTUP_GRACE_SECONDS=60
+export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_REFRESH_SUCCESS_AGE_SECONDS=120
+export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MINIMUM_EXPIRY_HEADROOM_SECONDS=60
+export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MINIMUM_REFRESH_SAMPLES=20
+export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_REFRESH_FAILURE_BASIS_POINTS=500
+export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MINIMUM_ADMISSION_SAMPLES=100
+export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_ADMISSION_DENIAL_BASIS_POINTS=1000
+export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_CONSECUTIVE_BATCH_LIMIT_CYCLES=3
 ```
 
 密码值只存在于 `*_PASSWORD_REF` 指向的 secret 中。使用演示脚本时，staging 会在 Maven build 前
-检查依赖、scope、HTTPS、baseline、public-only authority JSON、I/O/scheduler/batch bounds、文件可读性、
+检查依赖、scope、HTTPS、baseline、public-only authority JSON、I/O/scheduler/batch/SLO bounds、文件可读性、
 credential reference、SPKI、workload identity 与跨 source identity isolation：
 
 ```bash
@@ -102,17 +111,28 @@ runtime 状态；descriptor 异常时使用固定 reason code，不携带异常�
 - `controlPlaneCertificateStatusAvailable`
 - `controlPlaneCertificateStatusFresh`
 - `controlPlaneCertificateRevocationAdmission`
+- `controlPlaneCertificateStatusSloIntegrated`
+- `controlPlaneCertificateStatusSloHealthy`
+- `controlPlaneCertificateStatusFixedCardinalityTelemetry`
 
 `Available=false, Fresh=true` 表示远端刚发生短暂故障、但已验证 cache 仍在硬租约内；它不是长期降级
 许可。`Fresh=false` 必须解释为请求 admission 已关闭。`controlPlaneCertificateRotationProductionReady`
 继续为 false。
 
+独立 SLO assessment 不复用 readiness 的瞬时语义：它以 closed violation vocabulary 检查启动宽限、
+当前 source outage、最近成功刷新年龄、hard-expiry headroom、成熟刷新失败率、成熟 admission deny-rate
+和连续 `BATCH_LIMIT` streak。后者只证明“本地有未追平 backlog 的信号”，不虚构外部 source head。
+因此 cache fresh 且 source 暂时不可用时，请求仍可按 exact binding 放行，但 SLO 同时进入
+`SLO_VIOLATED/SOURCE_UNAVAILABLE` 供告警消费。所有 meter tag 只来自 closed enum；target、authority、
+URI、fingerprint、credential、reason detail 和异常文本永不进入 metric identity。
+
 ## 6. 机器契约与测试证据
 
-本路径发布六个 closed JSON Schema：configuration、source descriptor、trust-store descriptor、monitor
-descriptor、admission descriptor 和 health。配置 schema 与两个 Spring profile、Java record、Java 25
+本路径发布七个 closed JSON Schema：configuration、source descriptor、trust-store descriptor、monitor
+descriptor、admission descriptor、health 和 SLO assessment。配置 schema 与两个 Spring profile、Java record、Java 25
 configuration metadata 做精确字段反射测试；未知字段、disabled residual、system trust downgrade、可选
-identity、重复 policy、超长配置与私钥字段均在 source I/O 前失败。
+identity、重复 policy、超长配置、私钥字段和与 I/O/publication lifetime 必然冲突的 SLO 窗口均在
+source I/O 前失败。
 
 以下 68 项状态链、真实 TLS source、durable floor、逐请求 gate 和 live transport 联合门禁已通过，
 0 failures、0 errors、0 skips：
@@ -137,7 +157,7 @@ mvn -f resource-gateway-examples/pom.xml test \
 - certified CA event/OCSP/CRL normalizer 的语义一致性、签名 custody 与互操作认证；
 - status authority key 和 source client identity 的无重启轮换、紧急撤销与恢复；
 - 多区域 source HA、anti-equivocation witness、publication retention/compaction 与 backlog contract；
-- freshness/backlog/deny-rate 固定基数指标、外部 alert routing 与 SLO burn-rate；
+- 精确 upstream source-head backlog、外部 alert routing、跨窗口 burn-rate 与 pager 演练；
 - production database、backup/restore、DR、split-brain、clock anomaly 与 chaos 认证；
 - HSM/KMS custody、maker/checker 变更流程和跨版本 N/N-1 compatibility matrix。
 

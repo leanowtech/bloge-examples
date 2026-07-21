@@ -3,13 +3,16 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
@@ -49,6 +52,32 @@ class ControlPlaneCertificateStatusProductSchemaTest {
                 "control-plane-certificate-status-monitor-descriptor-v1.schema.json");
         assertRecord(trust,
                 "control-plane-certificate-status-trust-store-descriptor-v1.schema.json");
+        var policy = new ControlPlaneCertificateStatusSloMonitor.Policy(
+                60, 120, 60, 20, 500, 100, 1_000, 3);
+        var assessment = new ControlPlaneCertificateStatusSloMonitor.Assessment(
+                ControlPlaneCertificateStatusSloMonitor.Assessment.SCHEMA_VERSION,
+                ControlPlaneCertificateStatusSloMonitor.State.HEALTHY, java.util.List.of(),
+                NOW, "CURRENT", true, true, 1, 60,
+                20, 0, 0, 100, 0, 0, 0, 1, policy.descriptor());
+        assertRecord(assessment,
+                "control-plane-certificate-status-slo-assessment-v1.schema.json");
+
+        ControlPlaneCertificateStatusMonitor watcher = mock(
+                ControlPlaneCertificateStatusMonitor.class);
+        when(watcher.descriptor()).thenReturn(monitor);
+        ControlPlaneCertificateStatusAdmission cache = mock(
+                ControlPlaneCertificateStatusAdmission.class);
+        when(cache.descriptor()).thenReturn(admission);
+        var telemetry = new ControlPlaneCertificateStatusTelemetry(
+                new SimpleMeterRegistry());
+        telemetry.recordRefresh(monitor, admission);
+        var slo = new ControlPlaneCertificateStatusSloMonitor(
+                watcher, cache, telemetry, Clock.fixed(NOW, ZoneOffset.UTC), policy);
+        JsonNode sloSchema = schema(
+                "control-plane-certificate-status-slo-assessment-v1.schema.json");
+        assertProperties(objectMapper.valueToTree(slo.health().getDetails()),
+                sloSchema.path("properties"));
+        assertThat(sloSchema.path("additionalProperties").asBoolean(true)).isFalse();
     }
 
     @Test
@@ -99,6 +128,9 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         assertThat(propertyNames(schema.at("/$defs/transport/properties")))
                 .containsExactlyInAnyOrderElementsOf(recordPropertyNames(
                         RecoveryFleetPublicationTransportProperties.class));
+        assertThat(propertyNames(schema.at("/$defs/slo/properties")))
+                .containsExactlyInAnyOrderElementsOf(recordPropertyNames(
+                        ControlPlaneCertificateStatusSloProperties.class));
         assertThat(schema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(schema.at("/$defs/transport/additionalProperties").asBoolean(true))
                 .isFalse();
@@ -126,6 +158,27 @@ class ControlPlaneCertificateStatusProductSchemaTest {
                                 ControlPlaneCertificateStatusMonitor.RefreshStatus.values())
                         .map(Enum::name).toArray(String[]::new));
 
+        JsonNode slo = schema(
+                "control-plane-certificate-status-slo-assessment-v1.schema.json");
+        assertThat(slo.at("/properties/state/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(Arrays.stream(
+                                ControlPlaneCertificateStatusSloMonitor.State.values())
+                        .map(Enum::name).toArray(String[]::new));
+        assertThat(slo.at("/properties/violations/items/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(Arrays.stream(
+                                ControlPlaneCertificateStatusSloMonitor.Violation.values())
+                        .map(Enum::name).toArray(String[]::new));
+        assertThat(slo.at("/properties/monitorStatus/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder(Arrays.stream(
+                                ControlPlaneCertificateStatusMonitor.RefreshStatus.values())
+                        .map(Enum::name).toArray(String[]::new));
+        assertThat(propertyNames(slo.at("/$defs/policy/properties")))
+                .containsExactlyInAnyOrderElementsOf(recordPropertyNames(
+                        ControlPlaneCertificateStatusSloMonitor.PolicyDescriptor.class));
+
         String combined = "";
         for (String name : schemaNames()) {
             combined += Files.readString(schemaPath(name));
@@ -146,6 +199,7 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         Set<String> expected = propertyNames(schema.path("properties"));
         Set<String> expectedTransport = propertyNames(
                 schema.at("/$defs/transport/properties"));
+        Set<String> expectedSlo = propertyNames(schema.at("/$defs/slo/properties"));
         YAMLMapper yaml = new YAMLMapper();
 
         for (String profile : new String[]{"test", "staging"}) {
@@ -155,6 +209,8 @@ class ControlPlaneCertificateStatusProductSchemaTest {
                     .containsExactlyInAnyOrderElementsOf(expected);
             assertThat(propertyNames(configured.path("transport")))
                     .containsExactlyInAnyOrderElementsOf(expectedTransport);
+            assertThat(propertyNames(configured.path("slo")))
+                    .containsExactlyInAnyOrderElementsOf(expectedSlo);
         }
         JsonNode staging = yaml.readTree(Files.readString(profilePath("staging")))
                 .at("/gateway/testing/control-plane-certificate-status");
@@ -174,8 +230,11 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         String prefix = ControlPlaneCertificateStatusRuntimeProperties.PREFIX;
         Set<String> expected = new LinkedHashSet<>();
         recordPropertyNames(ControlPlaneCertificateStatusRuntimeProperties.class).stream()
-                .filter(name -> !"transport".equals(name))
+                .filter(name -> !"transport".equals(name) && !"slo".equals(name))
                 .map(name -> prefix + "." + name)
+                .forEach(expected::add);
+        recordPropertyNames(ControlPlaneCertificateStatusSloProperties.class).stream()
+                .map(name -> prefix + ".slo." + name)
                 .forEach(expected::add);
         recordPropertyNames(RecoveryFleetPublicationTransportProperties.class).stream()
                 .map(name -> prefix + ".transport." + name)
@@ -183,7 +242,7 @@ class ControlPlaneCertificateStatusProductSchemaTest {
 
         assertThat(metadata.path("groups").valueStream()
                 .map(value -> value.path("name").asText()))
-                .contains(prefix, prefix + ".transport");
+                .contains(prefix, prefix + ".slo", prefix + ".transport");
         var properties = metadata.path("properties").valueStream()
                 .filter(value -> value.path("name").asText().startsWith(prefix + "."))
                 .toList();
@@ -260,6 +319,7 @@ class ControlPlaneCertificateStatusProductSchemaTest {
                 "control-plane-certificate-status-monitor-descriptor-v1.schema.json",
                 "control-plane-certificate-status-trust-store-descriptor-v1.schema.json",
                 "control-plane-certificate-status-health-v1.schema.json",
+                "control-plane-certificate-status-slo-assessment-v1.schema.json",
                 "control-plane-certificate-status-configuration-v1.schema.json");
     }
 }

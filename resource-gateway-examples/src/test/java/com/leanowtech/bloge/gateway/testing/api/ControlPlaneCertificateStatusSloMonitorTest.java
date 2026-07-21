@@ -12,6 +12,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -137,7 +139,42 @@ class ControlPlaneCertificateStatusSloMonitorTest {
         assertThat(assessment.state()).isEqualTo(
                 ControlPlaneCertificateStatusSloMonitor.State.OBSERVATION_UNAVAILABLE);
         assertThat(assessment.toString()).doesNotContain("vault://", "secret");
-        assertThat(harness.slo().health().getDetails()).hasSize(12);
+        assertThat(harness.slo().health().getDetails())
+                .containsKeys("schemaVersion", "state", "violations", "observedAt",
+                        "monitorStatus", "sourceAvailable", "admissionFresh", "sequence",
+                        "secondsToExpiry", "refreshAttempts", "refreshFailures",
+                        "refreshFailureBasisPoints", "admissionChecks", "admissionDenials",
+                        "admissionDenialBasisPoints", "consecutiveBatchLimitCycles",
+                        "lastRefreshSuccessAgeSeconds", "policy")
+                .hasSize(18);
+    }
+
+    @Test
+    void metricRegistryFailureCannotBreakScheduledAssessment() {
+        MutableClock clock = new MutableClock(NOW);
+        ControlPlaneCertificateStatusMonitor monitor = mock(
+                ControlPlaneCertificateStatusMonitor.class);
+        when(monitor.descriptor()).thenReturn(monitor(
+                ControlPlaneCertificateStatusMonitor.RefreshStatus.CURRENT,
+                true, true, 1, 0, NOW));
+        ControlPlaneCertificateStatusAdmission admission = mock(
+                ControlPlaneCertificateStatusAdmission.class);
+        when(admission.descriptor()).thenReturn(admission(true, true, 120));
+        ControlPlaneCertificateStatusTelemetry telemetry = mock(
+                ControlPlaneCertificateStatusTelemetry.class);
+        when(telemetry.snapshot()).thenReturn(new ControlPlaneCertificateStatusTelemetry.Snapshot(
+                1, 0, 1, 0, 0, 0, NOW, NOW));
+        doThrow(new IllegalStateException("https://metrics.internal?secret=value"))
+                .when(telemetry).observe(any());
+        var slo = new ControlPlaneCertificateStatusSloMonitor(
+                monitor, admission, telemetry, clock, POLICY);
+
+        var assessment = slo.assess();
+
+        assertThat(assessment.state()).isEqualTo(
+                ControlPlaneCertificateStatusSloMonitor.State.OBSERVATION_UNAVAILABLE);
+        assertThat(slo.descriptor()).isEqualTo(assessment);
+        assertThat(assessment.toString()).doesNotContain("metrics.internal", "secret=value");
     }
 
     @Test

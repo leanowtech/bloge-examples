@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.actuate.health.Status;
@@ -39,17 +40,23 @@ class ControlPlaneCertificateStatusRuntimeConfigurationTest {
             ControlPlaneCertificateStatusFloor floor =
                     configuration.controlPlaneCertificateStatusFloor(
                             database, objectMapper, trust, properties);
+            ControlPlaneCertificateStatusTelemetry telemetry =
+                    configuration.controlPlaneCertificateStatusTelemetry(
+                            new SimpleMeterRegistry());
             ControlPlaneCertificateStatusAdmission admission =
-                    configuration.controlPlaneCertificateStatusAdmission();
+                    configuration.controlPlaneCertificateStatusAdmission(telemetry);
             ControlPlaneCertificateStatusSource source =
                     configuration.controlPlaneCertificateStatusSource(objectMapper,
                             reference -> RecoveryFleetPublicationTlsFixture.password(),
                             properties);
             ControlPlaneCertificateStatusMonitor monitor =
                     configuration.controlPlaneCertificateStatusMonitor(
-                            floor, source, admission, properties);
+                            floor, source, admission, properties, telemetry);
+            ControlPlaneCertificateStatusSloMonitor sloMonitor =
+                    configuration.controlPlaneCertificateStatusSloMonitor(
+                            monitor, admission, telemetry, properties);
             ControlPlaneCertificateStatusScheduler scheduler =
-                    configuration.controlPlaneCertificateStatusScheduler(monitor);
+                    configuration.controlPlaneCertificateStatusScheduler(monitor, sloMonitor);
             ControlPlaneCertificateStatusHealth health =
                     configuration.controlPlaneCertificateStatusHealth(
                             monitor, source, trust, admission);
@@ -66,6 +73,8 @@ class ControlPlaneCertificateStatusRuntimeConfigurationTest {
                 assertThat(descriptor.strictProtocol()).isTrue();
             });
             assertThat(scheduler).isNotNull();
+            assertThat(sloMonitor.descriptor().state()).isEqualTo(
+                    ControlPlaneCertificateStatusSloMonitor.State.INITIALIZING);
             assertThat(health.health().getStatus()).isEqualTo(Status.DOWN);
             assertThat(health.health().getDetails())
                     .containsEntry("runtimeStatus", "ADMISSION_STALE")
@@ -90,7 +99,7 @@ class ControlPlaneCertificateStatusRuntimeConfigurationTest {
                 authorityKeysJson(objectMapper), 0L, fingerprint('0'),
                 "https://certificate-status.example.test/publications",
                 2_000L, 64 * 1024, 60L, 3_600L, 30_000L, 1_000L, 8,
-                transport);
+                ControlPlaneCertificateStatusSloProperties.defaults(), transport);
     }
 
     private static String authorityKeysJson(ObjectMapper objectMapper) throws Exception {

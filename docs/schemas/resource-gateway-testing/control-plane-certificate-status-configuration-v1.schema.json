@@ -11,7 +11,7 @@
     "baseline-sequence", "baseline-publication-fingerprint", "endpoint-uri",
     "request-timeout-millis", "maximum-publication-bytes", "clock-skew-seconds",
     "maximum-publication-lifetime-seconds", "refresh-delay-millis",
-    "initial-delay-millis", "maximum-batch", "transport"
+    "initial-delay-millis", "maximum-batch", "slo", "transport"
   ],
   "properties": {
     "enabled": { "type": "boolean" },
@@ -48,6 +48,7 @@
     "refresh-delay-millis": { "type": "integer", "minimum": 100, "maximum": 300000 },
     "initial-delay-millis": { "type": "integer", "minimum": 0, "maximum": 300000 },
     "maximum-batch": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "slo": { "$ref": "#/$defs/slo" },
     "transport": { "$ref": "#/$defs/transport" }
   },
   "$defs": {
@@ -60,6 +61,43 @@
       "pattern": "^(|sha256:[a-f0-9]{64})$"
     },
     "optionalValue": { "type": "string", "maxLength": 2048 },
+    "slo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startup-grace-seconds", "maximum-refresh-success-age-seconds",
+        "minimum-expiry-headroom-seconds", "minimum-refresh-samples",
+        "maximum-refresh-failure-basis-points", "minimum-admission-samples",
+        "maximum-admission-denial-basis-points",
+        "maximum-consecutive-batch-limit-cycles"
+      ],
+      "properties": {
+        "startup-grace-seconds": {
+          "type": "integer", "minimum": 0, "maximum": 3600
+        },
+        "maximum-refresh-success-age-seconds": {
+          "type": "integer", "minimum": 1, "maximum": 86400
+        },
+        "minimum-expiry-headroom-seconds": {
+          "type": "integer", "minimum": 0, "maximum": 86400
+        },
+        "minimum-refresh-samples": {
+          "type": "integer", "minimum": 1, "maximum": 1000000
+        },
+        "maximum-refresh-failure-basis-points": {
+          "type": "integer", "minimum": 0, "maximum": 10000
+        },
+        "minimum-admission-samples": {
+          "type": "integer", "minimum": 1, "maximum": 1000000
+        },
+        "maximum-admission-denial-basis-points": {
+          "type": "integer", "minimum": 0, "maximum": 10000
+        },
+        "maximum-consecutive-batch-limit-cycles": {
+          "type": "integer", "minimum": 0, "maximum": 100
+        }
+      }
+    },
     "transport": {
       "type": "object",
       "additionalProperties": false,
@@ -121,6 +159,18 @@
           "refresh-delay-millis": { "const": 30000 },
           "initial-delay-millis": { "const": 1000 },
           "maximum-batch": { "const": 8 },
+          "slo": {
+            "properties": {
+              "startup-grace-seconds": { "const": 60 },
+              "maximum-refresh-success-age-seconds": { "const": 120 },
+              "minimum-expiry-headroom-seconds": { "const": 60 },
+              "minimum-refresh-samples": { "const": 20 },
+              "maximum-refresh-failure-basis-points": { "const": 500 },
+              "minimum-admission-samples": { "const": 100 },
+              "maximum-admission-denial-basis-points": { "const": 1000 },
+              "maximum-consecutive-batch-limit-cycles": { "const": 3 }
+            }
+          },
           "transport": {
             "properties": {
               "enabled": { "const": false },

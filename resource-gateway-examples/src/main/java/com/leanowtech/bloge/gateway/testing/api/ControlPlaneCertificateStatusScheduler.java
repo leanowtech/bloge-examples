@@ -8,10 +8,24 @@ import java.util.Objects;
 public final class ControlPlaneCertificateStatusScheduler {
 
     private final ControlPlaneCertificateStatusMonitor monitor;
+    private final ControlPlaneCertificateStatusSloMonitor sloMonitor;
 
     /** @param monitor bounded durable-to-local status refresh pipeline */
     public ControlPlaneCertificateStatusScheduler(ControlPlaneCertificateStatusMonitor monitor) {
+        this(monitor, null);
+    }
+
+    /**
+     * Creates a refresh trigger that publishes SLO truth after each bounded source cycle.
+     *
+     * @param monitor durable-to-local status refresh pipeline
+     * @param sloMonitor local SLO assessor, nullable only for legacy isolated construction
+     */
+    public ControlPlaneCertificateStatusScheduler(
+            ControlPlaneCertificateStatusMonitor monitor,
+            ControlPlaneCertificateStatusSloMonitor sloMonitor) {
         this.monitor = Objects.requireNonNull(monitor, "monitor");
+        this.sloMonitor = sloMonitor;
     }
 
     /** Advances at most the configured batch and leaves every failure as bounded monitor state. */
@@ -20,5 +34,8 @@ public final class ControlPlaneCertificateStatusScheduler {
             fixedDelayString = "${gateway.testing.control-plane-certificate-status.refresh-delay-millis:30000}")
     public void refresh() {
         monitor.refresh();
+        if (sloMonitor != null) {
+            sloMonitor.assess();
+        }
     }
 }

@@ -28,11 +28,15 @@
 > target/generation/settings 的逐请求 gate 已形成可嵌入内核。后续产品增量已补齐 strict normalized
 > publication HTTPS source、private PKIX/SPKI/mTLS 与双端 workload identity、数据库 floor、bounded
 > monitor/scheduler、Spring test/staging composition、固定基数 health、Tool Studio capability、严格
-> Schema/profile metadata 和 demo preflight；12 条 live transport 在 handler I/O 前执行 exact status
+> Schema/profile metadata 和 demo preflight；后续 SLO 增量又补齐固定基数 refresh/admission telemetry、
+> 启动宽限、source outage、refresh age/failure ratio、hard-expiry headroom、deny-rate 与连续 batch-limit
+> backlog signal 的 closed assessment，并接入 Actuator、Tool Studio 和 demo preflight；12 条 live
+> transport 在 handler I/O 前执行 exact status
 > admission。远端短暂不可用时只允许使用尚未越过 wall-clock + monotonic hard expiry 的 durable cached
 > snapshot，撤销、未知、错代、fingerprint 漂移和硬过期均立即失败关闭。source 使用独立静态身份以避免
 > 由被保护 transport 拉取自身状态的递归 bootstrap。certified enterprise CA/OCSP/CRL adapter、动态
-> authority/source identity 轮换、外部 SLO、enterprise custody 和生产数据库/HA/DR/chaos 仍未闭合，
+> authority/source identity 轮换、精确 source-head backlog、外部 alert/burn-rate routing、enterprise
+> custody 和生产数据库/HA/DR/chaos 仍未闭合，
 > 因此 production readiness 继续关闭。验证见
 > [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)。
 > 本增量最终全量基线为 Resource Gateway 3817 tests（0 failures、0 errors、2 个条件浏览器跳过）和

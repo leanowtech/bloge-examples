@@ -535,9 +535,15 @@ of the rotating transports it protects; this avoids a recursive bootstrap depend
 source outage may continue serving only while the last durable signed snapshot remains inside its
 wall-clock and monotonic hard-expiry lease. Actuator and Tool Studio distinguish source
 availability from cached admission freshness, and expose no URI, certificate, fingerprint,
-credential reference, or provider diagnostic. The demo preflight validates exact scope binding,
-HTTPS, public-only trust material, finite I/O/scheduler bounds, private trust, workload identities,
-and cross-source client-identity isolation before Maven build. See the
+credential reference, or provider diagnostic. A sibling fixed-cardinality SLO assessment tracks
+startup grace, current source outage, last-success age, hard-expiry headroom, mature refresh
+failure and admission-denial ratios, and consecutive batch-limit cycles. Configure its bounded
+thresholds with `RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_*`. A fresh cache may still admit
+exact requests while the SLO reports `SOURCE_UNAVAILABLE`; availability policy and alert truth are
+intentionally separate. Micrometer and Tool Studio export only closed decisions and aggregate
+counts. The demo preflight validates exact scope binding, HTTPS, public-only trust material, finite
+I/O/scheduler/SLO bounds, private trust, workload identities, and cross-source client-identity
+isolation before Maven build. See the
 [certificate-status product verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md).
 
 Authenticated CA event delivery is now available as a separate test/staging product path. Set
@@ -558,7 +564,8 @@ See the [event watcher product verification](../docs/resource-gateway-execution-
 `productionReady` deliberately remains false. The delivered test/staging path does not yet prove a
 certified enterprise CA/OCSP/CRL normalizer, dynamic status-authority trust rotation, CA source HA
 and retention/compaction, event/status-source client-certificate hot rotation, external alerting
-and freshness/backlog SLO, HSM custody, production database certification, or HA/DR/chaos behavior.
+and burn-rate routing, an exact upstream source-head backlog contract, HSM custody, production
+database certification, or HA/DR/chaos behavior.
 See the
 [certificate identity and rotation kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md).
 

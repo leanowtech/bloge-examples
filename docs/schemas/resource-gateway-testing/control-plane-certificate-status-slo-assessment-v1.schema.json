@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-slo-assessment-v1.schema.json",
+  "title": "Resource Gateway Certificate Status SLO Assessment v1",
+  "description": "Fixed-cardinality local service-level assessment for normalized status refresh, hard-expiry headroom, possible catch-up backlog and request admission decisions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "state", "violations", "observedAt", "monitorStatus",
+    "sourceAvailable", "admissionFresh", "sequence", "secondsToExpiry",
+    "refreshAttempts", "refreshFailures", "refreshFailureBasisPoints",
+    "admissionChecks", "admissionDenials", "admissionDenialBasisPoints",
+    "consecutiveBatchLimitCycles", "lastRefreshSuccessAgeSeconds", "policy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateStatusSloAssessment.v1"
+    },
+    "state": {
+      "enum": ["HEALTHY", "INITIALIZING", "SLO_VIOLATED", "OBSERVATION_UNAVAILABLE"]
+    },
+    "violations": {
+      "type": "array",
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "NO_PUBLICATION", "ADMISSION_STALE", "EXPIRY_HEADROOM_LOW",
+          "SOURCE_UNAVAILABLE", "REFRESH_NEVER_SUCCEEDED", "REFRESH_SUCCESS_STALE",
+          "REFRESH_FAILURE_RATE_EXCEEDED", "ADMISSION_DENIAL_RATE_EXCEEDED",
+          "CATCH_UP_BACKLOG", "OBSERVATION_UNAVAILABLE"
+        ]
+      }
+    },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "monitorStatus": {
+      "enum": [
+        "CURRENT", "APPLIED", "BATCH_LIMIT", "SOURCE_UNAVAILABLE",
+        "SOURCE_REJECTED", "FLOOR_UNAVAILABLE", "PUBLICATION_REJECTED",
+        "CACHE_REJECTED", "UNAVAILABLE"
+      ]
+    },
+    "sourceAvailable": { "type": "boolean" },
+    "admissionFresh": { "type": "boolean" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "secondsToExpiry": { "type": "integer", "minimum": 0, "maximum": 86400 },
+    "refreshAttempts": { "type": "integer", "minimum": 0 },
+    "refreshFailures": { "type": "integer", "minimum": 0 },
+    "refreshFailureBasisPoints": { "$ref": "#/$defs/basisPoints" },
+    "admissionChecks": { "type": "integer", "minimum": 0 },
+    "admissionDenials": { "type": "integer", "minimum": 0 },
+    "admissionDenialBasisPoints": { "$ref": "#/$defs/basisPoints" },
+    "consecutiveBatchLimitCycles": { "type": "integer", "minimum": 0 },
+    "lastRefreshSuccessAgeSeconds": { "type": "integer", "minimum": -1 },
+    "policy": { "$ref": "#/$defs/policy" }
+  },
+  "$defs": {
+    "basisPoints": { "type": "integer", "minimum": 0, "maximum": 10000 },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startupGraceSeconds", "maximumRefreshSuccessAgeSeconds",
+        "minimumExpiryHeadroomSeconds", "minimumRefreshSamples",
+        "maximumRefreshFailureBasisPoints", "minimumAdmissionSamples",
+        "maximumAdmissionDenialBasisPoints", "maximumConsecutiveBatchLimitCycles"
+      ],
+      "properties": {
+        "startupGraceSeconds": { "type": "integer", "minimum": 0, "maximum": 3600 },
+        "maximumRefreshSuccessAgeSeconds": {
+          "type": "integer", "minimum": 1, "maximum": 86400
+        },
+        "minimumExpiryHeadroomSeconds": {
+          "type": "integer", "minimum": 0, "maximum": 86400
+        },
+        "minimumRefreshSamples": {
+          "type": "integer", "minimum": 1, "maximum": 1000000
+        },
+        "maximumRefreshFailureBasisPoints": { "$ref": "#/$defs/basisPoints" },
+        "minimumAdmissionSamples": {
+          "type": "integer", "minimum": 1, "maximum": 1000000
+        },
+        "maximumAdmissionDenialBasisPoints": { "$ref": "#/$defs/basisPoints" },
+        "maximumConsecutiveBatchLimitCycles": {
+          "type": "integer", "minimum": 0, "maximum": 100
+        }
+      }
+    }
+  }
+}

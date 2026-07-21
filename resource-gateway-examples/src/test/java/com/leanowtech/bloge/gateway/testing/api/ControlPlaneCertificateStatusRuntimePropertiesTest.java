@@ -29,6 +29,8 @@ class ControlPlaneCertificateStatusRuntimePropertiesTest {
         assertThat(properties.required()).isFalse();
         assertThat(properties.deploymentScopeId()).isEmpty();
         assertThat(properties.authorityKeysJson()).isEqualTo("[]");
+        assertThat(properties.slo()).isEqualTo(
+                ControlPlaneCertificateStatusSloProperties.defaults());
         assertThat(properties.transport().configured()).isFalse();
         assertThatThrownBy(properties::sourceSettings)
                 .isInstanceOf(IllegalArgumentException.class);
@@ -136,6 +138,28 @@ class ControlPlaneCertificateStatusRuntimePropertiesTest {
         });
     }
 
+    @Test
+    void sloWindowsMustCoverRuntimeIoAndRemainBelowPublicationLifetime()
+            throws Exception {
+        assertThatThrownBy(() -> properties(true, true, "rg-staging", "enterprise-ca",
+                POLICY, 1, keysJson(), new ControlPlaneCertificateStatusSloProperties(
+                        5L, 120L, 60L, 20, 500, 100, 1_000, 3), transport()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties(true, true, "rg-staging", "enterprise-ca",
+                POLICY, 1, keysJson(), new ControlPlaneCertificateStatusSloProperties(
+                        60L, 34L, 60L, 20, 500, 100, 1_000, 3), transport()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties(true, true, "rg-staging", "enterprise-ca",
+                POLICY, 1, keysJson(), new ControlPlaneCertificateStatusSloProperties(
+                        60L, 120L, 3_600L, 20, 500, 100, 1_000, 3), transport()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties(false, false, "", "", "", 0,
+                "[]", new ControlPlaneCertificateStatusSloProperties(
+                        61L, 120L, 60L, 20, 500, 100, 1_000, 3),
+                RecoveryFleetPublicationTransportProperties.disabled()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private ControlPlaneCertificateStatusRuntimeProperties enabled(String keysJson) {
         return properties(true, true, "rg-staging", "enterprise-ca", POLICY, 1,
                 keysJson, transport());
@@ -150,12 +174,26 @@ class ControlPlaneCertificateStatusRuntimePropertiesTest {
             int threshold,
             String keysJson,
             RecoveryFleetPublicationTransportProperties transport) {
+        return properties(enabled, required, scope, trustDomain, policies, threshold,
+                keysJson, ControlPlaneCertificateStatusSloProperties.defaults(), transport);
+    }
+
+    private static ControlPlaneCertificateStatusRuntimeProperties properties(
+            boolean enabled,
+            boolean required,
+            String scope,
+            String trustDomain,
+            String policies,
+            int threshold,
+            String keysJson,
+            ControlPlaneCertificateStatusSloProperties slo,
+            RecoveryFleetPublicationTransportProperties transport) {
         return new ControlPlaneCertificateStatusRuntimeProperties(enabled, required,
                 scope, trustDomain, policies, threshold, keysJson,
                 0L, fingerprint('0'),
                 enabled ? "https://certificate-status.example.test/publications" : "",
                 5_000L, 512 * 1024, 60L, 3_600L, 30_000L, 1_000L, 8,
-                transport);
+                slo, transport);
     }
 
     private ConfiguredControlPlaneCertificateStatusTrustStore trust(

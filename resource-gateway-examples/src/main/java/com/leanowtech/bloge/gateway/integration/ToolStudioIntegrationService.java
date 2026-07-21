@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEventWatcher;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationRuntime;
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateStatusSloMonitor;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority;
@@ -88,6 +89,7 @@ public class ToolStudioIntegrationService {
     private ControlPlaneCertificateRotationRuntime controlPlaneCertificateRotationRuntime;
     private ControlPlaneCertificateRotationEventWatcher
             controlPlaneCertificateRotationEventWatcher;
+    private ControlPlaneCertificateStatusSloMonitor controlPlaneCertificateStatusSloMonitor;
     private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory>
             recoveryFleetInventories = List.of();
     private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority>
@@ -211,6 +213,13 @@ public class ToolStudioIntegrationService {
     void configureControlPlaneCertificateRotationEventWatcher(
             ControlPlaneCertificateRotationEventWatcher watcher) {
         this.controlPlaneCertificateRotationEventWatcher = watcher;
+    }
+
+    /** Receives the profile-owned fixed-cardinality certificate-status SLO monitor. */
+    @Autowired(required = false)
+    void configureControlPlaneCertificateStatusSloMonitor(
+            ControlPlaneCertificateStatusSloMonitor monitor) {
+        this.controlPlaneCertificateStatusSloMonitor = monitor;
     }
 
     /** Receives the profile-owned semantic workbook projector with the isolated test runtime. */
@@ -586,6 +595,11 @@ public class ToolStudioIntegrationService {
                 rotation.certificateStatusFresh());
         features.put("controlPlaneCertificateRevocationAdmission",
                 rotation.certificateStatusIntegrated() && rotation.certificateStatusFresh());
+        CertificateStatusSloCapability statusSlo = currentCertificateStatusSlo();
+        features.put("controlPlaneCertificateStatusSloIntegrated", statusSlo.integrated());
+        features.put("controlPlaneCertificateStatusSloHealthy", statusSlo.healthy());
+        features.put("controlPlaneCertificateStatusFixedCardinalityTelemetry",
+                statusSlo.integrated());
         CertificateRotationEventDeliveryCapability eventDelivery =
                 currentCertificateRotationEventDelivery();
         features.put("controlPlaneCertificateRotationEventDeliveryIntegrated",
@@ -645,6 +659,22 @@ public class ToolStudioIntegrationService {
         } catch (RuntimeException unavailable) {
             return CertificateRotationEventDeliveryCapability.unavailable();
         }
+    }
+
+    private CertificateStatusSloCapability currentCertificateStatusSlo() {
+        if (controlPlaneCertificateStatusSloMonitor == null) {
+            return new CertificateStatusSloCapability(false, false);
+        }
+        try {
+            return new CertificateStatusSloCapability(true,
+                    controlPlaneCertificateStatusSloMonitor.descriptor().state()
+                            == ControlPlaneCertificateStatusSloMonitor.State.HEALTHY);
+        } catch (RuntimeException unavailable) {
+            return new CertificateStatusSloCapability(true, false);
+        }
+    }
+
+    private record CertificateStatusSloCapability(boolean integrated, boolean healthy) {
     }
 
     private record CertificateRotationEventDeliveryCapability(

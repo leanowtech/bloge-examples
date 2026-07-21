@@ -76,6 +76,7 @@ Environment:
   RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENDPOINT_URI  required HTTPS normalized-status endpoint
   RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_BASELINE_PUBLICATION_FINGERPRINT  required pinned status cursor
   RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_CLIENT_KEY_STORE_PATH  required independent client identity
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_*  optional bounded alert thresholds
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED  optional authenticated CA event delivery
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENDPOINT_URI  required HTTPS page endpoint
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_BASELINE_PAGE_FINGERPRINT  required pinned chain head
@@ -750,6 +751,36 @@ validate_control_plane_certificate_status() {
         [ "${refresh}" -gt 300000 ] || [ "${initial}" -gt 300000 ] ||
         [ "${batch}" -lt 1 ] || [ "${batch}" -gt 32 ]; then
         echo "Certificate status source, scheduler, or batch bounds are invalid." >&2
+        return 1
+    fi
+    local startup_grace="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_STARTUP_GRACE_SECONDS:-60}"
+    local maximum_success_age="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_REFRESH_SUCCESS_AGE_SECONDS:-120}"
+    local minimum_headroom="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MINIMUM_EXPIRY_HEADROOM_SECONDS:-60}"
+    local minimum_refresh_samples="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MINIMUM_REFRESH_SAMPLES:-20}"
+    local maximum_refresh_failure="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_REFRESH_FAILURE_BASIS_POINTS:-500}"
+    local minimum_admission_samples="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MINIMUM_ADMISSION_SAMPLES:-100}"
+    local maximum_admission_denial="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_ADMISSION_DENIAL_BASIS_POINTS:-1000}"
+    local maximum_batch_streak="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_CONSECUTIVE_BATCH_LIMIT_CYCLES:-3}"
+    if printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+        "${startup_grace}" "${maximum_success_age}" "${minimum_headroom}" \
+        "${minimum_refresh_samples}" "${maximum_refresh_failure}" \
+        "${minimum_admission_samples}" "${maximum_admission_denial}" \
+        "${maximum_batch_streak}" | grep -Eqv '^(0|[1-9][0-9]*)$' ||
+        [ "${startup_grace}" -gt 3600 ] ||
+        [ "$((startup_grace * 1000))" -lt "$((initial + timeout))" ] ||
+        [ "${maximum_success_age}" -lt 1 ] ||
+        [ "${maximum_success_age}" -gt 86400 ] ||
+        [ "$((maximum_success_age * 1000))" -lt "$((refresh + timeout))" ] ||
+        [ "${minimum_headroom}" -gt 86400 ] ||
+        [ "${minimum_headroom}" -ge "${lifetime}" ] ||
+        [ "${minimum_refresh_samples}" -lt 1 ] ||
+        [ "${minimum_refresh_samples}" -gt 1000000 ] ||
+        [ "${maximum_refresh_failure}" -gt 10000 ] ||
+        [ "${minimum_admission_samples}" -lt 1 ] ||
+        [ "${minimum_admission_samples}" -gt 1000000 ] ||
+        [ "${maximum_admission_denial}" -gt 10000 ] ||
+        [ "${maximum_batch_streak}" -gt 100 ]; then
+        echo "Certificate status SLO bounds are invalid." >&2
         return 1
     fi
     if [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_TRUST_STORE_PATH:-}" ] ||

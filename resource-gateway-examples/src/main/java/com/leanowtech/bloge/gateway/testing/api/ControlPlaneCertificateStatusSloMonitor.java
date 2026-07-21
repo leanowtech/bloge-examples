@@ -62,11 +62,16 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
         try {
             assessment = assess(monitor.descriptor(), admission.descriptor(),
                     telemetry.snapshot(), clock.instant());
+            telemetry.observe(assessment);
         } catch (RuntimeException unavailable) {
             assessment = Assessment.unavailable(clock.instant(), policy.descriptor());
+            try {
+                telemetry.observe(assessment);
+            } catch (RuntimeException ignored) {
+                // Cached fail-closed truth remains available when metric publication fails.
+            }
         }
         latest.set(assessment);
-        telemetry.observe(assessment);
         return assessment;
     }
 
@@ -93,16 +98,22 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
                 .withDetail("monitorStatus", assessment.monitorStatus())
                 .withDetail("sourceAvailable", assessment.sourceAvailable())
                 .withDetail("admissionFresh", assessment.admissionFresh())
+                .withDetail("sequence", assessment.sequence())
                 .withDetail("secondsToExpiry", assessment.secondsToExpiry())
+                .withDetail("refreshAttempts", assessment.refreshAttempts())
+                .withDetail("refreshFailures", assessment.refreshFailures())
                 .withDetail("refreshFailureBasisPoints",
                         assessment.refreshFailureBasisPoints())
+                .withDetail("admissionChecks", assessment.admissionChecks())
+                .withDetail("admissionDenials", assessment.admissionDenials())
                 .withDetail("admissionDenialBasisPoints",
                         assessment.admissionDenialBasisPoints())
                 .withDetail("consecutiveBatchLimitCycles",
                         assessment.consecutiveBatchLimitCycles())
                 .withDetail("lastRefreshSuccessAgeSeconds",
                         assessment.lastRefreshSuccessAgeSeconds())
-                .withDetail("productionReady", false)
+                .withDetail("observedAt", assessment.observedAt())
+                .withDetail("policy", assessment.policy())
                 .build();
     }
 

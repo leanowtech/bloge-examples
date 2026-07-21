@@ -2,7 +2,11 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEventWatcher;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationRuntime;
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateStatusSloMonitor;
 import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -29,6 +33,9 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 .containsEntry("controlPlaneCertificateStatusAvailable", false)
                 .containsEntry("controlPlaneCertificateStatusFresh", false)
                 .containsEntry("controlPlaneCertificateRevocationAdmission", false)
+                .containsEntry("controlPlaneCertificateStatusSloIntegrated", false)
+                .containsEntry("controlPlaneCertificateStatusSloHealthy", false)
+                .containsEntry("controlPlaneCertificateStatusFixedCardinalityTelemetry", false)
                 .containsEntry("controlPlaneCertificateRotationEventDeliveryIntegrated", false)
                 .containsEntry("controlPlaneCertificateRotationEventDeliveryReady", false)
                 .containsEntry(
@@ -156,6 +163,30 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
     }
 
     @Test
+    void certificateStatusSloIsProjectedWithoutInflatingProductionReadiness() {
+        ToolStudioIntegrationService service = service();
+        ControlPlaneCertificateStatusSloMonitor monitor = mock(
+                ControlPlaneCertificateStatusSloMonitor.class);
+        when(monitor.descriptor()).thenReturn(healthyAssessment());
+        service.configureControlPlaneCertificateStatusSloMonitor(monitor);
+
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("controlPlaneCertificateStatusSloIntegrated", true)
+                .containsEntry("controlPlaneCertificateStatusSloHealthy", true)
+                .containsEntry("controlPlaneCertificateStatusFixedCardinalityTelemetry", true)
+                .containsEntry("controlPlaneCertificateRotationProductionReady", false);
+
+        when(monitor.descriptor()).thenThrow(
+                new IllegalStateException("https://ca.internal/status?secret=value"));
+        var capabilities = service.capabilities().payload();
+        assertThat(capabilities.features())
+                .containsEntry("controlPlaneCertificateStatusSloIntegrated", true)
+                .containsEntry("controlPlaneCertificateStatusSloHealthy", false)
+                .containsEntry("controlPlaneCertificateStatusFixedCardinalityTelemetry", true);
+        assertThat(capabilities.toString()).doesNotContain("ca.internal", "secret=value");
+    }
+
+    @Test
     void eventWatcherDescriptorFailureClosesCapabilityWithoutLeakingDiagnostics() {
         ToolStudioIntegrationService service = service();
         ControlPlaneCertificateRotationEventWatcher watcher = mock(
@@ -191,5 +222,15 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
                 enabled, ready, trustAvailable, true, inventoried, registered,
                 synchronizedState);
+    }
+
+    private static ControlPlaneCertificateStatusSloMonitor.Assessment healthyAssessment() {
+        var policy = new ControlPlaneCertificateStatusSloMonitor.Policy(
+                60, 120, 60, 20, 500, 100, 1_000, 3);
+        return new ControlPlaneCertificateStatusSloMonitor.Assessment(
+                ControlPlaneCertificateStatusSloMonitor.Assessment.SCHEMA_VERSION,
+                ControlPlaneCertificateStatusSloMonitor.State.HEALTHY, List.of(),
+                Instant.parse("2026-07-22T00:00:00Z"), "CURRENT", true, true,
+                7, 120, 20, 0, 0, 100, 0, 0, 0, 1, policy.descriptor());
     }
 }
