@@ -91,11 +91,26 @@ public record RecoveryFleetPublicationTransportProperties(
             return new SystemTrustRecoveryFleetPublicationTransport();
         }
         return new PinnedMutualTlsRecoveryFleetPublicationTransport(
-                new PinnedMutualTlsRecoveryFleetPublicationTransport.Settings(
-                        path(trustStorePath), trustStorePasswordRef,
-                        path(clientKeyStorePath), clientKeyStorePasswordRef,
-                        pins(serverSpkiPins), identityPolicy()),
+                pinnedSettings(),
                 Objects.requireNonNull(secretResolver, "secretResolver"));
+    }
+
+    /**
+     * Returns complete public-only settings for an enabled pinned transport.
+     *
+     * <p>The value retains opaque credential references but never resolved password characters.
+     * Rotation runtimes use it to load immutable generations and compute material fingerprints.</p>
+     *
+     * @return validated pinned mutual-TLS settings
+     */
+    public PinnedMutualTlsRecoveryFleetPublicationTransport.Settings pinnedSettings() {
+        if (!enabled) {
+            throw invalid();
+        }
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport.Settings(
+                path(trustStorePath), trustStorePasswordRef,
+                path(clientKeyStorePath), clientKeyStorePasswordRef,
+                pins(serverSpkiPins), identityPolicy());
     }
 
     /** @return whether any non-default field was supplied */

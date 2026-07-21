@@ -59,6 +59,7 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
     ValidatedPublicationTransport externalSequenceAnchorBootstrapRootPublicationTransport(
             Properties properties,
             Environment environment,
+            ObjectProvider<ControlPlaneCertificateRotationRuntime> rotationRuntimes,
             ObjectProvider<ControlPlaneHttpTransport.SecretResolver> secretResolvers) {
         boolean staging = Objects.requireNonNull(environment, "environment")
                 .acceptsProfiles(Profiles.of("staging"));
@@ -70,7 +71,21 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
         requireIndependentClientIdentity(environment, properties.transport());
         ControlPlaneHttpTransport.SecretResolver secretResolver =
                 secretResolver(secretResolvers, properties.transport().enabled());
-        return new ValidatedPublicationTransport(properties.transport().create(secretResolver));
+        ControlPlaneCertificateRotationRuntime rotationRuntime =
+                rotationRuntimes.getIfAvailable();
+        if (rotationRuntime == null) {
+            if (Boolean.TRUE.equals(environment.getProperty(
+                    ControlPlaneCertificateRotationRuntimeProperties.PREFIX + ".enabled",
+                    Boolean.class, false))) {
+                throw new IllegalStateException(
+                        "Enabled certificate rotation runtime is unavailable");
+            }
+            return new ValidatedPublicationTransport(
+                    properties.transport().create(secretResolver));
+        }
+        return new ValidatedPublicationTransport(rotationRuntime.transport(
+                ControlPlaneCertificateRotationTargets.BOOTSTRAP_ROOT_PUBLISHER,
+                properties.transport()));
     }
 
     /** Creates the default database authority unless an embedder supplies a durable outbox. */

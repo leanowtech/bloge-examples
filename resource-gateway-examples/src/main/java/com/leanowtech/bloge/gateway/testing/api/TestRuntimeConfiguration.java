@@ -82,6 +82,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -1528,7 +1529,8 @@ public class TestRuntimeConfiguration {
             long maximumReceiptLifetimeSeconds,
             @Value("${gateway.testing.test-secrets.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.allow-insecure-loopback:false}")
             boolean allowInsecureLoopback,
-            ControlPlaneHttpTransport.SecretResolver secretResolver) {
+            ControlPlaneHttpTransport.SecretResolver secretResolver,
+            ObjectProvider<ControlPlaneCertificateRotationRuntime> rotationRuntimes) {
         int profileMinimumFaults = Arrays.asList(environment.getActiveProfiles())
                 .contains("staging") ? 1 : 0;
         int effectiveMinimumFaults = Math.max(minimumFaults, profileMinimumFaults);
@@ -1543,7 +1545,33 @@ public class TestRuntimeConfiguration {
                 "test-secret", scopeId, trustDomain, anchorSetId, signatureThreshold,
                 maximumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
                 clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback,
-                secretResolver));
+                secretResolver, optionalRotationRuntime(environment, rotationRuntimes)));
+    }
+
+    /** Package-compatible static-transport entry retained for focused configuration tests. */
+    TestSecretAuthorityExternalSequenceAnchor testSecretAuthorityExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            Environment environment,
+            TestRuntimeDatabase database,
+            String scopeId,
+            String trustDomain,
+            String anchorSetId,
+            int signatureThreshold,
+            int maximumFaults,
+            int minimumFaults,
+            String authorityKeysJson,
+            String endpointsJson,
+            long requestTimeoutMillis,
+            long clockSkewSeconds,
+            long maximumReceiptLifetimeSeconds,
+            boolean allowInsecureLoopback,
+            ControlPlaneHttpTransport.SecretResolver secretResolver) {
+        return testSecretAuthorityExternalSequenceAnchor(objectMapper, environment, database,
+                scopeId, trustDomain, anchorSetId, signatureThreshold, maximumFaults,
+                minimumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
+                clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback,
+                secretResolver, singleValueProvider(
+                        disabledRotationRuntime(objectMapper, secretResolver)));
     }
 
     /** Exposes endpoint- and key-free health for test-secret external non-equivocation. */
@@ -2801,7 +2829,8 @@ public class TestRuntimeConfiguration {
             long maximumReceiptLifetimeSeconds,
             @Value("${gateway.testing.stability-jobs.authority.http.jwks.cohort.signed-inventory.remote.external-anchor.allow-insecure-loopback:false}")
             boolean allowInsecureLoopback,
-            ControlPlaneHttpTransport.SecretResolver secretResolver) {
+            ControlPlaneHttpTransport.SecretResolver secretResolver,
+            ObjectProvider<ControlPlaneCertificateRotationRuntime> rotationRuntimes) {
         int profileMinimumFaults = Arrays.asList(environment.getActiveProfiles())
                 .contains("staging") ? 1 : 0;
         int effectiveMinimumFaults = Math.max(minimumFaults, profileMinimumFaults);
@@ -2816,7 +2845,33 @@ public class TestRuntimeConfiguration {
                 "suite-stability", scopeId, trustDomain, anchorSetId, signatureThreshold,
                 maximumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
                 clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback,
-                secretResolver);
+                secretResolver, optionalRotationRuntime(environment, rotationRuntimes));
+    }
+
+    /** Package-compatible static-transport entry retained for focused configuration tests. */
+    TestSuiteStabilityExternalSequenceAnchor testSuiteStabilityExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            Environment environment,
+            TestRuntimeDatabase database,
+            String scopeId,
+            String trustDomain,
+            String anchorSetId,
+            int signatureThreshold,
+            int maximumFaults,
+            int minimumFaults,
+            String authorityKeysJson,
+            String endpointsJson,
+            long requestTimeoutMillis,
+            long clockSkewSeconds,
+            long maximumReceiptLifetimeSeconds,
+            boolean allowInsecureLoopback,
+            ControlPlaneHttpTransport.SecretResolver secretResolver) {
+        return testSuiteStabilityExternalSequenceAnchor(objectMapper, environment, database,
+                scopeId, trustDomain, anchorSetId, signatureThreshold, maximumFaults,
+                minimumFaults, authorityKeysJson, endpointsJson, requestTimeoutMillis,
+                clockSkewSeconds, maximumReceiptLifetimeSeconds, allowInsecureLoopback,
+                secretResolver, singleValueProvider(
+                        disabledRotationRuntime(objectMapper, secretResolver)));
     }
 
     /** Exposes endpoint- and key-free health for the external non-equivocation quorum. */
@@ -3301,6 +3356,45 @@ public class TestRuntimeConfiguration {
         }
     }
 
+    private static ControlPlaneCertificateRotationRuntime disabledRotationRuntime(
+            ObjectMapper objectMapper,
+            ControlPlaneHttpTransport.SecretResolver secretResolver) {
+        return new ControlPlaneCertificateRotationRuntime(
+                ControlPlaneCertificateRotationRuntimeProperties.disabled(), Map.of(),
+                ControlPlaneCertificateRotationTrustStore.unavailable(),
+                (targetId, generation, materialId) -> {
+                    throw new IllegalStateException(
+                            "Control-plane certificate rotation material is unavailable");
+                }, secretResolver, new ControlPlaneCertificateSettingsFingerprint(objectMapper),
+                java.time.Clock.systemUTC());
+    }
+
+    /**
+     * Preserves static transports for focused embedders while refusing an enabled-policy
+     * downgrade when the rotation composition root was omitted.
+     */
+    private static ControlPlaneCertificateRotationRuntime optionalRotationRuntime(
+            Environment environment,
+            ObjectProvider<ControlPlaneCertificateRotationRuntime> rotationRuntimes) {
+        ControlPlaneCertificateRotationRuntime runtime = rotationRuntimes.getIfAvailable();
+        if (runtime == null && Boolean.TRUE.equals(environment.getProperty(
+                ControlPlaneCertificateRotationRuntimeProperties.PREFIX + ".enabled",
+                Boolean.class, false))) {
+            throw new IllegalStateException(
+                    "Enabled certificate rotation runtime is unavailable");
+        }
+        return runtime;
+    }
+
+    private static <T> ObjectProvider<T> singleValueProvider(T value) {
+        return new ObjectProvider<>() {
+            @Override
+            public T getObject() {
+                return value;
+            }
+        };
+    }
+
     /**
      * Builds the shared strict HTTP/quorum implementation for one isolated product domain.
      *
@@ -3325,7 +3419,8 @@ public class TestRuntimeConfiguration {
             long clockSkewSeconds,
             long maximumReceiptLifetimeSeconds,
             boolean allowInsecureLoopback,
-            ControlPlaneHttpTransport.SecretResolver secretResolver) {
+            ControlPlaneHttpTransport.SecretResolver secretResolver,
+            ControlPlaneCertificateRotationRuntime rotationRuntime) {
         boolean staging = Arrays.asList(environment.getActiveProfiles()).contains("staging");
         boolean managed = Boolean.TRUE.equals(environment.getProperty(
                 prefix + ".managed-trust.enabled", Boolean.class, false));
@@ -3366,8 +3461,10 @@ public class TestRuntimeConfiguration {
         }
         requireIndependentControlPlaneIdentity(
                 environment, notaryTransportPrefix, notaryTransportProperties);
-        ControlPlaneHttpTransport notaryTransport = notaryTransportProperties.create(
-                Objects.requireNonNull(secretResolver, "secretResolver"));
+        Objects.requireNonNull(secretResolver, "secretResolver");
+        ControlPlaneHttpTransport notaryTransport = rotationRuntime == null
+                ? notaryTransportProperties.create(secretResolver)
+                : rotationRuntime.transport(notaryTransportPrefix, notaryTransportProperties);
         var anchorSettings = new HttpTestSuiteStabilityExternalSequenceAnchor.Settings(
                 Duration.ofMillis(requestTimeoutMillis), Duration.ofSeconds(clockSkewSeconds),
                 Duration.ofSeconds(maximumReceiptLifetimeSeconds), allowInsecureLoopback);
@@ -3416,10 +3513,14 @@ public class TestRuntimeConfiguration {
                 requireIndependentControlPlaneIdentity(
                         environment, bootstrapTransportPrefix, bootstrapTransportProperties);
             }
-            ControlPlaneHttpTransport managedTransport = managedTransportProperties.create(
-                    Objects.requireNonNull(secretResolver, "secretResolver"));
-            ControlPlaneHttpTransport bootstrapTransport = bootstrapTransportProperties.create(
-                    secretResolver);
+            ControlPlaneHttpTransport managedTransport = rotationRuntime == null
+                    ? managedTransportProperties.create(secretResolver)
+                    : rotationRuntime.transport(
+                    managedTransportPrefix, managedTransportProperties);
+            ControlPlaneHttpTransport bootstrapTransport = rotationRuntime == null
+                    ? bootstrapTransportProperties.create(secretResolver)
+                    : rotationRuntime.transport(
+                    bootstrapTransportPrefix, bootstrapTransportProperties);
             String trustRootSetId = environment.getProperty(
                     prefix + ".managed-trust.trust-root-set-id", "");
             String bootstrapTrustDomain = environment.getProperty(

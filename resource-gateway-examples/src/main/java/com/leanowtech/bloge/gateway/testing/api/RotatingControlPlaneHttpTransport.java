@@ -33,7 +33,7 @@ import java.util.concurrent.Executor;
  * authorization.</p>
  */
 public final class RotatingControlPlaneHttpTransport
-        implements ControlPlaneHttpTransport, ControlPlaneCertificateRotationTarget {
+        implements RecoveryFleetPublicationTransport, ControlPlaneCertificateRotationTarget {
 
     private static final Duration MINIMUM_LEAD = Duration.ofSeconds(1);
     private static final Duration MAXIMUM_LEAD = Duration.ofDays(30);

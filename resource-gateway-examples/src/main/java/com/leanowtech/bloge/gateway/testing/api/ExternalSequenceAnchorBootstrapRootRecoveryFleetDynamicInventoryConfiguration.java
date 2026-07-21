@@ -90,6 +90,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             ObjectProvider<LaneResolver> laneResolvers,
             ValidatedFleetConfiguration configured,
             Environment environment,
+            ObjectProvider<ControlPlaneCertificateRotationRuntime> rotationRuntimes,
             ObjectProvider<RecoveryFleetPublicationTransport.SecretResolver> secretResolvers) {
         try {
             Objects.requireNonNull(configured, "configured");
@@ -123,6 +124,13 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             RecoveryFleetPublicationTransport.SecretResolver secretResolver =
                     secretResolver(secretResolvers, properties.transport().enabled()
                             || properties.trustRoots().transport().enabled());
+            ControlPlaneCertificateRotationRuntime rotationRuntime =
+                    rotationRuntimes.getIfAvailable();
+            if (rotationRuntime == null && Boolean.TRUE.equals(environment.getProperty(
+                    ControlPlaneCertificateRotationRuntimeProperties.PREFIX + ".enabled",
+                    Boolean.class, false))) {
+                throw DynamicInventoryProperties.invalid();
+            }
             ObjectMapper strict = Objects.requireNonNull(objectMapper, "objectMapper").copy()
                     .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                     .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -135,7 +143,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                 throw DynamicInventoryProperties.invalid();
             }
             ValidatedManagedTrustRoots managedTrustRoots = properties.trustRoots().enabled()
-                    ? validateManagedTrustRoots(strict, fleet, properties, secretResolver) : null;
+                    ? validateManagedTrustRoots(strict, fleet, properties, secretResolver,
+                    rotationRuntime) : null;
             List<AuthorityKey> deploymentKeys = List.of();
             List<AuthorityKey> witnessKeys = List.of();
             if (managedTrustRoots == null) {
@@ -163,8 +172,11 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                     Duration.ofMillis(properties.requestTimeoutMillis()),
                     Duration.ofSeconds(properties.maximumSnapshotAgeSeconds()),
                     properties.allowInsecureLoopback()).validated();
-            RecoveryFleetPublicationTransport transport = properties.transport().create(
-                    secretResolver);
+            RecoveryFleetPublicationTransport transport = rotationRuntime == null
+                    ? properties.transport().create(secretResolver)
+                    : rotationRuntime.transport(
+                    ControlPlaneCertificateRotationTargets.RECOVERY_FLEET_INVENTORY,
+                    properties.transport());
             return new ValidatedDynamicInventoryConfiguration(
                     properties.trustDomain(), policies, properties.signatureThreshold(),
                     deploymentKeys, binding, properties.witnessDomain(),
@@ -179,7 +191,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             ObjectMapper strict,
             FleetProperties fleet,
             DynamicInventoryProperties properties,
-            RecoveryFleetPublicationTransport.SecretResolver secretResolver) throws Exception {
+            RecoveryFleetPublicationTransport.SecretResolver secretResolver,
+            ControlPlaneCertificateRotationRuntime rotationRuntime) throws Exception {
         ManagedTrustRootProperties roots = properties.trustRoots();
         List<AuthorityKey> deploymentRootKeys = parseKeys(
                 strict, roots.deploymentRootAuthorityKeysJson());
@@ -215,10 +228,14 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                 Duration.ofSeconds(roots.unknownKeyRefreshIntervalSeconds()),
                 Duration.ofSeconds(roots.maximumSnapshotAgeSeconds()),
                 roots.allowInsecureLoopback()).validated();
+        RecoveryFleetPublicationTransport transport = rotationRuntime == null
+                ? roots.transport().create(secretResolver)
+                : rotationRuntime.transport(ControlPlaneCertificateRotationTargets
+                .RECOVERY_FLEET_INVENTORY_TRUST_ROOTS, roots.transport());
         return new ValidatedManagedTrustRoots(binding, policies,
                 roots.deploymentRootSignatureThreshold(), deploymentRootKeys,
                 roots.witnessRootSignatureThreshold(), witnessRootKeys, settings,
-                roots.transport().create(secretResolver));
+                transport);
     }
 
     /**
@@ -247,7 +264,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
             TestRuntimeDatabase database,
             DynamicInventoryProperties properties,
             ValidatedDynamicInventoryConfiguration validated,
-            ControlPlaneHttpTransport.SecretResolver secretResolver) {
+            ControlPlaneHttpTransport.SecretResolver secretResolver,
+            ControlPlaneCertificateRotationRuntime rotationRuntime) {
         Objects.requireNonNull(validated, "validated");
         var anchor = properties.externalAnchor();
         int profileMinimumFaults = environment.acceptsProfiles(Profiles.of("staging")) ? 1 : 0;
@@ -265,7 +283,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryCon
                         anchor.maximumFaults(), anchor.authorityKeysJson(), anchor.endpointsJson(),
                         anchor.requestTimeoutMillis(), anchor.clockSkewSeconds(),
                         anchor.maximumReceiptLifetimeSeconds(),
-                        anchor.allowInsecureLoopback(), secretResolver);
+                        anchor.allowInsecureLoopback(), secretResolver, rotationRuntime);
         return ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalSequenceAnchor.adapt(
                 shared);
     }

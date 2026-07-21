@@ -83,6 +83,24 @@ class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest {
     }
 
     @Test
+    void enabledRotationPolicyCannotSilentlyFallBackWhenCompositionRootIsMissing()
+            throws Exception {
+        Map<String, Object> properties = enabledProperties();
+        properties.put(ControlPlaneCertificateRotationRuntimeProperties.PREFIX + ".enabled",
+                "true");
+
+        var context = unrefreshedContext(properties, "test");
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("Enabled certificate rotation runtime is unavailable");
+        } finally {
+            context.close();
+        }
+    }
+
+    @Test
     void stagingRejectsPublisherTransportDowngradeBeforeDatabaseOrNetworkUse()
             throws Exception {
         Map<String, Object> properties = enabledProperties();
