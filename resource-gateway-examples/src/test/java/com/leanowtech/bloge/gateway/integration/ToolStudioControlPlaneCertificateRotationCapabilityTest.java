@@ -1,0 +1,79 @@
+package com.leanowtech.bloge.gateway.integration;
+
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationRuntime;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+class ToolStudioControlPlaneCertificateRotationCapabilityTest {
+
+    @Test
+    void absentRuntimeAdvertisesNoRotationOrProductionReadiness() {
+        var features = service().capabilities().payload().features();
+
+        assertThat(features)
+                .containsEntry("signedControlPlaneCertificateRotation", false)
+                .containsEntry("restartFreeControlPlaneCertificateRotation", false)
+                .containsEntry("controlPlaneCertificateRotationLocalReady", false)
+                .containsEntry("controlPlaneCertificateRotationDurableFloorIntegrated", false)
+                .containsEntry("controlPlaneCertificateRotationReplicaConvergenceProven", false)
+                .containsEntry("controlPlaneCertificateRotationProductionReady", false);
+    }
+
+    @Test
+    void localReadinessNeverInflatesDurabilityConvergenceOrProductionClaims() {
+        ToolStudioIntegrationService service = service();
+        ControlPlaneCertificateRotationRuntime runtime = mock(
+                ControlPlaneCertificateRotationRuntime.class);
+        when(runtime.descriptor()).thenReturn(descriptor(true, true, true, 12, 12, true));
+        service.configureControlPlaneCertificateRotation(runtime);
+
+        var features = service.capabilities().payload().features();
+
+        assertThat(features)
+                .containsEntry("signedControlPlaneCertificateRotation", true)
+                .containsEntry("restartFreeControlPlaneCertificateRotation", true)
+                .containsEntry("controlPlaneCertificateRotationLocalReady", true)
+                .containsEntry("controlPlaneCertificateRotationDurableFloorIntegrated", true)
+                .containsEntry("controlPlaneCertificateRotationReplicaConvergenceProven", false)
+                .containsEntry("controlPlaneCertificateRotationProductionReady", false);
+    }
+
+    @Test
+    void descriptorFailureBecomesClosedCapabilityWithoutLeakingDiagnostics() {
+        ToolStudioIntegrationService service = service();
+        ControlPlaneCertificateRotationRuntime runtime = mock(
+                ControlPlaneCertificateRotationRuntime.class);
+        when(runtime.descriptor()).thenThrow(
+                new IllegalStateException("vault://rotation-private-material"));
+        service.configureControlPlaneCertificateRotation(runtime);
+
+        var capabilities = service.capabilities().payload();
+
+        assertThat(capabilities.features())
+                .containsEntry("signedControlPlaneCertificateRotation", true)
+                .containsEntry("controlPlaneCertificateRotationLocalReady", false)
+                .containsEntry("controlPlaneCertificateRotationProductionReady", false);
+        assertThat(capabilities.toString())
+                .doesNotContain("rotation-private-material", "vault://");
+    }
+
+    private static ToolStudioIntegrationService service() {
+        return new ToolStudioIntegrationService(null, null, null, null);
+    }
+
+    private static ControlPlaneCertificateRotationRuntime.Descriptor descriptor(
+            boolean enabled,
+            boolean ready,
+            boolean trustAvailable,
+            int inventoried,
+            int registered,
+            boolean synchronizedState) {
+        return new ControlPlaneCertificateRotationRuntime.Descriptor(
+                ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
+                enabled, ready, trustAvailable, true, inventoried, registered,
+                synchronizedState);
+    }
+}

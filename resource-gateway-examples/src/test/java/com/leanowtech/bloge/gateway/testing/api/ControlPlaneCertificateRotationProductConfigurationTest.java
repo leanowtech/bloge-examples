@@ -66,6 +66,11 @@ class ControlPlaneCertificateRotationProductConfigurationTest {
         assertThatThrownBy(() -> source.resolve(TARGET, 2, "missing"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Control-plane certificate rotation material is unavailable");
+        assertThatThrownBy(() ->
+                ConfiguredControlPlaneCertificateRotationMaterialSource.fromJson(
+                        mapper, fingerprinter, json + "{}"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("catalog is invalid");
 
         Map<String, String> unsafe = catalogEntry(material, "candidate-b");
         unsafe.put("materialId", "vault://secret/path");
@@ -82,8 +87,14 @@ class ControlPlaneCertificateRotationProductConfigurationTest {
             throws Exception {
         var mapper = new ObjectMapper().findAndRegisterModules();
         var properties = properties("{\"" + TARGET + "\":7}");
+        var explicit = properties("{\"" + TARGET
+                + "\":{\"generation\":7,\"materialId\":\"baseline-a\"}}");
 
         assertThat(properties.initialGenerations(mapper)).containsEntry(TARGET, 7L);
+        assertThat(explicit.initialTargets(mapper).get(TARGET)).satisfies(initial -> {
+            assertThat(initial.generation()).isEqualTo(7);
+            assertThat(initial.materialId()).isEqualTo("baseline-a");
+        });
         assertThat(ControlPlaneCertificateRotationRuntimeProperties.disabled().enabled())
                 .isFalse();
         assertThatThrownBy(() -> new ControlPlaneCertificateRotationRuntimeProperties(
@@ -97,6 +108,14 @@ class ControlPlaneCertificateRotationProductConfigurationTest {
         assertThatThrownBy(() -> properties("{\"" + TARGET + "\":1,\""
                 + TARGET + "\":2}").initialGenerations(mapper))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties("{\"" + TARGET + "\":1}{}")
+                .initialGenerations(mapper)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties("{\"" + TARGET
+                + "\":{\"generation\":1,\"materialId\":\"vault://bad\"}}")
+                .initialTargets(mapper)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties("{\"" + TARGET
+                + "\":{\"generation\":1,\"materialId\":\"baseline\",\"extra\":1}}")
+                .initialTargets(mapper)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

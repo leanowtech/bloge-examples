@@ -206,6 +206,33 @@ class RotatingControlPlaneHttpTransportTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void durableRestoreHandlesNearFutureAndAlreadyActiveSuccessors() throws Exception {
+        var current = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "rotation-restore-current");
+        var successor = current.rotateClient(temporaryDirectory, "rotation-restore-next");
+        Instant now = Instant.now();
+        MutableClock clock = new MutableClock(now);
+        var pending = new RotatingControlPlaneHttpTransport(
+                21, settings(current), secretResolver(new AtomicInteger()), clock,
+                Duration.ofMinutes(1), Duration.ofHours(1));
+
+        pending.restorePending(22, now.plusMillis(100), settings(successor));
+        assertThat(pending.pendingGeneration()).hasValue(22);
+        clock.advance(Duration.ofMillis(100));
+        assertThat(pending.activeGeneration()).isEqualTo(22);
+
+        var late = new RotatingControlPlaneHttpTransport(
+                21, settings(current), secretResolver(new AtomicInteger()), clock,
+                Duration.ofMinutes(1), Duration.ofHours(1));
+        late.reconcileActive(22, now.minusSeconds(10), settings(successor));
+        assertThat(late.activeGeneration()).isEqualTo(22);
+        assertThat(late.pendingGeneration()).isEmpty();
+        assertThatThrownBy(() -> late.reconcileActive(
+                24, now.minusSeconds(5), settings(successor)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static String send(java.net.http.HttpClient client, java.net.URI uri)
             throws Exception {
         return client.send(HttpRequest.newBuilder(uri).GET().timeout(Duration.ofSeconds(2)).build(),

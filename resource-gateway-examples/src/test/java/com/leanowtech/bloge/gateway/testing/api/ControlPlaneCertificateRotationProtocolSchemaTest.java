@@ -114,6 +114,26 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         }
     }
 
+    @Test
+    void runtimeConfigurationSchemaIsStrictAndDoesNotClaimProductionReadiness()
+            throws Exception {
+        JsonNode schema = schema(
+                "control-plane-certificate-rotation-configuration-v1.schema.json");
+        String source = Files.readString(schemaPath(
+                "control-plane-certificate-rotation-configuration-v1.schema.json"));
+
+        assertThat(schema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(schema.path("required")).extracting(JsonNode::asText)
+                .contains("enabled", "required", "deployment-scope-id", "trust-domain",
+                        "authority-keys-json", "initial-generations-json",
+                        "material-catalog-json");
+        assertThat(source)
+                .contains("backed by a durable generation floor")
+                .contains("does not imply replica convergence")
+                .contains("private keys are forbidden")
+                .doesNotContain("productionReady\": true", "resolved-password");
+    }
+
     private ControlPlaneCertificateRotationEvent event() {
         Instant now = Instant.parse("2026-07-21T12:00:00Z");
         var material = new ControlPlaneCertificateRotationEvent.Material(

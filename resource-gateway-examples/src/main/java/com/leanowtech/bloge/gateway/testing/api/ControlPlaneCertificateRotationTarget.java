@@ -28,4 +28,38 @@ public interface ControlPlaneCertificateRotationTarget {
             long generation,
             Instant activateAt,
             PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings);
+
+    /**
+     * Atomically catches up one already-active durable successor.
+     *
+     * <p>Only a controller backed by a durable floor may invoke this operation. Implementations
+     * must still require the exact next generation and fully validate candidate identity before
+     * replacing the active request path.</p>
+     *
+     * @param generation exact active generation plus one
+     * @param activatedAt signed activation instant already reached by the durable authority
+     * @param settings complete successor settings
+     */
+    default void reconcileActive(
+            long generation,
+            Instant activatedAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings) {
+        throw new UnsupportedOperationException(
+                "Active certificate generation reconciliation is unsupported");
+    }
+
+    /**
+     * Restores one successor already authorized and staged by the durable floor.
+     *
+     * @param generation exact active generation plus one
+     * @param activateAt signed activation instant
+     * @param settings complete successor settings
+     */
+    default void restorePending(
+            long generation,
+            Instant activateAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings) {
+        throw new UnsupportedOperationException(
+                "Pending certificate generation restoration is unsupported");
+    }
 }

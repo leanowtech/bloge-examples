@@ -3366,7 +3366,10 @@ public class TestRuntimeConfiguration {
                     throw new IllegalStateException(
                             "Control-plane certificate rotation material is unavailable");
                 }, secretResolver, new ControlPlaneCertificateSettingsFingerprint(objectMapper),
-                java.time.Clock.systemUTC());
+                (deploymentScopeId, initialTargets) -> {
+                    throw new IllegalStateException(
+                            "Control-plane certificate rotation floor is unavailable");
+                }, java.time.Clock.systemUTC());
     }
 
     /**

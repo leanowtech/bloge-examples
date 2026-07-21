@@ -194,16 +194,16 @@ public final class DatabaseControlPlaneCertificateRotationFloor
             persistFloor(FloorRecord.initial(deploymentScopeId, targetId, initial, now));
             return;
         }
-        current = advanceIfDue(validateFloor(current, targetId), now);
-        if (initial.generation() < current.activeGeneration()) {
-            throw invalid("Control-plane certificate rotation bootstrap rejected rollback");
-        }
+        current = advanceIfDue(validateJournalHead(validateFloor(current, targetId)), now);
         if (initial.generation() > current.activeGeneration()) {
             throw invalid("Control-plane certificate rotation bootstrap rejected generation gap");
         }
+        if (initial.generation() < current.activeGeneration()) {
+            verifyAncestry(initial, current);
+            return;
+        }
         if (!initial.materialId().equals(current.activeMaterialId())
-                || !initial.settingsFingerprint().equals(
-                current.activeSettingsFingerprint())) {
+                || !initial.settingsFingerprint().equals(current.activeSettingsFingerprint())) {
             throw invalid("Control-plane certificate rotation bootstrap rejected fork");
         }
     }
@@ -257,7 +257,7 @@ public final class DatabaseControlPlaneCertificateRotationFloor
                 || pending.generation() != current.pendingGeneration()
                 || pending.state() != EventState.STAGED) {
             throw new IllegalStateException(
-                    "Control-plane certificate rotation pending event is corrupt");
+                    "Control-plane certificate rotation pending event journal is corrupt");
         }
         EventRecord activated = pending.activate(now);
         updateEvent(activated);
@@ -272,7 +272,74 @@ public final class DatabaseControlPlaneCertificateRotationFloor
             throw new IllegalStateException(
                     "Control-plane certificate rotation floor is missing");
         }
-        return validateFloor(current, targetId);
+        return validateJournalHead(validateFloor(current, targetId));
+    }
+
+    private void verifyAncestry(InitialTarget initial, FloorRecord current) {
+        List<EventRecord> descendants = events(current.targetId(), initial.generation(),
+                current.activeGeneration());
+        long expectedGeneration = initial.generation() + 1;
+        String expectedPredecessor = initial.settingsFingerprint();
+        EventRecord head = null;
+        for (EventRecord descendant : descendants) {
+            validateEvent(descendant);
+            if (descendant.generation() != expectedGeneration
+                    || descendant.state() != EventState.ACTIVE
+                    || !descendant.previousSettingsFingerprint().equals(expectedPredecessor)) {
+                throw invalid(
+                        "Control-plane certificate rotation bootstrap rejected forked ancestry");
+            }
+            expectedGeneration++;
+            expectedPredecessor = descendant.settingsFingerprint();
+            head = descendant;
+        }
+        if (head == null || expectedGeneration != current.activeGeneration() + 1
+                || !head.materialId().equals(current.activeMaterialId())
+                || !head.settingsFingerprint().equals(current.activeSettingsFingerprint())
+                || !head.eventId().equals(current.activeEventId())
+                || !head.eventFingerprint().equals(current.activeEventFingerprint())) {
+            throw invalid(
+                    "Control-plane certificate rotation bootstrap rejected incomplete ancestry");
+        }
+    }
+
+    private FloorRecord validateJournalHead(FloorRecord current) {
+        if (!current.activeEventId().isBlank()) {
+            EventRecord active = event(current.activeEventId());
+            if (!matchesActive(active, current)) {
+                throw new IllegalStateException(
+                        "Control-plane certificate rotation active event journal is corrupt");
+            }
+        }
+        if (current.pendingGeneration() > 0) {
+            EventRecord pending = event(current.pendingEventId());
+            if (!matchesPending(pending, current)) {
+                throw new IllegalStateException(
+                        "Control-plane certificate rotation pending event journal is corrupt");
+            }
+        }
+        return current;
+    }
+
+    private boolean matchesActive(EventRecord event, FloorRecord floor) {
+        return event != null && event.valid(objectMapper, deploymentScopeId)
+                && event.state() == EventState.ACTIVE
+                && event.targetId().equals(floor.targetId())
+                && event.generation() == floor.activeGeneration()
+                && event.materialId().equals(floor.activeMaterialId())
+                && event.settingsFingerprint().equals(floor.activeSettingsFingerprint())
+                && event.eventFingerprint().equals(floor.activeEventFingerprint());
+    }
+
+    private boolean matchesPending(EventRecord event, FloorRecord floor) {
+        return event != null && event.valid(objectMapper, deploymentScopeId)
+                && event.state() == EventState.STAGED
+                && event.targetId().equals(floor.targetId())
+                && event.generation() == floor.pendingGeneration()
+                && event.materialId().equals(floor.pendingMaterialId())
+                && event.settingsFingerprint().equals(floor.pendingSettingsFingerprint())
+                && event.eventFingerprint().equals(floor.pendingEventFingerprint())
+                && event.activateAt().equals(floor.pendingActivateAt());
     }
 
     private FloorRecord validateFloor(FloorRecord current, String targetId) {
@@ -337,6 +404,20 @@ public final class DatabaseControlPlaneCertificateRotationFloor
                     "Duplicate control-plane certificate rotation event");
         }
         return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    private List<EventRecord> events(String targetId, long after, long through) {
+        return jdbc.query("""
+                SELECT deployment_scope_id, target_id, event_id, event_fingerprint,
+                       generation, previous_settings_fingerprint, material_id,
+                       settings_fingerprint, policy_fingerprint, activate_at,
+                       expires_at, accepted_at, activation_state, activated_at,
+                       record_fingerprint
+                FROM rg_control_plane_certificate_rotation_events
+                WHERE deployment_scope_id = ? AND target_id = ?
+                  AND generation > ? AND generation <= ?
+                ORDER BY generation
+                """, this::eventRow, deploymentScopeId, targetId, after, through);
     }
 
     private void persistFloor(FloorRecord record) {

@@ -80,7 +80,7 @@ class DatabaseControlPlaneCertificateRotationFloorTest {
     }
 
     @Test
-    void dueSuccessorActivatesAndRestartRejectsRollbackGapAndFork() {
+    void dueSuccessorActivatesAndRestartVerifiesBaselineAncestryGapAndFork() {
         var floor = repository(initial(1, INITIAL_MATERIAL, INITIAL_FINGERPRINT));
         Instant now = now();
         var activated = floor.accept(event("rotation-002", 2, INITIAL_FINGERPRINT,
@@ -97,9 +97,10 @@ class DatabaseControlPlaneCertificateRotationFloorTest {
         });
         assertThat(repository(initial(2, "candidate-b", fingerprint('b')))
                 .snapshot(TARGET).activeGeneration()).isEqualTo(2);
-        assertThatThrownBy(() -> repository(
-                initial(1, INITIAL_MATERIAL, INITIAL_FINGERPRINT)))
-                .hasMessageContaining("rollback");
+        assertThat(repository(initial(1, INITIAL_MATERIAL, INITIAL_FINGERPRINT))
+                .snapshot(TARGET).activeGeneration()).isEqualTo(2);
+        assertThatThrownBy(() -> repository(initial(1, INITIAL_MATERIAL, fingerprint('9'))))
+                .hasMessageContaining("ancestry");
         assertThatThrownBy(() -> repository(
                 initial(3, "candidate-c", fingerprint('c'))))
                 .hasMessageContaining("generation gap");

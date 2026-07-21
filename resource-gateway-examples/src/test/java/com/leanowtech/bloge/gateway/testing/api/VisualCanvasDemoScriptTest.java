@@ -31,6 +31,26 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void stagingRejectsPartialCertificateRotationBeforeBuild() throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().putAll(stagingBase());
+        builder.environment().put(
+                "RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED", "true");
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Signed certificate rotation requires complete scope, trust, generation, and material configuration.");
+        assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
+    }
+
+    @Test
     void stagingTestSecretCohortFailsBeforeBuildWhenTrustChainIsPartial() throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
                 "bash", SCRIPT.toString(), "start", "--no-build")

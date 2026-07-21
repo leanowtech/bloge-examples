@@ -4,11 +4,11 @@
 
 ### 实施状态（2026-07-21）
 
-> Stage 4 证书轮换状态校正：签名控制器之后新增 database-clock durable generation floor，
-> 以 deployment/target 锁、exact event journal、双唯一约束、whole-record fingerprint 和到期原子晋升
-> 关闭跨重启回退、同代分叉及副本竞争。严格 floor snapshot v1 不携带路径或 credential。该 floor 尚未
-> 与 12 条 live transport 串成 floor-first 状态机，也没有逐副本 convergence proof，因此 capability 与
-> production readiness 必须继续关闭。
+> Stage 4 证书轮换状态校正：database-clock durable generation floor 已通过统一 runtime 接入 12 条
+> stable live transport，严格执行“签名/材料验真 -> durable accept -> local stage”，并支持 baseline ancestry
+> 验证、active/pending 重启恢复和 exact replay 修复。固定基数 health/capability 只声明 durable local
+> readiness；事件分发、逐副本 acknowledgement 与 fleet convergence proof 尚未闭合，因此 production
+> readiness 继续关闭。
 
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
@@ -115,9 +115,10 @@ dynamic inventory、managed trust-root 与九条 external-anchor 读侧，共 12
 properties、test/staging 配置、demo preflight、dynamic inventory v3、external anchor v2、
 capability v4、固定基数 health 与 Tool Studio projection 同步闭合。87 项产品聚焦测试与
 3619 项全量测试全绿。静态证书身份绑定已产品化；restart-free rotation 已从原子 TLS kernel
-推进到可嵌入的严格事件、M-of-N 信任、材料隔离和幂等控制模块，新增 26 项聚焦验证全绿。
-12 条产品链路配置、durable event journal、企业 CA 事件接入、吊销/OCSP/CRL、HSM custody
-与跨副本激活仍未闭合，不能据此宣称企业 PKI 已开放。验证见
+推进到 12 条 test/staging 产品链路的严格事件、M-of-N 信任、受控材料目录、floor-first durable
+generation、重启恢复、固定基数 health/capability 和 demo preflight，本轮 55 项聚焦验证全绿。
+企业 CA 事件分发、逐副本 acknowledgement/convergence、吊销/OCSP/CRL、HSM custody 与生产
+数据库/HA/DR/chaos 认证仍未闭合，不能据此宣称企业 PKI 已开放。验证见
 [certificate identity and rotation kernel verification](resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md)。
 
 Stage 2 本轮审计继续关闭 stored fixture 的对象稳定性和仓储替换断点：数据库 create/read 与

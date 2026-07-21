@@ -472,7 +472,7 @@ isolated test-runtime database journal/outbox; deployments may supply an equival
 or publisher bean. Close the caller-owned publisher after the service. See the
 [publisher transport verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-publisher-transport-verification.md).
 
-For embedding paths that require restart-free certificate replacement, the transport package now
+For test/staging paths that require restart-free certificate replacement, the transport package now
 provides `ControlPlaneCertificateIdentityPolicy` and `RotatingControlPlaneHttpTransport` as a kernel.
 The policy binds one client key to an exact Subject and single workload URI SAN, validates its chain
 with a pinned issuer as the PKIX trust anchor at the declared activation instant, and constrains the
@@ -488,13 +488,23 @@ to deployment scope, target, active settings fingerprint, contiguous generation,
 settings fingerprint and activation window; an independent public-key-only M-of-N Ed25519 policy
 must verify before an opaque material id can be resolved. Exact concurrent replay resolves and
 stages once, failures preserve the old generation, and target drift fails closed without exposing
-paths, secret references or resolver errors. A separate database-clock rotation floor now
-linearizes accepted generations across replicas, journals exact event identities, advances due
-successors atomically, rejects restart rollback and same-generation forks, and exposes a strict
-credential-free snapshot v1. The controller and floor remain separate embedding kernels: product
-wiring for the 12 transports has not yet bound live staging to the durable floor. CA-event
-ingestion, per-replica convergence, revocation status, HSM custody, and rotation health/capability
-projection remain follow-up gates. See the
+paths, secret references or resolver errors. A database-clock rotation floor linearizes accepted
+generations across replicas, journals exact event identities, advances due successors atomically,
+rejects restart rollback and same-generation forks, and exposes a strict credential-free snapshot
+v1. The test/staging product runtime now binds this floor-first state machine to all 12 stable
+transport ids: it verifies a strict out-of-band baseline, restores an active or pending durable
+successor from the controlled material catalog, and lets exact replay repair a replica whose local
+staging failed after durable acceptance. Set
+`RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED=true` and
+`RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_REQUIRED=true`, then provide the exact deployment scope,
+trust domain, accepted policy fingerprints, M-of-N public Ed25519 authorities, timing bounds, target
+baseline generation/material ids, and public material-location catalog under the adjacent
+`RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_*` variables. The demo script rejects partial policy,
+malformed bounds/JSON, private keys, or resolved passwords before building the service. Local
+Actuator health and Tool Studio capability expose only bounded readiness/durability booleans and
+target counts. They deliberately keep replica convergence and production readiness false: CA-event
+distribution, per-replica acknowledgements, revocation/OCSP/CRL, HSM custody, production database
+certification, and HA/DR/chaos remain follow-up gates. See the
 [certificate identity and rotation kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md).
 
 The same single-root journal can run unattended ceremony recovery by also setting

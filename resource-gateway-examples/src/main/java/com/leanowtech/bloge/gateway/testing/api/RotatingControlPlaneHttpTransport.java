@@ -134,6 +134,89 @@ public final class RotatingControlPlaneHttpTransport
         }
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public void reconcileActive(
+            long generation,
+            Instant activatedAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings) {
+        Objects.requireNonNull(activatedAt, "activatedAt");
+        Objects.requireNonNull(settings, "settings");
+        ActiveGeneration baseline;
+        Instant now;
+        synchronized (monitor) {
+            now = clock.instant();
+            baseline = promoteIfDue(now);
+            if (pending != null || generation != baseline.generation() + 1
+                    || activatedAt.isAfter(now)) {
+                throw invalid();
+            }
+        }
+
+        var candidate = load(settings, now);
+        requireBound(candidate);
+        if (!candidate.descriptor().equals(baseline.transport().descriptor())
+                || candidate.clientIdentityNotBefore().isAfter(now)
+                || !candidate.clientIdentityExpiresAt().isAfter(now.plus(minimumOverlap))) {
+            throw invalidMaterial();
+        }
+
+        synchronized (monitor) {
+            Instant observedAt = clock.instant();
+            ActiveGeneration observed = promoteIfDue(observedAt);
+            if (pending != null || observed.generation() != baseline.generation()
+                    || activatedAt.isAfter(observedAt)
+                    || !candidate.clientIdentityExpiresAt().isAfter(
+                    observedAt.plus(minimumOverlap))) {
+                throw invalid();
+            }
+            active = new ActiveGeneration(generation, activatedAt, candidate);
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void restorePending(
+            long generation,
+            Instant activateAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings) {
+        Objects.requireNonNull(activateAt, "activateAt");
+        Objects.requireNonNull(settings, "settings");
+        ActiveGeneration baseline;
+        synchronized (monitor) {
+            baseline = promoteIfDue(clock.instant());
+            if (pending != null || generation != baseline.generation() + 1) {
+                throw invalid();
+            }
+        }
+
+        var candidate = load(settings, activateAt);
+        requireBound(candidate);
+        if (!candidate.descriptor().equals(baseline.transport().descriptor())
+                || activateAt.plus(minimumOverlap).isAfter(
+                baseline.transport().clientIdentityExpiresAt())
+                || candidate.clientIdentityNotBefore().isAfter(activateAt)
+                || !candidate.clientIdentityExpiresAt().isAfter(
+                activateAt.plus(minimumOverlap))) {
+            throw invalidMaterial();
+        }
+
+        synchronized (monitor) {
+            Instant now = clock.instant();
+            ActiveGeneration observed = promoteIfDue(now);
+            if (pending != null || observed.generation() != baseline.generation()) {
+                throw invalid();
+            }
+            if (now.isBefore(activateAt)) {
+                pending = new PendingGeneration(generation, activateAt, candidate);
+            } else if (candidate.clientIdentityExpiresAt().isAfter(now.plus(minimumOverlap))) {
+                active = new ActiveGeneration(generation, activateAt, candidate);
+            } else {
+                throw invalidMaterial();
+            }
+        }
+    }
+
     /** @return current active generation after applying any due successor */
     public long activeGeneration() {
         return activeForRequest().generation();

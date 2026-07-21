@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -48,10 +49,10 @@ public final class ConfiguredControlPlaneCertificateRotationMaterialSource
             ControlPlaneCertificateSettingsFingerprint fingerprinter,
             String catalogJson) {
         try {
-            ObjectMapper strict = Objects.requireNonNull(objectMapper, "objectMapper").copy();
-            strict.getFactory().enable(
-                    StreamReadFeature.STRICT_DUPLICATE_DETECTION.mappedFeature());
-            JsonNode root = strict.readTree(Objects.requireNonNullElse(catalogJson, "").trim());
+            JsonNode root = Objects.requireNonNull(objectMapper, "objectMapper").reader()
+                    .with(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readTree(Objects.requireNonNullElse(catalogJson, "").trim());
             if (root == null || !root.isArray() || root.isEmpty()
                     || root.size() > MAXIMUM_MATERIALS) {
                 throw invalid();

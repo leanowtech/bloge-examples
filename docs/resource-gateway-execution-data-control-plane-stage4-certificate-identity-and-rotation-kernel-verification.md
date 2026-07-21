@@ -12,12 +12,13 @@
 精确静态证书身份已接入 publisher 写侧、dynamic inventory、managed trust-root 与
 九条 external-anchor 读侧，共 12 组 control-plane transport；并已进入 typed properties、
 test/staging 配置、demo preflight、严格 Schema、固定基数 health/capability 与 Tool Studio
-feature projection。证书轮换在原子 TLS 内核之上新增了可嵌入的签名控制模块：严格事件
+feature projection。证书轮换在原子 TLS 内核之上形成了 test/staging 产品状态机：严格事件
 协议、独立 M-of-N Ed25519 信任、deployment/target/predecessor/candidate 精确绑定、材料
-解析隔离、并发幂等和状态漂移封闭。新增 database-clock durable floor 已能跨副本线性化
-generation、持久化 exact event journal、防止重启回退/同代分叉并自动晋升到期 successor；但它尚未与
-12 条产品配置和 live staging 原子接线，也没有事件 watcher 或逐副本收敛证明，因此不能被解释为企业
-PKI 或生产证书轮换已经开放。
+解析隔离、并发幂等和状态漂移封闭；database-clock durable floor 在 live staging 前线性化
+generation、持久化 exact event journal、防止重启回退/同代分叉并自动晋升到期 successor；12 条
+稳定 target id 通过统一 runtime 恢复 active/pending generation。它仍没有 CA event watcher、逐副本
+确认或 fleet convergence proof，因此 capability 明确保持 `replicaConvergenceProven=false`、
+`productionReady=false`，不能被解释为企业 PKI 或生产证书轮换已经开放。
 
 ## 2. 根因模型
 
@@ -76,15 +77,19 @@ pending settings fingerprint 提升为新的 predecessor；live target 若在控
 pending 漂移，则进入 `STATE_OUT_OF_SYNC`。结果协议不携带 material id、settings/policy
 fingerprint、异常、路径或 secret reference。
 
-该控制器的接受日志仍是 process-local；`DatabaseControlPlaneCertificateRotationFloor` 是独立的持久化
-授权后置门禁。它以 deployment/target 稳定锁、数据库时钟和同事务 floor/event journal 保证 exact replay
+兼容构造器仍保留 process-local 接受状态；产品构造器把
+`DatabaseControlPlaneCertificateRotationFloor` 作为持久化授权后置门禁。它以 deployment/target
+稳定锁、数据库时钟和同事务 floor/event journal 保证 exact replay
 幂等、event-id 与 target-generation 双重唯一、连续前代校验、future successor 单 pending、到期原子
-晋升，以及 whole-record fingerprint 篡改失败关闭。启动清单只能建立空 floor 或精确重建当前 active
-head；旧代、跳代和同代不同材料均拒绝。该 floor 不存放路径、secret ref、密码或证书内容。
+晋升，以及 whole-record fingerprint 篡改失败关闭。启动 baseline 可建立新 floor，或通过完整事件祖先链
+重建更高 active head；跳代、同代不同材料和祖先链断裂均拒绝。该 floor 不存放路径、secret ref、密码或
+证书内容。
 
-生产接线仍必须先完成签名验证，再 durable accept，最后把同一 generation/material stage 到 live target，
-并证明每个副本都与 durable head 收敛。当前 controller 与 floor 尚未串成该状态机，不能把“数据库已经
-接受”解释为“所有副本已经切换”。
+产品状态机先完成签名和候选 fingerprint 验证，再 durable accept，最后把同一 generation/material
+stage 到本副本 live target；durable accept 后本地 staging 失败时，同一签名事件可重放修复。重启会先
+验证 baseline ancestry，再从受控 catalog 恢复 durable active/pending material。这个顺序关闭了
+“live 已切换但 floor 未落盘”的危险窗口，却不能把“数据库已接受”解释为“所有副本已切换”：当前没有
+副本清单、逐副本 stage/activate acknowledgement、quorum activation fence 或 convergence SLO。
 
 ## 5. 代码证据
 
@@ -98,11 +103,15 @@ head；旧代、跳代和同代不同材料均拒绝。该 floor 不存放路径
 - `ConfiguredControlPlaneCertificateRotationTrustStore`：独立 public-key-only M-of-N Ed25519
   policy、key lifecycle、时间窗与 canonical fingerprint 校验。
 - `ControlPlaneCertificateRotationController`：授权结果二次绑定、前代/候选指纹校验、并发幂等、
-  event-id 冲突、激活推进与状态漂移封闭。
+  event-id 冲突、floor-first durable accept、失败重放修复、激活推进与状态漂移封闭。
 - `ControlPlaneCertificateRotationMaterialSource`：把不受信事件与 deployment-owned
   certificate/secret material 隔离。
 - `DatabaseControlPlaneCertificateRotationFloor`：数据库时钟、稳定 target 锁、exact event journal、
-  whole-record fingerprint、重启防回退与同代分叉拒绝。
+  whole-record fingerprint、baseline ancestry 验证、重启防回退与同代分叉拒绝。
+- `ControlPlaneCertificateRotationRuntime`：统一管理 12 个 stable target id，构造 durable floor，恢复
+  active/pending material，并注册 floor-bound controller。
+- `ControlPlaneCertificateRotationHealth`：只投影 bounded local readiness、durable state 和目标计数；
+  replica convergence 与 production readiness 永远不由本地事实推导。
 - `RecoveryFleetPublicationTransportProperties`：对六个身份字段执行全有或全无校验，
   disabled residual、partial binding 和 required-without-binding 均在 secret resolution 前失败。
 - `TestRuntimeConfiguration` 与
@@ -116,8 +125,11 @@ head；旧代、跳代和同代不同材料均拒绝。该 floor 不存放路径
   apply result 不投影 TLS material 或 resolver failure details。
 - certificate rotation floor snapshot v1 严格 Schema：仅投影代次、opaque material id、事件 identity、
   fingerprint 与时间，不携带 TLS material location 或 credential。
-- health/capability/Tool Studio：只投影 `certificateIdentityBound` 及两个 source 级聚合
-  布尔值，不返回 Subject、SAN、issuer pin、路径或 secret reference。
+- certificate rotation configuration v1 严格 Schema：冻结 authority、timing、baseline inventory 与
+  material catalog 的 Spring 边界，不允许私钥或 resolved password。
+- health/capability/Tool Studio：投影 `certificateIdentityBound`、signed rotation、durable local readiness
+  和固定计数，不返回 Subject、SAN、issuer pin、fingerprint、路径或 secret reference；fleet convergence
+  和 production readiness 固定为 false。
 - `RecoveryFleetPublicationTlsFixture`：真实 CA、server/client 证书、双向 TLS server 和 client identity
   轮换材料。
 
@@ -130,7 +142,7 @@ RecoveryFleetPublicationTransportTest,\
 RotatingControlPlaneHttpTransportTest test
 ```
 
-验收结果：21 tests，0 failures、0 errors、0 skips。覆盖：
+验收结果由本轮 55 项 rotation 聚焦门禁覆盖，0 failures、0 errors、0 skips。其核心覆盖：
 
 - 真实 mTLS 下精确 client/server workload identity 成功；
 - client Subject、URI SAN、额外 workload URI、issuer、`clientAuth` 缺失在 transport 创建期失败；
@@ -142,23 +154,25 @@ RotatingControlPlaneHttpTransportTest test
 - 候选 credential 加载被阻塞时旧代真实 TLS 请求仍成功；
 - active identity 过期后请求在 handler 前 fail closed。
 
-签名轮换控制模块另执行 20 项协议/信任/并发/状态测试，0 failures、0 errors、0 skips；与
-真实 mTLS rotating transport 的 6 项合计 26 项。新增覆盖：
+签名轮换控制模块与真实 mTLS rotating transport 进一步覆盖：
 
 - 2-of-N 独立 authority quorum、unknown/revoked key、wrong policy/scope/target、签名和
   canonical fingerprint 篡改、严格 not-before/expiry/lifetime；
 - opaque material id 拒绝 URI/path，public trust descriptor 与 apply result 不泄漏 material；
 - exact concurrent replay 只解析/stage 一次，event-id/generation 冲突不穿透；
 - resolver/stage 失败保持旧代可重试，错误文本不进入结果；
-- 激活后 predecessor fingerprint 随 generation 推进，live target 漂移后 fail closed。
+- 激活后 predecessor fingerprint 随 generation 推进，live target 漂移后 fail closed；
+- durable accept 严格位于材料验真之后、live stage 之前；floor 拒绝/故障绝不触碰 live target；
+- durable accept 后 local stage 失败可由 exact replay 修复；到期 successor 可安全 reconcile；
+- 真实数据库重启从受验证祖先链恢复 active generation 和对应 mTLS client identity。
 
 durable floor 另执行 6 项数据库测试，0 failures、0 errors、0 skips；覆盖跨实例精确重建、旧启动清单
 回退/跳代/分叉拒绝、future staged 与 database-time 到期晋升、exact replay、event-id reuse、scope/
 predecessor 漂移、floor/event journal 篡改失败关闭，以及同一 target/generation 双副本竞争只有一个赢家。
 
-另执行复用 transport 的 79 项联合协议回归，0 failures、0 errors、0 skips；
-产品接线的 87 项聚焦测试亦全绿，覆盖 typed properties、Spring 组装、真实 TLS、
-Schema 冻结、health/capability、Tool Studio projection 与 demo preflight。
+此前复用 transport 的 79 项联合协议回归和产品接线的 87 项聚焦测试亦全绿；本轮 55 项覆盖 typed
+properties、Spring 组装、真实 TLS、durable restart、Schema 冻结、health/capability、Tool Studio
+projection 与 demo preflight。
 
 最终全量门禁：
 
@@ -171,8 +185,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 7. 下一门禁
 
-下一门禁是把已验证的签名控制器、durable floor 与 live target 收口成单一产品状态机：12 条稳定
-target id、typed rotation properties、受控 material catalog、floor-first 事件接入、重启恢复、逐副本
-convergence、固定基数 health/capability 和 demo preflight。其后仍需受控 switch-forward recovery。
-尚未闭合的外部生产责任包括企业 CA 签发/吊销事件源、OCSP/CRL、
-HSM 私钥 custody、secret-manager lease、HA/DR/chaos 和目标数据库认证。
+下一门禁从“本地 durable 正确”推进到“fleet 可证明收敛”：引入受治理的 replica inventory、事件分发
+cursor、逐副本 `STAGED/ACTIVE/FAILED` acknowledgement、staging quorum/all-replica policy、激活 fence、
+离线副本隔离与 convergence SLO；只有独立 verifier 证明 exact target/generation/material cohort 收敛后，
+`replicaConvergenceProven` 才能为 true。其后仍需受控 switch-forward recovery。尚未闭合的外部生产责任
+包括企业 CA 签发/吊销事件源、OCSP/CRL、HSM 私钥 custody、secret-manager lease、生产数据库迁移与
+备份恢复、HA/DR/chaos 和长周期证书生命周期认证。

@@ -234,6 +234,73 @@ class ControlPlaneCertificateRotationControllerTest {
     }
 
     @Test
+    void durableFloorRunsAfterMaterialResolutionAndBeforeLiveStaging() {
+        var floor = new FakeFloor() {
+            @Override
+            public synchronized Acceptance accept(ControlPlaneCertificateRotationEvent event) {
+                assertThat(resolutions).hasValue(1);
+                assertThat(target.stageCalls).hasValue(0);
+                return super.accept(event);
+            }
+        };
+        var controller = new ControlPlaneCertificateRotationController(
+                verifiedTrust(), materialSource, Clock.fixed(NOW, ZoneOffset.UTC),
+                "resource-gateway-prod", Map.of("external-notary",
+                new ControlPlaneCertificateRotationController.TargetRegistration(
+                        target, INITIAL_FINGERPRINT)), floor);
+
+        var result = controller.apply(event(7, 8, EVENT_FINGERPRINT,
+                MATERIAL_FINGERPRINT));
+
+        assertThat(result.status()).isEqualTo(
+                ControlPlaneCertificateRotationController.ApplyStatus.APPLIED);
+        assertThat(floor.acceptCallCount()).isEqualTo(1);
+        assertThat(target.stageCalls).hasValue(1);
+        assertThat(controller.targetStates().get("external-notary").synchronizedState())
+                .isTrue();
+    }
+
+    @Test
+    void durableRejectionAndOutageNeverStageTheLiveTarget() {
+        var rejectedFloor = new FakeFloor();
+        rejectedFloor.reject = true;
+        var rejectedController = durableController(rejectedFloor);
+
+        assertThat(rejectedController.apply(event(7, 8, EVENT_FINGERPRINT,
+                MATERIAL_FINGERPRINT)).status()).isEqualTo(
+                ControlPlaneCertificateRotationController.ApplyStatus.DURABILITY_REJECTED);
+        assertThat(target.stageCalls).hasValue(0);
+
+        var unavailableFloor = new FakeFloor();
+        unavailableFloor.unavailable = true;
+        var unavailableController = durableController(unavailableFloor);
+        assertThat(unavailableController.apply(event(7, 8, EVENT_FINGERPRINT,
+                MATERIAL_FINGERPRINT)).status()).isEqualTo(
+                ControlPlaneCertificateRotationController.ApplyStatus.DURABILITY_UNAVAILABLE);
+        assertThat(target.stageCalls).hasValue(0);
+    }
+
+    @Test
+    void exactDurableReplayRepairsAReplicaAfterLocalStagingFailure() {
+        var floor = new FakeFloor();
+        var controller = durableController(floor);
+        var event = event(7, 8, EVENT_FINGERPRINT, MATERIAL_FINGERPRINT);
+        target.failStage = true;
+
+        var failed = controller.apply(event);
+        target.failStage = false;
+        var repaired = controller.apply(event);
+
+        assertThat(failed.status()).isEqualTo(
+                ControlPlaneCertificateRotationController.ApplyStatus.STAGING_REJECTED);
+        assertThat(repaired.status()).isEqualTo(
+                ControlPlaneCertificateRotationController.ApplyStatus.APPLIED);
+        assertThat(floor.acceptCallCount()).isEqualTo(2);
+        assertThat(target.stageCalls).hasValue(2);
+        assertThat(target.pendingGeneration()).hasValue(8);
+    }
+
+    @Test
     void advancesMaterialPredecessorAfterActivationAndAcceptsOnlyTheNextGeneration() {
         String nextFingerprint = "sha256:" + "6".repeat(64);
         materialSource = (targetId, generation, materialId) ->
@@ -297,6 +364,15 @@ class ControlPlaneCertificateRotationControllerTest {
                 "resource-gateway-prod", Map.of("external-notary",
                 new ControlPlaneCertificateRotationController.TargetRegistration(
                         target, INITIAL_FINGERPRINT)));
+    }
+
+    private ControlPlaneCertificateRotationController durableController(
+            ControlPlaneCertificateRotationFloor floor) {
+        return new ControlPlaneCertificateRotationController(
+                verifiedTrust(), materialSource, Clock.fixed(NOW, ZoneOffset.UTC),
+                "resource-gateway-prod", Map.of("external-notary",
+                new ControlPlaneCertificateRotationController.TargetRegistration(
+                        target, INITIAL_FINGERPRINT)), floor);
     }
 
     private static ControlPlaneCertificateRotationTrustStore verifiedTrust() {
@@ -384,6 +460,61 @@ class ControlPlaneCertificateRotationControllerTest {
         private synchronized void forceActive(long generation) {
             activeGeneration = generation;
             pendingGeneration = 0;
+        }
+    }
+
+    private static class FakeFloor implements ControlPlaneCertificateRotationFloor {
+        private final AtomicInteger acceptCalls = new AtomicInteger();
+        private Snapshot snapshot = initialSnapshot();
+        private boolean reject;
+        private boolean unavailable;
+
+        @Override
+        public synchronized Acceptance accept(ControlPlaneCertificateRotationEvent event) {
+            int call = acceptCalls.incrementAndGet();
+            if (reject) {
+                throw new IllegalArgumentException("durable conflict: do-not-leak");
+            }
+            if (unavailable) {
+                throw new IllegalStateException("database unavailable: do-not-leak");
+            }
+            if (call == 1) {
+                var material = event.material();
+                snapshot = new Snapshot(Snapshot.SCHEMA_VERSION,
+                        "resource-gateway-prod", "external-notary", 7,
+                        "initial", INITIAL_FINGERPRINT, "", "", NOW,
+                        material.generation(), material.materialId(),
+                        material.settingsFingerprint(), material.eventId(),
+                        event.materialFingerprint(), material.activateAt(), NOW);
+                return new Acceptance(AcceptanceStatus.STAGED, snapshot);
+            }
+            return new Acceptance(AcceptanceStatus.REPLAYED, snapshot);
+        }
+
+        @Override
+        public synchronized Snapshot snapshot(String targetId) {
+            return snapshot;
+        }
+
+        @Override
+        public synchronized Map<String, Snapshot> snapshots() {
+            return Map.of("external-notary", snapshot);
+        }
+
+        @Override
+        public boolean durable() {
+            return true;
+        }
+
+        int acceptCallCount() {
+            return acceptCalls.get();
+        }
+
+        private static Snapshot initialSnapshot() {
+            return new Snapshot(Snapshot.SCHEMA_VERSION,
+                    "resource-gateway-prod", "external-notary", 7,
+                    "initial", INITIAL_FINGERPRINT, "", "", NOW,
+                    0, "", "", "", "", null, NOW);
         }
     }
 

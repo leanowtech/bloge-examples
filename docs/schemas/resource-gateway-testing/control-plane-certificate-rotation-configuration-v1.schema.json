@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-configuration-v1.schema.json",
+  "title": "Resource Gateway Control-Plane Certificate Rotation Spring Configuration v1",
+  "description": "Strict test/staging configuration for signed restart-free TLS generation rotation backed by a durable generation floor. Values ending in -json are bounded JSON strings because Spring environment variables supply them atomically. Durable local state does not imply replica convergence or production readiness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "required",
+    "deployment-scope-id",
+    "trust-domain",
+    "accepted-policy-fingerprints",
+    "signature-threshold",
+    "authority-keys-json",
+    "minimum-overlap-seconds",
+    "maximum-lead-time-seconds",
+    "initial-generations-json",
+    "material-catalog-json"
+  ],
+  "properties": {
+    "enabled": { "type": "boolean" },
+    "required": { "type": "boolean" },
+    "deployment-scope-id": {
+      "type": "string",
+      "pattern": "^(|[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254})$"
+    },
+    "trust-domain": {
+      "type": "string",
+      "pattern": "^(|[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254})$"
+    },
+    "accepted-policy-fingerprints": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31})$",
+      "maxLength": 2303
+    },
+    "signature-threshold": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "authority-keys-json": {
+      "type": "string",
+      "pattern": "^\\s*\\[.*\\]\\s*$",
+      "maxLength": 524288,
+      "description": "Strict public Ed25519 authority-key array; private keys are forbidden."
+    },
+    "minimum-overlap-seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2592000
+    },
+    "maximum-lead-time-seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2592000
+    },
+    "initial-generations-json": {
+      "type": "string",
+      "pattern": "^(|\\s*\\{.*\\}\\s*)$",
+      "maxLength": 65536,
+      "description": "Strict map from one of the twelve product transport ids to either a positive baseline generation or an object containing exactly generation and materialId."
+    },
+    "material-catalog-json": {
+      "type": "string",
+      "pattern": "^\\s*\\[.*\\]\\s*$",
+      "maxLength": 1048576,
+      "description": "Strict public TLS material-location catalog containing opaque credential references but no resolved passwords."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "required": { "const": true } },
+        "required": ["required"]
+      },
+      "then": { "properties": { "enabled": { "const": true } } }
+    },
+    {
+      "if": {
+        "properties": { "enabled": { "const": false } },
+        "required": ["enabled"]
+      },
+      "then": {
+        "properties": {
+          "required": { "const": false },
+          "deployment-scope-id": { "const": "" },
+          "trust-domain": { "const": "" },
+          "accepted-policy-fingerprints": { "const": "" },
+          "signature-threshold": { "const": 0 },
+          "authority-keys-json": { "enum": ["", "[]"] },
+          "minimum-overlap-seconds": { "const": 300 },
+          "maximum-lead-time-seconds": { "const": 86400 },
+          "initial-generations-json": { "enum": ["", "{}"] },
+          "material-catalog-json": { "enum": ["", "[]"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "enabled": { "const": true } },
+        "required": ["enabled"]
+      },
+      "then": {
+        "properties": {
+          "deployment-scope-id": { "minLength": 1 },
+          "trust-domain": { "minLength": 1 },
+          "accepted-policy-fingerprints": { "minLength": 71 },
+          "signature-threshold": { "minimum": 1 },
+          "authority-keys-json": { "not": { "enum": ["", "[]"] } },
+          "initial-generations-json": { "not": { "enum": ["", "{}"] } },
+          "material-catalog-json": { "not": { "enum": ["", "[]"] } }
+        }
+      }
+    }
+  ]
+}

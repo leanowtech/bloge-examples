@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationRuntime;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority;
@@ -83,6 +84,7 @@ public class ToolStudioIntegrationService {
             testSecretAuthorityExternalSequenceAnchors;
     private TestSuiteStabilityObservationExternalArchiveReconciliationHealth
             externalArchiveReconciliationHealth;
+    private ControlPlaneCertificateRotationRuntime controlPlaneCertificateRotationRuntime;
     private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory>
             recoveryFleetInventories = List.of();
     private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority>
@@ -192,6 +194,13 @@ public class ToolStudioIntegrationService {
     void configureExternalArchiveReconciliationHealth(
             TestSuiteStabilityObservationExternalArchiveReconciliationHealth health) {
         this.externalArchiveReconciliationHealth = health;
+    }
+
+    /** Receives the profile-owned local certificate-rotation runtime when assembled. */
+    @Autowired(required = false)
+    void configureControlPlaneCertificateRotation(
+            ControlPlaneCertificateRotationRuntime runtime) {
+        this.controlPlaneCertificateRotationRuntime = runtime;
     }
 
     /** Receives the profile-owned semantic workbook projector with the isolated test runtime. */
@@ -542,6 +551,17 @@ public class ToolStudioIntegrationService {
                 recoveryFleet.trustRootSourceMutualTls());
         features.put("bootstrapRootRecoveryFleetTrustRootSourceCertificateIdentityBound",
                 recoveryFleet.trustRootSourceCertificateIdentityBound());
+        ControlPlaneCertificateRotationRuntime.Descriptor rotation =
+                currentControlPlaneCertificateRotation();
+        features.put("signedControlPlaneCertificateRotation", rotation.enabled());
+        features.put("restartFreeControlPlaneCertificateRotation",
+                rotation.enabled() && rotation.ready());
+        features.put("controlPlaneCertificateRotationLocalReady",
+                rotation.enabled() && rotation.ready());
+        features.put("controlPlaneCertificateRotationDurableFloorIntegrated",
+                rotation.enabled() && rotation.durableState());
+        features.put("controlPlaneCertificateRotationReplicaConvergenceProven", false);
+        features.put("controlPlaneCertificateRotationProductionReady", false);
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),
@@ -550,6 +570,22 @@ public class ToolStudioIntegrationService {
                 current.endpoints());
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 augmented);
+    }
+
+    private ControlPlaneCertificateRotationRuntime.Descriptor
+            currentControlPlaneCertificateRotation() {
+        if (controlPlaneCertificateRotationRuntime == null) {
+            return new ControlPlaneCertificateRotationRuntime.Descriptor(
+                    ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
+                    false, true, false, false, 0, 0, true);
+        }
+        try {
+            return controlPlaneCertificateRotationRuntime.descriptor();
+        } catch (RuntimeException unavailable) {
+            return new ControlPlaneCertificateRotationRuntime.Descriptor(
+                    ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
+                    true, false, false, false, 0, 0, false);
+        }
     }
 
     private ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability

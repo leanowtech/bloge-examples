@@ -16,11 +16,13 @@ import java.util.regex.Pattern;
  * transports. It requires independent M-of-N authorization, exact target binding, a contiguous
  * generation, and a resolver-computed candidate fingerprint. Exact concurrent replay shares one
  * resolution attempt; a different command for the same target is rejected. Resolver and staging
- * failures never mutate accepted state and expose no exception text, path, or secret reference.</p>
+ * failures never mutate accepted state and expose no exception text, path, or secret reference.
+ * When a durable floor is supplied, verified candidate identity is committed before local staging;
+ * an exact replay can therefore repair a replica that failed after the durable commit.</p>
  *
- * <p>Accepted state is process-local. A production deployment must restore generation state from
- * an authoritative inventory and distribute the same signed event to every replica. This class
- * deliberately does not pretend that an in-memory journal proves cross-replica convergence.</p>
+ * <p>The compatibility constructor retains process-local accepted state for embedders. Product
+ * composition supplies a durable floor, but event distribution and fleet convergence remain
+ * separate responsibilities.</p>
  */
 public final class ControlPlaneCertificateRotationController {
 
@@ -48,7 +50,11 @@ public final class ControlPlaneCertificateRotationController {
         /** Resolved material differs from the signed material fingerprint. */
         MATERIAL_MISMATCH,
         /** The atomic TLS target rejected the otherwise verified candidate. */
-        STAGING_REJECTED
+        STAGING_REJECTED,
+        /** Durable generation state rejected the otherwise verified event. */
+        DURABILITY_REJECTED,
+        /** Durable generation state was unavailable or corrupt. */
+        DURABILITY_UNAVAILABLE
     }
 
     /**
@@ -140,6 +146,7 @@ public final class ControlPlaneCertificateRotationController {
     private final Clock clock;
     private final String deploymentScopeId;
     private final Map<String, MutableTargetState> targets;
+    private final ControlPlaneCertificateRotationFloor floor;
     private final Map<String, Attempt> attempts = new HashMap<>();
     private final Object monitor = new Object();
 
@@ -158,10 +165,31 @@ public final class ControlPlaneCertificateRotationController {
             Clock clock,
             String deploymentScopeId,
             Map<String, TargetRegistration> registrations) {
+        this(trustStore, materialSource, clock, deploymentScopeId, registrations, null);
+    }
+
+    /**
+     * Creates one bounded signed rotation controller with a durable post-authorization floor.
+     *
+     * @param trustStore independent public-key authorization trust
+     * @param materialSource deployment-owned material resolver
+     * @param clock authoritative local staging clock
+     * @param deploymentScopeId exact local deployment scope
+     * @param registrations one through 64 independently governed targets
+     * @param floor durable monotonic generation authority for the same target inventory
+     */
+    public ControlPlaneCertificateRotationController(
+            ControlPlaneCertificateRotationTrustStore trustStore,
+            ControlPlaneCertificateRotationMaterialSource materialSource,
+            Clock clock,
+            String deploymentScopeId,
+            Map<String, TargetRegistration> registrations,
+            ControlPlaneCertificateRotationFloor floor) {
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
         this.materialSource = Objects.requireNonNull(materialSource, "materialSource");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.deploymentScopeId = normalized(deploymentScopeId);
+        this.floor = floor;
         if (!IDENTIFIER.matcher(this.deploymentScopeId).matches()
                 || registrations == null || registrations.isEmpty()
                 || registrations.size() > MAXIMUM_TARGETS) {
@@ -174,7 +202,7 @@ public final class ControlPlaneCertificateRotationController {
                     registration, "registration");
             if (!IDENTIFIER.matcher(normalizedId).matches()
                     || indexed.putIfAbsent(normalizedId,
-                    new MutableTargetState(required.target(),
+                    new MutableTargetState(normalizedId, required.target(),
                             required.activeMaterialFingerprint())) != null) {
                 throw invalid();
             }
@@ -281,8 +309,15 @@ public final class ControlPlaneCertificateRotationController {
             if (result.status() == ApplyStatus.APPLIED) {
                 state.acceptedEventId = material.eventId();
                 state.acceptedEventFingerprint = event.materialFingerprint();
-                state.pendingGeneration = material.generation();
-                state.pendingMaterialFingerprint = material.settingsFingerprint();
+                if (result.activeGeneration() == material.generation()) {
+                    state.activeGeneration = material.generation();
+                    state.activeMaterialFingerprint = material.settingsFingerprint();
+                    state.pendingGeneration = 0;
+                    state.pendingMaterialFingerprint = "";
+                } else {
+                    state.pendingGeneration = material.generation();
+                    state.pendingMaterialFingerprint = material.settingsFingerprint();
+                }
             }
         }
         attempt.completion().complete(result);
@@ -295,8 +330,9 @@ public final class ControlPlaneCertificateRotationController {
             LinkedHashMap<String, TargetStateDescriptor> result = new LinkedHashMap<>();
             targets.forEach((targetId, state) -> {
                 refresh(state);
+                long pending = state.target.pendingGeneration().orElse(0);
                 result.put(targetId, new TargetStateDescriptor(state.activeGeneration,
-                        state.target.pendingGeneration().orElse(0), !state.outOfSync));
+                        pending, !state.outOfSync && durableStateMatches(state, pending)));
             });
             return Map.copyOf(result);
         }
@@ -319,20 +355,45 @@ public final class ControlPlaneCertificateRotationController {
             return rejected(ApplyStatus.MATERIAL_MISMATCH,
                     "CERTIFICATE_ROTATION_MATERIAL_MISMATCH", state);
         }
+        ControlPlaneCertificateRotationFloor.Acceptance durableAcceptance = null;
+        if (floor != null) {
+            try {
+                durableAcceptance = floor.accept(event);
+            } catch (IllegalArgumentException rejected) {
+                return rejected(ApplyStatus.DURABILITY_REJECTED,
+                        "CERTIFICATE_ROTATION_DURABILITY_REJECTED", state);
+            } catch (RuntimeException unavailable) {
+                return rejected(ApplyStatus.DURABILITY_UNAVAILABLE,
+                        "CERTIFICATE_ROTATION_DURABILITY_UNAVAILABLE", state);
+            }
+        }
         try {
-            state.target.stage(material.generation(), material.activateAt(),
-                    resolved.settings());
+            if (durableAcceptance != null
+                    && durableAcceptance.snapshot().activeGeneration()
+                    == material.generation()) {
+                state.target.reconcileActive(material.generation(),
+                        durableAcceptance.snapshot().activatedAt(), resolved.settings());
+            } else {
+                state.target.stage(material.generation(), material.activateAt(),
+                        resolved.settings());
+            }
         } catch (RuntimeException rejected) {
             return rejected(ApplyStatus.STAGING_REJECTED,
                     "CERTIFICATE_ROTATION_STAGING_REJECTED", state);
         }
+        long active = state.target.activeGeneration();
         OptionalLong pending = state.target.pendingGeneration();
-        if (pending.isEmpty() || pending.getAsLong() != material.generation()) {
+        if (active == material.generation() && pending.isEmpty()) {
+            return accepted(ApplyStatus.APPLIED, "APPLIED", event, state,
+                    material.generation(), 0);
+        }
+        if (active != state.activeGeneration || pending.isEmpty()
+                || pending.getAsLong() != material.generation()) {
             return rejected(ApplyStatus.STATE_OUT_OF_SYNC,
                     "CERTIFICATE_ROTATION_STATE_OUT_OF_SYNC", state);
         }
         return accepted(ApplyStatus.APPLIED, "APPLIED", event, state,
-                material.generation());
+                state.activeGeneration, material.generation());
     }
 
     private void refresh(MutableTargetState state) {
@@ -374,7 +435,7 @@ public final class ControlPlaneCertificateRotationController {
             String reason,
             ControlPlaneCertificateRotationEvent event,
             MutableTargetState state) {
-        return accepted(status, reason, event, state,
+        return accepted(status, reason, event, state, state.activeGeneration,
                 state.target.pendingGeneration().orElse(0));
     }
 
@@ -383,10 +444,25 @@ public final class ControlPlaneCertificateRotationController {
             String reason,
             ControlPlaneCertificateRotationEvent event,
             MutableTargetState state,
+            long activeGeneration,
             long pendingGeneration) {
         return new ApplyResult(ApplyResult.SCHEMA_VERSION, status, reason,
                 event.material().eventId(), event.materialFingerprint(),
-                state.activeGeneration, pendingGeneration);
+                activeGeneration, pendingGeneration);
+    }
+
+    private boolean durableStateMatches(MutableTargetState state, long pendingGeneration) {
+        if (floor == null) {
+            return true;
+        }
+        try {
+            ControlPlaneCertificateRotationFloor.Snapshot snapshot =
+                    floor.snapshot(state.targetId);
+            return snapshot.activeGeneration() == state.activeGeneration
+                    && snapshot.pendingGeneration() == pendingGeneration;
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
     }
 
     private ApplyResult rejected(
@@ -430,6 +506,7 @@ public final class ControlPlaneCertificateRotationController {
     }
 
     private static final class MutableTargetState {
+        private final String targetId;
         private final ControlPlaneCertificateRotationTarget target;
         private long activeGeneration;
         private String activeMaterialFingerprint;
@@ -440,8 +517,10 @@ public final class ControlPlaneCertificateRotationController {
         private boolean outOfSync;
 
         private MutableTargetState(
+                String targetId,
                 ControlPlaneCertificateRotationTarget target,
                 String activeMaterialFingerprint) {
+            this.targetId = targetId;
             this.target = target;
             this.activeGeneration = target.activeGeneration();
             this.activeMaterialFingerprint = activeMaterialFingerprint;

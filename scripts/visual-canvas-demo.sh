@@ -60,6 +60,14 @@ Environment:
   RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE  required for staging; staged rollout mode
   RG_RESOURCE_GATEWAY_INSTANCE_ID                  required for staging; exact serving replica id
   RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT         required for staging; sha256 image/JAR identity
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED  optional signed local TLS rotation preview
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SCOPE_ID  required exact deployment scope
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_TRUST_DOMAIN  required external PKI governance domain
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ACCEPTED_POLICIES  required sha256 policy list
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SIGNATURE_THRESHOLD  required; 1..32
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_AUTHORITY_KEYS_JSON  required public Ed25519 keys
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INITIAL_GENERATIONS_JSON  required target baseline generations/material ids
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_MATERIAL_CATALOG_JSON  required public material catalog
   RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED  optional; exact dynamic-JWKS test-secret replica gate
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED  required true for staging cohort
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN  required external trust domain
@@ -473,6 +481,57 @@ validate_control_plane_transport() {
         "${!server_issuer_pins_var}" |
         grep -Eqv '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,15}$'; then
         echo "${label} issuer SPKI pins are invalid." >&2
+        return 1
+    fi
+}
+
+validate_control_plane_certificate_rotation() {
+    if ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED:-false}"; then
+        return 0
+    fi
+    if ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_REQUIRED:-true}" ||
+        [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SCOPE_ID:-}" ] ||
+        [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_TRUST_DOMAIN:-}" ] ||
+        [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ACCEPTED_POLICIES:-}" ] ||
+        [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SIGNATURE_THRESHOLD:-}" ] ||
+        [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_AUTHORITY_KEYS_JSON:-}" ] ||
+        [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INITIAL_GENERATIONS_JSON:-}" ] ||
+        [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_MATERIAL_CATALOG_JSON:-}" ]; then
+        echo "Signed certificate rotation requires complete scope, trust, generation, and material configuration." >&2
+        return 1
+    fi
+    if printf '%s\n%s\n' \
+        "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SCOPE_ID}" \
+        "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_TRUST_DOMAIN}" |
+        grep -Eqv '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        ! printf '%s' "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ACCEPTED_POLICIES}" |
+        grep -Eq '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31}$'; then
+        echo "Signed certificate rotation scope, trust domain, or policy fingerprints are invalid." >&2
+        return 1
+    fi
+    local threshold="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SIGNATURE_THRESHOLD}"
+    local overlap="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_MINIMUM_OVERLAP_SECONDS:-300}"
+    local lead="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_MAXIMUM_LEAD_TIME_SECONDS:-86400}"
+    if printf '%s\n%s\n%s\n' "${threshold}" "${overlap}" "${lead}" |
+        grep -Eqv '^(0|[1-9][0-9]*)$' ||
+        [ "${threshold}" -lt 1 ] || [ "${threshold}" -gt 32 ] ||
+        [ "${overlap}" -gt 2592000 ] ||
+        [ "${lead}" -lt 1 ] || [ "${lead}" -gt 2592000 ]; then
+        echo "Signed certificate rotation quorum or timing bounds are invalid." >&2
+        return 1
+    fi
+    local authorities="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_AUTHORITY_KEYS_JSON}"
+    local generations="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INITIAL_GENERATIONS_JSON}"
+    local catalog="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_MATERIAL_CATALOG_JSON}"
+    if ! printf '%s' "${authorities}" | grep -Eq '^\[[[:space:]]*\{.*\}[[:space:]]*\]$' ||
+        ! printf '%s' "${generations}" | grep -Eq '^\{[[:space:]]*".*":[[:space:]]*([1-9][0-9]*|\{[[:space:]]*"generation"[[:space:]]*:[[:space:]]*[1-9][0-9]*[[:space:]]*,[[:space:]]*"materialId"[[:space:]]*:[[:space:]]*"[A-Za-z0-9][A-Za-z0-9._-]{0,254}"[[:space:]]*\}).*\}$' ||
+        ! printf '%s' "${catalog}" | grep -Eq '^\[[[:space:]]*\{.*\}[[:space:]]*\]$'; then
+        echo "Signed certificate rotation authority, generation, or material JSON is invalid." >&2
+        return 1
+    fi
+    if printf '%s\n%s\n' "${authorities}" "${catalog}" |
+        grep -Eqi '"(privateKey|privateKeyBase64|password)"[[:space:]]*:'; then
+        echo "Signed certificate rotation configuration must not contain private keys or resolved passwords." >&2
         return 1
     fi
 }
@@ -1274,6 +1333,7 @@ validate_profile_secrets() {
     fi
     validate_external_anchor_domain_isolation
     validate_control_plane_identity_isolation
+    validate_control_plane_certificate_rotation
 }
 
 pid_file() {
