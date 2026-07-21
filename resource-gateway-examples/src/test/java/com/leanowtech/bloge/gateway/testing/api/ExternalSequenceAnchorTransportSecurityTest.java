@@ -46,7 +46,7 @@ class ExternalSequenceAnchorTransportSecurityTest {
                         PINNED_MTLS, Optional.of(PINNED_MTLS), Optional.of(PINNED_MTLS));
 
         assertThat(security.toString()).doesNotContain(
-                "endpoint", "keystore", "secret", "sha256:", "certificate");
+                "endpoint", "keystore", "secret", "sha256:", "certificate=");
         assertThat(security.managedTrustPublication()).get()
                 .extracting(ControlPlaneHttpTransport.Descriptor::mutualTls)
                 .isEqualTo(true);
@@ -55,7 +55,8 @@ class ExternalSequenceAnchorTransportSecurityTest {
                 .isEqualTo(true);
         assertThat(security.asMap().toString())
                 .contains("serverSpkiPinned=true", "mutualTls=true")
-                .doesNotContain("endpoint", "keystore", "secret", "sha256:", "certificate");
+                .doesNotContain("endpoint", "keystore", "secret", "sha256:",
+                        "certificate=");
     }
 
     @Test

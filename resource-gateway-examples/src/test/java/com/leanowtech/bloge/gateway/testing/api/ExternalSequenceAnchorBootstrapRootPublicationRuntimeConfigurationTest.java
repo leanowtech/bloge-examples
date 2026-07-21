@@ -123,6 +123,19 @@ class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest {
         properties.put(PREFIX + "transport.server-spki-pins",
                 PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
                         material.serverCertificate()));
+        properties.put(PREFIX + "transport.certificate-identity-required", "true");
+        properties.put(PREFIX + "transport.expected-client-subject-dn",
+                material.clientCertificate().getSubjectX500Principal().getName());
+        properties.put(PREFIX + "transport.expected-client-uri-san",
+                material.clientUriSan());
+        properties.put(PREFIX + "transport.client-issuer-spki-pins",
+                PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                        material.certificateAuthority()));
+        properties.put(PREFIX + "transport.expected-server-uri-san",
+                material.serverUriSan());
+        properties.put(PREFIX + "transport.server-issuer-spki-pins",
+                PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                        material.certificateAuthority()));
         properties.put(
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
                         .DynamicInventoryProperties.PREFIX + ".transport.required", "true");
@@ -143,12 +156,14 @@ class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest {
                 assertThat(descriptor.privateTrustStore()).isTrue();
                 assertThat(descriptor.serverSpkiPinned()).isTrue();
                 assertThat(descriptor.mutualTls()).isTrue();
+                assertThat(descriptor.certificateIdentityBound()).isTrue();
             });
             assertThat(context.getBean(
                     ExternalSequenceAnchorBootstrapRootPublicationHealth.class)
                     .health().getDetails())
                     .containsEntry("transportServerSpkiPinned", true)
-                    .containsEntry("transportMutualTls", true);
+                    .containsEntry("transportMutualTls", true)
+                    .containsEntry("transportCertificateIdentityBound", true);
         }
     }
 

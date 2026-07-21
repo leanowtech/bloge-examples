@@ -408,7 +408,14 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
                 environment.getProperty(prefix + ".trust-store-password-ref", ""),
                 environment.getProperty(prefix + ".client-key-store-path", ""),
                 environment.getProperty(prefix + ".client-key-store-password-ref", ""),
-                environment.getProperty(prefix + ".server-spki-pins", ""));
+                environment.getProperty(prefix + ".server-spki-pins", ""),
+                environment.getProperty(prefix + ".certificate-identity-required",
+                        Boolean.class, false),
+                environment.getProperty(prefix + ".expected-client-subject-dn", ""),
+                environment.getProperty(prefix + ".expected-client-uri-san", ""),
+                environment.getProperty(prefix + ".client-issuer-spki-pins", ""),
+                environment.getProperty(prefix + ".expected-server-uri-san", ""),
+                environment.getProperty(prefix + ".server-issuer-spki-pins", ""));
     }
 
     private static ControlPlaneHttpTransport.SecretResolver secretResolver(

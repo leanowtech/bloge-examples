@@ -52,10 +52,12 @@ import java.util.regex.Pattern;
  * @param inventorySourcePrivateTrustStore whether inventory TLS uses deployment-owned roots
  * @param inventorySourceServerSpkiPinned whether inventory server keys are explicitly pinned
  * @param inventorySourceMutualTls whether inventory requests present a client certificate
+ * @param inventorySourceCertificateIdentityBound whether inventory peers match X.509 identities
  * @param trustRootSourceSystemTrustStore whether managed-root TLS uses JVM trust roots
  * @param trustRootSourcePrivateTrustStore whether managed-root TLS uses private trust roots
  * @param trustRootSourceServerSpkiPinned whether managed-root server keys are pinned
  * @param trustRootSourceMutualTls whether managed-root requests present a client certificate
+ * @param trustRootSourceCertificateIdentityBound whether managed-root peers match X.509 identities
  * @param schedulerActive whether a scheduler cycle is currently active
  * @param schedulerOverdue whether the scheduler exceeded its bounded progress budget
  * @param pollCount aggregate local scheduler polls
@@ -94,10 +96,12 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
         boolean inventorySourcePrivateTrustStore,
         boolean inventorySourceServerSpkiPinned,
         boolean inventorySourceMutualTls,
+        boolean inventorySourceCertificateIdentityBound,
         boolean trustRootSourceSystemTrustStore,
         boolean trustRootSourcePrivateTrustStore,
         boolean trustRootSourceServerSpkiPinned,
         boolean trustRootSourceMutualTls,
+        boolean trustRootSourceCertificateIdentityBound,
         boolean schedulerActive,
         boolean schedulerOverdue,
         long pollCount,
@@ -113,9 +117,13 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
     public static final String SCHEMA_VERSION_V2 =
             "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCapability.v2";
 
-    /** Current capability generation with source transport-authentication truth. */
-    public static final String SCHEMA_VERSION =
+    /** Source transport-authentication generation retained as a frozen historical reference. */
+    public static final String SCHEMA_VERSION_V3 =
             "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCapability.v3";
+
+    /** Current capability generation with exact certificate identity truth. */
+    public static final String SCHEMA_VERSION =
+            "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCapability.v4";
 
     private static final Pattern SOURCE_TYPE = Pattern.compile("[A-Z][A-Z0-9_]{0,127}");
     private static final Set<String> MANAGED_ROOT_STATUSES = Set.of(
@@ -156,8 +164,10 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 || byzantineQuorumInventoryNonEquivocation
                 || inventorySourceSystemTrustStore || inventorySourcePrivateTrustStore
                 || inventorySourceServerSpkiPinned || inventorySourceMutualTls
+                || inventorySourceCertificateIdentityBound
                 || trustRootSourceSystemTrustStore || trustRootSourcePrivateTrustStore
                 || trustRootSourceServerSpkiPinned || trustRootSourceMutualTls
+                || trustRootSourceCertificateIdentityBound
                 || schedulerActive
                 || schedulerOverdue || pollCount != 0L || pollFailureCount != 0L
                 || cycleCount != 0L || cycleFailureCount != 0L)
@@ -194,14 +204,16 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 && inventorySourceSystemTrustStore == inventorySourcePrivateTrustStore
                 || !dynamicInventory && (inventorySourceSystemTrustStore
                 || inventorySourcePrivateTrustStore || inventorySourceServerSpkiPinned
-                || inventorySourceMutualTls)
+                || inventorySourceMutualTls || inventorySourceCertificateIdentityBound)
                 || inventorySourceMutualTls && !inventorySourceServerSpkiPinned
+                || inventorySourceCertificateIdentityBound && !inventorySourceMutualTls
                 || managedTrustRootRefresh
                 && trustRootSourceSystemTrustStore == trustRootSourcePrivateTrustStore
                 || !managedTrustRootRefresh && (trustRootSourceSystemTrustStore
                 || trustRootSourcePrivateTrustStore || trustRootSourceServerSpkiPinned
-                || trustRootSourceMutualTls)
+                || trustRootSourceMutualTls || trustRootSourceCertificateIdentityBound)
                 || trustRootSourceMutualTls && !trustRootSourceServerSpkiPinned
+                || trustRootSourceCertificateIdentityBound && !trustRootSourceMutualTls
                 || pollCount < 0L || pollFailureCount < 0L || pollFailureCount > pollCount
                 || cycleCount < 0L || cycleFailureCount < 0L
                 || cycleFailureCount > cycleCount) {
@@ -268,7 +280,8 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 false, false, false, false, externallyAnchoredPublicationFloor,
                 byzantineQuorumAnchoredPublicationFloor,
                 dynamicInventory, false, false, false,
-                false, false, false, false, schedulerActive, schedulerOverdue,
+                false, false, false, false, false, false,
+                schedulerActive, schedulerOverdue,
                 pollCount, pollFailureCount, cycleCount, cycleFailureCount);
     }
 
@@ -319,7 +332,7 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 externalInventoryNonEquivocation,
                 byzantineQuorumInventoryNonEquivocation,
                 dynamicInventory, false, false, false,
-                managedTrustRootRefresh, false, false, false,
+                false, managedTrustRootRefresh, false, false, false, false,
                 schedulerActive, schedulerOverdue, pollCount, pollFailureCount,
                 cycleCount, cycleFailureCount);
     }
@@ -449,10 +462,12 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 enabled(descriptor, "inventorySourcePrivateTrustStore"),
                 enabled(descriptor, "inventorySourceServerSpkiPinned"),
                 enabled(descriptor, "inventorySourceMutualTls"),
+                enabled(descriptor, "inventorySourceCertificateIdentityBound"),
                 enabled(descriptor, "trustRootSourceSystemTrustStore"),
                 enabled(descriptor, "trustRootSourcePrivateTrustStore"),
                 enabled(descriptor, "trustRootSourceServerSpkiPinned"),
                 enabled(descriptor, "trustRootSourceMutualTls"),
+                enabled(descriptor, "trustRootSourceCertificateIdentityBound"),
                 scheduler.active(), scheduler.overdue(), scheduler.pollCount(),
                 scheduler.pollFailureCount(), worker.cycleCount(), worker.cycleFailureCount());
     }
@@ -522,7 +537,7 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 false, false, false, false, false, false, false,
                 false, false, "DISABLED", 0L, false, false, false, false,
                 false, false,
-                false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false,
                 false, false,
                 0L, 0L, 0L, 0L);
     }

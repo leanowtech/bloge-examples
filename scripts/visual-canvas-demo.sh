@@ -137,6 +137,12 @@ Environment:
   RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_CLIENT_KEY_STORE_PATH  required dedicated PKCS#12 client identity
   RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF  required env:VARIABLE reference
   RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_SERVER_SPKI_PINS  required canonical sha256 pins
+  Every enabled staging control-plane transport also requires these suffixes:
+    _EXPECTED_CLIENT_SUBJECT_DN  exact RFC 2253 client Subject DN
+    _EXPECTED_CLIENT_URI_SAN  exact absolute client workload URI SAN
+    _CLIENT_ISSUER_SPKI_PINS  canonical sha256 pins for admitted client issuers
+    _EXPECTED_SERVER_URI_SAN  exact absolute server workload URI SAN
+    _SERVER_ISSUER_SPKI_PINS  canonical sha256 pins for admitted server issuers
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED  optional; enables durable recovery fleet
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED  required true for staging fleet
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_PUBLICATION_URI  required HTTPS inventory source
@@ -390,9 +396,20 @@ validate_control_plane_transport() {
     local client_path_var="${prefix}_CLIENT_KEY_STORE_PATH"
     local client_ref_var="${prefix}_CLIENT_KEY_STORE_PASSWORD_REF"
     local pins_var="${prefix}_SERVER_SPKI_PINS"
+    local client_subject_var="${prefix}_EXPECTED_CLIENT_SUBJECT_DN"
+    local client_uri_var="${prefix}_EXPECTED_CLIENT_URI_SAN"
+    local client_issuer_pins_var="${prefix}_CLIENT_ISSUER_SPKI_PINS"
+    local server_uri_var="${prefix}_EXPECTED_SERVER_URI_SAN"
+    local server_issuer_pins_var="${prefix}_SERVER_ISSUER_SPKI_PINS"
 
     if ! truthy "${!enabled_var:-false}" || ! truthy "${!required_var:-true}"; then
         echo "Staging ${label} requires pinned mutual TLS." >&2
+        return 1
+    fi
+    if [ -z "${!client_subject_var:-}" ] || [ -z "${!client_uri_var:-}" ] ||
+        [ -z "${!client_issuer_pins_var:-}" ] || [ -z "${!server_uri_var:-}" ] ||
+        [ -z "${!server_issuer_pins_var:-}" ]; then
+        echo "${label} transport requires exact client and server certificate workload identities." >&2
         return 1
     fi
     if [ -z "${!client_path_var:-}" ] || [ -z "${!client_ref_var:-}" ] ||
@@ -445,6 +462,17 @@ validate_control_plane_transport() {
     if ! printf '%s' "${!pins_var}" |
         grep -Eq '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,15}$'; then
         echo "${label} SPKI pins are invalid." >&2
+        return 1
+    fi
+    if printf '%s\n%s\n' "${!client_uri_var}" "${!server_uri_var}" |
+        grep -Eqv '^[a-z][a-z0-9+.-]{1,31}:[^[:space:]]+$'; then
+        echo "${label} workload URI SANs are invalid." >&2
+        return 1
+    fi
+    if printf '%s\n%s\n' "${!client_issuer_pins_var}" \
+        "${!server_issuer_pins_var}" |
+        grep -Eqv '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,15}$'; then
+        echo "${label} issuer SPKI pins are invalid." >&2
         return 1
     fi
 }

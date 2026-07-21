@@ -66,6 +66,8 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrus
             details.put("sourcePrivateTrustStore", transport.privateTrustStore());
             details.put("sourceServerSpkiPinned", transport.serverSpkiPinned());
             details.put("sourceMutualTls", transport.mutualTls());
+            details.put("sourceCertificateIdentityBound",
+                    transport.certificateIdentityBound());
             return (snapshot.available() ? Health.up() : Health.down())
                     .withDetails(Map.copyOf(details)).build();
         } catch (RuntimeException unavailable) {

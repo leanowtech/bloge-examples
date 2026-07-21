@@ -396,14 +396,22 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
                         Map.entry("notaryTransportSystemTrustStore",
                                 notary.systemTrustStore()),
                         Map.entry("notaryTransportPinnedMutualTls", pinnedMutualTls(notary)),
+                        Map.entry("notaryTransportCertificateIdentityBound",
+                                notary.certificateIdentityBound()),
                         Map.entry("managedTrustTransportConfigured", managed.isPresent()),
                         Map.entry("managedTrustTransportPinnedMutualTls",
                                 managed.map(HttpTestSuiteStabilityExternalSequenceAnchor
                                         ::pinnedMutualTls).orElse(false)),
+                        Map.entry("managedTrustTransportCertificateIdentityBound",
+                                managed.map(ControlPlaneHttpTransport.Descriptor
+                                        ::certificateIdentityBound).orElse(false)),
                         Map.entry("bootstrapRootTransportConfigured", roots.isPresent()),
                         Map.entry("bootstrapRootTransportPinnedMutualTls",
                                 roots.map(HttpTestSuiteStabilityExternalSequenceAnchor
-                                        ::pinnedMutualTls).orElse(false))));
+                                        ::pinnedMutualTls).orElse(false)),
+                        Map.entry("bootstrapRootTransportCertificateIdentityBound",
+                                roots.map(ControlPlaneHttpTransport.Descriptor
+                                        ::certificateIdentityBound).orElse(false))));
     }
 
     /** Returns aggregate process-local operation state without remote I/O. */

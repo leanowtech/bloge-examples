@@ -1,0 +1,342 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v4.schema.json",
+  "title": "Resource Gateway External Sequence-Anchor Bootstrap-Root Recovery Fleet Capability v4",
+  "description": "Identity-free, process-local recovery-fleet readiness including managed runtime-key, source transport authentication, and exact certificate-identity truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "configured", "ready", "status", "externallyAttested",
+    "inventoryAvailable", "sourceType", "inventoryGeneration", "laneCount",
+    "dynamicInventory", "automaticRefresh", "signedRevocation",
+    "witnessedPublications", "durablePublicationFloor",
+    "externallyAnchoredPublicationFloor", "byzantineQuorumAnchoredPublicationFloor",
+    "managedTrustRootRefresh", "managedTrustRootAvailable", "managedTrustRootStatus",
+    "managedTrustRootSequence", "atomicDualTrustRootPublication",
+    "durableTrustRootFloor", "externallyAnchoredTrustRootFloor",
+    "byzantineQuorumAnchoredTrustRootFloor", "externalInventoryNonEquivocation",
+    "byzantineQuorumInventoryNonEquivocation",
+    "inventorySourceSystemTrustStore", "inventorySourcePrivateTrustStore",
+    "inventorySourceServerSpkiPinned", "inventorySourceMutualTls",
+    "inventorySourceCertificateIdentityBound",
+    "trustRootSourceSystemTrustStore", "trustRootSourcePrivateTrustStore",
+    "trustRootSourceServerSpkiPinned", "trustRootSourceMutualTls",
+    "trustRootSourceCertificateIdentityBound",
+    "schedulerActive", "schedulerOverdue",
+    "pollCount", "pollFailureCount", "cycleCount", "cycleFailureCount"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCapability.v4"
+    },
+    "configured": { "type": "boolean" },
+    "ready": { "type": "boolean" },
+    "status": {
+      "enum": [
+        "DISABLED", "INCOMPLETE_COMPOSITION", "AMBIGUOUS_COMPOSITION",
+        "UNATTESTED_INVENTORY", "READY", "INVENTORY_UNAVAILABLE",
+        "RUNTIME_CLOSED", "SCHEDULER_STALLED", "SCHEDULER_FAILED",
+        "CYCLE_FAILED", "LANE_FAILURES", "INCONSISTENT", "UNAVAILABLE"
+      ]
+    },
+    "externallyAttested": { "type": "boolean" },
+    "inventoryAvailable": { "type": "boolean" },
+    "sourceType": {
+      "type": "string",
+      "pattern": "^(|[A-Z][A-Z0-9_]{0,127})$"
+    },
+    "inventoryGeneration": { "type": "integer", "minimum": 0 },
+    "laneCount": { "type": "integer", "minimum": 0, "maximum": 256 },
+    "dynamicInventory": { "type": "boolean" },
+    "automaticRefresh": { "type": "boolean" },
+    "signedRevocation": { "type": "boolean" },
+    "witnessedPublications": { "type": "boolean" },
+    "durablePublicationFloor": { "type": "boolean" },
+    "externallyAnchoredPublicationFloor": { "type": "boolean" },
+    "byzantineQuorumAnchoredPublicationFloor": { "type": "boolean" },
+    "managedTrustRootRefresh": { "type": "boolean" },
+    "managedTrustRootAvailable": { "type": "boolean" },
+    "managedTrustRootStatus": {
+      "enum": [
+        "DISABLED", "HEALTHY", "CLOSED", "REFRESH_UNAVAILABLE", "SOURCE_EXPIRED",
+        "EXPIRED", "DEPLOYMENT_THRESHOLD_UNAVAILABLE", "WITNESS_THRESHOLD_UNAVAILABLE"
+      ]
+    },
+    "managedTrustRootSequence": { "type": "integer", "minimum": 0 },
+    "atomicDualTrustRootPublication": { "type": "boolean" },
+    "durableTrustRootFloor": { "type": "boolean" },
+    "externallyAnchoredTrustRootFloor": { "type": "boolean" },
+    "byzantineQuorumAnchoredTrustRootFloor": { "type": "boolean" },
+    "externalInventoryNonEquivocation": { "type": "boolean" },
+    "byzantineQuorumInventoryNonEquivocation": { "type": "boolean" },
+    "inventorySourceSystemTrustStore": { "type": "boolean" },
+    "inventorySourcePrivateTrustStore": { "type": "boolean" },
+    "inventorySourceServerSpkiPinned": { "type": "boolean" },
+    "inventorySourceMutualTls": { "type": "boolean" },
+    "inventorySourceCertificateIdentityBound": { "type": "boolean" },
+    "trustRootSourceSystemTrustStore": { "type": "boolean" },
+    "trustRootSourcePrivateTrustStore": { "type": "boolean" },
+    "trustRootSourceServerSpkiPinned": { "type": "boolean" },
+    "trustRootSourceMutualTls": { "type": "boolean" },
+    "trustRootSourceCertificateIdentityBound": { "type": "boolean" },
+    "schedulerActive": { "type": "boolean" },
+    "schedulerOverdue": { "type": "boolean" },
+    "pollCount": { "type": "integer", "minimum": 0 },
+    "pollFailureCount": { "type": "integer", "minimum": 0 },
+    "cycleCount": { "type": "integer", "minimum": 0 },
+    "cycleFailureCount": { "type": "integer", "minimum": 0 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "configured": { "const": false } }, "required": ["configured"] },
+      "then": {
+        "properties": {
+          "ready": { "const": false },
+          "status": { "const": "DISABLED" },
+          "externallyAttested": { "const": false },
+          "inventoryAvailable": { "const": false },
+          "sourceType": { "const": "" },
+          "inventoryGeneration": { "const": 0 },
+          "laneCount": { "const": 0 },
+          "dynamicInventory": { "const": false },
+          "automaticRefresh": { "const": false },
+          "signedRevocation": { "const": false },
+          "witnessedPublications": { "const": false },
+          "durablePublicationFloor": { "const": false },
+          "externallyAnchoredPublicationFloor": { "const": false },
+          "byzantineQuorumAnchoredPublicationFloor": { "const": false },
+          "managedTrustRootRefresh": { "const": false },
+          "managedTrustRootAvailable": { "const": false },
+          "managedTrustRootStatus": { "const": "DISABLED" },
+          "managedTrustRootSequence": { "const": 0 },
+          "atomicDualTrustRootPublication": { "const": false },
+          "durableTrustRootFloor": { "const": false },
+          "externallyAnchoredTrustRootFloor": { "const": false },
+          "byzantineQuorumAnchoredTrustRootFloor": { "const": false },
+          "externalInventoryNonEquivocation": { "const": false },
+          "byzantineQuorumInventoryNonEquivocation": { "const": false },
+          "inventorySourceSystemTrustStore": { "const": false },
+          "inventorySourcePrivateTrustStore": { "const": false },
+          "inventorySourceServerSpkiPinned": { "const": false },
+          "inventorySourceMutualTls": { "const": false },
+          "inventorySourceCertificateIdentityBound": { "const": false },
+          "trustRootSourceSystemTrustStore": { "const": false },
+          "trustRootSourcePrivateTrustStore": { "const": false },
+          "trustRootSourceServerSpkiPinned": { "const": false },
+          "trustRootSourceMutualTls": { "const": false },
+          "trustRootSourceCertificateIdentityBound": { "const": false },
+          "schedulerActive": { "const": false },
+          "schedulerOverdue": { "const": false },
+          "pollCount": { "const": 0 },
+          "pollFailureCount": { "const": 0 },
+          "cycleCount": { "const": 0 },
+          "cycleFailureCount": { "const": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "ready": { "const": true } }, "required": ["ready"] },
+      "then": {
+        "properties": {
+          "configured": { "const": true }, "status": { "const": "READY" },
+          "externallyAttested": { "const": true }, "inventoryAvailable": { "const": true },
+          "inventoryGeneration": { "minimum": 1 }, "schedulerOverdue": { "const": false }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "dynamicInventory": { "const": true } }, "required": ["dynamicInventory"] },
+      "then": { "properties": { "sourceType": { "const": "DYNAMIC_HTTPS_SIGNED_PUBLICATION_WITH_WITNESS" } } }
+    },
+    {
+      "if": { "properties": { "externallyAnchoredPublicationFloor": { "const": true } }, "required": ["externallyAnchoredPublicationFloor"] },
+      "then": { "properties": { "durablePublicationFloor": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "byzantineQuorumAnchoredPublicationFloor": { "const": true } }, "required": ["byzantineQuorumAnchoredPublicationFloor"] },
+      "then": { "properties": { "externallyAnchoredPublicationFloor": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "sourceType": { "const": "DYNAMIC_HTTPS_SIGNED_PUBLICATION_WITH_WITNESS" } }, "required": ["sourceType"] },
+      "then": { "properties": { "dynamicInventory": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "DISABLED" } }, "required": ["status"] },
+      "then": { "properties": { "configured": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "READY" } }, "required": ["status"] },
+      "then": { "properties": { "ready": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "inventoryAvailable": { "const": true } }, "required": ["inventoryAvailable"] },
+      "then": {
+        "properties": {
+          "externallyAttested": { "const": true }, "sourceType": { "minLength": 1 },
+          "inventoryGeneration": { "minimum": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          { "properties": { "automaticRefresh": { "const": true } }, "required": ["automaticRefresh"] },
+          { "properties": { "signedRevocation": { "const": true } }, "required": ["signedRevocation"] },
+          { "properties": { "witnessedPublications": { "const": true } }, "required": ["witnessedPublications"] },
+          { "properties": { "durablePublicationFloor": { "const": true } }, "required": ["durablePublicationFloor"] }
+        ]
+      },
+      "then": { "properties": { "externallyAttested": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "managedTrustRootRefresh": { "const": true } }, "required": ["managedTrustRootRefresh"] },
+      "then": {
+        "properties": {
+          "dynamicInventory": { "const": true },
+          "managedTrustRootSequence": { "minimum": 1 },
+          "managedTrustRootStatus": { "not": { "const": "DISABLED" } },
+          "atomicDualTrustRootPublication": { "const": true },
+          "durableTrustRootFloor": { "const": true }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "managedTrustRootRefresh": { "const": false } }, "required": ["managedTrustRootRefresh"] },
+      "then": {
+        "properties": {
+          "managedTrustRootAvailable": { "const": false },
+          "managedTrustRootStatus": { "const": "DISABLED" },
+          "managedTrustRootSequence": { "const": 0 },
+          "atomicDualTrustRootPublication": { "const": false },
+          "durableTrustRootFloor": { "const": false },
+          "externallyAnchoredTrustRootFloor": { "const": false },
+          "byzantineQuorumAnchoredTrustRootFloor": { "const": false }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "managedTrustRootAvailable": { "const": true } }, "required": ["managedTrustRootAvailable"] },
+      "then": {
+        "properties": {
+          "managedTrustRootRefresh": { "const": true },
+          "managedTrustRootStatus": { "const": "HEALTHY" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "managedTrustRootStatus": { "const": "HEALTHY" } }, "required": ["managedTrustRootStatus"] },
+      "then": { "properties": { "managedTrustRootAvailable": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "externallyAnchoredTrustRootFloor": { "const": true } }, "required": ["externallyAnchoredTrustRootFloor"] },
+      "then": { "properties": { "managedTrustRootRefresh": { "const": true }, "durableTrustRootFloor": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "byzantineQuorumAnchoredTrustRootFloor": { "const": true } }, "required": ["byzantineQuorumAnchoredTrustRootFloor"] },
+      "then": { "properties": { "externallyAnchoredTrustRootFloor": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "externalInventoryNonEquivocation": { "const": true } }, "required": ["externalInventoryNonEquivocation"] },
+      "then": { "properties": { "externallyAnchoredPublicationFloor": { "const": true } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "externalInventoryNonEquivocation": { "const": true },
+          "managedTrustRootRefresh": { "const": true }
+        },
+        "required": ["externalInventoryNonEquivocation", "managedTrustRootRefresh"]
+      },
+      "then": { "properties": { "externallyAnchoredTrustRootFloor": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "byzantineQuorumInventoryNonEquivocation": { "const": true } }, "required": ["byzantineQuorumInventoryNonEquivocation"] },
+      "then": {
+        "properties": {
+          "externalInventoryNonEquivocation": { "const": true },
+          "byzantineQuorumAnchoredPublicationFloor": { "const": true }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "byzantineQuorumInventoryNonEquivocation": { "const": true },
+          "managedTrustRootRefresh": { "const": true }
+        },
+        "required": ["byzantineQuorumInventoryNonEquivocation", "managedTrustRootRefresh"]
+      },
+      "then": { "properties": { "byzantineQuorumAnchoredTrustRootFloor": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "dynamicInventory": { "const": true } }, "required": ["dynamicInventory"] },
+      "then": {
+        "oneOf": [
+          { "properties": { "inventorySourceSystemTrustStore": { "const": true }, "inventorySourcePrivateTrustStore": { "const": false } } },
+          { "properties": { "inventorySourceSystemTrustStore": { "const": false }, "inventorySourcePrivateTrustStore": { "const": true } } }
+        ]
+      },
+      "else": {
+        "properties": {
+          "inventorySourceSystemTrustStore": { "const": false },
+          "inventorySourcePrivateTrustStore": { "const": false },
+          "inventorySourceServerSpkiPinned": { "const": false },
+          "inventorySourceMutualTls": { "const": false },
+          "inventorySourceCertificateIdentityBound": { "const": false }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "inventorySourceMutualTls": { "const": true } }, "required": ["inventorySourceMutualTls"] },
+      "then": { "properties": { "inventorySourceServerSpkiPinned": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "inventorySourcePrivateTrustStore": { "const": true } }, "required": ["inventorySourcePrivateTrustStore"] },
+      "then": {
+        "properties": {
+          "inventorySourceServerSpkiPinned": { "const": true },
+          "inventorySourceMutualTls": { "const": true }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "managedTrustRootRefresh": { "const": true } }, "required": ["managedTrustRootRefresh"] },
+      "then": {
+        "oneOf": [
+          { "properties": { "trustRootSourceSystemTrustStore": { "const": true }, "trustRootSourcePrivateTrustStore": { "const": false } } },
+          { "properties": { "trustRootSourceSystemTrustStore": { "const": false }, "trustRootSourcePrivateTrustStore": { "const": true } } }
+        ]
+      },
+      "else": {
+        "properties": {
+          "trustRootSourceSystemTrustStore": { "const": false },
+          "trustRootSourcePrivateTrustStore": { "const": false },
+          "trustRootSourceServerSpkiPinned": { "const": false },
+          "trustRootSourceMutualTls": { "const": false },
+          "trustRootSourceCertificateIdentityBound": { "const": false }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "trustRootSourceMutualTls": { "const": true } }, "required": ["trustRootSourceMutualTls"] },
+      "then": { "properties": { "trustRootSourceServerSpkiPinned": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "trustRootSourcePrivateTrustStore": { "const": true } }, "required": ["trustRootSourcePrivateTrustStore"] },
+      "then": {
+        "properties": {
+          "trustRootSourceServerSpkiPinned": { "const": true },
+          "trustRootSourceMutualTls": { "const": true }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "inventorySourceCertificateIdentityBound": { "const": true } }, "required": ["inventorySourceCertificateIdentityBound"] },
+      "then": { "properties": { "inventorySourceMutualTls": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "trustRootSourceCertificateIdentityBound": { "const": true } }, "required": ["trustRootSourceCertificateIdentityBound"] },
+      "then": { "properties": { "trustRootSourceMutualTls": { "const": true } } }
+    }
+  ]
+}

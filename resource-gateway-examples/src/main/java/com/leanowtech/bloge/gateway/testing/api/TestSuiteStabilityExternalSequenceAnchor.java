@@ -22,8 +22,11 @@ public interface TestSuiteStabilityExternalSequenceAnchor extends AutoCloseable 
             "concurrentNotaryRequests", "managedTrustPublication",
             "restartFreeNotaryKeyRotation", "durableTrustPublicationFloor",
             "notaryTransportSystemTrustStore", "notaryTransportPinnedMutualTls",
+            "notaryTransportCertificateIdentityBound",
             "managedTrustTransportConfigured", "managedTrustTransportPinnedMutualTls",
-            "bootstrapRootTransportConfigured", "bootstrapRootTransportPinnedMutualTls");
+            "managedTrustTransportCertificateIdentityBound",
+            "bootstrapRootTransportConfigured", "bootstrapRootTransportPinnedMutualTls",
+            "bootstrapRootTransportCertificateIdentityBound");
 
     /** Anchors one exact stream head or throws before local durable state may advance. */
     void accept(Head head);

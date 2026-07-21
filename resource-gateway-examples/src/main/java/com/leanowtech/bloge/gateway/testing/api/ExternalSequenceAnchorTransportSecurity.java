@@ -26,13 +26,14 @@ public record ExternalSequenceAnchorTransportSecurity(
 
     /** Current payload-free transport-security projection generation. */
     public static final String SCHEMA_VERSION =
-            "bloge.externalSequenceAnchorTransportSecurity.v1";
+            "bloge.externalSequenceAnchorTransportSecurity.v2";
     private static final Set<String> PROJECTION_FIELDS = Set.of(
             "schemaVersion", "notary", "managedTrustPublicationConfigured",
             "managedTrustPublication", "bootstrapRootBundleConfigured",
             "bootstrapRootBundle");
     private static final Set<String> DESCRIPTOR_FIELDS = Set.of(
-            "systemTrustStore", "privateTrustStore", "serverSpkiPinned", "mutualTls");
+            "systemTrustStore", "privateTrustStore", "serverSpkiPinned", "mutualTls",
+            "certificateIdentityBound");
 
     /** Freezes optional values and rejects an impossible root-without-trust composition. */
     public ExternalSequenceAnchorTransportSecurity {
@@ -86,7 +87,8 @@ public record ExternalSequenceAnchorTransportSecurity(
                 "systemTrustStore", value.systemTrustStore(),
                 "privateTrustStore", value.privateTrustStore(),
                 "serverSpkiPinned", value.serverSpkiPinned(),
-                "mutualTls", value.mutualTls());
+                "mutualTls", value.mutualTls(),
+                "certificateIdentityBound", value.certificateIdentityBound());
     }
 
     static boolean isValidProjection(Object value) {

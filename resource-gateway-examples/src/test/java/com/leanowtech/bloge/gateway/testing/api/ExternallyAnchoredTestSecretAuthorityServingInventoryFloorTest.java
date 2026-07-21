@@ -225,7 +225,7 @@ class ExternallyAnchoredTestSecretAuthorityServingInventoryFloorTest {
                 .containsEntry("bootstrapRootRefreshFailureCount", 0L);
         assertThat(health.getDetails().toString())
                 .doesNotContain("endpoint", "stream", "fingerprint", "authorityId", "key",
-                        "sha256:", "certificate");
+                        "sha256:", "certificate=");
 
         anchor.snapshotFails = true;
         assertThat(new TestSecretAuthorityExternalSequenceAnchorHealth(anchor)

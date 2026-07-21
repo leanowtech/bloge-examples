@@ -690,10 +690,12 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                 .containsEntry("inventorySourcePrivateTrustStore", true)
                 .containsEntry("inventorySourceServerSpkiPinned", true)
                 .containsEntry("inventorySourceMutualTls", true)
+                .containsEntry("inventorySourceCertificateIdentityBound", true)
                 .containsEntry("trustRootSourceSystemTrustStore", false)
                 .containsEntry("trustRootSourcePrivateTrustStore", true)
                 .containsEntry("trustRootSourceServerSpkiPinned", true)
-                .containsEntry("trustRootSourceMutualTls", true);
+                .containsEntry("trustRootSourceMutualTls", true)
+                .containsEntry("trustRootSourceCertificateIdentityBound", true);
         var capability = ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.project(
                 inventory,
                 context.getBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.class),
@@ -702,17 +704,20 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         assertThat(capability.inventorySourcePrivateTrustStore()).isTrue();
         assertThat(capability.inventorySourceServerSpkiPinned()).isTrue();
         assertThat(capability.inventorySourceMutualTls()).isTrue();
+        assertThat(capability.inventorySourceCertificateIdentityBound()).isTrue();
         assertThat(capability.trustRootSourceSystemTrustStore()).isFalse();
         assertThat(capability.trustRootSourcePrivateTrustStore()).isTrue();
         assertThat(capability.trustRootSourceServerSpkiPinned()).isTrue();
         assertThat(capability.trustRootSourceMutualTls()).isTrue();
+        assertThat(capability.trustRootSourceCertificateIdentityBound()).isTrue();
         assertThat(context.getBean(
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootHealth.class)
                 .health().getDetails())
                 .containsEntry("sourceSystemTrustStore", false)
                 .containsEntry("sourcePrivateTrustStore", true)
                 .containsEntry("sourceServerSpkiPinned", true)
-                .containsEntry("sourceMutualTls", true);
+                .containsEntry("sourceMutualTls", true)
+                .containsEntry("sourceCertificateIdentityBound", true);
     }
 
     private static void transportProperties(
@@ -732,6 +737,17 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         properties.put(prefix + "server-spki-pins",
                 PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
                         material.serverCertificate()));
+        properties.put(prefix + "certificate-identity-required", "true");
+        properties.put(prefix + "expected-client-subject-dn",
+                material.clientCertificate().getSubjectX500Principal().getName());
+        properties.put(prefix + "expected-client-uri-san", material.clientUriSan());
+        properties.put(prefix + "client-issuer-spki-pins",
+                PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                        material.certificateAuthority()));
+        properties.put(prefix + "expected-server-uri-san", material.serverUriSan());
+        properties.put(prefix + "server-issuer-spki-pins",
+                PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                        material.certificateAuthority()));
     }
 
     private RecoveryFleetPublicationTlsFixture.Server tlsSource(

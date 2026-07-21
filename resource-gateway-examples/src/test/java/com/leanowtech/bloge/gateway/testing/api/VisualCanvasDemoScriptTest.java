@@ -241,6 +241,40 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void stagingBootstrapRootPublisherRejectsMissingCertificateIdentityBeforeBuild()
+            throws Exception {
+        Path client = Files.createFile(temporaryDirectory.resolve("publisher-client.p12"));
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().putAll(stagingBase());
+        builder.environment().putAll(Map.ofEntries(
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENABLED", "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENDPOINT",
+                        "https://publisher.example/publications"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_ENABLED", "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_REQUIRED", "true"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_CLIENT_KEY_STORE_PATH",
+                        client.toString()),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF",
+                        "env:RG_PUBLISHER_CLIENT_PASSWORD"),
+                Map.entry("RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_SERVER_SPKI_PINS",
+                        "sha256:" + "c".repeat(64)),
+                Map.entry("RG_PUBLISHER_CLIENT_PASSWORD", "test-only-secret")));
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "publisher transport requires exact client and server certificate workload identities.");
+        assertThat(output).doesNotContain("test-only-secret", "Building Resource Gateway",
+                "Starting visual canvas");
+    }
+
+    @Test
     void stagingRecoveryFleetRejectsPublicationTransportDowngradeBeforeBuild()
             throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
@@ -308,6 +342,12 @@ class VisualCanvasDemoScriptTest {
                 Map.entry("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_SERVER_SPKI_PINS",
                         "sha256:" + "d".repeat(64)),
                 Map.entry("RG_RECOVERY_SHARED_CLIENT_PASSWORD", "test-only-secret")));
+        putCertificateIdentity(builder.environment(),
+                "RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT",
+                "inventory", 'e');
+        putCertificateIdentity(builder.environment(),
+                "RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT",
+                "trust-root", 'f');
 
         Process process = builder.start();
         assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
@@ -338,6 +378,23 @@ class VisualCanvasDemoScriptTest {
                         "sha256:" + "b".repeat(64)),
                 Map.entry("RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD", "1"),
                 Map.entry("RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON", "[{}]"));
+    }
+
+    private static void putCertificateIdentity(
+            Map<String, String> environment,
+            String prefix,
+            String workload,
+            char issuerPin) {
+        environment.put(prefix + "_EXPECTED_CLIENT_SUBJECT_DN",
+                "CN=" + workload + "-client,O=Resource Gateway");
+        environment.put(prefix + "_EXPECTED_CLIENT_URI_SAN",
+                "spiffe://resource-gateway.example/client/" + workload);
+        environment.put(prefix + "_CLIENT_ISSUER_SPKI_PINS",
+                "sha256:" + String.valueOf(issuerPin).repeat(64));
+        environment.put(prefix + "_EXPECTED_SERVER_URI_SAN",
+                "spiffe://resource-gateway.example/server/" + workload);
+        environment.put(prefix + "_SERVER_ISSUER_SPKI_PINS",
+                "sha256:" + String.valueOf(issuerPin).repeat(64));
     }
 
     private static Map<String, String> stagingTestSecretExternalAnchor() {

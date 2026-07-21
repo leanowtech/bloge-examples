@@ -54,7 +54,7 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
         String source = Files.readString(schemaPath());
         JsonNode schema = objectMapper.readTree(source);
 
-        assertThat(schema.path("allOf")).hasSize(26);
+        assertThat(schema.path("allOf")).hasSize(28);
         assertThat(schema.at("/allOf/1/then/properties/status/const").asText())
                 .isEqualTo("READY");
         assertThat(schema.at(
@@ -96,6 +96,12 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
         assertThat(schema.at(
                 "/allOf/23/then/oneOf/1/properties/trustRootSourcePrivateTrustStore/const")
                 .asBoolean()).isTrue();
+        assertThat(schema.at(
+                "/allOf/26/then/properties/inventorySourceMutualTls/const")
+                .asBoolean()).isTrue();
+        assertThat(schema.at(
+                "/allOf/27/then/properties/trustRootSourceMutualTls/const")
+                .asBoolean()).isTrue();
     }
 
     @Test
@@ -123,6 +129,20 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
         assertThat(legacy.path("additionalProperties").asBoolean()).isFalse();
     }
 
+    @Test
+    void legacyV3SchemaRemainsFrozenWithoutCertificateIdentityFields() throws Exception {
+        JsonNode legacy = objectMapper.readTree(Files.readString(legacyV3SchemaPath()));
+
+        assertThat(legacy.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability
+                        .SCHEMA_VERSION_V3);
+        assertThat(legacy.path("properties").has(
+                "inventorySourceCertificateIdentityBound")).isFalse();
+        assertThat(legacy.path("properties").has(
+                "trustRootSourceCertificateIdentityBound")).isFalse();
+        assertThat(legacy.path("additionalProperties").asBoolean()).isFalse();
+    }
+
     private static ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability ready() {
         return new ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION,
@@ -136,6 +156,11 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
     }
 
     private static Path schemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v4.schema.json");
+    }
+
+    private static Path legacyV3SchemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v3.schema.json");
     }

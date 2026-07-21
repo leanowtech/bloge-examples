@@ -126,6 +126,8 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationHealth
         details.put("transportPrivateTrustStore", service.transport().privateTrustStore());
         details.put("transportServerSpkiPinned", service.transport().serverSpkiPinned());
         details.put("transportMutualTls", service.transport().mutualTls());
+        details.put("transportCertificateIdentityBound",
+                service.transport().certificateIdentityBound());
         details.put("schedulerActive", scheduler.active());
         details.put("schedulerPollCount", scheduler.pollCount());
         details.put("schedulerCompletionCount", scheduler.completionCount());

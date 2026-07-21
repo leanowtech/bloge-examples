@@ -453,15 +453,20 @@ endpoint, publisher/trust identity, static Ed25519 response key and whole-second
 values under the matching `RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_*` variables in the two profile YAML
 files. Staging additionally requires `TRANSPORT_ENABLED=true`, `TRANSPORT_REQUIRED=true`, one
 dedicated PKCS#12 client identity, one to sixteen server SPKI pins, and either JVM PKIX roots or an
-explicit PKCS#12 trust store. Keystore passwords are opaque references resolved only while the
-immutable TLS context is built; the demo resolver accepts `env:VARIABLE`, while embedders may
+explicit PKCS#12 trust store. Every enabled staging control-plane transport also requires
+`EXPECTED_CLIENT_SUBJECT_DN`, `EXPECTED_CLIENT_URI_SAN`, `CLIENT_ISSUER_SPKI_PINS`,
+`EXPECTED_SERVER_URI_SAN`, and `SERVER_ISSUER_SPKI_PINS` under its existing transport prefix.
+The staging profile derives `certificate-identity-required=true` from `TRANSPORT_ENABLED`; the test
+profile leaves it false for explicit compatibility tests. Keystore passwords are opaque references
+resolved only while the immutable TLS context is built; the demo resolver accepts `env:VARIABLE`, while embedders may
 provide exactly one vault/workload-identity resolver. PKIX, hostname verification, SPKI pinning and
 mTLS must all succeed. The test profile retains the historical system-trust adapter only as an
 explicit migration path. Unknown fields, partial transport identity, insecure staging loopback,
 unsafe timeout/lease margins, or reuse of the inventory/managed-root client identity fail before
 credential resolution, journal DDL, or protocol-adapter assembly. Aggregate Actuator health and the
-v2 service snapshot report only system/private trust, pinning and mTLS booleans, never paths,
-references, pins or certificate identities. The v1 Java snapshot constructor remains as an explicit
+service snapshot report only system/private trust, pinning, mTLS and certificate-identity-bound
+booleans, never paths, references, pin values or certificate selectors. The v1 Java snapshot
+constructor remains as an explicit
 system-trust compatibility projection. The default lane uses the
 isolated test-runtime database journal/outbox; deployments may supply an equivalent durable outbox
 or publisher bean. Close the caller-owned publisher after the service. See the
@@ -473,10 +478,13 @@ The policy binds one client key to an exact Subject and single workload URI SAN,
 with a pinned issuer as the PKIX trust anchor at the declared activation instant, and constrains the
 server issuer and workload URI independently. The rotation kernel preloads exactly the next
 generation outside the request-state lock, enforces bounded activation and old/new certificate
-overlap, and lets a cached client atomically select one complete TLS generation per request. This is
-an embedding interface only: the nine product transports, typed properties, staging schema,
-health/capability projection, CA event authentication, revocation, and HSM custody remain follow-up
-gates. See the
+overlap, and lets a cached client atomically select one complete TLS generation per request. The
+static identity policy is wired through all control-plane transport properties, both Spring
+profiles, strict configuration schemas, health, recovery-fleet capability v4, and Tool Studio
+features. Staging therefore rejects an enabled publisher, inventory, trust-root, notary,
+managed-trust, or root-bundle link without complete workload identities. The rotation controller
+remains an embedding interface: a product CA-event watcher, signed event protocol, revocation
+status, HSM custody, and rotation health/capability projection remain follow-up gates. See the
 [certificate identity and rotation kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md).
 
 The same single-root journal can run unattended ceremony recovery by also setting

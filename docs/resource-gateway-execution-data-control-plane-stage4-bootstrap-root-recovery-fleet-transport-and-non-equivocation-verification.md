@@ -43,20 +43,25 @@ external-first + local-durable 的双层提交，而不是把外部服务变成�
 - 默认 demo resolver 只解析 `env:VARIABLE_NAME`，返回的 `char[]` 在 TLS context 初始化完成或失败后清零。
 - publisher、inventory、trust-root 以及九条 external-anchor 读链路中的所有活跃 source 必须使用
   不同的 client-keystore path + credential-reference 组合。
+- 每个已启用 transport 必须同时提供精确 client Subject DN、唯一 client URI SAN、
+  client issuer SPKI pins、精确 server URI SAN 和 server issuer SPKI pins；六个字段全有或全无。
+- client 必须只有一个 private-key identity，并满足 `clientAuth` EKU 与 digital-signature
+  KeyUsage；server 必须满足 `serverAuth` EKU 与同等 KeyUsage。
 - test 可显式使用 system-trust compatibility adapter；staging 同时要求 `enabled=true` 和
-  `required=true`，禁止静默降级。
+  `required=true`，且从 `enabled` 派生 `certificate-identity-required=true`，禁止静默降级。
 
 ### 3.2 能力事实
 
-`bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCapability.v3` 为两个 source 分别公开：
+`bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCapability.v4` 为两个 source 分别公开：
 
 - `SystemTrustStore`
 - `PrivateTrustStore`
 - `ServerSpkiPinned`
 - `MutualTls`
+- `CertificateIdentityBound`
 
 这些字段只陈述当前进程使用的聚合策略，不公开 path、pin、certificate subject、secret reference 或
-credential。v1/v2 Schema 与 Java 构造兼容面保持冻结。
+credential。v1/v2/v3 Schema 与 Java 构造兼容面保持冻结。
 
 ## 4. 外部顺序协议
 
@@ -96,9 +101,12 @@ durable root floor 必须隔离。
 
 权威配置契约：
 
-- [dynamic inventory v2 Schema](schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-dynamic-inventory-configuration-v2.schema.json)
-- [external anchor v1 Schema](schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-external-anchor-configuration-v1.schema.json)
-- [capability v3 Schema](schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v3.schema.json)
+- [dynamic inventory v3 Schema](schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-dynamic-inventory-configuration-v3.schema.json)
+- [external anchor v2 Schema](schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-external-anchor-configuration-v2.schema.json)
+- [capability v4 Schema](schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v4.schema.json)
+
+上述是当前权威版本。dynamic inventory v2、external anchor v1 与 capability v3 继续作为
+已发布历史协议冻结，不原地追加身份字段。
 
 `application-test.yml` 默认关闭强能力，便于迁移测试；`application-staging.yml` 把 dynamic inventory、
 managed roots、两个 publication transport、external anchor、managed notary trust、managed
@@ -132,6 +140,12 @@ Spring 是最终权威；脚本是更早、更可读的部署反馈，不替代 
 | `CLIENT_KEY_STORE_PATH` | 必须是绝对、可读的 PKCS#12 client identity 路径 |
 | `CLIENT_KEY_STORE_PASSWORD_REF` | 必须是可解析的 `env:VARIABLE`，不能填写密码原值 |
 | `SERVER_SPKI_PINS` | 1..16 个逗号分隔的 canonical `sha256:<64 lowercase hex>` pin |
+| `EXPECTED_CLIENT_SUBJECT_DN` | 必须与唯一 client leaf certificate Subject DN 精确一致 |
+| `EXPECTED_CLIENT_URI_SAN` | 必须是唯一的 workload URI SAN |
+| `CLIENT_ISSUER_SPKI_PINS` | 1..16 个 client issuer canonical SPKI pin，用于缩小 PKIX trust anchor |
+| `EXPECTED_SERVER_URI_SAN` | 必须与 server leaf 的 workload URI SAN 精确一致 |
+| `SERVER_ISSUER_SPKI_PINS` | 1..16 个 server issuer canonical SPKI pin，用于缩小 PKIX trust anchor |
+| `CERTIFICATE_IDENTITY_REQUIRED` | staging 从 `ENABLED` 派生为 `true`；test 仅显式兼容路径可为 `false` |
 
 两个 source 的 `CLIENT_KEY_STORE_PATH + CLIENT_KEY_STORE_PASSWORD_REF` 组合必须不同。部署脚本还要求
 引用的环境变量确实存在，但不会打印其值。完整变量清单可通过以下命令查看：
@@ -167,16 +181,18 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSP
 | `_TRUST_TRANSPORT_` | managed receipt-key publication 读取 |
 | `_BOOTSTRAP_ROOT_TRANSPORT_` | complete bootstrap-root bundle 读取 |
 
-每组都使用 5.1 表中的七个字段。staging 要求三组同时 `ENABLED=true`、`REQUIRED=true`；任一组
+每组都使用 5.1 表中的 13 个字段。staging 要求三组同时 `ENABLED=true`、`REQUIRED=true`；任一组
 缺失、启用 HTTP loopback、复用其他 source 身份，或 secret resolver 候选不唯一，都会在数据库 floor
 创建和远端调用前失败。`ExternalSequenceAnchorTransportSecurity` 在 descriptor 与 health 中只投影
-`systemTrustStore`、`privateTrustStore`、`serverSpkiPinned`、`mutualTls` 及两个 source-configured 布尔值。
+`systemTrustStore`、`privateTrustStore`、`serverSpkiPinned`、`mutualTls`、
+`certificateIdentityBound` 及两个 source-configured 布尔值。
 
 ## 6. 失败语义
 
 | 故障 | 结果 |
 | --- | --- |
 | PKIX、hostname、pin 或 client certificate 失败 | source refresh 失败，旧 snapshot 仅保留诊断价值并受 hard age fence |
+| Subject、URI SAN、issuer、EKU、KeyUsage 或唯一 key 不满足 | transport 创建或 TLS handler 前 fail closed |
 | credential ref 缺失或 resolver 多候选 | stateful source 创建前 fail closed |
 | 任意两个活跃 control-plane source 复用同一 client identity 配置 | preflight 失败 |
 | external anchor 不可用或不持久 | floor 创建前失败 |
@@ -192,8 +208,8 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSP
 - `RecoveryFleetPublicationTransportTest`：真实 TLS handshake、正确双向认证、错误 pin、错误 client
   identity、同一 CA 下以显式双 pin 重叠窗口完成 server certificate 轮换、credential character erase、
   无界 timeout 与配置拒绝。
-- `RecoveryFleetPublicationTransportPropertiesTest`：disabled/required/partial policy、source identity
-  隔离和重复 pin。
+- `RecoveryFleetPublicationTransportPropertiesTest`：disabled residual、required/partial identity policy、
+  完整策略降低、source identity 隔离和格式错误在 secret resolution 前失败。
 - `ExternallyAnchoredExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryFloorTest`：external-first、
   predecessor continuity、stream isolation、外部失败零本地写、unsafe adapter 和 Byzantine truth。
 - `ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurationTest`：两个独立 CA、server
@@ -207,8 +223,8 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSP
 - `VisualCanvasDemoScriptTest`：构建前拒绝 transport downgrade 与 recovery source 身份复用，且错误
   输出不包含解析后的 credential；`TestSecretAuthorityExternalNonEquivocationConfigurationTest` 另证明
   跨 publisher/domain 身份复用会在 secret resolution 和数据库访问前失败。
-- Schema/capability/integration tests：record/schema 字段同构、Spring metadata、v1/v2 冻结、v3
-  no-sensitive vocabulary 与 Tool Studio feature projection。
+- Schema/capability/integration tests：record/schema 字段同构、Spring metadata、历史版本冻结、
+  capability v4 no-sensitive vocabulary 与 Tool Studio feature projection。
 
 标准门禁：
 
@@ -216,8 +232,8 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSP
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-验收结果：3599 tests，0 failures、0 errors、2 个条件浏览器跳过；Browser DOM 34 项中
-32 项真实执行，browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
+验收结果：3619 tests，0 failures、0 errors、2 个条件浏览器跳过，并成功重打包
+Spring Boot 可执行 JAR。
 
 ## 8. 尚未闭合
 
@@ -226,8 +242,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
    [publisher transport verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-publisher-transport-verification.md)。
 2. `env:` resolver 适合 demo，不是企业 secret manager；正式部署需提供 Vault/KMS/workload identity
    resolver，并证明 secret rotation、lease、审计和不可回显。
-3. client identity “独立”当前按配置引用判定；证书主体、SAN、EKU、issuer policy 与硬件 key custody
-   仍需部署级 verifier。
+3. 证书 Subject、URI SAN、EKU/KeyUsage、issuer policy 和唯一 key 已由产品 transport verifier
+   强制；但自动签发/吊销、OCSP/CRL、HSM key custody、受信轮换事件与跨副本原子激活
+   尚未接入产品协议。
 4. external anchor 证明消费者观察一致，不替代 publisher/notary 自身 HA、anti-equivocation、gossip、
    WORM audit 和跨区灾备认证。
 5. production profile 仍物理排除该 testing composition；目标数据库方言、容量、长稳、DR 和 chaos

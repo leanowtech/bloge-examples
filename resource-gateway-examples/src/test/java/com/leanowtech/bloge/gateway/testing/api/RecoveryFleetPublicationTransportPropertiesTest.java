@@ -29,6 +29,7 @@ class RecoveryFleetPublicationTransportPropertiesTest {
             assertThat(descriptor.systemTrustStore()).isTrue();
             assertThat(descriptor.serverSpkiPinned()).isFalse();
             assertThat(descriptor.mutualTls()).isFalse();
+            assertThat(descriptor.certificateIdentityBound()).isFalse();
         });
     }
 
@@ -82,6 +83,47 @@ class RecoveryFleetPublicationTransportPropertiesTest {
                 .hasMessage("Recovery-fleet publication transport configuration is invalid");
     }
 
+    @Test
+    void identityRequirementRejectsDowngradeAndEveryPartialIdentityShape() {
+        assertThatThrownBy(() -> identityProperties(true, "", "", "", "", ""))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> identityProperties(false,
+                "CN=inventory-client,O=Resource Gateway", "", "", "", ""))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> identityProperties(false,
+                "CN=inventory-client,O=Resource Gateway",
+                "spiffe://resource-gateway.example/client/inventory", PIN, "", PIN))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void completeIdentityPolicyIsExplicitlyReported() {
+        RecoveryFleetPublicationTransportProperties properties = identityProperties(true,
+                "CN=inventory-client,O=Resource Gateway",
+                "spiffe://resource-gateway.example/client/inventory", PIN,
+                "spiffe://resource-gateway.example/server/inventory", PIN);
+
+        assertThat(properties.certificateIdentityBound()).isTrue();
+        assertThat(properties.configured()).isTrue();
+        assertThat(properties.certificateIdentityRequired()).isTrue();
+    }
+
+    @Test
+    void malformedIdentitySelectorFailsBeforeCredentialResolution() throws Exception {
+        Path client = Files.createFile(temporaryDirectory.resolve("identity-client.p12"));
+        RecoveryFleetPublicationTransportProperties properties =
+                new RecoveryFleetPublicationTransportProperties(
+                        true, true, "", "", client.toString(),
+                        "env:CLIENT_PASSWORD", PIN, true,
+                        "CN=inventory-client,O=Resource Gateway", "relative-uri", PIN,
+                        "spiffe://resource-gateway.example/server/inventory", PIN);
+
+        assertThatThrownBy(() -> properties.create(reference -> {
+            throw new AssertionError("credentials must not be resolved");
+        })).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Control-plane certificate identity policy is invalid");
+    }
+
     private static RecoveryFleetPublicationTransportProperties properties(
             Boolean enabled,
             Boolean required,
@@ -92,6 +134,19 @@ class RecoveryFleetPublicationTransportPropertiesTest {
             String pins) {
         return new RecoveryFleetPublicationTransportProperties(enabled, required,
                 trustStorePath, trustStorePasswordRef, clientKeyStorePath,
-                clientKeyStorePasswordRef, pins);
+                clientKeyStorePasswordRef, pins, false, "", "", "", "", "");
+    }
+
+    private static RecoveryFleetPublicationTransportProperties identityProperties(
+            boolean required,
+            String subject,
+            String clientUri,
+            String clientIssuerPins,
+            String serverUri,
+            String serverIssuerPins) {
+        return new RecoveryFleetPublicationTransportProperties(true, true,
+                "", "", "/identity.p12", "env:CLIENT_PASSWORD", PIN,
+                required, subject, clientUri, clientIssuerPins, serverUri,
+                serverIssuerPins);
     }
 }

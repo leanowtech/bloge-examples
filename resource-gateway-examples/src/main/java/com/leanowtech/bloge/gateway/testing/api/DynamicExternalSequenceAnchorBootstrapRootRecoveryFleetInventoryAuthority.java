@@ -563,6 +563,8 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                 Map.entry("inventorySourceServerSpkiPinned",
                         transportDescriptor.serverSpkiPinned()),
                 Map.entry("inventorySourceMutualTls", transportDescriptor.mutualTls()),
+                Map.entry("inventorySourceCertificateIdentityBound",
+                        transportDescriptor.certificateIdentityBound()),
                 Map.entry("trustRootSourceSystemTrustStore", managedTrustRoots != null
                         && managedTrustRoots.transportDescriptor().systemTrustStore()),
                 Map.entry("trustRootSourcePrivateTrustStore", managedTrustRoots != null
@@ -570,7 +572,10 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                 Map.entry("trustRootSourceServerSpkiPinned", managedTrustRoots != null
                         && managedTrustRoots.transportDescriptor().serverSpkiPinned()),
                 Map.entry("trustRootSourceMutualTls", managedTrustRoots != null
-                        && managedTrustRoots.transportDescriptor().mutualTls())));
+                        && managedTrustRoots.transportDescriptor().mutualTls()),
+                Map.entry("trustRootSourceCertificateIdentityBound",
+                        managedTrustRoots != null && managedTrustRoots.transportDescriptor()
+                                .certificateIdentityBound())));
     }
 
     /**

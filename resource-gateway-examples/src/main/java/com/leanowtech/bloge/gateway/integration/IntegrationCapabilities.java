@@ -338,6 +338,7 @@ public record IntegrationCapabilities(
         objects.put("externalSequenceAnchorBootstrapRootRecoveryFleetCapability", List.of(
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION_V1,
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION_V2,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION_V3,
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION));
         if (testExecutionEndpointEnabled) {
             objects.put("testExecutionRequest", List.of(

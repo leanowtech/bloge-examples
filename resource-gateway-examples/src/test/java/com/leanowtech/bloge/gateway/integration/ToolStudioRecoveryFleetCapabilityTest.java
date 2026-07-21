@@ -63,6 +63,8 @@ class ToolStudioRecoveryFleetCapabilityTest {
                                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability
                                         .SCHEMA_VERSION_V2,
                                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability
+                                        .SCHEMA_VERSION_V3,
+                                ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability
                                 .SCHEMA_VERSION));
         assertThat(capabilities.features())
                 .containsEntry("bootstrapRootRecoveryFleetConfigured", false)
@@ -117,9 +119,15 @@ class ToolStudioRecoveryFleetCapabilityTest {
                 .containsEntry("bootstrapRootRecoveryFleetInventorySourcePrivateTrust", false)
                 .containsEntry("bootstrapRootRecoveryFleetInventorySourceSpkiPinned", false)
                 .containsEntry("bootstrapRootRecoveryFleetInventorySourceMutualTls", false)
+                .containsEntry(
+                        "bootstrapRootRecoveryFleetInventorySourceCertificateIdentityBound",
+                        false)
                 .containsEntry("bootstrapRootRecoveryFleetTrustRootSourcePrivateTrust", false)
                 .containsEntry("bootstrapRootRecoveryFleetTrustRootSourceSpkiPinned", false)
-                .containsEntry("bootstrapRootRecoveryFleetTrustRootSourceMutualTls", false);
+                .containsEntry("bootstrapRootRecoveryFleetTrustRootSourceMutualTls", false)
+                .containsEntry(
+                        "bootstrapRootRecoveryFleetTrustRootSourceCertificateIdentityBound",
+                        false);
         JsonNode wire = new ObjectMapper().valueToTree(capabilities);
         assertThat(wire.at("/testability/recoveryFleet/status").asText())
                 .isEqualTo("READY");
@@ -304,10 +312,12 @@ class ToolStudioRecoveryFleetCapabilityTest {
                 Map.entry("inventorySourcePrivateTrustStore", false),
                 Map.entry("inventorySourceServerSpkiPinned", false),
                 Map.entry("inventorySourceMutualTls", false),
+                Map.entry("inventorySourceCertificateIdentityBound", false),
                 Map.entry("trustRootSourceSystemTrustStore", true),
                 Map.entry("trustRootSourcePrivateTrustStore", false),
                 Map.entry("trustRootSourceServerSpkiPinned", false),
-                Map.entry("trustRootSourceMutualTls", false)));
+                Map.entry("trustRootSourceMutualTls", false),
+                Map.entry("trustRootSourceCertificateIdentityBound", false)));
     }
 
     private record Fleet(

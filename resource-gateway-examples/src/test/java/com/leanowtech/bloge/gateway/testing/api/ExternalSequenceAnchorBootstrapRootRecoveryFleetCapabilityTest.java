@@ -53,6 +53,8 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityTest {
             assertThat(value.byzantineQuorumAnchoredTrustRootFloor()).isTrue();
             assertThat(value.externalInventoryNonEquivocation()).isTrue();
             assertThat(value.byzantineQuorumInventoryNonEquivocation()).isTrue();
+            assertThat(value.inventorySourceCertificateIdentityBound()).isFalse();
+            assertThat(value.trustRootSourceCertificateIdentityBound()).isFalse();
             assertThat(value.pollCount()).isZero();
             assertThat(value.cycleCount()).isZero();
         });
@@ -205,10 +207,12 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityTest {
                         Map.entry("inventorySourcePrivateTrustStore", false),
                         Map.entry("inventorySourceServerSpkiPinned", false),
                         Map.entry("inventorySourceMutualTls", false),
+                        Map.entry("inventorySourceCertificateIdentityBound", false),
                         Map.entry("trustRootSourceSystemTrustStore", true),
                         Map.entry("trustRootSourcePrivateTrustStore", false),
                         Map.entry("trustRootSourceServerSpkiPinned", false),
-                        Map.entry("trustRootSourceMutualTls", false)));
+                        Map.entry("trustRootSourceMutualTls", false),
+                        Map.entry("trustRootSourceCertificateIdentityBound", false)));
     }
 
     private static RuntimeSnapshot readyWorker() {

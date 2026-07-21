@@ -20,6 +20,12 @@ import java.util.Set;
  * @param clientKeyStorePath absolute PKCS#12 client-identity path
  * @param clientKeyStorePasswordRef opaque client-keystore credential reference
  * @param serverSpkiPins comma-separated canonical SHA-256 SubjectPublicKeyInfo pins
+ * @param certificateIdentityRequired prevents an enabled transport from omitting workload binding
+ * @param expectedClientSubjectDn exact client certificate subject distinguished name
+ * @param expectedClientUriSan exact client workload URI subject alternative name
+ * @param clientIssuerSpkiPins comma-separated accepted client issuer SPKI pins
+ * @param expectedServerUriSan exact server workload URI subject alternative name
+ * @param serverIssuerSpkiPins comma-separated accepted server trust-anchor SPKI pins
  */
 public record RecoveryFleetPublicationTransportProperties(
         Boolean enabled,
@@ -28,7 +34,13 @@ public record RecoveryFleetPublicationTransportProperties(
         String trustStorePasswordRef,
         String clientKeyStorePath,
         String clientKeyStorePasswordRef,
-        String serverSpkiPins) {
+        String serverSpkiPins,
+        Boolean certificateIdentityRequired,
+        String expectedClientSubjectDn,
+        String expectedClientUriSan,
+        String clientIssuerSpkiPins,
+        String expectedServerUriSan,
+        String serverIssuerSpkiPins) {
 
     /** Normalizes public values and rejects disabled, partial, or downgrade-prone settings. */
     public RecoveryFleetPublicationTransportProperties {
@@ -39,13 +51,30 @@ public record RecoveryFleetPublicationTransportProperties(
         clientKeyStorePath = normalized(clientKeyStorePath);
         clientKeyStorePasswordRef = normalized(clientKeyStorePasswordRef);
         serverSpkiPins = normalized(serverSpkiPins);
+        certificateIdentityRequired = Boolean.TRUE.equals(certificateIdentityRequired);
+        expectedClientSubjectDn = normalized(expectedClientSubjectDn);
+        expectedClientUriSan = normalized(expectedClientUriSan);
+        clientIssuerSpkiPins = normalized(clientIssuerSpkiPins);
+        expectedServerUriSan = normalized(expectedServerUriSan);
+        serverIssuerSpkiPins = normalized(serverIssuerSpkiPins);
         boolean privateTrustPartial = trustStorePath.isBlank()
                 != trustStorePasswordRef.isBlank();
+        boolean identityConfigured = configured(expectedClientSubjectDn,
+                expectedClientUriSan, clientIssuerSpkiPins, expectedServerUriSan,
+                serverIssuerSpkiPins);
+        boolean identityComplete = !expectedClientSubjectDn.isBlank()
+                && !expectedClientUriSan.isBlank() && !clientIssuerSpkiPins.isBlank()
+                && !expectedServerUriSan.isBlank() && !serverIssuerSpkiPins.isBlank();
         if (required && !enabled
                 || !enabled && configured(trustStorePath, trustStorePasswordRef,
-                clientKeyStorePath, clientKeyStorePasswordRef, serverSpkiPins)
+                clientKeyStorePath, clientKeyStorePasswordRef, serverSpkiPins,
+                expectedClientSubjectDn, expectedClientUriSan, clientIssuerSpkiPins,
+                expectedServerUriSan, serverIssuerSpkiPins)
+                || !enabled && certificateIdentityRequired
                 || enabled && (privateTrustPartial || clientKeyStorePath.isBlank()
-                || clientKeyStorePasswordRef.isBlank() || serverSpkiPins.isBlank())) {
+                || clientKeyStorePasswordRef.isBlank() || serverSpkiPins.isBlank())
+                || certificateIdentityRequired && !identityComplete
+                || identityConfigured && !identityComplete) {
             throw invalid();
         }
     }
@@ -64,20 +93,30 @@ public record RecoveryFleetPublicationTransportProperties(
         return new PinnedMutualTlsRecoveryFleetPublicationTransport(
                 new PinnedMutualTlsRecoveryFleetPublicationTransport.Settings(
                         path(trustStorePath), trustStorePasswordRef,
-                        path(clientKeyStorePath), clientKeyStorePasswordRef, pins()),
+                        path(clientKeyStorePath), clientKeyStorePasswordRef,
+                        pins(serverSpkiPins), identityPolicy()),
                 Objects.requireNonNull(secretResolver, "secretResolver"));
     }
 
     /** @return whether any non-default field was supplied */
     public boolean configured() {
         return required || enabled || configured(trustStorePath, trustStorePasswordRef,
-                clientKeyStorePath, clientKeyStorePasswordRef, serverSpkiPins);
+                clientKeyStorePath, clientKeyStorePasswordRef, serverSpkiPins,
+                expectedClientSubjectDn, expectedClientUriSan, clientIssuerSpkiPins,
+                expectedServerUriSan, serverIssuerSpkiPins)
+                || certificateIdentityRequired;
+    }
+
+    /** @return whether exact client and server workload identities are configured */
+    public boolean certificateIdentityBound() {
+        return !expectedClientSubjectDn.isBlank();
     }
 
     /** Returns the canonical disabled compatibility policy. */
     public static RecoveryFleetPublicationTransportProperties disabled() {
         return new RecoveryFleetPublicationTransportProperties(
-                false, false, "", "", "", "", "");
+                false, false, "", "", "", "", "", false,
+                "", "", "", "", "");
     }
 
     /**
@@ -95,9 +134,18 @@ public record RecoveryFleetPublicationTransportProperties(
                 && clientKeyStorePasswordRef.equals(compared.clientKeyStorePasswordRef);
     }
 
-    private Set<String> pins() {
+    private ControlPlaneCertificateIdentityPolicy identityPolicy() {
+        if (!certificateIdentityBound()) {
+            return ControlPlaneCertificateIdentityPolicy.unbound();
+        }
+        return new ControlPlaneCertificateIdentityPolicy(
+                expectedClientSubjectDn, expectedClientUriSan, pins(clientIssuerSpkiPins),
+                expectedServerUriSan, pins(serverIssuerSpkiPins));
+    }
+
+    private static Set<String> pins(String configured) {
         LinkedHashSet<String> result = new LinkedHashSet<>();
-        for (String value : serverSpkiPins.split(",", -1)) {
+        for (String value : configured.split(",", -1)) {
             if (!result.add(value.trim())) {
                 throw invalid();
             }

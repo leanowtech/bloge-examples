@@ -532,12 +532,16 @@ public class ToolStudioIntegrationService {
                 recoveryFleet.inventorySourceServerSpkiPinned());
         features.put("bootstrapRootRecoveryFleetInventorySourceMutualTls",
                 recoveryFleet.inventorySourceMutualTls());
+        features.put("bootstrapRootRecoveryFleetInventorySourceCertificateIdentityBound",
+                recoveryFleet.inventorySourceCertificateIdentityBound());
         features.put("bootstrapRootRecoveryFleetTrustRootSourcePrivateTrust",
                 recoveryFleet.trustRootSourcePrivateTrustStore());
         features.put("bootstrapRootRecoveryFleetTrustRootSourceSpkiPinned",
                 recoveryFleet.trustRootSourceServerSpkiPinned());
         features.put("bootstrapRootRecoveryFleetTrustRootSourceMutualTls",
                 recoveryFleet.trustRootSourceMutualTls());
+        features.put("bootstrapRootRecoveryFleetTrustRootSourceCertificateIdentityBound",
+                recoveryFleet.trustRootSourceCertificateIdentityBound());
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),

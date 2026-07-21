@@ -79,7 +79,8 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
         this.certificateIdentityBound = required.certificateIdentityPolicy().bound();
         this.descriptor = new Descriptor(Descriptor.SCHEMA_VERSION,
                 required.trustStorePath() == null,
-                required.trustStorePath() != null, true, true);
+                required.trustStorePath() != null, true, true,
+                required.certificateIdentityPolicy().bound());
     }
 
     /** {@inheritDoc} */

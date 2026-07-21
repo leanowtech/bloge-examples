@@ -1,16 +1,19 @@
-# Stage 4 Control-plane 证书身份与轮换内核验收
+# Stage 4 Control-plane 证书身份产品接线与轮换内核验收
 
 ## 1. 结论
 
-本增量关闭两个容易被混为一谈的根因，但只交付可复用内核，不提升产品接线声明：
+本增量关闭两个容易被混为一谈的根因，但对两者做不同成熟度声明：
 
 1. mTLS 握手成功不等于连接的是预期 workload。新增策略在 PKIX、hostname 和 server SPKI pin
    之外，约束 client Subject、双端 URI SAN、双端 EKU/KeyUsage 和独立 issuer SPKI pin。
 2. 把新证书写到原路径不等于安全热轮换。新增 rotation kernel 先在旧代之外加载并验真完整候选，
    再按连续 generation 和受限 activation time 原子切换；任何请求只使用完整旧代或完整新代。
 
-九条 external-anchor 读侧、publisher 写侧、typed properties、staging preflight、health/capability
-仍未接入该新策略。本增量不能被解释为企业 PKI 或生产证书轮换已经开放。
+精确静态证书身份已接入 publisher 写侧、dynamic inventory、managed trust-root 与
+九条 external-anchor 读侧，共 12 组 control-plane transport；并已进入 typed properties、
+test/staging 配置、demo preflight、严格 Schema、固定基数 health/capability 与 Tool Studio
+feature projection。证书轮换则仍只交付可复用 Java 内核，尚未接入产品配置和受信
+事件源。因此本增量不能被解释为企业 PKI 或生产证书轮换已经开放。
 
 ## 2. 根因模型
 
@@ -65,6 +68,17 @@ pending successor：
   descriptor 和可供轮换判定的 client certificate lifetime。
 - `RotatingControlPlaneHttpTransport`：两阶段 stage、连续 generation、重叠窗口、
   request-level 原子选择和过期 fail-closed。
+- `RecoveryFleetPublicationTransportProperties`：对六个身份字段执行全有或全无校验，
+  disabled residual、partial binding 和 required-without-binding 均在 secret resolution 前失败。
+- `TestRuntimeConfiguration` 与
+  `ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration`：将同一 typed policy 接入
+  12 组产品 transport，不由各 domain 自行解析证书选择器。
+- `application-staging.yml`：对每个已启用 transport 自动要求精确证书身份；
+  `application-test.yml` 仅保留显式兼容路径。
+- dynamic inventory v3、external anchor v2 与 capability v4 严格 Schema：新版本接收身份
+  配置或布尔真值，v2/v1/v3 旧 Schema 保持冻结。
+- health/capability/Tool Studio：只投影 `certificateIdentityBound` 及两个 source 级聚合
+  布尔值，不返回 Subject、SAN、issuer pin、路径或 secret reference。
 - `RecoveryFleetPublicationTlsFixture`：真实 CA、server/client 证书、双向 TLS server 和 client identity
   轮换材料。
 
@@ -89,7 +103,9 @@ RotatingControlPlaneHttpTransportTest test
 - 候选 credential 加载被阻塞时旧代真实 TLS 请求仍成功；
 - active identity 过期后请求在 handler 前 fail closed。
 
-另执行复用 transport 的 79 项联合协议回归，0 failures、0 errors、0 skips。
+另执行复用 transport 的 79 项联合协议回归，0 failures、0 errors、0 skips；
+产品接线的 87 项聚焦测试亦全绿，覆盖 typed properties、Spring 组装、真实 TLS、
+Schema 冻结、health/capability、Tool Studio projection 与 demo preflight。
 
 最终全量门禁：
 
@@ -97,12 +113,13 @@ RotatingControlPlaneHttpTransportTest test
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-验收结果：3613 tests，0 failures、0 errors、2 skips；并成功生成 37 MB 的
-`bloge-examples-resource-gateway-1.0.0.jar` Spring Boot 可执行产物。
+验收结果：3619 tests，0 failures、0 errors、2 skips；并成功生成 Spring Boot
+可执行产物 `bloge-examples-resource-gateway-1.0.0.jar`。
 
 ## 7. 下一门禁
 
-下一增量必须完成 typed certificate identity/rotation properties、严格 Schema、staging fail-fast、脚本
-preflight、固定基数 health/capability 和九条读侧/写侧产品接线。之后才可关闭“证书身份绑定已产品化”。
-仍不在本内核声明内的是企业 CA 签发/吊销事件认证、OCSP/CRL 策略、HSM 私钥 custody、跨副本一致
-轮换、secret manager lease、生产 HA/DR/chaos 和目标数据库认证。
+下一门禁不再是静态身份接线，而是将轮换内核收口到受信的产品协议：已认证且
+已签名的 CA/secret-manager inventory event、连续 generation、可观测 activation/overlap、
+失败不扰动旧代、跨副本一致激活和受控 rollback。仍未闭合的是企业 CA 签发/
+吊销事件认证、OCSP/CRL 策略、HSM 私钥 custody、secret manager lease、跨副本协调、
+生产 HA/DR/chaos 和目标数据库认证。

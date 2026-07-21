@@ -59,33 +59,46 @@ public interface ControlPlaneHttpTransport {
     /**
      * Aggregate transport security facts safe for capability and health projection.
      *
-     * <p>The v1 schema identifier is retained from the original recovery-fleet-only contract so
-     * existing capability consumers remain wire compatible while the Java ownership boundary is
-     * generalized.</p>
+     * <p>Version 2 adds only the fixed-cardinality identity-binding fact. It never projects
+     * certificate material, paths, aliases, pins, subjects, or workload URI values.</p>
      *
      * @param schemaVersion descriptor protocol version
      * @param systemTrustStore whether the JVM system trust store authenticates the server chain
      * @param privateTrustStore whether a deployment-owned trust store authenticates the chain
      * @param serverSpkiPinned whether every accepted chain must intersect an exact SPKI pin set
      * @param mutualTls whether a deployment-owned client certificate is presented
+     * @param certificateIdentityBound whether both peers satisfy exact X.509 workload policy
      */
     record Descriptor(
             String schemaVersion,
             boolean systemTrustStore,
             boolean privateTrustStore,
             boolean serverSpkiPinned,
-            boolean mutualTls) {
+            boolean mutualTls,
+            boolean certificateIdentityBound) {
+
+        /** Creates the v2 descriptor for a transport without workload identity binding. */
+        public Descriptor(
+                String schemaVersion,
+                boolean systemTrustStore,
+                boolean privateTrustStore,
+                boolean serverSpkiPinned,
+                boolean mutualTls) {
+            this(schemaVersion, systemTrustStore, privateTrustStore, serverSpkiPinned,
+                    mutualTls, false);
+        }
 
         /** Current descriptor protocol version. */
         public static final String SCHEMA_VERSION =
-                "bloge.recoveryFleetPublicationTransportDescriptor.v1";
+                "bloge.controlPlaneHttpTransportDescriptor.v2";
 
         /** Rejects contradictory or unauthenticated transport projections. */
         public Descriptor {
             schemaVersion = Objects.requireNonNullElse(schemaVersion, "").trim();
             if (!SCHEMA_VERSION.equals(schemaVersion)
                     || systemTrustStore == privateTrustStore
-                    || mutualTls && !serverSpkiPinned) {
+                    || mutualTls && !serverSpkiPinned
+                    || certificateIdentityBound && !mutualTls) {
                 throw new IllegalArgumentException(
                         "Control-plane HTTP transport descriptor is invalid");
             }

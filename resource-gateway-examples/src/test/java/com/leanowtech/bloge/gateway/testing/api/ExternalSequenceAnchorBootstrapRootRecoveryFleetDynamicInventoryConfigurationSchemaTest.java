@@ -96,7 +96,7 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
 
         assertThat(schema.path("allOf")).hasSize(4);
         assertThat(schema.at("/$defs/managedTrustRoots/allOf")).hasSize(2);
-        assertThat(schema.at("/$defs/publicationTransport/allOf")).hasSize(3);
+        assertThat(schema.at("/$defs/publicationTransport/allOf")).hasSize(4);
         assertThat(schema.at("/allOf/2/then/properties/signature-threshold/minimum")
                 .asInt()).isOne();
         assertThat(schema.at("/allOf/3/then/properties/signature-threshold/const")
@@ -118,6 +118,12 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         assertThat(schema.at(
                 "/$defs/publicationTransport/allOf/2/then/properties/server-spki-pins/minLength")
                 .asInt()).isEqualTo(71);
+        assertThat(schema.at(
+                "/$defs/publicationTransport/allOf/3/then/properties/client-issuer-spki-pins/minLength")
+                .asInt()).isEqualTo(71);
+        assertThat(schema.at(
+                "/$defs/publicationTransport/allOf/3/then/properties/expected-server-uri-san/minLength")
+                .asInt()).isEqualTo(4);
     }
 
     @Test
@@ -156,6 +162,9 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                         ROOT_PREFIX + ".unknown-key-refresh-interval-seconds",
                         TRANSPORT_PREFIX + ".client-key-store-password-ref",
                         TRANSPORT_PREFIX + ".server-spki-pins",
+                        TRANSPORT_PREFIX + ".certificate-identity-required",
+                        TRANSPORT_PREFIX + ".expected-client-uri-san",
+                        TRANSPORT_PREFIX + ".server-issuer-spki-pins",
                         ROOT_TRANSPORT_PREFIX + ".client-key-store-path",
                         EXTERNAL_PREFIX + ".enabled",
                         EXTERNAL_PREFIX + ".maximum-faults",
@@ -203,6 +212,20 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         assertThat(legacy.path("additionalProperties").asBoolean()).isFalse();
     }
 
+    @Test
+    void priorTransportSchemasRemainFrozenWithoutCertificateIdentityFields()
+            throws Exception {
+        JsonNode dynamic = objectMapper.readTree(Files.readString(legacyV2SchemaPath()));
+        JsonNode external = objectMapper.readTree(Files.readString(legacyExternalSchemaPath()));
+
+        assertThat(dynamic.at("/$defs/publicationTransport/properties")
+                .has("certificate-identity-required")).isFalse();
+        assertThat(dynamic.at("/$defs/publicationTransport/properties")
+                .has("expected-client-uri-san")).isFalse();
+        assertThat(external.at("/$defs/publicationTransport/properties")
+                .has("server-issuer-spki-pins")).isFalse();
+    }
+
     private JsonNode schema() throws Exception {
         return objectMapper.readTree(Files.readString(schemaPath()));
     }
@@ -232,7 +255,7 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
     private static Path schemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-recovery-fleet-dynamic-inventory-"
-                        + "configuration-v2.schema.json");
+                        + "configuration-v3.schema.json");
     }
 
     private static Path legacySchemaPath() {
@@ -241,7 +264,19 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                         + "configuration-v1.schema.json");
     }
 
+    private static Path legacyV2SchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-recovery-fleet-dynamic-inventory-"
+                        + "configuration-v2.schema.json");
+    }
+
     private static Path externalSchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-recovery-fleet-external-anchor-"
+                        + "configuration-v2.schema.json");
+    }
+
+    private static Path legacyExternalSchemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-recovery-fleet-external-anchor-"
                         + "configuration-v1.schema.json");
