@@ -517,9 +517,27 @@ stays degraded. Multi-replica mode requires externally attested inventory;
 `gateway.testing.control-plane-certificate-rotation-convergence` policy with the adjacent
 `RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_*`, fleet, process, artifact, inventory and
 lease variables. Actuator and Tool Studio now report bounded convergence integration,
-availability, current proof and serving readiness. `productionReady` deliberately remains false:
-CA-event distribution, revocation/OCSP/CRL, HSM custody, production database certification, and
-HA/DR/chaos remain follow-up gates. See the
+availability, current proof and serving readiness.
+
+Authenticated CA event delivery is now available as a separate test/staging product path. Set
+`RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED=true` only after signed rotation
+and convergence are both enabled and required, then configure an HTTPS endpoint, pinned baseline
+sequence/fingerprint, bounded poll/page policy, and an independent
+`RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_TRANSPORT_*` client identity. The source
+requires private PKIX, server SPKI pinning, mTLS, and exact client/server workload identities. Its
+TLS identity authorizes page delivery only: every event in a fingerprint-chained page still passes
+the independent M-of-N rotation trust policy. A stable serving-slot database cursor performs
+`fetch -> stage exact page -> apply every event -> commit`; partial failure leaves the page staged,
+and restart accepts only exact replay. The watcher pauses without source I/O while fleet serving
+admission is fenced, bounds each cycle to 1..32 pages, and exports only fixed-cardinality health and
+Tool Studio booleans. The demo preflight rejects HTTP/loopback staging sources, missing convergence,
+weak transport, unreadable key stores, invalid bounds, or resolved credentials before Maven build.
+See the [event watcher product verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-watcher-product-verification.md).
+
+`productionReady` deliberately remains false. The delivered test/staging path does not yet prove CA
+source HA and retention/compaction, event-source client-certificate hot rotation, external alerting
+and freshness/backlog SLO, HSM custody, production database certification, or HA/DR/chaos behavior.
+See the
 [certificate identity and rotation kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md).
 
 The same single-root journal can run unattended ceremony recovery by also setting

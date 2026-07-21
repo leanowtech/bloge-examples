@@ -137,9 +137,18 @@ custody 与生产数据库/HA/DR/chaos 认证仍未闭合，不能据此宣称�
 紧随其后的事件分发第一子步已冻结 fingerprint-chained page 和每 stable serving-slot 的 durable
 cursor：数据库在 apply 前 stage exact successor，只有页面内全部独立签名事件 durable apply 后才 commit；
 crash 只允许 exact replay，gap、fork、competing page、baseline drift 和 whole-record mutation 全部失败
-关闭。15 项协议/数据库门禁全绿。HTTP/mTLS watcher、自动调度与 freshness SLO 尚未接线，因此
-production readiness 不变。验证见
-[certificate rotation event cursor verification](resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-cursor-verification.md)。
+关闭。15 项协议/数据库门禁全绿。第二子步已把 strict HTTPS media type/version、private PKIX、SPKI
+pin、mTLS、双端 workload identity、body/deadline/lifetime bound 接成有界 source，并以
+`fetch -> stage -> apply all -> commit` watcher、固定 delay、serving fence、typed Spring properties、
+stable instance cursor bean、固定基数 health、Tool Studio capability、test/staging profile 和 demo
+preflight 形成产品路径。source transport 只授权页面交付，每个 event 仍逐一进入 M-of-N 签名 trust；
+部分 apply 保持 staged，exact replay 修复，gap/fork/protocol downgrade 永不推进 cursor。CA source
+HA/retention、source identity 热轮换、外部 freshness/backlog SLO 告警、生产数据库与 DR/chaos 认证仍未
+闭合，因此 production readiness 不变。page/cursor、HTTP watcher、Spring/TLS、Schema/metadata/YAML、
+capability 与 demo preflight 的 76 项联合门禁全绿。验证见
+[certificate rotation event cursor verification](resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-cursor-verification.md)、
+[certificate rotation event watcher kernel verification](resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-watcher-kernel-verification.md) 和
+[certificate rotation event watcher product verification](resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-watcher-product-verification.md)。
 
 Stage 2 本轮审计继续关闭 stored fixture 的对象稳定性和仓储替换断点：数据库 create/read 与
 execution、suite、durable 三类消费边界先做 canonical serialization round trip，递归冻结 JSON 容器并

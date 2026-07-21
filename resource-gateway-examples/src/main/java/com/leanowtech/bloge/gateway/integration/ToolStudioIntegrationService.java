@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEventWatcher;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationRuntime;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory;
@@ -85,6 +86,8 @@ public class ToolStudioIntegrationService {
     private TestSuiteStabilityObservationExternalArchiveReconciliationHealth
             externalArchiveReconciliationHealth;
     private ControlPlaneCertificateRotationRuntime controlPlaneCertificateRotationRuntime;
+    private ControlPlaneCertificateRotationEventWatcher
+            controlPlaneCertificateRotationEventWatcher;
     private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory>
             recoveryFleetInventories = List.of();
     private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority>
@@ -201,6 +204,13 @@ public class ToolStudioIntegrationService {
     void configureControlPlaneCertificateRotation(
             ControlPlaneCertificateRotationRuntime runtime) {
         this.controlPlaneCertificateRotationRuntime = runtime;
+    }
+
+    /** Receives the profile-owned durable certificate-rotation event watcher when assembled. */
+    @Autowired(required = false)
+    void configureControlPlaneCertificateRotationEventWatcher(
+            ControlPlaneCertificateRotationEventWatcher watcher) {
+        this.controlPlaneCertificateRotationEventWatcher = watcher;
     }
 
     /** Receives the profile-owned semantic workbook projector with the isolated test runtime. */
@@ -576,6 +586,20 @@ public class ToolStudioIntegrationService {
                 rotation.certificateStatusFresh());
         features.put("controlPlaneCertificateRevocationAdmission",
                 rotation.certificateStatusIntegrated() && rotation.certificateStatusFresh());
+        CertificateRotationEventDeliveryCapability eventDelivery =
+                currentCertificateRotationEventDelivery();
+        features.put("controlPlaneCertificateRotationEventDeliveryIntegrated",
+                eventDelivery.integrated());
+        features.put("controlPlaneCertificateRotationEventDeliveryReady",
+                eventDelivery.ready());
+        features.put("controlPlaneCertificateRotationEventDeliveryDurableCursor",
+                eventDelivery.durableCursor());
+        features.put("controlPlaneCertificateRotationEventDeliveryAuthenticatedSource",
+                eventDelivery.authenticatedSource());
+        features.put("controlPlaneCertificateRotationEventDeliverySourceMutualTls",
+                eventDelivery.sourceMutualTls());
+        features.put("controlPlaneCertificateRotationEventDeliverySourceCertificateIdentityBound",
+                eventDelivery.sourceCertificateIdentityBound());
         features.put("controlPlaneCertificateRotationProductionReady",
                 rotation.productionReady());
         IntegrationCapabilities augmented = new IntegrationCapabilities(
@@ -603,6 +627,42 @@ public class ToolStudioIntegrationService {
                     ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
                     true, false, false, false, 0, 0, false,
                     false, false, false, false, false, "UNAVAILABLE");
+        }
+    }
+
+    private CertificateRotationEventDeliveryCapability
+            currentCertificateRotationEventDelivery() {
+        if (controlPlaneCertificateRotationEventWatcher == null) {
+            return CertificateRotationEventDeliveryCapability.disabled();
+        }
+        try {
+            ControlPlaneCertificateRotationEventWatcher.Descriptor current =
+                    controlPlaneCertificateRotationEventWatcher.descriptor();
+            return new CertificateRotationEventDeliveryCapability(
+                    true, current.ready(), current.durableCursor(),
+                    current.authenticatedProtocol(), current.sourceMutualTls(),
+                    current.sourceCertificateIdentityBound());
+        } catch (RuntimeException unavailable) {
+            return CertificateRotationEventDeliveryCapability.unavailable();
+        }
+    }
+
+    private record CertificateRotationEventDeliveryCapability(
+            boolean integrated,
+            boolean ready,
+            boolean durableCursor,
+            boolean authenticatedSource,
+            boolean sourceMutualTls,
+            boolean sourceCertificateIdentityBound) {
+
+        private static CertificateRotationEventDeliveryCapability disabled() {
+            return new CertificateRotationEventDeliveryCapability(
+                    false, false, false, false, false, false);
+        }
+
+        private static CertificateRotationEventDeliveryCapability unavailable() {
+            return new CertificateRotationEventDeliveryCapability(
+                    true, false, false, false, false, false);
         }
     }
 

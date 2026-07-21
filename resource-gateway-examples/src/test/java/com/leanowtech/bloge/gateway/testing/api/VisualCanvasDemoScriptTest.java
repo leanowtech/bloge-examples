@@ -99,6 +99,88 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void stagingRejectsEventDeliveryWithoutRequiredRotationAndConvergenceBeforeBuild()
+            throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().putAll(stagingBase());
+        builder.environment().put(
+                "RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED", "true");
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Certificate rotation event delivery requires required signed rotation and all-replica convergence.");
+        assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
+    }
+
+    @Test
+    void stagingRejectsEventSourceLoopbackEscapeBeforeTransportLoading() throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        Map<String, String> environment = new HashMap<>(stagingBase());
+        putRequiredCertificateRotation(environment);
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED",
+                "true");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_REQUIRED",
+                "true");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENDPOINT_URI",
+                "http://127.0.0.1:18080/events");
+        environment.put(
+                "RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_BASELINE_PAGE_FINGERPRINT",
+                "sha256:" + "e".repeat(64));
+        environment.put(
+                "RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ALLOW_INSECURE_LOOPBACK",
+                "true");
+        builder.environment().putAll(environment);
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Staging certificate rotation event source requires HTTPS and an exact page-chain baseline.");
+        assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
+    }
+
+    @Test
+    void stagingRejectsEventSourcePrivateTrustDowngradeBeforeBuild() throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        Map<String, String> environment = new HashMap<>(stagingBase());
+        putRequiredCertificateRotation(environment);
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED",
+                "true");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_REQUIRED",
+                "true");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENDPOINT_URI",
+                "https://ca.example.test/v1/rotation-events");
+        environment.put(
+                "RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_BASELINE_PAGE_FINGERPRINT",
+                "sha256:" + "e".repeat(64));
+        builder.environment().putAll(environment);
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Certificate rotation event source requires a private trust store.");
+        assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
+    }
+
+    @Test
     void stagingTestSecretCohortFailsBeforeBuildWhenTrustChainIsPartial() throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
                 "bash", SCRIPT.toString(), "start", "--no-build")
@@ -446,6 +528,36 @@ class VisualCanvasDemoScriptTest {
                         "sha256:" + "b".repeat(64)),
                 Map.entry("RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_SIGNATURE_THRESHOLD", "1"),
                 Map.entry("RG_TEST_WORKER_QUARANTINE_CHANGE_AUTH_AUTHORITY_KEYS_JSON", "[{}]"));
+    }
+
+    private static void putRequiredCertificateRotation(Map<String, String> environment) {
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED", "true");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_REQUIRED", "true");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SCOPE_ID", "rg-staging");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_TRUST_DOMAIN",
+                "enterprise-pki");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ACCEPTED_POLICIES",
+                "sha256:" + "c".repeat(64));
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SIGNATURE_THRESHOLD", "1");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_AUTHORITY_KEYS_JSON", "[{}]");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INITIAL_GENERATIONS_JSON",
+                "{\"test.secret.notary.transport\":1}");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_MATERIAL_CATALOG_JSON",
+                "[{}]");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_ENABLED",
+                "true");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_REQUIRED",
+                "true");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_FLEET_ID", "fleet-a");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INSTANCE_ID", "replica-a");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_STARTUP_ID",
+                "6f5fe859-b55d-4bd2-b5bf-5cc54356e03d");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ARTIFACT_FINGERPRINT",
+                "sha256:" + "d".repeat(64));
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EXPECTED_INSTANCE_IDS",
+                "replica-a");
+        environment.put("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_REQUIRED_STAGED_REPLICAS",
+                "1");
     }
 
     private static void putCertificateIdentity(

@@ -72,6 +72,10 @@ Environment:
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_FLEET_ID  required immutable rollout generation
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INSTANCE_ID  required stable serving slot
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EXPECTED_INSTANCE_IDS  required exact comma-separated inventory
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED  optional authenticated CA event delivery
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENDPOINT_URI  required HTTPS page endpoint
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_BASELINE_PAGE_FINGERPRINT  required pinned chain head
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_TRANSPORT_CLIENT_KEY_STORE_PATH  required independent client identity
   RG_TEST_SECRET_AUTHORITY_COHORT_ENABLED  optional; exact dynamic-JWKS test-secret replica gate
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_ENABLED  required true for staging cohort
   RG_TEST_SECRET_AUTHORITY_COHORT_INVENTORY_EXTERNAL_ANCHOR_TRUST_DOMAIN  required external trust domain
@@ -627,8 +631,67 @@ validate_control_plane_certificate_rotation_convergence() {
     fi
 }
 
+validate_control_plane_certificate_rotation_event_source() {
+    if ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED:-false}"; then
+        if truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_REQUIRED:-false}"; then
+            echo "Required certificate rotation event source cannot be disabled." >&2
+            return 1
+        fi
+        return 0
+    fi
+    if ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_REQUIRED:-true}" ||
+        ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_REQUIRED:-false}" ||
+        ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_CONVERGENCE_REQUIRED:-false}"; then
+        echo "Certificate rotation event delivery requires required signed rotation and all-replica convergence." >&2
+        return 1
+    fi
+    local endpoint="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENDPOINT_URI:-}"
+    local baseline_sequence="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_BASELINE_SEQUENCE:-0}"
+    local baseline_fingerprint="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_BASELINE_PAGE_FINGERPRINT:-}"
+    if ! printf '%s' "${endpoint}" |
+        grep -Eq '^https://[^/?#[:space:]]+(/[^?#[:space:]]*)?$' ||
+        truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ALLOW_INSECURE_LOOPBACK:-false}" ||
+        ! printf '%s' "${baseline_sequence}" | grep -Eq '^(0|[1-9][0-9]*)$' ||
+        ! printf '%s' "${baseline_fingerprint}" |
+        grep -Eq '^sha256:[a-f0-9]{64}$'; then
+        echo "Staging certificate rotation event source requires HTTPS and an exact page-chain baseline." >&2
+        return 1
+    fi
+    local poll="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_POLL_INTERVAL_SECONDS:-5}"
+    local pages="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_MAXIMUM_PAGES_PER_POLL:-4}"
+    local timeout="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_REQUEST_TIMEOUT_MILLIS:-3000}"
+    local bytes="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_MAXIMUM_PAGE_BYTES:-262144}"
+    local skew="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_CLOCK_SKEW_SECONDS:-30}"
+    local lifetime="${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_MAXIMUM_PAGE_LIFETIME_SECONDS:-300}"
+    if printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
+        "${poll}" "${pages}" "${timeout}" "${bytes}" "${skew}" "${lifetime}" |
+        grep -Eqv '^(0|[1-9][0-9]*)$' ||
+        [ "${poll}" -lt 1 ] || [ "${poll}" -gt 3600 ] ||
+        [ "${pages}" -lt 1 ] || [ "${pages}" -gt 32 ] ||
+        [ "${timeout}" -lt 100 ] || [ "${timeout}" -gt 30000 ] ||
+        [ "${bytes}" -lt 1024 ] || [ "${bytes}" -gt 524288 ] ||
+        [ "${skew}" -gt 300 ] ||
+        [ "${lifetime}" -lt 1 ] || [ "${lifetime}" -gt 86400 ]; then
+        echo "Certificate rotation event source polling and page bounds are invalid." >&2
+        return 1
+    fi
+    if [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_TRANSPORT_TRUST_STORE_PATH:-}" ] ||
+        [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_TRANSPORT_TRUST_STORE_PASSWORD_REF:-}" ]; then
+        echo "Certificate rotation event source requires a private trust store." >&2
+        return 1
+    fi
+    validate_control_plane_transport \
+        "RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_TRANSPORT" \
+        "certificate rotation event source"
+}
+
 validate_control_plane_identity_isolation() {
     local -a prefixes=()
+    if truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED:-false}"; then
+        prefixes+=("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_TRANSPORT")
+    fi
     if truthy "${RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENABLED:-false}"; then
         prefixes+=("RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT")
     fi
@@ -1426,6 +1489,7 @@ validate_profile_secrets() {
     validate_control_plane_identity_isolation
     validate_control_plane_certificate_rotation
     validate_control_plane_certificate_rotation_convergence
+    validate_control_plane_certificate_rotation_event_source
 }
 
 pid_file() {

@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.integration;
 
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEventWatcher;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationRuntime;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +29,17 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 .containsEntry("controlPlaneCertificateStatusAvailable", false)
                 .containsEntry("controlPlaneCertificateStatusFresh", false)
                 .containsEntry("controlPlaneCertificateRevocationAdmission", false)
+                .containsEntry("controlPlaneCertificateRotationEventDeliveryIntegrated", false)
+                .containsEntry("controlPlaneCertificateRotationEventDeliveryReady", false)
+                .containsEntry(
+                        "controlPlaneCertificateRotationEventDeliveryDurableCursor", false)
+                .containsEntry(
+                        "controlPlaneCertificateRotationEventDeliveryAuthenticatedSource", false)
+                .containsEntry(
+                        "controlPlaneCertificateRotationEventDeliverySourceMutualTls", false)
+                .containsEntry(
+                        "controlPlaneCertificateRotationEventDeliverySourceCertificateIdentityBound",
+                        false)
                 .containsEntry("controlPlaneCertificateRotationProductionReady", false);
     }
 
@@ -114,6 +126,54 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 .containsEntry("controlPlaneCertificateRevocationAdmission", true)
                 .containsEntry("controlPlaneCertificateRotationLocalReady", true)
                 .containsEntry("controlPlaneCertificateRotationProductionReady", false);
+    }
+
+    @Test
+    void authenticatedDurableEventDeliveryIsAdvertisedWithoutInflatingProductionReadiness() {
+        ToolStudioIntegrationService service = service();
+        ControlPlaneCertificateRotationEventWatcher watcher = mock(
+                ControlPlaneCertificateRotationEventWatcher.class);
+        when(watcher.descriptor()).thenReturn(
+                new ControlPlaneCertificateRotationEventWatcher.Descriptor(
+                        ControlPlaneCertificateRotationEventWatcher.Descriptor.SCHEMA_VERSION,
+                        true, true, true, true, true, true,
+                        7, false, 2, 3, "IDLE", "NO_EVENTS"));
+        service.configureControlPlaneCertificateRotationEventWatcher(watcher);
+
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("controlPlaneCertificateRotationEventDeliveryIntegrated", true)
+                .containsEntry("controlPlaneCertificateRotationEventDeliveryReady", true)
+                .containsEntry(
+                        "controlPlaneCertificateRotationEventDeliveryDurableCursor", true)
+                .containsEntry(
+                        "controlPlaneCertificateRotationEventDeliveryAuthenticatedSource", true)
+                .containsEntry(
+                        "controlPlaneCertificateRotationEventDeliverySourceMutualTls", true)
+                .containsEntry(
+                        "controlPlaneCertificateRotationEventDeliverySourceCertificateIdentityBound",
+                        true)
+                .containsEntry("controlPlaneCertificateRotationProductionReady", false);
+    }
+
+    @Test
+    void eventWatcherDescriptorFailureClosesCapabilityWithoutLeakingDiagnostics() {
+        ToolStudioIntegrationService service = service();
+        ControlPlaneCertificateRotationEventWatcher watcher = mock(
+                ControlPlaneCertificateRotationEventWatcher.class);
+        when(watcher.descriptor()).thenThrow(
+                new IllegalStateException("https://ca.internal/events?credential=secret"));
+        service.configureControlPlaneCertificateRotationEventWatcher(watcher);
+
+        var capabilities = service.capabilities().payload();
+
+        assertThat(capabilities.features())
+                .containsEntry("controlPlaneCertificateRotationEventDeliveryIntegrated", true)
+                .containsEntry("controlPlaneCertificateRotationEventDeliveryReady", false)
+                .containsEntry(
+                        "controlPlaneCertificateRotationEventDeliveryAuthenticatedSource", false);
+        assertThat(capabilities.toString())
+                .doesNotContain("ca.internal", "credential=secret",
+                        "https://ca.internal/events");
     }
 
     private static ToolStudioIntegrationService service() {

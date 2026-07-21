@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-event-watcher-health-v1.schema.json",
+  "title": "Resource Gateway Certificate Rotation Event Watcher Health v1",
+  "description": "Fixed-cardinality, material-free Actuator details derived only from the cached watcher descriptor.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "enabled", "required", "ready", "durableCursor",
+    "automaticPolling", "authenticatedProtocol", "sourceMutualTls",
+    "sourceCertificateIdentityBound", "stagedPage", "status", "reasonCode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateRotationEventWatcherHealth.v1"
+    },
+    "enabled": { "const": true },
+    "required": { "type": "boolean" },
+    "ready": { "type": "boolean" },
+    "durableCursor": { "type": "boolean" },
+    "automaticPolling": { "type": "boolean" },
+    "authenticatedProtocol": { "type": "boolean" },
+    "sourceMutualTls": { "type": "boolean" },
+    "sourceCertificateIdentityBound": { "type": "boolean" },
+    "stagedPage": { "type": "boolean" },
+    "status": {
+      "enum": [
+        "NEW", "IDLE", "APPLIED", "RUNTIME_FENCED", "RUNTIME_UNAVAILABLE",
+        "SOURCE_UNAVAILABLE", "PROTOCOL_REJECTED", "CURSOR_UNAVAILABLE",
+        "CURSOR_CONFLICT", "APPLY_BLOCKED", "WATCHER_UNAVAILABLE", "CLOSED",
+        "UNAVAILABLE"
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+    }
+  }
+}
