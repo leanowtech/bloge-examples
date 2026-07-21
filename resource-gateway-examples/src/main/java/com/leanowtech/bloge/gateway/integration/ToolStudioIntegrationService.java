@@ -568,6 +568,14 @@ public class ToolStudioIntegrationService {
                 rotation.replicaConvergenceProven());
         features.put("controlPlaneCertificateRotationServingReady",
                 rotation.servingReady());
+        features.put("controlPlaneCertificateStatusIntegrated",
+                rotation.certificateStatusIntegrated());
+        features.put("controlPlaneCertificateStatusAvailable",
+                rotation.certificateStatusAvailable());
+        features.put("controlPlaneCertificateStatusFresh",
+                rotation.certificateStatusFresh());
+        features.put("controlPlaneCertificateRevocationAdmission",
+                rotation.certificateStatusIntegrated() && rotation.certificateStatusFresh());
         features.put("controlPlaneCertificateRotationProductionReady",
                 rotation.productionReady());
         IntegrationCapabilities augmented = new IntegrationCapabilities(

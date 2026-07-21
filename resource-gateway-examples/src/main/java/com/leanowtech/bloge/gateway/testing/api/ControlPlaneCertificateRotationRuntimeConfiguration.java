@@ -18,7 +18,8 @@ import java.time.Clock;
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
 @EnableConfigurationProperties({ControlPlaneCertificateRotationRuntimeProperties.class,
-        ControlPlaneCertificateRotationConvergenceProperties.class})
+        ControlPlaneCertificateRotationConvergenceProperties.class,
+        ControlPlaneCertificateStatusRuntimeProperties.class})
 public class ControlPlaneCertificateRotationRuntimeConfiguration {
 
     /** Creates the profile-gated composition root. */
@@ -125,15 +126,31 @@ public class ControlPlaneCertificateRotationRuntimeConfiguration {
             ControlPlaneCertificateSettingsFingerprint fingerprinter,
             ControlPlaneCertificateRotationFloorFactory floorFactory,
             ObjectProvider<ControlPlaneCertificateRotationConvergenceMonitor> monitors,
-            ControlPlaneCertificateRotationConvergenceProperties convergenceProperties) {
+            ControlPlaneCertificateRotationConvergenceProperties convergenceProperties,
+            ObjectProvider<ControlPlaneCertificateStatusMonitor> statusMonitors,
+            ObjectProvider<ControlPlaneCertificateStatusAdmission> statusAdmissions,
+            ControlPlaneCertificateStatusRuntimeProperties statusProperties) {
         ControlPlaneCertificateRotationConvergenceMonitor monitor = monitors.getIfAvailable();
         if (convergenceProperties.required() && monitor == null) {
             throw new IllegalStateException(
                     "Required certificate rotation convergence monitor is unavailable");
         }
+        ControlPlaneCertificateStatusMonitor statusMonitor = statusProperties.enabled()
+                ? statusMonitors.getIfAvailable() : null;
+        ControlPlaneCertificateStatusAdmission statusAdmission = statusProperties.enabled()
+                ? statusAdmissions.getIfAvailable() : null;
+        if (statusProperties.enabled()
+                && (!properties.enabled()
+                || !properties.deploymentScopeId().equals(
+                statusProperties.deploymentScopeId())
+                || statusMonitor == null || statusAdmission == null)) {
+            throw new IllegalStateException(
+                    "Certificate status admission requires the matching rotation runtime");
+        }
         return new ControlPlaneCertificateRotationRuntime(properties,
                 properties.initialTargets(objectMapper), trustStore, materialSource,
-                secretResolver, fingerprinter, floorFactory, Clock.systemUTC(), monitor);
+                secretResolver, fingerprinter, floorFactory, Clock.systemUTC(), monitor,
+                statusMonitor, statusAdmission);
     }
 
     /** Exposes bounded durable local readiness without claiming fleet convergence. */

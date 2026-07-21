@@ -24,6 +24,10 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                         "controlPlaneCertificateRotationReplicaConvergenceAvailable", false)
                 .containsEntry("controlPlaneCertificateRotationReplicaConvergenceProven", false)
                 .containsEntry("controlPlaneCertificateRotationServingReady", false)
+                .containsEntry("controlPlaneCertificateStatusIntegrated", false)
+                .containsEntry("controlPlaneCertificateStatusAvailable", false)
+                .containsEntry("controlPlaneCertificateStatusFresh", false)
+                .containsEntry("controlPlaneCertificateRevocationAdmission", false)
                 .containsEntry("controlPlaneCertificateRotationProductionReady", false);
     }
 
@@ -86,6 +90,29 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                         "controlPlaneCertificateRotationReplicaConvergenceAvailable", true)
                 .containsEntry("controlPlaneCertificateRotationReplicaConvergenceProven", true)
                 .containsEntry("controlPlaneCertificateRotationServingReady", true)
+                .containsEntry("controlPlaneCertificateRotationProductionReady", false);
+    }
+
+    @Test
+    void freshStatusAdmissionIsAdvertisedSeparatelyFromSourceAvailability() {
+        ToolStudioIntegrationService service = service();
+        ControlPlaneCertificateRotationRuntime runtime = mock(
+                ControlPlaneCertificateRotationRuntime.class);
+        when(runtime.descriptor()).thenReturn(
+                new ControlPlaneCertificateRotationRuntime.Descriptor(
+                        ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
+                        true, true, true, true, 12, 12, true,
+                        false, false, false, false,
+                        true, false, true, false,
+                        "DISABLED", "SOURCE_UNAVAILABLE"));
+        service.configureControlPlaneCertificateRotation(runtime);
+
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("controlPlaneCertificateStatusIntegrated", true)
+                .containsEntry("controlPlaneCertificateStatusAvailable", false)
+                .containsEntry("controlPlaneCertificateStatusFresh", true)
+                .containsEntry("controlPlaneCertificateRevocationAdmission", true)
+                .containsEntry("controlPlaneCertificateRotationLocalReady", true)
                 .containsEntry("controlPlaneCertificateRotationProductionReady", false);
     }
 

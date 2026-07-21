@@ -61,7 +61,9 @@ class ControlPlaneCertificateRotationHealthTest {
                         "synchronizedState", "durableGenerationFloorIntegrated",
                         "replicaConvergenceIntegrated", "replicaConvergenceAvailable",
                         "replicaConvergenceProven", "servingReady",
-                        "convergenceStatus", "productionReady")
+                        "convergenceStatus", "certificateStatusIntegrated",
+                        "certificateStatusAvailable", "certificateStatusFresh",
+                        "certificateStatus", "productionReady")
                 .doesNotContainValue("vault://certificate-secret");
         assertThat(health.getDetails().toString())
                 .doesNotContain("certificate-secret", "vault://");
@@ -84,6 +86,30 @@ class ControlPlaneCertificateRotationHealthTest {
         assertThat(converged.getDetails())
                 .containsEntry("replicaConvergenceIntegrated", true)
                 .containsEntry("replicaConvergenceProven", true)
+                .containsEntry("productionReady", false);
+    }
+
+    @Test
+    void certificateStatusDistinguishesSourceOutageFromHardAdmissionExpiry() {
+        var unavailable = health(statusDescriptor(false, false, false,
+                "SOURCE_UNAVAILABLE"));
+        var fenced = health(statusDescriptor(false, true, false, "CURRENT"));
+        var cachedDuringOutage = health(statusDescriptor(true, false, true,
+                "SOURCE_UNAVAILABLE"));
+
+        assertThat(unavailable.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(unavailable.getDetails())
+                .containsEntry("runtimeStatus", "CERTIFICATE_STATUS_UNAVAILABLE")
+                .containsEntry("certificateStatusFresh", false);
+        assertThat(fenced.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(fenced.getDetails())
+                .containsEntry("runtimeStatus", "CERTIFICATE_STATUS_FENCED")
+                .containsEntry("certificateStatusAvailable", true);
+        assertThat(cachedDuringOutage.getStatus()).isEqualTo(Status.UP);
+        assertThat(cachedDuringOutage.getDetails())
+                .containsEntry("runtimeStatus", "LOCAL_READY")
+                .containsEntry("certificateStatusAvailable", false)
+                .containsEntry("certificateStatusFresh", true)
                 .containsEntry("productionReady", false);
     }
 
@@ -126,5 +152,17 @@ class ControlPlaneCertificateRotationHealthTest {
                 ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
                 true, servingReady, true, true, 2, 2, true,
                 true, available, proven, servingReady, false, status);
+    }
+
+    private static ControlPlaneCertificateRotationRuntime.Descriptor statusDescriptor(
+            boolean ready,
+            boolean available,
+            boolean fresh,
+            String status) {
+        return new ControlPlaneCertificateRotationRuntime.Descriptor(
+                ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
+                true, ready, true, true, 2, 2, true,
+                false, false, false, false,
+                true, available, fresh, false, "DISABLED", status);
     }
 }

@@ -34,7 +34,7 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         JsonNode monitorSchema = schema(
                 "control-plane-certificate-rotation-convergence-monitor-descriptor-v1.schema.json");
         JsonNode runtimeSchema = schema(
-                "control-plane-certificate-rotation-runtime-descriptor-v2.schema.json");
+                "control-plane-certificate-rotation-runtime-descriptor-v3.schema.json");
         ControlPlaneCertificateRotationEvent event = event();
         var result = new ControlPlaneCertificateRotationController.ApplyResult(
                 ControlPlaneCertificateRotationController.ApplyResult.SCHEMA_VERSION,
@@ -69,7 +69,8 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         var runtime = new ControlPlaneCertificateRotationRuntime.Descriptor(
                 ControlPlaneCertificateRotationRuntime.Descriptor.SCHEMA_VERSION,
                 true, true, true, true, 2, 2, true,
-                true, true, true, true, false, "CONVERGED");
+                true, true, true, true, true, true, true,
+                false, "CONVERGED", "CURRENT");
 
         assertProperties(objectMapper.valueToTree(event),
                 eventSchema.at("/$defs/event/properties"));
@@ -119,7 +120,7 @@ class ControlPlaneCertificateRotationProtocolSchemaTest {
         JsonNode monitorSchema = schema(
                 "control-plane-certificate-rotation-convergence-monitor-descriptor-v1.schema.json");
         JsonNode runtimeSchema = schema(
-                "control-plane-certificate-rotation-runtime-descriptor-v2.schema.json");
+                "control-plane-certificate-rotation-runtime-descriptor-v3.schema.json");
 
         assertThat(eventSchema.at("/$defs/event/properties/schemaVersion/const").asText())
                 .isEqualTo(ControlPlaneCertificateRotationEvent.SCHEMA_VERSION);

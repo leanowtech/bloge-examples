@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -80,6 +81,58 @@ class ControlPlaneCertificateRotationRuntimeTest {
             clock.advance(Duration.ofSeconds(10));
             assertThat(send(client, server.uri())).isEqualTo("publication");
             assertThat(peer.get()).contains("CN=recovery-client-runtime-next");
+        }
+    }
+
+    @Test
+    void productRuntimeFencesRealRequestsUntilDurableExactStatusIsCached()
+            throws Exception {
+        var current = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "runtime-status-gate");
+        var objectMapper = new ObjectMapper().findAndRegisterModules();
+        var fingerprinter = new ControlPlaneCertificateSettingsFingerprint(objectMapper);
+        String currentFingerprint = fingerprinter.fingerprint(settings(current));
+        Instant now = Instant.now();
+        MutableClock clock = new MutableClock(now);
+        var admission = new ControlPlaneCertificateStatusAdmission(clock, System::nanoTime);
+        var statusFloor = new FixedStatusFloor(statusSnapshot(
+                now, currentFingerprint, goodTargetStatus(41, currentFingerprint)));
+        var statusMonitor = new ControlPlaneCertificateStatusMonitor(statusFloor,
+                cursor -> ControlPlaneCertificateStatusSource.FetchResult.unavailable(
+                        "STATUS_AUTHORITY_UNAVAILABLE"), admission, clock, 1);
+        var runtime = new ControlPlaneCertificateRotationRuntime(
+                enabledProperties(), Map.of(TARGET, initial(41)), verifiedTrust(),
+                (targetId, generation, materialId) -> {
+                    throw new AssertionError("material resolution must not run");
+                }, reference -> RecoveryFleetPublicationTlsFixture.password(),
+                fingerprinter, floorFactory(), clock, null, statusMonitor, admission);
+
+        RecoveryFleetPublicationTransport transport = runtime.transport(
+                TARGET, transportProperties(current));
+        var client = transport.client(Duration.ofSeconds(2));
+
+        try (var server = RecoveryFleetPublicationTlsFixture.startPublication(
+                current, new AtomicReference<>())) {
+            assertThatThrownBy(() -> send(client, server.uri()))
+                    .isInstanceOf(IOException.class)
+                    .hasMessage("Control-plane client identity is unavailable")
+                    .hasRootCauseMessage(
+                            "Control-plane client identity has no fresh certificate status");
+
+            ControlPlaneCertificateStatusMonitor.Descriptor refreshed =
+                    statusMonitor.refresh();
+
+            assertThat(refreshed.status()).isEqualTo(
+                    ControlPlaneCertificateStatusMonitor.RefreshStatus.SOURCE_UNAVAILABLE);
+            assertThat(send(client, server.uri())).isEqualTo("publication");
+            assertThat(runtime.descriptor()).satisfies(descriptor -> {
+                assertThat(descriptor.certificateStatusIntegrated()).isTrue();
+                assertThat(descriptor.certificateStatusAvailable()).isFalse();
+                assertThat(descriptor.certificateStatusFresh()).isTrue();
+                assertThat(descriptor.certificateStatus()).isEqualTo("SOURCE_UNAVAILABLE");
+                assertThat(descriptor.ready()).isTrue();
+                assertThat(descriptor.productionReady()).isFalse();
+            });
         }
     }
 
@@ -269,6 +322,39 @@ class ControlPlaneCertificateRotationRuntimeTest {
                 generation, "initial");
     }
 
+    private static ControlPlaneCertificateStatusFloor.Snapshot statusSnapshot(
+            Instant now,
+            String publicationFingerprint,
+            ControlPlaneCertificateStatusPublication.TargetStatus target) {
+        return new ControlPlaneCertificateStatusFloor.Snapshot(
+                ControlPlaneCertificateStatusFloor.Snapshot.SCHEMA_VERSION,
+                "rg-staging", 0, "sha256:" + "0".repeat(64), 1, "status-001",
+                publicationFingerprint, now.minusSeconds(1), now.plusSeconds(60), now,
+                List.of(target));
+    }
+
+    private static ControlPlaneCertificateStatusPublication.TargetStatus goodTargetStatus(
+            long generation, String settingsFingerprint) {
+        return new ControlPlaneCertificateStatusPublication.TargetStatus(TARGET, generation,
+                settingsFingerprint, List.of(
+                goodEvidence(ControlPlaneCertificateStatusPublication.CertificateRole.CLIENT,
+                        'c'),
+                goodEvidence(ControlPlaneCertificateStatusPublication.CertificateRole.SERVER,
+                        'd')));
+    }
+
+    private static ControlPlaneCertificateStatusPublication.CertificateEvidence goodEvidence(
+            ControlPlaneCertificateStatusPublication.CertificateRole role, char fingerprint) {
+        Instant observedAt = Instant.now();
+        return new ControlPlaneCertificateStatusPublication.CertificateEvidence(role,
+                ControlPlaneCertificateStatusPublication.CertificateStatus.GOOD,
+                ControlPlaneCertificateStatusPublication.EvidenceType.OCSP,
+                "sha256:" + String.valueOf(fingerprint).repeat(64),
+                "sha256:" + "e".repeat(64), "sha256:" + "f".repeat(64),
+                "CERTIFICATE_GOOD", observedAt, observedAt,
+                observedAt.plusSeconds(3_600));
+    }
+
     private static ControlPlaneCertificateRotationFloorFactory floorFactory() {
         return (scope, targets) -> new TestFloor(scope, targets);
     }
@@ -370,6 +456,21 @@ class ControlPlaneCertificateRotationRuntimeTest {
         @Override
         public Instant instant() {
             return instant;
+        }
+    }
+
+    private record FixedStatusFloor(
+            ControlPlaneCertificateStatusFloor.Snapshot snapshot)
+            implements ControlPlaneCertificateStatusFloor {
+
+        @Override
+        public Acceptance accept(ControlPlaneCertificateStatusPublication publication) {
+            throw new AssertionError("source returned no publication");
+        }
+
+        @Override
+        public boolean durable() {
+            return true;
         }
     }
 
