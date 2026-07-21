@@ -142,7 +142,7 @@ RecoveryFleetPublicationTransportTest,\
 RotatingControlPlaneHttpTransportTest test
 ```
 
-验收结果由本轮 55 项 rotation 聚焦门禁覆盖，0 failures、0 errors、0 skips。其核心覆盖：
+验收结果由本轮 56 项 rotation 聚焦门禁覆盖，0 failures、0 errors、0 skips。其核心覆盖：
 
 - 真实 mTLS 下精确 client/server workload identity 成功；
 - client Subject、URI SAN、额外 workload URI、issuer、`clientAuth` 缺失在 transport 创建期失败；
@@ -170,7 +170,7 @@ durable floor 另执行 6 项数据库测试，0 failures、0 errors、0 skips�
 回退/跳代/分叉拒绝、future staged 与 database-time 到期晋升、exact replay、event-id reuse、scope/
 predecessor 漂移、floor/event journal 篡改失败关闭，以及同一 target/generation 双副本竞争只有一个赢家。
 
-此前复用 transport 的 79 项联合协议回归和产品接线的 87 项聚焦测试亦全绿；本轮 55 项覆盖 typed
+此前复用 transport 的 79 项联合协议回归和产品接线的 87 项聚焦测试亦全绿；本轮 56 项覆盖 typed
 properties、Spring 组装、真实 TLS、durable restart、Schema 冻结、health/capability、Tool Studio
 projection 与 demo preflight。
 
