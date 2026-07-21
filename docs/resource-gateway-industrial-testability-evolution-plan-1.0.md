@@ -58,8 +58,9 @@ fence、floor-before-publish、worker generation fence 与版本化 aggregate ca
 recovery-fleet 日常 deployment/witness 运行密钥的原子双根 publication、双 bootstrap quorum verifier、
 数据库 durable generation floor、strict HTTPS/ETag refresh、unknown-key single-flight、aggregate health 与
 dynamic inventory consumer 已闭合；root generation 变化会使旧 inventory 立即不可用，库存端即使返回
-`304` 也必须用同一代原子双域 key set 重验。Spring 配置、staging downgrade fence 与 capability 接线未
-闭合，因此只宣称 embedding API 的免重启轮换内核，不宣称产品路径已端到端开放。
+`304` 也必须用同一代原子双域 key set 重验。后续 managed-root Spring 增量已闭合 strict 配置、staging
+downgrade fence、capability v2、配置 Schema/metadata 与 demo preflight，test/staging 产品路径已开放；
+production 路径仍受下述门禁约束。
 provider-confirmed cancellation/process isolation、动态 rebalance、production
 composition、运维配置 metadata/外部告警 SLO、publisher
 mTLS/pinning、response-key 热轮换、根源 anti-equivocation 与生产认证、HA/chaos/外部 SLO

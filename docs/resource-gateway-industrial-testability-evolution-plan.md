@@ -61,8 +61,9 @@ recovery fleet 的 witnessed `ACTIVE/REVOKED` publication machine protocol、双
 publication floor、严格 HTTPS/ETag 动态 authority、独立双域 M-of-N 验证、撤销传播、refresh/age hard
 fence、floor-before-publish、worker generation fence 与版本化 aggregate capability truth 亦已闭合；
 recovery-fleet 日常 deployment/witness 运行密钥的原子双根 publication、双 bootstrap quorum verifier 与
-数据库 durable generation floor 内核已闭合；其 strict HTTPS/ETag refresh、unknown-key single-flight、
-dynamic inventory consumer、Spring/health/capability 接线未闭合，因此尚不宣称免重启轮换。企业
+数据库 durable generation floor 内核已闭合；后续 managed-root Spring 增量又闭合 strict HTTPS/ETag
+refresh、unknown-key single-flight、dynamic inventory consumer、Spring/health/capability v2、配置
+Schema/metadata 与 demo preflight，test/staging 产品路径已开放。企业
 IAM/PDP、HSM/KMS custody、provider-confirmed cancellation/process isolation、
 动态 rebalance、production composition、运维配置 metadata/外部告警 SLO、publisher mTLS/pinning、
 response-key 热轮换、根源
