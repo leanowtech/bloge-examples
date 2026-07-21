@@ -4,10 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.actuate.health.Status;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.util.Base64;
@@ -28,6 +31,9 @@ class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest {
     private static final String PREFIX =
             ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration.Properties
                     .PREFIX + ".";
+
+    @TempDir
+    private Path temporaryDirectory;
 
     @Test
     void disabledTestProfileInstallsNoPublicationRuntime() {
@@ -65,10 +71,116 @@ class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest {
                     ExternalSequenceAnchorBootstrapRootPublicationHealth.class).health();
             assertThat(health.getStatus()).isEqualTo(Status.UP);
             assertThat(health.getDetails()).containsEntry("runtimeStatus", "READY");
+            assertThat(health.getDetails())
+                    .containsEntry("transportSystemTrustStore", true)
+                    .containsEntry("transportServerSpkiPinned", false)
+                    .containsEntry("transportMutualTls", false);
             assertThat(health.getDetails().toString())
                     .doesNotContain("scope-sensitive", "root-set-sensitive",
                             "worker-sensitive", "publisher-sensitive",
                             "response-key-sensitive", "127.0.0.1");
+        }
+    }
+
+    @Test
+    void stagingRejectsPublisherTransportDowngradeBeforeDatabaseOrNetworkUse()
+            throws Exception {
+        Map<String, Object> properties = enabledProperties();
+        properties.put(PREFIX + "allow-insecure-loopback", "false");
+        properties.put(PREFIX + "endpoint", "https://publisher.example/publications");
+        TestRuntimeDatabase database = mock(TestRuntimeDatabase.class);
+
+        var context = unrefreshedContext(properties, database, "staging");
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Bootstrap-root publication runtime configuration is invalid");
+            verify(database, never()).jdbc();
+        } finally {
+            context.close();
+        }
+    }
+
+    @Test
+    void stagingAssemblesPinnedMutualTlsPublisherFromOpaqueCredentials()
+            throws Exception {
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "spring-publisher");
+        Map<String, Object> properties = enabledProperties();
+        properties.put(PREFIX + "endpoint", "https://publisher.example/publications");
+        properties.put(PREFIX + "allow-insecure-loopback", "false");
+        properties.put(PREFIX + "transport.enabled", "true");
+        properties.put(PREFIX + "transport.required", "true");
+        properties.put(PREFIX + "transport.trust-store-path",
+                material.trustStore().toString());
+        properties.put(PREFIX + "transport.trust-store-password-ref",
+                "test:publisher-trust");
+        properties.put(PREFIX + "transport.client-key-store-path",
+                material.clientKeyStore().toString());
+        properties.put(PREFIX + "transport.client-key-store-password-ref",
+                "test:publisher-client");
+        properties.put(PREFIX + "transport.server-spki-pins",
+                PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                        material.serverCertificate()));
+        properties.put(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                        .DynamicInventoryProperties.PREFIX + ".transport.required", "true");
+        properties.put(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                        .ManagedTrustRootProperties.PREFIX + ".transport.required", "true");
+
+        var context = unrefreshedContext(properties, "staging");
+        context.registerBean(RecoveryFleetPublicationTransport.SecretResolver.class,
+                () -> reference -> RecoveryFleetPublicationTlsFixture.password());
+        try (context) {
+            context.refresh();
+
+            var publisher = context.getBean(
+                    HttpExternalSequenceAnchorBootstrapRootPublisher.class);
+            assertThat(publisher.transportDescriptor()).satisfies(descriptor -> {
+                assertThat(descriptor.systemTrustStore()).isFalse();
+                assertThat(descriptor.privateTrustStore()).isTrue();
+                assertThat(descriptor.serverSpkiPinned()).isTrue();
+                assertThat(descriptor.mutualTls()).isTrue();
+            });
+            assertThat(context.getBean(
+                    ExternalSequenceAnchorBootstrapRootPublicationHealth.class)
+                    .health().getDetails())
+                    .containsEntry("transportServerSpkiPinned", true)
+                    .containsEntry("transportMutualTls", true);
+        }
+    }
+
+    @Test
+    void stagingRejectsPublisherClientIdentityReuseBeforeDatabaseOrSecretResolution()
+            throws Exception {
+        Path sharedIdentity = Files.createFile(
+                temporaryDirectory.resolve("shared-client-identity.p12"));
+        Map<String, Object> properties = enabledProperties();
+        properties.put(PREFIX + "endpoint", "https://publisher.example/publications");
+        properties.put(PREFIX + "allow-insecure-loopback", "false");
+        configureTransport(properties, PREFIX + "transport.", sharedIdentity,
+                "env:SHARED_CLIENT_IDENTITY");
+        configureTransport(properties,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                        .DynamicInventoryProperties.PREFIX + ".transport.",
+                sharedIdentity, "env:SHARED_CLIENT_IDENTITY");
+        properties.put(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                        .DynamicInventoryProperties.PREFIX + ".enabled", "true");
+        TestRuntimeDatabase database = mock(TestRuntimeDatabase.class);
+
+        var context = unrefreshedContext(properties, database, "staging");
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Bootstrap-root publication runtime configuration is invalid")
+                    .hasMessageNotContaining("SHARED_CLIENT_IDENTITY");
+            verify(database, never()).jdbc();
+        } finally {
+            context.close();
         }
     }
 
@@ -174,6 +286,13 @@ class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest {
 
     private static AnnotationConfigApplicationContext unrefreshedContext(
             Map<String, Object> overrides, String... profiles) {
+        return unrefreshedContext(overrides, null, profiles);
+    }
+
+    private static AnnotationConfigApplicationContext unrefreshedContext(
+            Map<String, Object> overrides,
+            TestRuntimeDatabase suppliedDatabase,
+            String... profiles) {
         var context = new AnnotationConfigApplicationContext();
         context.getEnvironment().setActiveProfiles(profiles);
         Map<String, Object> properties = new LinkedHashMap<>(overrides);
@@ -181,11 +300,15 @@ class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest {
                 new MapPropertySource("bootstrap-root-publication", properties));
         context.registerBean(ObjectMapper.class,
                 () -> new ObjectMapper().findAndRegisterModules());
-        context.registerBean(TestRuntimeDatabase.class,
-                () -> new TestRuntimeDatabase(new TestRuntimeDatabase.Settings(
-                        "jdbc:h2:mem:bootstrap-root-publication-" + UUID.randomUUID()
-                                + ";DB_CLOSE_DELAY=-1", "sa", "", 2)),
-                definition -> definition.setDestroyMethodName("close"));
+        if (suppliedDatabase == null) {
+            context.registerBean(TestRuntimeDatabase.class,
+                    () -> new TestRuntimeDatabase(new TestRuntimeDatabase.Settings(
+                            "jdbc:h2:mem:bootstrap-root-publication-" + UUID.randomUUID()
+                                    + ";DB_CLOSE_DELAY=-1", "sa", "", 2)),
+                    definition -> definition.setDestroyMethodName("close"));
+        } else {
+            context.registerBean(TestRuntimeDatabase.class, () -> suppliedDatabase);
+        }
         context.register(
                 ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration.class);
         return context;
@@ -210,6 +333,18 @@ class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest {
         properties.put(PREFIX + "allow-insecure-loopback", "true");
         properties.put(PREFIX + "initial-delay-millis", "300000");
         return properties;
+    }
+
+    private static void configureTransport(
+            Map<String, Object> properties,
+            String prefix,
+            Path clientIdentity,
+            String secretReference) {
+        properties.put(prefix + "enabled", "true");
+        properties.put(prefix + "required", "true");
+        properties.put(prefix + "client-key-store-path", clientIdentity.toString());
+        properties.put(prefix + "client-key-store-password-ref", secretReference);
+        properties.put(prefix + "server-spki-pins", "sha256:" + "a".repeat(64));
     }
 
     private static void assertRuntimeAbsent(AnnotationConfigApplicationContext context) {

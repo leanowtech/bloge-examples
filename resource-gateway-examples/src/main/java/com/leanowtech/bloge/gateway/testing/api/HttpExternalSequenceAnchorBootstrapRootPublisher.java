@@ -72,6 +72,7 @@ public final class HttpExternalSequenceAnchorBootstrapRootPublisher
     private final URI endpoint;
     private final Settings settings;
     private final HttpClient httpClient;
+    private final ControlPlaneHttpTransport.Descriptor transportDescriptor;
 
     private volatile RuntimeState state = RuntimeState.initial();
 
@@ -99,13 +100,47 @@ public final class HttpExternalSequenceAnchorBootstrapRootPublisher
             Instant keyExpiresAt,
             URI endpoint,
             Settings settings) {
+        return fromBase64(objectMapper, trustDomain, publisherId, keyId,
+                publicKeyBase64, keyNotBefore, keyExpiresAt, endpoint, settings,
+                new SystemTrustRecoveryFleetPublicationTransport());
+    }
+
+    /**
+     * Creates a strict publisher using one frozen authenticated control-plane transport.
+     *
+     * @param objectMapper canonical JSON baseline
+     * @param trustDomain expected response-signing trust domain
+     * @param publisherId exact logical publisher identity
+     * @param keyId exact response-signing key identity
+     * @param publicKeyBase64 X.509-encoded Ed25519 public key
+     * @param keyNotBefore inclusive response-signing activation instant
+     * @param keyExpiresAt exclusive response-signing expiry instant
+     * @param endpoint exact remote publication endpoint
+     * @param settings bounded HTTP and signed-response freshness policy
+     * @param transport frozen PKIX, server-pinning, and client-identity policy
+     * @return configured strict publisher adapter
+     */
+    public static HttpExternalSequenceAnchorBootstrapRootPublisher fromBase64(
+            ObjectMapper objectMapper,
+            String trustDomain,
+            String publisherId,
+            String keyId,
+            String publicKeyBase64,
+            Instant keyNotBefore,
+            Instant keyExpiresAt,
+            URI endpoint,
+            Settings settings,
+            ControlPlaneHttpTransport transport) {
         try {
             byte[] encoded = Base64.getDecoder().decode(normalized(publicKeyBase64));
             PublicKey key = KeyFactory.getInstance("Ed25519").generatePublic(
                     new X509EncodedKeySpec(encoded));
+            ControlPlaneHttpTransport required = Objects.requireNonNull(
+                    transport, "transport");
             return new HttpExternalSequenceAnchorBootstrapRootPublisher(
                     objectMapper, Clock.systemUTC(), trustDomain, publisherId, keyId,
-                    key, keyNotBefore, keyExpiresAt, endpoint, settings, null);
+                    key, keyNotBefore, keyExpiresAt, endpoint, settings,
+                    required.client(settings.requestTimeout()), required.descriptor());
         } catch (RuntimeException invalid) {
             throw invalid;
         } catch (Exception invalid) {
@@ -127,6 +162,24 @@ public final class HttpExternalSequenceAnchorBootstrapRootPublisher
             URI endpoint,
             Settings settings,
             HttpClient httpClient) {
+        this(objectMapper, clock, trustDomain, publisherId, keyId, publicKey,
+                keyNotBefore, keyExpiresAt, endpoint, settings, httpClient,
+                new SystemTrustRecoveryFleetPublicationTransport().descriptor());
+    }
+
+    private HttpExternalSequenceAnchorBootstrapRootPublisher(
+            ObjectMapper objectMapper,
+            Clock clock,
+            String trustDomain,
+            String publisherId,
+            String keyId,
+            PublicKey publicKey,
+            Instant keyNotBefore,
+            Instant keyExpiresAt,
+            URI endpoint,
+            Settings settings,
+            HttpClient httpClient,
+            ControlPlaneHttpTransport.Descriptor transportDescriptor) {
         this.objectMapper = strict(Objects.requireNonNull(objectMapper, "objectMapper"));
         this.clock = Objects.requireNonNull(clock, "clock");
         this.trustDomain = identifier(trustDomain, "trustDomain");
@@ -145,6 +198,8 @@ public final class HttpExternalSequenceAnchorBootstrapRootPublisher
                 .connectTimeout(settings.requestTimeout())
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build() : httpClient;
+        this.transportDescriptor = Objects.requireNonNull(
+                transportDescriptor, "transportDescriptor");
     }
 
     /**
@@ -240,6 +295,12 @@ public final class HttpExternalSequenceAnchorBootstrapRootPublisher
     public Descriptor descriptor() {
         return new Descriptor(Descriptor.SCHEMA_VERSION, keyUsableAt(clock.instant()),
                 true, true, true, true, true, MAXIMUM_REQUEST_BYTES);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public ControlPlaneHttpTransport.Descriptor transportDescriptor() {
+        return transportDescriptor;
     }
 
     /** Returns aggregate local adapter outcomes without remote identities. */

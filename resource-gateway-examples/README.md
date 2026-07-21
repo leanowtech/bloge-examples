@@ -449,10 +449,21 @@ can now run one publication lane in `test` or `staging`; it is physically absent
 `RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENABLED=true`. Enabling it requires scope, root-set, worker,
 endpoint, publisher/trust identity, static Ed25519 response key and whole-second key lifecycle
 values under the matching `RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_*` variables in the two profile YAML
-files. Unknown fields, partial identity, unsafe timeout/lease margins or invalid retry/scheduler
-policy fail startup. The default lane uses the isolated test-runtime database journal/outbox and
-exports aggregate-only Actuator health; deployments may supply an equivalent durable outbox or
-publisher bean. Close the caller-owned publisher after the service.
+files. Staging additionally requires `TRANSPORT_ENABLED=true`, `TRANSPORT_REQUIRED=true`, one
+dedicated PKCS#12 client identity, one to sixteen server SPKI pins, and either JVM PKIX roots or an
+explicit PKCS#12 trust store. Keystore passwords are opaque references resolved only while the
+immutable TLS context is built; the demo resolver accepts `env:VARIABLE`, while embedders may
+provide exactly one vault/workload-identity resolver. PKIX, hostname verification, SPKI pinning and
+mTLS must all succeed. The test profile retains the historical system-trust adapter only as an
+explicit migration path. Unknown fields, partial transport identity, insecure staging loopback,
+unsafe timeout/lease margins, or reuse of the inventory/managed-root client identity fail before
+credential resolution, journal DDL, or protocol-adapter assembly. Aggregate Actuator health and the
+v2 service snapshot report only system/private trust, pinning and mTLS booleans, never paths,
+references, pins or certificate identities. The v1 Java snapshot constructor remains as an explicit
+system-trust compatibility projection. The default lane uses the
+isolated test-runtime database journal/outbox; deployments may supply an equivalent durable outbox
+or publisher bean. Close the caller-owned publisher after the service. See the
+[publisher transport verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-publisher-transport-verification.md).
 
 The same single-root journal can run unattended ceremony recovery by also setting
 `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_ENABLED=true`. Recovery requires publication to remain enabled,
@@ -588,7 +599,8 @@ non-equivocation claims; v3 adds separate aggregate transport-authentication fac
 managed-root sources. Its probe reads only startup-frozen bean
 candidates and fresh process-local snapshots; it does not perform bootstrap I/O. Online partition
 rebalance, external fleet-wide alert/convergence wiring, production-profile wiring, pinned mTLS for
-notary/trust/bootstrap-root endpoints, response-key hot rotation, publisher/notary HA and gossip
+managed notary-trust and bootstrap-root consumer endpoints, response-key hot rotation,
+publisher/notary HA and gossip
 certification, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
 bundle, and publication HTTP Schemas, failure matrix, runtime wiring, and remaining ceremony limits

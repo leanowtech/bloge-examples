@@ -128,6 +128,15 @@ Environment:
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_TIMEOUT_MS  default: 3000; 100..30000
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_UNKNOWN_KEY_REFRESH_SECONDS  default: 5; 1..3600
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_MAXIMUM_AGE_SECONDS  default: 60; 2..86400
+  RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENABLED  optional; enables durable root-chain publication
+  RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENDPOINT  required strict HTTPS publisher endpoint
+  RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_ENABLED  required true for staging publication
+  RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_REQUIRED  required true for staging publication
+  RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_TRUST_STORE_PATH  optional absolute PKCS#12 private roots
+  RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_TRUST_STORE_PASSWORD_REF  required env:VARIABLE with private roots
+  RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_CLIENT_KEY_STORE_PATH  required dedicated PKCS#12 client identity
+  RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF  required env:VARIABLE reference
+  RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_SERVER_SPKI_PINS  required canonical sha256 pins
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED  optional; enables durable recovery fleet
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED  required true for staging fleet
   RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_PUBLICATION_URI  required HTTPS inventory source
@@ -358,7 +367,7 @@ validate_managed_external_anchor_trust() {
     fi
 }
 
-validate_recovery_fleet_transport() {
+validate_control_plane_transport() {
     local prefix="$1"
     local label="$2"
     local enabled_var="${prefix}_ENABLED"
@@ -377,7 +386,7 @@ validate_recovery_fleet_transport() {
         [ -z "${!pins_var:-}" ] ||
         { [ -z "${!trust_path_var:-}" ] && [ -n "${!trust_ref_var:-}" ]; } ||
         { [ -n "${!trust_path_var:-}" ] && [ -z "${!trust_ref_var:-}" ]; }; then
-        echo "Recovery-fleet ${label} transport requires a client identity, pins, and a complete optional trust-store pair." >&2
+        echo "${label} transport requires a client identity, pins, and a complete optional trust-store pair." >&2
         return 1
     fi
     case "${!client_path_var}" in
@@ -477,6 +486,39 @@ validate_recovery_fleet_external_anchor() {
         return 1
     fi
     validate_managed_external_anchor_trust "${prefix}" "recovery-fleet"
+}
+
+validate_bootstrap_root_publisher_transport() {
+    if ! truthy "${RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENABLED:-false}"; then
+        return 0
+    fi
+    case "${RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENDPOINT:-}" in
+        https://*) ;;
+        *) echo "Staging bootstrap-root publisher must use HTTPS." >&2; return 1 ;;
+    esac
+    if truthy "${RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ALLOW_INSECURE_LOOPBACK:-false}"; then
+        echo "Staging bootstrap-root publisher forbids insecure loopback." >&2
+        return 1
+    fi
+    validate_control_plane_transport \
+        "RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT" \
+        "bootstrap-root publisher" || return 1
+
+    if truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED:-false}"; then
+        local publisher_path="${RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_CLIENT_KEY_STORE_PATH}"
+        local publisher_ref="${RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF}"
+        local inventory_path="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_CLIENT_KEY_STORE_PATH:-}"
+        local inventory_ref="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF:-}"
+        local root_path="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_CLIENT_KEY_STORE_PATH:-}"
+        local root_ref="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT_CLIENT_KEY_STORE_PASSWORD_REF:-}"
+        if { [ "${publisher_path}" = "${inventory_path}" ] &&
+            [ "${publisher_ref}" = "${inventory_ref}" ]; } ||
+            { [ "${publisher_path}" = "${root_path}" ] &&
+            [ "${publisher_ref}" = "${root_ref}" ]; }; then
+            echo "Bootstrap-root publisher requires a client identity independent from recovery-fleet sources." >&2
+            return 1
+        fi
+    fi
 }
 
 validate_test_secret_external_anchor() {
@@ -600,10 +642,10 @@ validate_recovery_fleet_managed_roots() {
         echo "Staging recovery fleet requires dynamic witnessed inventory and managed dual trust roots." >&2
         return 1
     fi
-    validate_recovery_fleet_transport \
+    validate_control_plane_transport \
         "RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT" \
         "inventory source" || return 1
-    validate_recovery_fleet_transport \
+    validate_control_plane_transport \
         "RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TRANSPORT" \
         "trust-root source" || return 1
     local inventory_client_path="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRANSPORT_CLIENT_KEY_STORE_PATH}"
@@ -745,6 +787,7 @@ validate_profile_secrets() {
         return 1
     fi
     validate_test_secret_external_anchor
+    validate_bootstrap_root_publisher_transport
     validate_recovery_fleet_managed_roots
     case "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE}" in
         LEGACY_READ_WRITE|DUAL_READ_KEYED_WRITE|KEYED_ONLY) ;;

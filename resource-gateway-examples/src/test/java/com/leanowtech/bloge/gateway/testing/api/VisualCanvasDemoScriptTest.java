@@ -196,6 +196,30 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void stagingBootstrapRootPublisherRejectsTransportDowngradeBeforeBuild()
+            throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().putAll(stagingBase());
+        builder.environment().putAll(Map.of(
+                "RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENABLED", "true",
+                "RG_TEST_BOOTSTRAP_ROOT_PUBLICATION_ENDPOINT",
+                "https://publisher.example/publications"));
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Staging recovery-fleet bootstrap-root publisher requires pinned mutual TLS.");
+        assertThat(output).doesNotContain("Building Resource Gateway",
+                "Starting visual canvas");
+    }
+
+    @Test
     void stagingRecoveryFleetRejectsPublicationTransportDowngradeBeforeBuild()
             throws Exception {
         ProcessBuilder builder = new ProcessBuilder(

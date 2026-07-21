@@ -41,6 +41,20 @@ public interface ExternalSequenceAnchorBootstrapRootPublisher extends AutoClosea
     Descriptor descriptor();
 
     /**
+     * Returns the server and client authentication posture used by this publisher.
+     *
+     * <p>The compatibility default reports JVM trust without pinning or client identity. Managed
+     * staging composition must override this with a pinned mutual-TLS descriptor.</p>
+     *
+     * @return payload-free transport authentication facts
+     */
+    default ControlPlaneHttpTransport.Descriptor transportDescriptor() {
+        return new ControlPlaneHttpTransport.Descriptor(
+                ControlPlaneHttpTransport.Descriptor.SCHEMA_VERSION,
+                true, false, false, false);
+    }
+
+    /**
      * Returns aggregate process-local outcomes without request or provider identities.
      *
      * @return immutable payload-free runtime projection

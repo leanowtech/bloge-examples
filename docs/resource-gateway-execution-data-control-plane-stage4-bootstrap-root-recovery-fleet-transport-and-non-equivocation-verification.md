@@ -190,8 +190,10 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 8. 尚未闭合
 
-1. external notary、notary trust publication 和 bootstrap-root bundle 尚未复用本增量的 pinned mTLS
-   port；目前仍是严格 HTTPS、内容签名和 challenge receipt，不应宣称 transport pinning 完整闭环。
+1. bootstrap-root publisher 写侧已复用同一 control-plane transport 并强制 staging pinned mTLS；
+   external notary、notary trust publication 和 bootstrap-root bundle 读侧仍未接入，因此仍不应宣称
+   transport pinning 完整闭环。写侧验证见
+   [publisher transport verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-publisher-transport-verification.md)。
 2. `env:` resolver 适合 demo，不是企业 secret manager；正式部署需提供 Vault/KMS/workload identity
    resolver，并证明 secret rotation、lease、审计和不可回显。
 3. client identity “独立”当前按配置引用判定；证书主体、SAN、EKU、issuer policy 与硬件 key custody

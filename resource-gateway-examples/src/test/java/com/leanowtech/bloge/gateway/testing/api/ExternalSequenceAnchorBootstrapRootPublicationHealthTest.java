@@ -71,6 +71,25 @@ class ExternalSequenceAnchorBootstrapRootPublicationHealthTest {
                 .doesNotContain("provider-sensitive-diagnostics");
     }
 
+    @SuppressWarnings("deprecation")
+    @Test
+    void v1JavaSnapshotConstructionUpgradesToExplicitSystemTrustTruth() {
+        var current = service(true, 0, 0, false);
+
+        var upgraded = new ExternalSequenceAnchorBootstrapRootPublicationService.Snapshot(
+                ExternalSequenceAnchorBootstrapRootPublicationService.Snapshot.SCHEMA_VERSION_V1,
+                current.closed(), current.descriptor(), current.publisher(),
+                current.supervisor());
+
+        assertThat(upgraded.schemaVersion()).isEqualTo(
+                ExternalSequenceAnchorBootstrapRootPublicationService.Snapshot.SCHEMA_VERSION);
+        assertThat(upgraded.transport()).satisfies(transport -> {
+            assertThat(transport.systemTrustStore()).isTrue();
+            assertThat(transport.serverSpkiPinned()).isFalse();
+            assertThat(transport.mutualTls()).isFalse();
+        });
+    }
+
     private static ExternalSequenceAnchorBootstrapRootPublicationHealth health(
             ExternalSequenceAnchorBootstrapRootPublicationService.Snapshot service,
             ExternalSequenceAnchorBootstrapRootPublicationScheduler.Snapshot scheduler) {
@@ -96,7 +115,11 @@ class ExternalSequenceAnchorBootstrapRootPublicationHealthTest {
                 activeCalls, lingeringCalls, closed);
         return new ExternalSequenceAnchorBootstrapRootPublicationService.Snapshot(
                 ExternalSequenceAnchorBootstrapRootPublicationService.Snapshot.SCHEMA_VERSION,
-                closed, descriptor, publisher, supervisor);
+                closed, descriptor,
+                new ControlPlaneHttpTransport.Descriptor(
+                        ControlPlaneHttpTransport.Descriptor.SCHEMA_VERSION,
+                        false, true, true, true),
+                publisher, supervisor);
     }
 
     private static ExternalSequenceAnchorBootstrapRootPublicationScheduler.Snapshot scheduler(

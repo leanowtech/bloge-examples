@@ -149,7 +149,8 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationService
      */
     public Snapshot snapshot() {
         return new Snapshot(Snapshot.SCHEMA_VERSION, closed.get(),
-                publisher.descriptor(), publisher.snapshot(), supervisor.snapshot());
+                publisher.descriptor(), publisher.transportDescriptor(),
+                publisher.snapshot(), supervisor.snapshot());
     }
 
     /**
@@ -317,6 +318,7 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationService
      * @param schemaVersion snapshot protocol generation
      * @param closed whether new work is rejected
      * @param descriptor publisher capability without identity
+     * @param transport publisher server/client authentication posture
      * @param publisher publisher aggregate runtime state
      * @param supervisor fixed-capacity local call state
      */
@@ -324,17 +326,46 @@ public final class ExternalSequenceAnchorBootstrapRootPublicationService
             String schemaVersion,
             boolean closed,
             ExternalSequenceAnchorBootstrapRootPublisher.Descriptor descriptor,
+            ControlPlaneHttpTransport.Descriptor transport,
             ExternalSequenceAnchorBootstrapRootPublisher.Snapshot publisher,
             ExternalSequenceAnchorBootstrapRootPublisherCallSupervisor.Snapshot supervisor) {
 
         /** Current publication service snapshot generation. */
-        public static final String SCHEMA_VERSION =
+        public static final String SCHEMA_VERSION_V1 =
                 "bloge.externalSequenceAnchorBootstrapRootPublicationServiceSnapshot.v1";
+
+        /** Current publication service snapshot generation with transport authentication truth. */
+        public static final String SCHEMA_VERSION =
+                "bloge.externalSequenceAnchorBootstrapRootPublicationServiceSnapshot.v2";
+
+        /**
+         * Preserves the v1 Java construction surface with explicit compatibility transport truth.
+         *
+         * @param schemaVersion v1 or current snapshot protocol generation
+         * @param closed whether new work is rejected
+         * @param descriptor publisher capability without identity
+         * @param publisher publisher aggregate runtime state
+         * @param supervisor fixed-capacity local call state
+         * @deprecated construct the v2 snapshot with an explicit transport descriptor
+         */
+        @Deprecated(since = "1.0", forRemoval = false)
+        public Snapshot(
+                String schemaVersion,
+                boolean closed,
+                ExternalSequenceAnchorBootstrapRootPublisher.Descriptor descriptor,
+                ExternalSequenceAnchorBootstrapRootPublisher.Snapshot publisher,
+                ExternalSequenceAnchorBootstrapRootPublisherCallSupervisor.Snapshot supervisor) {
+            this(SCHEMA_VERSION_V1.equals(schemaVersion) ? SCHEMA_VERSION : schemaVersion,
+                    closed, descriptor,
+                    new SystemTrustRecoveryFleetPublicationTransport().descriptor(),
+                    publisher, supervisor);
+        }
 
         /** Enforces complete aggregate-only child projections. */
         public Snapshot {
             schemaVersion = schemaVersion == null ? "" : schemaVersion.trim();
             descriptor = Objects.requireNonNull(descriptor, "descriptor");
+            transport = Objects.requireNonNull(transport, "transport");
             publisher = Objects.requireNonNull(publisher, "publisher");
             supervisor = Objects.requireNonNull(supervisor, "supervisor");
             if (!SCHEMA_VERSION.equals(schemaVersion)) {

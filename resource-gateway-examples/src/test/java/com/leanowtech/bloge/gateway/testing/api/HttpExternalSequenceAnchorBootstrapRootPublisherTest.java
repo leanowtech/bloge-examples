@@ -7,12 +7,14 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
@@ -20,8 +22,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +43,9 @@ class HttpExternalSequenceAnchorBootstrapRootPublisherTest {
     private final AtomicReference<String> idempotencyKey = new AtomicReference<>();
     private final AtomicReference<String> ifMatch = new AtomicReference<>();
     private final AtomicReference<String> requestProtocol = new AtomicReference<>();
+
+    @TempDir
+    private Path temporaryDirectory;
 
     private HttpServer server;
     private KeyPair keyPair;
@@ -192,6 +199,75 @@ class HttpExternalSequenceAnchorBootstrapRootPublisherTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void pinnedMutualTlsTransportPresentsClientIdentityAndRejectsWrongServerPin()
+            throws Exception {
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "publisher");
+        AtomicReference<String> peer = new AtomicReference<>();
+        try (var tls = RecoveryFleetPublicationTlsFixture.startPublication(material, peer)) {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+            var transport = transport(material,
+                    PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                            material.serverCertificate()));
+            var publisher = HttpExternalSequenceAnchorBootstrapRootPublisher.fromBase64(
+                    objectMapper, TRUST_DOMAIN, PUBLISHER_ID, KEY_ID,
+                    Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()),
+                    now.minusSeconds(60), now.plusSeconds(3600), tls.uri(),
+                    settings(false), transport);
+
+            assertThatThrownBy(() -> publisher.publish(request))
+                    .isInstanceOfSatisfying(
+                            ExternalSequenceAnchorBootstrapRootPublisher.PublisherException.class,
+                            failure -> assertThat(failure.reason()).isEqualTo(
+                                    ExternalSequenceAnchorBootstrapRootPublisher.FailureReason
+                                            .INVALID_RESPONSE));
+            assertThat(tls.requests()).isOne();
+            assertThat(peer.get()).contains("recovery-client-publisher");
+            assertThat(publisher.transportDescriptor()).satisfies(descriptor -> {
+                assertThat(descriptor.privateTrustStore()).isTrue();
+                assertThat(descriptor.serverSpkiPinned()).isTrue();
+                assertThat(descriptor.mutualTls()).isTrue();
+            });
+
+            var wrongPinPublisher = HttpExternalSequenceAnchorBootstrapRootPublisher.fromBase64(
+                    objectMapper, TRUST_DOMAIN, PUBLISHER_ID, KEY_ID,
+                    Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()),
+                    now.minusSeconds(60), now.plusSeconds(3600), tls.uri(),
+                    settings(false), transport(material, "sha256:" + "0".repeat(64)));
+            assertThatThrownBy(() -> wrongPinPublisher.publish(request))
+                    .isInstanceOfSatisfying(
+                            ExternalSequenceAnchorBootstrapRootPublisher.PublisherException.class,
+                            failure -> assertThat(failure.reason()).isEqualTo(
+                                    ExternalSequenceAnchorBootstrapRootPublisher.FailureReason
+                                            .UNAVAILABLE));
+            assertThat(tls.requests()).isOne();
+        }
+    }
+
+    @Test
+    void systemTrustTransportCannotReachMutualTlsPublisher() throws Exception {
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "anonymous-publisher");
+        AtomicReference<String> peer = new AtomicReference<>();
+        try (var tls = RecoveryFleetPublicationTlsFixture.startPublication(material, peer)) {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+            var publisher = HttpExternalSequenceAnchorBootstrapRootPublisher.fromBase64(
+                    objectMapper, TRUST_DOMAIN, PUBLISHER_ID, KEY_ID,
+                    Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()),
+                    now.minusSeconds(60), now.plusSeconds(3600), tls.uri(), settings(false));
+
+            assertThatThrownBy(() -> publisher.publish(request))
+                    .isInstanceOfSatisfying(
+                            ExternalSequenceAnchorBootstrapRootPublisher.PublisherException.class,
+                            failure -> assertThat(failure.reason()).isEqualTo(
+                                    ExternalSequenceAnchorBootstrapRootPublisher.FailureReason
+                                            .UNAVAILABLE));
+            assertThat(tls.requests()).isZero();
+            assertThat(peer.get()).isNull();
+        }
+    }
+
     private HttpExternalSequenceAnchorBootstrapRootPublisher publisher() {
         return new HttpExternalSequenceAnchorBootstrapRootPublisher(
                 objectMapper, Clock.fixed(NOW, ZoneOffset.UTC), TRUST_DOMAIN,
@@ -326,6 +402,16 @@ class HttpExternalSequenceAnchorBootstrapRootPublisherTest {
         return new HttpExternalSequenceAnchorBootstrapRootPublisher.Settings(
                 Duration.ofSeconds(1), Duration.ofSeconds(1),
                 Duration.ofSeconds(30), loopback);
+    }
+
+    private static RecoveryFleetPublicationTransport transport(
+            RecoveryFleetPublicationTlsFixture.Material material,
+            String pin) {
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                new PinnedMutualTlsRecoveryFleetPublicationTransport.Settings(
+                        material.trustStore(), "test:trust-password",
+                        material.clientKeyStore(), "test:client-password", Set.of(pin)),
+                reference -> RecoveryFleetPublicationTlsFixture.password());
     }
 
     private enum Mode {

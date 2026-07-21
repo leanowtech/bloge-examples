@@ -3,10 +3,12 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.actuate.health.Status;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 
+import java.nio.file.Path;
 import java.security.KeyPairGenerator;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -29,6 +31,9 @@ class ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfigurationTest {
                     .PREFIX + ".";
     private static final String CEREMONY_POLICY = "sha256:" + "a".repeat(64);
     private static final String GENESIS_POLICY = "sha256:" + "b".repeat(64);
+
+    @TempDir
+    private Path temporaryDirectory;
 
     @Test
     void disabledRecoveryInstallsNoRecoveryBeansWhilePublicationRemainsUsable()
@@ -153,9 +158,29 @@ class ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfigurationTest {
 
     @Test
     void stagingRejectsANonByzantineGenesisBeforeStartingTheLane() throws Exception {
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "recovery-staging-publisher");
         Map<String, Object> properties = enabledProperties();
         properties.put(RECOVERY_PREFIX + "genesis-json", genesisJson(1, 0, 1));
+        properties.put(PUBLICATION_PREFIX + "endpoint",
+                "https://publisher.example/publications");
+        properties.put(PUBLICATION_PREFIX + "allow-insecure-loopback", "false");
+        properties.put(PUBLICATION_PREFIX + "transport.enabled", "true");
+        properties.put(PUBLICATION_PREFIX + "transport.required", "true");
+        properties.put(PUBLICATION_PREFIX + "transport.trust-store-path",
+                material.trustStore().toString());
+        properties.put(PUBLICATION_PREFIX + "transport.trust-store-password-ref",
+                "test:recovery-staging-publisher-trust");
+        properties.put(PUBLICATION_PREFIX + "transport.client-key-store-path",
+                material.clientKeyStore().toString());
+        properties.put(PUBLICATION_PREFIX + "transport.client-key-store-password-ref",
+                "test:recovery-staging-publisher-client");
+        properties.put(PUBLICATION_PREFIX + "transport.server-spki-pins",
+                PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                        material.serverCertificate()));
         var context = unrefreshedContext(properties, true, "staging");
+        context.registerBean(RecoveryFleetPublicationTransport.SecretResolver.class,
+                () -> reference -> RecoveryFleetPublicationTlsFixture.password());
         try {
             assertThatThrownBy(context::refresh)
                     .rootCause()

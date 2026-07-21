@@ -1,5 +1,10 @@
 # Stage 4 external-anchor bootstrap-root ceremony durable workflow verification
 
+> 当前状态校正（2026-07-21）：bootstrap-root publisher 写侧现已接入 PKIX、hostname verification、
+> SPKI pinning 和 mTLS，staging 会在 journal/protocol adapter 接线前拒绝 transport downgrade；下文
+> “未包含 publisher mTLS”保留为对应历史子步的交付边界。实现与真实 TLS 反例见
+> [publisher transport verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-publisher-transport-verification.md)。
+
 ## 1. 本步边界
 
 本步建立 external sequence-anchor bootstrap-root 的 ceremony 协议、完整链重放验证内核、专用
@@ -275,7 +280,7 @@ content-addressed idempotency/predecessor conditional、短时签名响应、固
 fence service、单 lane scheduler 和 durable `QUARANTINED`。本子步与既有 ceremony 组联合聚焦门禁执行
 85 tests，0 failures、0 errors、0 skips；完整 Resource Gateway `clean verify` 执行 3314 tests，
 0 failures、0 errors、2 skips，Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功
-重打包 Spring Boot 可执行 JAR。边界明确不包含 publisher mTLS/client identity、certificate pinning、
+重打包 Spring Boot 可执行 JAR。该历史子步边界当时不包含 publisher mTLS/client identity、certificate pinning、
 response-key 热轮换、跨 root-set worker platform 或 publisher HA/anti-equivocation。
 
 单 root-set Spring publication composition 子步把同组聚焦门禁扩展到 98 tests，0 failures、0 errors、
@@ -513,9 +518,9 @@ mvn -f resource-gateway-examples/pom.xml \
   jitter、多 lane Spring/capability 产品接线、policy 维护迁移、
   外部 SLO/告警和目标数据库多副本认证仍未完成；publication 仍无跨 root-set fleet。当前能力不能被描述为
   部署级 worker platform；
-- publisher mTLS/client identity、certificate pinning、静态 response key 热轮换、跨 root-set fleet SLO；
-  当前 adapter 依赖 JVM HTTPS server trust 并额外验证 Ed25519 响应，
-  不等于双向 TLS 或证书 pinning；
+- publisher mTLS/client identity 与 certificate pinning 已在后续增量闭合；静态 response key 热轮换、
+  certificate issuer/SAN workload policy、跨 root-set fleet SLO 仍未完成。当前 staging adapter 已要求
+  PKIX + hostname + SPKI pin + mTLS，但这不等于 HSM custody 或 publisher HA；
 - publisher 侧 exact-idempotency conformance 认证、受治理 quarantine repair/abandon、跨区域 HA、独立
   consistency witness、anti-equivocation、journal/outbox retention 与 legal hold；
 - transaction-bound security audit、外部 WORM/evidence；当前 whole-record SHA-256 用于发现偶发腐化，

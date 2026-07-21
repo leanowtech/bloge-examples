@@ -3,19 +3,26 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyJournal.RecoveryPolicy;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationPolicy;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration.DynamicInventoryProperties;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration.ManagedTrustRootProperties;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -27,9 +34,10 @@ import java.util.Objects;
  * supervisor, and one fixed-delay scheduler. Spring dependency destruction then closes scheduler,
  * service, publisher, and database in that order.</p>
  *
- * <p>This is deliberately a single-root-set composition. It does not claim cross-root discovery,
- * sharding, fleet fairness, mTLS client identity, certificate pinning, response-key hot rotation,
- * or publisher anti-equivocation.</p>
+ * <p>This is deliberately a single-root-set composition. Staging requires PKIX, hostname
+ * verification, SPKI pinning, and a dedicated mutual-TLS client identity before journal creation.
+ * It does not claim cross-root discovery, sharding, fleet fairness, response-key hot rotation, or
+ * publisher anti-equivocation.</p>
  */
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
@@ -41,6 +49,30 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
     public ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration() {
     }
 
+    /**
+     * Freezes transport credentials and staging downgrade policy before any publication journal,
+     * worker, or network protocol adapter can be created.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = Properties.PREFIX, name = "enabled",
+            havingValue = "true")
+    ValidatedPublicationTransport externalSequenceAnchorBootstrapRootPublicationTransport(
+            Properties properties,
+            Environment environment,
+            ObjectProvider<ControlPlaneHttpTransport.SecretResolver> secretResolvers) {
+        boolean staging = Objects.requireNonNull(environment, "environment")
+                .acceptsProfiles(Profiles.of("staging"));
+        if (staging && (!properties.transport().enabled()
+                || !properties.transport().required()
+                || properties.allowInsecureLoopback())) {
+            throw Properties.invalid();
+        }
+        requireIndependentClientIdentity(environment, properties.transport());
+        ControlPlaneHttpTransport.SecretResolver secretResolver =
+                secretResolver(secretResolvers, properties.transport().enabled());
+        return new ValidatedPublicationTransport(properties.transport().create(secretResolver));
+    }
+
     /** Creates the default database authority unless an embedder supplies a durable outbox. */
     @Bean
     @ConditionalOnProperty(prefix = Properties.PREFIX, name = "enabled",
@@ -50,7 +82,9 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
             externalSequenceAnchorBootstrapRootPublicationJournal(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
-            Properties properties) {
+            Properties properties,
+            ValidatedPublicationTransport validatedTransport) {
+        Objects.requireNonNull(validatedTransport, "validatedTransport");
         return new DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal(
                 database.jdbc(), objectMapper, properties.scopeId(), properties.rootSetId(),
                 database.transactionManager(), properties.recoveryPolicy(),
@@ -65,13 +99,14 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
     HttpExternalSequenceAnchorBootstrapRootPublisher
             externalSequenceAnchorBootstrapRootPublisher(
             ObjectMapper objectMapper,
-            Properties properties) {
+            Properties properties,
+            ValidatedPublicationTransport validatedTransport) {
         return HttpExternalSequenceAnchorBootstrapRootPublisher.fromBase64(
                 objectMapper, properties.trustDomain(), properties.publisherId(),
                 properties.responseKeyId(), properties.responsePublicKeyBase64(),
                 properties.responseKeyNotBeforeInstant(),
                 properties.responseKeyExpiresAtInstant(), properties.endpointUri(),
-                properties.publisherSettings());
+                properties.publisherSettings(), validatedTransport.transport());
     }
 
     /** Creates the database-fenced consumer and its fixed-capacity call boundary. */
@@ -128,6 +163,7 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
      * @param responsePublicKeyBase64 X.509-encoded Ed25519 verification key
      * @param responseKeyNotBefore inclusive key activation instant
      * @param responseKeyExpiresAt exclusive key expiry instant
+     * @param transport endpoint authentication and publisher client-identity policy
      * @param requestTimeoutMillis complete HTTP request timeout
      * @param clockSkewSeconds accepted publisher clock lead
      * @param maximumResponseLifetimeSeconds maximum signed-response lifetime
@@ -158,6 +194,8 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
             String responsePublicKeyBase64,
             String responseKeyNotBefore,
             String responseKeyExpiresAt,
+            @NestedConfigurationProperty
+            RecoveryFleetPublicationTransportProperties transport,
             Long requestTimeoutMillis,
             Long clockSkewSeconds,
             Long maximumResponseLifetimeSeconds,
@@ -192,6 +230,8 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
             responsePublicKeyBase64 = normalized(responsePublicKeyBase64);
             responseKeyNotBefore = normalized(responseKeyNotBefore);
             responseKeyExpiresAt = normalized(responseKeyExpiresAt);
+            transport = transport == null
+                    ? RecoveryFleetPublicationTransportProperties.disabled() : transport;
             requestTimeoutMillis = defaulted(requestTimeoutMillis, 3_000L);
             clockSkewSeconds = defaulted(clockSkewSeconds, 5L);
             maximumResponseLifetimeSeconds = defaulted(
@@ -241,6 +281,11 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
                 parseUri(endpoint);
                 parseInstant(responseKeyNotBefore);
                 parseInstant(responseKeyExpiresAt);
+                if (transport.enabled() && allowInsecureLoopback) {
+                    throw invalid();
+                }
+            } else if (transport.configured()) {
+                throw invalid();
             }
         }
 
@@ -332,6 +377,67 @@ public class ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfiguration 
         private static IllegalArgumentException invalid() {
             return new IllegalArgumentException(
                     "Bootstrap-root publication runtime configuration is invalid");
+        }
+    }
+
+    private static void requireIndependentClientIdentity(
+            Environment environment,
+            RecoveryFleetPublicationTransportProperties publisher) {
+        List<String> independentSources = List.of(
+                DynamicInventoryProperties.PREFIX + ".transport",
+                ManagedTrustRootProperties.PREFIX + ".transport");
+        for (String prefix : independentSources) {
+            if (publisher.sharesClientIdentityWith(transport(environment, prefix))) {
+                throw Properties.invalid();
+            }
+        }
+    }
+
+    private static RecoveryFleetPublicationTransportProperties transport(
+            Environment environment,
+            String prefix) {
+        String ownerPrefix = prefix.endsWith(".transport")
+                ? prefix.substring(0, prefix.length() - ".transport".length()) : prefix;
+        if (!environment.getProperty(ownerPrefix + ".enabled", Boolean.class, false)) {
+            return RecoveryFleetPublicationTransportProperties.disabled();
+        }
+        return new RecoveryFleetPublicationTransportProperties(
+                environment.getProperty(prefix + ".enabled", Boolean.class, false),
+                environment.getProperty(prefix + ".required", Boolean.class, false),
+                environment.getProperty(prefix + ".trust-store-path", ""),
+                environment.getProperty(prefix + ".trust-store-password-ref", ""),
+                environment.getProperty(prefix + ".client-key-store-path", ""),
+                environment.getProperty(prefix + ".client-key-store-password-ref", ""),
+                environment.getProperty(prefix + ".server-spki-pins", ""));
+    }
+
+    private static ControlPlaneHttpTransport.SecretResolver secretResolver(
+            ObjectProvider<ControlPlaneHttpTransport.SecretResolver> providers,
+            boolean required) {
+        var configured = Objects.requireNonNull(providers, "providers")
+                .orderedStream().toList();
+        if (configured.size() > 1) {
+            throw Properties.invalid();
+        }
+        if (configured.size() == 1) {
+            return configured.getFirst();
+        }
+        if (!required) {
+            return reference -> {
+                throw new IllegalStateException(
+                        "Bootstrap-root publisher transport credential is unavailable");
+            };
+        }
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport
+                .EnvironmentSecretResolver();
+    }
+
+    /** Validated immutable transport token shared by journal and publisher construction. */
+    record ValidatedPublicationTransport(ControlPlaneHttpTransport transport) {
+
+        /** Rejects an absent transport after credential loading or profile preflight. */
+        ValidatedPublicationTransport {
+            transport = Objects.requireNonNull(transport, "transport");
         }
     }
 }
