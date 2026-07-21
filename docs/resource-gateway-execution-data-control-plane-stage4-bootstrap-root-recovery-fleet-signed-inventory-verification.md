@@ -206,6 +206,7 @@ browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JA
 - 在线 partition-count migration、rebalance、priority、weighted fairness；
 - PostgreSQL/MySQL、multi-region HA、DR/chaos/soak 和 production SLO 认证。
 
-下一增量必须复用本步 attestation/authority contract 实现 dynamic publication + durable floor，不能另建一套
-旁路清单语义。static green tests 只证明签名入口和运行时 fencing，不证明控制面失联、撤销或数据库回滚
-下仍可安全运行。
+后续 publication/floor kernel 已复用本步 attestation contract 冻结 witnessed `ACTIVE/REVOKED` 双链和数据库
+durable floor；尚待 bounded HTTPS/ETag dynamic authority 真正消费该协议。static green tests 只证明签名
+入口和运行时 fencing，不证明控制面失联或撤销已经传播。验证见
+[publication floor kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-publication-floor-kernel-verification.md)。

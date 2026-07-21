@@ -45,6 +45,8 @@ test/staging 单 root-set Spring publication/recovery composition/aggregate heal
 aggregate health、固定分区 durable cursor/sharding/cross-replica fairness 内核，以及绑定 deployment/
 artifact/fleet topology/完整 lane descriptor 的 M-of-N static signed inventory authority、hard expiry、runtime
 reverse binding、aggregate inventory health 与 test/staging durable fleet Spring composition 亦已闭合；
+recovery fleet 的 witnessed `ACTIVE/REVOKED` publication machine protocol、双前驱链与数据库 durable
+publication floor kernel 亦已闭合；
 provider-confirmed cancellation/process isolation、signed dynamic inventory publication/revocation/floor、
 动态 rebalance、dynamic authority 自动装配/capability/production
 产品接线、publisher
@@ -1059,6 +1061,25 @@ sanitized failure 和 signed authority preflight。fleet 与既有 single-lane c
 multi-lane composition，不宣称 dynamic inventory discovery/publication、capability/HTTP、production profile、
 目标数据库/HA/DR/chaos 或外部 SLO 认证。验证见
 [bootstrap-root recovery fleet runtime composition verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-runtime-composition-verification.md)。
+
+Stage 4 该增量第十九子步先冻结 recovery fleet dynamic inventory 的治理状态机，根治“动态消费者尚未
+实现时，publication/floor 语义也可能随 transport 实现漂移”的协议根因。新增 strict
+`bloge.externalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication.v1`：nested exact inventory
+之外，deployment authority 签名 material 绑定 scope、fleet、sequence、inventory fingerprint、
+`ACTIVE/REVOKED`、policy、publication predecessor 与 hard validity；独立 witness 绑定相同
+scope/fleet/sequence、publication fingerprint、witness predecessor 与独立有效期。envelope 构造即拒绝
+scope/fleet/sequence/fingerprint cross-link，signature 按 authority/key canonical 且 authority 唯一。
+
+新增 durable
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor` 与 H2 database-clock 实现，
+以 `(deploymentScopeId, fleetId)` 锁线性化多副本，whole-record fingerprint 绑定双 head 与 observed time；
+只允许 sequence 1 建立、exact replay 或 exact `current+1` successor，rollback、same-sequence fork、gap、
+任一 predecessor mismatch、cross-scope/fleet 和腐化行全部 fail closed。机器 Schema 通过相对 `$ref` 复用
+既有 inventory schema。本子步 protocol 5 项、Schema 3 项、floor 7 项共 15 tests 全绿，三个公共类型通过
+严格 JavaDoc 门禁。它只闭合 protocol + durable floor kernel；bounded HTTPS/ETag refresh、M-of-N
+publication/witness runtime verification、atomic ACTIVE publication、signed revocation propagation、snapshot
+age fence 与 worker in-flight integration 仍由下一子步完成。验证见
+[bootstrap-root recovery fleet publication floor kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-publication-floor-kernel-verification.md)。
 
 第五十三增量第十八子步把 exact cohort 的 expected set 从 replica-local 配置提升为外部可验签事实。
 deployment governance 生成 strict `bloge.testSuiteStabilityServingInventory.v1`，以 canonical material 绑定

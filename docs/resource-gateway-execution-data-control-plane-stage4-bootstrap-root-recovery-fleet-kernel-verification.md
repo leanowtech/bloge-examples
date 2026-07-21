@@ -273,8 +273,8 @@ ownership。fleet 与既有 single-lane configuration 的联合门禁执行 95 t
 
 ## 10. 仍未宣称
 
-- signed dynamic inventory publication、witness、revocation、refresh convergence 与 durable generation floor
-  （static signed attestation 与 hard expiry 已闭合）；
+- dynamic HTTPS inventory refresh、revocation propagation 与 refresh convergence（static attestation、
+  witnessed publication protocol 和数据库 durable floor kernel 已闭合）；
 - enterprise IAM/PDP 对 lane membership、worker、resolver 和 runtime fingerprint 的授权；
 - 在线 partition-count 变更、自动 rebalance、priority、带权 fleet-wide fairness 与 rollout jitter；
 - dynamic inventory 自动装配、capability/HTTP 和 production profile（test/staging composition 已闭合）；

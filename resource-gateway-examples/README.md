@@ -517,6 +517,17 @@ generation around each lane and before durable cursor commit; expiry or generati
 cycle closed. The separate inventory health projection remains aggregate-only and honestly advertises
 that this static mode has no automatic refresh, signed revocation, or durable generation floor.
 
+Deployment governance can now publish that exact attestation inside a strict witnessed
+`ACTIVE`/`REVOKED` predecessor chain. The publication machine contract binds deployment scope,
+fleet, policy, sequence, inventory identity, state, validity, and both publication/witness
+predecessors. A
+`DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor` serializes
+verified heads by scope and fleet, survives process reconstruction, and rejects rollback,
+same-sequence forks, gaps, broken predecessors, corrupt rows, and cross-fleet reuse. This increment
+is the governance kernel only: the static authority does not yet fetch or consume remote
+publications, so runtime revocation still requires the dynamic authority described in the next
+stage.
+
 Embedders that share the test-runtime database can also construct a
 `DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator` and pass it, one stable
 `fleetId`, and one fixed partition count to every worker replica. The coordinator uses database-clock
@@ -540,6 +551,10 @@ remaining dynamic-control-plane gates are in the
 [recovery fleet signed inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-signed-inventory-verification.md).
 The import/export wire contract is the strict
 [fleet inventory JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-v1.schema.json).
+The witnessed publication wire contract is the strict
+[fleet inventory publication JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-publication-v1.schema.json),
+with kernel verification in the
+[publication floor verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-publication-floor-kernel-verification.md).
 The profile/configuration/lifecycle contract and H2 context-rebuild proof are in the
 [recovery fleet runtime composition verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-runtime-composition-verification.md).
 
