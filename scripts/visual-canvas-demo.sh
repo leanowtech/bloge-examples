@@ -128,6 +128,14 @@ Environment:
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_TIMEOUT_MS  default: 3000; 100..30000
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_UNKNOWN_KEY_REFRESH_SECONDS  default: 5; 1..3600
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_INVENTORY_TRUST_ROOTS_MAXIMUM_AGE_SECONDS  default: 60; 2..86400
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED  optional; enables durable recovery fleet
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED  required true for staging fleet
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_PUBLICATION_URI  required HTTPS inventory source
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOTS_ENABLED  required true for staging fleet
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_URI  required distinct HTTPS dual-root source
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_SET_ID  required stable root-set identity
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_ROOT_DOMAIN  required bootstrap domain
+  RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_ROOT_DOMAIN  required independent bootstrap domain
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_HEARTBEAT_SECONDS  default: 10; 1..300
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_LEASE_SECONDS      default: 30; 3..900 and >= 3x heartbeat
   RG_TEST_STABILITY_JOB_AUTHORITY_COHORT_RETENTION_SECONDS  default: 86400; 3600..2592000
@@ -436,6 +444,126 @@ validate_external_anchor_domain_isolation() {
     fi
 }
 
+validate_recovery_fleet_managed_roots() {
+    if ! truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED:-false}"; then
+        return 0
+    fi
+    if ! truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_REQUIRED:-true}" ||
+        ! truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOTS_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOTS_REQUIRED:-true}"; then
+        echo "Staging recovery fleet requires dynamic witnessed inventory and managed dual trust roots." >&2
+        return 1
+    fi
+    if [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ID:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_SCOPE_ID:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ARTIFACT_FINGERPRINT:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ACCEPTED_POLICY_FINGERPRINTS:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_PUBLICATION_URI:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_URI:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_SET_ID:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_POLICY_FINGERPRINTS:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_ROOT_DOMAIN:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_ROOT_THRESHOLD:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_ROOT_KEYS_JSON:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_ROOT_DOMAIN:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_ROOT_THRESHOLD:-}" ] ||
+        [ -z "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_ROOT_KEYS_JSON:-}" ]; then
+        echo "Managed recovery-fleet inventory requires exact fleet binding, two sources, policies, and independent bootstrap roots." >&2
+        return 1
+    fi
+    if [ "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ARTIFACT_FINGERPRINT}" !=
+        "${RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT}" ]; then
+        echo "Recovery-fleet inventory artifact must match the local Resource Gateway artifact." >&2
+        return 1
+    fi
+    if [ -n "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_DOMAIN:-}" ] ||
+        [ "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_SIGNATURE_THRESHOLD:-0}" != "0" ] ||
+        [ -n "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_DOMAIN:-}" ] ||
+        [ "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_SIGNATURE_THRESHOLD:-0}" != "0" ] ||
+        ! printf '%s' "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_AUTHORITY_KEYS_JSON:-[]}" |
+        grep -Eq '^\[[[:space:]]*\]$' ||
+        ! printf '%s' "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_AUTHORITY_KEYS_JSON:-[]}" |
+        grep -Eq '^\[[[:space:]]*\]$'; then
+        echo "Managed recovery-fleet trust roots forbid static runtime trust and keys." >&2
+        return 1
+    fi
+    case "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_PUBLICATION_URI}" in
+        https://*) ;;
+        *) echo "Recovery-fleet inventory source must use HTTPS." >&2; return 1 ;;
+    esac
+    case "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_URI}" in
+        https://*) ;;
+        *) echo "Recovery-fleet trust-root source must use HTTPS." >&2; return 1 ;;
+    esac
+    if [ "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_PUBLICATION_URI}" =
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_URI}" ] ||
+        truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ALLOW_INSECURE_LOOPBACK:-false}" ||
+        truthy "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_ALLOW_INSECURE_LOOPBACK:-false}"; then
+        echo "Staging recovery-fleet inventory and trust roots require distinct strict-HTTPS sources." >&2
+        return 1
+    fi
+    if printf '%s\n%s\n%s\n%s\n' \
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ID}" \
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_SCOPE_ID}" \
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_SET_ID}" \
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_ROOT_DOMAIN}" |
+        grep -Eqv '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        ! printf '%s' "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_ROOT_DOMAIN}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        [ "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_ROOT_DOMAIN}" =
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_ROOT_DOMAIN}" ]; then
+        echo "Recovery-fleet identities and bootstrap-root domains must be valid and independent." >&2
+        return 1
+    fi
+    if printf '%s\n%s\n' \
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ACCEPTED_POLICY_FINGERPRINTS}" \
+        "${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_POLICY_FINGERPRINTS}" |
+        grep -Eqv '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31}$'; then
+        echo "Recovery-fleet inventory and root policy fingerprints are invalid." >&2
+        return 1
+    fi
+    local deployment_threshold="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_ROOT_THRESHOLD}"
+    local witness_threshold="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_ROOT_THRESHOLD}"
+    if printf '%s\n%s\n' "${deployment_threshold}" "${witness_threshold}" |
+        grep -Eqv '^[1-9][0-9]*$' || [ "${deployment_threshold}" -gt 32 ] ||
+        [ "${witness_threshold}" -gt 32 ]; then
+        echo "Recovery-fleet bootstrap-root signature thresholds must be 1..32." >&2
+        return 1
+    fi
+    local deployment_keys="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_DEPLOYMENT_ROOT_KEYS_JSON}"
+    local witness_keys="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_WITNESS_ROOT_KEYS_JSON}"
+    if printf '%s\n%s\n' "${deployment_keys}" "${witness_keys}" |
+        grep -Eqv '^\[.+\]$' || printf '%s\n%s\n' "${deployment_keys}" "${witness_keys}" |
+        grep -Eiq '"(privateKey|privateKeyBase64|secret|credential)"[[:space:]]*:'; then
+        echo "Recovery-fleet bootstrap roots require non-empty public-only JSON key arrays." >&2
+        return 1
+    fi
+
+    local inventory_refresh="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_REFRESH_INTERVAL_SECONDS:-30}"
+    local inventory_timeout="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_REQUEST_TIMEOUT_MS:-3000}"
+    local inventory_age="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_MAXIMUM_SNAPSHOT_AGE_SECONDS:-60}"
+    local root_refresh="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_REFRESH_SECONDS:-30}"
+    local root_timeout="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_TIMEOUT_MS:-3000}"
+    local root_unknown="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_UNKNOWN_KEY_REFRESH_SECONDS:-5}"
+    local root_age="${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_TRUST_ROOT_MAXIMUM_AGE_SECONDS:-60}"
+    if printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+        "${inventory_refresh}" "${inventory_timeout}" "${inventory_age}" \
+        "${root_refresh}" "${root_timeout}" "${root_unknown}" "${root_age}" |
+        grep -Eqv '^[1-9][0-9]*$' ||
+        [ "${inventory_refresh}" -gt 3600 ] || [ "${inventory_timeout}" -lt 100 ] ||
+        [ "${inventory_timeout}" -gt 30000 ] || [ "${inventory_age}" -gt 86400 ] ||
+        [ $((inventory_age * 1000)) -lt $((inventory_refresh * 1000 + inventory_timeout)) ] ||
+        [ "${root_refresh}" -gt 3600 ] || [ "${root_timeout}" -lt 100 ] ||
+        [ "${root_timeout}" -gt 30000 ] || [ "${root_unknown}" -gt 3600 ] ||
+        [ "${root_age}" -gt 86400 ] ||
+        [ $((root_age * 1000)) -lt $((root_refresh * 1000 + root_timeout)) ]; then
+        echo "Recovery-fleet inventory and root refresh timing bounds are invalid." >&2
+        return 1
+    fi
+}
+
 validate_profile_secrets() {
     if [ "${SPRING_PROFILE}" != "staging" ]; then
         return 0
@@ -456,6 +584,7 @@ validate_profile_secrets() {
         return 1
     fi
     validate_test_secret_external_anchor
+    validate_recovery_fleet_managed_roots
     case "${RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE}" in
         LEGACY_READ_WRITE|DUAL_READ_KEYED_WRITE|KEYED_ONLY) ;;
         *)

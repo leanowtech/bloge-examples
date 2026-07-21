@@ -20,9 +20,10 @@
 
 > Stage 4 recovery-fleet trust-root 状态校正：日常 deployment/witness 运行密钥的原子双根
 > publication、双 bootstrap quorum verifier、数据库 durable generation floor、strict HTTPS/ETag
-> refresh、unknown-key single-flight、aggregate health 与 dynamic inventory consumer 已闭合；Spring
-> 配置、staging downgrade fence 与 capability 接线尚未闭合，因此当前只宣称 embedding API
-> 具备免重启轮换内核，不宣称产品路径已端到端开放。
+> refresh、unknown-key single-flight、aggregate health、dynamic inventory consumer、strict Spring
+> 配置、staging downgrade fence、capability v2、配置 Schema 与 metadata 已闭合，test/staging 产品路径
+> 已开放。默认 external/Byzantine root floor、mTLS/pinning、HSM/KMS、生产数据库/HA/DR/chaos 认证仍未
+> 闭合，因此不能把 test/staging 路径解读为 production readiness。
 
 本轮将 `bloge.fixtureExecutionServices.v1` 作为 `metadata.executionServices` 的严格保留子协议
 落地，在不改变既有 fixture v1 顶层形状的前提下，让调用方以有界 identity scalar map 和 flag
@@ -1221,6 +1222,29 @@ aggregate health 与 managed consumer embedding API；Spring 配置、staging do
 Schema、external Byzantine floor、mTLS/pinning、HSM/KMS、production/目标数据库/HA/DR/chaos 仍待后续
 子步，不能把内核能力解读为产品路径已经开放。最终独占 `clean verify` 执行 3547 tests，0 failures、
 0 errors、2 个条件浏览器跳过，并成功重打包 Spring Boot 可执行 JAR。
+
+Stage 4 该增量第二十六子步根治 managed trust-root 只停留在 embedding interface、staging 仍可静态
+降级且 capability 丢失根状态的问题。dynamic inventory 新增 strict nested `trust-roots` 配置；managed
+mode 强制静态 runtime domain/threshold/key 全空，inventory/root source 必须不同，所有 identity、policy、
+两组 bootstrap public authority、threshold、URI 与 timing 在 DDL/I/O 前冻结；signed root publication
+携带的两组 runtime authority 在 inventory bootstrap 前验证。Spring 分别装配 inventory/root durable
+floor、root authority、managed inventory consumer 与 aggregate health，依赖销毁顺序保证 consumer 先于
+root refresh 关闭；同一 H2 上完整 context rebuild 证明两层 floor 可精确 replay。
+
+staging 同时要求 dynamic inventory 与 managed roots 的 `required=true`，禁止 loopback HTTP 和混合模式；
+demo script 在 build 前复核同一部署契约，Spring 仍是最终门禁。recovery-fleet capability 没有篡改 v1，
+而是升级为 strict v2：新增 managed-root availability/status/sequence、atomic dual-root、root floor strength
+与 combined non-equivocation；supported-object catalog 只声明当前可返回的 v2，冻结的 v1 Schema 仅作为
+历史兼容证据。strict configuration Schema
+与两个 Spring property record 及编译生成的 metadata 逐字段锁定；57 项 real HTTP/Ed25519/H2/
+Schema/integration/script 聚焦门禁全绿；验证见
+[managed recovery-fleet trust-root Spring verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-managed-trust-root-spring-verification.md)。
+联合 recovery-fleet/profile/integration 门禁 270 tests 全绿，5 个本轮公共类型 strict JavaDoc 零告警；
+最终独占 `clean verify` 执行 3556 tests，0 failures、0 errors、2 个条件浏览器跳过并成功重打包可执行 JAR。
+一次先行全量运行暴露既有 ceremony auto-heartbeat 的 wall-clock 时序抖动，精确复跑与后续独占全量均通过；
+该测试仍作为可控时钟改造债务记录，不能被“重跑通过”抹去。
+该步仍不提供默认 external/Byzantine root floor、mTLS/pinning、publisher HA/anti-equivocation、HSM/KMS、
+跨副本 convergence alert、production/目标数据库/backup-restore/多区 DR/chaos 认证，不能据此宣称生产闭环。
 
 第五十三增量第十八子步把 exact cohort 的 expected set 从 replica-local 配置提升为外部可验签事实。
 deployment governance 生成 strict `bloge.testSuiteStabilityServingInventory.v1`，以 canonical material 绑定

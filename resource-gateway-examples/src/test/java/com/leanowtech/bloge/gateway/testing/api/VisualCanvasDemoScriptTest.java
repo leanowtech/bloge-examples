@@ -171,6 +171,25 @@ class VisualCanvasDemoScriptTest {
         assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
     }
 
+    @Test
+    void stagingRecoveryFleetRejectsManagedRootDowngradeBeforeBuild() throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().putAll(stagingBase());
+        builder.environment().put("RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED", "true");
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Staging recovery fleet requires dynamic witnessed inventory and managed dual trust roots.");
+        assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
+    }
+
     private static Map<String, String> stagingBase() {
         return Map.ofEntries(
                 Map.entry("BLOGE_VISUAL_CANVAS_PROFILE", "staging"),

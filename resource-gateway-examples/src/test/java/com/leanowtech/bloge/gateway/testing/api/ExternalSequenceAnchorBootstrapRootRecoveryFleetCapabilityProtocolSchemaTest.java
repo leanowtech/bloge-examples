@@ -54,7 +54,7 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
         String source = Files.readString(schemaPath());
         JsonNode schema = objectMapper.readTree(source);
 
-        assertThat(schema.path("allOf")).hasSize(10);
+        assertThat(schema.path("allOf")).hasSize(20);
         assertThat(schema.at("/allOf/1/then/properties/status/const").asText())
                 .isEqualTo("READY");
         assertThat(schema.at(
@@ -78,11 +78,26 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
         assertThat(schema.at(
                 "/allOf/9/then/properties/externallyAttested/const").asBoolean())
                 .isTrue();
+        assertThat(schema.at(
+                "/allOf/10/then/properties/dynamicInventory/const").asBoolean())
+                .isTrue();
         for (String forbidden : new String[]{"deploymentScopeId", "fleetId", "laneKey",
                 "endpoint", "policyFingerprint", "materialFingerprint", "privateKey",
                 "credential", "payload", "exception"}) {
             assertThat(source).doesNotContain("\"" + forbidden + "\"");
         }
+    }
+
+    @Test
+    void legacyV1SchemaRemainsFrozenWithoutManagedRootFields() throws Exception {
+        JsonNode legacy = objectMapper.readTree(Files.readString(legacySchemaPath()));
+
+        assertThat(legacy.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability
+                        .SCHEMA_VERSION_V1);
+        assertThat(legacy.path("properties").has("managedTrustRootRefresh")).isFalse();
+        assertThat(legacy.path("properties").has("managedTrustRootStatus")).isFalse();
+        assertThat(legacy.path("additionalProperties").asBoolean()).isFalse();
     }
 
     private static ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability ready() {
@@ -98,6 +113,11 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityProtocolSchemaTe
     }
 
     private static Path schemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v2.schema.json");
+    }
+
+    private static Path legacySchemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v1.schema.json");
     }

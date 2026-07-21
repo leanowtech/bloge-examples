@@ -95,7 +95,19 @@ class ToolStudioRecoveryFleetCapabilityTest {
                 .containsEntry(
                         "bootstrapRootRecoveryFleetExternallyAnchoredPublicationFloor", true)
                 .containsEntry(
-                        "bootstrapRootRecoveryFleetByzantineQuorumPublicationFloor", true);
+                        "bootstrapRootRecoveryFleetByzantineQuorumPublicationFloor", true)
+                .containsEntry("bootstrapRootRecoveryFleetManagedTrustRoots", true)
+                .containsEntry("bootstrapRootRecoveryFleetManagedTrustRootsReady", true)
+                .containsEntry("bootstrapRootRecoveryFleetAtomicDualTrustRoots", true)
+                .containsEntry("bootstrapRootRecoveryFleetDurableTrustRootFloor", true)
+                .containsEntry(
+                        "bootstrapRootRecoveryFleetExternallyAnchoredTrustRootFloor", true)
+                .containsEntry(
+                        "bootstrapRootRecoveryFleetByzantineQuorumTrustRootFloor", true)
+                .containsEntry(
+                        "bootstrapRootRecoveryFleetExternalInventoryNonEquivocation", true)
+                .containsEntry(
+                        "bootstrapRootRecoveryFleetByzantineInventoryNonEquivocation", true);
         JsonNode wire = new ObjectMapper().valueToTree(capabilities);
         assertThat(wire.at("/testability/recoveryFleet/status").asText())
                 .isEqualTo("READY");
@@ -265,7 +277,17 @@ class ToolStudioRecoveryFleetCapabilityTest {
                 Map.entry("witnessedPublications", true),
                 Map.entry("durableGenerationFloor", true),
                 Map.entry("externallyAnchoredPublicationFloor", true),
-                Map.entry("byzantineQuorumAnchoredPublicationFloor", true)));
+                Map.entry("byzantineQuorumAnchoredPublicationFloor", true),
+                Map.entry("managedTrustRootRefresh", true),
+                Map.entry("managedTrustRootAvailable", true),
+                Map.entry("managedTrustRootStatus", "HEALTHY"),
+                Map.entry("managedTrustRootSequence", 1L),
+                Map.entry("atomicDualTrustRootPublication", true),
+                Map.entry("durableTrustRootFloor", true),
+                Map.entry("externallyAnchoredTrustRootFloor", true),
+                Map.entry("byzantineQuorumAnchoredTrustRootFloor", true),
+                Map.entry("externalInventoryNonEquivocation", true),
+                Map.entry("byzantineQuorumInventoryNonEquivocation", true)));
     }
 
     private record Fleet(

@@ -1015,6 +1015,14 @@ public record IntegrationCapabilities(
         features.put("bootstrapRootRecoveryFleetDurablePublicationFloor", false);
         features.put("bootstrapRootRecoveryFleetExternallyAnchoredPublicationFloor", false);
         features.put("bootstrapRootRecoveryFleetByzantineQuorumPublicationFloor", false);
+        features.put("bootstrapRootRecoveryFleetManagedTrustRoots", false);
+        features.put("bootstrapRootRecoveryFleetManagedTrustRootsReady", false);
+        features.put("bootstrapRootRecoveryFleetAtomicDualTrustRoots", false);
+        features.put("bootstrapRootRecoveryFleetDurableTrustRootFloor", false);
+        features.put("bootstrapRootRecoveryFleetExternallyAnchoredTrustRootFloor", false);
+        features.put("bootstrapRootRecoveryFleetByzantineQuorumTrustRootFloor", false);
+        features.put("bootstrapRootRecoveryFleetExternalInventoryNonEquivocation", false);
+        features.put("bootstrapRootRecoveryFleetByzantineInventoryNonEquivocation", false);
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("signedTestSuiteRunAttestation",

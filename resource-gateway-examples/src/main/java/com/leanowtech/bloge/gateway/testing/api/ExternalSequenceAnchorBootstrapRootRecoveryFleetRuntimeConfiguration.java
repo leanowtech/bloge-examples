@@ -88,6 +88,10 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
                 throw FleetProperties.invalid();
             }
             if (environment.acceptsProfiles(Profiles.of("staging"))
+                    && !dynamicInventory.trustRoots().required()) {
+                throw FleetProperties.invalid();
+            }
+            if (environment.acceptsProfiles(Profiles.of("staging"))
                     && !sloProperties.enabled()) {
                 throw FleetProperties.invalid();
             }
@@ -131,6 +135,8 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
                         authority.observation(), "fleet inventory authority observation");
                 var binding = Objects.requireNonNull(
                         authority.verifiedBinding(), "fleet inventory authority binding");
+                var descriptor = Objects.requireNonNull(
+                        authority.descriptor(), "fleet inventory authority descriptor");
                 if (!observed.available()
                         || observed.generation() != snapshot.generation()
                         || observed.laneCount() != snapshot.lanes().size()
@@ -139,7 +145,11 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
                     throw FleetProperties.invalid();
                 }
                 if (dynamicInventory.required()
-                        && !dynamicAuthority(observed, authority.descriptor())) {
+                        && !dynamicAuthority(observed, descriptor)) {
+                    throw FleetProperties.invalid();
+                }
+                if (dynamicInventory.trustRoots().required()
+                        && !managedTrustRoots(descriptor)) {
                     throw FleetProperties.invalid();
                 }
             } else if (dynamicInventory.required()) {
@@ -151,6 +161,19 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
         } catch (RuntimeException invalid) {
             throw FleetProperties.invalid();
         }
+    }
+
+    private static boolean managedTrustRoots(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor
+                    descriptor) {
+        var properties = descriptor.properties();
+        return Boolean.TRUE.equals(properties.get("managedTrustRootRefresh"))
+                && Boolean.TRUE.equals(properties.get("managedTrustRootAvailable"))
+                && "HEALTHY".equals(properties.get("managedTrustRootStatus"))
+                && properties.get("managedTrustRootSequence") instanceof Number sequence
+                && sequence.longValue() > 0L
+                && Boolean.TRUE.equals(properties.get("atomicDualTrustRootPublication"))
+                && Boolean.TRUE.equals(properties.get("durableTrustRootFloor"));
     }
 
     private static boolean dynamicAuthority(

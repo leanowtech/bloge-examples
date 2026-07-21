@@ -510,6 +510,22 @@ public class ToolStudioIntegrationService {
                 recoveryFleet.externallyAnchoredPublicationFloor());
         features.put("bootstrapRootRecoveryFleetByzantineQuorumPublicationFloor",
                 recoveryFleet.byzantineQuorumAnchoredPublicationFloor());
+        features.put("bootstrapRootRecoveryFleetManagedTrustRoots",
+                recoveryFleet.managedTrustRootRefresh());
+        features.put("bootstrapRootRecoveryFleetManagedTrustRootsReady",
+                recoveryFleet.managedTrustRootAvailable());
+        features.put("bootstrapRootRecoveryFleetAtomicDualTrustRoots",
+                recoveryFleet.atomicDualTrustRootPublication());
+        features.put("bootstrapRootRecoveryFleetDurableTrustRootFloor",
+                recoveryFleet.durableTrustRootFloor());
+        features.put("bootstrapRootRecoveryFleetExternallyAnchoredTrustRootFloor",
+                recoveryFleet.externallyAnchoredTrustRootFloor());
+        features.put("bootstrapRootRecoveryFleetByzantineQuorumTrustRootFloor",
+                recoveryFleet.byzantineQuorumAnchoredTrustRootFloor());
+        features.put("bootstrapRootRecoveryFleetExternalInventoryNonEquivocation",
+                recoveryFleet.externalInventoryNonEquivocation());
+        features.put("bootstrapRootRecoveryFleetByzantineInventoryNonEquivocation",
+                recoveryFleet.byzantineQuorumInventoryNonEquivocation());
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),

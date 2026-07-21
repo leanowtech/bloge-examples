@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.RuntimeSnapshot;
 
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -37,6 +38,16 @@ import java.util.regex.Pattern;
  * @param durablePublicationFloor whether publication ordering survives process restart
  * @param externallyAnchoredPublicationFloor whether publication ordering is externally anchored
  * @param byzantineQuorumAnchoredPublicationFloor whether the external anchor has Byzantine quorum
+ * @param managedTrustRootRefresh whether runtime verification keys refresh atomically
+ * @param managedTrustRootAvailable whether the current managed dual-key generation is usable
+ * @param managedTrustRootStatus bounded managed-root lifecycle status or {@code DISABLED}
+ * @param managedTrustRootSequence current accepted managed-root sequence, or zero when disabled
+ * @param atomicDualTrustRootPublication whether both runtime domains rotate as one generation
+ * @param durableTrustRootFloor whether managed-root ordering survives process restart
+ * @param externallyAnchoredTrustRootFloor whether managed-root ordering is externally anchored
+ * @param byzantineQuorumAnchoredTrustRootFloor whether that root anchor has Byzantine quorum
+ * @param externalInventoryNonEquivocation whether every mutable inventory stream is externally ordered
+ * @param byzantineQuorumInventoryNonEquivocation whether every stream has Byzantine quorum ordering
  * @param schedulerActive whether a scheduler cycle is currently active
  * @param schedulerOverdue whether the scheduler exceeded its bounded progress budget
  * @param pollCount aggregate local scheduler polls
@@ -61,6 +72,16 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
         boolean durablePublicationFloor,
         boolean externallyAnchoredPublicationFloor,
         boolean byzantineQuorumAnchoredPublicationFloor,
+        boolean managedTrustRootRefresh,
+        boolean managedTrustRootAvailable,
+        String managedTrustRootStatus,
+        long managedTrustRootSequence,
+        boolean atomicDualTrustRootPublication,
+        boolean durableTrustRootFloor,
+        boolean externallyAnchoredTrustRootFloor,
+        boolean byzantineQuorumAnchoredTrustRootFloor,
+        boolean externalInventoryNonEquivocation,
+        boolean byzantineQuorumInventoryNonEquivocation,
         boolean schedulerActive,
         boolean schedulerOverdue,
         long pollCount,
@@ -68,16 +89,25 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
         long cycleCount,
         long cycleFailureCount) {
 
-    /** Current capability protocol generation. */
-    public static final String SCHEMA_VERSION =
+    /** Original capability protocol generation retained as a frozen historical reference. */
+    public static final String SCHEMA_VERSION_V1 =
             "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCapability.v1";
 
+    /** Current capability protocol generation with managed-root operational truth. */
+    public static final String SCHEMA_VERSION =
+            "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCapability.v2";
+
     private static final Pattern SOURCE_TYPE = Pattern.compile("[A-Z][A-Z0-9_]{0,127}");
+    private static final Set<String> MANAGED_ROOT_STATUSES = Set.of(
+            "DISABLED", "HEALTHY", "CLOSED", "REFRESH_UNAVAILABLE", "SOURCE_EXPIRED",
+            "EXPIRED", "DEPLOYMENT_THRESHOLD_UNAVAILABLE",
+            "WITNESS_THRESHOLD_UNAVAILABLE");
 
     /** Enforces status, trust, anchoring, and aggregate-counter relationships. */
     public ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability {
         schemaVersion = normalized(schemaVersion);
         sourceType = normalized(sourceType);
+        managedTrustRootStatus = normalized(managedTrustRootStatus);
         status = Objects.requireNonNull(status, "status");
         boolean disabled = status == Status.DISABLED;
         boolean hasInventoryIdentity = !sourceType.isBlank() || inventoryGeneration != 0L
@@ -97,7 +127,13 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 || hasInventoryIdentity || dynamicInventory || automaticRefresh
                 || signedRevocation || witnessedPublications || durablePublicationFloor
                 || externallyAnchoredPublicationFloor
-                || byzantineQuorumAnchoredPublicationFloor || schedulerActive
+                || byzantineQuorumAnchoredPublicationFloor || managedTrustRootRefresh
+                || managedTrustRootAvailable || !"DISABLED".equals(managedTrustRootStatus)
+                || managedTrustRootSequence != 0L || atomicDualTrustRootPublication
+                || durableTrustRootFloor || externallyAnchoredTrustRootFloor
+                || byzantineQuorumAnchoredTrustRootFloor
+                || externalInventoryNonEquivocation
+                || byzantineQuorumInventoryNonEquivocation || schedulerActive
                 || schedulerOverdue || pollCount != 0L || pollFailureCount != 0L
                 || cycleCount != 0L || cycleFailureCount != 0L)
                 || dynamicInventory
@@ -108,12 +144,93 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 || externallyAnchoredPublicationFloor && !durablePublicationFloor
                 || byzantineQuorumAnchoredPublicationFloor
                 && !externallyAnchoredPublicationFloor
+                || managedTrustRootRefresh && !dynamicInventory
+                || managedTrustRootRefresh != atomicDualTrustRootPublication
+                || managedTrustRootRefresh != durableTrustRootFloor
+                || managedTrustRootRefresh && (managedTrustRootSequence < 1L
+                || !MANAGED_ROOT_STATUSES.contains(managedTrustRootStatus)
+                || "DISABLED".equals(managedTrustRootStatus)
+                || managedTrustRootAvailable != "HEALTHY".equals(managedTrustRootStatus))
+                || !managedTrustRootRefresh && (managedTrustRootAvailable
+                || !"DISABLED".equals(managedTrustRootStatus)
+                || managedTrustRootSequence != 0L || externallyAnchoredTrustRootFloor
+                || byzantineQuorumAnchoredTrustRootFloor)
+                || externallyAnchoredTrustRootFloor && !durableTrustRootFloor
+                || byzantineQuorumAnchoredTrustRootFloor
+                && !externallyAnchoredTrustRootFloor
+                || externalInventoryNonEquivocation
+                && (!externallyAnchoredPublicationFloor
+                || managedTrustRootRefresh && !externallyAnchoredTrustRootFloor)
+                || byzantineQuorumInventoryNonEquivocation
+                && (!externalInventoryNonEquivocation
+                || !byzantineQuorumAnchoredPublicationFloor
+                || managedTrustRootRefresh && !byzantineQuorumAnchoredTrustRootFloor)
                 || pollCount < 0L || pollFailureCount < 0L || pollFailureCount > pollCount
                 || cycleCount < 0L || cycleFailureCount < 0L
                 || cycleFailureCount > cycleCount) {
             throw new IllegalArgumentException(
                     "Bootstrap-root recovery fleet capability is invalid");
         }
+    }
+
+    /**
+     * Preserves the pre-managed Java construction surface with a disabled-root projection.
+     *
+     * @param schemaVersion current schema version
+     * @param configured whether a local fleet is composed
+     * @param ready whether polling is admitted
+     * @param status bounded readiness state
+     * @param externallyAttested whether inventory signatures are authoritative
+     * @param inventoryAvailable whether the inventory is currently usable
+     * @param sourceType bounded inventory source type
+     * @param inventoryGeneration current inventory generation
+     * @param laneCount inventory lane cardinality
+     * @param dynamicInventory whether witnessed HTTPS refresh is active
+     * @param automaticRefresh whether inventory refresh is automatic
+     * @param signedRevocation whether signed revocation is enforced
+     * @param witnessedPublications whether publication ordering is witnessed
+     * @param durablePublicationFloor whether publication order survives restart
+     * @param externallyAnchoredPublicationFloor whether publication order is external
+     * @param byzantineQuorumAnchoredPublicationFloor whether publication order has quorum
+     * @param schedulerActive whether one scheduler cycle is active
+     * @param schedulerOverdue whether scheduler progress is overdue
+     * @param pollCount process-local poll count
+     * @param pollFailureCount process-local poll failure count
+     * @param cycleCount process-local worker cycle count
+     * @param cycleFailureCount process-local worker cycle failure count
+     */
+    public ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
+            String schemaVersion,
+            boolean configured,
+            boolean ready,
+            Status status,
+            boolean externallyAttested,
+            boolean inventoryAvailable,
+            String sourceType,
+            long inventoryGeneration,
+            int laneCount,
+            boolean dynamicInventory,
+            boolean automaticRefresh,
+            boolean signedRevocation,
+            boolean witnessedPublications,
+            boolean durablePublicationFloor,
+            boolean externallyAnchoredPublicationFloor,
+            boolean byzantineQuorumAnchoredPublicationFloor,
+            boolean schedulerActive,
+            boolean schedulerOverdue,
+            long pollCount,
+            long pollFailureCount,
+            long cycleCount,
+            long cycleFailureCount) {
+        this(schemaVersion, configured, ready, status, externallyAttested,
+                inventoryAvailable, sourceType, inventoryGeneration, laneCount,
+                dynamicInventory, automaticRefresh, signedRevocation,
+                witnessedPublications, durablePublicationFloor,
+                externallyAnchoredPublicationFloor,
+                byzantineQuorumAnchoredPublicationFloor, false, false, "DISABLED", 0L,
+                false, false, false, false, externallyAnchoredPublicationFloor,
+                byzantineQuorumAnchoredPublicationFloor, schedulerActive, schedulerOverdue,
+                pollCount, pollFailureCount, cycleCount, cycleFailureCount);
     }
 
     /**
@@ -216,6 +333,9 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
         String sourceType = source instanceof String value ? value : "";
         boolean dynamic = DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
                 .SOURCE_TYPE.equals(sourceType);
+        boolean managedRoots = enabled(descriptor, "managedTrustRootRefresh");
+        String rootStatus = text(descriptor, "managedTrustRootStatus", "DISABLED");
+        long rootSequence = number(descriptor, "managedTrustRootSequence");
         return new ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 SCHEMA_VERSION, true, status == Status.READY, status,
                 descriptor.externallyAttested(), observation.available(), sourceType,
@@ -226,6 +346,14 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 enabled(descriptor, "durableGenerationFloor"),
                 enabled(descriptor, "externallyAnchoredPublicationFloor"),
                 enabled(descriptor, "byzantineQuorumAnchoredPublicationFloor"),
+                managedRoots, enabled(descriptor, "managedTrustRootAvailable"),
+                rootStatus, rootSequence,
+                enabled(descriptor, "atomicDualTrustRootPublication"),
+                enabled(descriptor, "durableTrustRootFloor"),
+                enabled(descriptor, "externallyAnchoredTrustRootFloor"),
+                enabled(descriptor, "byzantineQuorumAnchoredTrustRootFloor"),
+                enabled(descriptor, "externalInventoryNonEquivocation"),
+                enabled(descriptor, "byzantineQuorumInventoryNonEquivocation"),
                 scheduler.active(), scheduler.overdue(), scheduler.pollCount(),
                 scheduler.pollFailureCount(), worker.cycleCount(), worker.cycleFailureCount());
     }
@@ -277,12 +405,24 @@ public record ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
         return Boolean.TRUE.equals(descriptor.properties().get(property));
     }
 
+    private static String text(Descriptor descriptor, String property, String fallback) {
+        Object value = descriptor.properties().get(property);
+        return value instanceof String text ? text : fallback;
+    }
+
+    private static long number(Descriptor descriptor, String property) {
+        Object value = descriptor.properties().get(property);
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
     private static ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability empty(
             boolean configured,
             Status status) {
         return new ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability(
                 SCHEMA_VERSION, configured, false, status, false, false, "", 0L, 0,
-                false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false,
+                false, false, "DISABLED", 0L, false, false, false, false,
+                false, false, false, false,
                 0L, 0L, 0L, 0L);
     }
 

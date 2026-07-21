@@ -28,7 +28,9 @@ public interface ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthor
             "refreshIntervalSeconds", "maximumSnapshotAgeSeconds",
             "externallyAnchoredPublicationFloor",
             "byzantineQuorumAnchoredPublicationFloor", "managedTrustRootRefresh",
-            "atomicDualTrustRootPublication", "externallyAnchoredTrustRootFloor",
+            "managedTrustRootAvailable", "managedTrustRootStatus",
+            "managedTrustRootSequence", "atomicDualTrustRootPublication",
+            "durableTrustRootFloor", "externallyAnchoredTrustRootFloor",
             "byzantineQuorumAnchoredTrustRootFloor", "externalInventoryNonEquivocation",
             "byzantineQuorumInventoryNonEquivocation");
 

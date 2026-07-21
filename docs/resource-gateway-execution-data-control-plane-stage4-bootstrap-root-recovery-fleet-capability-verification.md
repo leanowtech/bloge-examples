@@ -14,6 +14,10 @@
 payload 读取。它只读取启动时冻结的唯一 bean 组合及其进程内 immutable snapshot，因此没有扩大认证面和
 数据面。production profile 仍不装配 recovery fleet；能力对象只能如实回显 `DISABLED`，不能绕过发布门禁。
 
+V1 现已冻结。后续 managed trust-root 产品接线通过新的 capability v2 增加 root 状态、floor 强度和
+combined non-equivocation，没有向 v1 偷增字段；参见
+[managed trust-root Spring verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-managed-trust-root-spring-verification.md)。
+
 ## 2. 根因
 
 仅有 worker、scheduler 和 health bean 不能形成稳定的跨系统协议：
@@ -141,8 +145,8 @@ mvn -f resource-gateway-examples/pom.xml \
 1. local SLO policy/assessment/metric vocabulary 已由后续子步闭合；外部 metrics backend/alert routing、
    durable SLI window 与跨副本 convergence readiness 仍未完成；
 2. deployment/witness 原子双 trust-root publication、验证器、durable key floor、strict HTTPS/ETag
-   refresh、unknown-key refresh、dynamic authority 与 aggregate health 已闭合；Spring/capability 产品
-   接线、staging downgrade fence 与配置 Schema 仍待完成；
+   refresh、unknown-key refresh、dynamic authority、aggregate health、Spring/capability v2 产品接线与
+   staging downgrade fence 已由后续子步闭合；
 3. publication floor 的外部 Byzantine anchor、publisher/witness HA 与 split-view/equivocation 检测；
 4. mTLS、certificate pinning、DNS/proxy policy 和 response-key hot rotation；
 5. enterprise IAM/PDP、HSM/KMS custody 和 production profile composition；

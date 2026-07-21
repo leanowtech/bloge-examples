@@ -147,9 +147,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 8. Honest boundary
 
-This increment closes the dynamic source and managed inventory-consumer kernel. It does not yet
-auto-configure that managed mode in Spring, publish its state through the integration capability
-Schema, provide deployment properties or staging downgrade protection, use mTLS/certificate
-pinning, provide an externally witnessed Byzantine trust-root floor, integrate HSM/KMS custody, or
-certify production databases, HA, DR, and chaos behavior. Those remain deployment/product gates;
-their absence must not be represented as end-to-end production readiness.
+This increment closed the dynamic source and managed inventory-consumer kernel. The subsequent
+[managed trust-root Spring increment](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-managed-trust-root-spring-verification.md)
+now provides deployment properties, lifecycle/health composition, a staging downgrade fence, and
+capability v2. mTLS/certificate pinning, an externally witnessed Byzantine trust-root floor,
+HSM/KMS custody, production databases, HA, DR, and chaos certification remain deployment/product
+gates; their absence must not be represented as end-to-end production readiness.

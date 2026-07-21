@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication.State;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication.WitnessCheckpoint;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication.WitnessMaterial;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication.AuthorityKeyMaterial;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor.Generation;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublicationFloor;
@@ -49,11 +50,19 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
     private static final String POLICY = "sha256:" + "b".repeat(64);
     private static final String TRUST_DOMAIN = "fleet-inventory.example";
     private static final String WITNESS_DOMAIN = "fleet-witness.example";
+    private static final String DEPLOYMENT_ROOT_DOMAIN = "fleet-deployment-root.example";
+    private static final String WITNESS_ROOT_DOMAIN = "fleet-witness-root.example";
+    private static final String ROOT_SET = "fleet-inventory-runtime-roots";
+    private static final String ROOT_PREFIX =
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                    .ManagedTrustRootProperties.PREFIX + ".";
 
     private ObjectMapper objectMapper;
     private Instant now;
     private KeyPair deployment;
     private KeyPair witness;
+    private KeyPair deploymentRoot;
+    private KeyPair witnessRoot;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -62,6 +71,90 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         KeyPairGenerator generator = KeyPairGenerator.getInstance("Ed25519");
         deployment = generator.generateKeyPair();
         witness = generator.generateKeyPair();
+        deploymentRoot = generator.generateKeyPair();
+        witnessRoot = generator.generateKeyPair();
+    }
+
+    @Test
+    void managedModeBootstrapsDualHttpSourcesPersistsBothFloorsAndRebuilds()
+            throws Exception {
+        try (var inventorySource = source(activePublication());
+             var rootSource = rootSource(trustRootPublication());
+             var database = database()) {
+            Map<String, Object> properties = managedProperties(
+                    inventorySource.uri(), rootSource.uri());
+            DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority inventory;
+            DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                    roots;
+            try (var first = context(properties, database, null, List.of(key -> null),
+                    null, "test")) {
+                inventory = first.getBean(
+                        DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                                .class);
+                roots = first.getBean(
+                        DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                                .class);
+                assertManagedRuntime(first, inventory, roots);
+                assertThat(rootFloorTableCount(database)).isEqualTo(2);
+            }
+            assertThat(inventory.observation().status()).isEqualTo("CLOSED");
+            assertThat(roots.snapshot().status()).isEqualTo("CLOSED");
+
+            try (var rebuilt = context(properties, database, null, List.of(key -> null),
+                    null, "test")) {
+                assertManagedRuntime(rebuilt, rebuilt.getBean(
+                                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                                        .class),
+                        rebuilt.getBean(
+                                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                                        .class));
+            }
+            assertThat(inventorySource.requests()).isEqualTo(2);
+            assertThat(rootSource.requests()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void managedModeRejectsStaticKeyMixingAndSharedSourceBeforeStateOrNetwork()
+            throws Exception {
+        try (var inventorySource = source(activePublication());
+             var rootSource = rootSource(trustRootPublication());
+             var database = database()) {
+            Map<String, Object> mixed = managedProperties(
+                    inventorySource.uri(), rootSource.uri());
+            mixed.put(DYNAMIC_PREFIX + "trust-domain", TRUST_DOMAIN);
+            var context = unrefreshedContext(mixed, database, null,
+                    List.of(key -> null), null, "test");
+            try {
+                assertThatThrownBy(context::refresh)
+                        .rootCause().isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("Dynamic recovery-fleet inventory configuration is invalid");
+                assertThat(inventorySource.requests()).isZero();
+                assertThat(rootSource.requests()).isZero();
+                assertThat(allRecoveryTables(database)).isZero();
+                assertThat(rootFloorTableCount(database)).isZero();
+            } finally {
+                context.close();
+            }
+        }
+
+        try (var sharedSource = rootSource(trustRootPublication());
+             var database = database()) {
+            Map<String, Object> shared = managedProperties(
+                    sharedSource.uri(), sharedSource.uri());
+            var context = unrefreshedContext(shared, database, null,
+                    List.of(key -> null), null, "test");
+            try {
+                assertThatThrownBy(context::refresh)
+                        .rootCause().isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("Dynamic recovery-fleet inventory configuration is invalid");
+                assertThat(sharedSource.requests()).isZero();
+                assertThat(allRecoveryTables(database)).isZero();
+                assertThat(rootFloorTableCount(database)).isZero();
+            } finally {
+                context.close();
+            }
+        }
     }
 
     @Test
@@ -164,6 +257,31 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
     }
 
     @Test
+    void productionPresencePhysicallyExcludesManagedRootAndInventorySources()
+            throws Exception {
+        try (var inventorySource = source(activePublication());
+             var rootSource = rootSource(trustRootPublication());
+             var database = database()) {
+            var context = context(managedProperties(inventorySource.uri(), rootSource.uri()),
+                    database, null, List.of(key -> null), null, "production", "test");
+            try {
+                assertThat(context.getBeansOfType(
+                        DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                                .class)).isEmpty();
+                assertThat(context.getBeansOfType(
+                        DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                                .class)).isEmpty();
+                assertThat(inventorySource.requests()).isZero();
+                assertThat(rootSource.requests()).isZero();
+                assertThat(allRecoveryTables(database)).isZero();
+                assertThat(rootFloorTableCount(database)).isZero();
+            } finally {
+                context.close();
+            }
+        }
+    }
+
+    @Test
     void requiredModeRejectsStaticFallbackBeforeCoordinatorStateExists() {
         Map<String, Object> properties = fleetProperties();
         properties.put(DYNAMIC_PREFIX + "enabled", "false");
@@ -205,6 +323,19 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         try (var source = source(activePublication()); var database = database()) {
             Map<String, Object> insecure = dynamicProperties(source.uri());
             insecure.put(DYNAMIC_PREFIX + "required", "true");
+            insecure.put(ROOT_PREFIX + "enabled", "true");
+            insecure.put(ROOT_PREFIX + "required", "true");
+            insecure.put(ROOT_PREFIX + "trust-root-set-id", ROOT_SET);
+            insecure.put(ROOT_PREFIX + "accepted-policy-fingerprints", POLICY);
+            insecure.put(ROOT_PREFIX + "deployment-root-domain", DEPLOYMENT_ROOT_DOMAIN);
+            insecure.put(ROOT_PREFIX + "deployment-root-signature-threshold", "1");
+            insecure.put(ROOT_PREFIX + "deployment-root-authority-keys-json",
+                    keysJson("deployment-root", "deployment-root-key", deploymentRoot));
+            insecure.put(ROOT_PREFIX + "witness-root-domain", WITNESS_ROOT_DOMAIN);
+            insecure.put(ROOT_PREFIX + "witness-root-signature-threshold", "1");
+            insecure.put(ROOT_PREFIX + "witness-root-authority-keys-json",
+                    keysJson("witness-root", "witness-root-key", witnessRoot));
+            insecure.put(ROOT_PREFIX + "publication-uri", "https://roots.example/current");
             var context = unrefreshedContext(
                     insecure, database, null, List.of(key -> null), null, "staging");
             try {
@@ -214,6 +345,26 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                                 "Dynamic recovery-fleet inventory configuration is invalid");
                 assertThat(source.requests()).isZero();
                 assertThat(allRecoveryTables(database)).isZero();
+            } finally {
+                context.close();
+            }
+        }
+
+        try (var rootSource = rootSource(trustRootPublication());
+             var database = database()) {
+            Map<String, Object> insecureRoot = managedProperties(
+                    "https://inventory.example/current", rootSource.uri());
+            insecureRoot.put(DYNAMIC_PREFIX + "allow-insecure-loopback", "false");
+            var context = unrefreshedContext(
+                    insecureRoot, database, null, List.of(key -> null), null, "staging");
+            try {
+                assertThatThrownBy(context::refresh)
+                        .rootCause().isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage(
+                                "Dynamic recovery-fleet inventory configuration is invalid");
+                assertThat(rootSource.requests()).isZero();
+                assertThat(allRecoveryTables(database)).isZero();
+                assertThat(rootFloorTableCount(database)).isZero();
             } finally {
                 context.close();
             }
@@ -434,6 +585,66 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         return properties;
     }
 
+    private Map<String, Object> managedProperties(String inventoryUri, String rootUri)
+            throws Exception {
+        Map<String, Object> properties = dynamicProperties(inventoryUri);
+        properties.put(DYNAMIC_PREFIX + "required", "true");
+        properties.put(DYNAMIC_PREFIX + "trust-domain", "");
+        properties.put(DYNAMIC_PREFIX + "signature-threshold", "0");
+        properties.put(DYNAMIC_PREFIX + "authority-keys-json", "[]");
+        properties.put(DYNAMIC_PREFIX + "witness-domain", "");
+        properties.put(DYNAMIC_PREFIX + "witness-signature-threshold", "0");
+        properties.put(DYNAMIC_PREFIX + "witness-authority-keys-json", "[]");
+        properties.put(ROOT_PREFIX + "enabled", "true");
+        properties.put(ROOT_PREFIX + "required", "true");
+        properties.put(ROOT_PREFIX + "trust-root-set-id", ROOT_SET);
+        properties.put(ROOT_PREFIX + "accepted-policy-fingerprints", POLICY);
+        properties.put(ROOT_PREFIX + "deployment-root-domain", DEPLOYMENT_ROOT_DOMAIN);
+        properties.put(ROOT_PREFIX + "deployment-root-signature-threshold", "1");
+        properties.put(ROOT_PREFIX + "deployment-root-authority-keys-json",
+                keysJson("deployment-root", "deployment-root-key", deploymentRoot));
+        properties.put(ROOT_PREFIX + "witness-root-domain", WITNESS_ROOT_DOMAIN);
+        properties.put(ROOT_PREFIX + "witness-root-signature-threshold", "1");
+        properties.put(ROOT_PREFIX + "witness-root-authority-keys-json",
+                keysJson("witness-root", "witness-root-key", witnessRoot));
+        properties.put(ROOT_PREFIX + "publication-uri", rootUri);
+        properties.put(ROOT_PREFIX + "refresh-interval-seconds", "30");
+        properties.put(ROOT_PREFIX + "request-timeout-millis", "1000");
+        properties.put(ROOT_PREFIX + "unknown-key-refresh-interval-seconds", "5");
+        properties.put(ROOT_PREFIX + "maximum-snapshot-age-seconds", "60");
+        properties.put(ROOT_PREFIX + "allow-insecure-loopback", "true");
+        return properties;
+    }
+
+    private static void assertManagedRuntime(
+            AnnotationConfigApplicationContext context,
+            DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority inventory,
+            DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                    roots) {
+        assertThat(roots.snapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.available()).isTrue();
+            assertThat(snapshot.status()).isEqualTo("HEALTHY");
+            assertThat(snapshot.sequence()).isOne();
+        });
+        assertThat(inventory.observation()).satisfies(observed -> {
+            assertThat(observed.available()).isTrue();
+            assertThat(observed.generation()).isEqualTo(17L);
+        });
+        assertThat(inventory.descriptor().properties())
+                .containsEntry("managedTrustRootRefresh", true)
+                .containsEntry("managedTrustRootAvailable", true)
+                .containsEntry("managedTrustRootStatus", "HEALTHY")
+                .containsEntry("managedTrustRootSequence", 1L)
+                .containsEntry("atomicDualTrustRootPublication", true)
+                .containsEntry("durableTrustRootFloor", true);
+        assertThat(context.getBean(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootHealth.class)
+                .health().getStatus()).isEqualTo(Status.UP);
+        assertThat(context.getBean(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth.class)
+                .health().getStatus()).isEqualTo(Status.UP);
+    }
+
     private static Map<String, Object> fleetProperties() {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put(FLEET_PREFIX + "enabled", "true");
@@ -491,6 +702,42 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                         publicationFingerprint)), checkpoint);
     }
 
+    private ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication
+            trustRootPublication() {
+        var material = new
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication
+                .Material(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication
+                        .Material.SCHEMA_VERSION,
+                ROOT_SET, 1L, "", SCOPE, FLEET,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication
+                        .SCHEMA_VERSION,
+                DEPLOYMENT_ROOT_DOMAIN, WITNESS_ROOT_DOMAIN, TRUST_DOMAIN, WITNESS_DOMAIN,
+                1, 1,
+                List.of(keyMaterial("deployment", "deployment-key", deployment)),
+                List.of(keyMaterial("witness", "witness-key", witness)),
+                POLICY, now.minusSeconds(60), now.minusSeconds(60), now.plusSeconds(3_600));
+        String fingerprint = ProtocolFingerprint.of(objectMapper, material);
+        return new
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication
+                        .SCHEMA_VERSION,
+                material, fingerprint,
+                List.of(sign("deployment-root", "deployment-root-key", deploymentRoot,
+                        fingerprint)),
+                List.of(sign("witness-root", "witness-root-key", witnessRoot,
+                        fingerprint)));
+    }
+
+    private AuthorityKeyMaterial keyMaterial(
+            String authorityId,
+            String keyId,
+            KeyPair keyPair) {
+        return new AuthorityKeyMaterial(authorityId, keyId,
+                Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()),
+                now.minusSeconds(3_600), now.plusSeconds(7_200), true, false);
+    }
+
     private AuthoritySignature sign(
             String authorityId,
             String keyId,
@@ -521,20 +768,43 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
     private SignedSource source(
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication publication)
             throws Exception {
+        return source(publication,
+                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                        .MEDIA_TYPE,
+                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
+                        .PROTOCOL_HEADER,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication
+                        .SCHEMA_VERSION,
+                "\"publication-1\"");
+    }
+
+    private SignedSource rootSource(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication
+                    publication) throws Exception {
+        return source(publication,
+                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                        .MEDIA_TYPE,
+                DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                        .PROTOCOL_HEADER,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication
+                        .SCHEMA_VERSION,
+                "\"root-generation-1\"");
+    }
+
+    private SignedSource source(
+            Object publication,
+            String mediaType,
+            String protocolHeader,
+            String protocolVersion,
+            String etag) throws Exception {
         byte[] body = objectMapper.writeValueAsBytes(publication);
         AtomicInteger requests = new AtomicInteger();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/inventory", exchange -> {
             requests.incrementAndGet();
-            exchange.getResponseHeaders().set("Content-Type",
-                    DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
-                            .MEDIA_TYPE);
-            exchange.getResponseHeaders().set(
-                    DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority
-                            .PROTOCOL_HEADER,
-                    ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryPublication
-                            .SCHEMA_VERSION);
-            exchange.getResponseHeaders().set("ETag", "\"publication-1\"");
+            exchange.getResponseHeaders().set("Content-Type", mediaType);
+            exchange.getResponseHeaders().set(protocolHeader, protocolVersion);
+            exchange.getResponseHeaders().set("ETag", etag);
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
@@ -568,6 +838,14 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
                         + "WHERE TABLE_NAME LIKE 'RG_EXT_ANCHOR_RECOVERY_%' "
                         + "OR TABLE_NAME LIKE 'RG_EXTERNAL_SEQUENCE_ANCHOR_%'",
+                Integer.class);
+    }
+
+    private static int rootFloorTableCount(TestRuntimeDatabase database) {
+        return database.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME IN "
+                        + "('RG_TEST_SUITE_STABILITY_INVENTORY_TRUST_ROOT_FLOOR_LOCKS', "
+                        + "'RG_TEST_SUITE_STABILITY_INVENTORY_TRUST_ROOT_FLOORS')",
                 Integer.class);
     }
 

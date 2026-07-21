@@ -411,6 +411,9 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
     public Descriptor descriptor() {
         RefreshState state = refreshState;
         Observation observed = observation(state, clock.instant());
+        DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootAuthority
+                .Snapshot rootSnapshot = managedTrustRoots == null
+                ? null : managedTrustRoots.snapshot();
         return new Descriptor(Descriptor.SCHEMA_VERSION, true, true,
                 observed.available(), observed.status(), observed.generation(),
                 observed.laneCount(), Map.ofEntries(
@@ -441,7 +444,14 @@ public final class DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInvent
                 Map.entry("byzantineQuorumAnchoredPublicationFloor",
                         publicationFloor.byzantineQuorumAnchored()),
                 Map.entry("managedTrustRootRefresh", managedTrustRoots != null),
+                Map.entry("managedTrustRootAvailable",
+                        rootSnapshot != null && rootSnapshot.available()),
+                Map.entry("managedTrustRootStatus",
+                        rootSnapshot == null ? "DISABLED" : rootSnapshot.status()),
+                Map.entry("managedTrustRootSequence",
+                        rootSnapshot == null ? 0L : rootSnapshot.sequence()),
                 Map.entry("atomicDualTrustRootPublication", managedTrustRoots != null),
+                Map.entry("durableTrustRootFloor", managedTrustRoots != null),
                 Map.entry("externallyAnchoredTrustRootFloor", managedTrustRoots != null
                         && managedTrustRoots.externallyAnchoredFloor()),
                 Map.entry("byzantineQuorumAnchoredTrustRootFloor", managedTrustRoots != null

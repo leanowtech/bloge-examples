@@ -545,11 +545,17 @@ threshold is no longer satisfiable. A strict HTTPS/ETag authority now refreshes 
 performs cooldown-bounded unknown-key refresh, and supplies the exact same immutable key-set
 generation to the dynamic inventory verifier. Root generation drift closes admission until the
 inventory is reverified, including on a source `304`; disjoint replacement roots therefore reject a
-cached inventory instead of extending its trust. Spring auto-configuration, staging downgrade
-protection, deployment properties, and capability output are not yet connected, so this remains an
-embedding API rather than a product-level restart-free rotation claim. See the
+cached inventory instead of extending its trust. The test/staging Spring path now exposes this as a
+product mode under `bootstrap-root-recovery-fleet-dynamic-inventory.trust-roots`. Managed mode
+forbids every static runtime domain, threshold, and key; owns a separate durable root floor and
+aggregate health indicator; and closes inventory before roots. Staging requires both dynamic
+inventory and managed roots, two distinct HTTPS sources, and no insecure loopback. Test retains the
+static path for migration. The demo script checks the same downgrade invariants before build, while
+Spring remains the authoritative gate. See the
 [recovery fleet trust-root kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-trust-root-kernel-verification.md)
-and [dynamic trust-root verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-trust-root-verification.md), plus the strict
+and [dynamic trust-root verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-trust-root-verification.md), the
+[managed trust-root Spring verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-managed-trust-root-spring-verification.md), plus the strict
+[dynamic inventory Spring configuration JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-dynamic-inventory-configuration-v1.schema.json),
 [trust-root publication JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-trust-root-publication-v1.schema.json)
 and [dynamic snapshot JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-dynamic-trust-root-snapshot-v1.schema.json).
 
@@ -573,7 +579,9 @@ worker fences every lane and cursor commit against current authority generation 
 
 The Spring path does not generate trust roots or discover lane runtimes. The existing
 `GET /api/integration/capabilities` endpoint now publishes an identity-free, versioned recovery-fleet
-state machine and conservative boolean projections. Its probe reads only startup-frozen bean
+state machine and conservative boolean projections. Capability v1 remains frozen; v2 adds managed
+root availability/status/sequence, atomic dual-root and floor strength, plus combined
+non-equivocation claims. Its probe reads only startup-frozen bean
 candidates and fresh process-local snapshots; it does not perform bootstrap I/O. Online partition
 rebalance, external fleet-wide alert/convergence wiring, production-profile wiring, publisher
 mTLS/client identity and certificate pinning, response-key hot rotation,
@@ -602,8 +610,10 @@ real signed-HTTP Spring proof are in the
 The capability state machine, strict Schema, no-I/O projection, compatibility, and integration proof
 are in the
 [recovery fleet capability verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-capability-verification.md),
-with its machine contract in the
-[recovery fleet capability JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v1.schema.json).
+with its current machine contract in the
+[recovery fleet capability v2 JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v2.schema.json)
+and the frozen
+[v1 JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v1.schema.json).
 
 Enabled test/staging fleets also install a versioned process-local SLO assessment and 41
 fixed-cardinality Micrometer series. The monitor reuses the authority-bracketed immutable capability
@@ -620,8 +630,8 @@ long-lived SLI storage, and fleet-wide convergence remain deployment responsibil
 and strict
 [SLO assessment JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-slo-assessment-v1.schema.json).
 
-Scope, cohort, inventory/witness trust, managed-root freshness, external-anchor quorum/timing, and
-lease settings are checked by
+Scope, cohort, recovery-fleet inventory/root sources, static-key exclusion, managed-root freshness,
+external-anchor quorum/timing, and lease settings are checked by
 `scripts/visual-canvas-demo.sh` before staging startup. A deployment may
 instead contribute one custom
 `TestSuiteStabilityJobAuthorizer` with a ready key-free descriptor. There is no allow-all fallback:

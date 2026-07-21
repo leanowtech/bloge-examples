@@ -43,6 +43,16 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityTest {
             assertThat(value.durablePublicationFloor()).isTrue();
             assertThat(value.externallyAnchoredPublicationFloor()).isTrue();
             assertThat(value.byzantineQuorumAnchoredPublicationFloor()).isTrue();
+            assertThat(value.managedTrustRootRefresh()).isTrue();
+            assertThat(value.managedTrustRootAvailable()).isTrue();
+            assertThat(value.managedTrustRootStatus()).isEqualTo("HEALTHY");
+            assertThat(value.managedTrustRootSequence()).isOne();
+            assertThat(value.atomicDualTrustRootPublication()).isTrue();
+            assertThat(value.durableTrustRootFloor()).isTrue();
+            assertThat(value.externallyAnchoredTrustRootFloor()).isTrue();
+            assertThat(value.byzantineQuorumAnchoredTrustRootFloor()).isTrue();
+            assertThat(value.externalInventoryNonEquivocation()).isTrue();
+            assertThat(value.byzantineQuorumInventoryNonEquivocation()).isTrue();
             assertThat(value.pollCount()).isZero();
             assertThat(value.cycleCount()).isZero();
         });
@@ -70,6 +80,8 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityTest {
         assertThat(capability.ready()).isFalse();
         assertThat(capability.inventoryAvailable()).isFalse();
         assertThat(capability.automaticRefresh()).isTrue();
+        assertThat(capability.managedTrustRootAvailable()).isTrue();
+        assertThat(capability.managedTrustRootStatus()).isEqualTo("HEALTHY");
     }
 
     @Test
@@ -178,7 +190,17 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetCapabilityTest {
                         Map.entry("witnessedPublications", true),
                         Map.entry("durableGenerationFloor", true),
                         Map.entry("externallyAnchoredPublicationFloor", true),
-                        Map.entry("byzantineQuorumAnchoredPublicationFloor", true)));
+                        Map.entry("byzantineQuorumAnchoredPublicationFloor", true),
+                        Map.entry("managedTrustRootRefresh", true),
+                        Map.entry("managedTrustRootAvailable", true),
+                        Map.entry("managedTrustRootStatus", "HEALTHY"),
+                        Map.entry("managedTrustRootSequence", 1L),
+                        Map.entry("atomicDualTrustRootPublication", true),
+                        Map.entry("durableTrustRootFloor", true),
+                        Map.entry("externallyAnchoredTrustRootFloor", true),
+                        Map.entry("byzantineQuorumAnchoredTrustRootFloor", true),
+                        Map.entry("externalInventoryNonEquivocation", true),
+                        Map.entry("byzantineQuorumInventoryNonEquivocation", true)));
     }
 
     private static RuntimeSnapshot readyWorker() {

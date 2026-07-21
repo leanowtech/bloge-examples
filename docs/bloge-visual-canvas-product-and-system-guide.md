@@ -1218,6 +1218,19 @@ Byzantine genesis、跨域 trust-domain/floor alias；root 或 publication rollb
 [Testing Control Plane API](resource-gateway-testing-control-plane-api.md) 与
 [request-index rolling-upgrade verification](resource-gateway-execution-data-control-plane-stage4-worker-quarantine-request-index-upgrade-verification.md)。
 
+若 staging 同时启用 `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_ENABLED=true`，则 recovery fleet 不允许
+退回静态 inventory runtime keys。必须同时开启
+`RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED=true` 和
+`...DYNAMIC_INVENTORY_TRUST_ROOTS_ENABLED=true`，提供互不相同的 inventory/root HTTPS URI、稳定的
+root-set id、两组相互独立的 bootstrap-root domain、各自的 Ed25519 public-key JSON 与 threshold；
+父级 `TRUST_DOMAIN`、`SIGNATURE_THRESHOLD`、`AUTHORITY_KEYS_JSON` 及 witness 对应静态变量必须分别
+为空、`0`、`[]`。脚本会在 build 前检查 profile downgrade、同 URI、HTTP loopback、静态/动态混用、
+artifact 不一致和时间边界，Spring 再执行 strict JSON、密码学、floor 与 signed binding 校验。启动后应在
+capability 的 `testability.recoveryFleet` 中看到 v2、`managedTrustRootRefresh=true`、
+`managedTrustRootAvailable=true`、`managedTrustRootStatus=HEALTHY` 和正数 root sequence；否则不能把
+fleet 的 `ready` 当作可发布证据。变量全集及剩余 mTLS、external Byzantine floor、HA/DR 门禁见
+[managed recovery-fleet trust-root Spring verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-managed-trust-root-spring-verification.md)。
+
 测试控制面的 target fingerprint 获取、fixture 注册、执行、批量、证据查询、脱敏和生产隔离操作见
 [Resource Gateway Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
 
