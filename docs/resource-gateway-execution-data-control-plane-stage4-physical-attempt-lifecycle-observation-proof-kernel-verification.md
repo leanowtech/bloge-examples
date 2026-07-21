@@ -115,8 +115,21 @@ javadoc --release 25 -Werror -Xdoclint:all
 start、observation、cancellation、reservation 和 durable journal 的跨链路聚焦门禁执行 123 tests，
 0 failures、0 errors、0 skips。
 
-完整 `clean verify` 证据将在本增量提交的 immutable snapshot 上执行后回填，避免共享 worktree 的并发
-Maven/浏览器进程污染测试口径。
+实现提交 `023d1a5a` 的 immutable snapshot
+`/private/tmp/bloge-examples-verify-023d1a5a.ImPOMS` 执行：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 3998, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 07:13 min
+```
+
+- 结构化解析 452 份 `TEST-*.xml`，汇总仍为 3998/0/0/2；
+- repackaged executable JAR 为 39,472,644 bytes，并包含四个 observation 公共类型及其 nested types；
+- 门禁退出后 snapshot Maven/Surefire 进程为 0，Chrome for Testing/ChromeDriver 进程为 0。
+
+验证使用提交快照而非共享 worktree，避免后续编辑、并发 Maven 或浏览器进程污染验收对象。
 
 ## 8. 诚实边界与下一步
 
