@@ -40,6 +40,7 @@
         <assertj.version>3.27.1</assertj.version>
         <jackson.version>2.18.2</jackson.version>
         <selenium.version>4.45.0</selenium.version>
+        <bouncycastle.version>1.80</bouncycastle.version>
     </properties>
 
     <dependencyManagement>
@@ -150,6 +151,12 @@
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
             <version>${assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
