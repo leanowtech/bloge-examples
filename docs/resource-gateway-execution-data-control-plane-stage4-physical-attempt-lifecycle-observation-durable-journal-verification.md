@@ -150,7 +150,12 @@ javadoc --release 25 -Werror -Xdoclint:all
 0 warnings, 0 errors
 ```
 
-完整 `clean verify` 将在本增量实现 commit 的 immutable snapshot 上执行并回填。
+实现提交 `ab5599b2` 的 immutable snapshot
+`/private/tmp/bloge-examples-verify-ab5599b2.evNZBs` 上执行完整
+`mvn -f resource-gateway-examples/pom.xml clean verify`，结果为 4017 tests、0 failures、0 errors、
+2 skips，总耗时 7 分 29 秒。453 份 Surefire XML 结构化重算得到相同结果；39,518,483 bytes 的
+Spring Boot 可执行 JAR 包含 observation journal API 与 database implementation 的 17 个 class entry。
+构建结束后该 snapshot 的 Maven/Surefire/Java 进程为 0，Chrome for Testing/ChromeDriver 进程为 0。
 
 ## 9. 尚未闭合
 
