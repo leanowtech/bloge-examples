@@ -89,11 +89,11 @@ final class ScopedProcessTree {
         for (Target target : targets) {
             if (target.isOriginalAlive()
                     && !target.process().destroyForcibly()
-                    && target.process().isAlive()) {
+                    && target.isOriginalAlive()) {
                 throw new ScopeException(Disposition.TERMINATION_REFUSED);
             }
         }
-        while (targets.stream().map(Target::process).anyMatch(ProcessHandle::isAlive)) {
+        while (targets.stream().anyMatch(Target::isOriginalAlive)) {
             if (Thread.currentThread().isInterrupted()) {
                 throw new ScopeException(Disposition.TERMINATION_INTERRUPTED);
             }
@@ -108,8 +108,7 @@ final class ScopedProcessTree {
      * @throws ScopeException when the captured process is still alive
      */
     void verifyTerminated() {
-        capturedTargets.forEach(Target::requireIdentityIfAlive);
-        if (capturedTargets.stream().map(Target::process).anyMatch(ProcessHandle::isAlive)) {
+        if (capturedTargets.stream().anyMatch(Target::isOriginalAlive)) {
             throw new ScopeException(Disposition.STILL_RUNNING);
         }
     }
@@ -219,12 +218,21 @@ final class ScopedProcessTree {
             Objects.requireNonNull(command, "command");
         }
 
-        private boolean matches(ProcessHandle process) {
+        private IdentityStatus observe(ProcessHandle process) {
             ProcessHandle.Info info = process.info();
-            return process.pid() == pid
-                    && info.startInstant().filter(startedAt::equals).isPresent()
-                    && info.command().map(Path::of).map(ScopedProcessTree::normalized)
-                    .filter(command::equals).isPresent();
+            if (process.pid() != pid) {
+                return IdentityStatus.MISMATCH;
+            }
+            var observedStart = info.startInstant();
+            var observedCommand = info.command();
+            if (observedStart.isEmpty() || observedCommand.isEmpty()) {
+                return IdentityStatus.UNKNOWN;
+            }
+            return observedStart.filter(startedAt::equals).isPresent()
+                    && observedCommand.map(Path::of).map(ScopedProcessTree::normalized)
+                    .filter(command::equals).isPresent()
+                    ? IdentityStatus.MATCH
+                    : IdentityStatus.MISMATCH;
         }
     }
 
@@ -246,7 +254,7 @@ final class ScopedProcessTree {
                     Target target = new Target(process, new Identity(
                             process.pid(), startedAt.orElseThrow(),
                             normalized(Path.of(command.orElseThrow()))));
-                    if (target.isOriginalAlive()) {
+                    if (target.identity.observe(process) == IdentityStatus.MATCH) {
                         return target;
                     }
                 }
@@ -259,12 +267,18 @@ final class ScopedProcessTree {
         }
 
         private boolean isOriginalAlive() {
-            return process.isAlive() && identity.matches(process);
+            return process.isAlive() && identity.observe(process) != IdentityStatus.MISMATCH;
         }
 
         private void requireIdentityIfAlive() {
-            if (process.isAlive() && !identity.matches(process)) {
-                throw new ScopeException(Disposition.IDENTITY_MISMATCH);
+            if (!process.isAlive()) {
+                return;
+            }
+            IdentityStatus status = identity.observe(process);
+            if (status != IdentityStatus.MATCH) {
+                throw new ScopeException(status == IdentityStatus.UNKNOWN
+                        ? Disposition.IDENTITY_UNAVAILABLE
+                        : Disposition.IDENTITY_MISMATCH);
             }
         }
 
@@ -272,10 +286,14 @@ final class ScopedProcessTree {
             if (!process.isAlive()) {
                 throw new ScopeException(Disposition.NOT_RUNNING);
             }
-            if (!identity.matches(process)) {
-                throw new ScopeException(Disposition.IDENTITY_MISMATCH);
-            }
+            requireIdentityIfAlive();
         }
+    }
+
+    private enum IdentityStatus {
+        MATCH,
+        MISMATCH,
+        UNKNOWN
     }
 
     private static void awaitCaptureRetry() {

@@ -104,7 +104,7 @@ coordinator 后该测试类为 19 tests，其中新增 3 项真实组合门禁�
 两个新增并发门禁和 JavaDoc 修订完成后，两个公共 journal 类型通过
 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。下述 `3893` 全量数字对应此前冻结的
 `3c08bb7c`，用于保留 journal 初始增量的历史证据。后续 coordinator、调用前数据库时间栅栏与浏览器
-生命周期修复提交 `d5fadc32` 的不可变源码快照全量基线已前移为 3921 tests、0 failures、0 errors、
+生命周期修复提交 `21c7cef5` 的 detached worktree 全量基线已前移为 3921 tests、0 failures、0 errors、
 2 个条件浏览器跳过，并成功重打包 Spring Boot 可执行 JAR。
 
 coordinator 的 10 项单元测试与 3 项真实 journal 组合测试见
@@ -116,9 +116,10 @@ coordinator 的 10 项单元测试与 3 项真实 journal 组合测试见
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-结果为 3893 tests，0 failures、0 errors、2 个条件浏览器跳过，Spring Boot JAR 重打包成功；总耗时
-7 分 24 秒。该结果证明 journal 初始增量与完整 Resource Gateway 行为面兼容，不把聚焦测试替代成
-全量回归结论。
+当前结果为 3921 tests，0 failures、0 errors、2 个条件浏览器跳过，Spring Boot JAR 重打包成功；总耗时
+7 分 40 秒。独立解析 446 份 Surefire XML 得到相同汇总，制品大小为 39,339,813 字节，构建退出后没有
+ChromeDriver、headless Chrome 或进程夹具残留。该结果证明 journal、coordinator、invocation authorization
+与浏览器生命周期修复兼容完整 Resource Gateway 行为面，不把聚焦测试替代成全量回归结论。
 
 ## 6. 尚未完成
 

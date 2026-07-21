@@ -91,15 +91,16 @@ Surefire 运行中被另一 Maven 编译重写 `target/test-classes` 并产生�
 形成进程退出证据。修复后的同一真实用例再次耗时约 40 秒，实际越过 graceful 边界后仍成功收敛，20 项
 联合门禁全绿，随后 OS 扫描没有 ChromeDriver、headless Chrome 或夹具进程残留。
 
-修复提交 `d5fadc32` 又从 `git archive` 创建不共享 `target` 的不可变源码快照并执行完整门禁：
+修复提交 `21c7cef5` 又创建不共享 `target` 的 detached worktree 并执行完整门禁：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
 结果为 3921 tests，0 failures、0 errors、2 个条件浏览器跳过，Spring Boot 可执行 JAR 重打包成功，总耗时
-7 分 39 秒。其中 `VisualAuthoringBrowserDomTest` 为 34 tests、0 failures、0 errors、2 skips；launcher、
-closer 与 process-scope 19 项内核测试全部执行且全绿。该结果是本次生命周期修复的最终全量基线。
+7 分 40 秒。其中 `VisualAuthoringBrowserDomTest` 为 34 tests、0 failures、0 errors、2 skips；launcher、
+closer 与 process-scope 19 项内核测试全部执行且全绿。独立解析 446 份 Surefire XML 得到相同汇总，
+构建退出后没有受监督进程残留。该结果是本次生命周期修复的最终全量基线。
 
 ## 5. 未完成边界
 
