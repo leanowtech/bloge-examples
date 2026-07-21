@@ -467,6 +467,18 @@ isolated test-runtime database journal/outbox; deployments may supply an equival
 or publisher bean. Close the caller-owned publisher after the service. See the
 [publisher transport verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-publisher-transport-verification.md).
 
+For embedding paths that require restart-free certificate replacement, the transport package now
+provides `ControlPlaneCertificateIdentityPolicy` and `RotatingControlPlaneHttpTransport` as a kernel.
+The policy binds one client key to an exact Subject and single workload URI SAN, validates its chain
+with a pinned issuer as the PKIX trust anchor at the declared activation instant, and constrains the
+server issuer and workload URI independently. The rotation kernel preloads exactly the next
+generation outside the request-state lock, enforces bounded activation and old/new certificate
+overlap, and lets a cached client atomically select one complete TLS generation per request. This is
+an embedding interface only: the nine product transports, typed properties, staging schema,
+health/capability projection, CA event authentication, revocation, and HSM custody remain follow-up
+gates. See the
+[certificate identity and rotation kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md).
+
 The same single-root journal can run unattended ceremony recovery by also setting
 `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_ENABLED=true`. Recovery requires publication to remain enabled,
 one strict public-only genesis document, accepted ceremony policy fingerprints, a worker identity,

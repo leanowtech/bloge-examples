@@ -28,9 +28,10 @@
 `ControlPlaneCertificateIdentityPolicy` 只接受两种形态：全空兼容策略，或字段完整的绑定策略。绑定
 策略强制：
 
-- client keystore 恰好一个 key entry，证书链至少两层且逐层签名可验证；
+- client keystore 恰好一个 key entry，证书链至少两层，并以命中独立 issuer pin 的 CA
+  作为 `TrustAnchor` 在激活时刻完成 PKIX path validation；
 - client leaf 在激活时刻有效，包含 `clientAuth` EKU 和 digital-signature KeyUsage；
-- client Subject DN、client URI SAN 与配置精确匹配，issuer chain 命中独立 client issuer pin；
+- client Subject DN 与配置精确匹配，client 只能携带一个且必须匹配的 workload URI SAN；
 - server PKIX trust anchor 先按 server issuer pin 收窄；
 - server leaf 包含 `serverAuth` EKU、digital-signature KeyUsage 和精确 server URI SAN；
 - policy、异常和 descriptor 不投影 keystore 密码、私钥、路径或实际证书值。
@@ -79,7 +80,7 @@ RotatingControlPlaneHttpTransportTest test
 验收结果：21 tests，0 failures、0 errors、0 skips。覆盖：
 
 - 真实 mTLS 下精确 client/server workload identity 成功；
-- client Subject、URI SAN、issuer、`clientAuth` 缺失在 transport 创建期失败；
+- client Subject、URI SAN、额外 workload URI、issuer、`clientAuth` 缺失在 transport 创建期失败；
 - server URI SAN 与 issuer 错误在 HTTP handler 前失败；
 - credential 字符在成功和失败路径擦除，descriptor 不泄漏路径/ref/pin；
 - 连续 generation 在同一稳定 client 上按时切换 client principal；
@@ -89,6 +90,15 @@ RotatingControlPlaneHttpTransportTest test
 - active identity 过期后请求在 handler 前 fail closed。
 
 另执行复用 transport 的 79 项联合协议回归，0 failures、0 errors、0 skips。
+
+最终全量门禁：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml clean verify
+```
+
+验收结果：3613 tests，0 failures、0 errors、2 skips；并成功生成 37 MB 的
+`bloge-examples-resource-gateway-1.0.0.jar` Spring Boot 可执行产物。
 
 ## 7. 下一门禁
 

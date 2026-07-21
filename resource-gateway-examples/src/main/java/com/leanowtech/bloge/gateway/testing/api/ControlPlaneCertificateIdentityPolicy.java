@@ -167,6 +167,7 @@ public record ControlPlaneCertificateIdentityPolicy(
         List<X509Certificate> admitted = java.util.Arrays.stream(available)
                 .filter(certificate -> serverIssuerSpkiPins.contains(
                         PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(certificate)))
+                .filter(ControlPlaneCertificateIdentityPolicy::certificateAuthority)
                 .toList();
         if (admitted.isEmpty()) {
             throw new CertificateException("Server certificate authority is not admitted");
