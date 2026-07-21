@@ -92,23 +92,22 @@ Surefire 运行中被另一 Maven 编译重写 `target/test-classes` 并产生�
 形成进程退出证据。修复后的同一真实用例再次耗时约 40 秒，实际越过 graceful 边界后仍成功收敛，20 项
 联合门禁全绿，随后 OS 扫描没有 ChromeDriver、headless Chrome 或夹具进程残留。
 
-提交 `e73ed61d` 创建不共享 `target` 的 detached worktree 并执行完整门禁：
+最终代码提交 `195dd9e2` 从 `git archive` 创建不共享 `target` 的不可变源码快照并执行完整门禁：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
 结果为 3921 tests，0 failures、0 errors、2 个条件浏览器跳过，Spring Boot 可执行 JAR 重打包成功，总耗时
-8 分 04 秒。其中 `VisualAuthoringBrowserDomTest` 为 34 tests、0 failures、0 errors、2 skips；launcher、
+7 分 35 秒。其中 `VisualAuthoringBrowserDomTest` 为 34 tests、0 failures、0 errors、2 skips；launcher、
 closer 与 process-scope 19 项内核测试全部执行且全绿。独立解析 446 份 Surefire XML 得到相同汇总，制品
-大小为 39,339,813 字节；构建退出后没有 ChromeDriver、headless Chrome 或进程夹具残留。
+大小为 39,339,813 字节；快照的 Maven/Surefire 进程正常退出。
 
-后续提交 `195dd9e2` 进一步把 start instant 变化的 `REPLACED` 与同一进程 command 异常的
+该提交进一步把 start instant 变化的 `REPLACED` 与同一进程 command 异常的
 `ATTRIBUTE_MISMATCH` 分开：前者停止追踪且绝不杀死复用 PID，后者与身份属性暂不可见都继续失败关闭。
-当前 HEAD 的 `ScopedProcessTreeTest,BoundedBrowserSessionCloserTest` 聚焦门禁为 12 tests、0 failures、
+该提交的 `ScopedProcessTreeTest,BoundedBrowserSessionCloserTest` 聚焦门禁为 12 tests、0 failures、
 0 errors、0 skips；`ScopedProcessTree` 的 package JavaDoc 以 `--release 25 -Werror -Xdoclint:all` 校验为
-0 warnings、0 errors。由于这一步尚未重新执行完整 `clean verify`，当前严格全量基线仍是其父提交
-`e73ed61d`，不能把聚焦门禁外推为新提交的全量证明。
+0 warnings、0 errors；上述 3921 项不可变快照全量门禁又证明该分类修订与完整 Resource Gateway 行为面兼容。
 
 ## 5. 未完成边界
 
