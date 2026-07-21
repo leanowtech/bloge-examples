@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-event-watcher-descriptor-v1.schema.json",
+  "title": "Resource Gateway Certificate Rotation Event Watcher Descriptor v1",
+  "description": "Material-free local stage/apply/commit watcher state. Event, page, certificate, source URI, replica identity, and provider diagnostics are intentionally absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "ready", "durableCursor", "automaticPolling",
+    "authenticatedProtocol", "sourceMutualTls", "sourceCertificateIdentityBound",
+    "committedSequence", "stagedPage", "appliedPageCount", "appliedEventCount",
+    "status", "reasonCode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateRotationEventWatcherDescriptor.v1"
+    },
+    "ready": { "type": "boolean" },
+    "durableCursor": { "const": true },
+    "automaticPolling": { "type": "boolean" },
+    "authenticatedProtocol": { "const": true },
+    "sourceMutualTls": { "const": true },
+    "sourceCertificateIdentityBound": { "const": true },
+    "committedSequence": { "type": "integer", "minimum": 0 },
+    "stagedPage": { "type": "boolean" },
+    "appliedPageCount": { "type": "integer", "minimum": 0 },
+    "appliedEventCount": { "type": "integer", "minimum": 0 },
+    "status": {
+      "enum": [
+        "NEW", "IDLE", "APPLIED", "RUNTIME_FENCED", "RUNTIME_UNAVAILABLE",
+        "SOURCE_UNAVAILABLE", "PROTOCOL_REJECTED", "CURSOR_UNAVAILABLE",
+        "CURSOR_CONFLICT", "APPLY_BLOCKED", "WATCHER_UNAVAILABLE", "CLOSED"
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+    }
+  }
+}

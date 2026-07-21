@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-rotation-event-source-descriptor-v1.schema.json",
+  "title": "Resource Gateway Certificate Rotation Event Source Descriptor v1",
+  "description": "Fixed-cardinality transport and protocol facts for the authenticated event-page source.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "authenticatedProtocol", "privateTrustStore",
+    "serverSpkiPinned", "mutualTls", "certificateIdentityBound"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateRotationEventSourceDescriptor.v1"
+    },
+    "authenticatedProtocol": { "const": true },
+    "privateTrustStore": { "const": true },
+    "serverSpkiPinned": { "const": true },
+    "mutualTls": { "const": true },
+    "certificateIdentityBound": { "const": true }
+  }
+}
