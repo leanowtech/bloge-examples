@@ -77,6 +77,16 @@ mvn -f resource-gateway-examples/pom.xml \
 - entry/floor/sequence 篡改或缺失失败关闭；
 - 两线程 exact prepare 只有一个 creator，另一个得到 replay。
 
+最终隔离全量门禁：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml clean verify
+```
+
+结果为 3893 tests，0 failures、0 errors、2 个条件浏览器跳过，Spring Boot JAR 重打包成功；总耗时
+7 分 24 秒。该结果证明 journal 增量与完整 Resource Gateway 行为面兼容，不把 13 项聚焦测试替代成
+全量回归结论。
+
 ## 6. 尚未完成
 
 本增量没有 Spring bean、HTTP route、JSON Schema、test-kit 类型或 capability advertisement。进入产品 worker
