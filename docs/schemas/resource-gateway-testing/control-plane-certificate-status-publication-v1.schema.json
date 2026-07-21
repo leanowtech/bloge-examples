@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-testing/control-plane-certificate-status-publication-v1.schema.json",
+  "title": "Control-plane certificate status publication v1",
+  "description": "Strict payload-free normalized CA event, OCSP, or CRL status publication. Native revocation payloads, responder URLs, credentials, and certificate bytes are forbidden.",
+  "$ref": "#/$defs/publication",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "instant": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "authoritySignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorityId", "keyId", "algorithm", "signedAt", "signature"],
+      "properties": {
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "algorithm": { "const": "Ed25519" },
+        "signedAt": { "$ref": "#/$defs/instant" },
+        "signature": {
+          "type": "string",
+          "minLength": 88,
+          "maxLength": 88,
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    },
+    "certificateEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role", "status", "evidenceType", "certificateFingerprint",
+        "issuerSpkiFingerprint", "evidenceFingerprint", "reasonCode",
+        "effectiveAt", "thisUpdate", "nextUpdate"
+      ],
+      "properties": {
+        "role": { "enum": ["CLIENT", "SERVER"] },
+        "status": { "enum": ["GOOD", "REVOKED", "UNKNOWN"] },
+        "evidenceType": { "enum": ["CA_EVENT", "OCSP", "CRL"] },
+        "certificateFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "issuerSpkiFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "evidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+        },
+        "effectiveAt": { "$ref": "#/$defs/instant" },
+        "thisUpdate": { "$ref": "#/$defs/instant" },
+        "nextUpdate": { "$ref": "#/$defs/instant" }
+      }
+    },
+    "targetStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetId", "generation", "settingsFingerprint", "certificates"],
+      "properties": {
+        "targetId": { "$ref": "#/$defs/identifier" },
+        "generation": { "type": "integer", "minimum": 1 },
+        "settingsFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "certificates": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/certificateEvidence" }
+        }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "trustDomain", "publicationId", "deploymentScopeId",
+        "sequence", "previousPublicationFingerprint", "policyFingerprint",
+        "issuedAt", "expiresAt", "targets"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.controlPlaneCertificateStatusPublicationMaterial.v1"
+        },
+        "trustDomain": { "$ref": "#/$defs/identifier" },
+        "publicationId": { "$ref": "#/$defs/identifier" },
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "previousPublicationFingerprint": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/fingerprint" }
+          ]
+        },
+        "policyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "issuedAt": { "$ref": "#/$defs/instant" },
+        "expiresAt": { "$ref": "#/$defs/instant" },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/targetStatus" }
+        }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "material", "materialFingerprint", "signatures"],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.controlPlaneCertificateStatusPublication.v1"
+        },
+        "material": { "$ref": "#/$defs/material" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/authoritySignature" }
+        }
+      }
+    }
+  }
+}

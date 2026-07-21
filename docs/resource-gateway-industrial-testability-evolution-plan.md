@@ -21,8 +21,10 @@
 > withdraw，以短租约 cached proof 在 database time 到达签名时刻后执行 `ALL_REPLICAS STAGED -> durable
 > floor -> live transport -> ALL_REPLICAS ACTIVE -> serving`，并对重启 active generation 重新证明；health/
 > capability 如实投影 convergence。多副本必须使用外部 attested inventory，`FENCED_QUORUM` 在没有真实
-> traffic fence 时启动即拒绝。CA event watcher、撤销/OCSP/CRL、enterprise custody、生产 HA/DR/chaos
-> 仍未闭合，因此 production readiness 继续关闭。
+> traffic fence 时启动即拒绝。吊销链第一子步已冻结完整、签名、硬过期且 cursor 连续的
+> `bloge.controlPlaneCertificateStatusPublication.v1`，独立 M-of-N trust store 可验证外部 adapter
+> 归一化的 CA event/OCSP/CRL commitment；database floor、watcher、逐请求 gate、enterprise custody、
+> 生产 HA/DR/chaos 仍未闭合，因此 production readiness 继续关闭。
 
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |

@@ -23,7 +23,11 @@ whole-record fingerprint 阻断重复副本、回退、分叉、篡改与 author
 `ControlPlaneCertificateRotationConvergenceMonitor` 接入 runtime heartbeat、durable activation fence 与
 live serving fence：数据库时间到达签名时刻且全副本 `STAGED` 后，严格按 durable floor 先、live transport
 后晋级；新代必须等全副本 `ACTIVE` 才能出站。capability 可如实报告当前 convergence proof，但
-`productionReady=false` 仍保持关闭，因为 CA event watcher、撤销、企业 custody 与生产 HA/DR 尚未闭合。
+`productionReady=false` 仍保持关闭，因为 CA event watcher、吊销状态持久化/逐请求准入、企业 custody
+与生产 HA/DR 尚未闭合。吊销链的第一子步已冻结
+`bloge.controlPlaneCertificateStatusPublication.v1`：外部 adapter 把已验证的 CA event、OCSP 或 CRL
+归一化为完整、签名、硬过期、cursor 连续的无载荷快照，并由独立 M-of-N Ed25519 trust store 校验。
+该协议内核不等于运行时吊销已开放；数据库单调 floor、watcher 和 request gate 仍是后继门禁。
 
 ## 2. 根因模型
 
@@ -148,6 +152,9 @@ signed active head 也必须重新形成全副本 ACTIVE proof。`FENCED_QUORUM`
   配置或布尔真值，v2/v1/v3 旧 Schema 保持冻结。
 - certificate rotation event v1 与 apply result v1 严格 Schema：字段与 Java protocol 对齐，
   apply result 不投影 TLS material 或 resolver failure details。
+- certificate status publication v1 严格 Schema：冻结完整 target inventory、连续 cursor、前序指纹、
+  client/server 两类状态，以及 CA event/OCSP/CRL 的 payload-free fingerprint 与 freshness commitment；
+  禁止证书正文、responder URL、原始 OCSP/CRL、credential 和 provider exception。
 - certificate rotation floor snapshot v1 严格 Schema：仅投影代次、opaque material id、事件 identity、
   fingerprint 与时间，不携带 TLS material location 或 credential。
 - certificate rotation configuration v1 严格 Schema：冻结 authority、timing、baseline inventory 与
@@ -230,8 +237,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 7. 下一门禁
 
-下一门禁不再重复实现 ACK 接线，而是补齐 CA event watcher/cursor、撤销/OCSP/CRL、convergence SLO/
-alert、受控 switch-forward recovery 与独立运维演练。`FENCED_QUORUM` 只有在部署权威能证明缺失副本已
+下一门禁不再重复定义吊销 JSON，而是把已冻结的 status publication 接入 database-clock cursor/
+fingerprint floor、CA event watcher、硬过期缓存和逐请求 admission，并补齐 convergence SLO/alert、
+受控 switch-forward recovery 与独立运维演练。`FENCED_QUORUM` 只有在部署权威能证明缺失副本已
 无法继续服务旧 generation 后才可开放。尚未闭合的外部生产责任
 包括企业 CA 签发/吊销事件源、OCSP/CRL、HSM 私钥 custody、secret-manager lease、生产数据库迁移与
 备份恢复、HA/DR/chaos 和长周期证书生命周期认证。
