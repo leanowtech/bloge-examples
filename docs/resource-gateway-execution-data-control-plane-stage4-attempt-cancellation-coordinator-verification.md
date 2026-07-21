@@ -76,6 +76,9 @@ javadoc --release 25 -Werror -Xdoclint:all
 浏览器跳过，Spring Boot 可执行 JAR 重打包成功，总耗时 7 分 35 秒。独立解析 446 份 Surefire XML 得到
 相同汇总，制品大小为 39,339,813 字节，快照的 Maven/Surefire 进程正常退出。
 该全量基线同时包含 coordinator、数据库时间 invocation authorization 以及浏览器质量门生命周期修复。
+包含相同最终代码且仅追加验证文档的提交 `90b41a40` 又在 detached worktree 完成第二次全量门禁：
+3921 tests、0 failures、0 errors、2 skips，总耗时 7 分 59 秒；446 份 XML 与 39,339,813 字节 JAR
+独立复核一致，构建退出后没有 ChromeDriver、headless Chrome 或进程夹具残留。
 
 ## 4. 没有完成的产品闭环
 

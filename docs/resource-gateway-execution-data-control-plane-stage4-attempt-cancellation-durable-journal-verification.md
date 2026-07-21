@@ -120,6 +120,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 7 分 35 秒。独立解析 446 份 Surefire XML 得到相同汇总，制品大小为 39,339,813 字节，快照的
 Maven/Surefire 进程正常退出。该结果证明 journal、coordinator、invocation authorization
 与浏览器生命周期修复兼容完整 Resource Gateway 行为面，不把聚焦测试替代成全量回归结论。
+包含相同最终代码且仅追加验证文档的提交 `90b41a40` 又完成第二次 detached-worktree 全量门禁：
+3921 tests、0 failures、0 errors、2 skips，总耗时 7 分 59 秒；独立 XML/JAR 复核一致，构建退出后没有
+ChromeDriver、headless Chrome 或进程夹具残留。
 
 ## 6. 尚未完成
 

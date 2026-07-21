@@ -109,6 +109,12 @@ closer 与 process-scope 19 项内核测试全部执行且全绿。独立解析 
 0 errors、0 skips；`ScopedProcessTree` 的 package JavaDoc 以 `--release 25 -Werror -Xdoclint:all` 校验为
 0 warnings、0 errors；上述 3921 项不可变快照全量门禁又证明该分类修订与完整 Resource Gateway 行为面兼容。
 
+为排除单次环境偶然性，包含同一最终代码且仅追加验证文档的提交 `90b41a40` 又在不共享 `target` 的
+detached worktree 完成第二次 `clean verify`：3921 tests、0 failures、0 errors、2 skips，总耗时 7 分
+59 秒；独立解析 446 份 Surefire XML 得到相同汇总，JAR 为 39,339,813 字节。构建退出后再扫描操作系统
+进程表，没有 ChromeDriver、headless Chrome、`sleep 123456789` 或 shell-child 夹具残留。两次全量结果
+相同，第二次还补齐了退出后的进程级残留检查。
+
 ## 5. 未完成边界
 
 本增量关闭的是“浏览器测试 JVM 可被第三方 session handshake 永久拖死”的质量门禁活性缺口，
