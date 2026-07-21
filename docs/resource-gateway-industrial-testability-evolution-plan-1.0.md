@@ -14,9 +14,16 @@
 > `bloge.controlPlaneCertificateStatusPublication.v1`，独立 M-of-N trust store 可验证外部 adapter
 > 归一化的 CA event/OCSP/CRL commitment；database-clock floor 已闭合连续 cursor、完整清单、发布 ID
 > 唯一、整行指纹和吊销不可逆。bounded watcher、wall-clock + monotonic hard-expiry cache 以及精确
-> target/generation/settings 的逐请求 gate 已形成可嵌入内核；Spring/source transport 产品接线、
-> enterprise custody、
-> 生产 HA/DR/chaos 仍未闭合，因此 production readiness 继续关闭。
+> target/generation/settings 的逐请求 gate 已形成可嵌入内核。后续产品增量已补齐 strict normalized
+> publication HTTPS source、private PKIX/SPKI/mTLS 与双端 workload identity、数据库 floor、bounded
+> monitor/scheduler、Spring test/staging composition、固定基数 health、Tool Studio capability、严格
+> Schema/profile metadata 和 demo preflight；12 条 live transport 在 handler I/O 前执行 exact status
+> admission。远端短暂不可用时只允许使用尚未越过 wall-clock + monotonic hard expiry 的 durable cached
+> snapshot，撤销、未知、错代、fingerprint 漂移和硬过期均立即失败关闭。source 使用独立静态身份以避免
+> 由被保护 transport 拉取自身状态的递归 bootstrap。certified enterprise CA/OCSP/CRL adapter、动态
+> authority/source identity 轮换、外部 SLO、enterprise custody 和生产数据库/HA/DR/chaos 仍未闭合，
+> 因此 production readiness 继续关闭。验证见
+> [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)。
 
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging

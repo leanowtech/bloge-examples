@@ -2,12 +2,17 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import org.junit.jupiter.api.Test;
 
+import java.io.InputStream;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Enumeration;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -102,6 +107,12 @@ class ControlPlaneCertificateStatusProductSchemaTest {
         assertThat(schema.at("/properties/authority-keys-json/maxLength").asInt())
                 .isEqualTo(512 * 1024);
         assertThat(schema.at("/properties/maximum-batch/maximum").asInt()).isEqualTo(32);
+        assertThat(schema.at(
+                "/allOf/2/then/properties/transport/properties/trust-store-path/minLength")
+                .asInt()).isEqualTo(1);
+        assertThat(schema.at(
+                "/allOf/2/then/properties/transport/properties/certificate-identity-required/const")
+                .asBoolean()).isTrue();
     }
 
     @Test
@@ -125,6 +136,61 @@ class ControlPlaneCertificateStatusProductSchemaTest {
                 "exceptionMessage"}) {
             assertThat(combined).doesNotContain("\"" + forbidden + "\"");
         }
+    }
+
+    @Test
+    void testAndStagingProfilesExactlyPublishTheFrozenConfigurationKeys()
+            throws Exception {
+        JsonNode schema = schema(
+                "control-plane-certificate-status-configuration-v1.schema.json");
+        Set<String> expected = propertyNames(schema.path("properties"));
+        Set<String> expectedTransport = propertyNames(
+                schema.at("/$defs/transport/properties"));
+        YAMLMapper yaml = new YAMLMapper();
+
+        for (String profile : new String[]{"test", "staging"}) {
+            JsonNode configured = yaml.readTree(Files.readString(profilePath(profile)))
+                    .at("/gateway/testing/control-plane-certificate-status");
+            assertThat(propertyNames(configured))
+                    .containsExactlyInAnyOrderElementsOf(expected);
+            assertThat(propertyNames(configured.path("transport")))
+                    .containsExactlyInAnyOrderElementsOf(expectedTransport);
+        }
+        JsonNode staging = yaml.readTree(Files.readString(profilePath("staging")))
+                .at("/gateway/testing/control-plane-certificate-status");
+        assertThat(staging.path("required").asText()).isEqualTo(
+                "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENABLED:false}");
+        assertThat(staging.at("/transport/required").asText()).isEqualTo(
+                "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_ENABLED:false}");
+        assertThat(staging.at("/transport/certificate-identity-required").asText())
+                .isEqualTo(
+                        "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_ENABLED:false}");
+    }
+
+    @Test
+    void java25BuildPublishesEveryDocumentedNestedSpringConfigurationProperty()
+            throws Exception {
+        JsonNode metadata = projectConfigurationMetadata();
+        String prefix = ControlPlaneCertificateStatusRuntimeProperties.PREFIX;
+        Set<String> expected = new LinkedHashSet<>();
+        recordPropertyNames(ControlPlaneCertificateStatusRuntimeProperties.class).stream()
+                .filter(name -> !"transport".equals(name))
+                .map(name -> prefix + "." + name)
+                .forEach(expected::add);
+        recordPropertyNames(RecoveryFleetPublicationTransportProperties.class).stream()
+                .map(name -> prefix + ".transport." + name)
+                .forEach(expected::add);
+
+        assertThat(metadata.path("groups").valueStream()
+                .map(value -> value.path("name").asText()))
+                .contains(prefix, prefix + ".transport");
+        var properties = metadata.path("properties").valueStream()
+                .filter(value -> value.path("name").asText().startsWith(prefix + "."))
+                .toList();
+        assertThat(properties.stream().map(value -> value.path("name").asText()))
+                .containsExactlyInAnyOrderElementsOf(expected);
+        assertThat(properties).allSatisfy(value ->
+                assertThat(value.path("description").asText()).isNotBlank());
     }
 
     private void assertRecord(Object value, String schemaName) throws Exception {
@@ -158,7 +224,33 @@ class ControlPlaneCertificateStatusProductSchemaTest {
     }
 
     private static Path schemaPath(String name) {
-        return Path.of("..", "docs", "schemas", "resource-gateway-testing", name);
+        Path path = Path.of("..", "docs", "schemas", "resource-gateway-testing", name);
+        return Files.exists(path) ? path : Path.of("docs", "schemas",
+                "resource-gateway-testing", name);
+    }
+
+    private static Path profilePath(String profile) {
+        Path path = Path.of("src", "main", "resources", "application-" + profile + ".yml");
+        return Files.exists(path) ? path : Path.of("resource-gateway-examples", "src",
+                "main", "resources", "application-" + profile + ".yml");
+    }
+
+    private JsonNode projectConfigurationMetadata() throws Exception {
+        String prefix = ControlPlaneCertificateStatusRuntimeProperties.PREFIX;
+        Enumeration<URL> resources = getClass().getClassLoader().getResources(
+                "META-INF/spring-configuration-metadata.json");
+        while (resources.hasMoreElements()) {
+            try (InputStream input = resources.nextElement().openStream()) {
+                JsonNode candidate = objectMapper.readTree(input);
+                boolean ownsPrefix = candidate.path("groups").valueStream().anyMatch(
+                        group -> prefix.equals(group.path("name").asText()));
+                if (ownsPrefix) {
+                    return candidate;
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "Certificate status configuration metadata is missing");
     }
 
     private static Set<String> schemaNames() {

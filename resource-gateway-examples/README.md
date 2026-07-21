@@ -519,6 +519,27 @@ stays degraded. Multi-replica mode requires externally attested inventory;
 lease variables. Actuator and Tool Studio now report bounded convergence integration,
 availability, current proof and serving readiness.
 
+Signed certificate-status admission is available beside rotation in the `test` and `staging`
+profiles. Set `RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENABLED=true` only with required signed
+rotation and the exact same deployment scope. Configure an independent status trust domain,
+accepted policy fingerprints, M-of-N public Ed25519 authority keys, a pinned publication-chain
+baseline, bounded refresh policy, and a private-PKIX/SPKI/mTLS identity under
+`RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_*`. The source accepts only strict normalized
+complete-snapshot publications; a database-clock floor rejects gaps, forks, rollback, omitted
+targets, and revoked-to-valid resurrection before updating the local dual-clock admission cache.
+Every live rotating transport checks the exact target, generation, and settings fingerprint before
+request dispatch. `REVOKED`, `UNKNOWN`, mismatch, or hard expiry therefore fails before handler I/O.
+
+The status source deliberately uses a static, separately governed client identity rather than one
+of the rotating transports it protects; this avoids a recursive bootstrap dependency. A transient
+source outage may continue serving only while the last durable signed snapshot remains inside its
+wall-clock and monotonic hard-expiry lease. Actuator and Tool Studio distinguish source
+availability from cached admission freshness, and expose no URI, certificate, fingerprint,
+credential reference, or provider diagnostic. The demo preflight validates exact scope binding,
+HTTPS, public-only trust material, finite I/O/scheduler bounds, private trust, workload identities,
+and cross-source client-identity isolation before Maven build. See the
+[certificate-status product verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md).
+
 Authenticated CA event delivery is now available as a separate test/staging product path. Set
 `RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED=true` only after signed rotation
 and convergence are both enabled and required, then configure an HTTPS endpoint, pinned baseline
@@ -534,8 +555,9 @@ Tool Studio booleans. The demo preflight rejects HTTP/loopback staging sources, 
 weak transport, unreadable key stores, invalid bounds, or resolved credentials before Maven build.
 See the [event watcher product verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-rotation-event-watcher-product-verification.md).
 
-`productionReady` deliberately remains false. The delivered test/staging path does not yet prove CA
-source HA and retention/compaction, event-source client-certificate hot rotation, external alerting
+`productionReady` deliberately remains false. The delivered test/staging path does not yet prove a
+certified enterprise CA/OCSP/CRL normalizer, dynamic status-authority trust rotation, CA source HA
+and retention/compaction, event/status-source client-certificate hot rotation, external alerting
 and freshness/backlog SLO, HSM custody, production database certification, or HA/DR/chaos behavior.
 See the
 [certificate identity and rotation kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md).

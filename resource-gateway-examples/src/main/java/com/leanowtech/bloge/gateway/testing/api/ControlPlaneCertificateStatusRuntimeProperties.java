@@ -107,7 +107,11 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
                 || initialDelayMillis < 0 || initialDelayMillis > 300_000
                 || maximumBatch < 1 || maximumBatch > 32
                 || !transport.enabled() || !transport.required()
-                || !transport.certificateIdentityBound())) {
+                || transport.trustStorePath().isBlank()
+                || transport.trustStorePasswordRef().isBlank()
+                || !transport.certificateIdentityRequired()
+                || !transport.certificateIdentityBound()
+                || oversized(transport))) {
             throw invalid();
         }
     }
@@ -156,6 +160,19 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
 
     private static String normalized(String value) {
         return Objects.requireNonNullElse(value, "").trim();
+    }
+
+    private static boolean oversized(RecoveryFleetPublicationTransportProperties transport) {
+        return transport.trustStorePath().length() > 2_048
+                || transport.trustStorePasswordRef().length() > 2_048
+                || transport.clientKeyStorePath().length() > 2_048
+                || transport.clientKeyStorePasswordRef().length() > 2_048
+                || transport.serverSpkiPins().length() > 1_151
+                || transport.expectedClientSubjectDn().length() > 2_048
+                || transport.expectedClientUriSan().length() > 2_048
+                || transport.clientIssuerSpkiPins().length() > 1_151
+                || transport.expectedServerUriSan().length() > 2_048
+                || transport.serverIssuerSpkiPins().length() > 1_151;
     }
 
     private static IllegalArgumentException invalid() {

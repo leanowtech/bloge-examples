@@ -66,6 +66,41 @@ class ControlPlaneCertificateStatusRuntimePropertiesTest {
     }
 
     @Test
+    void enabledPolicyRejectsSystemTrustOptionalIdentityAndOversizedTransport()
+            throws Exception {
+        RecoveryFleetPublicationTransportProperties systemTrust =
+                new RecoveryFleetPublicationTransportProperties(true, true,
+                        "", "", "/etc/bloge/status-client.p12", "secret:status-client",
+                        fingerprint('a'), true, "CN=resource-gateway-status-client",
+                        "spiffe://example.test/resource-gateway/status-client", fingerprint('b'),
+                        "spiffe://example.test/certificate-status/server", fingerprint('c'));
+        RecoveryFleetPublicationTransportProperties optionalIdentity =
+                new RecoveryFleetPublicationTransportProperties(true, true,
+                        "/etc/bloge/status-trust.p12", "secret:status-trust",
+                        "/etc/bloge/status-client.p12", "secret:status-client",
+                        fingerprint('a'), false, "CN=resource-gateway-status-client",
+                        "spiffe://example.test/resource-gateway/status-client", fingerprint('b'),
+                        "spiffe://example.test/certificate-status/server", fingerprint('c'));
+        RecoveryFleetPublicationTransportProperties oversized =
+                new RecoveryFleetPublicationTransportProperties(true, true,
+                        "/" + "t".repeat(2_048), "secret:status-trust",
+                        "/etc/bloge/status-client.p12", "secret:status-client",
+                        fingerprint('a'), true, "CN=resource-gateway-status-client",
+                        "spiffe://example.test/resource-gateway/status-client", fingerprint('b'),
+                        "spiffe://example.test/certificate-status/server", fingerprint('c'));
+
+        assertThatThrownBy(() -> properties(true, true, "rg-staging", "enterprise-ca",
+                POLICY, 1, keysJson(), systemTrust))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties(true, true, "rg-staging", "enterprise-ca",
+                POLICY, 1, keysJson(), optionalIdentity))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties(true, true, "rg-staging", "enterprise-ca",
+                POLICY, 1, keysJson(), oversized))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void publicKeyParserRejectsDuplicateUnknownTrailingAndOversizedConfiguration()
             throws Exception {
         String valid = keysJson();

@@ -156,6 +156,8 @@
             "properties": {
               "enabled": { "const": true },
               "required": { "const": true },
+              "trust-store-path": { "minLength": 1 },
+              "trust-store-password-ref": { "minLength": 1 },
               "client-key-store-path": { "minLength": 1 },
               "client-key-store-password-ref": { "minLength": 1 },
               "server-spki-pins": { "minLength": 71 },

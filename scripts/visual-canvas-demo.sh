@@ -72,6 +72,10 @@ Environment:
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_FLEET_ID  required immutable rollout generation
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_INSTANCE_ID  required stable serving slot
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EXPECTED_INSTANCE_IDS  required exact comma-separated inventory
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENABLED  optional signed CA status admission
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENDPOINT_URI  required HTTPS normalized-status endpoint
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_BASELINE_PUBLICATION_FINGERPRINT  required pinned status cursor
+  RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_CLIENT_KEY_STORE_PATH  required independent client identity
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED  optional authenticated CA event delivery
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENDPOINT_URI  required HTTPS page endpoint
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_BASELINE_PAGE_FINGERPRINT  required pinned chain head
@@ -687,8 +691,82 @@ validate_control_plane_certificate_rotation_event_source() {
         "certificate rotation event source"
 }
 
+validate_control_plane_certificate_status() {
+    if ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENABLED:-false}"; then
+        if truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_REQUIRED:-false}"; then
+            echo "Required certificate status admission cannot be disabled." >&2
+            return 1
+        fi
+        return 0
+    fi
+    local status_scope="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SCOPE_ID:-}"
+    if ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_REQUIRED:-true}" ||
+        ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED:-false}" ||
+        ! truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_REQUIRED:-false}" ||
+        [ -z "${status_scope}" ] ||
+        [ "${status_scope}" != "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SCOPE_ID:-}" ]; then
+        echo "Certificate status admission requires required signed rotation with the exact deployment scope." >&2
+        return 1
+    fi
+    local trust_domain="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRUST_DOMAIN:-}"
+    local policies="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ACCEPTED_POLICIES:-}"
+    local threshold="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SIGNATURE_THRESHOLD:-0}"
+    local authorities="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_AUTHORITY_KEYS_JSON:-[]}"
+    local baseline_sequence="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_BASELINE_SEQUENCE:-0}"
+    local baseline_fingerprint="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_BASELINE_PUBLICATION_FINGERPRINT:-}"
+    local endpoint="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENDPOINT_URI:-}"
+    if printf '%s\n%s\n' "${status_scope}" "${trust_domain}" |
+        grep -Eqv '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        ! printf '%s' "${policies}" |
+        grep -Eq '^sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31}$' ||
+        ! printf '%s' "${threshold}" | grep -Eq '^[1-9][0-9]*$' ||
+        [ "${threshold}" -gt 32 ] ||
+        ! printf '%s' "${authorities}" |
+        grep -Eq '^\[[[:space:]]*\{.*\}[[:space:]]*\]$' ||
+        printf '%s' "${authorities}" |
+        grep -Eqi '"(privateKey|privateKeyBase64|password)"[[:space:]]*:' ||
+        ! printf '%s' "${baseline_sequence}" | grep -Eq '^(0|[1-9][0-9]*)$' ||
+        ! printf '%s' "${baseline_fingerprint}" |
+        grep -Eq '^sha256:[a-f0-9]{64}$' ||
+        ! printf '%s' "${endpoint}" |
+        grep -Eq '^https://[^/?#[:space:]]+(/[^?#[:space:]]*)?$'; then
+        echo "Certificate status trust, baseline, or HTTPS source configuration is invalid." >&2
+        return 1
+    fi
+    local timeout="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_REQUEST_TIMEOUT_MILLIS:-5000}"
+    local bytes="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_MAXIMUM_PUBLICATION_BYTES:-524288}"
+    local skew="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_CLOCK_SKEW_SECONDS:-60}"
+    local lifetime="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_MAXIMUM_PUBLICATION_LIFETIME_SECONDS:-3600}"
+    local refresh="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_REFRESH_DELAY_MILLIS:-30000}"
+    local initial="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_INITIAL_DELAY_MILLIS:-1000}"
+    local batch="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_MAXIMUM_BATCH:-8}"
+    if printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+        "${timeout}" "${bytes}" "${skew}" "${lifetime}" "${refresh}" \
+        "${initial}" "${batch}" | grep -Eqv '^(0|[1-9][0-9]*)$' ||
+        [ "${timeout}" -lt 100 ] || [ "${timeout}" -gt 30000 ] ||
+        [ "${bytes}" -lt 1024 ] || [ "${bytes}" -gt 2097152 ] ||
+        [ "${skew}" -gt 300 ] || [ "${lifetime}" -lt 1 ] ||
+        [ "${lifetime}" -gt 86400 ] || [ "${refresh}" -lt 100 ] ||
+        [ "${refresh}" -gt 300000 ] || [ "${initial}" -gt 300000 ] ||
+        [ "${batch}" -lt 1 ] || [ "${batch}" -gt 32 ]; then
+        echo "Certificate status source, scheduler, or batch bounds are invalid." >&2
+        return 1
+    fi
+    if [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_TRUST_STORE_PATH:-}" ] ||
+        [ -z "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_TRUST_STORE_PASSWORD_REF:-}" ]; then
+        echo "Certificate status source requires a private trust store." >&2
+        return 1
+    fi
+    validate_control_plane_transport \
+        "RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT" \
+        "certificate status source"
+}
+
 validate_control_plane_identity_isolation() {
     local -a prefixes=()
+    if truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENABLED:-false}"; then
+        prefixes+=("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT")
+    fi
     if truthy "${RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_ENABLED:-false}"; then
         prefixes+=("RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_EVENT_SOURCE_TRANSPORT")
     fi
@@ -1489,6 +1567,7 @@ validate_profile_secrets() {
     validate_control_plane_identity_isolation
     validate_control_plane_certificate_rotation
     validate_control_plane_certificate_rotation_convergence
+    validate_control_plane_certificate_status
     validate_control_plane_certificate_rotation_event_source
 }
 
