@@ -86,6 +86,10 @@ mvn -f resource-gateway-examples/pom.xml \
 - descriptor/cancel 正常调用、固定槽饱和、adapter 忽略 interrupt 后的 lingering；
 - provider failure 脱敏、caller interrupt 恢复、关闭后拒绝与 policy 边界。
 
+最终执行 `mvn -f resource-gateway-examples/pom.xml clean verify`，结果为 3879 tests、0 failures、
+0 errors、2 个既有条件浏览器跳过，并成功重打包 Spring Boot 可执行 JAR。相对 3855 基线新增的
+24 项正好由 7 项 browser session supervision 内核测试和 17 项 cancellation proof-kernel 测试构成。
+
 五个新增 public protocol 类型另以 `javadoc --release 25 -Werror -Xdoclint:all` 独立验证，
 0 warnings、0 errors；该结论不外推为全模块既有 public API 的 JavaDoc 已全部清零。
 
