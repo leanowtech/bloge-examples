@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-testing/control-plane-certificate-status-source-head-floor-snapshot-v1.schema.json",
+  "title": "Control-plane certificate status source-head floor snapshot v1",
+  "description": "Strict durable highest verified certificate-status source head. Empty attestation fields and null times represent only the deployment-pinned baseline before first acceptance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "deploymentScopeId", "baselineSequence",
+    "baselinePublicationFingerprint", "headSequence",
+    "headPublicationFingerprint", "attestationId", "attestationFingerprint",
+    "issuedAt", "expiresAt", "observedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateStatusSourceHeadFloorSnapshot.v1"
+    },
+    "deploymentScopeId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "baselineSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "baselinePublicationFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "headSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "headPublicationFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "attestationId": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "attestationFingerprint": {
+      "type": "string",
+      "pattern": "^$|^sha256:[a-f0-9]{64}$"
+    },
+    "issuedAt": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "format": "date-time" }
+      ]
+    },
+    "expiresAt": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "format": "date-time" }
+      ]
+    },
+    "observedAt": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "format": "date-time" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-testing/control-plane-certificate-status-source-response-v2.schema.json",
+  "title": "Control-plane certificate status source response v2",
+  "description": "Strict response binding an optional immediate successor publication to an exact signed source head. A null publication is valid only when the requester cursor equals sourceHead; that cursor-dependent invariant is enforced by the transport adapter.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sourceHead", "publication"],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateStatusSourceResponse.v2"
+    },
+    "sourceHead": {
+      "$ref": "control-plane-certificate-status-source-head-v1.schema.json"
+    },
+    "publication": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "control-plane-certificate-status-publication-v1.schema.json" }
+      ]
+    }
+  }
+}

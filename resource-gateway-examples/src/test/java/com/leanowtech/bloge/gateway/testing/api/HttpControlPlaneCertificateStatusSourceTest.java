@@ -55,6 +55,8 @@ class HttpControlPlaneCertificateStatusSourceTest {
     void fetchesOneStrictContiguousPublicationWithExactCursorAndHeaders() throws Exception {
         ControlPlaneCertificateStatusPublication publication = publication(
                 1, "", NOW, NOW.plusSeconds(60));
+        ControlPlaneCertificateStatusSourceHead sourceHead = sourceHead(
+                3, fingerprint('3'), NOW, NOW.plusSeconds(300));
         AtomicReference<String> query = new AtomicReference<>();
         AtomicReference<String> accept = new AtomicReference<>();
         AtomicReference<String> protocol = new AtomicReference<>();
@@ -63,7 +65,8 @@ class HttpControlPlaneCertificateStatusSourceTest {
             accept.set(exchange.getRequestHeaders().getFirst("Accept"));
             protocol.set(exchange.getRequestHeaders().getFirst(
                     HttpControlPlaneCertificateStatusSource.PROTOCOL_HEADER));
-            respond(exchange, 200, objectMapper.writeValueAsBytes(publication), true, true);
+            respond(exchange, 200, objectMapper.writeValueAsBytes(
+                    response(publication, sourceHead)), true, true);
         });
 
         ControlPlaneCertificateStatusSource.FetchResult result = source().fetch(cursor());
@@ -71,6 +74,8 @@ class HttpControlPlaneCertificateStatusSourceTest {
         assertThat(result.status()).isEqualTo(
                 ControlPlaneCertificateStatusSource.FetchStatus.PUBLICATION);
         assertThat(result.publication()).isEqualTo(publication);
+        assertThat(result.sourceHead()).isEqualTo(sourceHead);
+        assertThat(result.exactSourceHead()).isTrue();
         assertThat(query.get()).contains("deploymentScopeId=" + SCOPE,
                 "afterSequence=0", "afterPublicationFingerprint=sha256%3A");
         assertThat(accept.get()).isEqualTo(HttpControlPlaneCertificateStatusSource.MEDIA_TYPE);
@@ -87,27 +92,40 @@ class HttpControlPlaneCertificateStatusSourceTest {
     }
 
     @Test
-    void acceptsOnlyProtocolBoundEmptyResponses() {
-        handler.set(exchange -> respond(exchange, 204, new byte[0], false, true));
-        assertThat(source().fetch(cursor()).status()).isEqualTo(
+    void unchangedRequiresAnExactSignedHeadAndForbidsEmptySuccess() throws Exception {
+        ControlPlaneCertificateStatusSourceHead baseline = sourceHead(
+                0, fingerprint('0'), NOW, NOW.plusSeconds(300));
+        handler.set(exchange -> respond(exchange, 200,
+                objectMapper.writeValueAsBytes(response(null, baseline)), true, true));
+        var unchanged = source().fetch(cursor());
+        assertThat(unchanged.status()).isEqualTo(
                 ControlPlaneCertificateStatusSource.FetchStatus.UNCHANGED);
+        assertThat(unchanged.sourceHead()).isEqualTo(baseline);
 
-        handler.set(exchange -> respond(exchange, 204, new byte[0], false, false));
+        handler.set(exchange -> respond(exchange, 200, objectMapper.writeValueAsBytes(
+                response(null, sourceHead(1, fingerprint('1'), NOW,
+                        NOW.plusSeconds(300)))), true, true));
         assertThat(source().fetch(cursor()).reasonCode())
-                .isEqualTo("CERTIFICATE_STATUS_PROTOCOL_DOWNGRADE");
+                .isEqualTo("CERTIFICATE_STATUS_SOURCE_RESPONSE_INVALID");
+
+        handler.set(exchange -> respond(exchange, 204, new byte[0], false, true));
+        assertThat(source().fetch(cursor()).reasonCode())
+                .isEqualTo("CERTIFICATE_STATUS_HTTP_REJECTED");
     }
 
     @Test
     void rejectsMediaTypeProtocolAndFingerprintDowngrade() throws Exception {
         ControlPlaneCertificateStatusPublication publication = publication(
                 1, "", NOW, NOW.plusSeconds(60));
+        ControlPlaneCertificateStatusSourceHead sourceHead = sourceHead(
+                1, publication.materialFingerprint(), NOW, NOW.plusSeconds(300));
         handler.set(exchange -> respond(exchange, 200,
-                objectMapper.writeValueAsBytes(publication), false, true));
+                objectMapper.writeValueAsBytes(response(publication, sourceHead)), false, true));
         assertThat(source().fetch(cursor()).reasonCode())
                 .isEqualTo("CERTIFICATE_STATUS_PROTOCOL_DOWNGRADE");
 
         handler.set(exchange -> respond(exchange, 200,
-                objectMapper.writeValueAsBytes(publication), true, false));
+                objectMapper.writeValueAsBytes(response(publication, sourceHead)), true, false));
         assertThat(source().fetch(cursor()).reasonCode())
                 .isEqualTo("CERTIFICATE_STATUS_PROTOCOL_DOWNGRADE");
 
@@ -115,9 +133,11 @@ class HttpControlPlaneCertificateStatusSourceTest {
                 ControlPlaneCertificateStatusPublication.SCHEMA_VERSION,
                 publication.material(), fingerprint('9'), publication.signatures());
         handler.set(exchange -> respond(exchange, 200,
-                objectMapper.writeValueAsBytes(tampered), true, true));
+                objectMapper.writeValueAsBytes(response(tampered, sourceHead(
+                        1, tampered.materialFingerprint(), NOW,
+                        NOW.plusSeconds(300)))), true, true));
         assertThat(source().fetch(cursor()).reasonCode())
-                .isEqualTo("CERTIFICATE_STATUS_PUBLICATION_INVALID");
+                .isEqualTo("CERTIFICATE_STATUS_SOURCE_RESPONSE_INVALID");
     }
 
     @Test
@@ -130,8 +150,11 @@ class HttpControlPlaneCertificateStatusSourceTest {
         ControlPlaneCertificateStatusSource.Cursor successorCursor =
                 new ControlPlaneCertificateStatusSource.Cursor(1, fingerprint('0'));
         handler.set(exchange -> respond(exchange, 200,
-                objectMapper.writeValueAsBytes(publication(
-                        2, fingerprint('8'), NOW, NOW.plusSeconds(60))), true, true));
+                objectMapper.writeValueAsBytes(response(publication(
+                        2, fingerprint('8'), NOW, NOW.plusSeconds(60)), sourceHead(
+                        2, publication(2, fingerprint('8'), NOW,
+                                NOW.plusSeconds(60)).materialFingerprint(), NOW,
+                        NOW.plusSeconds(300)))), true, true));
         assertThat(source().fetch(successorCursor).status()).isEqualTo(
                 ControlPlaneCertificateStatusSource.FetchStatus.PROTOCOL_REJECTED);
     }
@@ -146,12 +169,12 @@ class HttpControlPlaneCertificateStatusSourceTest {
         handler.set(exchange -> respond(exchange, 200,
                 "{not-json".getBytes(StandardCharsets.UTF_8), true, true));
         assertThat(source().fetch(cursor()).reasonCode())
-                .isEqualTo("CERTIFICATE_STATUS_PUBLICATION_INVALID");
+                .isEqualTo("CERTIFICATE_STATUS_SOURCE_RESPONSE_INVALID");
 
         handler.set(exchange -> respond(exchange, 200,
                 "{\"unknown\":true}".getBytes(StandardCharsets.UTF_8), true, true));
         assertThat(source().fetch(cursor()).reasonCode())
-                .isEqualTo("CERTIFICATE_STATUS_PUBLICATION_INVALID");
+                .isEqualTo("CERTIFICATE_STATUS_SOURCE_RESPONSE_INVALID");
     }
 
     @Test
@@ -182,7 +205,9 @@ class HttpControlPlaneCertificateStatusSourceTest {
     private void assertRejected(ControlPlaneCertificateStatusPublication publication)
             throws Exception {
         handler.set(exchange -> respond(exchange, 200,
-                objectMapper.writeValueAsBytes(publication), true, true));
+                objectMapper.writeValueAsBytes(response(publication, sourceHead(
+                        publication.material().sequence(), publication.materialFingerprint(),
+                        NOW, NOW.plusSeconds(300)))), true, true));
         assertThat(source().fetch(cursor()).status()).isEqualTo(
                 ControlPlaneCertificateStatusSource.FetchStatus.PROTOCOL_REJECTED);
     }
@@ -265,6 +290,29 @@ class HttpControlPlaneCertificateStatusSourceTest {
                 new ControlPlaneCertificateStatusPublication.AuthoritySignature(
                         "authority-a", "key-a", "Ed25519", evidenceTime,
                         Base64.getEncoder().encodeToString(new byte[64]))));
+    }
+
+    private ControlPlaneCertificateStatusSourceHead sourceHead(
+            long sequence, String publicationFingerprint, Instant issuedAt, Instant expiresAt) {
+        var material = new ControlPlaneCertificateStatusSourceHead.Material(
+                ControlPlaneCertificateStatusSourceHead.Material.SCHEMA_VERSION,
+                "enterprise-ca-status", "source-head-%03d-%d".formatted(
+                sequence, issuedAt.getEpochSecond()), SCOPE, sequence,
+                publicationFingerprint, fingerprint('f'), issuedAt, expiresAt);
+        return new ControlPlaneCertificateStatusSourceHead(
+                ControlPlaneCertificateStatusSourceHead.SCHEMA_VERSION, material,
+                ProtocolFingerprint.of(objectMapper, material), List.of(
+                new ControlPlaneCertificateStatusPublication.AuthoritySignature(
+                        "authority-a", "key-a", "Ed25519", issuedAt,
+                        Base64.getEncoder().encodeToString(new byte[64]))));
+    }
+
+    private static ControlPlaneCertificateStatusSourceResponse response(
+            ControlPlaneCertificateStatusPublication publication,
+            ControlPlaneCertificateStatusSourceHead sourceHead) {
+        return new ControlPlaneCertificateStatusSourceResponse(
+                ControlPlaneCertificateStatusSourceResponse.SCHEMA_VERSION,
+                sourceHead, publication);
     }
 
     private static ControlPlaneCertificateStatusPublication.CertificateEvidence evidence(

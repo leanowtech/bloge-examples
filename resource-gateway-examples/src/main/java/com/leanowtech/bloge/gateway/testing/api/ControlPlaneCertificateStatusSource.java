@@ -47,21 +47,26 @@ public interface ControlPlaneCertificateStatusSource {
      *
      * @param status closed source result
      * @param publication candidate only for {@link FetchStatus#PUBLICATION}
+     * @param sourceHead exact signed source head for successful v2 responses, otherwise null
      */
     record FetchResult(
             FetchStatus status,
             ControlPlaneCertificateStatusPublication publication,
+            ControlPlaneCertificateStatusSourceHead sourceHead,
             String reasonCode) {
 
         /** Enforces all-or-none status and candidate publication. */
         public FetchResult {
             status = Objects.requireNonNull(status, "status");
             reasonCode = reasonCode == null ? "" : reasonCode.trim();
+            boolean successful = status == FetchStatus.PUBLICATION
+                    || status == FetchStatus.UNCHANGED;
             if (status == FetchStatus.PUBLICATION && publication == null
                     || status != FetchStatus.PUBLICATION && publication != null
+                    || !successful && sourceHead != null
                     || status == FetchStatus.PUBLICATION && !reasonCode.isBlank()
-                    || status != FetchStatus.PUBLICATION
-                    && !reasonCode.matches("[A-Z][A-Z0-9_.-]{0,127}")) {
+                    || status == FetchStatus.UNCHANGED && !"NO_CHANGE".equals(reasonCode)
+                    || !successful && !reasonCode.matches("[A-Z][A-Z0-9_.-]{0,127}")) {
                 throw new IllegalArgumentException(
                         "Certificate status source result is invalid");
             }
@@ -69,24 +74,45 @@ public interface ControlPlaneCertificateStatusSource {
 
         /** @return a source response containing no successor */
         public static FetchResult unchanged() {
-            return new FetchResult(FetchStatus.UNCHANGED, null, "NO_CHANGE");
+            return new FetchResult(FetchStatus.UNCHANGED, null, null, "NO_CHANGE");
+        }
+
+        /** @return a v2 source response proving the supplied cursor is the exact head */
+        public static FetchResult unchanged(ControlPlaneCertificateStatusSourceHead sourceHead) {
+            return new FetchResult(FetchStatus.UNCHANGED, null,
+                    Objects.requireNonNull(sourceHead, "sourceHead"), "NO_CHANGE");
         }
 
         /** @return a source response containing one untrusted candidate */
         public static FetchResult publication(
                 ControlPlaneCertificateStatusPublication publication) {
             return new FetchResult(FetchStatus.PUBLICATION,
-                    Objects.requireNonNull(publication, "publication"), "");
+                    Objects.requireNonNull(publication, "publication"), null, "");
+        }
+
+        /** @return a v2 source response containing one successor and its exact source head */
+        public static FetchResult publication(
+                ControlPlaneCertificateStatusPublication publication,
+                ControlPlaneCertificateStatusSourceHead sourceHead) {
+            return new FetchResult(FetchStatus.PUBLICATION,
+                    Objects.requireNonNull(publication, "publication"),
+                    Objects.requireNonNull(sourceHead, "sourceHead"), "");
         }
 
         /** @return a bounded transient source-failure result */
         public static FetchResult unavailable(String reasonCode) {
-            return new FetchResult(FetchStatus.SOURCE_UNAVAILABLE, null, reasonCode);
+            return new FetchResult(FetchStatus.SOURCE_UNAVAILABLE, null, null, reasonCode);
         }
 
         /** @return a bounded strict-protocol rejection result */
         public static FetchResult rejected(String reasonCode) {
-            return new FetchResult(FetchStatus.PROTOCOL_REJECTED, null, reasonCode);
+            return new FetchResult(FetchStatus.PROTOCOL_REJECTED, null, null, reasonCode);
+        }
+
+        /** @return whether this successful result carries an exact signed source head */
+        public boolean exactSourceHead() {
+            return (status == FetchStatus.PUBLICATION || status == FetchStatus.UNCHANGED)
+                    && sourceHead != null;
         }
     }
 

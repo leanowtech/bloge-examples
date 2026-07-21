@@ -21,24 +21,27 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * Strict HTTPS/mTLS source for normalized certificate-status publications.
+ * Strict HTTPS/mTLS source for normalized certificate-status response envelopes.
  *
  * <p>The adapter follows no redirects, sends the exact durable cursor, accepts one versioned media
- * type and protocol header, bounds the body before parsing, rejects duplicate/unknown/trailing JSON,
- * and preflights scope, contiguous sequence, predecessor, canonical fingerprint, and freshness.
- * The database floor still repeats trust, cursor, inventory, and database-time verification.</p>
+ * type and protocol header, bounds the body before parsing, rejects duplicate/unknown/trailing
+ * JSON, and preflights the exact source head plus any contiguous successor. Empty successful
+ * responses are forbidden: an unchanged result must prove that the supplied cursor equals the
+ * signed head. The database floors still repeat trust, cursor, and database-time verification.</p>
  */
 public final class HttpControlPlaneCertificateStatusSource
         implements ControlPlaneCertificateStatusSource {
 
     /** Required response media type. */
     public static final String MEDIA_TYPE =
-            "application/vnd.bloge.control-plane-certificate-status-publication.v1+json";
+            "application/vnd.bloge.control-plane-certificate-status-source-response.v2+json";
     /** Exact response header preventing generic JSON downgrade. */
     public static final String PROTOCOL_HEADER =
             "X-BLOGE-Certificate-Status-Protocol";
     /** Exact protocol header value. */
-    public static final String PROTOCOL_VERSION = "certificate-status-publication-v1";
+    public static final String PROTOCOL_VERSION = "certificate-status-source-response-v2";
+
+    private static final Duration MAXIMUM_SOURCE_HEAD_LIFETIME = Duration.ofHours(24);
 
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -93,11 +96,6 @@ public final class HttpControlPlaneCertificateStatusSource
             HttpResponse<InputStream> response = client.send(
                     request, HttpResponse.BodyHandlers.ofInputStream());
             try (InputStream body = response.body()) {
-                if (response.statusCode() == 204) {
-                    return exactHeader(response, PROTOCOL_HEADER, PROTOCOL_VERSION)
-                            && emptyBody(body) ? FetchResult.unchanged()
-                            : FetchResult.rejected("CERTIFICATE_STATUS_PROTOCOL_DOWNGRADE");
-                }
                 if (response.statusCode() != 200) {
                     return transientStatus(response.statusCode())
                             ? FetchResult.unavailable("CERTIFICATE_STATUS_HTTP_UNAVAILABLE")
@@ -114,15 +112,22 @@ public final class HttpControlPlaneCertificateStatusSource
                 }
                 try {
                     byte[] bytes = bounded(body, settings.maximumPublicationBytes());
-                    ControlPlaneCertificateStatusPublication publication = objectMapper.readValue(
-                            bytes, ControlPlaneCertificateStatusPublication.class);
-                    return valid(publication, required)
-                            ? FetchResult.publication(publication)
-                            : FetchResult.rejected("CERTIFICATE_STATUS_PUBLICATION_INVALID");
+                    ControlPlaneCertificateStatusSourceResponse sourceResponse =
+                            objectMapper.readValue(bytes,
+                                    ControlPlaneCertificateStatusSourceResponse.class);
+                    if (!valid(sourceResponse, required)) {
+                        return FetchResult.rejected(
+                                "CERTIFICATE_STATUS_SOURCE_RESPONSE_INVALID");
+                    }
+                    return sourceResponse.hasPublication()
+                            ? FetchResult.publication(sourceResponse.publication(),
+                            sourceResponse.sourceHead())
+                            : FetchResult.unchanged(sourceResponse.sourceHead());
                 } catch (BodyTooLargeException tooLarge) {
                     return FetchResult.rejected("CERTIFICATE_STATUS_BODY_TOO_LARGE");
                 } catch (IOException | RuntimeException invalid) {
-                    return FetchResult.rejected("CERTIFICATE_STATUS_PUBLICATION_INVALID");
+                    return FetchResult.rejected(
+                            "CERTIFICATE_STATUS_SOURCE_RESPONSE_INVALID");
                 }
             }
         } catch (InterruptedException interrupted) {
@@ -147,7 +152,33 @@ public final class HttpControlPlaneCertificateStatusSource
         return URI.create(settings.endpointUri() + "?" + query);
     }
 
-    private boolean valid(
+    private boolean valid(ControlPlaneCertificateStatusSourceResponse response, Cursor cursor) {
+        if (response == null || !validSourceHead(response.sourceHead())) {
+            return false;
+        }
+        var head = response.sourceHead().material();
+        if (!response.hasPublication()) {
+            return head.headSequence() == cursor.sequence()
+                    && head.headPublicationFingerprint().equals(
+                    cursor.publicationFingerprint());
+        }
+        return validPublication(response.publication(), cursor);
+    }
+
+    private boolean validSourceHead(ControlPlaneCertificateStatusSourceHead sourceHead) {
+        if (sourceHead == null || !sourceHead.fingerprintVerified(objectMapper)) {
+            return false;
+        }
+        var material = sourceHead.material();
+        Instant now = clock.instant();
+        return material.deploymentScopeId().equals(settings.deploymentScopeId())
+                && !material.issuedAt().isAfter(now.plus(settings.clockSkew()))
+                && material.expiresAt().isAfter(now)
+                && Duration.between(material.issuedAt(), material.expiresAt())
+                .compareTo(MAXIMUM_SOURCE_HEAD_LIFETIME) <= 0;
+    }
+
+    private boolean validPublication(
             ControlPlaneCertificateStatusPublication publication, Cursor cursor) {
         if (publication == null || !publication.fingerprintVerified(objectMapper)) {
             return false;
@@ -174,10 +205,6 @@ public final class HttpControlPlaneCertificateStatusSource
 
     private static boolean transientStatus(int status) {
         return status == 408 || status == 425 || status == 429 || status >= 500;
-    }
-
-    private static boolean emptyBody(InputStream body) throws IOException {
-        return body.read() == -1;
     }
 
     private static byte[] bounded(InputStream input, int maximumBytes) throws IOException {
