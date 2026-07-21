@@ -141,6 +141,16 @@
 > 452 份 Surefire XML 汇总一致，JAR 与残留进程核验通过。验证见
 > [physical attempt lifecycle observation proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-lifecycle-observation-proof-kernel-verification.md)。
 
+> Stage 4 physical attempt 第六增量建立 database-authoritative lifecycle observation journal。immutable
+> command lifecycle、provider/deployment observation sequence 和 per-attempt latest positive state floor
+> 独立持久化，acceptance 原子协调三者；`NOT_OBSERVED/INDETERMINATE` 只能成为 non-confirming command
+> 结果。queue lease loss 后允许 observation，但 exact start 必须仍被完整保留；unexpired query 防 storm，
+> expired recovery 与 late receipt 由 provider sequence、attempt revision、process identity、state rank/time
+> 和 terminal immutability 收敛。19 项 H2 与跨实例并发/篡改测试、142 项物理链门禁全绿，两个新增公共
+> 类型及 receipt strict JavaDoc 零告警。跨 start/cancel/observation 的统一 provider ledger、coordinator、
+> reconciler、retention、queue/slot terminal 投影和真实 provider 仍待完成，capability 继续关闭。验证见
+> [physical attempt lifecycle observation durable-journal verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-lifecycle-observation-durable-journal-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

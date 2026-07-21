@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
  * @param startCommandId exact original start command
  * @param startCommandFingerprint exact original start-command material
  * @param leaseEpoch durable queue ownership generation observed by the provider
- * @param providerSequence monotonic provider-wide signed-fact sequence
+ * @param providerSequence monotonic provider-side observation sequence
  * @param attemptRevision monotonic state revision for this attempt, or zero if non-confirming
  * @param isolationMode physical boundary asserted by the provider
  * @param state closed observed lifecycle state

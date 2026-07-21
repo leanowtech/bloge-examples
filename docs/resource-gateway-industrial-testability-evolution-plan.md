@@ -162,6 +162,18 @@
 > （0 failures、0 errors、2 skips），452 份 Surefire XML 汇总一致，JAR 与残留进程核验通过。验证见
 > [physical attempt lifecycle observation proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-lifecycle-observation-proof-kernel-verification.md)。
 
+> Stage 4 physical attempt 第六增量新增 database-authoritative lifecycle observation journal。每条
+> command 的 `PREPARED/POSITIVE/NON_CONFIRMING` 生命周期、provider/deployment observation sequence
+> 与 per-attempt latest positive state floor 分表维护并在 acceptance 事务中协调；negative observation
+> 永不覆盖 positive floor。observation 在 queue lease loss 后仍可用于 orphan reconciliation，但必须重验
+> exact retained start；同 attempt 仅一条未过期 query，expired command 可由新 command 接管，合法迟到
+> receipt 仍受 provider sequence、attempt revision、process identity、state rank/effective time 和 terminal
+> immutability 约束。19 项 H2 行为/并发/篡改测试与 142 项完整物理链门禁全绿，两个新增公共类型和 receipt
+> strict JavaDoc 零告警。start/cancel/observation provider sequence 尚未统一，coordinator/reconciler、
+> retention/tombstone、queue/slot terminal 投影、真实 provider 与产品接线仍未实现，capability 继续关闭。
+> 验证见
+> [physical attempt lifecycle observation durable-journal verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-lifecycle-observation-durable-journal-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
