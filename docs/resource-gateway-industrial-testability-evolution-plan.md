@@ -47,6 +47,13 @@
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
 
+> 质量门禁活性增量：真实全量回归暴露 Selenium session handshake 可同时越过 HTTP client timeout 与
+> JUnit timeout，永久占住 Surefire JVM。浏览器回归现以单 daemon worker、无队列、caller-owned deadline
+> 和原子 session ownership 启动；timeout/interrupt/factory failure 后 abort 与 cleanup 在相互独立的
+> daemon 边界执行，迟到 session 唯一回收，正常 teardown 同样受 15 秒监督，失败只暴露闭集状态。
+> 8 项聚焦测试全绿。该机制保证测试调用线程收敛，不等于 OS process kill 或生产运行时 hard
+> cancellation。验证见 [browser session supervision verification](resource-gateway-test-quality-gate-browser-session-supervision-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
