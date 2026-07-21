@@ -59,6 +59,16 @@
 > process/container provider 尚未接线，能力继续关闭。验证见
 > [attempt cancellation proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-proof-kernel-verification.md)。
 
+> Stage 4 attempt cancellation 第二增量已建立 database-authoritative durable journal：provider 调用前
+> `prepare` 冻结 exact command/descriptor 和 attempt/lease-epoch 唯一绑定；`accept` 在同一事务使用
+> database time 复验 Ed25519 attestation，追加 immutable provider sequence、推进 deployment floor，
+> 并落 `CONFIRMED/UNCONFIRMED` terminal entry。exact replay、过期恢复、sequence rollback、terminal
+> rewrite、entry/floor/sequence 篡改与并发 prepare 的 13 项 H2 门禁全绿。retention/tombstone、动态
+> trust、worker/job 双线性化、orphan reconciliation 与产品接线仍未完成，capability 继续关闭。验证见
+> [durable cancellation journal verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-durable-journal-verification.md)。
+> 下表仍写的“durable cancellation receipt 待完成”特指 retention/tombstone、worker 消费与产品协议；
+> 不再指本增量已经落地的 journal correctness core。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

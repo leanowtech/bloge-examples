@@ -72,6 +72,18 @@
 > provider，因此产品 capability 继续关闭。验证见
 > [attempt cancellation proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-proof-kernel-verification.md)。
 
+> Stage 4 attempt cancellation 第二增量新增 database-authoritative durable journal。
+> `prepare` 在 provider 调用前冻结 exact command/descriptor，同一 attempt + lease epoch 只能绑定一份命令；
+> `accept` 在事务内使用 database time 重新验证 command、provider/deployment/key/time/signature，随后原子追加
+> immutable provider sequence、推进 deployment floor 并写入 `CONFIRMED/UNCONFIRMED` terminal entry。
+> exact replay 不重复推进 floor，过期后仍可读取已留存事实；rollback/fork/terminal rewrite、entry/floor/
+> sequence 篡改或缺失均 fail closed。13 项 H2 行为/并发测试全绿。当前尚无 retention/tombstone、动态
+> trust inventory、worker/job 双线性化、orphan reconciliation、Spring/HTTP/Schema/test-kit/capability，
+> 因此仍不是可启用的 hard-cancellation 产品能力。验证见
+> [durable cancellation journal verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-durable-journal-verification.md)。
+> 下表仍写的“durable cancellation receipt 待完成”特指 retention/tombstone、worker 消费与产品协议；
+> 不再指本增量已经落地的 journal correctness core。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
