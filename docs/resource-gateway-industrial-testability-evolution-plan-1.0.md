@@ -98,6 +98,14 @@ Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功�
 执行 230 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR 与 public
 JavaDoc 门禁。验证见 [Stage 4 external notary trust rotation verification](resource-gateway-execution-data-control-plane-stage4-external-notary-trust-rotation-verification.md)。
 
+紧接着的证书身份子步先交付不提升产品 capability 的内核：`ControlPlaneCertificateIdentityPolicy`
+在 PKIX/hostname/leaf pin 之外强制唯一 client key、双端 URI SAN、role EKU/KeyUsage、client Subject
+与独立 issuer pin；generation-based rotating transport 以锁外候选加载、锁内二次比较、连续代次、
+受限激活和最小重叠窗口保证请求只看到完整旧代或新代，证书过期则在网络前 fail closed。21 项内核
+测试和 79 项联合协议回归全绿。typed config、staging、Schema、health/capability 与九条产品链路尚未
+接入，不能据此宣称企业 PKI 已开放。验证见
+[certificate identity and rotation kernel verification](resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md)。
+
 Stage 2 本轮审计继续关闭 stored fixture 的对象稳定性和仓储替换断点：数据库 create/read 与
 execution、suite、durable 三类消费边界先做 canonical serialization round trip，递归冻结 JSON 容器并
 重算 bundle fingerprint，再把 read 结果绑定到完整 tenant/environment/id/revision lookup key，把 create

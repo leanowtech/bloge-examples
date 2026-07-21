@@ -18,6 +18,7 @@ import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
@@ -47,6 +48,9 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
 
     private final SSLContext sslContext;
     private final Descriptor descriptor;
+    private final boolean certificateIdentityBound;
+    private final Instant clientIdentityNotBefore;
+    private final Instant clientIdentityExpiresAt;
 
     /**
      * Loads and freezes one pinned mutual-TLS transport.
@@ -57,9 +61,22 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
     public PinnedMutualTlsRecoveryFleetPublicationTransport(
             Settings settings,
             SecretResolver secretResolver) {
+        this(settings, secretResolver, Instant.now());
+    }
+
+    /** Package-visible activation-time constructor used by atomic rotation preflight. */
+    PinnedMutualTlsRecoveryFleetPublicationTransport(
+            Settings settings,
+            SecretResolver secretResolver,
+            Instant identityValidationTime) {
         Settings required = Objects.requireNonNull(settings, "settings").validated();
         SecretResolver resolver = Objects.requireNonNull(secretResolver, "secretResolver");
-        this.sslContext = buildContext(required, resolver);
+        LoadedContext loaded = buildContext(required, resolver,
+                Objects.requireNonNull(identityValidationTime, "identityValidationTime"));
+        this.sslContext = loaded.sslContext();
+        this.clientIdentityNotBefore = loaded.identityNotBefore();
+        this.clientIdentityExpiresAt = loaded.identityExpiresAt();
+        this.certificateIdentityBound = required.certificateIdentityPolicy().bound();
         this.descriptor = new Descriptor(Descriptor.SCHEMA_VERSION,
                 required.trustStorePath() == null,
                 required.trustStorePath() != null, true, true);
@@ -83,6 +100,22 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
         return descriptor;
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public boolean certificateIdentityBound() {
+        return certificateIdentityBound;
+    }
+
+    /** Returns the latest not-before instant among selectable client certificates. */
+    Instant clientIdentityNotBefore() {
+        return clientIdentityNotBefore;
+    }
+
+    /** Returns the earliest expiry instant among selectable client certificates. */
+    Instant clientIdentityExpiresAt() {
+        return clientIdentityExpiresAt;
+    }
+
     /**
      * Public-only transport settings. Credential values are deliberately absent.
      *
@@ -91,13 +124,27 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
      * @param clientKeyStorePath absolute deployment-owned PKCS#12 client-key path
      * @param clientKeyStorePasswordRef opaque client-key-store password reference
      * @param serverSpkiPins one to sixteen canonical SHA-256 SPKI pins
+     * @param certificateIdentityPolicy exact X.509 workload identity policy
      */
     public record Settings(
             Path trustStorePath,
             String trustStorePasswordRef,
             Path clientKeyStorePath,
             String clientKeyStorePasswordRef,
-            Set<String> serverSpkiPins) {
+            Set<String> serverSpkiPins,
+            ControlPlaneCertificateIdentityPolicy certificateIdentityPolicy) {
+
+        /** Creates settings with the explicit compatibility identity policy. */
+        public Settings(
+                Path trustStorePath,
+                String trustStorePasswordRef,
+                Path clientKeyStorePath,
+                String clientKeyStorePasswordRef,
+                Set<String> serverSpkiPins) {
+            this(trustStorePath, trustStorePasswordRef, clientKeyStorePath,
+                    clientKeyStorePasswordRef, serverSpkiPins,
+                    ControlPlaneCertificateIdentityPolicy.unbound());
+        }
 
         /** Validates and canonicalizes all public transport configuration. */
         public Settings {
@@ -120,6 +167,8 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
                 throw invalid();
             }
             serverSpkiPins = Set.copyOf(pins);
+            certificateIdentityPolicy = Objects.requireNonNullElseGet(
+                    certificateIdentityPolicy, ControlPlaneCertificateIdentityPolicy::unbound);
         }
 
         /** @return this already validated immutable value */
@@ -204,7 +253,10 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
         }
     }
 
-    private static SSLContext buildContext(Settings settings, SecretResolver resolver) {
+    private static LoadedContext buildContext(
+            Settings settings,
+            SecretResolver resolver,
+            Instant identityValidationTime) {
         char[] trustPassword = null;
         char[] clientPassword = null;
         try {
@@ -220,23 +272,30 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
                 }
                 trustFactory.init(trustStore);
             }
-            X509ExtendedTrustManager baseTrust = x509TrustManager(
+            X509ExtendedTrustManager configuredTrust = x509TrustManager(
                     trustFactory.getTrustManagers());
+            X509ExtendedTrustManager baseTrust = constrainedTrustManager(
+                    configuredTrust, settings.certificateIdentityPolicy());
             TrustManager[] trustManagers = new TrustManager[]{
-                    new PinningTrustManager(baseTrust, settings.serverSpkiPins())};
+                    new PinningTrustManager(baseTrust, settings.serverSpkiPins(),
+                            settings.certificateIdentityPolicy())};
 
             clientPassword = requiredSecret(resolver, settings.clientKeyStorePasswordRef());
             KeyStore clientStore = loadStore(settings.clientKeyStorePath(), clientPassword);
             if (!containsPrivateKey(clientStore)) {
                 throw invalidMaterial();
             }
+            CertificateLifetime lifetime = certificateLifetime(clientStore);
+            settings.certificateIdentityPolicy().verifyClientKeyStore(
+                    clientStore, identityValidationTime);
             KeyManagerFactory keyFactory = KeyManagerFactory.getInstance(
                     KeyManagerFactory.getDefaultAlgorithm());
             keyFactory.init(clientStore, clientPassword);
 
             SSLContext context = SSLContext.getInstance("TLS");
             context.init(keyFactory.getKeyManagers(), trustManagers, new SecureRandom());
-            return context;
+            return new LoadedContext(
+                    context, lifetime.identityNotBefore(), lifetime.identityExpiresAt());
         } catch (IllegalArgumentException failure) {
             throw failure;
         } catch (Exception failure) {
@@ -277,6 +336,33 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
         return false;
     }
 
+    private static CertificateLifetime certificateLifetime(KeyStore store) throws Exception {
+        Instant notBefore = Instant.MIN;
+        Instant expiresAt = Instant.MAX;
+        boolean found = false;
+        var aliases = store.aliases();
+        while (aliases.hasMoreElements()) {
+            String alias = aliases.nextElement();
+            if (!store.isKeyEntry(alias)
+                    || !(store.getCertificate(alias) instanceof X509Certificate certificate)) {
+                continue;
+            }
+            found = true;
+            Instant candidateNotBefore = certificate.getNotBefore().toInstant();
+            Instant candidateExpiresAt = certificate.getNotAfter().toInstant();
+            if (candidateNotBefore.isAfter(notBefore)) {
+                notBefore = candidateNotBefore;
+            }
+            if (candidateExpiresAt.isBefore(expiresAt)) {
+                expiresAt = candidateExpiresAt;
+            }
+        }
+        if (!found || !expiresAt.isAfter(notBefore)) {
+            throw invalidMaterial();
+        }
+        return new CertificateLifetime(notBefore, expiresAt);
+    }
+
     private static X509ExtendedTrustManager x509TrustManager(TrustManager[] managers) {
         for (TrustManager manager : managers) {
             if (manager instanceof X509ExtendedTrustManager x509) {
@@ -284,6 +370,25 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
             }
         }
         throw invalidMaterial();
+    }
+
+    private static X509ExtendedTrustManager constrainedTrustManager(
+            X509ExtendedTrustManager configured,
+            ControlPlaneCertificateIdentityPolicy policy) throws Exception {
+        if (!policy.bound()) {
+            return configured;
+        }
+        X509Certificate[] admitted = policy.admittedServerIssuers(
+                configured.getAcceptedIssuers());
+        KeyStore anchors = KeyStore.getInstance(KEY_STORE_TYPE);
+        anchors.load(null, null);
+        for (int index = 0; index < admitted.length; index++) {
+            anchors.setCertificateEntry("authority-" + index, admitted[index]);
+        }
+        TrustManagerFactory factory = TrustManagerFactory.getInstance(
+                TrustManagerFactory.getDefaultAlgorithm());
+        factory.init(anchors);
+        return x509TrustManager(factory.getTrustManagers());
     }
 
     private static IllegalArgumentException invalidMaterial() {
@@ -297,13 +402,29 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
         }
     }
 
+    private record LoadedContext(
+            SSLContext sslContext,
+            Instant identityNotBefore,
+            Instant identityExpiresAt) {
+    }
+
+    private record CertificateLifetime(
+            Instant identityNotBefore,
+            Instant identityExpiresAt) {
+    }
+
     private static final class PinningTrustManager extends X509ExtendedTrustManager {
         private final X509ExtendedTrustManager delegate;
         private final Set<String> pins;
+        private final ControlPlaneCertificateIdentityPolicy identityPolicy;
 
-        private PinningTrustManager(X509ExtendedTrustManager delegate, Set<String> pins) {
+        private PinningTrustManager(
+                X509ExtendedTrustManager delegate,
+                Set<String> pins,
+                ControlPlaneCertificateIdentityPolicy identityPolicy) {
             this.delegate = delegate;
             this.pins = pins;
+            this.identityPolicy = identityPolicy;
         }
 
         @Override
@@ -317,6 +438,7 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
                 throws CertificateException {
             delegate.checkServerTrusted(chain, authType);
             requirePin(chain);
+            identityPolicy.verifyServerChain(chain);
         }
 
         @Override
@@ -330,6 +452,7 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
                 throws CertificateException {
             delegate.checkServerTrusted(chain, authType, socket);
             requirePin(chain);
+            identityPolicy.verifyServerChain(chain);
         }
 
         @Override
@@ -343,6 +466,7 @@ public final class PinnedMutualTlsRecoveryFleetPublicationTransport
                 throws CertificateException {
             delegate.checkServerTrusted(chain, authType, engine);
             requirePin(chain);
+            identityPolicy.verifyServerChain(chain);
         }
 
         @Override

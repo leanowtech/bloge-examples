@@ -33,6 +33,7 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -109,18 +110,35 @@ final class RecoveryFleetPublicationTlsFixture {
             KeyPair certificateAuthorityKey,
             X509Certificate certificateAuthority,
             KeyPair clientKey,
-            X509Certificate clientCertificate) {
+            X509Certificate clientCertificate,
+            String serverUriSan,
+            String clientUriSan) {
 
         static Material create(Path directory, String suffix) throws Exception {
+            return create(directory, suffix, true);
+        }
+
+        static Material createWithoutClientExtendedKeyUsage(
+                Path directory,
+                String suffix) throws Exception {
+            return create(directory, suffix, false);
+        }
+
+        private static Material create(
+                Path directory,
+                String suffix,
+                boolean clientExtendedKeyUsage) throws Exception {
+            String serverUriSan = "spiffe://bloge.test/control-plane/server/" + suffix;
+            String clientUriSan = "spiffe://bloge.test/control-plane/client/" + suffix;
             KeyPair caKey = keyPair();
             X509Certificate ca = certificate("recovery-ca-" + suffix, caKey, null, null,
-                    true, false, false);
+                    true, false, false, false, "");
             KeyPair serverKey = keyPair();
             X509Certificate server = certificate("localhost", serverKey, ca, caKey,
-                    false, true, false);
+                    false, true, false, true, serverUriSan);
             KeyPair clientKey = keyPair();
             X509Certificate client = certificate("recovery-client-" + suffix, clientKey,
-                    ca, caKey, false, false, true);
+                    ca, caKey, false, false, true, clientExtendedKeyUsage, clientUriSan);
 
             Path serverStore = directory.resolve("server-" + suffix + ".p12");
             Path clientStore = directory.resolve("client-" + suffix + ".p12");
@@ -129,20 +147,49 @@ final class RecoveryFleetPublicationTlsFixture {
             writeKeyStore(clientStore, "client", clientKey, client, ca);
             writeTrustStore(trustStore, ca);
             return new Material(serverStore, clientStore, trustStore, server,
-                    caKey, ca, clientKey, client);
+                    caKey, ca, clientKey, client, serverUriSan, clientUriSan);
         }
 
         Material rotateServer(Path directory, String suffix) throws Exception {
             KeyPair nextServerKey = keyPair();
             X509Certificate nextServer = certificate(
                     "localhost", nextServerKey, certificateAuthority,
-                    certificateAuthorityKey, false, true, false);
+                    certificateAuthorityKey, false, true, false, true, serverUriSan);
             Path nextServerStore = directory.resolve("server-" + suffix + ".p12");
             writeKeyStore(nextServerStore, "server", nextServerKey, nextServer,
                     certificateAuthority);
             return new Material(nextServerStore, clientKeyStore, trustStore, nextServer,
                     certificateAuthorityKey, certificateAuthority, clientKey,
-                    clientCertificate);
+                    clientCertificate, serverUriSan, clientUriSan);
+        }
+
+        Material rotateClient(Path directory, String suffix) throws Exception {
+            String nextClientUriSan = "spiffe://bloge.test/control-plane/client/" + suffix;
+            KeyPair nextClientKey = keyPair();
+            X509Certificate nextClient = certificate(
+                    "recovery-client-" + suffix, nextClientKey, certificateAuthority,
+                    certificateAuthorityKey, false, false, true, true, nextClientUriSan);
+            Path nextClientStore = directory.resolve("client-" + suffix + ".p12");
+            writeKeyStore(nextClientStore, "client", nextClientKey, nextClient,
+                    certificateAuthority);
+            return new Material(serverKeyStore, nextClientStore, trustStore,
+                    serverCertificate, certificateAuthorityKey, certificateAuthority,
+                    nextClientKey, nextClient, serverUriSan, nextClientUriSan);
+        }
+
+        Material addClientUriSan(Path directory, String suffix, String additionalUriSan)
+                throws Exception {
+            KeyPair nextClientKey = keyPair();
+            X509Certificate nextClient = certificate(
+                    "recovery-client-" + suffix, nextClientKey, certificateAuthority,
+                    certificateAuthorityKey, false, false, true, true,
+                    clientUriSan, additionalUriSan);
+            Path nextClientStore = directory.resolve("client-" + suffix + ".p12");
+            writeKeyStore(nextClientStore, "client", nextClientKey, nextClient,
+                    certificateAuthority);
+            return new Material(serverKeyStore, nextClientStore, trustStore,
+                    serverCertificate, certificateAuthorityKey, certificateAuthority,
+                    nextClientKey, nextClient, serverUriSan, clientUriSan);
         }
 
         private SSLContext serverContext() throws Exception {
@@ -205,7 +252,9 @@ final class RecoveryFleetPublicationTlsFixture {
                 KeyPair issuerKey,
                 boolean certificateAuthority,
                 boolean server,
-                boolean client) throws Exception {
+                boolean client,
+                boolean includeExtendedKeyUsage,
+                String... uriSans) throws Exception {
             X500Name subject = new X500Name("CN=" + commonName);
             X500Name issuer = issuerCertificate == null
                     ? subject : new X500Name(issuerCertificate.getSubjectX500Principal().getName());
@@ -230,16 +279,31 @@ final class RecoveryFleetPublicationTlsFixture {
             } else {
                 builder.addExtension(Extension.keyUsage, true,
                         new KeyUsage(KeyUsage.digitalSignature | KeyUsage.keyEncipherment));
-                if (server) {
+                if (server && includeExtendedKeyUsage) {
                     builder.addExtension(Extension.extendedKeyUsage, false,
                             new ExtendedKeyUsage(KeyPurposeId.id_kp_serverAuth));
+                }
+                if (server) {
+                    List<GeneralName> subjectNames = new java.util.ArrayList<>(List.of(
+                            new GeneralName(GeneralName.dNSName, "localhost"),
+                            new GeneralName(GeneralName.iPAddress, "127.0.0.1")));
+                    for (String uriSan : uriSans) {
+                        subjectNames.add(new GeneralName(
+                                GeneralName.uniformResourceIdentifier, uriSan));
+                    }
                     builder.addExtension(Extension.subjectAlternativeName, false,
-                            new GeneralNames(new GeneralName[]{
-                                    new GeneralName(GeneralName.dNSName, "localhost"),
-                                    new GeneralName(GeneralName.iPAddress, "127.0.0.1")}));
-                } else if (client) {
+                            new GeneralNames(subjectNames.toArray(GeneralName[]::new)));
+                } else if (client && includeExtendedKeyUsage) {
                     builder.addExtension(Extension.extendedKeyUsage, false,
                             new ExtendedKeyUsage(KeyPurposeId.id_kp_clientAuth));
+                }
+                if (client) {
+                    GeneralName[] subjectNames = java.util.Arrays.stream(uriSans)
+                            .map(uriSan -> new GeneralName(
+                                    GeneralName.uniformResourceIdentifier, uriSan))
+                            .toArray(GeneralName[]::new);
+                    builder.addExtension(Extension.subjectAlternativeName, false,
+                            new GeneralNames(subjectNames));
                 }
             }
             X509Certificate certificate = new JcaX509CertificateConverter().getCertificate(

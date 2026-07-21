@@ -53,7 +53,116 @@ class RecoveryFleetPublicationTransportTest {
                     .doesNotContain(temporaryDirectory.toString(), "test:trust", "test:client",
                             PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
                                     material.serverCertificate()));
+            assertThat(transport.certificateIdentityBound()).isFalse();
         }
+    }
+
+    @Test
+    void certificatePolicyBindsBothWorkloadIdentitiesAcrossARealTlsHandshake()
+            throws Exception {
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "identity-bound");
+        AtomicReference<String> peer = new AtomicReference<>();
+        try (var server = RecoveryFleetPublicationTlsFixture.startPublication(material, peer)) {
+            var transport = new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                    boundSettings(material, policy(material)), secretResolver());
+
+            var response = transport.client(Duration.ofSeconds(2)).send(
+                    HttpRequest.newBuilder(server.uri()).GET()
+                            .timeout(Duration.ofSeconds(2)).build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(peer.get()).contains("CN=recovery-client-identity-bound");
+            assertThat(transport.certificateIdentityBound()).isTrue();
+        }
+    }
+
+    @Test
+    void mismatchedClientSubjectUriIssuerAndMissingClientAuthFailBeforeAnyRequest()
+            throws Exception {
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "client-policy");
+        String subject = material.clientCertificate().getSubjectX500Principal().getName();
+        String issuerPin = PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                material.certificateAuthority());
+        String serverIssuerPin = issuerPin;
+
+        assertThatThrownBy(() -> new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                boundSettings(material, new ControlPlaneCertificateIdentityPolicy(
+                        "CN=another-client", material.clientUriSan(), Set.of(issuerPin),
+                        material.serverUriSan(), Set.of(serverIssuerPin))), secretResolver()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("material is unavailable");
+        assertThatThrownBy(() -> new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                boundSettings(material, new ControlPlaneCertificateIdentityPolicy(
+                        subject, "spiffe://bloge.test/control-plane/client/another",
+                        Set.of(issuerPin), material.serverUriSan(),
+                        Set.of(serverIssuerPin))), secretResolver()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                boundSettings(material, new ControlPlaneCertificateIdentityPolicy(
+                        subject, material.clientUriSan(), Set.of("sha256:" + "1".repeat(64)),
+                        material.serverUriSan(), Set.of(serverIssuerPin))), secretResolver()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        var missingEku = RecoveryFleetPublicationTlsFixture.Material
+                .createWithoutClientExtendedKeyUsage(temporaryDirectory, "client-no-eku");
+        assertThatThrownBy(() -> new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                boundSettings(missingEku, policy(missingEku)), secretResolver()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void additionalClientWorkloadUriFailsExactIdentityBinding() throws Exception {
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "client-extra-uri").addClientUriSan(
+                temporaryDirectory, "client-extra-uri-expanded",
+                "spiffe://bloge.test/control-plane/client/unrelated");
+
+        assertThatThrownBy(() -> new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                boundSettings(material, policy(material)), secretResolver()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("material is unavailable");
+    }
+
+    @Test
+    void mismatchedServerWorkloadUriFailsBeforeTheHttpHandler() throws Exception {
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "server-policy");
+        var mismatched = new ControlPlaneCertificateIdentityPolicy(
+                material.clientCertificate().getSubjectX500Principal().getName(),
+                material.clientUriSan(), Set.of(issuerPin(material)),
+                "spiffe://bloge.test/control-plane/server/another",
+                Set.of(issuerPin(material)));
+        try (var server = RecoveryFleetPublicationTlsFixture.startPublication(
+                material, new AtomicReference<>())) {
+            var transport = new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                    boundSettings(material, mismatched), secretResolver());
+
+            assertThatThrownBy(() -> transport.client(Duration.ofSeconds(2)).send(
+                    HttpRequest.newBuilder(server.uri()).GET()
+                            .timeout(Duration.ofSeconds(2)).build(),
+                    HttpResponse.BodyHandlers.discarding()))
+                    .isInstanceOfAny(java.io.IOException.class, InterruptedException.class);
+            assertThat(server.requests()).isZero();
+        }
+    }
+
+    @Test
+    void untrustedServerIssuerPolicyFailsBeforeClientConstructionCompletes()
+            throws Exception {
+        var material = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "server-issuer-policy");
+        var policy = new ControlPlaneCertificateIdentityPolicy(
+                material.clientCertificate().getSubjectX500Principal().getName(),
+                material.clientUriSan(), Set.of(issuerPin(material)),
+                material.serverUriSan(), Set.of("sha256:" + "2".repeat(64)));
+
+        assertThatThrownBy(() -> new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                boundSettings(material, policy), secretResolver()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("material is unavailable");
     }
 
     @Test
@@ -227,6 +336,30 @@ class RecoveryFleetPublicationTransportTest {
             Set<String> pins) {
         return new PinnedMutualTlsRecoveryFleetPublicationTransport.Settings(
                 trustStore, trustSecret, clientKeyStore, clientSecret, pins);
+    }
+
+    private static PinnedMutualTlsRecoveryFleetPublicationTransport.Settings boundSettings(
+            RecoveryFleetPublicationTlsFixture.Material material,
+            ControlPlaneCertificateIdentityPolicy policy) {
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport.Settings(
+                material.trustStore(), "test:trust", material.clientKeyStore(),
+                "test:client", Set.of(
+                PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                        material.serverCertificate())), policy);
+    }
+
+    private static ControlPlaneCertificateIdentityPolicy policy(
+            RecoveryFleetPublicationTlsFixture.Material material) {
+        String issuerPin = issuerPin(material);
+        return new ControlPlaneCertificateIdentityPolicy(
+                material.clientCertificate().getSubjectX500Principal().getName(),
+                material.clientUriSan(), Set.of(issuerPin), material.serverUriSan(),
+                Set.of(issuerPin));
+    }
+
+    private static String issuerPin(RecoveryFleetPublicationTlsFixture.Material material) {
+        return PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                material.certificateAuthority());
     }
 
     private static RecoveryFleetPublicationTransport.SecretResolver secretResolver() {

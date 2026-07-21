@@ -10,16 +10,20 @@ import java.util.Objects;
  * <p>This transport owns TLS material loading, server authentication, client identity, redirect
  * policy, and credential disposal. Protocol adapters retain responsibility for request and response
  * validation and never receive keystore passwords or private-key material. One transport instance
- * represents one frozen client identity and server-trust policy; callers must not reuse it across
- * independently governed control-plane authorities.</p>
+ * represents one governed client/server trust domain. Static adapters freeze that policy; rotating
+ * adapters may replace it only through an authenticated, monotonic generation protocol. Callers
+ * must not reuse either form across independently governed control-plane authorities.</p>
  */
 public interface ControlPlaneHttpTransport {
 
     /**
-     * Creates an immutable no-redirect client with the supplied connection deadline.
+     * Creates a no-redirect client with the supplied connection deadline.
+     *
+     * <p>Static transports return an immutable TLS client. A rotating transport may return a stable
+     * proxy whose request methods atomically select the current immutable TLS generation.</p>
      *
      * @param connectTimeout finite connection deadline from 100 milliseconds through 30 seconds
-     * @return immutable client carrying this transport's trust and identity policy
+     * @return client carrying this transport's governed trust and identity policy
      */
     HttpClient client(Duration connectTimeout);
 
@@ -29,6 +33,15 @@ public interface ControlPlaneHttpTransport {
      * @return immutable transport security descriptor
      */
     Descriptor descriptor();
+
+    /**
+     * Reports whether exact X.509 workload identities are enforced in addition to TLS trust.
+     *
+     * @return true only when both client and server identities are certificate-policy bound
+     */
+    default boolean certificateIdentityBound() {
+        return false;
+    }
 
     /** Resolves one opaque credential reference into caller-owned characters. */
     @FunctionalInterface
