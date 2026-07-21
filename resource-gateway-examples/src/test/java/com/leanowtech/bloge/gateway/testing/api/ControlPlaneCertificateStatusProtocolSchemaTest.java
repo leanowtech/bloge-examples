@@ -67,13 +67,33 @@ class ControlPlaneCertificateStatusProtocolSchemaTest {
 
     @Test
     void protocolCannotCarryRawCertificatesResponderLocationsOrCredentials() throws Exception {
-        String source = Files.readString(schemaPath());
+        String source = Files.readString(schemaPath()) + Files.readString(floorSchemaPath());
         for (String forbidden : new String[]{
                 "certificateBytes", "certificatePem", "privateKey", "password", "secretRef",
                 "keyStore", "trustStore", "responderUrl", "crlUrl", "ocspResponse",
                 "crlPayload", "exception", "stackTrace"}) {
             assertThat(source).doesNotContain("\"" + forbidden + "\"");
         }
+    }
+
+    @Test
+    void floorSnapshotSchemaMatchesTheDurableJavaProjection() throws Exception {
+        JsonNode schema = new ObjectMapper().readTree(Files.readString(floorSchemaPath()));
+        Instant now = Instant.parse("2026-07-21T12:00:00Z");
+        var target = publication().material().targets().getFirst();
+        var snapshot = new ControlPlaneCertificateStatusFloor.Snapshot(
+                ControlPlaneCertificateStatusFloor.Snapshot.SCHEMA_VERSION,
+                "rg-staging-sg", 0, FINGERPRINT, 1, "status-001", FINGERPRINT,
+                now, now.plusSeconds(3600), now.plusSeconds(1), List.of(target));
+
+        assertProperties(objectMapper.valueToTree(snapshot), schema.path("properties"));
+        assertThat(schema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(schema.at("/properties/schemaVersion/const").asText())
+                .isEqualTo(ControlPlaneCertificateStatusFloor.Snapshot.SCHEMA_VERSION);
+        assertThat(schema.at("/properties/targets/maxItems").asInt()).isEqualTo(128);
+        assertThat(schema.at("/properties/targets/items/$ref").asText())
+                .isEqualTo("control-plane-certificate-status-publication-v1.schema.json"
+                        + "#/$defs/targetStatus");
     }
 
     private ControlPlaneCertificateStatusPublication publication() {
@@ -111,6 +131,11 @@ class ControlPlaneCertificateStatusProtocolSchemaTest {
     private static Path schemaPath() {
         return Path.of("..", "docs", "schemas", "resource-gateway-testing",
                 "control-plane-certificate-status-publication-v1.schema.json");
+    }
+
+    private static Path floorSchemaPath() {
+        return Path.of("..", "docs", "schemas", "resource-gateway-testing",
+                "control-plane-certificate-status-floor-snapshot-v1.schema.json");
     }
 
     private static void assertProperties(JsonNode value, JsonNode properties) {

@@ -27,7 +27,11 @@ live serving fence：数据库时间到达签名时刻且全副本 `STAGED` 后�
 与生产 HA/DR 尚未闭合。吊销链的第一子步已冻结
 `bloge.controlPlaneCertificateStatusPublication.v1`：外部 adapter 把已验证的 CA event、OCSP 或 CRL
 归一化为完整、签名、硬过期、cursor 连续的无载荷快照，并由独立 M-of-N Ed25519 trust store 校验。
-该协议内核不等于运行时吊销已开放；数据库单调 floor、watcher 和 request gate 仍是后继门禁。
+第二子步已新增 `DatabaseControlPlaneCertificateStatusFloor`：在同一事务内使用数据库时间重新验签，
+校验 deployment-pinned baseline、连续 cursor、前序指纹、发布 ID 唯一性和完整 target inventory，并原子
+替换 status head；同一 target generation/settings 下证书 identity 不得漂移，`REVOKED` 不得复活为
+`GOOD/UNKNOWN`。head、target 与当前 journal 均带 canonical whole-record fingerprint。该持久化内核
+仍不等于运行时吊销已开放；watcher、硬过期 cache 和 request gate 仍是后继门禁。
 CA 事件分发的 page-chain/cursor 子步也已冻结：每页绑定 scope、连续 sequence、previous page
 fingerprint 和最多 12 个不同 target 的独立签名事件；每个 stable serving slot 以数据库
 `stage -> apply -> commit` 游标防止部分处理后误推进，并对 exact replay、gap、fork、baseline drift 与
@@ -162,6 +166,8 @@ signed active head 也必须重新形成全副本 ACTIVE proof。`FENCED_QUORUM`
 - certificate status publication v1 严格 Schema：冻结完整 target inventory、连续 cursor、前序指纹、
   client/server 两类状态，以及 CA event/OCSP/CRL 的 payload-free fingerprint 与 freshness commitment；
   禁止证书正文、responder URL、原始 OCSP/CRL、credential 和 provider exception。
+- certificate status floor snapshot v1 严格 Schema：冻结 deployment baseline、durable cursor、数据库接收
+  时刻和完整 status head；初始未接收与 live publication 采用互斥形态。
 - certificate rotation floor snapshot v1 严格 Schema：仅投影代次、opaque material id、事件 identity、
   fingerprint 与时间，不携带 TLS material location 或 credential。
 - certificate rotation configuration v1 严格 Schema：冻结 authority、timing、baseline inventory 与
@@ -246,8 +252,8 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 7. 下一门禁
 
-下一门禁不再重复定义轮换或吊销 JSON，而是把已冻结的 rotation event cursor 接入 CA event watcher，
-并把 status publication 接入 database-clock cursor/fingerprint floor、硬过期缓存和逐请求 admission，
+下一门禁不再重复定义轮换/吊销 JSON 或数据库 cursor，而是把已冻结的 rotation event cursor 接入
+CA event watcher，并把 status publication/floor 接入硬过期缓存和逐请求 admission，
 随后补齐 convergence SLO/alert、
 受控 switch-forward recovery 与独立运维演练。`FENCED_QUORUM` 只有在部署权威能证明缺失副本已
 无法继续服务旧 generation 后才可开放。尚未闭合的外部生产责任
