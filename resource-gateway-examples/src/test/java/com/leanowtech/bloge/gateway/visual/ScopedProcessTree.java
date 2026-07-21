@@ -86,13 +86,14 @@ final class ScopedProcessTree {
     void terminate() {
         List<Target> targets = terminationTargets();
         for (Target target : targets) {
+            target.requireIdentityIfAlive();
             if (target.isOriginalAlive()
                     && !target.process().destroyForcibly()
-                    && target.process().isAlive()) {
+                    && target.isOriginalAlive()) {
                 throw new ScopeException(Disposition.TERMINATION_REFUSED);
             }
         }
-        while (targets.stream().map(Target::process).anyMatch(ProcessHandle::isAlive)) {
+        while (targets.stream().anyMatch(Target::isOriginalAlive)) {
             if (Thread.currentThread().isInterrupted()) {
                 throw new ScopeException(Disposition.TERMINATION_INTERRUPTED);
             }
@@ -256,13 +257,13 @@ final class ScopedProcessTree {
         }
 
         private boolean isOriginalAlive() {
-            if (!process.isAlive()) {
-                return false;
-            }
-            if (!identity.matches(process)) {
+            return process.isAlive() && identity.matches(process);
+        }
+
+        private void requireIdentityIfAlive() {
+            if (process.isAlive() && !identity.matches(process)) {
                 throw new ScopeException(Disposition.IDENTITY_MISMATCH);
             }
-            return true;
         }
 
         private void requireIdentityOrExit() {

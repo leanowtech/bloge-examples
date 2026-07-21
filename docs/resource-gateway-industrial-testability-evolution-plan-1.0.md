@@ -42,7 +42,7 @@
 > 和原子 session ownership 启动；timeout/interrupt/factory failure 后 abort 与 cleanup 在相互独立的
 > daemon 边界执行，迟到 session 唯一回收。正常 teardown 又拆为独立的 15 秒 `driver.quit()` graceful
 > 阶段和 15 秒 OS process-tree force 阶段；graceful 失败但 force 成功时保留原业务断言，force 也失败时
-> 才暴露脱敏闭集状态，caller interruption 在有界 force 后恢复。ChromeDriver 又按 executable、exact
+> 才暴露脱敏闭集状态，caller interruption 恢复后由独立 daemon 异步止损。ChromeDriver 又按 executable、exact
 > port argument、PID、start instant、command 捕获可见进程树，退出需验证已捕获身份，根先退出不得掩盖
 > 存活后代。独立源码快照的 20 项聚焦测试全绿。该机制保证测试调用线程和已捕获进程收敛，不等于
 > cgroup/Job Object 原子进程域或生产运行时 hard

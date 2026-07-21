@@ -30,7 +30,7 @@ JUnit 线程中，并且把 `service.stop()`、迟到 session cleanup 和正常 
 9. force-close 使用另一个 daemon platform thread 和完整的 15 秒边界；它成功时 teardown 收敛为
    `FORCED`，只有它超时、失败或 caller 被中断时才产生闭集基础设施错误。
 10. graceful/force provider exception 不得进入构建摘要；caller interrupt 必须恢复，且在 graceful
-    阶段被中断后仍要完成有界 force-close，再恢复 interrupt 并返回闭集错误。
+    阶段被中断后只在独立 daemon 上异步发起 force-close，立即恢复 interrupt 并返回闭集错误。
 11. ChromeDriver capture 必须以 executable 与 frozen port argument 唯一定位，并钉住 PID、start instant、
     command 以及当时可见的后代；graceful success 需证明这些身份都已退出，force-close 需先复验身份再
     终止，不能仅凭可复用 PID 杀进程。
@@ -75,7 +75,7 @@ mvn -f resource-gateway-examples/pom.xml \
 - 非法、非毫秒整数和无界 timeout 拒绝。
 
 另有 7 个 close 内核测试覆盖 graceful success、graceful timeout 后 force success、两阶段 timeout、
-graceful failure 补偿、force failure 闭集分类与脱敏、caller interruption/有界 force-close，以及 timeout
+graceful failure 补偿、force failure 闭集分类与脱敏、caller interruption/异步 force-close，以及 timeout
 边界校验。真实 Chrome 用例继续完成大型 target window 的 connectability 操作，并在双阶段受监督
 teardown 下退出。Chrome 150 对 Selenium CDP 149 的兼容性告警仍存在，但不改变本次断言。
 
