@@ -134,21 +134,24 @@ configuration metadata 做精确字段反射测试；未知字段、disabled res
 identity、重复 policy、超长配置、私钥字段和与 I/O/publication lifetime 必然冲突的 SLO 窗口均在
 source I/O 前失败。
 
-以下 68 项状态链、真实 TLS source、durable floor、逐请求 gate 和 live transport 联合门禁已通过，
+以下 110 项状态链、真实 TLS source、durable floor、逐请求 gate、live transport、Tool Studio capability
+和 demo preflight 联合门禁已通过，
 0 failures、0 errors、0 skips：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml test \
-  -Dtest='*ControlPlaneCertificateStatus*,HttpControlPlaneCertificateStatusSourceTest,DatabaseControlPlaneCertificateStatusFloorTest,ControlPlaneCertificateRotationRuntimeTest,RotatingControlPlaneHttpTransportTest'
+  -Dtest='*ControlPlaneCertificateStatus*,HttpControlPlaneCertificateStatusSourceTest,DatabaseControlPlaneCertificateStatusFloorTest,ControlPlaneCertificateRotationRuntimeTest,RotatingControlPlaneHttpTransportTest,ToolStudioControlPlaneCertificateRotationCapabilityTest,VisualCanvasDemoScriptTest'
 ```
 
-另有 56 项 profile/metadata/YAML/demo preflight 与 certificate rotation event delivery 联合产品测试
-通过，证明两个独立 source 可以在同一 composition root 中保持协议、凭据和 client identity 边界。
-
-最终全量回归基线同样通过：Resource Gateway `clean verify` 执行 3817 tests，0 failures、0 errors、
+最终全量回归基线同样通过：Resource Gateway `clean verify` 执行 3834 tests，0 failures、0 errors、
 2 个条件浏览器跳过，并生成 Spring Boot 可执行 JAR；独立 test-kit `clean verify` 执行 230 tests，
-0 failures、0 errors、0 skips，且将 56 份 testing Schema 与 5 份 Tool Studio Schema 打入发布 JAR，
+0 failures、0 errors、0 skips，且将 57 份 testing Schema 与 5 份 Tool Studio Schema 打入发布 JAR，
 普通 JAR、shaded JAR 和 public JavaDoc 门禁全部通过。
+
+本次构建仍有三类非阻断工程告警：BLOGE `0.8.9-RC2` 的已发布 POM 缺少一项传递依赖版本、Mockito
+仍使用 JDK 动态 agent、Selenium 在本机 Chrome CDP 150 上回退到 CDP 149。另有故障路径测试会输出
+预期的 fail-closed/optimistic-lock WARN。它们不改变本次绿色结论，但应在依赖发布与测试日志治理中
+消除，避免真实故障被噪声淹没。
 
 ## 7. 未完成边界
 
