@@ -295,6 +295,16 @@ workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
 Gateway `clean verify` 执行 3358 tests，0 failures、0 errors、2 skips，Browser DOM 34 项中 32 项及
 browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
 
+fleet runtime 子步新增 scheduler 13 项与 health 6 项测试，把 ceremony/publication/fleet 联合聚焦门禁
+扩展到 148 tests，0 failures、0 errors、0 skips。fleet inventory、worker、scheduler 与 health 4 个
+公共类型通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors；完整 Resource Gateway
+`clean verify` 执行 3377 tests，0 failures、0 errors、2 skips，Browser DOM 34 项中 32 项及 browser
+workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
+
+该联合门禁还在真实时间跨过旧固定基准后暴露了测试时钟漂移：service 15 项与 database journal 27 项
+原先用 JVM 固定绝对时间生成 deadline，却由数据库当前时间执行租约判定。fixture 现改为逐 test 从隔离
+数据库 `CURRENT_TIMESTAMP` 取得整秒 canonical 基准；生产 deadline 语义未放宽，测试可在任意日期复跑。
+
 ## 11. 双域部署接线
 
 Spring 组合根现已在 suite-stability 与 test-secret 两个域分别创建：
@@ -482,7 +492,7 @@ Schema 不变，本地细分类只存在 supervisor snapshot。
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootPublisherCallSupervisorTest,HttpExternalSequenceAnchorBootstrapRootPublisherTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoverySchedulerTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoveryHealthTest,ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationHealthTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest \
+  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootPublisherCallSupervisorTest,HttpExternalSequenceAnchorBootstrapRootPublisherTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoverySchedulerTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoveryHealthTest,ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationHealthTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetSchedulerTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetHealthTest \
   test
 ```
 
@@ -497,9 +507,10 @@ mvn -f resource-gateway-examples/pom.xml \
   orphan/provider-side reconciliation 和 provider 级重试预算；当前本地 timeout 只中断 adapter，
   忽略 interrupt 的调用会占用一个固定槽位直到真实返回，但不能形成无界线程/队列，也不能提交过期
   artifact；
-- recovery 已具备进程内 canonical lane discovery、代际防回滚/同代漂移、单 worker 有界 round-robin 和
-  poison-lane 隔离，但 signed dynamic resolver inventory publication/revocation、durable 跨副本 cursor、
-  shard assignment、跨副本公平、fleet rollout jitter、scheduler/health/Spring 产品接线、policy 维护迁移、
+- recovery 已具备进程内 canonical lane discovery、代际防回滚/同代漂移、单 worker 有界 round-robin、
+  poison-lane 隔离、fixed-delay scheduler、停滞预算和 aggregate health，但 signed dynamic resolver
+  inventory publication/revocation、durable 跨副本 cursor、shard assignment、跨副本公平、fleet rollout
+  jitter、多 lane Spring/capability 产品接线、policy 维护迁移、
   外部 SLO/告警和目标数据库多副本认证仍未完成；publication 仍无跨 root-set fleet。当前能力不能被描述为
   部署级 worker platform；
 - publisher mTLS/client identity、certificate pinning、静态 response key 热轮换、跨 root-set fleet SLO；

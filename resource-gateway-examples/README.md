@@ -480,10 +480,23 @@ returned without exception text or provider diagnostics; the underlying per-root
 only acquisition, retry, attempt-budget, and fence authority. Close the worker before its caller-owned
 services; close waits for an admitted cycle but never closes inventory, resolvers, or services.
 
+For continuous embedding, wrap that worker in an
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler`. Its single fixed-delay daemon lane and
+explicit `runOnce()` path share one admission monitor, so local cycles never overlap. Runtime failures
+remain visible but do not stop later polls; a fatal error terminates the periodic future after
+publishing a bounded failure snapshot. The scheduler also reports an overdue idle timer or active
+cycle against explicit health budgets. Register
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetHealth` when aggregate Actuator readiness is
+needed: closed, overdue, cycle-wide, and latest lane failures are DOWN, while empty/no-work cycles are
+UP. Health reads no inventory and exports no lane identity or diagnostics. Close in strict order:
+scheduler, worker, then caller-owned services/resolvers. Reentrant scheduler close from an active
+cycle is rejected; concurrent close callers share a completion barrier without holding the cycle
+monitor, preventing shutdown lock inversion.
+
 The default Spring composition remains a single-root authoring runtime, not a new Resource Gateway
 endpoint or deployment-wide worker registry. The fleet cursor is process-local: signed dynamic
 resolver inventory publication/revocation, durable cross-replica cursor/sharding/fairness,
-fleet scheduler/health/Spring wiring, publisher mTLS/client identity and certificate pinning,
+multi-lane Spring/capability wiring, publisher mTLS/client identity and certificate pinning,
 response-key hot rotation,
 publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete

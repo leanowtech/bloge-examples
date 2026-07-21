@@ -11,10 +11,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -35,7 +37,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
 
-    private static final Instant NOW = Instant.parse("2026-07-21T01:00:00Z");
     private static final String SCOPE = "stability-fleet";
     private static final String ROOT_SET = "external-notary-bootstrap-roots";
     private static final String ROOT_DOMAIN = "external-notary-root.example";
@@ -50,12 +51,16 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
     private ExternalSequenceAnchorBootstrapRootCeremonyProducer producer;
     private DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal journal;
     private ExternalSequenceAnchorBootstrapRootCeremonyService service;
+    private Instant now;
 
     @BeforeEach
     void setUp() throws Exception {
         database = new TestRuntimeDatabase(new TestRuntimeDatabase.Settings(
                 "jdbc:h2:mem:external-bootstrap-root-ceremony-service-"
                         + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1", "sa", "", 8));
+        now = database.jdbc().queryForObject(
+                "SELECT CURRENT_TIMESTAMP", Timestamp.class).toInstant()
+                .truncatedTo(ChronoUnit.SECONDS);
         objectMapper = new ObjectMapper().findAndRegisterModules();
         genesisKeys = keys();
         incomingKeys = keys();
@@ -64,7 +69,7 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
                 SCOPE, ROOT_SET, ROOT_DOMAIN, 3, 1,
                 materials(genesisKeys, "genesis"), GENESIS_POLICY);
         producer = new ExternalSequenceAnchorBootstrapRootCeremonyProducer(
-                objectMapper, Clock.fixed(NOW, ZoneOffset.UTC), binding(),
+                objectMapper, Clock.fixed(now, ZoneOffset.UTC), binding(),
                 Set.of(POLICY), genesis);
         journal = journal();
         service = new ExternalSequenceAnchorBootstrapRootCeremonyService(producer, journal);
@@ -636,8 +641,8 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
                 ExternalSequenceAnchorBootstrapRootCeremonyProducer.RotationRequest
                         .SCHEMA_VERSION,
                 ceremonyId, genesis.materialFingerprint(objectMapper),
-                materials(incomingKeys, "incoming"), POLICY, NOW, NOW,
-                NOW.plusSeconds(3600));
+                materials(incomingKeys, "incoming"), POLICY, now, now,
+                now.plusSeconds(3600));
     }
 
     private ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding binding() {
@@ -654,7 +659,7 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
                         entry.getKey(), prefix + "-key-" + entry.getKey().substring(5),
                         Base64.getEncoder().encodeToString(
                                 entry.getValue().getPublic().getEncoded()),
-                        NOW.minusSeconds(3600), NOW.plus(Duration.ofDays(40)), true, false))
+                        now.minusSeconds(3600), now.plus(Duration.ofDays(40)), true, false))
                 .sorted(Comparator.comparing(
                         ExternalSequenceAnchorBootstrapRootGenesis.RootKeyMaterial::authorityId))
                 .toList();

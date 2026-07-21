@@ -10,10 +10,13 @@
 - generation rollback 与 same-generation drift 防护；
 - `ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker` 的有界 canonical round-robin；
 - per-lane runtime failure isolation、payload-free result 和 aggregate runtime snapshot；
-- admitted cycle 与 `close()` 的强 quiescence 边界。
+- admitted cycle 与 `close()` 的强 quiescence 边界；
+- 单 daemon lane、fixed-delay、手工/后台互斥的 fleet scheduler；
+- timer/active-cycle 停滞判定与 aggregate-only Actuator health。
 
-本步不是签名动态 inventory、远端 discovery、后台 scheduler、跨副本 durable cursor/sharding 或生产 fleet
-产品。默认 test/staging Spring composition 仍只装配一个 root-set lane。
+本步不是签名动态 inventory、远端 discovery、跨副本 durable cursor/sharding 或生产 fleet 产品。默认
+test/staging Spring composition 仍只装配一个 root-set lane；scheduler/health 目前是供 embedder 显式组合的
+公共 Java 运行面。
 
 ## 2. 根因
 
@@ -84,7 +87,7 @@ delay、attempt exhaustion 或 acquired fence，fleet worker 不复制这些权�
 这避免每次 inventory 扩容都让后缀 lane 重新饥饿。该 cursor 目前只在进程内，重启会从首 lane 开始；
 跨副本长期公平必须由后续 durable shard/cursor 协议证明。
 
-## 7. 生命周期与观测
+## 7. 生命周期、调度与观测
 
 `runCycle()` 和 `close()` 共用 admission monitor。已进入的 cycle 完成前 close 不返回；close 提交后所有
 新 cycle 在读取 inventory 前拒绝。worker 不拥有 inventory、service、resolver 或 provider transport，
@@ -94,6 +97,23 @@ delay、attempt exhaustion 或 acquired fence，fleet worker 不复制这些权�
 状态，不包含 scope、root-set、resolver、authority、key、fingerprint、payload、endpoint 或 exception。
 `CycleResult` 可向已授权 embedder 返回 bounded lane key 与 recovery/execution enum，用于定位哪条公开
 root-set lane 需要治理处理，但不携带 provider diagnostics。
+
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler` 只有一条 fixed-delay daemon lane，显式
+`runOnce()` 与后台 poll 使用同一个 admission monitor，因此不会在本进程重叠调用 worker。RuntimeException
+被计数后允许下一轮恢复；`Error` 在发布 bounded failure snapshot 后终止 periodic future。scheduler 不拥有
+worker，关闭顺序必须是 scheduler、worker、各 lane service/resolver。并发 close caller 等待同一个
+completion monitor；等待 admitted cycle 时不持有 close monitor，cycle 内 reentrant close 会在进入协调前
+被拒绝，避免 close-monitor/cycle-monitor 锁反转。
+
+scheduler 把“线程存在但已不推进”建模为一等状态：active cycle 超过 `maximumCycleDuration`，或 idle
+timer 错过 next due 后又超过一个完整 poll interval，`overdue=true`。这是 readiness fence，不冒充远端
+provider cancel；真正的 signer deadline、数据库 lease/fence 和 process isolation 仍由下层负责。wall clock
+回拨时完成时间夹紧到本轮开始时间，active poll 则合法保留上一 poll 的 completion timestamp。
+
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetHealth` 只读 worker/scheduler immutable snapshot。关闭、
+停滞、cycle-wide inventory/invariant failure 和最新 lane failure 均 DOWN；空 inventory、未到 first due、
+no-work 和干净 cycle 均 UP。details 只有固定基数计数、状态和容量参数，不包含 lane key、scope、root-set、
+worker、resolver、fingerprint、endpoint、payload 或 exception。
 
 ## 8. 嵌入方式
 
@@ -108,8 +128,15 @@ ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory = () ->
                 inventoryGeneration, List.of(lane));
 try (var worker = new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker(
         inventory, authenticatedWorkerId,
-        new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.Policy(30, 16))) {
-    var cycle = worker.runCycle();
+        new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.Policy(30, 16));
+     var scheduler = new ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler(
+             worker,
+             new ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler.SchedulePolicy(
+                     Duration.ofSeconds(5), Duration.ofSeconds(5),
+                     Duration.ofMinutes(10), Duration.ofSeconds(5)))) {
+    var firstCycle = scheduler.runOnce();
+    var health = new ExternalSequenceAnchorBootstrapRootRecoveryFleetHealth(
+            worker, scheduler).health();
 }
 ```
 
@@ -122,7 +149,7 @@ try (var worker = new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker(
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest \
+  -Dtest=ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetSchedulerTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetHealthTest \
   test
 ```
 
@@ -131,12 +158,21 @@ mvn -f resource-gateway-examples/pom.xml \
 fatal failure、空 generation、幂等 close 和 admitted-cycle quiescence；聚焦门禁为 14 tests，0 failures、
 0 errors、0 skips。
 
-将 fleet 两个测试类加入 ceremony/publication 既有门禁后，联合聚焦门禁执行 129 tests，0 failures、
-0 errors、0 skips。producer、service、fleet inventory 与 fleet worker 4 个公共类型通过
-`javadoc --release 25 -Werror -Xdoclint:all` 独立验证，0 warnings、0 errors；该结论不外推为全模块
-JavaDoc 已清零。
+runtime 子步新增 scheduler 13 项与 health 6 项测试，覆盖自动失败后续跑、fatal future 终止、显式 poll
+互斥、close quiescence/非所有权/关门后无等待拒绝、reentrant close 与并发 close 锁反转、timer/active 两类 overdue、
+wall-clock 回拨、active poll timestamp、policy/snapshot 反例、六类 readiness 和 diagnostics 脱敏。fleet
+四类聚焦门禁现执行 33 tests，ceremony/publication/fleet 联合聚焦门禁执行 148 tests，均为 0 failures、
+0 errors、0 skips。fleet inventory、
+worker、scheduler 与 health 4 个公共类型通过 `javadoc --release 25 -Werror -Xdoclint:all` 独立验证，
+0 warnings、0 errors；该结论不外推为全模块 JavaDoc 已清零。
 
-冻结源码的完整 Resource Gateway `clean verify` 执行 3358 tests，0 failures、0 errors、2 skips；
+联合门禁在真实时钟跨过旧 fixture 的固定绝对时间后，暴露 ceremony service 与 database journal 测试把
+JVM 固定时钟和数据库 `CURRENT_TIMESTAMP` 混用，导致截止时间随日历失效。两组 fixture 现均在每个
+test 的隔离数据库建立后读取 `CURRENT_TIMESTAMP`，规整为协议允许的整秒 canonical 基准，再据此构造
+key lifecycle、proposal、approval、preflight 与 outcome；原 15 项 service 和 27 项 journal 测试因此可在
+任意日期重复执行，生产数据库仍是 lease/deadline 唯一时间权威。
+
+冻结源码的完整 Resource Gateway `clean verify` 执行 3377 tests，0 failures、0 errors、2 skips；
 Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
 
 ## 10. 仍未宣称
@@ -144,7 +180,7 @@ Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功�
 - signed dynamic inventory publication、witness、revocation、hard expiry 与 durable generation floor；
 - enterprise IAM/PDP 对 lane membership、worker、resolver 和 runtime fingerprint 的授权；
 - durable cross-replica cursor、shard ownership、rebalance、priority、fleet-wide fairness 与 rollout jitter；
-- fleet scheduler、aggregate health/readiness、Spring composition、capability/Schema/HTTP；
+- 多 lane Spring composition、capability/Schema/HTTP 和 production profile；
 - publication fleet、publisher mTLS/pinning、response-key hot rotation 与 anti-equivocation；
 - HSM/KMS custody、provider-confirmed cancellation/process isolation；
 - PostgreSQL/MySQL 并发、multi-region HA、DR/chaos/soak 和外部 SLO 认证。

@@ -46,11 +46,13 @@ maker/checker journal/coordinator、自动 execution heartbeat/freeze、本地 s
 publication outbox、顺序 claim/receipt fence、失败退避预算与旧行回填、strict signed HTTPS publisher、
 machine Schema、固定容量调用监督、database-fenced consumer/scheduler 和 authenticated-conflict quarantine
 及 test/staging 单 root-set Spring publication/recovery composition/aggregate health、跨 root-set recovery 的
-进程内强绑定 inventory、generation 防回滚/同代漂移和有界公平 worker kernel 现已闭合；企业 IAM/PDP、
+进程内强绑定 inventory、generation 防回滚/同代漂移、有界公平 worker、fixed-delay scheduler、停滞预算和
+aggregate health 现已闭合；企业 IAM/PDP、
 HSM/KMS custody、provider-confirmed cancellation/process isolation、signed dynamic resolver inventory、
-durable 跨副本 cursor/sharding、公平调度与 fleet 产品接线、publisher mTLS/pinning、response-key 热轮换、根源
+durable 跨副本 cursor/sharding/fairness、多 lane Spring/capability 产品接线、publisher mTLS/pinning、
+response-key 热轮换、根源
 anti-equivocation 与生产认证、HA/chaos/外部 SLO 仍待完成。
-完整 Resource Gateway `clean verify` 执行 3358 tests，0 failures、0 errors、2 个条件浏览器跳过；
+完整 Resource Gateway `clean verify` 执行 3377 tests，0 failures、0 errors、2 个条件浏览器跳过；
 Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功生成 Spring Boot 可执行 JAR；
 独立 test-kit `clean verify`
 执行 230 tests，0 failures、0 errors、0 skips，并通过权威 Schema 打包、普通/shaded JAR 与 public
@@ -622,9 +624,10 @@ maker/checker journal/coordinator、自动 execution heartbeat、本地 signer/r
 数据库原子 recovery acquisition/退避/attempt budget、单 lane scheduler、`PRODUCED` 同事务 durable
 publication outbox、strict signed HTTPS publisher/machine Schema、固定容量调用监督、database-fenced
 consumer/scheduler、authenticated-conflict quarantine 和 test/staging 单 root-set Spring publication/recovery
-composition，以及跨 root-set recovery 的进程内强绑定 inventory/generation/fair-worker kernel 已闭合；
+composition，以及跨 root-set recovery 的进程内强绑定 inventory/generation/fair-worker/scheduler/health
+runtime 已闭合；
 企业 IAM/PDP、provider-confirmed cancellation/process isolation、signed dynamic resolver inventory、
-durable 跨副本 cursor/sharding/fairness 与 fleet 产品接线、publisher
+durable 跨副本 cursor/sharding/fairness 与多 lane Spring/capability 产品接线、publisher
 mTLS/pinning、response-key 热轮换、根源 anti-equivocation、KMS/HSM/HA 与跨数据库/DR 认证仍是后续工作。验证见
 [Stage 4 test-secret signed serving-inventory verification](resource-gateway-execution-data-control-plane-stage4-test-secret-signed-serving-inventory-verification.md)。
 
@@ -957,6 +960,32 @@ Gateway `clean verify` 执行 3358 tests，0 failures、0 errors、2 skips，32 
 workflow 真实执行，并成功重打包可执行 JAR。该步只闭合 process-local recovery fleet kernel，
 不宣称 signed dynamic inventory/revocation、durable 跨副本 cursor/sharding/fairness、scheduler/health/
 Spring 产品接线或 publication fleet 已完成。验证见
+[bootstrap-root recovery fleet kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-kernel-verification.md)。
+
+Stage 4 该增量第十五子步根治“worker 可手工运行，但没有可证明的持续推进、停滞判定和 fleet 级
+readiness”这一运行面缺口。新增
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler`：后台 fixed-delay 与显式 `runOnce()` 共用
+单 admission monitor，RuntimeException 计数后允许后继 poll，`Error` 先发布 bounded failure 再终止
+periodic future；close 先关闭准入并等待已进入 cycle，且不关闭 caller-owned worker/service/resolver。
+worker 内数据库 journal 仍是 acquisition/retry/attempt/fence 唯一权威，scheduler 不复制业务重试。
+
+scheduler snapshot 以一个 immutable volatile metrics record 原子发布 poll/completion/failure、最新 generation
+和 lane aggregate；active cycle 超过 `maximumCycleDuration`，或 idle timer 错过 next due 后再超过一个
+poll interval，均标记 `overdue`。wall clock 回拨时 completion 夹紧到开始时间；active 新 poll 可保留上一
+poll completion，避免制造不可能时间关系。新增 aggregate-only
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetHealth`，关闭、停滞、scheduler/cycle-wide failure 和最新
+lane failure 为 DOWN，空 inventory/no-work/clean cycle 为 UP；health 不访问 inventory/provider，也不输出
+scope/root-set/worker/resolver/fingerprint/endpoint/payload/exception。scheduler 13 项覆盖关门后无等待拒绝、
+reentrant close 与并发 close 锁反转等生命周期反例，health 6 项新增测试，fleet 四类聚焦门禁 33 tests，
+ceremony/publication/fleet 联合门禁 148 tests，均为 0 failures、0 errors、
+0 skips；fleet 四个公共类型通过严格 JavaDoc 门禁。完整 Resource Gateway `clean verify` 执行
+3377 tests，0 failures、0 errors、2 skips，32 项 Browser DOM 与 1 项 browser workflow 真实执行，并
+成功重打包可执行 JAR。
+联合门禁同时根治旧 ceremony 测试的双时钟 fixture：service 15 项与 database journal 27 项不再使用会
+随日历过期的固定绝对时间，而是逐 test 从隔离数据库 `CURRENT_TIMESTAMP` 取得整秒 canonical 基准；
+数据库继续作为生产 lease/deadline 唯一时间权威。
+该步不宣称 signed dynamic inventory/revocation、durable cross-replica cursor/sharding/fairness、多 lane
+Spring/capability/production 接线、provider-confirmed cancellation 或 publication fleet 已完成。验证见
 [bootstrap-root recovery fleet kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-kernel-verification.md)。
 
 第五十三增量第十八子步根治 exact configured cohort 可被本地缩窄后自证的问题。staging cohort 必须

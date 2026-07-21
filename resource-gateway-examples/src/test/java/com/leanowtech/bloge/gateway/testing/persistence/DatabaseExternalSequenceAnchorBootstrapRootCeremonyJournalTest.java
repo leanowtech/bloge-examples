@@ -23,6 +23,7 @@ import java.security.KeyPairGenerator;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -41,8 +42,6 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     private static final String SCOPE = "stability-fleet";
     private static final String ROOT_SET = "external-notary-bootstrap-roots";
     private static final String TRUST_DOMAIN = "bootstrap-root.example";
-    private static final Instant NOW = Instant.parse("2026-07-21T01:00:00Z");
-
     private TestRuntimeDatabase database;
     private ObjectMapper objectMapper;
     private KeyPair keyPair;
@@ -52,18 +51,22 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
     private ExternalSequenceAnchorBootstrapRootPublicationOutbox.PublicationPolicy
             publicationPolicy;
     private DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournal journal;
+    private Instant now;
 
     @BeforeEach
     void setUp() throws Exception {
         database = new TestRuntimeDatabase(new TestRuntimeDatabase.Settings(
                 "jdbc:h2:mem:external-bootstrap-root-ceremony-" + UUID.randomUUID()
                         + ";DB_CLOSE_DELAY=-1", "sa", "", 8));
+        now = database.jdbc().queryForObject(
+                "SELECT CURRENT_TIMESTAMP", Timestamp.class).toInstant()
+                .truncatedTo(ChronoUnit.SECONDS);
         objectMapper = new ObjectMapper().findAndRegisterModules();
         keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         String publicKey = Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
         rootKey = new ExternalSequenceAnchorBootstrapRootGenesis.RootKeyMaterial(
-                "root-1", "key-1", publicKey, NOW.minusSeconds(3600),
-                NOW.plusSeconds(86_400), true, false);
+                "root-1", "key-1", publicKey, now.minusSeconds(3600),
+                now.plusSeconds(86_400), true, false);
         descriptor = new ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor(
                 ExternalSequenceAnchorBootstrapRootSigningAuthority.Descriptor.SCHEMA_VERSION,
                 rootKey.authorityId(), rootKey.keyId(), "Ed25519", publicKey);
@@ -949,13 +952,13 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
         var request = new ExternalSequenceAnchorBootstrapRootCeremonyProducer.RotationRequest(
                 ExternalSequenceAnchorBootstrapRootCeremonyProducer.RotationRequest
                         .SCHEMA_VERSION,
-                ceremonyId, predecessor, List.of(rootKey), fingerprint('9'), NOW, NOW,
-                NOW.plusSeconds(3600));
+                ceremonyId, predecessor, List.of(rootKey), fingerprint('9'), now, now,
+                now.plusSeconds(3600));
         var preflight = new ExternalSequenceAnchorBootstrapRootCeremonyProducer
                 .CeremonyPreflight(
                 ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyPreflight
                         .SCHEMA_VERSION,
-                ceremonyId, 1L, materialFingerprint, NOW.plusSeconds(300),
+                ceremonyId, 1L, materialFingerprint, now.plusSeconds(300),
                 List.of(descriptor),
                 List.of(descriptor));
         return new ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal(
@@ -975,12 +978,12 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
                 ExternalSequenceAnchorBootstrapRootCeremonyProducer.RotationRequest
                         .SCHEMA_VERSION,
                 ceremonyId, currentBundle.headMaterialFingerprint(), List.of(rootKey),
-                fingerprint('9'), NOW, NOW, NOW.plusSeconds(3600));
+                fingerprint('9'), now, now, now.plusSeconds(3600));
         var preflight = new ExternalSequenceAnchorBootstrapRootCeremonyProducer
                 .CeremonyPreflight(
                 ExternalSequenceAnchorBootstrapRootCeremonyProducer.CeremonyPreflight
                         .SCHEMA_VERSION,
-                ceremonyId, sequence, fingerprint(marker), NOW.plusSeconds(300),
+                ceremonyId, sequence, fingerprint(marker), now.plusSeconds(300),
                 List.of(descriptor),
                 List.of(descriptor));
         return new ExternalSequenceAnchorBootstrapRootCeremonyJournal.CeremonyProposal(
@@ -996,10 +999,10 @@ class DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest {
         var material = new ExternalSequenceAnchorBootstrapRootTransition.Material(
                 ExternalSequenceAnchorBootstrapRootTransition.Material.SCHEMA_VERSION,
                 ROOT_SET, sequence, proposal.request().expectedPreviousMaterialFingerprint(),
-                SCOPE, TRUST_DOMAIN, 1, 0, List.of(rootKey), fingerprint('9'), NOW, NOW,
-                NOW.plusSeconds(3600));
+                SCOPE, TRUST_DOMAIN, 1, 0, List.of(rootKey), fingerprint('9'), now, now,
+                now.plusSeconds(3600));
         var signature = new TestSuiteStabilityServingInventory.AuthoritySignature(
-                descriptor.authorityId(), descriptor.keyId(), "Ed25519", NOW,
+                descriptor.authorityId(), descriptor.keyId(), "Ed25519", now,
                 Base64.getEncoder().encodeToString(new byte[64]));
         var transition = new ExternalSequenceAnchorBootstrapRootTransition(
                 ExternalSequenceAnchorBootstrapRootTransition.SCHEMA_VERSION,
