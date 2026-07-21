@@ -221,18 +221,20 @@ final class ScopedProcessTree {
         private IdentityStatus observe(ProcessHandle process) {
             ProcessHandle.Info info = process.info();
             if (process.pid() != pid) {
-                return IdentityStatus.MISMATCH;
+                return IdentityStatus.REPLACED;
             }
             var observedStart = info.startInstant();
             var observedCommand = info.command();
             if (observedStart.isEmpty() || observedCommand.isEmpty()) {
                 return IdentityStatus.UNKNOWN;
             }
-            return observedStart.filter(startedAt::equals).isPresent()
-                    && observedCommand.map(Path::of).map(ScopedProcessTree::normalized)
+            if (observedStart.filter(startedAt::equals).isEmpty()) {
+                return IdentityStatus.REPLACED;
+            }
+            return observedCommand.map(Path::of).map(ScopedProcessTree::normalized)
                     .filter(command::equals).isPresent()
                     ? IdentityStatus.MATCH
-                    : IdentityStatus.MISMATCH;
+                    : IdentityStatus.ATTRIBUTE_MISMATCH;
         }
     }
 
@@ -267,7 +269,7 @@ final class ScopedProcessTree {
         }
 
         private boolean isOriginalAlive() {
-            return process.isAlive() && identity.observe(process) != IdentityStatus.MISMATCH;
+            return process.isAlive() && identity.observe(process) != IdentityStatus.REPLACED;
         }
 
         private void requireIdentityIfAlive() {
@@ -292,7 +294,8 @@ final class ScopedProcessTree {
 
     private enum IdentityStatus {
         MATCH,
-        MISMATCH,
+        REPLACED,
+        ATTRIBUTE_MISMATCH,
         UNKNOWN
     }
 
