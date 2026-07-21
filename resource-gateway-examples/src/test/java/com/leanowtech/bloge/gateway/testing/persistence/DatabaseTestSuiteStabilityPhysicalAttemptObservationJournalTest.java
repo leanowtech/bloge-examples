@@ -16,6 +16,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemp
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationCommand;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationCoordinator;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationJournal;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationReconciler;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationVerifier;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartAuthority;
@@ -41,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -77,6 +80,8 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     private TestSuiteStabilityPhysicalAttemptObservationAuthority.Descriptor descriptor;
     private DatabaseTestSuiteStabilityPhysicalAttemptStartJournal starts;
     private DatabaseTestSuiteStabilityPhysicalAttemptObservationJournal journal;
+    private DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+            reconciliations;
     private AtomicLong startSequence;
 
     @BeforeEach
@@ -109,6 +114,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         journal = new DatabaseTestSuiteStabilityPhysicalAttemptObservationJournal(
                 jdbc, mapper, starts, observationVerifier(), transactions);
         journal.init();
+        reconciliations = reconciliationJournal(10);
         startSequence = new AtomicLong(10);
     }
 
@@ -677,6 +683,416 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                                 .POSITIVE);
     }
 
+    @Test
+    void reconciliationDiscoversDurableStartAndClaimsItWithDatabaseLease() {
+        AttemptContext context = retainedStart('a', true);
+
+        var claim = reconciliations.claimNext("reconciler-a").orElseThrow();
+
+        assertThat(claim.startCommand()).isEqualTo(context.start());
+        assertThat(claim.lease().epoch()).isEqualTo(1);
+        assertThat(claim.automaticAttempts()).isZero();
+        assertThat(claim.consecutiveUncertainty()).isZero();
+        assertThat(reconciliations.snapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.ready()).isZero();
+            assertThat(snapshot.leased()).isEqualTo(1);
+            assertThat(snapshot.expiredLeases()).isZero();
+        });
+    }
+
+    @Test
+    void reconciliationCompletionIsExactlyReplayableAndRejectsChangedResult() {
+        AttemptContext context = retainedStart('a', true);
+        var claim = reconciliations.claimNext("reconciler-a").orElseThrow();
+        var result = new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.ResultKind
+                        .REMOTE_UNCERTAIN,
+                command(context, 'a').commandId());
+
+        var completed = reconciliations.complete(claim.lease(), result);
+        var replayed = reconciliations.complete(claim.lease(), result);
+
+        assertThat(completed.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .CompletionStatus.RESCHEDULED);
+        assertThat(completed.automaticAttempts()).isEqualTo(1);
+        assertThat(completed.consecutiveUncertainty()).isEqualTo(1);
+        assertThat(replayed.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .CompletionStatus.REPLAYED);
+        assertReconciliationConflict(() -> reconciliations.complete(
+                        claim.lease(),
+                        new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .Result(
+                                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                        .ResultKind.NON_CONFIRMING,
+                                result.observationCommandId())),
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .ConflictException.Reason.RESULT_CONFLICT);
+    }
+
+    @Test
+    void localBackpressureBacksOffSeparatelyWithoutConsumingProviderBudget()
+            throws Exception {
+        retainedStart('a', true);
+        var claim = reconciliations.claimNext("reconciler-a").orElseThrow();
+
+        var completed = reconciliations.complete(
+                claim.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.LOCAL_BACKPRESSURE,
+                        ""));
+
+        assertThat(completed.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .CompletionStatus.RESCHEDULED);
+        assertThat(completed.automaticAttempts()).isZero();
+        assertThat(completed.consecutiveUncertainty()).isZero();
+        Thread.sleep(150);
+        var retry = reconciliations.claimNext("reconciler-a").orElseThrow();
+        reconciliations.complete(
+                retry.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.LOCAL_BACKPRESSURE,
+                        ""));
+        assertThat(jdbc.queryForObject("""
+                SELECT consecutive_local_failures
+                FROM rg_test_stability_attempt_observation_reconciliation_targets
+                WHERE attempt_id = ?
+                """, Integer.class, claim.lease().attemptId())).isEqualTo(2);
+    }
+
+    @Test
+    void repeatedRemoteUncertaintyExhaustsBudgetWithoutInventingTerminalState()
+            throws Exception {
+        AttemptContext context = retainedStart('a', false);
+        String commandId = command(context, 'a').commandId();
+        var first = reconciliations.claimNext("reconciler-a").orElseThrow();
+        reconciliations.complete(first.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.REMOTE_UNCERTAIN,
+                        commandId));
+        Thread.sleep(150);
+
+        var second = reconciliations.claimNext("reconciler-b").orElseThrow();
+        var quarantined = reconciliations.complete(second.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.NON_CONFIRMING,
+                        commandId));
+
+        assertThat(second.lease().epoch()).isEqualTo(2);
+        assertThat(quarantined.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .CompletionStatus.QUARANTINED);
+        assertThat(quarantined.targetStatus()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .TargetStatus.QUARANTINED);
+        assertThat(quarantined.automaticAttempts()).isEqualTo(2);
+        assertThat(quarantined.consecutiveUncertainty()).isEqualTo(2);
+        assertThat(journal.latestPositive(
+                "tenant-a", "test", context.identity().attemptId())).isEmpty();
+    }
+
+    @Test
+    void positiveActiveObservationResetsUncertaintyAndUsesSteadyPollDelay()
+            throws Exception {
+        AttemptContext context = retainedStart('a', true);
+        String commandId = command(context, 'a').commandId();
+        var first = reconciliations.claimNext("reconciler-a").orElseThrow();
+        reconciliations.complete(first.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.REMOTE_UNCERTAIN,
+                        commandId));
+        Thread.sleep(150);
+
+        var second = reconciliations.claimNext("reconciler-a").orElseThrow();
+        var active = reconciliations.complete(second.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.POSITIVE_ACTIVE,
+                        commandId));
+
+        assertThat(active.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .CompletionStatus.RESCHEDULED);
+        assertThat(active.automaticAttempts()).isEqualTo(2);
+        assertThat(active.consecutiveUncertainty()).isZero();
+    }
+
+    @Test
+    void positiveTerminalClosesOnlyTheReconciliationTarget() {
+        AttemptContext context = retainedStart('a', true);
+        var claim = reconciliations.claimNext("reconciler-a").orElseThrow();
+
+        var terminal = reconciliations.complete(claim.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.POSITIVE_TERMINAL,
+                        command(context, 'a').commandId()));
+
+        assertThat(terminal.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .CompletionStatus.TERMINAL);
+        assertThat(reconciliations.claimNext("reconciler-b")).isEmpty();
+        assertThat(jobs.find("tenant-a", "test", context.identity().jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.RUNNING);
+    }
+
+    @Test
+    void expiredLeaseCanBeTakenOverAndStaleOwnerCannotComplete() throws Exception {
+        AttemptContext context = retainedStart('a', true);
+        var stale = reconciliations.claimNext("reconciler-a").orElseThrow();
+        Thread.sleep(1_100);
+
+        var takeover = reconciliations.claimNext("reconciler-b").orElseThrow();
+
+        assertThat(takeover.lease().epoch()).isEqualTo(2);
+        assertThat(takeover.startCommand()).isEqualTo(context.start());
+        assertReconciliationConflict(() -> reconciliations.complete(
+                        stale.lease(),
+                        new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .Result(
+                                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                        .ResultKind.LOCAL_BACKPRESSURE,
+                                "")),
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .ConflictException.Reason.LEASE_LOST);
+    }
+
+    @Test
+    void reconciliationDiscoveryIsPageBounded() {
+        retainedStart('a', true);
+        retainedStart('b', true);
+        var bounded = reconciliationJournal(1);
+
+        assertThat(bounded.claimNext("reconciler-a")).isPresent();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_stability_attempt_observation_reconciliation_targets
+                """, Integer.class)).isEqualTo(1);
+        assertThat(bounded.snapshot().undiscoveredSources()).isEqualTo(1);
+    }
+
+    @Test
+    void dueClaimsRotateAcrossTenantEnvironmentScopes() throws Exception {
+        retainedStart('a', true, "tenant-a");
+        retainedStart('b', true, "tenant-b");
+        var first = reconciliations.claimNext("reconciler-a").orElseThrow();
+        reconciliations.complete(first.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.LOCAL_BACKPRESSURE,
+                        ""));
+        Thread.sleep(150);
+
+        var second = reconciliations.claimNext("reconciler-a").orElseThrow();
+
+        assertThat(second.startCommand().identity().tenantId())
+                .isNotEqualTo(first.startCommand().identity().tenantId());
+    }
+
+    @Test
+    void reconciliationTargetTamperingFailsClosedBeforeAnotherClaim()
+            throws Exception {
+        retainedStart('a', true);
+        var claim = reconciliations.claimNext("reconciler-a").orElseThrow();
+        reconciliations.complete(claim.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.LOCAL_BACKPRESSURE,
+                        ""));
+        Thread.sleep(150);
+        jdbc.update("""
+                UPDATE rg_test_stability_attempt_observation_reconciliation_targets
+                SET automatic_attempts = 99
+                WHERE attempt_id = ?
+                """, claim.lease().attemptId());
+
+        assertReconciliationConflict(() -> reconciliations.claimNext("reconciler-b"),
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .ConflictException.Reason.INTEGRITY_FAILURE);
+    }
+
+    @Test
+    void reconcilerPersistsRunningFactAndSchedulesSteadyObservation() {
+        AttemptContext context = retainedStart('a', true);
+        AtomicInteger descriptorCalls = new AtomicInteger();
+        AtomicInteger observationCalls = new AtomicInteger();
+        var authority = authority(descriptorCalls, observationCalls,
+                command -> uncheckedObservation(
+                        command, 101, 1,
+                        TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING));
+
+        try (var supervisor = supervisor(Duration.ofMillis(500))) {
+            var result = reconciler(supervisor, (provider, deployment) -> authority)
+                    .reconcileNext("reconciler-a");
+
+            assertThat(result.stage()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationReconciler.Stage.RESCHEDULED);
+            assertThat(result.automaticAttempts()).isEqualTo(1);
+            assertThat(result.consecutiveUncertainty()).isZero();
+            assertThat(descriptorCalls).hasValue(1);
+            assertThat(observationCalls).hasValue(1);
+            assertThat(journal.latestPositive(
+                    "tenant-a", "test", context.identity().attemptId()))
+                    .get().extracting(state -> state.receipt().state())
+                    .isEqualTo(
+                            TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING);
+        }
+    }
+
+    @Test
+    void reconcilerRetainsSignedNonConfirmationAsUncertainty() {
+        retainedStart('a', false);
+        var authority = authority(new AtomicInteger(), new AtomicInteger(),
+                command -> uncheckedObservation(
+                        command, 101, 0,
+                        TestSuiteStabilityPhysicalAttemptObservationReceipt.State.NOT_OBSERVED));
+
+        try (var supervisor = supervisor(Duration.ofMillis(500))) {
+            var result = reconciler(supervisor, (provider, deployment) -> authority)
+                    .reconcileNext("reconciler-a");
+
+            assertThat(result.stage()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationReconciler.Stage.RESCHEDULED);
+            assertThat(result.automaticAttempts()).isEqualTo(1);
+            assertThat(result.consecutiveUncertainty()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void reconcilerClosesFromRetainedTerminalFloorWithoutProviderIo() throws Exception {
+        AttemptContext context = retainedStart('a', true);
+        var completionLost = reconciliations.claimNext("reconciler-lost").orElseThrow();
+        TestSuiteStabilityPhysicalAttemptObservationCommand command = command(context, 'a');
+        journal.prepare(command, descriptor);
+        journal.accept(command.commandId(), observation(
+                command, 101, 1,
+                TestSuiteStabilityPhysicalAttemptObservationReceipt.State.TERMINAL));
+        Thread.sleep(1_100);
+        AtomicInteger resolutions = new AtomicInteger();
+
+        try (var supervisor = supervisor(Duration.ofMillis(500))) {
+            var result = reconciler(supervisor, (provider, deployment) -> {
+                resolutions.incrementAndGet();
+                throw new IllegalStateException("must not resolve provider");
+            }).reconcileNext("reconciler-a");
+
+            assertThat(result.stage()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationReconciler.Stage.TERMINAL);
+            assertThat(result.automaticAttempts()).isZero();
+            assertThat(resolutions).hasValue(0);
+            assertThat(completionLost.lease().epoch()).isEqualTo(1);
+            assertThat(jobs.find("tenant-a", "test", context.identity().jobId()))
+                    .get().extracting(TestSuiteStabilityJobRecord::status)
+                    .isEqualTo(TestSuiteStabilityJobRecord.Status.RUNNING);
+        }
+    }
+
+    @Test
+    void independentReplicasCannotClaimTheSameDueTarget() throws Exception {
+        retainedStart('a', true);
+        var replica = reconciliationJournal(10);
+
+        var claims = concurrently(
+                () -> reconciliations.claimNext("reconciler-a"),
+                () -> replica.claimNext("reconciler-b"));
+
+        assertThat(claims).filteredOn(Optional::isPresent).hasSize(1);
+        assertThat(claims).filteredOn(Optional::isEmpty).hasSize(1);
+    }
+
+    @Test
+    void reconcilerObservationTimeoutConsumesUncertaintyButNotTerminalTruth() {
+        AttemptContext context = retainedStart('a', true);
+        var authority = authority(descriptor(Duration.ofMillis(100)),
+                new AtomicInteger(), new AtomicInteger(), command -> {
+            try {
+                Thread.sleep(5_000);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return uncheckedObservation(
+                    command, 101, 1,
+                    TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING);
+        });
+
+        try (var supervisor = supervisor(Duration.ofMillis(100))) {
+            var result = reconciler(supervisor, (provider, deployment) -> authority)
+                    .reconcileNext("reconciler-a");
+
+            assertThat(result.stage()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationReconciler.Stage.RESCHEDULED);
+            assertThat(result.automaticAttempts()).isEqualTo(1);
+            assertThat(result.consecutiveUncertainty()).isEqualTo(1);
+            assertThat(journal.latestPositive(
+                    "tenant-a", "test", context.identity().attemptId())).isEmpty();
+        }
+    }
+
+    @Test
+    void reconcilerResolverOutageIsLocalBackpressure() {
+        retainedStart('a', true);
+
+        try (var supervisor = supervisor(Duration.ofMillis(500))) {
+            var result = reconciler(supervisor, (provider, deployment) -> {
+                throw new IllegalStateException("resolver unavailable");
+            }).reconcileNext("reconciler-a");
+
+            assertThat(result.stage()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationReconciler.Stage.RESCHEDULED);
+            assertThat(result.automaticAttempts()).isZero();
+            assertThat(result.consecutiveUncertainty()).isZero();
+        }
+    }
+
+    @Test
+    void reconcilerCountsProviderCallBeforeQuarantiningInvalidAttestation() {
+        AttemptContext context = retainedStart('a', true);
+        var authority = authority(new AtomicInteger(), new AtomicInteger(), command -> {
+            var signed = uncheckedObservation(
+                    command, 101, 1,
+                    TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING);
+            return new TestSuiteStabilityPhysicalAttemptObservationReceipt.Attestation(
+                    signed.schemaVersion(), signed.receipt(), signed.keyId(),
+                    Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[64]));
+        });
+
+        try (var supervisor = supervisor(Duration.ofMillis(500))) {
+            var result = reconciler(supervisor, (provider, deployment) -> authority)
+                    .reconcileNext("reconciler-a");
+
+            assertThat(result.stage()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationReconciler.Stage.QUARANTINED);
+            assertThat(result.automaticAttempts()).isEqualTo(1);
+            assertThat(journal.latestPositive(
+                    "tenant-a", "test", context.identity().attemptId())).isEmpty();
+        }
+    }
+
+    @Test
+    void reconcilerFailsFastWhenLeaseCannotContainCommandWindow() {
+        try (var supervisor = supervisor(Duration.ofMillis(500))) {
+            assertThatThrownBy(() -> new
+                    TestSuiteStabilityPhysicalAttemptObservationReconciler(
+                    mapper, reconciliations, starts, journal,
+                    new TestSuiteStabilityPhysicalAttemptObservationCoordinator(
+                            journal, supervisor),
+                    (provider, deployment) -> null,
+                    new TestSuiteStabilityPhysicalAttemptObservationReconciler.Policy(
+                            Duration.ofMillis(950), Duration.ofMillis(100))))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("lease cannot contain");
+        }
+    }
+
     private ConcurrentAcceptance acceptConcurrently(
             TestSuiteStabilityPhysicalAttemptObservationJournal target,
             TestSuiteStabilityPhysicalAttemptObservationCommand command) throws Exception {
@@ -733,7 +1149,11 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     }
 
     private AttemptContext retainedStart(char id, boolean confirmed) {
-        TestSuiteStabilityJobClaim claim = claimed(id);
+        return retainedStart(id, confirmed, "tenant-a");
+    }
+
+    private AttemptContext retainedStart(char id, boolean confirmed, String tenantId) {
+        TestSuiteStabilityJobClaim claim = claimed(id, tenantId);
         TestSuiteStabilityPhysicalAttemptIdentity identity =
                 TestSuiteStabilityPhysicalAttemptIdentity.create(
                         mapper, claim.lease(), fingerprint(id), PROVIDER_ID, DEPLOYMENT_ID,
@@ -759,7 +1179,11 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     }
 
     private TestSuiteStabilityJobClaim claimed(char id) {
-        jobs.submit(submission(id), POLICY);
+        return claimed(id, "tenant-a");
+    }
+
+    private TestSuiteStabilityJobClaim claimed(char id, String tenantId) {
+        jobs.submit(submission(id, tenantId), POLICY);
         TestSuiteStabilityJobClaim claim = jobs.claimNext("test", "worker-a", POLICY);
         assertThat(claim.outcome()).isEqualTo(TestSuiteStabilityJobClaim.Outcome.ACQUIRED);
         return claim;
@@ -963,6 +1387,33 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                         Duration.ofSeconds(1), observationTimeout, 1));
     }
 
+    private DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+            reconciliationJournal(int discoveryPageSize) {
+        var value =
+                new DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal(
+                        jdbc, mapper, starts,
+                        new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .Policy(
+                                Duration.ofSeconds(1), Duration.ofMillis(100),
+                                Duration.ofMillis(100), Duration.ofMillis(400), 2,
+                                Duration.ofMinutes(1), discoveryPageSize),
+                        transactions);
+        value.init();
+        return value;
+    }
+
+    private TestSuiteStabilityPhysicalAttemptObservationReconciler reconciler(
+            TestSuiteStabilityPhysicalAttemptObservationCallSupervisor supervisor,
+            TestSuiteStabilityPhysicalAttemptObservationReconciler.AuthorityResolver resolver) {
+        return new TestSuiteStabilityPhysicalAttemptObservationReconciler(
+                mapper, reconciliations, starts, journal,
+                new TestSuiteStabilityPhysicalAttemptObservationCoordinator(
+                        journal, supervisor),
+                resolver,
+                new TestSuiteStabilityPhysicalAttemptObservationReconciler.Policy(
+                        Duration.ofMillis(500), Duration.ofMillis(100)));
+    }
+
     private TestSuiteStabilityPhysicalAttemptObservationAuthority authority(
             AtomicInteger descriptorCalls,
             AtomicInteger observationCalls,
@@ -1001,6 +1452,10 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     }
 
     private static TestSuiteStabilityJobSubmission submission(char id) {
+        return submission(id, "tenant-a");
+    }
+
+    private static TestSuiteStabilityJobSubmission submission(char id, String tenantId) {
         TestSuiteStabilityExecutionRequest request = new TestSuiteStabilityExecutionRequest(
                 "", TestSuiteStabilityProtocolFixtures.SUITE_REF,
                 "request-" + id, 3, Map.of("pipeline", "nightly"));
@@ -1008,7 +1463,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                 "stability-job-" + String.valueOf(id).repeat(64), request,
                 fingerprint('9'), "INTERNAL",
                 new TestSuiteStabilityJobPrincipal(
-                        "tenant-a", "org-a", "project-a", "test", "sg-1", "SERVICE",
+                        tenantId, "org-a", "project-a", "test", "sg-1", "SERVICE",
                         "ci-runner", "", "TEST_EXECUTION", "correlation-" + id,
                         Set.of("test-runners"), "INTERNAL", ""),
                 TestSuiteStabilityJobSubmission.Priority.NORMAL,
@@ -1021,6 +1476,17 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         assertThatThrownBy(invocation)
                 .isInstanceOfSatisfying(
                         TestSuiteStabilityPhysicalAttemptObservationJournal
+                                .ConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(reason));
+    }
+
+    private static void assertReconciliationConflict(
+            org.assertj.core.api.ThrowableAssert.ThrowingCallable invocation,
+            TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                    .ConflictException.Reason reason) {
+        assertThatThrownBy(invocation)
+                .isInstanceOfSatisfying(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
                                 .ConflictException.class,
                         failure -> assertThat(failure.reason()).isEqualTo(reason));
     }
