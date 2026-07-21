@@ -129,6 +129,17 @@
 > 可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-coordinator-verification.md)。
 
+> Stage 4 physical attempt 第五增量新增 provider-signed lifecycle observation proof kernel。observation
+> command 内容寻址 exact start command、可选已知 process、minimum attempt revision、deadline 与 challenge；
+> receipt 封闭表达 `START_PENDING/RUNNING/TERMINAL/NOT_OBSERVED/INDETERMINATE`。只有
+> `RUNNING/TERMINAL` 证明 exact process，`NOT_OBSERVED/INDETERMINATE` 始终只触发 reconciliation；
+> terminal 必须携带 closed disposition 与 evidence manifest fingerprint。verifier 独立重算 identity/start/
+> observation 三层内容身份，验证 process/revision rollback fence、time、provider binding 与 pinned
+> Ed25519 signature。13 项聚焦测试全绿，四个公共类型 strict JavaDoc 零告警。durable journal、bounded
+> reconciler、queue/slot/cancel/natural-terminal 双线性化和真实 isolation provider 尚未接线，capability
+> 继续关闭。验证见
+> [physical attempt lifecycle observation proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-lifecycle-observation-proof-kernel-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

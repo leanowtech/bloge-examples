@@ -149,6 +149,18 @@
 > 2 skips），并通过 Surefire XML、可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-coordinator-verification.md)。
 
+> Stage 4 physical attempt 第五增量冻结 provider-signed lifecycle observation proof kernel。内容寻址
+> observation command 嵌入 exact start command，并绑定可选已知 process fingerprint、minimum attempt
+> revision、deadline 与 challenge；receipt 以 `START_PENDING/RUNNING/TERMINAL/NOT_OBSERVED/
+> INDETERMINATE` 封闭区分已接受、正向进程事实、终态证据与非确认查询结果。`NOT_OBSERVED` 永不构成
+> non-start proof，已知 process 后的不同 process 或 pending downgrade 失败关闭；五类 terminal
+> disposition 均须绑定 evidence manifest fingerprint。authority descriptor 明示 bounded latency 与
+> minimum state retention，pinned Ed25519 verifier 重算 identity/start/observation 三层内容身份并回绑
+> provider/deployment/key/isolation/time/revision/process。13 项协议/密码/回退/重放测试全绿，四个公共类型
+> strict JavaDoc 零告警。durable observation journal、reconciler、queue/slot 双线性化、真实 provider 与
+> 产品接线仍未实现，capability 继续关闭。验证见
+> [physical attempt lifecycle observation proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-lifecycle-observation-proof-kernel-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
