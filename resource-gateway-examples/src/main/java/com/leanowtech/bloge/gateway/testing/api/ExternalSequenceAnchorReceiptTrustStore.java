@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -26,6 +27,24 @@ public interface ExternalSequenceAnchorReceiptTrustStore extends AutoCloseable {
 
     /** @return aggregate key-free refresh and lifecycle state */
     Snapshot snapshot();
+
+    /**
+     * Returns transport posture only for a remote managed trust-publication source.
+     *
+     * @return payload-free transport descriptor, or empty for static/caller-owned trust
+     */
+    default Optional<ControlPlaneHttpTransport.Descriptor> transportDescriptor() {
+        return Optional.empty();
+    }
+
+    /**
+     * Returns transport posture only for a remote complete bootstrap-root source.
+     *
+     * @return payload-free root-bundle transport descriptor, or empty when not configured
+     */
+    default Optional<ControlPlaneHttpTransport.Descriptor> bootstrapRootTransportDescriptor() {
+        return Optional.empty();
+    }
 
     /**
      * Returns the aggregate bootstrap-root capability behind a managed notary publication.

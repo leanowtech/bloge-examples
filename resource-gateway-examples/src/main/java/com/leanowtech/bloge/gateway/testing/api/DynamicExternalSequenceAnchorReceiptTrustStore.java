@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadLocalRandom;
@@ -61,6 +62,7 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
     private final ExternalSequenceAnchorTrustPublicationFloor floor;
     private final Settings settings;
     private final DocumentFetcher fetcher;
+    private final ControlPlaneHttpTransport.Descriptor transportDescriptor;
     private final Object refreshLock = new Object();
     private final ScheduledThreadPoolExecutor scheduler;
     private final AtomicBoolean refreshFailureLogged = new AtomicBoolean();
@@ -90,7 +92,37 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
             ExternalSequenceAnchorTrustPublicationFloor floor,
             Settings settings) {
         this(objectMapper, Clock.systemUTC(), binding, acceptedPolicies,
-                bootstrapSignatureThreshold, bootstrapRootKeys, floor, settings, null, true);
+                bootstrapSignatureThreshold, bootstrapRootKeys, floor, settings,
+                (DocumentFetcher) null, true);
+    }
+
+    /**
+     * Bootstraps managed notary trust with static bootstrap keys and an authenticated source.
+     *
+     * @param objectMapper application JSON mapper
+     * @param binding exact deployment binding and freshness policy
+     * @param acceptedPolicies accepted external rotation-policy fingerprints
+     * @param bootstrapSignatureThreshold required bootstrap-root signature quorum
+     * @param bootstrapRootKeys independent bootstrap-root verification keys
+     * @param floor durable monotonic publication floor
+     * @param settings strict remote refresh policy
+     * @param transport frozen source trust and client-identity policy
+     */
+    public DynamicExternalSequenceAnchorReceiptTrustStore(
+            ObjectMapper objectMapper,
+            ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicies,
+            int bootstrapSignatureThreshold,
+            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    bootstrapRootKeys,
+            ExternalSequenceAnchorTrustPublicationFloor floor,
+            Settings settings,
+            ControlPlaneHttpTransport transport) {
+        this(objectMapper, Clock.systemUTC(), binding, acceptedPolicies,
+                staticRootStore(objectMapper, Clock.systemUTC(), binding,
+                        bootstrapSignatureThreshold, bootstrapRootKeys),
+                floor, settings, httpFetcher(settings, transport), true, true,
+                Objects.requireNonNull(transport, "transport").descriptor());
     }
 
     /**
@@ -98,6 +130,13 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
      *
      * <p>This store owns and closes the supplied root store. A root refresh failure immediately
      * closes receipt verification even when the last notary publication remains locally fresh.</p>
+     *
+     * @param objectMapper application JSON mapper
+     * @param binding exact deployment binding and freshness policy
+     * @param acceptedPolicies accepted external rotation-policy fingerprints
+     * @param rootTrustStore already bootstrapped complete-chain root authority
+     * @param floor durable monotonic publication floor
+     * @param settings strict remote refresh policy
      */
     public DynamicExternalSequenceAnchorReceiptTrustStore(
             ObjectMapper objectMapper,
@@ -108,6 +147,35 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
             Settings settings) {
         this(objectMapper, Clock.systemUTC(), binding, acceptedPolicies,
                 rootTrustStore, floor, settings, null, true, true);
+    }
+
+    /**
+     * Bootstraps managed notary trust through an explicitly authenticated source transport.
+     *
+     * <p>The supplied transport freezes PKIX roots, hostname verification, server pins, and the
+     * client workload identity before the first publication fetch. This store owns the supplied
+     * root store but does not own or close the stateless transport.</p>
+     *
+     * @param objectMapper application JSON mapper
+     * @param binding exact deployment binding and freshness policy
+     * @param acceptedPolicies accepted external rotation-policy fingerprints
+     * @param rootTrustStore already bootstrapped complete-chain root authority
+     * @param floor durable monotonic publication floor
+     * @param settings strict remote refresh policy
+     * @param transport frozen source trust and client-identity policy
+     */
+    public DynamicExternalSequenceAnchorReceiptTrustStore(
+            ObjectMapper objectMapper,
+            ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicies,
+            ExternalSequenceAnchorBootstrapRootTrustStore rootTrustStore,
+            ExternalSequenceAnchorTrustPublicationFloor floor,
+            Settings settings,
+            ControlPlaneHttpTransport transport) {
+        this(objectMapper, Clock.systemUTC(), binding, acceptedPolicies,
+                rootTrustStore, floor, settings,
+                httpFetcher(settings, transport), true, true,
+                Objects.requireNonNull(transport, "transport").descriptor());
     }
 
     DynamicExternalSequenceAnchorReceiptTrustStore(
@@ -133,12 +201,48 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
             Clock clock,
             ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding,
             Set<String> acceptedPolicies,
+            int bootstrapSignatureThreshold,
+            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
+                    bootstrapRootKeys,
+            ExternalSequenceAnchorTrustPublicationFloor floor,
+            Settings settings,
+            boolean startScheduler,
+            ControlPlaneHttpTransport transport) {
+        this(objectMapper, clock, binding, acceptedPolicies,
+                staticRootStore(objectMapper, clock, binding,
+                        bootstrapSignatureThreshold, bootstrapRootKeys),
+                floor, settings, httpFetcher(settings, transport), startScheduler, true,
+                Objects.requireNonNull(transport, "transport").descriptor());
+    }
+
+    DynamicExternalSequenceAnchorReceiptTrustStore(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicies,
             ExternalSequenceAnchorBootstrapRootTrustStore rootTrustStore,
             ExternalSequenceAnchorTrustPublicationFloor floor,
             Settings settings,
             DocumentFetcher fetcher,
             boolean startScheduler,
             boolean ownsRootTrustStore) {
+        this(objectMapper, clock, binding, acceptedPolicies, rootTrustStore, floor, settings,
+                fetcher, startScheduler, ownsRootTrustStore,
+                new SystemTrustRecoveryFleetPublicationTransport().descriptor());
+    }
+
+    private DynamicExternalSequenceAnchorReceiptTrustStore(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicies,
+            ExternalSequenceAnchorBootstrapRootTrustStore rootTrustStore,
+            ExternalSequenceAnchorTrustPublicationFloor floor,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler,
+            boolean ownsRootTrustStore,
+            ControlPlaneHttpTransport.Descriptor transportDescriptor) {
         this.objectMapper = strict(objectMapper);
         this.clock = Objects.requireNonNull(clock, "clock");
         this.binding = Objects.requireNonNull(binding, "binding");
@@ -152,7 +256,11 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
                     "Dynamic external sequence-anchor trust requires a durable floor");
         }
         this.settings = Objects.requireNonNull(settings, "settings").validated();
-        this.fetcher = fetcher == null ? new HttpDocumentFetcher() : fetcher;
+        this.fetcher = fetcher == null ? new HttpDocumentFetcher(
+                new SystemTrustRecoveryFleetPublicationTransport().client(
+                        this.settings.requestTimeout())) : fetcher;
+        this.transportDescriptor = Objects.requireNonNull(
+                transportDescriptor, "transportDescriptor");
         if (!refresh()) {
             if (ownsRootTrustStore) {
                 rootTrustStore.close();
@@ -224,6 +332,18 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
                 current.publicationSequence(), current.authorityCount(),
                 current.activeAuthorityCount(), observed.lastSuccessfulRefreshAt(),
                 observed.refreshSuccessCount(), observed.refreshFailureCount());
+    }
+
+    /** @return payload-free source transport security facts without remote I/O */
+    @Override
+    public Optional<ControlPlaneHttpTransport.Descriptor> transportDescriptor() {
+        return Optional.of(transportDescriptor);
+    }
+
+    /** @return optional complete-chain source transport facts without remote I/O */
+    @Override
+    public Optional<ControlPlaneHttpTransport.Descriptor> bootstrapRootTransportDescriptor() {
+        return rootTrustStore.transportDescriptor();
     }
 
     /** {@inheritDoc} */
@@ -457,9 +577,8 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
 
         private final HttpClient client;
 
-        private HttpDocumentFetcher() {
-            this.client = HttpClient.newBuilder()
-                    .followRedirects(HttpClient.Redirect.NEVER).build();
+        private HttpDocumentFetcher(HttpClient client) {
+            this.client = Objects.requireNonNull(client, "client");
         }
 
         @Override
@@ -500,6 +619,14 @@ public final class DynamicExternalSequenceAnchorReceiptTrustStore
                         response.headers().firstValue("ETag").orElse(""));
             }
         }
+    }
+
+    private static DocumentFetcher httpFetcher(
+            Settings settings,
+            ControlPlaneHttpTransport transport) {
+        Settings validated = Objects.requireNonNull(settings, "settings").validated();
+        return new HttpDocumentFetcher(Objects.requireNonNull(transport, "transport")
+                .client(validated.requestTimeout()));
     }
 
     /**

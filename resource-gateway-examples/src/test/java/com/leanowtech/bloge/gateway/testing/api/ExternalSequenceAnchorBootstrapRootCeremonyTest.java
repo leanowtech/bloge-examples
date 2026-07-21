@@ -5,10 +5,12 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
@@ -52,6 +54,9 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
     private Map<String, KeyPair> generationTwoKeys;
     private Map<String, KeyPair> notaryKeys;
     private ExternalSequenceAnchorBootstrapRootGenesis genesis;
+
+    @TempDir
+    private Path temporaryDirectory;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -488,6 +493,54 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
     }
 
     @Test
+    void completeChainSourceRequiresTheConfiguredPinnedMutualTlsIdentity() throws Exception {
+        ExternalSequenceAnchorBootstrapRootTransition first = transition(
+                1, genesis.materialFingerprint(objectMapper), genesisKeys,
+                generationOneKeys, NOW.minusSeconds(30), NOW.plusSeconds(3600));
+        byte[] body = objectMapper.writeValueAsBytes(bundle(first));
+        RecoveryFleetPublicationTlsFixture.Material material =
+                RecoveryFleetPublicationTlsFixture.Material.create(
+                        temporaryDirectory, "bootstrap-root-source");
+        AtomicReference<String> peer = new AtomicReference<>("");
+        Map<String, String> headers = Map.of(
+                "Content-Type", DynamicExternalSequenceAnchorBootstrapRootTrustStore.MEDIA_TYPE,
+                DynamicExternalSequenceAnchorBootstrapRootTrustStore.PROTOCOL_HEADER,
+                ExternalSequenceAnchorBootstrapRootBundle.SCHEMA_VERSION,
+                "ETag", "root-generation-1");
+        try (RecoveryFleetPublicationTlsFixture.Server server =
+                     RecoveryFleetPublicationTlsFixture.start(
+                             material, "/roots", body, headers, peer)) {
+            ControlPlaneHttpTransport transport = pinnedTransport(
+                    material, PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                            material.serverCertificate()));
+            var settings = new DynamicExternalSequenceAnchorBootstrapRootTrustStore.Settings(
+                    server.uri(), Duration.ofSeconds(2), Duration.ofSeconds(10),
+                    Duration.ofMinutes(2), Duration.ofSeconds(5), false);
+            try (var store = new DynamicExternalSequenceAnchorBootstrapRootTrustStore(
+                    objectMapper, clock, binding(), Set.of(POLICY), genesis,
+                    new InMemoryFloor(), settings, false, transport)) {
+                assertThat(store.transportDescriptor()).get().satisfies(descriptor -> {
+                    assertThat(descriptor.privateTrustStore()).isTrue();
+                    assertThat(descriptor.serverSpkiPinned()).isTrue();
+                    assertThat(descriptor.mutualTls()).isTrue();
+                });
+                assertThat(peer.get()).contains("recovery-client-bootstrap-root-source");
+                assertThat(server.requests()).isEqualTo(1);
+            }
+
+            ControlPlaneHttpTransport wrongPin = pinnedTransport(
+                    material, "sha256:" + "0".repeat(64));
+            assertThatThrownBy(() ->
+                    new DynamicExternalSequenceAnchorBootstrapRootTrustStore(
+                            objectMapper, clock, binding(), Set.of(POLICY), genesis,
+                            new InMemoryFloor(), settings, false, wrongPin))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("bootstrap is unavailable");
+            assertThat(server.requests()).isEqualTo(1);
+        }
+    }
+
+    @Test
     void notarySuccessorDrivesRootRotationAndRootForkClosesReceiptTrust()
             throws Exception {
         ExternalSequenceAnchorBootstrapRootTransition first = transition(
@@ -573,13 +626,24 @@ class ExternalSequenceAnchorBootstrapRootCeremonyTest {
                 new DynamicExternalSequenceAnchorBootstrapRootTrustStore.Settings(
                         bundleUri, Duration.ofSeconds(2), Duration.ofSeconds(10),
                         Duration.ofMinutes(2), Duration.ofSeconds(5), true),
-                null, false);
+                (DynamicExternalSequenceAnchorBootstrapRootTrustStore.DocumentFetcher) null,
+                false);
     }
 
     private DynamicExternalSequenceAnchorBootstrapRootTrustStore.FetchedDocument document(
             ExternalSequenceAnchorBootstrapRootBundle bundle, String etag) throws Exception {
         return new DynamicExternalSequenceAnchorBootstrapRootTrustStore.FetchedDocument(
                 false, objectMapper.writeValueAsBytes(bundle), etag);
+    }
+
+    private static ControlPlaneHttpTransport pinnedTransport(
+            RecoveryFleetPublicationTlsFixture.Material material,
+            String pin) {
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                new PinnedMutualTlsRecoveryFleetPublicationTransport.Settings(
+                        material.trustStore(), "test:root-trust",
+                        material.clientKeyStore(), "test:root-client", Set.of(pin)),
+                reference -> RecoveryFleetPublicationTlsFixture.password());
     }
 
     private DynamicExternalSequenceAnchorReceiptTrustStore.FetchedDocument notaryDocument(

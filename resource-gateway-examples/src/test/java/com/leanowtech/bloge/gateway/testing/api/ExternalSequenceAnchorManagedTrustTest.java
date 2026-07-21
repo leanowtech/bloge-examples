@@ -5,10 +5,12 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
@@ -50,6 +52,9 @@ class ExternalSequenceAnchorManagedTrustTest {
     private KeyPair rootB;
     private Map<String, KeyPair> generationA;
     private Map<String, KeyPair> generationB;
+
+    @TempDir
+    private Path temporaryDirectory;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -371,6 +376,51 @@ class ExternalSequenceAnchorManagedTrustTest {
         }
     }
 
+    @Test
+    void managedTrustSourceRequiresTheConfiguredPinnedMutualTlsIdentity() throws Exception {
+        ExternalSequenceAnchorTrustPublication first = publication(
+                1, "", generationA, NOW.plusSeconds(3600));
+        byte[] body = objectMapper.writeValueAsBytes(first);
+        RecoveryFleetPublicationTlsFixture.Material material =
+                RecoveryFleetPublicationTlsFixture.Material.create(
+                        temporaryDirectory, "managed-notary-trust");
+        AtomicReference<String> peer = new AtomicReference<>("");
+        Map<String, String> headers = Map.of(
+                "Content-Type", DynamicExternalSequenceAnchorReceiptTrustStore.MEDIA_TYPE,
+                DynamicExternalSequenceAnchorReceiptTrustStore.PROTOCOL_HEADER,
+                ExternalSequenceAnchorTrustPublication.SCHEMA_VERSION,
+                "ETag", "trust-generation-1");
+        try (RecoveryFleetPublicationTlsFixture.Server server =
+                     RecoveryFleetPublicationTlsFixture.start(
+                             material, "/trust", body, headers, peer)) {
+            ControlPlaneHttpTransport transport = pinnedTransport(
+                    material, PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                            material.serverCertificate()));
+            var settings = new DynamicExternalSequenceAnchorReceiptTrustStore.Settings(
+                    server.uri(), Duration.ofSeconds(2), Duration.ofSeconds(10),
+                    Duration.ofMinutes(2), Duration.ofSeconds(5), false);
+            try (var store = new DynamicExternalSequenceAnchorReceiptTrustStore(
+                    objectMapper, clock, binding(), Set.of(POLICY), 2, roots(),
+                    new InMemoryFloor(), settings, false, transport)) {
+                assertThat(store.transportDescriptor()).get().satisfies(descriptor -> {
+                    assertThat(descriptor.privateTrustStore()).isTrue();
+                    assertThat(descriptor.serverSpkiPinned()).isTrue();
+                    assertThat(descriptor.mutualTls()).isTrue();
+                });
+                assertThat(peer.get()).contains("recovery-client-managed-notary-trust");
+                assertThat(server.requests()).isEqualTo(1);
+            }
+
+            assertThatThrownBy(() -> new DynamicExternalSequenceAnchorReceiptTrustStore(
+                    objectMapper, clock, binding(), Set.of(POLICY), 2, roots(),
+                    new InMemoryFloor(), settings,
+                    false, pinnedTransport(material, "sha256:" + "0".repeat(64))))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("bootstrap is unavailable");
+            assertThat(server.requests()).isEqualTo(1);
+        }
+    }
+
     private ConfiguredExternalSequenceAnchorReceiptTrustStore configured(
             ExternalSequenceAnchorTrustPublication publication,
             ExternalSequenceAnchorTrustPublicationFloor floor) {
@@ -398,7 +448,8 @@ class ExternalSequenceAnchorManagedTrustTest {
                 new DynamicExternalSequenceAnchorReceiptTrustStore.Settings(
                         publicationUri, Duration.ofSeconds(2), Duration.ofSeconds(10),
                         Duration.ofMinutes(2), Duration.ofSeconds(5), true),
-                null, false);
+                (DynamicExternalSequenceAnchorReceiptTrustStore.DocumentFetcher) null,
+                false);
     }
 
     private ConfiguredExternalSequenceAnchorReceiptTrustStore.ExpectedBinding binding() {
@@ -512,6 +563,16 @@ class ExternalSequenceAnchorManagedTrustTest {
             String etag) throws Exception {
         return new DynamicExternalSequenceAnchorReceiptTrustStore.FetchedDocument(
                 false, objectMapper.writeValueAsBytes(publication), etag);
+    }
+
+    private static ControlPlaneHttpTransport pinnedTransport(
+            RecoveryFleetPublicationTlsFixture.Material material,
+            String pin) {
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                new PinnedMutualTlsRecoveryFleetPublicationTransport.Settings(
+                        material.trustStore(), "test:notary-trust",
+                        material.clientKeyStore(), "test:notary-client", Set.of(pin)),
+                reference -> RecoveryFleetPublicationTlsFixture.password());
     }
 
     private static KeyPair keyPair() throws Exception {

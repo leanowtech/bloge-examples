@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Atomic bootstrap-root snapshot used to verify managed external-notary trust publications.
@@ -27,6 +28,15 @@ public interface ExternalSequenceAnchorBootstrapRootTrustStore extends AutoClose
 
     /** @return aggregate key-free chain and refresh state */
     Snapshot snapshot();
+
+    /**
+     * Returns transport posture only for a dynamically refreshed complete-chain source.
+     *
+     * @return payload-free transport descriptor, or empty for static/caller-owned roots
+     */
+    default Optional<ControlPlaneHttpTransport.Descriptor> transportDescriptor() {
+        return Optional.empty();
+    }
 
     /** @return an unavailable capability value for trust paths without a root-chain projection */
     static Descriptor unavailableDescriptor() {

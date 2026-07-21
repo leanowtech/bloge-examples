@@ -7,11 +7,13 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -27,6 +29,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,6 +48,9 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
     private HttpServer server;
     private List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> keys;
     private List<HttpTestSuiteStabilityExternalSequenceAnchor.Endpoint> endpoints;
+
+    @TempDir
+    private Path temporaryDirectory;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -201,6 +207,78 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
                         .Reason.UNAVAILABLE);
     }
 
+    @Test
+    void notaryRequestsUseTheConfiguredPinnedMutualTlsIdentity() throws Exception {
+        RecoveryFleetPublicationTlsFixture.Material material =
+                RecoveryFleetPublicationTlsFixture.Material.create(
+                        temporaryDirectory, "external-notary");
+        AtomicReference<String> peer = new AtomicReference<>("");
+        Map<String, String> headers = Map.of(
+                "Content-Type", HttpTestSuiteStabilityExternalSequenceAnchor.MEDIA_TYPE,
+                HttpTestSuiteStabilityExternalSequenceAnchor.PROTOCOL_HEADER,
+                TestSuiteStabilityExternalSequenceCheckpointReceipt.SCHEMA_VERSION);
+        try (RecoveryFleetPublicationTlsFixture.Server tlsServer =
+                     RecoveryFleetPublicationTlsFixture.start(
+                             material, "/notary", "{}".getBytes(StandardCharsets.UTF_8),
+                             headers, peer)) {
+            KeyPair key = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+            Instant now = Instant.now();
+            String authorityKeysJson = objectMapper.writeValueAsString(List.of(Map.of(
+                    "authorityId", "notary-1",
+                    "keyId", "key-1",
+                    "publicKeyBase64", Base64.getEncoder().encodeToString(
+                            key.getPublic().getEncoded()),
+                    "notBefore", now.minusSeconds(60).toString(),
+                    "expiresAt", now.plusSeconds(3600).toString(),
+                    "enabled", true,
+                    "revoked", false)));
+            String endpointsJson = objectMapper.writeValueAsString(List.of(Map.of(
+                    "authorityId", "notary-1",
+                    "failureDomain", "region-1",
+                    "uri", tlsServer.uri().toString())));
+            var strictSettings = new HttpTestSuiteStabilityExternalSequenceAnchor.Settings(
+                    Duration.ofSeconds(2), Duration.ofSeconds(1),
+                    Duration.ofSeconds(10), false);
+            ControlPlaneHttpTransport transport = pinnedTransport(
+                    material, PinnedMutualTlsRecoveryFleetPublicationTransport.spkiPin(
+                            material.serverCertificate()));
+            HttpTestSuiteStabilityExternalSequenceAnchor anchor =
+                    HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
+                            objectMapper, TRUST_DOMAIN, ANCHOR_SET, 1, 0,
+                            authorityKeysJson, endpointsJson, strictSettings, transport);
+
+            assertThatThrownBy(() -> anchor.accept(head()))
+                    .isInstanceOf(TestSuiteStabilityExternalSequenceAnchor
+                            .ExternalAnchorException.class);
+            assertThat(anchor.transportSecurity().notary()).satisfies(descriptor -> {
+                assertThat(descriptor.privateTrustStore()).isTrue();
+                assertThat(descriptor.serverSpkiPinned()).isTrue();
+                assertThat(descriptor.mutualTls()).isTrue();
+            });
+            assertThat(peer.get()).contains("recovery-client-external-notary");
+            assertThat(tlsServer.requests()).isEqualTo(1);
+
+            HttpTestSuiteStabilityExternalSequenceAnchor wrongPin =
+                    HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
+                            objectMapper, TRUST_DOMAIN, ANCHOR_SET, 1, 0,
+                            authorityKeysJson, endpointsJson, strictSettings,
+                            pinnedTransport(material, "sha256:" + "0".repeat(64)));
+            assertThatThrownBy(() -> wrongPin.accept(head()))
+                    .isInstanceOf(TestSuiteStabilityExternalSequenceAnchor
+                            .ExternalAnchorException.class);
+            assertThat(tlsServer.requests()).isEqualTo(1);
+
+            HttpTestSuiteStabilityExternalSequenceAnchor anonymous =
+                    HttpTestSuiteStabilityExternalSequenceAnchor.fromJson(
+                            objectMapper, TRUST_DOMAIN, ANCHOR_SET, 1, 0,
+                            authorityKeysJson, endpointsJson, strictSettings);
+            assertThatThrownBy(() -> anonymous.accept(head()))
+                    .isInstanceOf(TestSuiteStabilityExternalSequenceAnchor
+                            .ExternalAnchorException.class);
+            assertThat(tlsServer.requests()).isEqualTo(1);
+        }
+    }
+
     private HttpTestSuiteStabilityExternalSequenceAnchor anchor(
             int threshold, int maximumFaults) {
         return new HttpTestSuiteStabilityExternalSequenceAnchor(
@@ -217,6 +295,16 @@ class HttpTestSuiteStabilityExternalSequenceAnchorTest {
 
     private static HttpClient client() {
         return HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+    }
+
+    private static ControlPlaneHttpTransport pinnedTransport(
+            RecoveryFleetPublicationTlsFixture.Material material,
+            String pin) {
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport(
+                new PinnedMutualTlsRecoveryFleetPublicationTransport.Settings(
+                        material.trustStore(), "test:notary-trust",
+                        material.clientKeyStore(), "test:notary-client", Set.of(pin)),
+                reference -> RecoveryFleetPublicationTlsFixture.password());
     }
 
     private void handle(

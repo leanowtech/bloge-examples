@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadLocalRandom;
@@ -59,6 +60,7 @@ public final class DynamicExternalSequenceAnchorBootstrapRootTrustStore
     private final ExternalSequenceAnchorBootstrapRootPublicationFloor floor;
     private final Settings settings;
     private final DocumentFetcher fetcher;
+    private final ControlPlaneHttpTransport.Descriptor transportDescriptor;
     private final Object refreshLock = new Object();
     private final ScheduledThreadPoolExecutor scheduler;
     private final AtomicBoolean refreshFailureLogged = new AtomicBoolean();
@@ -85,7 +87,35 @@ public final class DynamicExternalSequenceAnchorBootstrapRootTrustStore
             ExternalSequenceAnchorBootstrapRootPublicationFloor floor,
             Settings settings) {
         this(objectMapper, Clock.systemUTC(), binding, acceptedPolicies,
-                genesis, floor, settings, null, true);
+                genesis, floor, settings, (DocumentFetcher) null, true);
+    }
+
+    /**
+     * Bootstraps a complete root chain through an explicitly authenticated source transport.
+     *
+     * <p>The transport is frozen before the first bundle fetch and supplies PKIX roots, hostname
+     * verification, server pins, and a workload client identity. This store does not own or close
+     * the stateless transport.</p>
+     *
+     * @param objectMapper application JSON mapper
+     * @param binding exact local root-chain binding and lifecycle policy
+     * @param acceptedPolicies accepted ceremony policy fingerprints
+     * @param genesis deployment-pinned finite trust anchor
+     * @param floor durable monotonic verified-chain floor
+     * @param settings strict complete-chain refresh policy
+     * @param transport frozen bundle-source trust and client-identity policy
+     */
+    public DynamicExternalSequenceAnchorBootstrapRootTrustStore(
+            ObjectMapper objectMapper,
+            ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicies,
+            ExternalSequenceAnchorBootstrapRootGenesis genesis,
+            ExternalSequenceAnchorBootstrapRootPublicationFloor floor,
+            Settings settings,
+            ControlPlaneHttpTransport transport) {
+        this(objectMapper, Clock.systemUTC(), binding, acceptedPolicies, genesis, floor, settings,
+                httpFetcher(settings, transport), true,
+                Objects.requireNonNull(transport, "transport").descriptor());
     }
 
     DynamicExternalSequenceAnchorBootstrapRootTrustStore(
@@ -98,6 +128,36 @@ public final class DynamicExternalSequenceAnchorBootstrapRootTrustStore
             Settings settings,
             DocumentFetcher fetcher,
             boolean startScheduler) {
+        this(objectMapper, clock, binding, acceptedPolicies, genesis, floor, settings, fetcher,
+                startScheduler, new SystemTrustRecoveryFleetPublicationTransport().descriptor());
+    }
+
+    DynamicExternalSequenceAnchorBootstrapRootTrustStore(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicies,
+            ExternalSequenceAnchorBootstrapRootGenesis genesis,
+            ExternalSequenceAnchorBootstrapRootPublicationFloor floor,
+            Settings settings,
+            boolean startScheduler,
+            ControlPlaneHttpTransport transport) {
+        this(objectMapper, clock, binding, acceptedPolicies, genesis, floor, settings,
+                httpFetcher(settings, transport), startScheduler,
+                Objects.requireNonNull(transport, "transport").descriptor());
+    }
+
+    private DynamicExternalSequenceAnchorBootstrapRootTrustStore(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding binding,
+            Set<String> acceptedPolicies,
+            ExternalSequenceAnchorBootstrapRootGenesis genesis,
+            ExternalSequenceAnchorBootstrapRootPublicationFloor floor,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler,
+            ControlPlaneHttpTransport.Descriptor transportDescriptor) {
         this.objectMapper = strict(objectMapper);
         this.clock = Objects.requireNonNull(clock, "clock");
         this.binding = Objects.requireNonNull(binding, "binding");
@@ -110,7 +170,11 @@ public final class DynamicExternalSequenceAnchorBootstrapRootTrustStore
                     "Dynamic bootstrap-root trust requires a durable floor");
         }
         this.settings = Objects.requireNonNull(settings, "settings").validated();
-        this.fetcher = fetcher == null ? new HttpDocumentFetcher() : fetcher;
+        this.fetcher = fetcher == null ? new HttpDocumentFetcher(
+                new SystemTrustRecoveryFleetPublicationTransport().client(
+                        this.settings.requestTimeout())) : fetcher;
+        this.transportDescriptor = Objects.requireNonNull(
+                transportDescriptor, "transportDescriptor");
         if (!refresh()) {
             throw new IllegalStateException(
                     "Dynamic external bootstrap-root trust bootstrap is unavailable");
@@ -186,6 +250,12 @@ public final class DynamicExternalSequenceAnchorBootstrapRootTrustStore
                 current.activeAuthorityCount(), current.headExpiresAt(),
                 observed.lastSuccessfulRefreshAt(), observed.refreshSuccessCount(),
                 observed.refreshFailureCount());
+    }
+
+    /** @return payload-free bundle-source transport security facts without remote I/O */
+    @Override
+    public Optional<ControlPlaneHttpTransport.Descriptor> transportDescriptor() {
+        return Optional.of(transportDescriptor);
     }
 
     /** Stops background refresh and permanently closes this local root view. */
@@ -360,8 +430,11 @@ public final class DynamicExternalSequenceAnchorBootstrapRootTrustStore
 
     private static final class HttpDocumentFetcher implements DocumentFetcher {
 
-        private final HttpClient client = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NEVER).build();
+        private final HttpClient client;
+
+        private HttpDocumentFetcher(HttpClient client) {
+            this.client = Objects.requireNonNull(client, "client");
+        }
 
         @Override
         public FetchedDocument fetch(URI uri, String etag, Duration timeout) throws IOException {
@@ -402,7 +475,24 @@ public final class DynamicExternalSequenceAnchorBootstrapRootTrustStore
         }
     }
 
-    /** Strict complete-chain remote refresh policy. */
+    private static DocumentFetcher httpFetcher(
+            Settings settings,
+            ControlPlaneHttpTransport transport) {
+        Settings validated = Objects.requireNonNull(settings, "settings").validated();
+        return new HttpDocumentFetcher(Objects.requireNonNull(transport, "transport")
+                .client(validated.requestTimeout()));
+    }
+
+    /**
+     * Strict complete-chain remote refresh policy.
+     *
+     * @param bundleUri HTTPS complete-chain bundle endpoint
+     * @param requestTimeout bounded per-request timeout
+     * @param refreshInterval background refresh cadence
+     * @param maximumSnapshotAge hard age since the last successful refresh
+     * @param unknownKeyRefreshInterval global synchronous refresh cooldown
+     * @param allowInsecureLoopback explicit local-test HTTP escape hatch
+     */
     public record Settings(
             URI bundleUri,
             Duration requestTimeout,

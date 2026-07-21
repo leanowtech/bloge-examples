@@ -22,6 +22,11 @@ public interface TestSecretAuthorityExternalSequenceAnchor extends AutoCloseable
     /** @return aggregate runtime state; this read must not perform remote I/O */
     TestSuiteStabilityExternalSequenceAnchor.Snapshot snapshot();
 
+    /** @return payload-free notary and managed-trust transport posture */
+    default ExternalSequenceAnchorTransportSecurity transportSecurity() {
+        return ExternalSequenceAnchorTransportSecurity.compatibility();
+    }
+
     /** @return aggregate receipt-trust refresh state without identities or key material */
     default ExternalSequenceAnchorReceiptTrustStore.Snapshot trustSnapshot() {
         return new ExternalSequenceAnchorReceiptTrustStore.Snapshot(
@@ -69,6 +74,11 @@ public interface TestSecretAuthorityExternalSequenceAnchor extends AutoCloseable
             @Override
             public TestSuiteStabilityExternalSequenceAnchor.Snapshot snapshot() {
                 return value.snapshot();
+            }
+
+            @Override
+            public ExternalSequenceAnchorTransportSecurity transportSecurity() {
+                return value.transportSecurity();
             }
 
             @Override

@@ -32,6 +32,15 @@ public interface TestSuiteStabilityExternalSequenceAnchor extends AutoCloseable 
     Snapshot snapshot();
 
     /**
+     * Returns payload-free transport posture for notaries and optional managed trust sources.
+     *
+     * @return immutable local transport-security projection without remote I/O
+     */
+    default ExternalSequenceAnchorTransportSecurity transportSecurity() {
+        return ExternalSequenceAnchorTransportSecurity.compatibility();
+    }
+
+    /**
      * @return aggregate receipt-trust refresh state; reading it must never perform remote I/O
      */
     default ExternalSequenceAnchorReceiptTrustStore.Snapshot trustSnapshot() {

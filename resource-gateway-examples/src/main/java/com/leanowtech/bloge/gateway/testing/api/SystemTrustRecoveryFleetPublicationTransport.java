@@ -38,6 +38,11 @@ public final class SystemTrustRecoveryFleetPublicationTransport
         return DESCRIPTOR;
     }
 
+    /** Returns the immutable compatibility descriptor without allocating a transport. */
+    static Descriptor descriptorValue() {
+        return DESCRIPTOR;
+    }
+
     static Duration bounded(Duration timeout) {
         Duration required = Objects.requireNonNull(timeout, "connectTimeout");
         if (required.compareTo(Duration.ofMillis(100)) < 0

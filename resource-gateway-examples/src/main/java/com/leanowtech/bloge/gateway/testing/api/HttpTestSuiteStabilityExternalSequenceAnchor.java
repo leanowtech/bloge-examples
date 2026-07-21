@@ -73,6 +73,7 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
     private final Set<String> endpointAuthorityIds;
     private final Settings settings;
     private final HttpClient httpClient;
+    private final ExternalSequenceAnchorTransportSecurity transportSecurity;
     private volatile RuntimeState state = RuntimeState.initial();
 
     /**
@@ -97,15 +98,48 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
             String authorityKeysJson,
             String endpointsJson,
             Settings settings) {
+        return fromJson(objectMapper, trustDomain, anchorSetId, signatureThreshold,
+                maximumFaults, authorityKeysJson, endpointsJson, settings,
+                new SystemTrustRecoveryFleetPublicationTransport());
+    }
+
+    /**
+     * Strictly parses static receipt trust and binds every notary call to one frozen transport.
+     *
+     * @param objectMapper canonical JSON baseline
+     * @param trustDomain expected notary trust domain
+     * @param anchorSetId stable notary-set identity
+     * @param signatureThreshold required accepted receipt quorum
+     * @param maximumFaults declared Byzantine fault bound
+     * @param authorityKeysJson bounded public Ed25519 keys
+     * @param endpointsJson one endpoint and failure domain per authority
+     * @param settings transport and receipt freshness policy
+     * @param transport authenticated notary control-plane transport
+     * @return configured external sequence anchor
+     */
+    public static HttpTestSuiteStabilityExternalSequenceAnchor fromJson(
+            ObjectMapper objectMapper,
+            String trustDomain,
+            String anchorSetId,
+            int signatureThreshold,
+            int maximumFaults,
+            String authorityKeysJson,
+            String endpointsJson,
+            Settings settings,
+            ControlPlaneHttpTransport transport) {
         try {
             ObjectMapper strict = strict(Objects.requireNonNull(objectMapper, "objectMapper"));
+            Settings validated = Objects.requireNonNull(settings, "settings");
+            ControlPlaneHttpTransport required = Objects.requireNonNull(
+                    transport, "transport");
             List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> keys =
                     ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
                             strict, authorityKeysJson);
             return new HttpTestSuiteStabilityExternalSequenceAnchor(
                     strict, Clock.systemUTC(), new SecureRandom(), trustDomain, anchorSetId,
                     signatureThreshold, maximumFaults, keys,
-                    parseEndpoints(strict, endpointsJson), settings, defaultClient());
+                    parseEndpoints(strict, endpointsJson), validated,
+                    required.client(validated.requestTimeout()), required.descriptor());
         } catch (RuntimeException invalid) {
             throw invalid;
         } catch (Exception invalid) {
@@ -129,7 +163,27 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
         this(objectMapper, clock, secureRandom, trustDomain, anchorSetId,
                 signatureThreshold, maximumFaults,
                 new StaticExternalSequenceAnchorReceiptTrustStore(clock, authorityKeys),
-                endpoints, settings, httpClient);
+                endpoints, settings, httpClient,
+                SystemTrustRecoveryFleetPublicationTransport.descriptorValue());
+    }
+
+    private HttpTestSuiteStabilityExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            Clock clock,
+            SecureRandom secureRandom,
+            String trustDomain,
+            String anchorSetId,
+            int signatureThreshold,
+            int maximumFaults,
+            List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> authorityKeys,
+            List<Endpoint> endpoints,
+            Settings settings,
+            HttpClient httpClient,
+            ControlPlaneHttpTransport.Descriptor notaryTransport) {
+        this(objectMapper, clock, secureRandom, trustDomain, anchorSetId,
+                signatureThreshold, maximumFaults,
+                new StaticExternalSequenceAnchorReceiptTrustStore(clock, authorityKeys),
+                endpoints, settings, httpClient, notaryTransport);
     }
 
     HttpTestSuiteStabilityExternalSequenceAnchor(
@@ -144,6 +198,24 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
             List<Endpoint> endpoints,
             Settings settings,
             HttpClient httpClient) {
+        this(objectMapper, clock, secureRandom, trustDomain, anchorSetId,
+                signatureThreshold, maximumFaults, trustStore, endpoints, settings,
+                httpClient, SystemTrustRecoveryFleetPublicationTransport.descriptorValue());
+    }
+
+    private HttpTestSuiteStabilityExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            Clock clock,
+            SecureRandom secureRandom,
+            String trustDomain,
+            String anchorSetId,
+            int signatureThreshold,
+            int maximumFaults,
+            ExternalSequenceAnchorReceiptTrustStore trustStore,
+            List<Endpoint> endpoints,
+            Settings settings,
+            HttpClient httpClient,
+            ControlPlaneHttpTransport.Descriptor notaryTransport) {
         this.objectMapper = strict(Objects.requireNonNull(objectMapper, "objectMapper"));
         this.clock = Objects.requireNonNull(clock, "clock");
         this.secureRandom = Objects.requireNonNull(secureRandom, "secureRandom");
@@ -157,6 +229,11 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
         this.endpointAuthorityIds = this.endpoints.stream()
                 .map(Endpoint::authorityId).collect(java.util.stream.Collectors.toUnmodifiableSet());
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
+        this.transportSecurity = new ExternalSequenceAnchorTransportSecurity(
+                ExternalSequenceAnchorTransportSecurity.SCHEMA_VERSION,
+                Objects.requireNonNull(notaryTransport, "notaryTransport"),
+                this.trustStore.transportDescriptor(),
+                this.trustStore.bootstrapRootTransportDescriptor());
         validatePolicy();
     }
 
@@ -182,12 +259,45 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
             ExternalSequenceAnchorReceiptTrustStore trustStore,
             String endpointsJson,
             Settings settings) {
+        return fromTrustStore(objectMapper, trustDomain, anchorSetId, signatureThreshold,
+                maximumFaults, trustStore, endpointsJson, settings,
+                new SystemTrustRecoveryFleetPublicationTransport());
+    }
+
+    /**
+     * Creates a managed-trust anchor whose notary calls use one frozen authenticated transport.
+     *
+     * @param objectMapper canonical JSON baseline
+     * @param trustDomain exact receipt signer trust domain
+     * @param anchorSetId stable notary-set identity
+     * @param signatureThreshold required accepted receipt quorum
+     * @param maximumFaults declared Byzantine fault bound
+     * @param trustStore managed atomic receipt trust snapshot
+     * @param endpointsJson one endpoint and failure domain per authority
+     * @param settings transport and receipt freshness policy
+     * @param transport authenticated notary control-plane transport
+     * @return configured external sequence anchor
+     */
+    public static HttpTestSuiteStabilityExternalSequenceAnchor fromTrustStore(
+            ObjectMapper objectMapper,
+            String trustDomain,
+            String anchorSetId,
+            int signatureThreshold,
+            int maximumFaults,
+            ExternalSequenceAnchorReceiptTrustStore trustStore,
+            String endpointsJson,
+            Settings settings,
+            ControlPlaneHttpTransport transport) {
         try {
             ObjectMapper strict = strict(Objects.requireNonNull(objectMapper, "objectMapper"));
+            Settings validated = Objects.requireNonNull(settings, "settings");
+            ControlPlaneHttpTransport required = Objects.requireNonNull(
+                    transport, "transport");
             return new HttpTestSuiteStabilityExternalSequenceAnchor(
                     strict, Clock.systemUTC(), new SecureRandom(), trustDomain, anchorSetId,
                     signatureThreshold, maximumFaults, trustStore,
-                    parseEndpoints(strict, endpointsJson), settings, defaultClient());
+                    parseEndpoints(strict, endpointsJson), validated,
+                    required.client(validated.requestTimeout()), required.descriptor());
         } catch (RuntimeException invalid) {
             try {
                 Objects.requireNonNull(trustStore, "trustStore").close();
@@ -293,6 +403,12 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
                 observed.lastSuccessfulAnchorAt(), observed.successCount(),
                 observed.failureCount(), observed.conflictCount(), endpoints.size(),
                 signatureThreshold, maximumFaults, endpoints.size());
+    }
+
+    /** Returns the frozen payload-free posture of all HTTP links in this trust chain. */
+    @Override
+    public ExternalSequenceAnchorTransportSecurity transportSecurity() {
+        return transportSecurity;
     }
 
     /** Returns aggregate local receipt-trust refresh state without remote I/O. */
@@ -528,10 +644,6 @@ public final class HttpTestSuiteStabilityExternalSequenceAnchor
         byte[] value = new byte[32];
         secureRandom.nextBytes(value);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
-    }
-
-    private static HttpClient defaultClient() {
-        return HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
     }
 
     private static void closeQuietly(InputStream input) {
