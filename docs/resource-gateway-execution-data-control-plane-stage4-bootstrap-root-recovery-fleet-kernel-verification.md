@@ -2,7 +2,8 @@
 
 ## 1. 本步边界
 
-本步把已闭合的单 root-set recovery service 提升为可嵌入的多 root-set 进程内执行内核，新增：
+本步把已闭合的单 root-set recovery service 提升为可嵌入的多 root-set 执行内核，并在兼容进程内
+模式之外增加可选的持久化跨副本协调面，新增：
 
 - service/producer 的 immutable public `ExpectedBinding` 投影；
 - `ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory` v1；
@@ -12,11 +13,15 @@
 - per-lane runtime failure isolation、payload-free result 和 aggregate runtime snapshot；
 - admitted cycle 与 `close()` 的强 quiescence 边界；
 - 单 daemon lane、fixed-delay、手工/后台互斥的 fleet scheduler；
-- timer/active-cycle 停滞判定与 aggregate-only Actuator health。
+- timer/active-cycle 停滞判定与 aggregate-only Actuator health；
+- `ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator` 固定分区租约协议；
+- 数据库时钟、整行指纹、fleet/lease 双 epoch 与持久化 per-partition cursor；
+- active acquire command 重试去重、精确 renewal revision、complete/abandon 栅栏；
+- 慢 lane 执行期间的独立 heartbeat，以及跨副本/重建后公平续跑。
 
-本步不是签名动态 inventory、远端 discovery、跨副本 durable cursor/sharding 或生产 fleet 产品。默认
-test/staging Spring composition 仍只装配一个 root-set lane；scheduler/health 目前是供 embedder 显式组合的
-公共 Java 运行面。
+本步不是签名动态 inventory、远端 discovery、动态 rebalance 或生产 fleet 产品。默认 test/staging
+Spring composition 仍只装配一个 root-set lane；coordinator/worker/scheduler/health 是供 embedder 显式
+组合的公共 Java 运行面，尚未形成默认 Spring/capability/配置交付面。
 
 ## 2. 根因
 
@@ -27,6 +32,9 @@ test/staging Spring composition 仍只装配一个 root-set lane；scheduler/hea
 2. 每个本地 timer 独立抖动，没有全局有界工作预算，root-set 数量直接放大线程和轮询压力；
 3. 固定从字典序头部扫描会让异常前缀长期饿死后续 lane；
 4. inventory 更新没有代际语义时，回滚或同代换绑可静默改变 signer runtime。
+5. 进程内 cursor 在重启后归零，多副本各自轮转会重复扫描热分区并长期遗漏冷分区；
+6. acquire 响应丢失若没有 active-command 重试身份，调用方重试可能再占一个分区；
+7. 只在 lane 之间续租会让单个慢 lane 穿透外层 lease，随后以过期 revision 错误推进 cursor。
 
 因此本步先建立强绑定、代际和公平内核，再接签名 inventory 与跨副本控制面；把远端发现直接塞进 worker
 只会重新引入无界 I/O、凭据泄漏和不可审计漂移。
@@ -75,6 +83,11 @@ lane 抛出 RuntimeException 时 cursor 仍推进，结果只记录 `runtimeFail
 `cycleFailureCount`。每个 lane 内部仍由其 journal 原子决定 no-work、approval wait、lease busy、retry
 delay、attempt exhaustion 或 acquired fence，fleet worker 不复制这些权威状态。
 
+durable 模式把 canonical lane key 以 length-framed SHA-256 稳定映射到 1..64 个固定分区。数据库按
+`lastPartitionId` 循环选择可用分区，每个分区最多一个未过期 owner；不同副本可以并行处理不同分区，
+但同一分区只发布一个 scheduling lease。该外层 lease 只控制扫描归属，不授权业务写入；即使租约过期
+造成 at-least-once 轮询，lane ceremony journal 的 attempt token 和 write fence 仍是唯一写权限。
+
 ## 6. Inventory 变更时的 cursor
 
 新 generation 不把 cursor 重置到字典序头部。worker 对旧 cursor 做 upper-bound 定位：
@@ -84,8 +97,12 @@ delay、attempt exhaustion 或 acquired fence，fleet worker 不复制这些权�
 - 没有更大 key 时回绕到首 lane；
 - 新增到 cursor 之前的 lane 会在本轮回绕后获得机会。
 
-这避免每次 inventory 扩容都让后缀 lane 重新饥饿。该 cursor 目前只在进程内，重启会从首 lane 开始；
-跨副本长期公平必须由后续 durable shard/cursor 协议证明。
+这避免每次 inventory 扩容都让后缀 lane 重新饥饿。兼容 local worker 的 cursor 仍只在进程内；durable
+worker 则在每个固定分区保存最后实际尝试的 lane，完成与释放在同一数据库事务提交，重建 coordinator
+或 worker 后从 strict successor 继续。更高 inventory generation 会提升 fleet epoch、立即清除旧 owner
+并保留 cursor；回滚、同 generation fingerprint 漂移和同 `fleetId` 改 partition count 均 fail closed。
+partition count 会改变所有 lane 的映射，因此拓扑迁移必须使用新 `fleetId` 并执行显式切换，不能滚动
+修改原 fleet。
 
 ## 7. 生命周期、调度与观测
 
@@ -95,8 +112,16 @@ delay、attempt exhaustion 或 acquired fence，fleet worker 不复制这些权�
 
 `RuntimeSnapshot` 只包含 cycle/lane aggregate counters、active/closed、最新成功 generation 和最近 cycle
 状态，不包含 scope、root-set、resolver、authority、key、fingerprint、payload、endpoint 或 exception。
-`CycleResult` 可向已授权 embedder 返回 bounded lane key 与 recovery/execution enum，用于定位哪条公开
-root-set lane 需要治理处理，但不携带 provider diagnostics。
+`CycleResult` v2 可向已授权 embedder 返回 bounded lane key、recovery/execution enum 和
+`COMPLETED/COORDINATOR_BUSY` disposition；因此“空 inventory 正常完成”和“所有分区正在被其他副本
+处理”不会混成同一个空结果。结果不携带 provider diagnostics。
+
+durable worker 为 acquisition 生成 UUID-derived 32-hex command id。相同 active command 的歧义重试返回同一个 exact
+lease；owner、duration 或 inventory 漂移的重放被拒绝。独立 daemon heartbeat 以 lease duration 的
+约三分之一周期续租，单个慢 lane 不会阻塞心跳；worker 在提交 cursor 前先停止并等待 heartbeat，再用
+最新 expiry revision 完成。renewal、generation advance 或 takeover 导致的 stale revision 一律 fenced，
+整个 cycle 失败且不发布未提交进度。fatal/invariant failure 会尝试 `abandon` 最新 revision，以尽快释放
+分区但不推进 cursor；清理失败作为 suppressed failure 保留，不覆盖原始失败。
 
 `ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler` 只有一条 fixed-delay daemon lane，显式
 `runOnce()` 与后台 poll 使用同一个 admission monitor，因此不会在本进程重叠调用 worker。RuntimeException
@@ -143,13 +168,31 @@ try (var worker = new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker(
 `reviewedRuntimeBindingFingerprint` 和 `inventoryGeneration` 必须来自部署治理权威，不能由 worker 根据
 任意运行对象自证。变更 resolver/service 时先发布新 generation，再让 worker 读取；不得复用原 generation。
 
+多个副本共享同一数据库时，可显式增加 durable coordinator：
+
+```java
+var coordinator =
+        new DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator(
+                jdbcTemplate, objectMapper, transactionManager);
+coordinator.init();
+try (var worker = new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker(
+        inventory, authenticatedReplicaWorkerId,
+        new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.Policy(30, 16),
+        coordinator, "bootstrap-root-recovery-v1", 8)) {
+    var cycle = worker.runCycle();
+}
+```
+
+所有副本必须使用同一 `fleetId`、partition count 和 inventory generation/fingerprint。协调表只存公开
+lane cursor、owner、命令/租约标识和时间，不存 resolver、credential、provider payload 或异常文本。
+
 ## 9. 验证
 
 聚焦命令：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetSchedulerTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetHealthTest \
+  -Dtest=ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinatorTest,DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinatorTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetDurableIntegrationTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetSchedulerTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetHealthTest \
   test
 ```
 
@@ -166,23 +209,33 @@ wall-clock 回拨、active poll timestamp、policy/snapshot 反例、六类 read
 worker、scheduler 与 health 4 个公共类型通过 `javadoc --release 25 -Werror -Xdoclint:all` 独立验证，
 0 warnings、0 errors；该结论不外推为全模块 JavaDoc 已清零。
 
+durable fleet 子步新增 21 项测试；fleet 七类聚焦门禁现执行 54 tests，覆盖 fingerprint/partition
+canonicality、固定拓扑、active-command 重试去重、数据库循环分配、全部 busy、精确 renewal/stale fence、generation
+advance/rollback/drift、过期 takeover、并发单赢家、cursor/整行损坏 fail closed、abandon 不推进 cursor、
+慢 lane 后台 heartbeat、fatal cleanup，以及共享数据库下多副本与重建后 per-partition cursor 续跑，均为
+0 failures、0 errors、0 skips。inventory、coordinator、database coordinator、worker、scheduler 与 health
+六个公共类型通过 `javadoc --release 25 -Werror -Xdoclint:all` 独立验证，0 warnings、0 errors；该结论
+不外推为全模块 JavaDoc 已清零。
+
 联合门禁在真实时钟跨过旧 fixture 的固定绝对时间后，暴露 ceremony service 与 database journal 测试把
 JVM 固定时钟和数据库 `CURRENT_TIMESTAMP` 混用，导致截止时间随日历失效。两组 fixture 现均在每个
 test 的隔离数据库建立后读取 `CURRENT_TIMESTAMP`，规整为协议允许的整秒 canonical 基准，再据此构造
 key lifecycle、proposal、approval、preflight 与 outcome；原 15 项 service 和 27 项 journal 测试因此可在
 任意日期重复执行，生产数据库仍是 lease/deadline 唯一时间权威。
 
-冻结源码的完整 Resource Gateway `clean verify` 执行 3377 tests，0 failures、0 errors、2 skips；
+冻结源码的完整 Resource Gateway `clean verify` 执行 3398 tests，0 failures、0 errors、2 skips；
 Browser DOM 34 项中 32 项及 browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
 
 ## 10. 仍未宣称
 
 - signed dynamic inventory publication、witness、revocation、hard expiry 与 durable generation floor；
 - enterprise IAM/PDP 对 lane membership、worker、resolver 和 runtime fingerprint 的授权；
-- durable cross-replica cursor、shard ownership、rebalance、priority、fleet-wide fairness 与 rollout jitter；
+- 在线 partition-count 变更、自动 rebalance、priority、带权 fleet-wide fairness 与 rollout jitter；
 - 多 lane Spring composition、capability/Schema/HTTP 和 production profile；
 - publication fleet、publisher mTLS/pinning、response-key hot rotation 与 anti-equivocation；
 - HSM/KMS custody、provider-confirmed cancellation/process isolation；
 - PostgreSQL/MySQL 并发、multi-region HA、DR/chaos/soak 和外部 SLO 认证。
 
-这些缺口是下一增量的输入，不能由本地 round-robin green tests 推导为已完成。
+这些缺口是下一增量的输入，不能由固定分区协调器的 green tests 推导为已完成。当前数据库实现只在本仓
+H2 test-runtime 上验证，尚未获得 PostgreSQL/MySQL 方言、锁等待/statement timeout、连接池耗尽、跨 AZ
+时延和 failover 认证；部署方在此之前不得把它标成 production-ready fleet service。

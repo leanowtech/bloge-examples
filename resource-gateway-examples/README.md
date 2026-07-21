@@ -494,10 +494,18 @@ cycle is rejected; concurrent close callers share a completion barrier without h
 monitor, preventing shutdown lock inversion.
 
 The default Spring composition remains a single-root authoring runtime, not a new Resource Gateway
-endpoint or deployment-wide worker registry. The fleet cursor is process-local: signed dynamic
-resolver inventory publication/revocation, durable cross-replica cursor/sharding/fairness,
-multi-lane Spring/capability wiring, publisher mTLS/client identity and certificate pinning,
-response-key hot rotation,
+endpoint or deployment-wide worker registry. Local fleet workers retain a process-local cursor.
+Embedders that share the test-runtime database can instead construct a
+`DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator` and pass it, one stable
+`fleetId`, and one fixed partition count to every worker replica. The coordinator uses database-clock
+partition leases, active-command retry deduplication, generation fencing, exact renewal/completion,
+failure abandonment, and durable per-partition cursors; the worker heartbeats independently of slow
+lane execution. A busy coordinator is reported separately from an empty completed inventory. The
+lane journal remains the only execution/write fence.
+
+This is still an explicit Java embedding surface. Signed dynamic resolver inventory
+publication/revocation, online partition rebalance, multi-lane Spring/capability wiring, publisher
+mTLS/client identity and certificate pinning, response-key hot rotation,
 publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
 bundle, and publication HTTP Schemas, failure matrix, runtime wiring, and remaining ceremony limits

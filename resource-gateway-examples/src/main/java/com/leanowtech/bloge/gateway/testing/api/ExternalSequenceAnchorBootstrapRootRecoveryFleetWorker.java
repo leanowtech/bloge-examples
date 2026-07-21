@@ -7,14 +7,22 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory.LaneDescriptor;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory.LaneKey;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory.Snapshot;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.Acquisition;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.AcquisitionCommand;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.AcquisitionStatus;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.CompletionStatus;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.FleetManifest;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.Lease;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Bounded fair worker over an authorized bootstrap-root recovery lane inventory.
@@ -26,10 +34,12 @@ import java.util.concurrent.atomic.AtomicLong;
  * failures remain visible to the caller.</p>
  *
  * <p>The worker rejects inventory generation rollback, descriptor drift at the same generation,
- * and same-generation replacement of service or resolver objects. It relies on each lane's
- * database journal for acquisition, retry timing, attempt budget, and fencing. The cursor is
- * process-local, so this kernel provides local fairness only; it does not claim durable fleet
- * sharding, cross-replica fairness, signed inventory governance, or background scheduling.</p>
+ * and same-generation replacement of service or resolver objects. Its compatible local mode keeps
+ * one process-local cursor. Its durable mode acquires one fixed partition through a database-clock
+ * coordinator, resumes after that partition's durable cursor, and heartbeats independently of slow
+ * lane execution. A fenced completion fails the cycle and leaves the prior cursor for at-least-once
+ * replay; a fatal cycle explicitly abandons its latest lease without moving that cursor. Each
+ * lane's own ceremony journal remains the execution and write-fencing authority.</p>
  */
 public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
         implements AutoCloseable {
@@ -37,6 +47,9 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
     private final ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory;
     private final String workerId;
     private final Policy policy;
+    private final ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator;
+    private final String fleetId;
+    private final int partitionCount;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong cycleCount = new AtomicLong();
     private final AtomicLong cycleFailureCount = new AtomicLong();
@@ -73,6 +86,31 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
             String workerId,
             Policy policy) {
+        this(inventory, workerId, policy, null, null, 0);
+    }
+
+    /**
+     * Creates a cross-replica worker with durable partition assignment and cursor fairness.
+     *
+     * <p>Partition count is a fleet identity invariant. Changing it requires a new
+     * {@code fleetId}; this prevents a rolling deployment from silently remapping lanes. The
+     * coordinator lease is scheduling authority only. Long lane execution may outlive it, in which
+     * case stale completion fails and the lane-level ceremony journal prevents duplicate writes.</p>
+     *
+     * @param inventory non-blocking already-authorized local lane inventory
+     * @param workerId stable pre-authenticated recovery worker identity
+     * @param policy bounded lane budget and database lease duration
+     * @param coordinator durable database-clock partition coordinator
+     * @param fleetId stable deployment-wide scheduler identity
+     * @param partitionCount fixed partition count from 1 through 64
+     */
+    public ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
+            String workerId,
+            Policy policy,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator,
+            String fleetId,
+            int partitionCount) {
         this.inventory = Objects.requireNonNull(inventory, "inventory");
         this.workerId = Objects.requireNonNull(workerId, "workerId");
         this.policy = Objects.requireNonNull(policy, "policy");
@@ -83,6 +121,24 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
         if (policy.leaseDurationSeconds() < 3L) {
             throw new IllegalArgumentException(
                     "Ceremony fleet auto-heartbeat lease must be at least three seconds");
+        }
+        this.coordinator = coordinator;
+        if (coordinator == null) {
+            if (fleetId != null || partitionCount != 0) {
+                throw new IllegalArgumentException(
+                        "Local recovery fleet worker cannot declare durable topology");
+            }
+            this.fleetId = null;
+            this.partitionCount = 0;
+        } else {
+            if (!coordinator.durable()) {
+                throw new IllegalArgumentException(
+                        "Recovery fleet coordinator must be durable");
+            }
+            FleetManifest validated = new FleetManifest(FleetManifest.SCHEMA_VERSION,
+                    fleetId, 1L, "sha256:" + "0".repeat(64), partitionCount);
+            this.fleetId = validated.fleetId();
+            this.partitionCount = validated.partitionCount();
         }
     }
 
@@ -98,33 +154,10 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
         try {
             Snapshot current = Objects.requireNonNull(inventory.snapshot(), "inventory snapshot");
             accept(current);
-            List<Lane> lanes = current.lanes();
-            List<LaneResult> results = new ArrayList<>();
-            int visits = Math.min(policy.maximumLanesPerCycle(), lanes.size());
-            int start = indexAfter(lanes, cursorExclusive);
-            for (int offset = 0; offset < visits; offset++) {
-                Lane lane = lanes.get((start + offset) % lanes.size());
-                laneAttemptCount.incrementAndGet();
-                try {
-                    RecoveryExecutionResult result = lane.service().recover(
-                            workerId, policy.leaseDurationSeconds(), lane.authorityResolver());
-                    RecoveryStatus status = Objects.requireNonNull(
-                            result, "recovery result").status();
-                    ExecutionStatus executionStatus = result.execution() == null
-                            ? null : result.execution().status();
-                    if (status == RecoveryStatus.EXECUTED) {
-                        laneAcquiredCount.incrementAndGet();
-                    }
-                    results.add(LaneResult.completed(lane.key(), status, executionStatus));
-                } catch (RuntimeException laneFailure) {
-                    laneFailureCount.incrementAndGet();
-                    results.add(LaneResult.failed(lane.key()));
-                } finally {
-                    cursorExclusive = lane.key();
-                }
-            }
+            CycleExecution execution = coordinator == null
+                    ? runLocal(current) : runDurable(current);
             CycleResult completed = new CycleResult(CycleResult.SCHEMA_VERSION,
-                    current.generation(), results);
+                    current.generation(), execution.disposition(), execution.lanes());
             lastInventoryGeneration = current.generation();
             lastCycleFailed = false;
             lastCompletedCycleHadLaneFailures = completed.failedCount() > 0;
@@ -135,6 +168,242 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
             throw cycleFailure;
         } finally {
             active = false;
+        }
+    }
+
+    private CycleExecution runLocal(Snapshot current) {
+        List<Lane> lanes = current.lanes();
+        List<LaneResult> results = new ArrayList<>();
+        int visits = Math.min(policy.maximumLanesPerCycle(), lanes.size());
+        int start = indexAfter(lanes, cursorExclusive);
+        for (int offset = 0; offset < visits; offset++) {
+            Lane lane = lanes.get((start + offset) % lanes.size());
+            try {
+                visit(lane, results);
+            } finally {
+                cursorExclusive = lane.key();
+            }
+        }
+        return CycleExecution.completed(results);
+    }
+
+    private CycleExecution runDurable(Snapshot current) {
+        FleetManifest manifest = FleetManifest.from(fleetId, current, partitionCount);
+        AcquisitionCommand command = new AcquisitionCommand(AcquisitionCommand.SCHEMA_VERSION,
+                manifest, workerId, UUID.randomUUID().toString().replace("-", ""),
+                policy.leaseDurationSeconds());
+        Acquisition acquisition = Objects.requireNonNull(
+                coordinator.acquire(command), "fleet acquisition");
+        if (acquisition.status() == AcquisitionStatus.BUSY) {
+            return CycleExecution.busy();
+        }
+        Lease acquiredLease = exactAcquisition(command, acquisition.lease());
+        List<Lane> partitionLanes = current.lanes().stream()
+                .filter(lane -> acquiredLease.owns(lane.key()))
+                .toList();
+        List<LaneResult> results = new ArrayList<>();
+        int visits = Math.min(policy.maximumLanesPerCycle(), partitionLanes.size());
+        int start = indexAfter(partitionLanes, acquiredLease.cursorExclusive());
+        LeaseHeartbeat heartbeat;
+        try {
+            heartbeat = new LeaseHeartbeat(coordinator, acquiredLease);
+        } catch (RuntimeException | Error startupFailure) {
+            try {
+                coordinator.abandon(acquiredLease);
+            } catch (RuntimeException | Error cleanupFailure) {
+                startupFailure.addSuppressed(cleanupFailure);
+            }
+            throw startupFailure;
+        }
+        LaneKey lastAttempted = null;
+        try {
+            for (int offset = 0; offset < visits; offset++) {
+                if (offset > 0) {
+                    heartbeat.renewNow();
+                }
+                heartbeat.assertHealthy();
+                Lane lane = partitionLanes.get((start + offset) % partitionLanes.size());
+                visit(lane, results);
+                lastAttempted = lane.key();
+                heartbeat.assertHealthy();
+            }
+            Lease latest = heartbeat.stop();
+            if (coordinator.complete(latest, lastAttempted) != CompletionStatus.COMPLETED) {
+                throw new IllegalStateException(
+                        "Recovery fleet partition completion was fenced");
+            }
+            return CycleExecution.completed(results);
+        } catch (RuntimeException | Error failure) {
+            Lease latest = heartbeat.stopAfterFailure(failure);
+            try {
+                coordinator.abandon(latest);
+            } catch (RuntimeException | Error cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
+    }
+
+    private static Lease exactAcquisition(AcquisitionCommand command, Lease lease) {
+        Lease safe = Objects.requireNonNull(lease, "fleet lease");
+        if (!safe.manifest().equals(command.manifest())
+                || !safe.workerId().equals(command.workerId())
+                || !safe.commandId().equals(command.commandId())
+                || safe.leaseDurationSeconds() != command.leaseDurationSeconds()) {
+            throw new IllegalStateException(
+                    "Recovery fleet coordinator returned a drifted acquisition");
+        }
+        return safe;
+    }
+
+    private void visit(Lane lane, List<LaneResult> results) {
+        laneAttemptCount.incrementAndGet();
+        try {
+            RecoveryExecutionResult result = lane.service().recover(
+                    workerId, policy.leaseDurationSeconds(), lane.authorityResolver());
+            RecoveryStatus status = Objects.requireNonNull(
+                    result, "recovery result").status();
+            ExecutionStatus executionStatus = result.execution() == null
+                    ? null : result.execution().status();
+            if (status == RecoveryStatus.EXECUTED) {
+                laneAcquiredCount.incrementAndGet();
+            }
+            results.add(LaneResult.completed(lane.key(), status, executionStatus));
+        } catch (RuntimeException laneFailure) {
+            laneFailureCount.incrementAndGet();
+            results.add(LaneResult.failed(lane.key()));
+        }
+    }
+
+    private record CycleExecution(CycleDisposition disposition, List<LaneResult> lanes) {
+
+        private CycleExecution {
+            disposition = Objects.requireNonNull(disposition, "disposition");
+            lanes = List.copyOf(Objects.requireNonNull(lanes, "lanes"));
+        }
+
+        private static CycleExecution completed(List<LaneResult> lanes) {
+            return new CycleExecution(CycleDisposition.COMPLETED, lanes);
+        }
+
+        private static CycleExecution busy() {
+            return new CycleExecution(CycleDisposition.COORDINATOR_BUSY, List.of());
+        }
+    }
+
+    private static final class LeaseHeartbeat {
+
+        private static final long STOP_TIMEOUT_MILLIS = 5_000L;
+
+        private final ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator;
+        private final AtomicReference<Lease> latest;
+        private final AtomicReference<Throwable> failure = new AtomicReference<>();
+        private final AtomicBoolean stopping = new AtomicBoolean();
+        private final long intervalMillis;
+        private final Thread thread;
+
+        private LeaseHeartbeat(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator,
+                Lease initial) {
+            this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
+            Lease safe = Objects.requireNonNull(initial, "initial");
+            this.latest = new AtomicReference<>(safe);
+            this.intervalMillis = Math.max(1_000L,
+                    Math.multiplyExact(safe.leaseDurationSeconds(), 1_000L) / 3L);
+            this.thread = Thread.ofPlatform().daemon(true)
+                    .name("bootstrap-root-recovery-fleet-heartbeat")
+                    .start(this::run);
+        }
+
+        private void run() {
+            while (!stopping.get()) {
+                try {
+                    Thread.sleep(intervalMillis);
+                } catch (InterruptedException interrupted) {
+                    if (stopping.get()) {
+                        return;
+                    }
+                    Thread.currentThread().interrupt();
+                    failure.compareAndSet(null, new IllegalStateException(
+                            "Recovery fleet partition heartbeat was interrupted", interrupted));
+                    return;
+                }
+                renewNow();
+            }
+        }
+
+        private synchronized void renewNow() {
+            if (stopping.get() || failure.get() != null) {
+                return;
+            }
+            try {
+                Lease current = latest.get();
+                Lease renewed = coordinator.renew(current).orElseThrow(() ->
+                        new IllegalStateException(
+                                "Recovery fleet partition lease was fenced during cycle"));
+                if (!renewed.manifest().equals(current.manifest())
+                        || renewed.partitionId() != current.partitionId()
+                        || renewed.fleetEpoch() != current.fleetEpoch()
+                        || renewed.leaseEpoch() != current.leaseEpoch()
+                        || !renewed.leaseToken().equals(current.leaseToken())
+                        || !renewed.workerId().equals(current.workerId())
+                        || !renewed.commandId().equals(current.commandId())
+                        || renewed.leaseDurationSeconds() != current.leaseDurationSeconds()
+                        || !Objects.equals(renewed.cursorExclusive(), current.cursorExclusive())
+                        || !renewed.leaseExpiresAt().isAfter(current.leaseExpiresAt())) {
+                    throw new IllegalStateException(
+                            "Recovery fleet coordinator returned a drifted renewal");
+                }
+                latest.set(renewed);
+            } catch (RuntimeException | Error renewalFailure) {
+                failure.compareAndSet(null, renewalFailure);
+            }
+        }
+
+        private void assertHealthy() {
+            Throwable heartbeatFailure = failure.get();
+            if (heartbeatFailure instanceof RuntimeException runtimeFailure) {
+                throw runtimeFailure;
+            }
+            if (heartbeatFailure instanceof Error fatalFailure) {
+                throw fatalFailure;
+            }
+        }
+
+        private Lease stop() {
+            stopThread();
+            assertHealthy();
+            return latest.get();
+        }
+
+        private Lease stopAfterFailure(Throwable primary) {
+            try {
+                stopThread();
+            } catch (RuntimeException stopFailure) {
+                primary.addSuppressed(stopFailure);
+            }
+            Throwable heartbeatFailure = failure.get();
+            if (heartbeatFailure != null && heartbeatFailure != primary) {
+                primary.addSuppressed(heartbeatFailure);
+            }
+            return latest.get();
+        }
+
+        private void stopThread() {
+            if (stopping.compareAndSet(false, true)) {
+                thread.interrupt();
+            }
+            try {
+                thread.join(STOP_TIMEOUT_MILLIS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(
+                        "Interrupted while stopping recovery fleet heartbeat", interrupted);
+            }
+            if (thread.isAlive()) {
+                throw new IllegalStateException(
+                        "Recovery fleet partition heartbeat did not stop in time");
+            }
         }
     }
 
@@ -297,28 +566,40 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
         }
     }
 
+    /** Bounded completion state of one fleet worker cycle. */
+    public enum CycleDisposition {
+        /** The local cycle or acquired durable partition completed and committed normally. */
+        COMPLETED,
+        /** Every durable partition was actively leased, so no lane was attempted. */
+        COORDINATOR_BUSY
+    }
+
     /**
      * Payload-free result of one bounded fleet cycle.
      *
      * @param schemaVersion cycle result protocol generation
      * @param inventoryGeneration exact inventory generation used by the cycle
+     * @param disposition normal completion or durable coordinator contention
      * @param lanes actual bounded lane visit order and outcomes
      */
     public record CycleResult(
             String schemaVersion,
             long inventoryGeneration,
+            CycleDisposition disposition,
             List<LaneResult> lanes) {
 
         /** Current fleet cycle result schema. */
         public static final String SCHEMA_VERSION =
-                "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCycle.v1";
+                "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCycle.v2";
 
-        /** Defensively copies results and rejects duplicate lane visits. */
+        /** Defensively copies results and enforces disposition-dependent lane shape. */
         public CycleResult {
             schemaVersion = schemaVersion == null ? "" : schemaVersion.trim();
+            disposition = Objects.requireNonNull(disposition, "disposition");
             lanes = List.copyOf(Objects.requireNonNull(lanes, "lanes"));
             Set<LaneKey> keys = new HashSet<>();
             if (!SCHEMA_VERSION.equals(schemaVersion) || inventoryGeneration < 1L
+                    || disposition == CycleDisposition.COORDINATOR_BUSY && !lanes.isEmpty()
                     || lanes.size()
                     > ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory.MAXIMUM_LANES
                     || lanes.stream().anyMatch(result -> result == null
@@ -326,6 +607,18 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker
                 throw new IllegalArgumentException(
                         "Bootstrap-root recovery fleet cycle result is invalid");
             }
+        }
+
+        /**
+         * Creates a normally completed cycle for source compatibility with local schedulers.
+         *
+         * @param schemaVersion cycle result protocol generation
+         * @param inventoryGeneration exact inventory generation used by the cycle
+         * @param lanes actual bounded lane visit order and outcomes
+         */
+        public CycleResult(
+                String schemaVersion, long inventoryGeneration, List<LaneResult> lanes) {
+            this(schemaVersion, inventoryGeneration, CycleDisposition.COMPLETED, lanes);
         }
 
         /**

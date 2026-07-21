@@ -4,13 +4,21 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyService.RecoveryExecutionResult;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootCeremonyService.RecoveryStatus;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory.Lane;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory.LaneKey;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory.Snapshot;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.Acquisition;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.AcquisitionCommand;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.AbandonStatus;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.CompletionStatus;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.Lease;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.CycleDisposition;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.Policy;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -22,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -194,7 +203,10 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest {
         when(inventory.snapshot()).thenReturn(snapshot(1L));
         var worker = worker(inventory, 1);
 
-        assertThat(worker.runCycle().attemptedCount()).isZero();
+        var cycle = worker.runCycle();
+
+        assertThat(cycle.attemptedCount()).isZero();
+        assertThat(cycle.disposition()).isEqualTo(CycleDisposition.COMPLETED);
         worker.close();
         worker.close();
 
@@ -241,11 +253,278 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest {
         });
     }
 
+    @Test
+    void durableAssignmentVisitsOnlyItsPartitionRenewsAndCommitsLastAttemptedCursor() {
+        int partitions = 3;
+        int assignedPartition = 1;
+        Lane first = partitionLane(assignedPartition, partitions, 0, 'a');
+        Lane second = partitionLane(assignedPartition, partitions, 1, 'b');
+        List<Lane> ordered = List.of(first, second).stream()
+                .sorted(java.util.Comparator.comparing(Lane::key)).toList();
+        Lane foreign = partitionLane(2, partitions, 0, 'c');
+        when(first.service().recover(anyString(), anyLong(), any())).thenReturn(noWork());
+        when(second.service().recover(anyString(), anyLong(), any())).thenReturn(noWork());
+        var coordinator = durableCoordinator();
+        AtomicReference<Lease> acquired = new AtomicReference<>();
+        AtomicReference<Lease> renewed = new AtomicReference<>();
+        when(coordinator.acquire(any(AcquisitionCommand.class))).thenAnswer(invocation -> {
+            AcquisitionCommand command = invocation.getArgument(0);
+            Lease lease = lease(command, assignedPartition, null);
+            acquired.set(lease);
+            return Acquisition.acquired(lease);
+        });
+        when(coordinator.renew(any(Lease.class))).thenAnswer(invocation -> {
+            Lease current = invocation.getArgument(0);
+            Lease next = renewed(current);
+            renewed.set(next);
+            return Optional.of(next);
+        });
+        when(coordinator.complete(any(Lease.class), nullable(LaneKey.class)))
+                .thenReturn(CompletionStatus.COMPLETED);
+        var worker = durableWorker(() -> snapshot(7L, foreign, second, first),
+                coordinator, partitions, 2);
+
+        var cycle = worker.runCycle();
+
+        assertThat(cycle.lanes()).extracting(result -> result.laneKey().rootSetId())
+                .containsExactly(ordered.getFirst().key().rootSetId(),
+                        ordered.getLast().key().rootSetId());
+        verify(foreign.service(), never()).recover(anyString(), anyLong(), any());
+        verify(coordinator).renew(acquired.get());
+        verify(coordinator).complete(renewed.get(), ordered.getLast().key());
+        assertThat(acquired.get().manifest().inventoryGeneration()).isEqualTo(7L);
+        assertThat(acquired.get().manifest().inventoryFingerprint())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator
+                        .inventoryFingerprint(snapshot(7L, foreign, second, first)));
+    }
+
+    @Test
+    void durableBusyCycleDoesNotPollOrCompleteAnyLane() {
+        Lane lane = lane("tenant", "roots-a", 'a');
+        var coordinator = durableCoordinator();
+        when(coordinator.acquire(any(AcquisitionCommand.class))).thenReturn(Acquisition.busy());
+        var worker = durableWorker(() -> snapshot(3L, lane), coordinator, 2, 1);
+
+        var cycle = worker.runCycle();
+
+        assertThat(cycle.attemptedCount()).isZero();
+        assertThat(cycle.disposition()).isEqualTo(CycleDisposition.COORDINATOR_BUSY);
+
+        verify(lane.service(), never()).recover(anyString(), anyLong(), any());
+        verify(coordinator, never()).renew(any());
+        verify(coordinator, never()).complete(any(), nullable(LaneKey.class));
+        assertThat(worker.runtimeSnapshot()).satisfies(runtime -> {
+            assertThat(runtime.cycleCount()).isOne();
+            assertThat(runtime.cycleFailureCount()).isZero();
+            assertThat(runtime.lastInventoryGeneration()).isEqualTo(3L);
+        });
+    }
+
+    @Test
+    void durableAcquisitionRejectsCoordinatorIdentityDriftBeforePolling() {
+        Lane lane = lane("tenant", "roots-a", 'a');
+        var coordinator = durableCoordinator();
+        when(coordinator.acquire(any(AcquisitionCommand.class))).thenAnswer(invocation -> {
+            AcquisitionCommand command = invocation.getArgument(0);
+            int partition = ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator
+                    .partitionFor(lane.key(), command.manifest().partitionCount());
+            Lease drifted = new Lease(Lease.SCHEMA_VERSION, command.manifest(), partition,
+                    1L, 1L, "a".repeat(32), "other-worker", command.commandId(),
+                    command.leaseDurationSeconds(),
+                    java.time.Instant.parse("2026-07-21T00:00:30Z"), null);
+            return Acquisition.acquired(drifted);
+        });
+        var worker = durableWorker(() -> snapshot(1L, lane), coordinator, 1, 1);
+
+        assertThatThrownBy(worker::runCycle).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("drifted acquisition");
+
+        verify(lane.service(), never()).recover(anyString(), anyLong(), any());
+        verify(coordinator, never()).renew(any());
+        verify(coordinator, never()).complete(any(), nullable(LaneKey.class));
+        verify(coordinator, never()).abandon(any());
+    }
+
+    @Test
+    void fencedRenewalStopsPartitionWithoutAdvancingItsCursor() {
+        int partitions = 2;
+        Lane first = partitionLane(0, partitions, 0, 'a');
+        Lane second = partitionLane(0, partitions, 1, 'b');
+        List<Lane> ordered = List.of(first, second).stream()
+                .sorted(java.util.Comparator.comparing(Lane::key)).toList();
+        when(ordered.getFirst().service().recover(anyString(), anyLong(), any()))
+                .thenReturn(noWork());
+        var coordinator = durableCoordinator();
+        when(coordinator.acquire(any(AcquisitionCommand.class))).thenAnswer(invocation ->
+                Acquisition.acquired(lease(invocation.getArgument(0), 0, null)));
+        when(coordinator.renew(any(Lease.class))).thenReturn(Optional.empty());
+        var worker = durableWorker(() -> snapshot(1L, first, second),
+                coordinator, partitions, 2);
+
+        assertThatThrownBy(worker::runCycle).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("fenced during cycle");
+
+        verify(ordered.getFirst().service()).recover(anyString(), anyLong(), any());
+        verify(ordered.getLast().service(), never()).recover(anyString(), anyLong(), any());
+        verify(coordinator, never()).complete(any(), nullable(LaneKey.class));
+        verify(coordinator).abandon(any(Lease.class));
+        assertThat(worker.runtimeSnapshot()).satisfies(runtime -> {
+            assertThat(runtime.cycleFailureCount()).isOne();
+            assertThat(runtime.laneAttemptCount()).isOne();
+            assertThat(runtime.lastCycleFailed()).isTrue();
+        });
+    }
+
+    @Test
+    void fencedCompletionFailsCycleInsteadOfPublishingUncommittedProgress() {
+        Lane lane = lane("tenant", "roots-a", 'a');
+        when(lane.service().recover(anyString(), anyLong(), any())).thenReturn(noWork());
+        var coordinator = durableCoordinator();
+        when(coordinator.acquire(any(AcquisitionCommand.class))).thenAnswer(invocation -> {
+            AcquisitionCommand command = invocation.getArgument(0);
+            int partition = ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator
+                    .partitionFor(lane.key(), command.manifest().partitionCount());
+            return Acquisition.acquired(lease(command, partition, null));
+        });
+        when(coordinator.complete(any(), any())).thenReturn(CompletionStatus.FENCED);
+        var worker = durableWorker(() -> snapshot(1L, lane), coordinator, 2, 1);
+
+        assertThatThrownBy(worker::runCycle).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("completion was fenced");
+        verify(coordinator).abandon(any(Lease.class));
+        assertThat(worker.runtimeSnapshot()).satisfies(runtime -> {
+            assertThat(runtime.cycleFailureCount()).isOne();
+            assertThat(runtime.lastInventoryGeneration()).isZero();
+        });
+    }
+
+    @Test
+    void backgroundHeartbeatRenewsDuringOneSlowLaneAndCompletionUsesLatestRevision()
+            throws Exception {
+        Lane slow = lane("tenant", "roots-a", 'a');
+        CountDownLatch renewed = new CountDownLatch(1);
+        var coordinator = durableCoordinator();
+        AtomicReference<Lease> initial = new AtomicReference<>();
+        AtomicReference<Lease> completed = new AtomicReference<>();
+        when(coordinator.acquire(any(AcquisitionCommand.class))).thenAnswer(invocation -> {
+            AcquisitionCommand command = invocation.getArgument(0);
+            int partition = ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator
+                    .partitionFor(slow.key(), command.manifest().partitionCount());
+            Lease lease = lease(command, partition, null);
+            initial.set(lease);
+            return Acquisition.acquired(lease);
+        });
+        when(coordinator.renew(any(Lease.class))).thenAnswer(invocation -> {
+            Lease current = invocation.getArgument(0);
+            Lease next = new Lease(Lease.SCHEMA_VERSION, current.manifest(),
+                    current.partitionId(), current.fleetEpoch(), current.leaseEpoch(),
+                    current.leaseToken(), current.workerId(), current.commandId(),
+                    current.leaseDurationSeconds(), current.leaseExpiresAt().plusSeconds(3L),
+                    current.cursorExclusive());
+            renewed.countDown();
+            return Optional.of(next);
+        });
+        when(coordinator.complete(any(Lease.class), any(LaneKey.class)))
+                .thenAnswer(invocation -> {
+                    completed.set(invocation.getArgument(0));
+                    return CompletionStatus.COMPLETED;
+                });
+        when(slow.service().recover(anyString(), anyLong(), any())).thenAnswer(invocation -> {
+            assertThat(renewed.await(3, TimeUnit.SECONDS)).isTrue();
+            return noWork();
+        });
+        var worker = durableWorker(() -> snapshot(1L, slow), coordinator, 1, 1, 3L);
+
+        assertThat(worker.runCycle().disposition()).isEqualTo(CycleDisposition.COMPLETED);
+
+        assertThat(completed.get().leaseExpiresAt()).isAfter(initial.get().leaseExpiresAt());
+        verify(coordinator).renew(initial.get());
+    }
+
+    @Test
+    void fatalDurableLaneAbandonsTheLatestLeaseWithoutCompletingCursor() {
+        Lane fatal = lane("tenant", "roots-a", 'a');
+        when(fatal.service().recover(anyString(), anyLong(), any()))
+                .thenThrow(new AssertionError("fatal runtime"));
+        var coordinator = durableCoordinator();
+        when(coordinator.acquire(any(AcquisitionCommand.class))).thenAnswer(invocation -> {
+            AcquisitionCommand command = invocation.getArgument(0);
+            int partition = ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator
+                    .partitionFor(fatal.key(), command.manifest().partitionCount());
+            return Acquisition.acquired(lease(command, partition, null));
+        });
+        var worker = durableWorker(() -> snapshot(1L, fatal), coordinator, 1, 1);
+
+        assertThatThrownBy(worker::runCycle).isInstanceOf(AssertionError.class);
+
+        verify(coordinator).abandon(any(Lease.class));
+        verify(coordinator, never()).complete(any(), nullable(LaneKey.class));
+    }
+
     private static ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker worker(
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
             int maximumLanesPerCycle) {
         return new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker(
                 inventory, "fleet-worker", new Policy(30L, maximumLanesPerCycle));
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker durableWorker(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator,
+            int partitionCount,
+            int maximumLanesPerCycle) {
+        return durableWorker(inventory, coordinator, partitionCount,
+                maximumLanesPerCycle, 30L);
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker durableWorker(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator,
+            int partitionCount,
+            int maximumLanesPerCycle,
+            long leaseDurationSeconds) {
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker(
+                inventory, "fleet-worker", new Policy(
+                        leaseDurationSeconds, maximumLanesPerCycle),
+                coordinator, "bootstrap-recovery", partitionCount);
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator
+            durableCoordinator() {
+        var coordinator = mock(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.class);
+        when(coordinator.durable()).thenReturn(true);
+        when(coordinator.abandon(any(Lease.class))).thenReturn(AbandonStatus.ABANDONED);
+        return coordinator;
+    }
+
+    private static Lease lease(
+            AcquisitionCommand command, int partitionId, LaneKey cursorExclusive) {
+        return new Lease(Lease.SCHEMA_VERSION, command.manifest(), partitionId,
+                1L, 1L, "a".repeat(32), command.workerId(),
+                command.commandId(), command.leaseDurationSeconds(),
+                java.time.Instant.parse("2026-07-21T00:00:30Z"), cursorExclusive);
+    }
+
+    private static Lease renewed(Lease current) {
+        return new Lease(Lease.SCHEMA_VERSION, current.manifest(), current.partitionId(),
+                current.fleetEpoch(), current.leaseEpoch(), current.leaseToken(),
+                current.workerId(), current.commandId(), current.leaseDurationSeconds(),
+                current.leaseExpiresAt().plusSeconds(1L), current.cursorExclusive());
+    }
+
+    private static Lane partitionLane(
+            int partitionId, int partitionCount, int ordinal, char fingerprint) {
+        int found = 0;
+        for (int candidate = 0; candidate < 10_000; candidate++) {
+            String rootSetId = "roots-" + candidate;
+            LaneKey key = new LaneKey("tenant", rootSetId);
+            if (ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator.partitionFor(
+                    key, partitionCount) == partitionId && found++ == ordinal) {
+                return lane("tenant", rootSetId, fingerprint);
+            }
+        }
+        throw new AssertionError("No partition lane fixture found");
     }
 
     private static Lane recordingLane(
