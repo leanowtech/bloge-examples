@@ -137,16 +137,17 @@ mvn -f resource-gateway-examples/pom.xml \
 ```
 
 相关 configuration、authority、health 和 floor 类型同时进入 strict JavaDoc 门禁；全量
-`resource-gateway-examples clean verify` 仍是提交条件。实测 Spring composition 21 tests、完整
-recovery-fleet 128 tests 均为 0 failures、0 errors、0 skips；strict JavaDoc 为 0 warnings、0 errors；全量
-`clean verify` 执行 3472 tests，0 failures、0 errors、2 条环境条件跳过，并完成可执行 JAR 重打包。
+`resource-gateway-examples clean verify` 仍是提交条件。实测 Spring composition 21 tests、包含后续
+capability protocol 的完整 recovery-fleet 142 tests 均为 0 failures、0 errors、0 skips；strict JavaDoc 为
+0 warnings、0 errors；全量 `clean verify` 执行 3493 tests，0 failures、0 errors、2 条环境条件跳过，并完成
+可执行 JAR 重打包。
 
 ## 9. 未完成门禁
 
 本子步只关闭 test/staging 产品接线，不解除以下生产门禁：
 
 1. deployment/witness trust-root restart-free rotation 与 durable key floor；
-2. capability discovery、配置 metadata 和外部告警/SLO；
+2. capability truth 已由后续子步闭合；配置 metadata、外部告警/SLO 和跨副本 convergence readiness；
 3. mTLS、certificate pinning、DNS/proxy policy 与 response-key rotation；
 4. external Byzantine anchor、publisher/witness HA、equivocation detection 和跨区 transparency；
 5. PostgreSQL/MySQL、rolling upgrade、backup/restore、DR、chaos/soak 与容量认证；

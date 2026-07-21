@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.testing.api.DynamicJwksTestSecretAuthorityTr
 import com.leanowtech.bloge.gateway.testing.api.DynamicTestSecretAuthorityServingInventoryAuthority;
 import com.leanowtech.bloge.gateway.testing.api.DynamicTestSecretAuthorityServingInventoryTrustRootAuthority;
 import com.leanowtech.bloge.gateway.testing.api.ConfiguredTestSecretAuthorityServingInventoryTrustRootAuthority;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityResponse;
@@ -334,6 +335,8 @@ public record IntegrationCapabilities(
         objects.put("externalArchiveReconciliationReadiness", List.of(
                 TestSuiteStabilityObservationExternalArchiveReconciliationHealth.SCHEMA_VERSION_V1,
                 TestSuiteStabilityObservationExternalArchiveReconciliationHealth.SCHEMA_VERSION));
+        objects.put("externalSequenceAnchorBootstrapRootRecoveryFleetCapability", List.of(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION));
         if (testExecutionEndpointEnabled) {
             objects.put("testExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest.SCHEMA_VERSION));
@@ -1003,6 +1006,15 @@ public record IntegrationCapabilities(
         features.put("boundedExternalObservationArchiveSourceRetentionHealth",
                 testExecutionEndpointEnabled
                         && reconciliation.sourceRetention().configured());
+        features.put("bootstrapRootRecoveryFleetConfigured", false);
+        features.put("bootstrapRootRecoveryFleetReady", false);
+        features.put("bootstrapRootRecoveryFleetExternallyAttested", false);
+        features.put("bootstrapRootRecoveryFleetDynamicInventory", false);
+        features.put("bootstrapRootRecoveryFleetSignedRevocation", false);
+        features.put("bootstrapRootRecoveryFleetWitnessedPublications", false);
+        features.put("bootstrapRootRecoveryFleetDurablePublicationFloor", false);
+        features.put("bootstrapRootRecoveryFleetExternallyAnchoredPublicationFloor", false);
+        features.put("bootstrapRootRecoveryFleetByzantineQuorumPublicationFloor", false);
         features.put("signedTestRunEvidence", testExecutionEndpointEnabled && signer.available());
         features.put("suiteSignedChildEvidenceGate", testExecutionEndpointEnabled && signer.available());
         features.put("signedTestSuiteRunAttestation",
@@ -1187,6 +1199,7 @@ public record IntegrationCapabilities(
      * @param workerQuarantineChangeAuthorizationTrust key-free external approval readiness
      * @param suiteStabilityCurrentAuthority key-free current-authority revalidation readiness
      * @param externalArchiveReconciliation identity-free reconciliation operational readiness
+     * @param recoveryFleet identity-free bootstrap-root recovery-fleet readiness
      */
     public record Testability(
             String protocolVersion,
@@ -1198,7 +1211,8 @@ public record IntegrationCapabilities(
                     workerQuarantineChangeAuthorizationTrust,
             TestSuiteStabilityJobAuthorizer.Descriptor suiteStabilityCurrentAuthority,
             TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
-                    externalArchiveReconciliation
+                    externalArchiveReconciliation,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability recoveryFleet
     ) {
         /** Normalizes capability values. */
         public Testability {
@@ -1219,11 +1233,42 @@ public record IntegrationCapabilities(
             externalArchiveReconciliation = externalArchiveReconciliation == null
                     ? TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
                     .unavailable() : externalArchiveReconciliation;
+            recoveryFleet = recoveryFleet == null
+                    ? ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.disabled()
+                    : recoveryFleet;
             if (suiteStabilityJobSubmissionEnabled
                     && !suiteStabilityCurrentAuthority.available()) {
                 throw new IllegalArgumentException(
                         "Stability-job submission requires current-authority readiness");
             }
+        }
+
+        /**
+         * Preserves the pre-recovery-fleet capability constructor.
+         *
+         * @param protocolVersion testing-control protocol generation
+         * @param enabledEnvironments environments allowed to expose the testing control plane
+         * @param schemaContractMode whether schema-only contracts are available
+         * @param executionEndpointEnabled whether synchronous test execution is available
+         * @param suiteStabilityJobSubmissionEnabled whether asynchronous suite submission is ready
+         * @param trust key-free worker-quarantine authorization trust readiness
+         * @param currentAuthority key-free current-authority revalidation readiness
+         * @param archiveReconciliation external archive reconciliation readiness
+         */
+        public Testability(
+                String protocolVersion,
+                List<String> enabledEnvironments,
+                boolean schemaContractMode,
+                boolean executionEndpointEnabled,
+                boolean suiteStabilityJobSubmissionEnabled,
+                WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust,
+                TestSuiteStabilityJobAuthorizer.Descriptor currentAuthority,
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                        archiveReconciliation) {
+            this(protocolVersion, enabledEnvironments, schemaContractMode,
+                    executionEndpointEnabled, suiteStabilityJobSubmissionEnabled, trust,
+                    currentAuthority, archiveReconciliation,
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.disabled());
         }
 
         /** Preserves the v1 constructor while treating asynchronous submission as unavailable. */
@@ -1308,6 +1353,21 @@ public record IntegrationCapabilities(
             return new Testability("bloge.testing.v1", List.of("test", "staging"),
                     true, true, suiteStabilityJobSubmissionEnabled, trust, currentAuthority,
                     archiveReconciliation);
+        }
+
+        /**
+         * Returns this protocol state with a freshly projected local recovery-fleet capability.
+         *
+         * @param capability current identity-free fleet readiness
+         * @return immutable testability projection
+         */
+        public Testability withRecoveryFleet(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability capability) {
+            return new Testability(protocolVersion, enabledEnvironments, schemaContractMode,
+                    executionEndpointEnabled, suiteStabilityJobSubmissionEnabled,
+                    workerQuarantineChangeAuthorizationTrust, suiteStabilityCurrentAuthority,
+                    externalArchiveReconciliation,
+                    Objects.requireNonNull(capability, "capability"));
         }
     }
 }

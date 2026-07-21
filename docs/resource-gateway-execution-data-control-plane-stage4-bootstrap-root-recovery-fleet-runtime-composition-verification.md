@@ -161,16 +161,17 @@ mvn -f resource-gateway-examples/pom.xml \
 
 `ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest` 11 项与
 `ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurationTest` 10 项联合执行 21 tests，
-0 failures、0 errors、0 skips；后者显式覆盖两种 configuration 注册顺序。完整 recovery-fleet 16 类门禁执行
-128 tests，0 failures、0 errors、
+0 failures、0 errors、0 skips；后者显式覆盖两种 configuration 注册顺序。包含后续 capability protocol 的
+完整 recovery-fleet 18 类门禁执行 142 tests，0 failures、0 errors、
 0 skips；相关公共类型通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。完整
-Resource Gateway `clean verify` 执行 3472 tests，0 failures、0 errors、2 条环境条件跳过，并成功重打包
+Resource Gateway `clean verify` 执行 3493 tests，0 failures、0 errors、2 条环境条件跳过，并成功重打包
 Spring Boot 可执行 JAR。
 
 ## 9. 未完成的生产门禁
 
-- dynamic authority 的信任根在线轮换与 capability discovery；
-- capability/schema discovery endpoint 和运维配置 metadata；
+- dynamic authority 的信任根在线轮换；
+- capability/schema discovery 已由后续子步闭合；运维配置 metadata、外部告警/SLO 与跨副本
+  convergence readiness 仍未完成；
 - enterprise IAM 对 worker/inventory/lane membership 的授权；
 - production profile、PostgreSQL/MySQL 方言、连接池/锁超时与 rolling-upgrade certification；
 - multi-region HA、backup/restore rollback、DR、chaos、soak 与外部 SLO；

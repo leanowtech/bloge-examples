@@ -553,8 +553,11 @@ I/O. Staging additionally requires the certified dynamic mode and rejects static
 it optional. Both configurations are physically absent when `production` is active. The existing
 worker fences every lane and cursor commit against current authority generation and availability.
 
-The Spring path does not generate trust roots or discover lane runtimes. Online partition rebalance,
-capability/HTTP discovery, production-profile wiring, publisher
+The Spring path does not generate trust roots or discover lane runtimes. The existing
+`GET /api/integration/capabilities` endpoint now publishes an identity-free, versioned recovery-fleet
+state machine and conservative boolean projections. Its probe reads only startup-frozen bean
+candidates and fresh process-local snapshots; it does not perform bootstrap I/O. Online partition
+rebalance, operational configuration metadata, external alert/SLO wiring, production-profile wiring, publisher
 mTLS/client identity and certificate pinning, response-key hot rotation,
 publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
@@ -578,6 +581,11 @@ The profile/configuration/lifecycle contract and H2 context-rebuild proof are in
 The strict dynamic properties, startup ordering, staging downgrade fence, ownership contract, and
 real signed-HTTP Spring proof are in the
 [dynamic fleet inventory Spring composition verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-spring-composition-verification.md).
+The capability state machine, strict Schema, no-I/O projection, compatibility, and integration proof
+are in the
+[recovery fleet capability verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-capability-verification.md),
+with its machine contract in the
+[recovery fleet capability JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v1.schema.json).
 
 Scope, cohort, inventory/witness trust, managed-root freshness, external-anchor quorum/timing, and
 lease settings are checked by

@@ -214,15 +214,18 @@ context close；disabled fallback；production 物理隔离；staging required �
 inventory health 在两种 configuration 注册顺序下都只装配一个。
 
 recovery-fleet 的 protocol、Schema、floor v2/legacy、worker、coordinator、scheduler、health、Spring
-composition 与 dynamic authority 共 16 类联合门禁执行 128 tests，0 failures、0 errors、0 skips。动态
+composition、dynamic authority 与后续 capability protocol 共 18 类联合门禁执行 142 tests，0 failures、
+0 errors、0 skips。动态
 authority、authority SPI、health 与 configured verifier 四个公共类型通过
 `javadoc --release 25 -Werror -Xdoclint:all`；新增 configuration 也纳入相同严格门禁，0 warnings、
-0 errors。`mvn -f resource-gateway-examples/pom.xml clean verify` 全量门禁执行 3472 tests，0 failures、
+0 errors；新增 capability 公共类型也独立通过同一严格门禁。`mvn -f resource-gateway-examples/pom.xml clean verify`
+全量门禁执行 3493 tests，0 failures、
 0 errors、2 条环境条件跳过，并成功生成 Spring Boot 可执行 JAR。
 
 ## 9. 剩余工业化门禁
 
-1. 尚没有 capability discovery endpoint 与运维配置 metadata；
+1. capability truth 已由后续子步通过既有 integration endpoint 闭合；运维配置 metadata、外部告警/SLO 和
+   跨副本 convergence readiness 仍未完成；
 2. deployment/witness trust roots 固定在构造期，未实现 restart-free 双根发布、撤销和 durable key floor；
 3. publication floor 只在本地数据库持久化，`externallyAnchored=false`、`byzantineQuorumAnchored=false`；
 4. HTTPS 未声明 client mTLS、certificate pinning、代理策略、DNS rebinding 防护和 response-key 热轮换；

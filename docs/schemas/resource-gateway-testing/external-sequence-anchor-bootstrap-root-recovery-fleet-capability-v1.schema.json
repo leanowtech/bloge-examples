@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v1.schema.json",
+  "title": "Resource Gateway External Sequence-Anchor Bootstrap-Root Recovery Fleet Capability v1",
+  "description": "Identity-free, process-local recovery-fleet composition and readiness truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "configured", "ready", "status", "externallyAttested",
+    "inventoryAvailable", "sourceType", "inventoryGeneration", "laneCount",
+    "dynamicInventory", "automaticRefresh", "signedRevocation",
+    "witnessedPublications", "durablePublicationFloor",
+    "externallyAnchoredPublicationFloor", "byzantineQuorumAnchoredPublicationFloor",
+    "schedulerActive", "schedulerOverdue", "pollCount", "pollFailureCount",
+    "cycleCount", "cycleFailureCount"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetCapability.v1"
+    },
+    "configured": { "type": "boolean" },
+    "ready": { "type": "boolean" },
+    "status": {
+      "enum": [
+        "DISABLED", "INCOMPLETE_COMPOSITION", "AMBIGUOUS_COMPOSITION",
+        "UNATTESTED_INVENTORY", "READY", "INVENTORY_UNAVAILABLE",
+        "RUNTIME_CLOSED", "SCHEDULER_STALLED", "SCHEDULER_FAILED",
+        "CYCLE_FAILED", "LANE_FAILURES", "INCONSISTENT", "UNAVAILABLE"
+      ]
+    },
+    "externallyAttested": { "type": "boolean" },
+    "inventoryAvailable": { "type": "boolean" },
+    "sourceType": {
+      "type": "string",
+      "pattern": "^(|[A-Z][A-Z0-9_]{0,127})$"
+    },
+    "inventoryGeneration": { "type": "integer", "minimum": 0 },
+    "laneCount": { "type": "integer", "minimum": 0, "maximum": 256 },
+    "dynamicInventory": { "type": "boolean" },
+    "automaticRefresh": { "type": "boolean" },
+    "signedRevocation": { "type": "boolean" },
+    "witnessedPublications": { "type": "boolean" },
+    "durablePublicationFloor": { "type": "boolean" },
+    "externallyAnchoredPublicationFloor": { "type": "boolean" },
+    "byzantineQuorumAnchoredPublicationFloor": { "type": "boolean" },
+    "schedulerActive": { "type": "boolean" },
+    "schedulerOverdue": { "type": "boolean" },
+    "pollCount": { "type": "integer", "minimum": 0 },
+    "pollFailureCount": { "type": "integer", "minimum": 0 },
+    "cycleCount": { "type": "integer", "minimum": 0 },
+    "cycleFailureCount": { "type": "integer", "minimum": 0 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "configured": { "const": false } }, "required": ["configured"] },
+      "then": {
+        "properties": {
+          "ready": { "const": false },
+          "status": { "const": "DISABLED" },
+          "externallyAttested": { "const": false },
+          "inventoryAvailable": { "const": false },
+          "sourceType": { "const": "" },
+          "inventoryGeneration": { "const": 0 },
+          "laneCount": { "const": 0 },
+          "dynamicInventory": { "const": false },
+          "automaticRefresh": { "const": false },
+          "signedRevocation": { "const": false },
+          "witnessedPublications": { "const": false },
+          "durablePublicationFloor": { "const": false },
+          "externallyAnchoredPublicationFloor": { "const": false },
+          "byzantineQuorumAnchoredPublicationFloor": { "const": false },
+          "schedulerActive": { "const": false },
+          "schedulerOverdue": { "const": false },
+          "pollCount": { "const": 0 },
+          "pollFailureCount": { "const": 0 },
+          "cycleCount": { "const": 0 },
+          "cycleFailureCount": { "const": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "ready": { "const": true } }, "required": ["ready"] },
+      "then": {
+        "properties": {
+          "configured": { "const": true },
+          "status": { "const": "READY" },
+          "externallyAttested": { "const": true },
+          "inventoryAvailable": { "const": true },
+          "inventoryGeneration": { "minimum": 1 },
+          "schedulerOverdue": { "const": false }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "dynamicInventory": { "const": true } }, "required": ["dynamicInventory"] },
+      "then": {
+        "properties": {
+          "sourceType": { "const": "DYNAMIC_HTTPS_SIGNED_PUBLICATION_WITH_WITNESS" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "externallyAnchoredPublicationFloor": { "const": true } }, "required": ["externallyAnchoredPublicationFloor"] },
+      "then": { "properties": { "durablePublicationFloor": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "byzantineQuorumAnchoredPublicationFloor": { "const": true } }, "required": ["byzantineQuorumAnchoredPublicationFloor"] },
+      "then": { "properties": { "externallyAnchoredPublicationFloor": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "sourceType": { "const": "DYNAMIC_HTTPS_SIGNED_PUBLICATION_WITH_WITNESS" } }, "required": ["sourceType"] },
+      "then": { "properties": { "dynamicInventory": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "DISABLED" } }, "required": ["status"] },
+      "then": { "properties": { "configured": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "READY" } }, "required": ["status"] },
+      "then": { "properties": { "ready": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "inventoryAvailable": { "const": true } }, "required": ["inventoryAvailable"] },
+      "then": {
+        "properties": {
+          "externallyAttested": { "const": true },
+          "sourceType": { "minLength": 1 },
+          "inventoryGeneration": { "minimum": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          { "properties": { "automaticRefresh": { "const": true } }, "required": ["automaticRefresh"] },
+          { "properties": { "signedRevocation": { "const": true } }, "required": ["signedRevocation"] },
+          { "properties": { "witnessedPublications": { "const": true } }, "required": ["witnessedPublications"] },
+          { "properties": { "durablePublicationFloor": { "const": true } }, "required": ["durablePublicationFloor"] }
+        ]
+      },
+      "then": { "properties": { "externallyAttested": { "const": true } } }
+    }
+  ]
+}

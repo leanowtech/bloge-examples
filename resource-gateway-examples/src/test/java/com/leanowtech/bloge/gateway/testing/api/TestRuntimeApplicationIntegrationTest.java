@@ -124,6 +124,12 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(capabilities.getBody()).isNotNull();
         assertThat(capabilities.getBody().payload().testability().executionEndpointEnabled()).isTrue();
+        assertThat(capabilities.getBody().payload().testability().recoveryFleet().status())
+                .isEqualTo(ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.Status
+                        .DISABLED);
+        assertThat(capabilities.getBody().payload().features())
+                .containsEntry("bootstrapRootRecoveryFleetConfigured", false)
+                .containsEntry("bootstrapRootRecoveryFleetReady", false);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->

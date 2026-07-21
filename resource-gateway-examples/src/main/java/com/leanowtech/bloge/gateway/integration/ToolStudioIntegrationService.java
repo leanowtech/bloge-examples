@@ -1,6 +1,11 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler;
+import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorReceiptTrustStore;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
@@ -78,6 +83,14 @@ public class ToolStudioIntegrationService {
             testSecretAuthorityExternalSequenceAnchors;
     private TestSuiteStabilityObservationExternalArchiveReconciliationHealth
             externalArchiveReconciliationHealth;
+    private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory>
+            recoveryFleetInventories = List.of();
+    private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority>
+            recoveryFleetAuthorities = List.of();
+    private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker>
+            recoveryFleetWorkers = List.of();
+    private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler>
+            recoveryFleetSchedulers = List.of();
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -150,6 +163,28 @@ public class ToolStudioIntegrationService {
     void configureTestSecretAuthorityExternalSequenceAnchors(
             ObjectProvider<TestSecretAuthorityExternalSequenceAnchor> anchors) {
         this.testSecretAuthorityExternalSequenceAnchors = anchors;
+    }
+
+    /**
+     * Freezes recovery-fleet bean candidates at startup so capability reads never instantiate a
+     * lazy authority and accidentally perform remote bootstrap I/O.
+     *
+     * @param inventories local inventory candidates
+     * @param authorities externally attested inventory-authority candidates
+     * @param workers bounded recovery-worker candidates
+     * @param schedulers fixed-delay recovery-scheduler candidates
+     */
+    @Autowired
+    void configureRecoveryFleetCapabilitySources(
+            ObjectProvider<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory> inventories,
+            ObjectProvider<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority>
+                    authorities,
+            ObjectProvider<ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker> workers,
+            ObjectProvider<ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler> schedulers) {
+        recoveryFleetInventories = inventories.orderedStream().toList();
+        recoveryFleetAuthorities = authorities.orderedStream().toList();
+        recoveryFleetWorkers = workers.orderedStream().toList();
+        recoveryFleetSchedulers = schedulers.orderedStream().toList();
     }
 
     /** Receives the explicit test/staging reconciliation readiness monitor when assembled. */
@@ -457,13 +492,62 @@ public class ToolStudioIntegrationService {
                         && durableSecretInventoryRootFloor && dynamicSecretInventoryReady);
         features.put("testSecretAuthorityDynamicServingInventoryReady",
                 dynamicSecretInventoryReady);
+        ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability recoveryFleet =
+                currentRecoveryFleetCapability();
+        features.put("bootstrapRootRecoveryFleetConfigured", recoveryFleet.configured());
+        features.put("bootstrapRootRecoveryFleetReady", recoveryFleet.ready());
+        features.put("bootstrapRootRecoveryFleetExternallyAttested",
+                recoveryFleet.externallyAttested());
+        features.put("bootstrapRootRecoveryFleetDynamicInventory",
+                recoveryFleet.dynamicInventory());
+        features.put("bootstrapRootRecoveryFleetSignedRevocation",
+                recoveryFleet.signedRevocation());
+        features.put("bootstrapRootRecoveryFleetWitnessedPublications",
+                recoveryFleet.witnessedPublications());
+        features.put("bootstrapRootRecoveryFleetDurablePublicationFloor",
+                recoveryFleet.durablePublicationFloor());
+        features.put("bootstrapRootRecoveryFleetExternallyAnchoredPublicationFloor",
+                recoveryFleet.externallyAnchoredPublicationFloor());
+        features.put("bootstrapRootRecoveryFleetByzantineQuorumPublicationFloor",
+                recoveryFleet.byzantineQuorumAnchoredPublicationFloor());
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),
-                current.evidenceSigner(), current.payloadGovernance(), current.testability(),
+                current.evidenceSigner(), current.payloadGovernance(),
+                current.testability().withRecoveryFleet(recoveryFleet),
                 current.endpoints());
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 augmented);
+    }
+
+    private ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability
+            currentRecoveryFleetCapability() {
+        try {
+            int inventories = recoveryFleetInventories.size();
+            int authorities = recoveryFleetAuthorities.size();
+            int workers = recoveryFleetWorkers.size();
+            int schedulers = recoveryFleetSchedulers.size();
+            if (inventories == 0 && authorities == 0 && workers == 0 && schedulers == 0) {
+                return ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.disabled();
+            }
+            if (inventories > 1 || authorities > 1 || workers > 1 || schedulers > 1) {
+                return ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.ambiguous();
+            }
+            if (inventories != 1 || workers != 1 || schedulers != 1) {
+                return ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.incomplete();
+            }
+            if (authorities == 0) {
+                return ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.unattested();
+            }
+            if (recoveryFleetInventories.getFirst() != recoveryFleetAuthorities.getFirst()) {
+                return ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.ambiguous();
+            }
+            return ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.project(
+                    recoveryFleetAuthorities.getFirst(), recoveryFleetWorkers.getFirst(),
+                    recoveryFleetSchedulers.getFirst());
+        } catch (RuntimeException unavailable) {
+            return ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.unavailable();
+        }
     }
 
     private TestSecretAuthority.Descriptor currentTestSecretAuthority() {
