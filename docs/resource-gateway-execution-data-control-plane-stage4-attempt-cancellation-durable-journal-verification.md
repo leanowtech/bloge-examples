@@ -39,10 +39,23 @@ PREPARED --accept(verified NOT_FOUND/REJECTED)-----------> UNCONFIRMED
 sequence journal 连续性，追加新 sequence、推进 floor、更新 terminal entry，全部在一个
 `REQUIRES_NEW/READ_COMMITTED` 事务内。任何中途异常都不能留下“floor 已推进但 receipt 未落库”或反序状态。
 
+sequence floor 的作用域是 exact `providerId + deploymentId`；同一 deployment 内必须严格递增，provider
+换代后由新的 deployment scope 建立自己的 floor。两个独立 journal 实例共享同一数据库时，provider lock
+仍把 floor 推进线性化，不依赖 JVM 内锁。
+
 每个 entry、floor 和 sequence row 都有 canonical whole-row fingerprint。terminal entry 每次读取都反查它
 自己的 immutable sequence row，并校验当前 floor 与 latest journal 一致；删 sequence、改 status/sequence
 或直接回滚 floor 都会 fail closed。该承诺防普通损坏和未同步写，不把数据库管理员可同时重写所有行的能力
 误称为外部防篡改；外部 witness/WORM 仍属后续阶段。
+
+这里还必须区分“接受时可信”和“读取时仍可信”：`accept` 使用数据库时间、冻结 descriptor 和当时配置的
+trust key 完整复验 attestation；`find` 校验的是已接受记录、immutable sequence 与当前 floor 的存储连续性，
+不会按调用时的新 trust inventory 重新验签。历史密钥到期不应自动抹掉当时的证明，但 compromise/revocation
+是否追溯否定历史 receipt 必须由后续带生效时间和 trust generation 的策略显式定义，不能由普通读取暗中改变。
+
+实时接受还采用严格到达时限：数据库时间到达 `confirmationDeadlineAt` 后拒绝新 receipt，即使 provider
+声称更早已完成终止。这样关闭离线迟到回执无限改写状态的窗口；需要接纳延迟证明时，应进入独立、受审计的
+reconciliation 协议，而不是放宽主 journal。
 
 ## 4. 失败语义
 
@@ -66,7 +79,7 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DatabaseTestSuiteStabilityAttemptCancellationJournalTest test
 ```
 
-结果为 13 tests，0 failures、0 errors、0 skips，覆盖：
+结果为 15 tests，0 failures、0 errors、0 skips，覆盖：
 
 - prepare/confirmed accept/find 的完整往返和 payload-free sequence 落库；
 - exact prepare/terminal replay、deadline 关闭后的 retained replay；
@@ -75,7 +88,15 @@ mvn -f resource-gateway-examples/pom.xml \
 - 错签名事务回滚、signed `NOT_FOUND` 只能进入 `UNCONFIRMED`；
 - tenant/environment 不可见、expired/incompatible preflight；
 - entry/floor/sequence 篡改或缺失失败关闭；
-- 两线程 exact prepare 只有一个 creator，另一个得到 replay。
+- 两线程 exact prepare 只有一个 creator，另一个得到 replay；
+- 两个独立 journal 实例竞争同一 provider sequence 时只有一个提交，loser 保持 `PREPARED` 并可用更高
+  sequence 恢复；
+- barrier、future 与 daemon executor 都有 caller-owned deadline，参与者缺失和 future 永不完成的故障注入
+  会在固定时间内失败，不把竞态断言变成无限挂起。
+
+两个新增并发门禁和 JavaDoc 修订完成后，两个公共 journal 类型通过
+`javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。下述 `3893` 全量数字对应此前冻结的
+`3c08bb7c`；当前增量提交后的精确全量基线需在独占 `clean verify` 完成后再前移。
 
 最终隔离全量门禁：
 
@@ -84,7 +105,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
 结果为 3893 tests，0 failures、0 errors、2 个条件浏览器跳过，Spring Boot JAR 重打包成功；总耗时
-7 分 24 秒。该结果证明 journal 增量与完整 Resource Gateway 行为面兼容，不把 13 项聚焦测试替代成
+7 分 24 秒。该结果证明 journal 初始增量与完整 Resource Gateway 行为面兼容，不把聚焦测试替代成
 全量回归结论。
 
 ## 6. 尚未完成

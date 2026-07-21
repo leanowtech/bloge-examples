@@ -37,7 +37,17 @@ public interface TestSuiteStabilityAttemptCancellationJournal {
             String commandId,
             TestSuiteStabilityAttemptCancellationReceipt.Attestation attestation);
 
-    /** Resolves one integrity-verified entry only inside its exact tenant/environment scope. */
+    /**
+     * Resolves one integrity-verified entry only inside its exact tenant/environment scope.
+     *
+     * <p>An absent command and a command owned by another scope are deliberately indistinguishable
+     * to the caller.</p>
+     *
+     * @param tenantId exact caller tenant
+     * @param environmentId exact {@code test} or {@code staging} environment
+     * @param commandId content-addressed cancellation command id
+     * @return the validated entry when it belongs to the exact scope, otherwise empty
+     */
     Optional<Entry> find(String tenantId, String environmentId, String commandId);
 
     /** Durable journal lifecycle. */
@@ -68,7 +78,12 @@ public interface TestSuiteStabilityAttemptCancellationJournal {
         REPLAYED
     }
 
-    /** Immutable result of one prepare command. */
+    /**
+     * Immutable result of one prepare command.
+     *
+     * @param status whether this call created or exactly replayed the retained command
+     * @param entry exact retained journal projection
+     */
     record Preparation(PreparationStatus status, Entry entry) {
         /** Requires a prepared or already terminal exact entry. */
         public Preparation {
@@ -81,7 +96,12 @@ public interface TestSuiteStabilityAttemptCancellationJournal {
         }
     }
 
-    /** Immutable result of one receipt acceptance. */
+    /**
+     * Immutable result of one receipt acceptance.
+     *
+     * @param status whether this call confirmed, failed to confirm, or replayed a terminal receipt
+     * @param entry exact retained terminal projection
+     */
     record Acceptance(AcceptanceStatus status, Entry entry) {
         /** Requires an outcome consistent with the retained terminal entry. */
         public Acceptance {
@@ -173,16 +193,26 @@ public interface TestSuiteStabilityAttemptCancellationJournal {
     /** Stable journal conflict that intentionally excludes command/provider payload. */
     final class ConflictException extends IllegalStateException {
         private static final long serialVersionUID = 1L;
+
+        /** Closed machine-readable failure class. */
         private final ConflictReason reason;
 
-        /** @param reason exact fail-closed conflict class */
+        /**
+         * Creates a payload-free journal conflict.
+         *
+         * @param reason exact fail-closed conflict class
+         */
         public ConflictException(ConflictReason reason) {
             super("Suite-stability attempt cancellation journal conflict: "
                     + Objects.requireNonNull(reason, "reason"));
             this.reason = reason;
         }
 
-        /** @return exact machine-stable conflict reason */
+        /**
+         * Returns the closed failure class without exposing command or provider content.
+         *
+         * @return exact machine-stable conflict reason
+         */
         public ConflictReason reason() {
             return reason;
         }

@@ -63,7 +63,10 @@
 > `prepare` 冻结 exact command/descriptor 和 attempt/lease-epoch 唯一绑定；`accept` 在同一事务使用
 > database time 复验 Ed25519 attestation，追加 immutable provider sequence、推进 deployment floor，
 > 并落 `CONFIRMED/UNCONFIRMED` terminal entry。exact replay、过期恢复、sequence rollback、terminal
-> rewrite、entry/floor/sequence 篡改与并发 prepare 的 13 项 H2 门禁全绿。retention/tombstone、动态
+> rewrite、entry/floor/sequence 篡改、并发 prepare、跨实例 provider-sequence 竞争以及并发 harness
+> deadline 的 15 项 H2 门禁全绿；两个公共类型 strict JavaDoc 零告警。`find` 只验证接受后的存储连续性，
+> 不按现时 trust inventory 重解释历史 attestation；普通行指纹也不对抗可重算哈希的数据库管理员。
+> retention/tombstone、动态
 > trust、worker/job 双线性化、orphan reconciliation 与产品接线仍未完成，capability 继续关闭。验证见
 > [durable cancellation journal verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-durable-journal-verification.md)。
 > 下表仍写的“durable cancellation receipt 待完成”特指 retention/tombstone、worker 消费与产品协议；

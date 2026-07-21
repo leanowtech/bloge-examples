@@ -21,9 +21,14 @@ import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +38,8 @@ class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
     private static final String PROVIDER_ID = "attempt-runtime-a";
     private static final String DEPLOYMENT_ID = "attempt-runtime-a.generation-7";
     private static final String KEY_ID = "attempt-runtime-a.key-3";
+    private static final long CONCURRENCY_TIMEOUT_MILLIS = 5_000L;
+    private static final AtomicLong CONCURRENCY_THREAD_SEQUENCE = new AtomicLong();
 
     private ObjectMapper mapper;
     private JdbcTemplate jdbc;
@@ -300,26 +307,134 @@ class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
     void concurrentExactPreparationHasOneCreatorAndOneReplay() throws Exception {
         TestSuiteStabilityAttemptCancellationCommand command = command(1, 7, 'a');
         CountDownLatch start = new CountDownLatch(1);
-        var pool = Executors.newFixedThreadPool(2);
+        ExecutorService pool = concurrencyPool();
         try {
             Future<TestSuiteStabilityAttemptCancellationJournal.Preparation> first =
                     pool.submit(() -> {
-                        start.await();
+                        await(start, CONCURRENCY_TIMEOUT_MILLIS);
                         return journal.prepare(command, descriptor);
                     });
             Future<TestSuiteStabilityAttemptCancellationJournal.Preparation> second =
                     pool.submit(() -> {
-                        start.await();
+                        await(start, CONCURRENCY_TIMEOUT_MILLIS);
                         return journal.prepare(command, descriptor);
                     });
             start.countDown();
 
-            assertThat(List.of(first.get().status(), second.get().status()))
+            assertThat(List.of(get(first).status(), get(second).status()))
                     .containsExactlyInAnyOrder(
                             TestSuiteStabilityAttemptCancellationJournal.PreparationStatus.PREPARED,
                             TestSuiteStabilityAttemptCancellationJournal.PreparationStatus.REPLAYED);
         } finally {
-            pool.shutdownNow();
+            start.countDown();
+            shutdown(pool);
+        }
+    }
+
+    @Test
+    void concurrentReplicaAcceptanceSerializesTheProviderSequenceFloor() throws Exception {
+        TestSuiteStabilityAttemptCancellationCommand first = command(1, 7, 'a');
+        TestSuiteStabilityAttemptCancellationCommand second = command(2, 8, 'b');
+        journal.prepare(first, descriptor);
+        journal.prepare(second, descriptor);
+        DatabaseTestSuiteStabilityAttemptCancellationJournal replica =
+                new DatabaseTestSuiteStabilityAttemptCancellationJournal(
+                        new JdbcTemplate(jdbc.getDataSource()), mapper, verifierFor(keyPair));
+        replica.init();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = concurrencyPool();
+        try {
+            Future<ConcurrentAcceptance> firstResult = pool.submit(() -> acceptConcurrently(
+                    journal, first, ready, start));
+            Future<ConcurrentAcceptance> secondResult = pool.submit(() -> acceptConcurrently(
+                    replica, second, ready, start));
+            await(ready, CONCURRENCY_TIMEOUT_MILLIS);
+            start.countDown();
+
+            List<ConcurrentAcceptance> results = List.of(
+                    get(firstResult), get(secondResult));
+            assertThat(results).filteredOn(ConcurrentAcceptance::confirmed).hasSize(1);
+            assertThat(results).filteredOn(result -> result.conflict()
+                            == TestSuiteStabilityAttemptCancellationJournal.ConflictReason
+                            .PROVIDER_SEQUENCE_ROLLBACK)
+                    .hasSize(1);
+            ConcurrentAcceptance rejected = results.stream()
+                    .filter(result -> !result.confirmed())
+                    .findFirst()
+                    .orElseThrow();
+            TestSuiteStabilityAttemptCancellationCommand retry =
+                    rejected.commandId().equals(first.commandId()) ? first : second;
+            assertThat(journal.find("tenant-a", "test", retry.commandId()))
+                    .get()
+                    .extracting(TestSuiteStabilityAttemptCancellationJournal.Entry::status)
+                    .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.Status.PREPARED);
+            assertThat(journal.accept(retry.commandId(), attestation(retry, 12,
+                    TestSuiteStabilityAttemptCancellationReceipt.Outcome.TERMINATED)).status())
+                    .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.AcceptanceStatus
+                            .CONFIRMED);
+        } finally {
+            start.countDown();
+            shutdown(pool);
+        }
+    }
+
+    @Test
+    void concurrencyHarnessBoundsMissingParticipantsAndUnfinishedFutures() {
+        CountDownLatch missingParticipant = new CountDownLatch(1);
+        CompletableFuture<Object> unfinished = new CompletableFuture<>();
+
+        assertThatThrownBy(() -> await(missingParticipant, 100L))
+                .isInstanceOf(TimeoutException.class)
+                .hasMessage("Concurrency barrier did not converge before its deadline");
+        assertThatThrownBy(() -> get(unfinished, 100L))
+                .isInstanceOf(TimeoutException.class);
+    }
+
+    private ConcurrentAcceptance acceptConcurrently(
+            TestSuiteStabilityAttemptCancellationJournal target,
+            TestSuiteStabilityAttemptCancellationCommand command,
+            CountDownLatch ready,
+            CountDownLatch start) throws Exception {
+        ready.countDown();
+        await(start, CONCURRENCY_TIMEOUT_MILLIS);
+        try {
+            target.accept(command.commandId(), attestation(command, 11,
+                    TestSuiteStabilityAttemptCancellationReceipt.Outcome.TERMINATED));
+            return new ConcurrentAcceptance(command.commandId(), true, null);
+        } catch (TestSuiteStabilityAttemptCancellationJournal.ConflictException conflict) {
+            return new ConcurrentAcceptance(command.commandId(), false, conflict.reason());
+        }
+    }
+
+    private static ExecutorService concurrencyPool() {
+        return Executors.newFixedThreadPool(2, task -> Thread.ofPlatform()
+                .daemon(true)
+                .name("attempt-cancellation-journal-race-"
+                        + CONCURRENCY_THREAD_SEQUENCE.incrementAndGet())
+                .unstarted(task));
+    }
+
+    private static void await(CountDownLatch latch, long timeoutMillis) throws Exception {
+        if (!latch.await(timeoutMillis, TimeUnit.MILLISECONDS)) {
+            throw new TimeoutException(
+                    "Concurrency barrier did not converge before its deadline");
+        }
+    }
+
+    private static <T> T get(Future<T> future) throws Exception {
+        return get(future, CONCURRENCY_TIMEOUT_MILLIS);
+    }
+
+    private static <T> T get(Future<T> future, long timeoutMillis) throws Exception {
+        return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
+    }
+
+    private static void shutdown(ExecutorService pool) throws Exception {
+        pool.shutdownNow();
+        if (!pool.awaitTermination(CONCURRENCY_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+            throw new TimeoutException(
+                    "Concurrency executor did not terminate before its deadline");
         }
     }
 
@@ -419,5 +534,11 @@ class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
         byte[] challenge = new byte[32];
         java.util.Arrays.fill(challenge, (byte) value);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(challenge);
+    }
+
+    private record ConcurrentAcceptance(
+            String commandId,
+            boolean confirmed,
+            TestSuiteStabilityAttemptCancellationJournal.ConflictReason conflict) {
     }
 }

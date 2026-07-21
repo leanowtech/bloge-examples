@@ -75,6 +75,8 @@ public final class DatabaseTestSuiteStabilityAttemptCancellationJournal
     }
 
     /**
+     * Creates a journal with a caller-supplied transaction manager.
+     *
      * @param jdbc isolated test-runtime JDBC facade
      * @param objectMapper canonical protocol mapper
      * @param verifier pinned provider trust verifier
