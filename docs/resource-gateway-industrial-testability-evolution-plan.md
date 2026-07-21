@@ -43,9 +43,9 @@
 > 因此 production readiness 继续关闭。验证见
 > [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)
 > 和 [source-head protocol verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-source-head-protocol-verification.md)。
-> 截至 physical-attempt lifecycle observation proof/durable journal、start proof/durable start journal、positive queue lease
-> epoch、attempt cancellation coordinator、调用前数据库时间栅栏与浏览器生命周期修复的最终全量基线为
-> Resource Gateway 4017 tests（0 failures、
+> 截至 physical-attempt lifecycle observation proof/durable journal/call supervisor/coordinator、start proof/durable
+> start journal、positive queue lease epoch、attempt cancellation coordinator、调用前数据库时间栅栏与浏览器
+> 生命周期修复的最终全量基线为 Resource Gateway 4037 tests（0 failures、
 > 0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
@@ -182,8 +182,10 @@
 > provider I/O；timeout/interrupt/adapter/attestation failure 保持 `PREPARED`。7 项 supervisor、10 项
 > coordinator、22 项真实 H2/Ed25519 journal 组合测试全绿，完整 physical-attempt/cancellation 聚焦链
 > 162 项全绿，两个公共类型 strict JavaDoc 零告警。自动 orphan claim、统一 provider ledger、queue/slot/
-> cancellation terminal 双线性化、真实 provider 与产品接线仍未实现，capability 继续关闭。完整
-> `clean verify` 将在实现提交的 immutable snapshot 上执行并回填。验证见
+> cancellation terminal 双线性化、真实 provider 与产品接线仍未实现，capability 继续关闭。实现提交
+> `aa0e08b5` 的 immutable snapshot 完整 `clean verify` 执行 4037 tests（0 failures、0 errors、2 skips），
+> 455 份 Surefire XML 汇总一致，39,536,280 bytes 可执行 JAR 包含两个新增类型，耗时 7:28，且构建/
+> 测试浏览器残留进程均为零。验证见
 > [physical attempt lifecycle observation coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-lifecycle-observation-coordinator-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |

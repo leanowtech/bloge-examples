@@ -123,7 +123,24 @@ javadoc --release 25 -Werror -Xdoclint:all
 0 warnings, 0 errors
 ```
 
-完整 `clean verify` 将在本增量实现 commit 的 immutable snapshot 上执行并回填。
+完整项目门禁在实现提交 `aa0e08b5` 的 immutable source snapshot 上执行：
+
+```text
+snapshot: /private/tmp/bloge-examples-verify-aa0e08b5.k3LSYg
+command: mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 4037, Failures: 0, Errors: 0, Skipped: 2
+Total time: 07:28 min
+Surefire XML: 455 files, tests=4037, failures=0, errors=0, skipped=2
+Executable JAR: 39,536,280 bytes
+Snapshot build/test processes after completion: 0
+Chrome for Testing/ChromeDriver processes after completion: 0
+```
+
+JAR entry inspection 确认 `TestSuiteStabilityPhysicalAttemptObservationCallSupervisor` 及其 nested types 与
+`TestSuiteStabilityPhysicalAttemptObservationCoordinator` 均进入 `BOOT-INF/classes`。因此 Maven 汇总、结构化
+XML、发布制品和进程收敛四个观察面一致；该结论只覆盖此 immutable snapshot，不以共享 worktree 的缓存或
+进程状态替代证据。
 
 ## 7. 尚未闭合
 
