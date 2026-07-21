@@ -32,9 +32,9 @@
 > 因此 production readiness 继续关闭。验证见
 > [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)
 > 和 [source-head protocol verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-source-head-protocol-verification.md)。
-> 截至 physical-attempt reservation、positive queue lease epoch、attempt cancellation coordinator、
-> 调用前数据库时间栅栏与浏览器生命周期修复的最终全量基线为
-> Resource Gateway 3932 tests（0 failures、
+> 截至 physical-attempt reservation、provider-signed start proof kernel、positive queue lease epoch、
+> attempt cancellation coordinator、调用前数据库时间栅栏与浏览器生命周期修复的最终全量基线为
+> Resource Gateway 3950 tests（0 failures、
 > 0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
@@ -104,7 +104,8 @@
 > pinned Ed25519 verifier 和 fixed-capacity/zero-queue supervisor 已落地，interrupt-ignoring adapter 保持
 > slot occupancy 与 lingering observation。17 项 start 测试及 1 项 cancellation null-result 回归全绿，
 > 五个新增公共类型 strict JavaDoc 零告警。durable start journal、真实隔离 provider、worker/queue 投影
-> 和 orphan reconciliation 仍未接线，capability 继续关闭。验证见
+> 和 orphan reconciliation 仍未接线，capability 继续关闭。隔离提交快照上的全量 `clean verify` 已执行
+> 3950 tests（0 failures、0 errors、2 skips），并完成 Surefire XML、可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-proof-kernel-verification.md)。
 
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability

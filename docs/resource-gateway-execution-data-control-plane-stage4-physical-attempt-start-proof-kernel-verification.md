@@ -82,6 +82,23 @@ regression：
 
 五个新增 public types 通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
 
+### 5.1 Immutable full gate
+
+实现提交 `e8f8ac95` 通过 immutable `git archive` 快照上的完整发布门禁：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml clean verify
+```
+
+- Maven：3950 tests，0 failures，0 errors，2 skips，`BUILD SUCCESS`；
+- structured cross-check：449 份 Surefire XML 合计 3950 tests，0 failures，0 errors，2 skips；
+- artifact：Spring Boot executable JAR 成功生成，39,403,654 bytes；
+- lifecycle：门禁退出后没有快照 Maven、ChromeDriver 或 Chrome for Testing 残留进程；
+- wall time：7 分 08 秒。
+
+该结果证明本增量与完整 Resource Gateway 回归、真实浏览器套件和可执行打包兼容，不证明尚未接线的
+真实 process/container provider、worker dispatch 或跨主机 orphan recovery 已具备生产能力。
+
 ## 6. 尚未开放
 
 当前没有 Spring bean、HTTP route、Schema、test-kit 或 capability advertisement。下列事项完成前不得让
