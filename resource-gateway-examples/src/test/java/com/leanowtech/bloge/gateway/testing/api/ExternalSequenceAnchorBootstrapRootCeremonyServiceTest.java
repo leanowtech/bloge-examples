@@ -158,9 +158,10 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
                         responseLossJournal));
         List<IdempotentSigner> authorizers = signers(genesisKeys, "genesis", Set.of());
         CountDownLatch signerEntered = new CountDownLatch(1);
+        CountDownLatch signerRelease = new CountDownLatch(1);
         IdempotentSigner first = authorizers.getFirst();
         authorizers.set(0, new IdempotentSigner(first.authorityId, first.keyId,
-                first.keyPair, false, 3_500L, signerEntered));
+                first.keyPair, false, 0L, signerEntered, signerRelease));
         List<IdempotentSigner> incoming = signers(incomingKeys, "incoming", Set.of());
         var request = request("ceremony-heartbeat-service");
         service.propose(request, "maker-a", 300, authorities(authorizers),
@@ -172,27 +173,49 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
             var execution = worker.submit(() -> service.execute(
                     request.ceremonyId(), "worker-a", 3,
                     authorities(authorizers), authorities(incoming)));
-            assertThat(signerEntered.await(5, TimeUnit.SECONDS)).isTrue();
-            Thread.sleep(3_100L);
+            try {
+                assertThat(signerEntered.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(responseLossJournal.heartbeatRecovered.await(
+                        5, TimeUnit.SECONDS)).isTrue();
+                awaitDatabaseTime(responseLossJournal.initialClaim.claimUntil());
 
-            var rival = journal().acquire(
-                    new ExternalSequenceAnchorBootstrapRootCeremonyJournal.AcquisitionCommand(
-                            ExternalSequenceAnchorBootstrapRootCeremonyJournal.AcquisitionCommand
-                                    .SCHEMA_VERSION,
-                            request.ceremonyId(), "worker-b", 30));
-            assertThat(rival.disposition()).isEqualTo(
-                    ExternalSequenceAnchorBootstrapRootCeremonyJournal.AcquisitionDisposition
-                            .BUSY);
+                var rival = journal().acquire(
+                        new ExternalSequenceAnchorBootstrapRootCeremonyJournal.AcquisitionCommand(
+                                ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                                        .AcquisitionCommand.SCHEMA_VERSION,
+                                request.ceremonyId(), "worker-b", 30));
+                assertThat(rival.disposition()).isEqualTo(
+                        ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                                .AcquisitionDisposition.BUSY);
+                assertThat(rival.snapshot().heartbeatCount()).isPositive();
+            } finally {
+                signerRelease.countDown();
+            }
             result = execution.get(5, TimeUnit.SECONDS);
         }
 
         assertThat(result.status()).isEqualTo(
                 ExternalSequenceAnchorBootstrapRootCeremonyService.ExecutionStatus.PRODUCED);
         assertThat(result.snapshot().attemptCount()).isEqualTo(1L);
-        assertThat(result.snapshot().heartbeatCount()).isGreaterThanOrEqualTo(2L);
-        assertThat(result.snapshot().claimVersion()).isGreaterThanOrEqualTo(3L);
+        assertThat(result.snapshot().heartbeatCount()).isPositive();
+        assertThat(result.snapshot().claimVersion())
+                .isEqualTo(result.snapshot().heartbeatCount() + 1L);
         assertThat((long) responseLossJournal.heartbeatCalls.get())
                 .isEqualTo(result.snapshot().heartbeatCount() + 1L);
+    }
+
+    private void awaitDatabaseTime(Instant threshold) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        Instant observed;
+        do {
+            observed = database.jdbc().queryForObject(
+                    "SELECT CURRENT_TIMESTAMP", Timestamp.class).toInstant();
+            if (!observed.isBefore(threshold)) {
+                return;
+            }
+            Thread.sleep(10L);
+        } while (System.nanoTime() < deadline);
+        assertThat(observed).isAfterOrEqualTo(threshold);
     }
 
     @Test
@@ -705,6 +728,7 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
         private final boolean unavailable;
         private final long delayMillis;
         private final CountDownLatch entered;
+        private final CountDownLatch release;
         private final Map<String, SignatureRequest> requests = new LinkedHashMap<>();
         private final Map<String, SignatureResponse> responses = new LinkedHashMap<>();
         private int callCount;
@@ -715,7 +739,7 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
                 String keyId,
                 KeyPair keyPair,
                 boolean unavailable) {
-            this(authorityId, keyId, keyPair, unavailable, 0L, null);
+            this(authorityId, keyId, keyPair, unavailable, 0L, null, null);
         }
 
         private IdempotentSigner(
@@ -725,12 +749,24 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
                 boolean unavailable,
                 long delayMillis,
                 CountDownLatch entered) {
+            this(authorityId, keyId, keyPair, unavailable, delayMillis, entered, null);
+        }
+
+        private IdempotentSigner(
+                String authorityId,
+                String keyId,
+                KeyPair keyPair,
+                boolean unavailable,
+                long delayMillis,
+                CountDownLatch entered,
+                CountDownLatch release) {
             this.authorityId = authorityId;
             this.keyId = keyId;
             this.keyPair = keyPair;
             this.unavailable = unavailable;
             this.delayMillis = delayMillis;
             this.entered = entered;
+            this.release = release;
         }
 
         @Override
@@ -748,6 +784,16 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
             }
             if (entered != null) {
                 entered.countDown();
+            }
+            if (release != null) {
+                try {
+                    if (!release.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("signer release timed out");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("signer interrupted", interrupted);
+                }
             }
             if (delayMillis > 0L) {
                 try {
@@ -789,6 +835,8 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
         private final ExternalSequenceAnchorBootstrapRootCeremonyJournal delegate;
         private final HeartbeatFault fault;
         private final AtomicInteger heartbeatCalls = new AtomicInteger();
+        private final CountDownLatch heartbeatRecovered = new CountDownLatch(1);
+        private volatile ExecutionClaim initialClaim;
 
         private FaultInjectingHeartbeatJournal(
                 ExternalSequenceAnchorBootstrapRootCeremonyJournal delegate,
@@ -809,7 +857,14 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
 
         @Override
         public Acquisition acquire(AcquisitionCommand command) {
-            return delegate.acquire(command);
+            Acquisition acquired = delegate.acquire(command);
+            if (acquired.disposition()
+                    == ExternalSequenceAnchorBootstrapRootCeremonyJournal
+                    .AcquisitionDisposition.ACQUIRED
+                    && initialClaim == null) {
+                initialClaim = acquired.claim();
+            }
+            return acquired;
         }
 
         @Override
@@ -820,7 +875,8 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
         @Override
         public HeartbeatResult heartbeat(HeartbeatCommand command) {
             HeartbeatResult committed = delegate.heartbeat(command);
-            if (heartbeatCalls.getAndIncrement() == 0) {
+            int call = heartbeatCalls.getAndIncrement();
+            if (call == 0) {
                 if (fault == HeartbeatFault.RESPONSE_LOSS) {
                     throw new IllegalStateException("simulated committed response loss");
                 }
@@ -830,6 +886,9 @@ class ExternalSequenceAnchorBootstrapRootCeremonyServiceTest {
                         valid.claimUntil(), valid.proposal());
                 return new HeartbeatResult(HeartbeatDisposition.RENEWED,
                         malformed, committed.snapshot());
+            }
+            if (fault == HeartbeatFault.RESPONSE_LOSS) {
+                heartbeatRecovered.countDown();
             }
             return committed;
         }
