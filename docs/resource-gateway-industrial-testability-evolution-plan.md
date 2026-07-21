@@ -1195,6 +1195,25 @@ inventory、lane、数据库、网络、provider 或 payload；unattested invent
 SLI window、expected replica inventory 与跨副本 convergence、production/目标数据库/HA/DR/chaos 仍是
 部署硬门禁。
 
+Stage 4 该增量第二十四子步先关闭 recovery-fleet deployment/witness 运行密钥被静态构造参数固化、两组
+key 可能分代更新且完整 fleet restart 后缺少 key-generation rollback protection 的协议根因。新增 strict
+`bloge.externalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootPublication.v1`：deployment
+bootstrap-root quorum 与独立 witness bootstrap-root quorum 对同一 canonical material 签名，material 原子
+绑定 scope/fleet/protocol/root-set、四个独立 trust domain、双 threshold/key set、policy、短时间窗与
+sequence/predecessor。verifier 只在 fingerprint、exact binding、独立双 M-of-N、Ed25519 key lifecycle 和
+runtime authority/public-key 不重叠全部通过后构造一个防御性冻结的 `VerifiedKeySet`。
+
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTrustRootFloor` 在 key set 可见前接受 exact
+generation；数据库适配器复用 transactionally locked、whole-record-fingerprinted floor，以长度前缀 scope/
+fleet 命名空间拒绝 rollback、same-sequence fork、gap、broken predecessor、元组碰撞、记录腐化、outage
+和并发双后继。合法紧急吊销可推进 floor，但阈值不足立即关闭 key access。15 项真实 Ed25519、strict
+Schema、数据库重建/竞争聚焦测试全绿，四个公共类型通过 strict JavaDoc。验证见
+[bootstrap-root recovery fleet trust-root kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-trust-root-kernel-verification.md)。该步只关闭原子协议、配置 verifier 与 durable floor
+内核；strict HTTPS/ETag refresh、unknown-key single-flight、dynamic inventory consumer、Spring/health/
+capability、external Byzantine floor、mTLS/pinning、HSM/KMS、production/目标数据库/HA/DR/chaos 仍待后续
+子步，不能把它解读为免重启轮换已端到端开放。完整 `clean verify` 执行 3533 tests，0 failures、0 errors、
+2 个条件浏览器跳过并成功重打包；其中本子步新增 15 项，第二十三子步 SLO 新增 25 项。
+
 第五十三增量第十八子步根治 exact configured cohort 可被本地缩窄后自证的问题。staging cohort 必须
 消费 deployment-owned `bloge.testSuiteStabilityServingInventory.v1`：canonical material 把 trust domain、
 单调 revision、stable scope、immutable cohort、artifact、protocol、排序后的精确 serving-slot 集、外部
