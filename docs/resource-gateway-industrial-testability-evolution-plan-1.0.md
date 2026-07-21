@@ -32,8 +32,9 @@
 > 因此 production readiness 继续关闭。验证见
 > [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)
 > 和 [source-head protocol verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-source-head-protocol-verification.md)。
-> 截至 attempt cancellation coordinator、调用前数据库时间栅栏与浏览器生命周期修复的最终全量基线为
-> Resource Gateway 3921 tests（0 failures、
+> 截至 physical-attempt reservation、positive queue lease epoch、attempt cancellation coordinator、
+> 调用前数据库时间栅栏与浏览器生命周期修复的最终全量基线为
+> Resource Gateway 3932 tests（0 failures、
 > 0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。

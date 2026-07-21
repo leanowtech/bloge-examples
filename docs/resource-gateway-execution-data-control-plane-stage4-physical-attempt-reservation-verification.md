@@ -72,9 +72,13 @@ TestSuiteStabilityJobExecutionCoordinatorTest test
 - queued job 伪造 lease 不得创建 physical attempt；
 - scope non-disclosure 与 retained-column tamper detection。
 
-三个新增公共类型已通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。全量
-`clean verify` 以不可变源码快照执行，避免同一 worktree 的并发 Maven 输出污染，最终结果记录在本文件
-后续修订中。
+三个新增公共类型已通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
+
+最终代码提交 `286fe62f` 从 `git archive` 导出到不可变源码快照执行完整
+`mvn -f resource-gateway-examples/pom.xml clean verify`：3932 tests、0 failures、0 errors、2 个条件浏览器
+跳过，总耗时 7 分 11 秒，Spring Boot 可执行 JAR 重打包成功。独立使用结构化 XML parser 汇总 447 份
+Surefire XML 得到相同数字；JAR 为 39,364,254 bytes。Maven/Surefire 正常退出，随后未发现该快照、
+ChromeDriver 或 Chrome 测试进程残留。
 
 ## 5. 明确未完成
 
