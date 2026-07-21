@@ -340,7 +340,7 @@ public final class ControlPlaneCertificateStatusSloMonitor implements HealthIndi
      * @param admissionChecks cumulative request admission checks
      * @param admissionDenials cumulative denied admission checks
      * @param admissionDenialBasisPoints mature admission denial ratio
-     * @param consecutiveBatchLimitCycles current possible-backlog streak
+     * @param consecutiveBatchLimitCycles diagnostic batch-capacity streak, not exact backlog
      * @param lastRefreshSuccessAgeSeconds last success age, or -1 when unknown
      * @param policy policy used for this assessment
      */

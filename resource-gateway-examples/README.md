@@ -525,8 +525,10 @@ rotation and the exact same deployment scope. Configure an independent status tr
 accepted policy fingerprints, M-of-N public Ed25519 authority keys, a pinned publication-chain
 baseline, bounded refresh policy, and a private-PKIX/SPKI/mTLS identity under
 `RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRANSPORT_*`. The source accepts only strict normalized
-complete-snapshot publications; a database-clock floor rejects gaps, forks, rollback, omitted
-targets, and revoked-to-valid resurrection before updating the local dual-clock admission cache.
+v2 responses containing an M-of-N signed exact source head and at most one complete-snapshot
+successor. Independent database-clock floors reject head/publication gaps, forks, rollback, omitted
+targets, stale head renewal, and revoked-to-valid resurrection before updating the local dual-clock
+admission cache.
 Every live rotating transport checks the exact target, generation, and settings fingerprint before
 request dispatch. `REVOKED`, `UNKNOWN`, mismatch, or hard expiry therefore fails before handler I/O.
 
@@ -536,9 +538,11 @@ source outage may continue serving only while the last durable signed snapshot r
 wall-clock and monotonic hard-expiry lease. Actuator and Tool Studio distinguish source
 availability from cached admission freshness, and expose no URI, certificate, fingerprint,
 credential reference, or provider diagnostic. A sibling fixed-cardinality SLO assessment tracks
-startup grace, current source outage, last-success age, hard-expiry headroom, mature refresh
-failure and admission-denial ratios, and consecutive batch-limit cycles. Configure its bounded
-thresholds with `RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_*`. A fresh cache may still admit
+startup grace, current source outage, exact source-head availability and lag, last-success age,
+hard-expiry headroom, and mature refresh failure and admission-denial ratios. Configure its bounded
+thresholds with `RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_*`, including
+`RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_SOURCE_HEAD_LAG`. Consecutive batch-limit
+cycles remain diagnostic only. A fresh cache may still admit
 exact requests while the SLO reports `SOURCE_UNAVAILABLE`; availability policy and alert truth are
 intentionally separate. Micrometer and Tool Studio export only closed decisions and aggregate
 counts. The demo preflight validates exact scope binding, HTTPS, public-only trust material, finite
@@ -564,7 +568,7 @@ See the [event watcher product verification](../docs/resource-gateway-execution-
 `productionReady` deliberately remains false. The delivered test/staging path does not yet prove a
 certified enterprise CA/OCSP/CRL normalizer, dynamic status-authority trust rotation, CA source HA
 and retention/compaction, event/status-source client-certificate hot rotation, external alerting
-and burn-rate routing, an exact upstream source-head backlog contract, HSM custody, production
+and burn-rate routing, multi-region source-head equivocation witnessing, HSM custody, production
 database certification, or HA/DR/chaos behavior.
 See the
 [certificate identity and rotation kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-certificate-identity-and-rotation-kernel-verification.md).

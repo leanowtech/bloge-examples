@@ -2,7 +2,7 @@
 
 **TL;DR**：以 resource-gateway-industrial-testability-evolution-plan.md 为北极星终态，从既有 `GatewayGraphContractTestService` 语义中**提炼统一执行数据控制内核**，向上开放调用方驱动的 fixture 注入入口（/api/testing/executions + micro-graph operator runner + test-kit），向下以「独立 test engine 实例 + BLOGE run-scoped `ExecutionOptions.operatorResolver`」在 RG 层落地；隔离采用「入口硬隔离 + deny-by-default + 证据分级」，验收采用仓库自身 CI dogfooding。分三个阶段交付（语义冻结 → 内核提炼 → 注入入口与工程化），每阶段独立可验证。可靠性模型形式化为：**DAG 正确性 = L1（真实算子 + 效应边界拟合）⊕ L3（真实编排 + 节点边界拟合）**，合成缝由保真度阶梯（F0-F5）封闭，前提「算子确定性」由 Composability Contract 强制而非假设（见第五节）。
 
-### 实施状态（2026-07-21）
+### 实施状态（2026-07-22）
 
 > Stage 4 证书轮换状态校正：database-clock durable generation floor 已通过统一 runtime 接入 12 条
 > stable live transport；精确 replica inventory/process-start lease、`STAGED/ACTIVE/FAILED` ACK、单 active
@@ -18,14 +18,15 @@
 > publication HTTPS source、private PKIX/SPKI/mTLS 与双端 workload identity、数据库 floor、bounded
 > monitor/scheduler、Spring test/staging composition、固定基数 health、Tool Studio capability、严格
 > Schema/profile metadata 和 demo preflight；后续 SLO 增量又补齐固定基数 refresh/admission telemetry、
-> 启动宽限、source outage、refresh age/failure ratio、hard-expiry headroom、deny-rate 与连续 batch-limit
-> backlog signal 的 closed assessment，并接入 Actuator、Tool Studio 和 demo preflight；12 条 live
+> 启动宽限、source outage、refresh age/failure ratio、hard-expiry headroom、deny-rate 与 exact signed
+> source-head lag 的 closed assessment，并接入 Actuator、Tool Studio 和 demo preflight；12 条 live
 > transport 在 handler I/O 前执行 exact status
 > admission。远端短暂不可用时只允许使用尚未越过 wall-clock + monotonic hard expiry 的 durable cached
 > snapshot，撤销、未知、错代、fingerprint 漂移和硬过期均立即失败关闭。source 使用独立静态身份以避免
 > 由被保护 transport 拉取自身状态的递归 bootstrap。certified enterprise CA/OCSP/CRL adapter、动态
-> authority/source identity 轮换仍未闭合；精确 source-head 的独立 M-of-N signed protocol、closed Schema
-> 和 key-free verifier kernel 已冻结，但 durable anti-rollback floor、HTTPS source、monitor/SLO 产品接线仍待完成；
+> authority/source identity 轮换仍未闭合；精确 source-head 已完成独立 M-of-N signed protocol、strict v2
+> HTTPS response envelope、database-clock anti-rollback floor、publication identity binding、dual-clock hard
+> expiry、monitor/SLO/health/telemetry/capability、closed Schema/profile 和 demo preflight 的 test/staging 接线；
 > 外部 alert/burn-rate routing、enterprise
 > custody 和生产数据库/HA/DR/chaos 仍未闭合，
 > 因此 production readiness 继续关闭。验证见

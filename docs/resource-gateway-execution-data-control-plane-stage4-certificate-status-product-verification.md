@@ -8,12 +8,15 @@ M-of-N 验签、database-clock monotonic floor、dual-clock local admission 和�
 
 固定执行顺序为：
 
-1. source 通过独立 private PKIX、SPKI pin、mTLS 与双端 workload identity 获取唯一后继 publication；
-2. trust store 校验 trust domain、policy、M-of-N 签名、key lifecycle 与完整 publication commitment；
-3. durable floor 校验连续 sequence、predecessor、整行 fingerprint、唯一 publication id 和完整 target 清单；
-4. monitor 先提交 durable snapshot，再原子替换进程内 admission cache；
-5. 每条 rotating transport 在真实 handler I/O 前校验 exact target、generation 与 settings fingerprint；
-6. `REVOKED`、`UNKNOWN`、binding mismatch 或 hard expiry 一律不发送请求。
+1. source 通过独立 private PKIX、SPKI pin、mTLS 与双端 workload identity 获取 strict v2 response；
+2. 每个成功 response 必须携带签名 exact source head，并可携带 request cursor 的唯一直接后继；
+3. trust store 分别校验 publication/source-head 的 trust domain、policy、M-of-N 签名和 key lifecycle；
+4. source-head floor 以数据库时钟拒绝 rollback、fork、stale renewal、attestation-id reuse 与存储漂移；
+5. publication floor 校验连续 sequence、predecessor、整行 fingerprint、唯一 publication id 和完整 target 清单；
+6. monitor 以 sequence + publication fingerprint 计算 exact lag，再替换进程内 admission cache；
+7. source-head 本地 lease 同时受数据库 observedAt、wall clock 与 monotonic deadline 约束，replay 不续命；
+8. 每条 rotating transport 在真实 handler I/O 前校验 exact target、generation 与 settings fingerprint；
+9. `REVOKED`、`UNKNOWN`、binding mismatch 或 hard expiry 一律不发送请求。
 
 这条链证明“当前证书代次是否仍被外部状态权威允许”，不替代 rotation event 的变更授权，也不把
 source transport 的 TLS 身份提升为 CA 状态签名权威。
@@ -73,7 +76,7 @@ export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MINIMUM_REFRESH_SAMPLES=20
 export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_REFRESH_FAILURE_BASIS_POINTS=500
 export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MINIMUM_ADMISSION_SAMPLES=100
 export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_ADMISSION_DENIAL_BASIS_POINTS=1000
-export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_CONSECUTIVE_BATCH_LIMIT_CYCLES=3
+export RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_SOURCE_HEAD_LAG=0
 ```
 
 密码值只存在于 `*_PASSWORD_REF` 指向的 secret 中。使用演示脚本时，staging 会在 Maven build 前
@@ -97,6 +100,7 @@ scripts/stop-visual-canvas-demo.sh
 | source timeout/5xx，cache 仍 fresh | 不变 | 保留 exact snapshot | 允许 exact binding |
 | source timeout/5xx，cache 已 hard-expired | 不变 | stale | 全部失败关闭 |
 | publication gap/fork/rollback | 不推进 | 不替换 | 保留旧 lease 至硬过期 |
+| source head 缺失/过期/回退/分叉 | head floor 不推进 | 保留旧 cache | readiness/SLO 失败关闭，旧 cache 仅服务至自身硬过期 |
 | publication 漏 target 或整行被篡改 | 不推进 | 不替换 | 保留旧 lease 至硬过期 |
 | target 为 `REVOKED` 或 `UNKNOWN` | 新完整 snapshot | 对该 binding 拒绝 | handler 前阻断 |
 | generation/settings fingerprint 不匹配 | 不需要写 floor | exact lookup miss | handler 前阻断 |
@@ -104,8 +108,9 @@ scripts/stop-visual-canvas-demo.sh
 
 ## 5. 运维判读
 
-Actuator status health 固定为 16 个低基数字段，区分 `sourceAvailable`、`admissionFresh`、monitor 状态和
-runtime 状态；descriptor 异常时使用固定 reason code，不携带异常文本。Tool Studio capability 公开：
+Actuator status health v2 固定为 19 个低基数字段，区分 `sourceAvailable`、`sourceHeadVerified`、
+`sourceHeadSequence`、`sourceHeadLag`、`admissionFresh`、monitor 状态和 runtime 状态；descriptor 异常时
+使用固定 reason code，不携带异常文本。Tool Studio capability 公开：
 
 - `controlPlaneCertificateStatusIntegrated`
 - `controlPlaneCertificateStatusAvailable`
@@ -113,37 +118,38 @@ runtime 状态；descriptor 异常时使用固定 reason code，不携带异常�
 - `controlPlaneCertificateRevocationAdmission`
 - `controlPlaneCertificateStatusSloIntegrated`
 - `controlPlaneCertificateStatusSloHealthy`
+- `controlPlaneCertificateStatusExactSourceHead`
 - `controlPlaneCertificateStatusFixedCardinalityTelemetry`
 
 `Available=false, Fresh=true` 表示远端刚发生短暂故障、但已验证 cache 仍在硬租约内；它不是长期降级
 许可。`Fresh=false` 必须解释为请求 admission 已关闭。`controlPlaneCertificateRotationProductionReady`
 继续为 false。
 
-独立 SLO assessment 不复用 readiness 的瞬时语义：它以 closed violation vocabulary 检查启动宽限、
-当前 source outage、最近成功刷新年龄、hard-expiry headroom、成熟刷新失败率、成熟 admission deny-rate
-和连续 `BATCH_LIMIT` streak。后者只证明“本地有未追平 backlog 的信号”，不虚构外部 source head。
-因此 cache fresh 且 source 暂时不可用时，请求仍可按 exact binding 放行，但 SLO 同时进入
+独立 SLO assessment v2 不复用 readiness 的瞬时语义：它以 closed violation vocabulary 检查启动宽限、
+当前 source outage、exact source-head availability、最近成功刷新年龄、hard-expiry headroom、成熟刷新
+失败率、成熟 admission deny-rate 和 `sourceHeadLag > maximumSourceHeadLag`。`BATCH_LIMIT` 仍作为吞吐趋势
+计数保留，但不再冒充外部 backlog 事实。因此 cache fresh 且 source 暂时不可用时，请求仍可按 exact binding 放行，但 SLO 同时进入
 `SLO_VIOLATED/SOURCE_UNAVAILABLE` 供告警消费。所有 meter tag 只来自 closed enum；target、authority、
 URI、fingerprint、credential、reason detail 和异常文本永不进入 metric identity。
 
 ## 6. 机器契约与测试证据
 
-本路径发布七个 closed JSON Schema：configuration、source descriptor、trust-store descriptor、monitor
-descriptor、admission descriptor、health 和 SLO assessment。配置 schema 与两个 Spring profile、Java record、Java 25
+本路径保留 v1 历史协议，并发布 v2 configuration、source response、source-head、source-head floor、monitor、
+health 与 SLO closed JSON Schema。配置 schema 与两个 Spring profile、Java record、Java 25
 configuration metadata 做精确字段反射测试；未知字段、disabled residual、system trust downgrade、可选
 identity、重复 policy、超长配置、私钥字段和与 I/O/publication lifetime 必然冲突的 SLO 窗口均在
 source I/O 前失败。
 
-以下 110 项状态链、真实 TLS source、durable floor、逐请求 gate、live transport、Tool Studio capability
-和 demo preflight 联合门禁已通过，
+以下 82 项 exact source-head、HTTP source、durable floor、monitor/SLO、health、Tool Studio capability
+和 demo preflight 聚焦门禁已通过，
 0 failures、0 errors、0 skips：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml test \
-  -Dtest='*ControlPlaneCertificateStatus*,HttpControlPlaneCertificateStatusSourceTest,DatabaseControlPlaneCertificateStatusFloorTest,ControlPlaneCertificateRotationRuntimeTest,RotatingControlPlaneHttpTransportTest,ToolStudioControlPlaneCertificateRotationCapabilityTest,VisualCanvasDemoScriptTest'
+  -Dtest='ControlPlaneCertificateStatusSourceHeadTest,ControlPlaneCertificateStatusSourceHeadProtocolSchemaTest,ControlPlaneCertificateStatusSourceResponseProtocolTest,DatabaseControlPlaneCertificateStatusSourceHeadFloorTest,HttpControlPlaneCertificateStatusSourceTest,ControlPlaneCertificateStatusMonitorTest,ControlPlaneCertificateStatusTelemetryTest,ControlPlaneCertificateStatusSloMonitorTest,ControlPlaneCertificateStatusHealthTest,ControlPlaneCertificateStatusRuntimeConfigurationTest,ControlPlaneCertificateStatusProductSchemaTest,ToolStudioControlPlaneCertificateRotationCapabilityTest,VisualCanvasDemoScriptTest'
 ```
 
-最终全量回归基线同样通过：Resource Gateway `clean verify` 执行 3834 tests，0 failures、0 errors、
+上一轮全量回归基线为：Resource Gateway `clean verify` 执行 3834 tests，0 failures、0 errors、
 2 个条件浏览器跳过，并生成 Spring Boot 可执行 JAR；独立 test-kit `clean verify` 执行 230 tests，
 0 failures、0 errors、0 skips，且将 57 份 testing Schema 与 5 份 Tool Studio Schema 打入发布 JAR，
 普通 JAR、shaded JAR 和 public JavaDoc 门禁全部通过。
@@ -159,8 +165,8 @@ mvn -f resource-gateway-examples/pom.xml test \
 
 - certified CA event/OCSP/CRL normalizer 的语义一致性、签名 custody 与互操作认证；
 - status authority key 和 source client identity 的无重启轮换、紧急撤销与恢复；
-- 多区域 source HA、anti-equivocation witness、publication retention/compaction 与 backlog contract；
-- 精确 upstream source-head backlog、外部 alert routing、跨窗口 burn-rate 与 pager 演练；
+- 多区域 source HA、anti-equivocation witness、跨域 gossip 与 publication retention/compaction；
+- 外部 alert routing、跨窗口 burn-rate、error-budget policy 与 pager 演练；
 - production database、backup/restore、DR、split-brain、clock anomaly 与 chaos 认证；
 - HSM/KMS custody、maker/checker 变更流程和跨版本 N/N-1 compatibility matrix。
 

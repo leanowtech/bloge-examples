@@ -1,9 +1,12 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
 
 /**
  * Bounded watcher that moves signed status publications into durable and request-path state.
@@ -17,6 +20,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * waiting for the watcher.</p>
  */
 public final class ControlPlaneCertificateStatusMonitor {
+
+    private static final Duration MAXIMUM_SOURCE_HEAD_LIFETIME = Duration.ofHours(24);
 
     /** Closed refresh outcomes suitable for health and fixed-cardinality metrics. */
     public enum RefreshStatus {
@@ -45,9 +50,11 @@ public final class ControlPlaneCertificateStatusMonitor {
     private final ControlPlaneCertificateStatusSource source;
     private final ControlPlaneCertificateStatusAdmission admission;
     private final Clock clock;
+    private final LongSupplier ticker;
     private final int maximumBatch;
     private final ControlPlaneCertificateStatusTelemetry telemetry;
     private final AtomicReference<Descriptor> latest;
+    private final AtomicReference<SourceHeadLease> sourceHeadLease = new AtomicReference<>();
 
     /**
      * Creates one bounded status watcher.
@@ -71,6 +78,29 @@ public final class ControlPlaneCertificateStatusMonitor {
     }
 
     /**
+     * Creates one bounded watcher with explicit wall and monotonic clocks.
+     *
+     * @param floor durable database-time status authority
+     * @param sourceHeadFloor durable database-time exact source-head authority
+     * @param source untrusted normalized publication source
+     * @param admission local non-blocking request-path cache
+     * @param clock wall clock used for signed source-head expiry
+     * @param ticker monotonic nanosecond source defeating in-process clock rollback
+     * @param maximumBatch one through 32 successors per refresh
+     */
+    public ControlPlaneCertificateStatusMonitor(
+            ControlPlaneCertificateStatusFloor floor,
+            ControlPlaneCertificateStatusSourceHeadFloor sourceHeadFloor,
+            ControlPlaneCertificateStatusSource source,
+            ControlPlaneCertificateStatusAdmission admission,
+            Clock clock,
+            LongSupplier ticker,
+            int maximumBatch) {
+        this(floor, sourceHeadFloor, source, admission, clock, ticker, maximumBatch,
+                ControlPlaneCertificateStatusTelemetry.noop());
+    }
+
+    /**
      * Creates one bounded watcher with fixed-cardinality operational telemetry.
      *
      * @param floor durable database-time status authority
@@ -89,11 +119,37 @@ public final class ControlPlaneCertificateStatusMonitor {
             Clock clock,
             int maximumBatch,
             ControlPlaneCertificateStatusTelemetry telemetry) {
+        this(floor, sourceHeadFloor, source, admission, clock, System::nanoTime,
+                maximumBatch, telemetry);
+    }
+
+    /**
+     * Creates one bounded watcher with explicit clocks and fixed-cardinality telemetry.
+     *
+     * @param floor durable database-time status authority
+     * @param sourceHeadFloor durable database-time exact source-head authority
+     * @param source untrusted normalized publication source
+     * @param admission local non-blocking request-path cache
+     * @param clock wall clock used for signed source-head expiry
+     * @param ticker monotonic nanosecond source defeating in-process clock rollback
+     * @param maximumBatch one through 32 successors per refresh
+     * @param telemetry refresh recorder without source or certificate identity tags
+     */
+    public ControlPlaneCertificateStatusMonitor(
+            ControlPlaneCertificateStatusFloor floor,
+            ControlPlaneCertificateStatusSourceHeadFloor sourceHeadFloor,
+            ControlPlaneCertificateStatusSource source,
+            ControlPlaneCertificateStatusAdmission admission,
+            Clock clock,
+            LongSupplier ticker,
+            int maximumBatch,
+            ControlPlaneCertificateStatusTelemetry telemetry) {
         this.floor = Objects.requireNonNull(floor, "floor");
         this.sourceHeadFloor = Objects.requireNonNull(sourceHeadFloor, "sourceHeadFloor");
         this.source = Objects.requireNonNull(source, "source");
         this.admission = Objects.requireNonNull(admission, "admission");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.ticker = Objects.requireNonNull(ticker, "ticker");
         this.telemetry = Objects.requireNonNull(telemetry, "telemetry");
         if (!floor.durable() || !sourceHeadFloor.durable()
                 || maximumBatch < 1 || maximumBatch > 32) {
@@ -107,10 +163,11 @@ public final class ControlPlaneCertificateStatusMonitor {
 
     /**
      * Restores durable state and performs one bounded source catch-up cycle.
+     * Concurrent triggers are serialized so an older cycle cannot replace a newer head lease.
      *
      * @return immutable latest operational descriptor
      */
-    public Descriptor refresh() {
+    public synchronized Descriptor refresh() {
         ControlPlaneCertificateStatusFloor.Snapshot current;
         ControlPlaneCertificateStatusSourceHeadFloor.Snapshot sourceHead;
         try {
@@ -209,9 +266,7 @@ public final class ControlPlaneCertificateStatusMonitor {
     public Descriptor descriptor() {
         Descriptor observed = latest.get();
         ControlPlaneCertificateStatusAdmission.Descriptor cache = admission.descriptor();
-        boolean sourceHeadFresh = observed.sourceHeadVerified()
-                && observed.sourceHeadExpiresAt() != null
-                && clock.instant().isBefore(observed.sourceHeadExpiresAt());
+        boolean sourceHeadFresh = observed.sourceHeadVerified() && sourceHeadFresh();
         if (observed.admissionFresh() == cache.fresh()
                 && observed.sourceHeadVerified() == sourceHeadFresh) {
             return observed;
@@ -251,6 +306,10 @@ public final class ControlPlaneCertificateStatusMonitor {
         long sourceHeadLag = sourceHead == null
                 ? -1L : sourceHead.exactLagFrom(
                 sequence, publicationFingerprint, observedAt);
+        if (sourceHeadLag >= 0) {
+            installSourceHeadLease(sourceHead, observedAt);
+        }
+        boolean sourceHeadVerified = sourceHeadLag >= 0 && sourceHeadFresh();
         return new Descriptor(Descriptor.SCHEMA_VERSION, status,
                 floor.durable() && sourceHeadFloor.durable(),
                 status == RefreshStatus.CURRENT || status == RefreshStatus.APPLIED
@@ -259,8 +318,61 @@ public final class ControlPlaneCertificateStatusMonitor {
                         || status == RefreshStatus.SOURCE_REJECTED
                         || status == RefreshStatus.SOURCE_HEAD_REJECTED,
                 admission.descriptor().fresh(), sequence, applied, observedAt, expiresAt,
-                sourceHeadLag >= 0, sourceHeadSequence, sourceHeadLag,
+                sourceHeadVerified, sourceHeadSequence,
+                sourceHeadVerified ? sourceHeadLag : -1L,
                 sourceHead == null ? null : sourceHead.expiresAt());
+    }
+
+    private void installSourceHeadLease(
+            ControlPlaneCertificateStatusSourceHeadFloor.Snapshot sourceHead,
+            Instant observedAt) {
+        Instant lifetimeStart = observedAt.isAfter(sourceHead.observedAt())
+                ? observedAt : sourceHead.observedAt();
+        Duration remaining = Duration.between(lifetimeStart, sourceHead.expiresAt());
+        if (remaining.isZero() || remaining.isNegative()
+                || remaining.compareTo(MAXIMUM_SOURCE_HEAD_LIFETIME) > 0) {
+            return;
+        }
+        long loadedTick = ticker.getAsLong();
+        SourceHeadLease candidate = new SourceHeadLease(sourceHead.headSequence(),
+                sourceHead.issuedAt(), sourceHead.attestationFingerprint(),
+                sourceHead.expiresAt(), loadedTick,
+                saturatedAdd(loadedTick, remaining.toNanos()), new AtomicBoolean());
+        while (true) {
+            SourceHeadLease current = sourceHeadLease.get();
+            if (current != null && (current.attestationFingerprint().equals(
+                    candidate.attestationFingerprint())
+                    || current.headSequence() > candidate.headSequence()
+                    || current.headSequence() == candidate.headSequence()
+                    && !current.issuedAt().isBefore(candidate.issuedAt()))) {
+                return;
+            }
+            if (sourceHeadLease.compareAndSet(current, candidate)) {
+                return;
+            }
+        }
+    }
+
+    private boolean sourceHeadFresh() {
+        SourceHeadLease lease = sourceHeadLease.get();
+        if (lease == null || lease.closed().get()) {
+            return false;
+        }
+        long nowTick = ticker.getAsLong();
+        boolean fresh = clock.instant().isBefore(lease.expiresAt())
+                && nowTick >= lease.loadedTick() && nowTick < lease.expiresTick();
+        if (!fresh) {
+            lease.closed().set(true);
+        }
+        return fresh;
+    }
+
+    private static long saturatedAdd(long left, long right) {
+        try {
+            return Math.addExact(left, right);
+        } catch (ArithmeticException overflow) {
+            return Long.MAX_VALUE;
+        }
     }
 
     private static boolean consistent(
@@ -286,6 +398,16 @@ public final class ControlPlaneCertificateStatusMonitor {
                 && (publication.material().sequence() != head.headSequence()
                 || publication.materialFingerprint().equals(
                 head.headPublicationFingerprint()));
+    }
+
+    private record SourceHeadLease(
+            long headSequence,
+            Instant issuedAt,
+            String attestationFingerprint,
+            Instant expiresAt,
+            long loadedTick,
+            long expiresTick,
+            AtomicBoolean closed) {
     }
 
     /**

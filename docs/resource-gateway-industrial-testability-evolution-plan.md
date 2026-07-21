@@ -13,7 +13,7 @@
 | 非目标 | 不把 Resource Gateway 变成通用代码覆盖率平台；不允许普通生产请求携带测试替换指令；不替代 operator 代码仓库中的白盒单元测试 |
 | 第一原则 | 测试控制必须是运行期带外控制，不进入业务 `GraphContext`，不改变 DSL 业务语义，不能被生产请求伪造 |
 
-### 实施快照（2026-07-21）
+### 实施快照（2026-07-22）
 
 > Stage 4 证书轮换状态校正：database-clock durable generation floor 已通过统一 runtime 接入 12 条
 > stable live transport；精确 replica inventory/process-start lease、`STAGED/ACTIVE/FAILED` ACK、单 active
@@ -29,14 +29,15 @@
 > publication HTTPS source、private PKIX/SPKI/mTLS 与双端 workload identity、数据库 floor、bounded
 > monitor/scheduler、Spring test/staging composition、固定基数 health、Tool Studio capability、严格
 > Schema/profile metadata 和 demo preflight；后续 SLO 增量又补齐固定基数 refresh/admission telemetry、
-> 启动宽限、source outage、refresh age/failure ratio、hard-expiry headroom、deny-rate 与连续 batch-limit
-> backlog signal 的 closed assessment，并接入 Actuator、Tool Studio 和 demo preflight；12 条 live
+> 启动宽限、source outage、refresh age/failure ratio、hard-expiry headroom、deny-rate 与 exact signed
+> source-head lag 的 closed assessment，并接入 Actuator、Tool Studio 和 demo preflight；12 条 live
 > transport 在 handler I/O 前执行 exact status
 > admission。远端短暂不可用时只允许使用尚未越过 wall-clock + monotonic hard expiry 的 durable cached
 > snapshot，撤销、未知、错代、fingerprint 漂移和硬过期均立即失败关闭。source 使用独立静态身份以避免
 > 由被保护 transport 拉取自身状态的递归 bootstrap。certified enterprise CA/OCSP/CRL adapter、动态
-> authority/source identity 轮换仍未闭合；精确 source-head 的独立 M-of-N signed protocol、closed Schema
-> 和 key-free verifier kernel 已冻结，但 durable anti-rollback floor、HTTPS source、monitor/SLO 产品接线仍待完成；
+> authority/source identity 轮换仍未闭合；精确 source-head 已完成独立 M-of-N signed protocol、strict v2
+> HTTPS response envelope、database-clock anti-rollback floor、publication identity binding、dual-clock hard
+> expiry、monitor/SLO/health/telemetry/capability、closed Schema/profile 和 demo preflight 的 test/staging 接线；
 > 外部 alert/burn-rate routing、enterprise
 > custody 和生产数据库/HA/DR/chaos 仍未闭合，
 > 因此 production readiness 继续关闭。验证见

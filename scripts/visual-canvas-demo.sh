@@ -760,12 +760,12 @@ validate_control_plane_certificate_status() {
     local maximum_refresh_failure="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_REFRESH_FAILURE_BASIS_POINTS:-500}"
     local minimum_admission_samples="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MINIMUM_ADMISSION_SAMPLES:-100}"
     local maximum_admission_denial="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_ADMISSION_DENIAL_BASIS_POINTS:-1000}"
-    local maximum_batch_streak="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_CONSECUTIVE_BATCH_LIMIT_CYCLES:-3}"
+    local maximum_source_head_lag="${RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_SOURCE_HEAD_LAG:-0}"
     if printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
         "${startup_grace}" "${maximum_success_age}" "${minimum_headroom}" \
         "${minimum_refresh_samples}" "${maximum_refresh_failure}" \
         "${minimum_admission_samples}" "${maximum_admission_denial}" \
-        "${maximum_batch_streak}" | grep -Eqv '^(0|[1-9][0-9]*)$' ||
+        "${maximum_source_head_lag}" | grep -Eqv '^(0|[1-9][0-9]*)$' ||
         [ "${startup_grace}" -gt 3600 ] ||
         [ "$((startup_grace * 1000))" -lt "$((initial + timeout))" ] ||
         [ "${maximum_success_age}" -lt 1 ] ||
@@ -779,7 +779,7 @@ validate_control_plane_certificate_status() {
         [ "${minimum_admission_samples}" -lt 1 ] ||
         [ "${minimum_admission_samples}" -gt 1000000 ] ||
         [ "${maximum_admission_denial}" -gt 10000 ] ||
-        [ "${maximum_batch_streak}" -gt 100 ]; then
+        [ "${maximum_source_head_lag}" -gt 1000000 ]; then
         echo "Certificate status SLO bounds are invalid." >&2
         return 1
     fi

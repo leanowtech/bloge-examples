@@ -168,7 +168,7 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
         ToolStudioIntegrationService service = service();
         ControlPlaneCertificateStatusSloMonitor monitor = mock(
                 ControlPlaneCertificateStatusSloMonitor.class);
-        when(monitor.descriptor()).thenReturn(healthyAssessment());
+        when(monitor.assess()).thenReturn(healthyAssessment());
         service.configureControlPlaneCertificateStatusSloMonitor(monitor);
 
         assertThat(service.capabilities().payload().features())
@@ -178,7 +178,7 @@ class ToolStudioControlPlaneCertificateRotationCapabilityTest {
                 .containsEntry("controlPlaneCertificateStatusFixedCardinalityTelemetry", true)
                 .containsEntry("controlPlaneCertificateRotationProductionReady", false);
 
-        when(monitor.descriptor()).thenThrow(
+        when(monitor.assess()).thenThrow(
                 new IllegalStateException("https://ca.internal/status?secret=value"));
         var capabilities = service.capabilities().payload();
         assertThat(capabilities.features())

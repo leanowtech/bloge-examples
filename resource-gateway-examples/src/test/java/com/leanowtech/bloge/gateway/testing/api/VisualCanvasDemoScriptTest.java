@@ -297,6 +297,43 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void stagingRejectsUnboundedCertificateStatusSourceHeadLagBeforeBuild()
+            throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        Map<String, String> environment = new HashMap<>(stagingBase());
+        putRequiredCertificateRotation(environment);
+        environment.putAll(Map.ofEntries(
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENABLED", "true"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_REQUIRED", "true"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SCOPE_ID", "rg-staging"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_TRUST_DOMAIN",
+                        "enterprise-ca-status"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ACCEPTED_POLICIES",
+                        "sha256:" + "9".repeat(64)),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SIGNATURE_THRESHOLD", "1"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_AUTHORITY_KEYS_JSON", "[{}]"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_BASELINE_SEQUENCE", "0"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_BASELINE_PUBLICATION_FINGERPRINT",
+                        "sha256:" + "8".repeat(64)),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_ENDPOINT_URI",
+                        "https://ca.example.test/v1/certificate-status"),
+                Map.entry("RG_TEST_CONTROL_PLANE_CERTIFICATE_STATUS_SLO_MAXIMUM_SOURCE_HEAD_LAG",
+                        "1000001")));
+        builder.environment().putAll(environment);
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains("Certificate status SLO bounds are invalid.");
+        assertThat(output).doesNotContain("Building Resource Gateway", "Starting visual canvas");
+    }
+
+    @Test
     void stagingTestSecretCohortFailsBeforeBuildWhenTrustChainIsPartial() throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
                 "bash", SCRIPT.toString(), "start", "--no-build")

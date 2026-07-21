@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -229,6 +230,38 @@ class ControlPlaneCertificateStatusMonitorTest {
             assertThat(descriptor.sourceHeadLag()).isEqualTo(-1);
             assertThat(descriptor.sourceHeadExpiresAt()).isEqualTo(NOW.plusSeconds(3_600));
         });
+    }
+
+    @Test
+    void monotonicDeadlinePreventsClockRollbackFromExtendingASourceHead() throws Exception {
+        MutableFloor floor = new MutableFloor();
+        ControlPlaneCertificateStatusPublication first = publication(1, "", 1, SETTINGS);
+        MutableClock clock = new MutableClock(NOW);
+        AtomicLong ticks = new AtomicLong(1L);
+        ControlPlaneCertificateStatusSourceHead sourceHead = sourceHead(
+                1, first.materialFingerprint());
+        var monitor = new ControlPlaneCertificateStatusMonitor(
+                floor, new MutableSourceHeadFloor(),
+                cursor -> cursor.sequence() == 0
+                        ? ControlPlaneCertificateStatusSource.FetchResult.publication(
+                                first, sourceHead)
+                        : ControlPlaneCertificateStatusSource.FetchResult.unchanged(sourceHead),
+                admission(), clock, ticks::get, 4);
+
+        assertThat(monitor.refresh().sourceHeadVerified()).isTrue();
+        ticks.addAndGet(Duration.ofSeconds(3_500).toNanos());
+        clock.set(NOW.plusSeconds(3_500));
+        assertThat(monitor.refresh().sourceHeadVerified()).isTrue();
+        clock.set(NOW.minusSeconds(3_600));
+        ticks.addAndGet(Duration.ofSeconds(101).toNanos());
+
+        assertThat(monitor.descriptor()).satisfies(descriptor -> {
+            assertThat(descriptor.sourceHeadVerified()).isFalse();
+            assertThat(descriptor.sourceHeadLag()).isEqualTo(-1);
+        });
+        clock.set(NOW.plusSeconds(1));
+        ticks.set(2L);
+        assertThat(monitor.descriptor().sourceHeadVerified()).isFalse();
     }
 
     private static ControlPlaneCertificateStatusAdmission admission() {

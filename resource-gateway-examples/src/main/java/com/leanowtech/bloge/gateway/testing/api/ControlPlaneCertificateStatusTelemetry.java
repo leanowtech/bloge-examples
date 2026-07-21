@@ -288,7 +288,7 @@ public final class ControlPlaneCertificateStatusTelemetry {
      * @param refreshSuccesses source-successful refresh cycles
      * @param admissionChecks total request-path status checks
      * @param admissionDenials request-path checks not ending ALLOWED
-     * @param consecutiveBatchLimitCycles current possible-backlog streak
+     * @param consecutiveBatchLimitCycles diagnostic batch-capacity streak, not exact backlog
      * @param lastRefreshAt latest refresh completion, nullable before the first cycle
      * @param lastSuccessfulRefreshAt latest source-successful cycle, nullable before success
      */

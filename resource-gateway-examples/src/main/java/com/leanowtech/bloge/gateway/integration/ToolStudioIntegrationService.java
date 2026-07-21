@@ -669,7 +669,7 @@ public class ToolStudioIntegrationService {
         }
         try {
             ControlPlaneCertificateStatusSloMonitor.Assessment assessment =
-                    controlPlaneCertificateStatusSloMonitor.descriptor();
+                    controlPlaneCertificateStatusSloMonitor.assess();
             return new CertificateStatusSloCapability(true,
                     assessment.state() == ControlPlaneCertificateStatusSloMonitor.State.HEALTHY,
                     assessment.sourceHeadVerified());
