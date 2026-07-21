@@ -24,10 +24,13 @@
 > admission。远端短暂不可用时只允许使用尚未越过 wall-clock + monotonic hard expiry 的 durable cached
 > snapshot，撤销、未知、错代、fingerprint 漂移和硬过期均立即失败关闭。source 使用独立静态身份以避免
 > 由被保护 transport 拉取自身状态的递归 bootstrap。certified enterprise CA/OCSP/CRL adapter、动态
-> authority/source identity 轮换、精确 source-head backlog、外部 alert/burn-rate routing、enterprise
+> authority/source identity 轮换仍未闭合；精确 source-head 的独立 M-of-N signed protocol、closed Schema
+> 和 key-free verifier kernel 已冻结，但 durable anti-rollback floor、HTTPS source、monitor/SLO 产品接线仍待完成；
+> 外部 alert/burn-rate routing、enterprise
 > custody 和生产数据库/HA/DR/chaos 仍未闭合，
 > 因此 production readiness 继续关闭。验证见
-> [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)。
+> [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)
+> 和 [source-head protocol verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-source-head-protocol-verification.md)。
 > 本增量最终全量基线为 Resource Gateway 3834 tests（0 failures、0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；57 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。

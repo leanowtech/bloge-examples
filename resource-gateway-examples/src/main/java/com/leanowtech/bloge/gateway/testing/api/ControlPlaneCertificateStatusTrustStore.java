@@ -104,6 +104,63 @@ public interface ControlPlaneCertificateStatusTrustStore {
     }
 
     /**
+     * Key-free bounded verification result for an exact source-head attestation.
+     *
+     * @param status closed verification state
+     * @param reasonCode stable machine-readable outcome
+     * @param attestationId identity exposed only when verified
+     * @param attestationFingerprint material fingerprint exposed only when verified
+     * @param headSequence exact external publication-log head exposed only when verified
+     * @param headPublicationFingerprint exact head fingerprint exposed only when verified
+     * @param validSignatureCount distinct valid authority count
+     * @param requiredSignatureCount configured authority threshold
+     */
+    record SourceHeadVerification(
+            VerificationStatus status,
+            String reasonCode,
+            String attestationId,
+            String attestationFingerprint,
+            long headSequence,
+            String headPublicationFingerprint,
+            int validSignatureCount,
+            int requiredSignatureCount) {
+        private static final Pattern REASON = Pattern.compile("[A-Z][A-Z0-9_.-]{0,127}");
+        private static final Pattern IDENTIFIER =
+                Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+
+        /** Ensures rejected outcomes disclose no source-head identity or cursor. */
+        public SourceHeadVerification {
+            status = Objects.requireNonNull(status, "status");
+            reasonCode = normalized(reasonCode);
+            attestationId = normalized(attestationId);
+            attestationFingerprint = normalized(attestationFingerprint);
+            headPublicationFingerprint = normalized(headPublicationFingerprint);
+            boolean verified = status == VerificationStatus.VERIFIED;
+            if (!REASON.matcher(reasonCode).matches()
+                    || validSignatureCount < 0 || validSignatureCount > 32
+                    || requiredSignatureCount < 0 || requiredSignatureCount > 32
+                    || verified && (!IDENTIFIER.matcher(attestationId).matches()
+                    || !FINGERPRINT.matcher(attestationFingerprint).matches()
+                    || headSequence < 0
+                    || !FINGERPRINT.matcher(headPublicationFingerprint).matches()
+                    || requiredSignatureCount < 1
+                    || validSignatureCount < requiredSignatureCount)
+                    || !verified && (!attestationId.isBlank()
+                    || !attestationFingerprint.isBlank() || headSequence != 0
+                    || !headPublicationFingerprint.isBlank())) {
+                throw new IllegalArgumentException(
+                        "Control-plane certificate status source-head verification is invalid");
+            }
+        }
+
+        /** @return true only for an exact externally authorized source head */
+        public boolean verified() {
+            return status == VerificationStatus.VERIFIED;
+        }
+    }
+
+    /**
      * Fixed-cardinality public trust posture.
      *
      * @param schemaVersion descriptor protocol version
@@ -163,6 +220,19 @@ public interface ControlPlaneCertificateStatusTrustStore {
             ExpectedBinding expected,
             Instant observedAt);
 
+    /**
+     * Verifies one untrusted exact source-head attestation.
+     *
+     * @param sourceHead untrusted signed source-head statement
+     * @param expected exact local deployment binding
+     * @param observedAt authoritative observation time
+     * @return closed verification outcome without keys, endpoints, or certificate material
+     */
+    SourceHeadVerification verifySourceHead(
+            ControlPlaneCertificateStatusSourceHead sourceHead,
+            ExpectedBinding expected,
+            Instant observedAt);
+
     /** @return key-free current trust posture */
     Descriptor descriptor();
 
@@ -176,6 +246,15 @@ public interface ControlPlaneCertificateStatusTrustStore {
                     Instant observedAt) {
                 return new Verification(VerificationStatus.UNAVAILABLE,
                         "CERTIFICATE_STATUS_TRUST_UNAVAILABLE", "", "", 0, 0, 0);
+            }
+
+            @Override
+            public SourceHeadVerification verifySourceHead(
+                    ControlPlaneCertificateStatusSourceHead sourceHead,
+                    ExpectedBinding expected,
+                    Instant observedAt) {
+                return new SourceHeadVerification(VerificationStatus.UNAVAILABLE,
+                        "CERTIFICATE_STATUS_TRUST_UNAVAILABLE", "", "", 0, "", 0, 0);
             }
 
             @Override

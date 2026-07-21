@@ -203,34 +203,65 @@ public final class ConfiguredControlPlaneCertificateStatusTrustStore
                     "CERTIFICATE_STATUS_MATERIAL_INVALID", 0);
         }
 
-        int valid = 0;
-        Set<String> countedAuthorities = new HashSet<>();
-        for (ControlPlaneCertificateStatusPublication.AuthoritySignature supplied
-                : publication.signatures()) {
-            AuthorityKey key = keys.get(supplied.authorityId() + '\u0000' + supplied.keyId());
-            if (key == null || !key.activeAt(supplied.signedAt())) {
-                continue;
-            }
-            try {
-                if (!verifySignature(key.publicKey(), publication.materialFingerprint(),
-                        supplied.signature())
-                        || !countedAuthorities.add(supplied.authorityId())) {
-                    return rejected(VerificationStatus.SIGNATURE_INVALID,
-                            "CERTIFICATE_STATUS_SIGNATURE_INVALID", valid);
-                }
-                valid++;
-            } catch (GeneralSecurityException | IllegalArgumentException invalid) {
-                return rejected(VerificationStatus.SIGNATURE_INVALID,
-                        "CERTIFICATE_STATUS_SIGNATURE_INVALID", valid);
-            }
+        SignatureResult signatures = verifySignatures(
+                publication.materialFingerprint(), publication.signatures());
+        if (signatures.invalid()) {
+            return rejected(VerificationStatus.SIGNATURE_INVALID,
+                    "CERTIFICATE_STATUS_SIGNATURE_INVALID", signatures.validCount());
         }
-        if (valid < signatureThreshold) {
+        if (signatures.validCount() < signatureThreshold) {
             return rejected(VerificationStatus.QUORUM_NOT_MET,
-                    "CERTIFICATE_STATUS_QUORUM_NOT_MET", valid);
+                    "CERTIFICATE_STATUS_QUORUM_NOT_MET", signatures.validCount());
         }
         return new Verification(VerificationStatus.VERIFIED, "VERIFIED",
                 material.publicationId(), publication.materialFingerprint(), material.sequence(),
-                valid, signatureThreshold);
+                signatures.validCount(), signatureThreshold);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public SourceHeadVerification verifySourceHead(
+            ControlPlaneCertificateStatusSourceHead sourceHead,
+            ExpectedBinding expected,
+            Instant observedAt) {
+        if (sourceHead == null || expected == null || observedAt == null) {
+            return rejectedSourceHead(VerificationStatus.MATERIAL_INVALID,
+                    "CERTIFICATE_STATUS_SOURCE_HEAD_MATERIAL_INVALID", 0);
+        }
+        ControlPlaneCertificateStatusSourceHead.Material material = sourceHead.material();
+        if (!trustDomain.equals(material.trustDomain())
+                || !expected.deploymentScopeId().equals(material.deploymentScopeId())) {
+            return rejectedSourceHead(VerificationStatus.BINDING_MISMATCH,
+                    "CERTIFICATE_STATUS_SOURCE_HEAD_BINDING_MISMATCH", 0);
+        }
+        if (!acceptedPolicies.contains(material.policyFingerprint())) {
+            return rejectedSourceHead(VerificationStatus.POLICY_REJECTED,
+                    "CERTIFICATE_STATUS_SOURCE_HEAD_POLICY_REJECTED", 0);
+        }
+        if (!validSourceHeadTime(material, sourceHead.signatures(), observedAt)) {
+            return rejectedSourceHead(VerificationStatus.TIME_INVALID,
+                    "CERTIFICATE_STATUS_SOURCE_HEAD_TIME_INVALID", 0);
+        }
+        if (!sourceHead.fingerprintVerified(objectMapper)) {
+            return rejectedSourceHead(VerificationStatus.MATERIAL_INVALID,
+                    "CERTIFICATE_STATUS_SOURCE_HEAD_MATERIAL_INVALID", 0);
+        }
+        SignatureResult signatures = verifySignatures(
+                sourceHead.materialFingerprint(), sourceHead.signatures());
+        if (signatures.invalid()) {
+            return rejectedSourceHead(VerificationStatus.SIGNATURE_INVALID,
+                    "CERTIFICATE_STATUS_SOURCE_HEAD_SIGNATURE_INVALID",
+                    signatures.validCount());
+        }
+        if (signatures.validCount() < signatureThreshold) {
+            return rejectedSourceHead(VerificationStatus.QUORUM_NOT_MET,
+                    "CERTIFICATE_STATUS_SOURCE_HEAD_QUORUM_NOT_MET",
+                    signatures.validCount());
+        }
+        return new SourceHeadVerification(VerificationStatus.VERIFIED, "VERIFIED",
+                material.attestationId(), sourceHead.materialFingerprint(),
+                material.headSequence(), material.headPublicationFingerprint(),
+                signatures.validCount(), signatureThreshold);
     }
 
     /** {@inheritDoc} */
@@ -319,6 +350,12 @@ public final class ConfiguredControlPlaneCertificateStatusTrustStore
                 signatureThreshold);
     }
 
+    private SourceHeadVerification rejectedSourceHead(
+            VerificationStatus status, String reasonCode, int validCount) {
+        return new SourceHeadVerification(status, reasonCode, "", "", 0, "",
+                validCount, signatureThreshold);
+    }
+
     private static boolean validTime(
             ControlPlaneCertificateStatusPublication.Material material,
             List<ControlPlaneCertificateStatusPublication.AuthoritySignature> signatures,
@@ -351,6 +388,51 @@ public final class ConfiguredControlPlaneCertificateStatusTrustStore
             }
         }
         return true;
+    }
+
+    private static boolean validSourceHeadTime(
+            ControlPlaneCertificateStatusSourceHead.Material material,
+            List<ControlPlaneCertificateStatusPublication.AuthoritySignature> signatures,
+            Instant observedAt) {
+        Instant latestAcceptedFuture = observedAt.plus(CLOCK_SKEW);
+        if (material.issuedAt().isAfter(latestAcceptedFuture)
+                || !observedAt.isBefore(material.expiresAt())
+                || Duration.between(material.issuedAt(), material.expiresAt())
+                .compareTo(MAXIMUM_PUBLICATION_LIFETIME) > 0) {
+            return false;
+        }
+        Instant earliestSignature = material.issuedAt().minus(CLOCK_SKEW);
+        return signatures.stream().allMatch(signature ->
+                !signature.signedAt().isBefore(earliestSignature)
+                        && !signature.signedAt().isAfter(latestAcceptedFuture)
+                        && signature.signedAt().isBefore(material.expiresAt()));
+    }
+
+    private SignatureResult verifySignatures(
+            String materialFingerprint,
+            List<ControlPlaneCertificateStatusPublication.AuthoritySignature> signatures) {
+        int valid = 0;
+        Set<String> countedAuthorities = new HashSet<>();
+        for (ControlPlaneCertificateStatusPublication.AuthoritySignature supplied : signatures) {
+            AuthorityKey key = keys.get(supplied.authorityId() + '\u0000' + supplied.keyId());
+            if (key == null || !key.activeAt(supplied.signedAt())) {
+                continue;
+            }
+            try {
+                if (!verifySignature(key.publicKey(), materialFingerprint,
+                        supplied.signature())
+                        || !countedAuthorities.add(supplied.authorityId())) {
+                    return new SignatureResult(valid, true);
+                }
+                valid++;
+            } catch (GeneralSecurityException | IllegalArgumentException invalid) {
+                return new SignatureResult(valid, true);
+            }
+        }
+        return new SignatureResult(valid, false);
+    }
+
+    private record SignatureResult(int validCount, boolean invalid) {
     }
 
     private static boolean verifySignature(
