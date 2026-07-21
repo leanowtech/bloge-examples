@@ -65,7 +65,8 @@ class TestSuiteStabilityAttemptCancellationCoordinatorTest {
                 TestSuiteStabilityAttemptCancellationJournal.AcceptanceStatus.CONFIRMED);
         assertThat(result.entry().status()).isEqualTo(
                 TestSuiteStabilityAttemptCancellationJournal.Status.CONFIRMED);
-        assertThat(events).containsExactly("find", "descriptor", "prepare", "cancel", "accept");
+        assertThat(events).containsExactly(
+                "find", "descriptor", "prepare", "authorize", "cancel", "accept");
     }
 
     @Test
@@ -115,7 +116,8 @@ class TestSuiteStabilityAttemptCancellationCoordinatorTest {
 
         assertThat(result.status()).isEqualTo(
                 TestSuiteStabilityAttemptCancellationJournal.AcceptanceStatus.CONFIRMED);
-        assertThat(events).containsExactly("find", "descriptor", "prepare", "cancel", "accept");
+        assertThat(events).containsExactly(
+                "find", "descriptor", "prepare", "authorize", "cancel", "accept");
     }
 
     @Test
@@ -156,7 +158,8 @@ class TestSuiteStabilityAttemptCancellationCoordinatorTest {
                         .InvocationException) error).disposition())
                 .isEqualTo(TestSuiteStabilityAttemptCancellationCallSupervisor
                         .Disposition.TIMED_OUT);
-        assertThat(events).containsExactly("find", "descriptor", "prepare", "cancel");
+        assertThat(events).containsExactly(
+                "find", "descriptor", "prepare", "authorize", "cancel");
         assertThat(journal.retained.orElseThrow().status()).isEqualTo(
                 TestSuiteStabilityAttemptCancellationJournal.Status.PREPARED);
     }
@@ -175,7 +178,8 @@ class TestSuiteStabilityAttemptCancellationCoordinatorTest {
                         .InvocationException) error).disposition())
                 .isEqualTo(TestSuiteStabilityAttemptCancellationCallSupervisor
                         .Disposition.UNAVAILABLE);
-        assertThat(events).containsExactly("find", "descriptor", "prepare", "cancel");
+        assertThat(events).containsExactly(
+                "find", "descriptor", "prepare", "authorize", "cancel");
         assertThat(journal.retained.orElseThrow().status()).isEqualTo(
                 TestSuiteStabilityAttemptCancellationJournal.Status.PREPARED);
     }
@@ -187,7 +191,8 @@ class TestSuiteStabilityAttemptCancellationCoordinatorTest {
 
         assertThatThrownBy(() -> coordinator().cancel(authority, command))
                 .isSameAs(journal.acceptFailure);
-        assertThat(events).containsExactly("find", "descriptor", "prepare", "cancel", "accept");
+        assertThat(events).containsExactly(
+                "find", "descriptor", "prepare", "authorize", "cancel", "accept");
         assertThat(journal.retained.orElseThrow().status()).isEqualTo(
                 TestSuiteStabilityAttemptCancellationJournal.Status.PREPARED);
     }
@@ -205,6 +210,21 @@ class TestSuiteStabilityAttemptCancellationCoordinatorTest {
                 TestSuiteStabilityAttemptCancellationJournal.Status.UNCONFIRMED);
         assertThat(result.entry().attestation().orElseThrow().receipt()
                 .terminationConfirmed()).isFalse();
+    }
+
+    @Test
+    void doesNotCallProviderWhenDatabaseTimeRejectsInvocation() {
+        journal.authorizationFailure = new TestSuiteStabilityAttemptCancellationJournal
+                .ConflictException(TestSuiteStabilityAttemptCancellationJournal
+                .ConflictReason.COMMAND_EXPIRED);
+        RecordingAuthority authority = authority(descriptor, ignored -> confirmed);
+
+        assertThatThrownBy(() -> coordinator().cancel(authority, command))
+                .isSameAs(journal.authorizationFailure);
+        assertThat(events).containsExactly("find", "descriptor", "prepare", "authorize");
+        assertThat(authority.cancellationCalls()).isZero();
+        assertThat(journal.retained.orElseThrow().status()).isEqualTo(
+                TestSuiteStabilityAttemptCancellationJournal.Status.PREPARED);
     }
 
     private TestSuiteStabilityAttemptCancellationCoordinator coordinator() {
@@ -312,6 +332,7 @@ class TestSuiteStabilityAttemptCancellationCoordinatorTest {
 
         private final List<String> events;
         private Optional<Entry> retained = Optional.empty();
+        private RuntimeException authorizationFailure;
         private RuntimeException acceptFailure;
 
         private RecordingJournal(List<String> events) {
@@ -334,6 +355,14 @@ class TestSuiteStabilityAttemptCancellationCoordinatorTest {
             Entry prepared = entry(Status.PREPARED, candidateDescriptor, Optional.empty());
             retained = Optional.of(prepared);
             return new Preparation(PreparationStatus.PREPARED, prepared);
+        }
+
+        @Override
+        public void authorizeInvocation(String commandId) {
+            events.add("authorize");
+            if (authorizationFailure != null) {
+                throw authorizationFailure;
+            }
         }
 
         @Override

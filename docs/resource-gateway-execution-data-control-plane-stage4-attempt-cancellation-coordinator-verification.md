@@ -14,7 +14,8 @@ find exact command
   -> absent/PREPARED: bounded descriptor
        -> durable prepare exact command + descriptor
        -> terminal race: exact replay
-       -> PREPARED: bounded idempotent cancel
+       -> PREPARED: database-time invocation authorization
+          -> bounded idempotent cancel
           -> journal accept + verifier + provider floor
 ```
 
@@ -29,6 +30,7 @@ find exact command
 | signed `NOT_FOUND/REJECTED` | `UNCONFIRMED` | 只证明 provider 回答，不能释放 slot |
 | exact `UNCONFIRMED` replay | `REPLAYED`，零 provider I/O | 仍是 `UNCONFIRMED`，不得升级语义 |
 | provider timeout/unavailable | supervisor closed failure | command 保持 `PREPARED` |
+| command expired / remaining provider window insufficient | journal conflict，零 cancel I/O | `PREPARED` 保留待 reconciliation |
 | invalid attestation | verifier/journal closed failure | command 保持 `PREPARED`，floor 不推进 |
 | prepared descriptor drift | journal conflict，零 cancel I/O | 冻结 binding 不改写 |
 | journal 返回错 command/descriptor | contract violation | 拒绝继续投影 |
@@ -45,13 +47,14 @@ mvn -f resource-gateway-examples/pom.xml \
   test
 ```
 
-结果为 27 tests，0 failures、0 errors、0 skips：
+结果为 29 tests，0 failures、0 errors、0 skips：
 
-- 9 项 coordinator 单元行为覆盖 fresh ordering、confirmed/unconfirmed replay、prepared recovery、descriptor
-  drift、timeout、provider diagnostics 脱敏、accept failure 与 `NOT_FOUND`；
-- durable journal 的 18 项中有 3 项使用真实 Ed25519 verifier、H2 transaction 和 provider sequence floor，
+- 10 项 coordinator 单元行为覆盖 fresh ordering、confirmed/unconfirmed replay、prepared recovery、descriptor
+  drift、timeout、provider diagnostics 脱敏、accept failure、数据库时钟 invocation 拒绝与 `NOT_FOUND`；
+- durable journal 的 19 项中有 3 项使用真实 Ed25519 verifier、H2 transaction 和 provider sequence floor，
   覆盖 verified termination + 零 I/O replay、verified `NOT_FOUND`、timeout 后 durable `PREPARED`；
-- 其余 15 项继续覆盖 journal identity、integrity、scope、deadline、rollback 和跨实例并发。
+- 其余 16 项继续覆盖 journal identity、integrity、scope、deadline、剩余 provider window、rollback 和
+  跨实例并发。
 
 coordinator 公共类型通过：
 

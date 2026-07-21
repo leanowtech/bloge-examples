@@ -79,8 +79,8 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DatabaseTestSuiteStabilityAttemptCancellationJournalTest test
 ```
 
-journal core 结果为 15 tests，0 failures、0 errors、0 skips；加入 coordinator 后该测试类为 18 tests，
-其中新增 3 项真实组合门禁。journal core 覆盖：
+journal core 与 invocation re-authorization 结果为 16 tests，0 failures、0 errors、0 skips；加入
+coordinator 后该测试类为 19 tests，其中新增 3 项真实组合门禁。journal core 覆盖：
 
 - prepare/confirmed accept/find 的完整往返和 payload-free sequence 落库；
 - exact prepare/terminal replay、deadline 关闭后的 retained replay；
@@ -88,6 +88,7 @@ journal core 结果为 15 tests，0 failures、0 errors、0 skips；加入 coord
 - 两个 attempt 的 sequence advance、rollback 后 PREPARED 可恢复；
 - 错签名事务回滚、signed `NOT_FOUND` 只能进入 `UNCONFIRMED`；
 - tenant/environment 不可见、expired/incompatible preflight；
+- provider 调用前以数据库时间拒绝已过期或剩余窗口小于 frozen descriptor 最大延迟的 side effect；
 - entry/floor/sequence 篡改或缺失失败关闭；
 - 两线程 exact prepare 只有一个 creator，另一个得到 replay；
 - 两个独立 journal 实例竞争同一 provider sequence 时只有一个提交，loser 保持 `PREPARED` 并可用更高
@@ -99,7 +100,7 @@ journal core 结果为 15 tests，0 failures、0 errors、0 skips；加入 coord
 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。下述 `3893` 全量数字对应此前冻结的
 `3c08bb7c`；当前增量提交后的精确全量基线需在独占 `clean verify` 完成后再前移。
 
-coordinator 的 9 项单元测试与 3 项真实 journal 组合测试见
+coordinator 的 10 项单元测试与 3 项真实 journal 组合测试见
 [attempt cancellation coordinator verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-coordinator-verification.md)。
 
 最终隔离全量门禁：

@@ -213,6 +213,32 @@ public final class DatabaseTestSuiteStabilityAttemptCancellationJournal
 
     /** {@inheritDoc} */
     @Override
+    public void authorizeInvocation(String commandId) {
+        String requiredCommandId = requireCommandId(commandId);
+        Boolean authorized = mutations.execute(status -> {
+            StoredEntry initial = entry(requiredCommandId);
+            if (initial == null) {
+                throw conflict(ConflictReason.COMMAND_NOT_PREPARED);
+            }
+            Entry initialEntry = validateEntry(initial);
+            lockAttempt(initialEntry.command());
+            Entry prepared = validateEntry(requireEntry(requiredCommandId));
+            if (prepared.status() != Status.PREPARED) {
+                throw conflict(ConflictReason.COMMAND_NOT_PREPARED);
+            }
+            Instant now = currentTime();
+            validatePreparationTime(prepared.command(), now);
+            validateInvocationWindow(prepared.command(), prepared.descriptor(), now);
+            return Boolean.TRUE;
+        });
+        if (!Boolean.TRUE.equals(authorized)) {
+            throw new IllegalStateException(
+                    "Attempt cancellation invocation authorization returned no result");
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
     public Acceptance accept(
             String commandId,
             TestSuiteStabilityAttemptCancellationReceipt.Attestation attestation) {
@@ -312,6 +338,17 @@ public final class DatabaseTestSuiteStabilityAttemptCancellationJournal
                 command.requestedAt(), command.confirmationDeadlineAt());
         if (!descriptor.available()
                 || descriptor.maximumConfirmationLatency().compareTo(commandWindow) > 0) {
+            throw conflict(ConflictReason.PROVIDER_INCOMPATIBLE);
+        }
+    }
+
+    private void validateInvocationWindow(
+            TestSuiteStabilityAttemptCancellationCommand command,
+            TestSuiteStabilityAttemptCancellationAuthority.Descriptor descriptor,
+            Instant now) {
+        Duration remaining = Duration.between(now, command.confirmationDeadlineAt());
+        if (!descriptor.available()
+                || descriptor.maximumConfirmationLatency().compareTo(remaining) > 0) {
             throw conflict(ConflictReason.PROVIDER_INCOMPATIBLE);
         }
     }

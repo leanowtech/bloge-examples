@@ -27,6 +27,20 @@ public interface TestSuiteStabilityAttemptCancellationJournal {
             TestSuiteStabilityAttemptCancellationAuthority.Descriptor descriptor);
 
     /**
+     * Re-authorizes one prepared provider invocation against current database time.
+     *
+     * <p>Exact preparation replay intentionally remains readable after its original deadline, so
+     * callers must invoke this method immediately before producing the provider side effect. An
+     * implementation must require an exact {@link Status#PREPARED} entry and reject an elapsed or
+     * insufficient confirmation window without mutating the retained fact.</p>
+     *
+     * @param commandId exact prepared cancellation command
+     * @throws ConflictException when the command is absent, terminal, expired, or no longer has
+     *         enough database-time window for its frozen provider descriptor
+     */
+    void authorizeInvocation(String commandId);
+
+    /**
      * Verifies and durably accepts one provider response.
      *
      * @param commandId previously prepared command id

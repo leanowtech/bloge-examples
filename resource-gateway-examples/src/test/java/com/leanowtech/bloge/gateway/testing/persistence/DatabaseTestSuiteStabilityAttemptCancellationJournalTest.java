@@ -126,6 +126,15 @@ class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
 
         assertThat(journal.prepare(command, fastDescriptor).status()).isEqualTo(
                 TestSuiteStabilityAttemptCancellationJournal.PreparationStatus.REPLAYED);
+        assertThatThrownBy(() -> journal.authorizeInvocation(command.commandId()))
+                .isInstanceOfSatisfying(
+                        TestSuiteStabilityAttemptCancellationJournal.ConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityAttemptCancellationJournal.ConflictReason
+                                        .COMMAND_EXPIRED));
+        assertThat(journal.find("tenant-a", "test", command.commandId()))
+                .get().extracting(TestSuiteStabilityAttemptCancellationJournal.Entry::status)
+                .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.Status.PREPARED);
     }
 
     @Test
@@ -343,6 +352,27 @@ class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM rg_test_stability_attempt_cancel_entries
                 """, Integer.class)).isZero();
+    }
+
+    @Test
+    void invocationAuthorizationRejectsInsufficientRemainingProviderWindow() throws Exception {
+        Instant now = databaseTime();
+        TestSuiteStabilityAttemptCancellationCommand command = command(
+                1, 7, 'a', now, now.plusSeconds(1));
+        TestSuiteStabilityAttemptCancellationAuthority.Descriptor slowDescriptor =
+                descriptor(Duration.ofSeconds(1));
+        journal.prepare(command, slowDescriptor);
+        Thread.sleep(10L);
+
+        assertThatThrownBy(() -> journal.authorizeInvocation(command.commandId()))
+                .isInstanceOfSatisfying(
+                        TestSuiteStabilityAttemptCancellationJournal.ConflictException.class,
+                        failure -> assertThat(failure.reason()).isEqualTo(
+                                TestSuiteStabilityAttemptCancellationJournal.ConflictReason
+                                        .PROVIDER_INCOMPATIBLE));
+        assertThat(journal.find("tenant-a", "test", command.commandId()))
+                .get().extracting(TestSuiteStabilityAttemptCancellationJournal.Entry::status)
+                .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.Status.PREPARED);
     }
 
     @Test

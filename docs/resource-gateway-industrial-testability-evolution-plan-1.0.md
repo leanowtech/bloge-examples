@@ -74,7 +74,8 @@
 
 > Stage 4 attempt cancellation 第三增量新增 coordinator，冻结 `find -> bounded descriptor -> durable
 > prepare -> bounded idempotent cancel -> verified accept` 顺序。terminal exact replay 不再触发 provider；
-> timeout/adapter/attestation failure 保持 `PREPARED`；descriptor drift 失败关闭。9 项单元与 3 项真实
+> timeout/adapter/attestation failure 保持 `PREPARED`；数据库时钟 invocation re-authorization 阻止过期
+> 或剩余 provider 窗口不足的外部调用，descriptor drift 失败关闭。10 项单元与 3 项真实
 > journal/verifier 组合门禁共同全绿，公共类型 strict JavaDoc 零告警。`UNCONFIRMED` 不自动重试，旧
 > deployment 不由当前 authority 猜测解析，仍须进入未实现的 reconciliation/orphan lane。验证见
 > [attempt cancellation coordinator verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-coordinator-verification.md)。

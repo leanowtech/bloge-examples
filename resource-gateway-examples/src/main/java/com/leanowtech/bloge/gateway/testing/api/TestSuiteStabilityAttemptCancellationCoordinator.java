@@ -8,8 +8,9 @@ import java.util.Optional;
  *
  * <p>The coordinator first replays any exact terminal fact, otherwise resolves the current
  * provider descriptor through the bounded call supervisor, durably prepares the exact command and
- * descriptor, invokes the idempotent provider, and finally asks the journal to verify and accept
- * the detached attestation. A provider timeout, adapter failure, invalid attestation, or journal
+ * descriptor, re-authorizes the side effect against database time, invokes the idempotent
+ * provider, and finally asks the journal to verify and accept the detached attestation. A provider
+ * timeout, adapter failure, invalid attestation, or journal
  * ambiguity leaves the command {@link TestSuiteStabilityAttemptCancellationJournal.Status#PREPARED}
  * for explicit recovery; none is converted into cancellation success.</p>
  *
@@ -92,6 +93,7 @@ public final class TestSuiteStabilityAttemptCancellationCoordinator {
             return replay(prepared);
         }
 
+        journal.authorizeInvocation(requiredCommand.commandId());
         TestSuiteStabilityAttemptCancellationReceipt.Attestation attestation =
                 supervisor.cancel(requiredAuthority, requiredCommand);
         TestSuiteStabilityAttemptCancellationJournal.Acceptance acceptance =
