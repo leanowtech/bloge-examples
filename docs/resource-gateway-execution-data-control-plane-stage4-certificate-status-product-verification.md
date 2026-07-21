@@ -125,6 +125,11 @@ mvn -f resource-gateway-examples/pom.xml test \
 另有 56 项 profile/metadata/YAML/demo preflight 与 certificate rotation event delivery 联合产品测试
 通过，证明两个独立 source 可以在同一 composition root 中保持协议、凭据和 client identity 边界。
 
+最终全量回归基线同样通过：Resource Gateway `clean verify` 执行 3817 tests，0 failures、0 errors、
+2 个条件浏览器跳过，并生成 Spring Boot 可执行 JAR；独立 test-kit `clean verify` 执行 230 tests，
+0 failures、0 errors、0 skips，且将 56 份 testing Schema 与 5 份 Tool Studio Schema 打入发布 JAR，
+普通 JAR、shaded JAR 和 public JavaDoc 门禁全部通过。
+
 ## 7. 未完成边界
 
 本增量不声明 enterprise PKI production ready，剩余根问题包括：

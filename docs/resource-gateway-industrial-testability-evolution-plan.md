@@ -35,6 +35,9 @@
 > authority/source identity 轮换、外部 SLO、enterprise custody 和生产数据库/HA/DR/chaos 仍未闭合，
 > 因此 production readiness 继续关闭。验证见
 > [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)。
+> 本增量最终全量基线为 Resource Gateway 3817 tests（0 failures、0 errors、2 个条件浏览器跳过）和
+> 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；56 份 testing Schema 与 5 份 Tool Studio
+> Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
 
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
