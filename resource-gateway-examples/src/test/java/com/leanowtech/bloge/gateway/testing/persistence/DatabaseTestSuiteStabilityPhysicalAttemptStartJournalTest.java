@@ -13,7 +13,9 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptIdentity;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartCallSupervisor;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartCommand;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartCoordinator;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartVerifier;
@@ -42,6 +44,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -314,6 +317,95 @@ class DatabaseTestSuiteStabilityPhysicalAttemptStartJournalTest {
                 command(reserved('a', '1').identity(), 'a');
         journal.prepare(command, descriptor);
         journal.authorizeInvocation(command.commandId());
+
+        assertThat(journal.find("tenant-a", "test", command.commandId()))
+                .get().extracting(TestSuiteStabilityPhysicalAttemptStartJournal.Entry::status)
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptStartJournal.Status.PREPARED);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_start_provider_sequences
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void coordinatorPersistsVerifiedStartAndReplaysWithoutProvider() throws Exception {
+        TestSuiteStabilityPhysicalAttemptStartCommand command =
+                command(reserved('a', '1').identity(), 'a');
+        AtomicInteger descriptorCalls = new AtomicInteger();
+        AtomicInteger startCalls = new AtomicInteger();
+        TestSuiteStabilityPhysicalAttemptStartAuthority authority = authority(
+                descriptorCalls, startCalls,
+                candidate -> signed(
+                        candidate, 11,
+                        TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome.STARTED));
+
+        try (var supervisor = supervisor(Duration.ofSeconds(1))) {
+            var coordinator = new TestSuiteStabilityPhysicalAttemptStartCoordinator(
+                    journal, supervisor);
+            assertThat(coordinator.start(authority, command).status()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptStartJournal.AcceptanceStatus.CONFIRMED);
+            assertThat(coordinator.start(authority, command).status()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptStartJournal.AcceptanceStatus.REPLAYED);
+        }
+
+        assertThat(descriptorCalls).hasValue(1);
+        assertThat(startCalls).hasValue(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_start_provider_sequences
+                """, Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void coordinatorPersistsVerifiedRejectionAsUnconfirmed() throws Exception {
+        TestSuiteStabilityPhysicalAttemptStartCommand command =
+                command(reserved('a', '1').identity(), 'a');
+        TestSuiteStabilityPhysicalAttemptStartAuthority authority = authority(
+                new AtomicInteger(), new AtomicInteger(),
+                candidate -> signed(
+                        candidate, 11,
+                        TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome.REJECTED));
+
+        TestSuiteStabilityPhysicalAttemptStartJournal.Acceptance accepted;
+        try (var supervisor = supervisor(Duration.ofSeconds(1))) {
+            accepted = new TestSuiteStabilityPhysicalAttemptStartCoordinator(
+                    journal, supervisor).start(authority, command);
+        }
+
+        assertThat(accepted.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptStartJournal.AcceptanceStatus.UNCONFIRMED);
+        assertThat(accepted.entry().attestation()).get()
+                .extracting(value -> value.receipt().startConfirmed()).isEqualTo(false);
+    }
+
+    @Test
+    void coordinatorTimeoutLeavesPreparedWithoutProviderSequence() {
+        TestSuiteStabilityPhysicalAttemptStartCommand command =
+                command(reserved('a', '1').identity(), 'a');
+        TestSuiteStabilityPhysicalAttemptStartAuthority authority = authority(
+                new AtomicInteger(), new AtomicInteger(), candidate -> {
+                    try {
+                        Thread.sleep(Duration.ofSeconds(5));
+                        return attestation(
+                                candidate, 11,
+                                TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome.STARTED);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("provider interrupted");
+                    } catch (Exception failure) {
+                        throw new IllegalStateException("provider failed");
+                    }
+                });
+
+        try (var supervisor = supervisor(Duration.ofMillis(100))) {
+            var coordinator = new TestSuiteStabilityPhysicalAttemptStartCoordinator(
+                    journal, supervisor);
+            assertThatThrownBy(() -> coordinator.start(authority, command))
+                    .isInstanceOfSatisfying(
+                            TestSuiteStabilityPhysicalAttemptStartCallSupervisor
+                                    .InvocationException.class,
+                            failure -> assertThat(failure.disposition()).isEqualTo(
+                                    TestSuiteStabilityPhysicalAttemptStartCallSupervisor
+                                            .Disposition.TIMED_OUT));
+        }
 
         assertThat(journal.find("tenant-a", "test", command.commandId()))
                 .get().extracting(TestSuiteStabilityPhysicalAttemptStartJournal.Entry::status)
@@ -635,6 +727,17 @@ class DatabaseTestSuiteStabilityPhysicalAttemptStartJournalTest {
         return attestation(command, providerSequence, outcome, keyPair);
     }
 
+    private TestSuiteStabilityPhysicalAttemptStartReceipt.Attestation signed(
+            TestSuiteStabilityPhysicalAttemptStartCommand command,
+            long providerSequence,
+            TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome outcome) {
+        try {
+            return attestation(command, providerSequence, outcome);
+        } catch (Exception failure) {
+            throw new IllegalStateException("Unable to sign test start receipt");
+        }
+    }
+
     private TestSuiteStabilityPhysicalAttemptStartReceipt.Attestation attestation(
             TestSuiteStabilityPhysicalAttemptStartCommand command,
             long providerSequence,
@@ -684,6 +787,33 @@ class DatabaseTestSuiteStabilityPhysicalAttemptStartJournalTest {
                 PROVIDER_ID, DEPLOYMENT_ID, KEY_ID, true,
                 Set.of(TestSuiteStabilityAttemptCancellationReceipt.IsolationMode.PROCESS),
                 latency);
+    }
+
+    private TestSuiteStabilityPhysicalAttemptStartAuthority authority(
+            AtomicInteger descriptorCalls,
+            AtomicInteger startCalls,
+            Start start) {
+        return new TestSuiteStabilityPhysicalAttemptStartAuthority() {
+            @Override
+            public Descriptor descriptor() {
+                descriptorCalls.incrementAndGet();
+                return descriptor;
+            }
+
+            @Override
+            public TestSuiteStabilityPhysicalAttemptStartReceipt.Attestation start(
+                    TestSuiteStabilityPhysicalAttemptStartCommand command) {
+                startCalls.incrementAndGet();
+                return start.start(command);
+            }
+        };
+    }
+
+    private static TestSuiteStabilityPhysicalAttemptStartCallSupervisor supervisor(
+            Duration startTimeout) {
+        return new TestSuiteStabilityPhysicalAttemptStartCallSupervisor(
+                new TestSuiteStabilityPhysicalAttemptStartCallSupervisor.Policy(
+                        Duration.ofSeconds(1), startTimeout, 1));
     }
 
     private TestSuiteStabilityPhysicalAttemptStartVerifier verifierFor(KeyPair pair) {
@@ -745,6 +875,12 @@ class DatabaseTestSuiteStabilityPhysicalAttemptStartJournalTest {
             String commandId,
             boolean confirmed,
             TestSuiteStabilityPhysicalAttemptStartJournal.ConflictReason conflict) {
+    }
+
+    @FunctionalInterface
+    private interface Start {
+        TestSuiteStabilityPhysicalAttemptStartReceipt.Attestation start(
+                TestSuiteStabilityPhysicalAttemptStartCommand command);
     }
 
     private static final class StoppedParentAuthority

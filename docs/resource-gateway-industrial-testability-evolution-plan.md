@@ -139,6 +139,15 @@
 > 3972 tests（0 failures、0 errors、2 skips），并通过 Surefire XML、可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start durable-journal verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-durable-journal-verification.md)。
 
+> Stage 4 physical attempt 第四增量新增 start coordinator，固化 `scoped find -> bounded descriptor ->
+> durable prepare -> database-time authorization -> bounded idempotent start -> verified accept`。confirmed/
+> unconfirmed terminal replay 均为零 provider I/O；prepared recovery 必须重验 current descriptor 与 live
+> reservation，timeout/adapter/attestation failure 保持 `PREPARED`。10 项单元与 3 项真实 H2/Ed25519/
+> supervisor 组合测试全绿，完整 physical-attempt/queue 聚焦门禁 141 tests 全绿，公共类型 strict JavaDoc
+> 零告警。coordinator 不投影 queue/slot/cancellation/natural terminal，现有 worker 也未切换到物理 provider；
+> capability 继续关闭。验证见
+> [physical attempt start coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-coordinator-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |

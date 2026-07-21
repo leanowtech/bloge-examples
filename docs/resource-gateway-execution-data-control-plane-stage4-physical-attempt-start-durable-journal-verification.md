@@ -139,7 +139,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 本增量没有 Spring bean、HTTP route、Schema、test-kit 或 capability advertisement。以下事项仍是启用
 physical attempt runtime 的硬前置：
 
-1. start coordinator 固化 descriptor supervision、prepare、authorization、start 和 accept 的调用顺序；
+1. start coordinator 的 Spring/runtime composition 与 provider inventory binding；
 2. 真实 process/container/VM provider 与 execution-envelope vault；
 3. queue `RUNNING`、start journal、cancellation journal 和 natural terminal 的双线性化投影；
 4. timeout、`UNCONFIRMED`、late receipt、deployment drift 的 bounded reconciliation；
@@ -147,5 +147,7 @@ physical attempt runtime 的硬前置：
 6. slot 在 provider-confirmed terminal 或显式 orphan occupancy 前不得释放；
 7. retention/tombstone/external anchor、动态 signed provider inventory、health/SLO 与生产数据库/HA/DR/chaos。
 
-下一增量应实现 start coordinator，但不能因此直接改造 worker。只有 coordinator 与 journal 的真实组合门禁
-稳定后，才应引入 provider adapter 和 queue projection。
+start coordinator 及其真实 journal/supervisor 组合门禁已经落地，见
+[physical attempt start coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-coordinator-verification.md)。
+下一增量应引入明确限定 test/staging 的 isolated provider composition 和 faithful lifecycle harness，但仍不
+应在缺少 queue/cancellation/slot 投影前直接改造 worker。

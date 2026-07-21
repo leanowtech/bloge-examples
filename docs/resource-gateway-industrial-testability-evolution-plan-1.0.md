@@ -120,6 +120,13 @@
 > 可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start durable-journal verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-durable-journal-verification.md)。
 
+> Stage 4 physical attempt 第四增量新增 start coordinator，固定 `find -> bounded descriptor -> durable
+> prepare -> database-time authorization -> bounded start -> verified accept`。terminal replay 零 provider I/O，
+> prepared recovery 重验 descriptor 与 live reservation；timeout/adapter/attestation failure 均保持
+> `PREPARED`。10 项单元、3 项真实组合与 141 项完整聚焦门禁全绿，公共类型 strict JavaDoc 零告警。
+> queue/slot/cancellation/natural-terminal 投影和 worker provider 切换未实现，capability 继续关闭。验证见
+> [physical attempt start coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-coordinator-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS
