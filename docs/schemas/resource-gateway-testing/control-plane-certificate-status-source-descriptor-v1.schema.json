@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-source-descriptor-v1.schema.json",
+  "title": "Resource Gateway Certificate Status Source Descriptor v1",
+  "description": "Material-free security posture of the normalized certificate-status publication source.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "available", "privateTrustStore", "serverSpkiPinned",
+    "mutualTls", "certificateIdentityBound", "strictProtocol"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateStatusSourceDescriptor.v1"
+    },
+    "available": { "type": "boolean" },
+    "privateTrustStore": { "type": "boolean" },
+    "serverSpkiPinned": { "type": "boolean" },
+    "mutualTls": { "type": "boolean" },
+    "certificateIdentityBound": { "type": "boolean" },
+    "strictProtocol": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "available": { "const": true } } },
+      "then": {
+        "properties": {
+          "privateTrustStore": { "const": true },
+          "serverSpkiPinned": { "const": true },
+          "mutualTls": { "const": true },
+          "certificateIdentityBound": { "const": true },
+          "strictProtocol": { "const": true }
+        }
+      },
+      "else": {
+        "properties": {
+          "privateTrustStore": { "const": false },
+          "serverSpkiPinned": { "const": false },
+          "mutualTls": { "const": false },
+          "certificateIdentityBound": { "const": false },
+          "strictProtocol": { "const": false }
+        }
+      }
+    }
+  ]
+}

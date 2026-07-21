@@ -90,12 +90,14 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
                 || refreshDelayMillis != 30_000L || initialDelayMillis != 1_000L
                 || maximumBatch != 8 || transport.configured();
         if (required && !enabled || !enabled && residual
-                || enabled && (deploymentScopeId.isBlank() || trustDomain.isBlank()
-                || acceptedPolicyFingerprints.isBlank()
+                || enabled && (!identifier(deploymentScopeId) || !identifier(trustDomain)
+                || !validPolicies(acceptedPolicyFingerprints)
                 || signatureThreshold < 1 || signatureThreshold > 32
-                || emptyArray(authorityKeysJson) || baselineSequence < 0
+                || emptyArray(authorityKeysJson) || authorityKeysJson.length() > 512 * 1024
+                || baselineSequence < 0
                 || !baselinePublicationFingerprint.matches("sha256:[a-f0-9]{64}")
-                || endpointUri.isBlank() || requestTimeoutMillis < 100
+                || endpointUri.isBlank() || endpointUri.length() > 2_048
+                || requestTimeoutMillis < 100
                 || requestTimeoutMillis > 30_000 || maximumPublicationBytes < 1_024
                 || maximumPublicationBytes > 2 * 1024 * 1024
                 || clockSkewSeconds < 0 || clockSkewSeconds > 300
@@ -130,6 +132,26 @@ public record ControlPlaneCertificateStatusRuntimeProperties(
 
     private static boolean emptyArray(String value) {
         return value.isBlank() || "[]".equals(value);
+    }
+
+    private static boolean identifier(String value) {
+        return value.matches("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
+    }
+
+    private static boolean validPolicies(String value) {
+        String[] policies = value.split(",", -1);
+        if (policies.length < 1 || policies.length > 32) {
+            return false;
+        }
+        java.util.HashSet<String> distinct = new java.util.HashSet<>();
+        for (String policy : policies) {
+            String normalized = normalized(policy);
+            if (!normalized.matches("sha256:[a-f0-9]{64}")
+                    || !distinct.add(normalized)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String normalized(String value) {

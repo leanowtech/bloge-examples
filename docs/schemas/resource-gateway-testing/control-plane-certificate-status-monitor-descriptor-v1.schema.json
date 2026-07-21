@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-monitor-descriptor-v1.schema.json",
+  "title": "Resource Gateway Certificate Status Monitor Descriptor v1",
+  "description": "Bounded status-source, durable-floor and local-admission refresh posture.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "status", "durable", "sourceAvailable", "admissionFresh",
+    "sequence", "appliedCount", "observedAt", "publicationExpiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateStatusMonitorDescriptor.v1"
+    },
+    "status": {
+      "enum": [
+        "CURRENT", "APPLIED", "BATCH_LIMIT", "SOURCE_UNAVAILABLE",
+        "SOURCE_REJECTED", "FLOOR_UNAVAILABLE", "PUBLICATION_REJECTED",
+        "CACHE_REJECTED"
+      ]
+    },
+    "durable": { "const": true },
+    "sourceAvailable": { "type": "boolean" },
+    "admissionFresh": { "type": "boolean" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "appliedCount": { "type": "integer", "minimum": 0, "maximum": 32 },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "publicationExpiresAt": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

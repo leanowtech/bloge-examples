@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-configuration-v1.schema.json",
+  "title": "Resource Gateway Certificate Status Runtime Configuration v1",
+  "description": "Strict test/staging configuration for signed normalized certificate status, durable monotonic floor, dual-clock local admission and an independent private-PKIX/SPKI/mTLS source. JSON strings are bounded because Spring environment variables supply them atomically.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled", "required", "deployment-scope-id", "trust-domain",
+    "accepted-policy-fingerprints", "signature-threshold", "authority-keys-json",
+    "baseline-sequence", "baseline-publication-fingerprint", "endpoint-uri",
+    "request-timeout-millis", "maximum-publication-bytes", "clock-skew-seconds",
+    "maximum-publication-lifetime-seconds", "refresh-delay-millis",
+    "initial-delay-millis", "maximum-batch", "transport"
+  ],
+  "properties": {
+    "enabled": { "type": "boolean" },
+    "required": { "type": "boolean" },
+    "deployment-scope-id": { "$ref": "#/$defs/optionalIdentifier" },
+    "trust-domain": { "$ref": "#/$defs/optionalIdentifier" },
+    "accepted-policy-fingerprints": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,31})$",
+      "maxLength": 2303
+    },
+    "signature-threshold": { "type": "integer", "minimum": 0, "maximum": 32 },
+    "authority-keys-json": {
+      "type": "string",
+      "pattern": "^\\s*\\[.*\\]\\s*$",
+      "maxLength": 524288,
+      "description": "Strict array containing only public Ed25519 keys and lifecycle metadata."
+    },
+    "baseline-sequence": { "type": "integer", "minimum": 0 },
+    "baseline-publication-fingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+    "endpoint-uri": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^(|https://[^?#]+)$"
+    },
+    "request-timeout-millis": { "type": "integer", "minimum": 100, "maximum": 30000 },
+    "maximum-publication-bytes": {
+      "type": "integer", "minimum": 1024, "maximum": 2097152
+    },
+    "clock-skew-seconds": { "type": "integer", "minimum": 0, "maximum": 300 },
+    "maximum-publication-lifetime-seconds": {
+      "type": "integer", "minimum": 1, "maximum": 86400
+    },
+    "refresh-delay-millis": { "type": "integer", "minimum": 100, "maximum": 300000 },
+    "initial-delay-millis": { "type": "integer", "minimum": 0, "maximum": 300000 },
+    "maximum-batch": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "transport": { "$ref": "#/$defs/transport" }
+  },
+  "$defs": {
+    "optionalIdentifier": {
+      "type": "string",
+      "pattern": "^(|[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254})$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    },
+    "optionalValue": { "type": "string", "maxLength": 2048 },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled", "required", "trust-store-path", "trust-store-password-ref",
+        "client-key-store-path", "client-key-store-password-ref", "server-spki-pins",
+        "certificate-identity-required", "expected-client-subject-dn",
+        "expected-client-uri-san", "client-issuer-spki-pins",
+        "expected-server-uri-san", "server-issuer-spki-pins"
+      ],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "required": { "type": "boolean" },
+        "trust-store-path": { "$ref": "#/$defs/optionalValue" },
+        "trust-store-password-ref": { "$ref": "#/$defs/optionalValue" },
+        "client-key-store-path": { "$ref": "#/$defs/optionalValue" },
+        "client-key-store-password-ref": { "$ref": "#/$defs/optionalValue" },
+        "server-spki-pins": {
+          "type": "string",
+          "pattern": "^(|sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,15})$"
+        },
+        "certificate-identity-required": { "type": "boolean" },
+        "expected-client-subject-dn": { "$ref": "#/$defs/optionalValue" },
+        "expected-client-uri-san": { "$ref": "#/$defs/optionalValue" },
+        "client-issuer-spki-pins": {
+          "type": "string",
+          "pattern": "^(|sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,15})$"
+        },
+        "expected-server-uri-san": { "$ref": "#/$defs/optionalValue" },
+        "server-issuer-spki-pins": {
+          "type": "string",
+          "pattern": "^(|sha256:[a-f0-9]{64}(,sha256:[a-f0-9]{64}){0,15})$"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "required": { "const": true } } },
+      "then": { "properties": { "enabled": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "enabled": { "const": false } } },
+      "then": {
+        "properties": {
+          "required": { "const": false },
+          "deployment-scope-id": { "const": "" },
+          "trust-domain": { "const": "" },
+          "accepted-policy-fingerprints": { "const": "" },
+          "signature-threshold": { "const": 0 },
+          "authority-keys-json": { "enum": ["", "[]"] },
+          "baseline-sequence": { "const": 0 },
+          "baseline-publication-fingerprint": { "const": "" },
+          "endpoint-uri": { "const": "" },
+          "request-timeout-millis": { "const": 5000 },
+          "maximum-publication-bytes": { "const": 524288 },
+          "clock-skew-seconds": { "const": 60 },
+          "maximum-publication-lifetime-seconds": { "const": 3600 },
+          "refresh-delay-millis": { "const": 30000 },
+          "initial-delay-millis": { "const": 1000 },
+          "maximum-batch": { "const": 8 },
+          "transport": {
+            "properties": {
+              "enabled": { "const": false },
+              "required": { "const": false },
+              "trust-store-path": { "const": "" },
+              "trust-store-password-ref": { "const": "" },
+              "client-key-store-path": { "const": "" },
+              "client-key-store-password-ref": { "const": "" },
+              "server-spki-pins": { "const": "" },
+              "certificate-identity-required": { "const": false },
+              "expected-client-subject-dn": { "const": "" },
+              "expected-client-uri-san": { "const": "" },
+              "client-issuer-spki-pins": { "const": "" },
+              "expected-server-uri-san": { "const": "" },
+              "server-issuer-spki-pins": { "const": "" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "enabled": { "const": true } } },
+      "then": {
+        "properties": {
+          "deployment-scope-id": { "minLength": 1 },
+          "trust-domain": { "minLength": 1 },
+          "accepted-policy-fingerprints": { "minLength": 71 },
+          "signature-threshold": { "minimum": 1 },
+          "authority-keys-json": { "not": { "enum": ["", "[]"] } },
+          "baseline-publication-fingerprint": { "pattern": "^sha256:[a-f0-9]{64}$" },
+          "endpoint-uri": { "minLength": 9 },
+          "transport": {
+            "properties": {
+              "enabled": { "const": true },
+              "required": { "const": true },
+              "client-key-store-path": { "minLength": 1 },
+              "client-key-store-password-ref": { "minLength": 1 },
+              "server-spki-pins": { "minLength": 71 },
+              "certificate-identity-required": { "const": true },
+              "expected-client-subject-dn": { "minLength": 1 },
+              "expected-client-uri-san": { "minLength": 1 },
+              "client-issuer-spki-pins": { "minLength": 71 },
+              "expected-server-uri-san": { "minLength": 1 },
+              "server-issuer-spki-pins": { "minLength": 71 }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -37,6 +39,8 @@ public final class ConfiguredControlPlaneCertificateStatusTrustStore
     private static final Duration MAXIMUM_EVIDENCE_AGE = Duration.ofDays(7);
     private static final int MAXIMUM_AUTHORITIES = 32;
     private static final int MAXIMUM_KEYS = 64;
+    private static final int MAXIMUM_CONFIGURATION_CHARACTERS = 512 * 1024;
+    private static final int MAXIMUM_POLICY_CHARACTERS = 2_303;
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
@@ -268,9 +272,17 @@ public final class ConfiguredControlPlaneCertificateStatusTrustStore
             int signatureThreshold,
             String authorityKeysJson) {
         try {
-            ObjectMapper mapper = objectMapper == null
-                    ? new ObjectMapper().findAndRegisterModules() : objectMapper;
-            JsonNode root = mapper.readTree(normalized(authorityKeysJson));
+            String encodedKeys = normalized(authorityKeysJson);
+            String encodedPolicies = normalized(acceptedPolicies);
+            if (encodedKeys.length() > MAXIMUM_CONFIGURATION_CHARACTERS
+                    || encodedPolicies.length() > MAXIMUM_POLICY_CHARACTERS) {
+                throw invalid();
+            }
+            ObjectMapper mapper = (objectMapper == null
+                    ? new ObjectMapper().findAndRegisterModules() : objectMapper).copy()
+                    .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                    .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+            JsonNode root = mapper.readTree(encodedKeys);
             if (root == null || !root.isArray() || root.isEmpty()
                     || root.size() > MAXIMUM_KEYS) {
                 throw invalid();
@@ -293,7 +305,7 @@ public final class ConfiguredControlPlaneCertificateStatusTrustStore
                         bool(node, "enabled"), bool(node, "revoked")));
             }
             return new ConfiguredControlPlaneCertificateStatusTrustStore(
-                    mapper, clock, trustDomain, fingerprints(acceptedPolicies),
+                    mapper, clock, trustDomain, fingerprints(encodedPolicies),
                     signatureThreshold, parsed);
         } catch (RuntimeException | java.io.IOException invalid) {
             throw new IllegalArgumentException(
@@ -366,10 +378,15 @@ public final class ConfiguredControlPlaneCertificateStatusTrustStore
 
     private static Set<String> fingerprints(String configured) {
         Set<String> values = new HashSet<>();
-        for (String value : normalized(configured).split(",", -1)) {
+        String normalizedConfiguration = normalized(configured);
+        if (normalizedConfiguration.isBlank()) {
+            throw invalid();
+        }
+        for (String value : normalizedConfiguration.split(",", -1)) {
             String normalized = normalized(value);
-            if (!normalized.isBlank()) {
-                values.add(normalized);
+            if (!FINGERPRINT.matcher(normalized).matches() || !values.add(normalized)
+                    || values.size() > 32) {
+                throw invalid();
             }
         }
         return values;

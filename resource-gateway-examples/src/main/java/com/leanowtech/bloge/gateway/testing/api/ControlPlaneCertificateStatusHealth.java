@@ -56,14 +56,20 @@ public final class ControlPlaneCertificateStatusHealth implements HealthIndicato
                     && transport.privateTrustStore() && transport.serverSpkiPinned()
                     && transport.mutualTls() && transport.certificateIdentityBound()
                     && transport.strictProtocol() && cache.fresh();
-            Map<String, Object> details = details(watcher, transport, trust, cache, ready);
+            Map<String, Object> details = details(watcher, transport, trust, cache,
+                    runtimeStatus(watcher, transport, trust, cache, ready));
             return (ready ? Health.up() : Health.down()).withDetails(details).build();
         } catch (RuntimeException unavailable) {
             return Health.down()
                     .withDetail("schemaVersion", SCHEMA_VERSION)
                     .withDetail("runtimeStatus", "UNAVAILABLE")
+                    .withDetail("monitorStatus", "UNAVAILABLE")
                     .withDetail("trustAvailable", false)
                     .withDetail("strictSourceAvailable", false)
+                    .withDetail("sourcePrivateTrust", false)
+                    .withDetail("sourceSpkiPinned", false)
+                    .withDetail("sourceMutualTls", false)
+                    .withDetail("sourceCertificateIdentityBound", false)
                     .withDetail("durableFloorIntegrated", false)
                     .withDetail("admissionFresh", false)
                     .withDetail("targetCount", 0)
@@ -80,10 +86,11 @@ public final class ControlPlaneCertificateStatusHealth implements HealthIndicato
             ControlPlaneCertificateStatusSource.Descriptor source,
             ControlPlaneCertificateStatusTrustStore.Descriptor trust,
             ControlPlaneCertificateStatusAdmission.Descriptor cache,
-            boolean ready) {
+            String runtimeStatus) {
         LinkedHashMap<String, Object> details = new LinkedHashMap<>();
         details.put("schemaVersion", SCHEMA_VERSION);
-        details.put("runtimeStatus", ready ? "READY" : watcher.status().name());
+        details.put("runtimeStatus", runtimeStatus);
+        details.put("monitorStatus", watcher.status().name());
         details.put("trustAvailable", trust.available());
         details.put("strictSourceAvailable", source.available() && source.strictProtocol());
         details.put("sourcePrivateTrust", source.privateTrustStore());
@@ -98,5 +105,31 @@ public final class ControlPlaneCertificateStatusHealth implements HealthIndicato
         details.put("unknownTargetCount", cache.unknownTargetCount());
         details.put("productionReady", false);
         return Map.copyOf(details);
+    }
+
+    private static String runtimeStatus(
+            ControlPlaneCertificateStatusMonitor.Descriptor watcher,
+            ControlPlaneCertificateStatusSource.Descriptor source,
+            ControlPlaneCertificateStatusTrustStore.Descriptor trust,
+            ControlPlaneCertificateStatusAdmission.Descriptor cache,
+            boolean ready) {
+        if (ready) {
+            return "READY";
+        }
+        if (!trust.available()) {
+            return "TRUST_UNAVAILABLE";
+        }
+        if (!source.available() || !source.privateTrustStore()
+                || !source.serverSpkiPinned() || !source.mutualTls()
+                || !source.certificateIdentityBound() || !source.strictProtocol()) {
+            return "SOURCE_SECURITY_UNAVAILABLE";
+        }
+        if (!watcher.durable()) {
+            return "FLOOR_UNAVAILABLE";
+        }
+        if (!cache.fresh()) {
+            return "ADMISSION_STALE";
+        }
+        return "UNAVAILABLE";
     }
 }

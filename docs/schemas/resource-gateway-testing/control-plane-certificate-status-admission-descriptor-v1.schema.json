@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-admission-descriptor-v1.schema.json",
+  "title": "Resource Gateway Certificate Status Admission Descriptor v1",
+  "description": "Fixed-cardinality projection of the local dual-clock hard-expiry request-admission cache.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "loaded", "fresh", "sequence", "targetCount",
+    "goodTargetCount", "revokedTargetCount", "unknownTargetCount",
+    "secondsToExpiry", "reasonCode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateStatusAdmissionDescriptor.v1"
+    },
+    "loaded": { "type": "boolean" },
+    "fresh": { "type": "boolean" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "targetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "goodTargetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "revokedTargetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "unknownTargetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "secondsToExpiry": { "type": "integer", "minimum": 0, "maximum": 86400 },
+    "reasonCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$" }
+  }
+}

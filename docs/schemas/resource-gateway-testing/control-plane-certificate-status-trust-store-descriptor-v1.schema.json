@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-trust-store-descriptor-v1.schema.json",
+  "title": "Resource Gateway Certificate Status Trust Store Descriptor v1",
+  "description": "Public-key-only, material-free certificate-status signature trust posture.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "available", "trustDomain", "authorityCount", "keyCount",
+    "signatureThreshold", "acceptedPolicyCount", "properties"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.controlPlaneCertificateStatusTrustStoreDescriptor.v1"
+    },
+    "available": { "type": "boolean" },
+    "trustDomain": { "type": "string", "maxLength": 255 },
+    "authorityCount": { "type": "integer", "minimum": 0, "maximum": 32 },
+    "keyCount": { "type": "integer", "minimum": 0, "maximum": 64 },
+    "signatureThreshold": { "type": "integer", "minimum": 0, "maximum": 32 },
+    "acceptedPolicyCount": { "type": "integer", "minimum": 0, "maximum": 32 },
+    "properties": {
+      "type": "object",
+      "maxProperties": 16,
+      "additionalProperties": {
+        "type": ["string", "boolean", "integer", "number"]
+      }
+    }
+  }
+}

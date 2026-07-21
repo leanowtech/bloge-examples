@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/control-plane-certificate-status-health-v1.schema.json",
+  "title": "Resource Gateway Certificate Status Health v1",
+  "description": "Fixed-cardinality Actuator details for certificate-status ingestion and request admission without identities or revocation payloads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "runtimeStatus", "monitorStatus", "trustAvailable",
+    "strictSourceAvailable", "sourcePrivateTrust", "sourceSpkiPinned",
+    "sourceMutualTls", "sourceCertificateIdentityBound", "durableFloorIntegrated",
+    "admissionFresh", "targetCount", "goodTargetCount", "revokedTargetCount",
+    "unknownTargetCount", "productionReady"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.controlPlaneCertificateStatusHealth.v1" },
+    "runtimeStatus": {
+      "enum": [
+        "READY", "TRUST_UNAVAILABLE", "SOURCE_SECURITY_UNAVAILABLE",
+        "FLOOR_UNAVAILABLE", "ADMISSION_STALE", "UNAVAILABLE"
+      ]
+    },
+    "monitorStatus": {
+      "enum": [
+        "CURRENT", "APPLIED", "BATCH_LIMIT", "SOURCE_UNAVAILABLE",
+        "SOURCE_REJECTED", "FLOOR_UNAVAILABLE", "PUBLICATION_REJECTED",
+        "CACHE_REJECTED", "UNAVAILABLE"
+      ]
+    },
+    "trustAvailable": { "type": "boolean" },
+    "strictSourceAvailable": { "type": "boolean" },
+    "sourcePrivateTrust": { "type": "boolean" },
+    "sourceSpkiPinned": { "type": "boolean" },
+    "sourceMutualTls": { "type": "boolean" },
+    "sourceCertificateIdentityBound": { "type": "boolean" },
+    "durableFloorIntegrated": { "type": "boolean" },
+    "admissionFresh": { "type": "boolean" },
+    "targetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "goodTargetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "revokedTargetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "unknownTargetCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "productionReady": { "const": false }
+  }
+}
