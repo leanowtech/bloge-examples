@@ -153,6 +153,16 @@
 > Surefire XML 汇总一致，39,518,483 bytes 可执行 JAR 与零构建/测试浏览器残留进程核验通过。验证见
 > [physical attempt lifecycle observation durable-journal verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-lifecycle-observation-durable-journal-verification.md)。
 
+> Stage 4 physical attempt 第七增量新增 fixed-capacity/zero-queue lifecycle observation call supervisor
+> 与 durable coordinator。accepted command replay 零 provider I/O；其余调用严格按 scoped find、bounded
+> descriptor、durable prepare、database-time authorization、bounded observe 和 verified acceptance 排序。
+> timeout/interrupt/adapter/attestation failure 保持 `PREPARED`，不虚构远端状态。7 项 supervisor、10 项
+> coordinator、22 项真实 H2/Ed25519 journal 组合测试和 162 项完整物理链门禁全绿，两个新增公共类型
+> strict JavaDoc 零告警。orphan reconciler、跨 family provider ledger、queue/slot/cancellation terminal
+> 双线性化、真实 provider 与产品接线仍待完成，capability 继续关闭。完整 `clean verify` 将在实现提交的
+> immutable snapshot 上执行并回填。验证见
+> [physical attempt lifecycle observation coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-lifecycle-observation-coordinator-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

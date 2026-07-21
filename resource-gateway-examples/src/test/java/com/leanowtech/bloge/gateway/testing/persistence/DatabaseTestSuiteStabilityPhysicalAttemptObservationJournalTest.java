@@ -12,7 +12,9 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRecord;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptIdentity;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationCallSupervisor;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationCommand;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationCoordinator;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationVerifier;
@@ -46,6 +48,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -132,6 +135,110 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                 SELECT COUNT(*)
                 FROM rg_test_stability_attempt_observation_provider_sequences
                 """, Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void coordinatorPersistsVerifiedPositiveAndReplaysWithoutProviderIo() throws Exception {
+        AttemptContext context = retainedStart('a', true);
+        TestSuiteStabilityPhysicalAttemptObservationCommand command = command(context, 'a');
+        AtomicInteger descriptorCalls = new AtomicInteger();
+        AtomicInteger observationCalls = new AtomicInteger();
+        var authority = authority(
+                descriptorCalls, observationCalls,
+                ignored -> uncheckedObservation(
+                        command, 101, 1,
+                        TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING));
+
+        try (var supervisor = supervisor(Duration.ofSeconds(1))) {
+            var coordinator = new TestSuiteStabilityPhysicalAttemptObservationCoordinator(
+                    journal, supervisor);
+
+            var accepted = coordinator.observe(authority, command);
+            var replayed = coordinator.observe(authority, command);
+
+            assertThat(accepted.status()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationJournal.AcceptanceStatus
+                            .POSITIVE);
+            assertThat(replayed.status()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationJournal.AcceptanceStatus
+                            .REPLAYED);
+            assertThat(journal.latestPositive(
+                    "tenant-a", "test", context.identity().attemptId()))
+                    .get().extracting(state -> state.receipt().state())
+                    .isEqualTo(TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING);
+            assertThat(descriptorCalls).hasValue(1);
+            assertThat(observationCalls).hasValue(1);
+        }
+    }
+
+    @Test
+    void coordinatorTimeoutLeavesPreparedAndExactRetryCanAccept() throws Exception {
+        AttemptContext context = retainedStart('a', true);
+        TestSuiteStabilityPhysicalAttemptObservationCommand command = command(context, 'a');
+        AtomicInteger descriptorCalls = new AtomicInteger();
+        AtomicInteger observationCalls = new AtomicInteger();
+        var retryDescriptor = descriptor(Duration.ofSeconds(1));
+        var slowAuthority = authority(
+                retryDescriptor, descriptorCalls, observationCalls, ignored -> {
+            try {
+                Thread.sleep(Duration.ofSeconds(5));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return uncheckedObservation(
+                    command, 101, 1,
+                    TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING);
+        });
+
+        try (var supervisor = supervisor(Duration.ofMillis(100))) {
+            var coordinator = new TestSuiteStabilityPhysicalAttemptObservationCoordinator(
+                    journal, supervisor);
+            assertThatThrownBy(() -> coordinator.observe(slowAuthority, command))
+                    .isInstanceOfSatisfying(
+                            TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
+                                    .InvocationException.class,
+                            failure -> assertThat(failure.disposition()).isEqualTo(
+                                    TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
+                                            .Disposition.TIMED_OUT));
+        }
+        assertThat(journal.find("tenant-a", "test", command.commandId()))
+                .get().extracting(TestSuiteStabilityPhysicalAttemptObservationJournal.Entry::status)
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptObservationJournal.Status.PREPARED);
+
+        var retryAuthority = authority(
+                retryDescriptor, descriptorCalls, observationCalls,
+                ignored -> uncheckedObservation(
+                        command, 101, 1,
+                        TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING));
+        try (var supervisor = supervisor(Duration.ofSeconds(1))) {
+            var accepted = new TestSuiteStabilityPhysicalAttemptObservationCoordinator(
+                    journal, supervisor).observe(retryAuthority, command);
+            assertThat(accepted.status()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationJournal.AcceptanceStatus
+                            .POSITIVE);
+        }
+        assertThat(descriptorCalls).hasValue(2);
+        assertThat(observationCalls).hasValue(2);
+    }
+
+    @Test
+    void coordinatorObservesConfirmedStartAfterQueueLeaseLoss() throws Exception {
+        AttemptContext context = retainedStart('a', true);
+        jobs.retry(context.claim().lease(), "RG.TEST.RUNTIME_UNAVAILABLE", POLICY);
+        TestSuiteStabilityPhysicalAttemptObservationCommand command = command(context, 'a');
+        var authority = authority(
+                new AtomicInteger(), new AtomicInteger(),
+                ignored -> uncheckedObservation(
+                        command, 101, 1,
+                        TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING));
+
+        try (var supervisor = supervisor(Duration.ofSeconds(1))) {
+            var accepted = new TestSuiteStabilityPhysicalAttemptObservationCoordinator(
+                    journal, supervisor).observe(authority, command);
+            assertThat(accepted.status()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptObservationJournal.AcceptanceStatus
+                            .POSITIVE);
+        }
     }
 
     @Test
@@ -700,6 +807,19 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         return observation(command, providerSequence, revision, state, disposition);
     }
 
+    private TestSuiteStabilityPhysicalAttemptObservationReceipt.Attestation
+            uncheckedObservation(
+                    TestSuiteStabilityPhysicalAttemptObservationCommand command,
+                    long providerSequence,
+                    long revision,
+                    TestSuiteStabilityPhysicalAttemptObservationReceipt.State state) {
+        try {
+            return observation(command, providerSequence, revision, state);
+        } catch (Exception failure) {
+            throw new IllegalStateException("Unable to sign test observation", failure);
+        }
+    }
+
     private TestSuiteStabilityPhysicalAttemptObservationReceipt.Attestation observation(
             TestSuiteStabilityPhysicalAttemptObservationCommand command,
             long providerSequence,
@@ -834,6 +954,43 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                 PROVIDER_ID, DEPLOYMENT_ID, KEY_ID, true,
                 Set.of(TestSuiteStabilityAttemptCancellationReceipt.IsolationMode.PROCESS),
                 latency, Duration.ofHours(1));
+    }
+
+    private TestSuiteStabilityPhysicalAttemptObservationCallSupervisor supervisor(
+            Duration observationTimeout) {
+        return new TestSuiteStabilityPhysicalAttemptObservationCallSupervisor(
+                new TestSuiteStabilityPhysicalAttemptObservationCallSupervisor.Policy(
+                        Duration.ofSeconds(1), observationTimeout, 1));
+    }
+
+    private TestSuiteStabilityPhysicalAttemptObservationAuthority authority(
+            AtomicInteger descriptorCalls,
+            AtomicInteger observationCalls,
+            java.util.function.Function<TestSuiteStabilityPhysicalAttemptObservationCommand,
+                    TestSuiteStabilityPhysicalAttemptObservationReceipt.Attestation> response) {
+        return authority(descriptor, descriptorCalls, observationCalls, response);
+    }
+
+    private TestSuiteStabilityPhysicalAttemptObservationAuthority authority(
+            TestSuiteStabilityPhysicalAttemptObservationAuthority.Descriptor currentDescriptor,
+            AtomicInteger descriptorCalls,
+            AtomicInteger observationCalls,
+            java.util.function.Function<TestSuiteStabilityPhysicalAttemptObservationCommand,
+                    TestSuiteStabilityPhysicalAttemptObservationReceipt.Attestation> response) {
+        return new TestSuiteStabilityPhysicalAttemptObservationAuthority() {
+            @Override
+            public Descriptor descriptor() {
+                descriptorCalls.incrementAndGet();
+                return currentDescriptor;
+            }
+
+            @Override
+            public TestSuiteStabilityPhysicalAttemptObservationReceipt.Attestation observe(
+                    TestSuiteStabilityPhysicalAttemptObservationCommand command) {
+                observationCalls.incrementAndGet();
+                return response.apply(command);
+            }
+        };
     }
 
     private Instant databaseTime() {
