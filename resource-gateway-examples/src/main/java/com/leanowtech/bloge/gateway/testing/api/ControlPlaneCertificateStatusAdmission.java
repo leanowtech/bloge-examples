@@ -25,11 +25,13 @@ public final class ControlPlaneCertificateStatusAdmission {
 
     private final Clock clock;
     private final LongSupplier ticker;
+    private final ControlPlaneCertificateStatusTelemetry telemetry;
     private final AtomicReference<CachedStatus> cached = new AtomicReference<>();
 
     /** Creates an admission cache using UTC wall time and the JVM monotonic ticker. */
     public ControlPlaneCertificateStatusAdmission() {
-        this(Clock.systemUTC(), System::nanoTime);
+        this(Clock.systemUTC(), System::nanoTime,
+                ControlPlaneCertificateStatusTelemetry.noop());
     }
 
     /**
@@ -39,8 +41,23 @@ public final class ControlPlaneCertificateStatusAdmission {
      * @param ticker monotonic nanosecond source used to defeat wall-clock rollback
      */
     public ControlPlaneCertificateStatusAdmission(Clock clock, LongSupplier ticker) {
+        this(clock, ticker, ControlPlaneCertificateStatusTelemetry.noop());
+    }
+
+    /**
+     * Creates an admission cache with explicit clocks and fixed-cardinality telemetry.
+     *
+     * @param clock wall clock used to honor signed expiry
+     * @param ticker monotonic nanosecond source used to defeat wall-clock rollback
+     * @param telemetry request-decision recorder without target or certificate tags
+     */
+    public ControlPlaneCertificateStatusAdmission(
+            Clock clock,
+            LongSupplier ticker,
+            ControlPlaneCertificateStatusTelemetry telemetry) {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.ticker = Objects.requireNonNull(ticker, "ticker");
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry");
     }
 
     /**
@@ -121,14 +138,42 @@ public final class ControlPlaneCertificateStatusAdmission {
     public boolean servingPermitted(
             String targetId, long generation, String settingsFingerprint) {
         CachedStatus status = cached.get();
+        ControlPlaneCertificateStatusTelemetry.AdmissionDecision decision =
+                decision(status, targetId, generation, settingsFingerprint);
+        telemetry.recordAdmission(decision);
+        return decision == ControlPlaneCertificateStatusTelemetry.AdmissionDecision.ALLOWED;
+    }
+
+    private ControlPlaneCertificateStatusTelemetry.AdmissionDecision decision(
+            CachedStatus status,
+            String targetId,
+            long generation,
+            String settingsFingerprint) {
+        if (status == null) {
+            return ControlPlaneCertificateStatusTelemetry.AdmissionDecision.NO_PUBLICATION;
+        }
         if (!fresh(status)) {
-            return false;
+            return ControlPlaneCertificateStatusTelemetry.AdmissionDecision.STALE;
         }
         ControlPlaneCertificateStatusPublication.TargetStatus target =
                 status.targets().get(normalized(targetId));
-        return target != null && target.generation() == generation
-                && target.settingsFingerprint().equals(normalized(settingsFingerprint))
-                && target.admitted();
+        if (target == null) {
+            return ControlPlaneCertificateStatusTelemetry.AdmissionDecision.TARGET_MISSING;
+        }
+        if (target.generation() != generation) {
+            return ControlPlaneCertificateStatusTelemetry.AdmissionDecision.GENERATION_MISMATCH;
+        }
+        if (!target.settingsFingerprint().equals(normalized(settingsFingerprint))) {
+            return ControlPlaneCertificateStatusTelemetry.AdmissionDecision.SETTINGS_MISMATCH;
+        }
+        if (target.certificates().stream().anyMatch(evidence -> evidence.status()
+                == ControlPlaneCertificateStatusPublication.CertificateStatus.REVOKED)) {
+            return ControlPlaneCertificateStatusTelemetry.AdmissionDecision.REVOKED;
+        }
+        if (!target.admitted()) {
+            return ControlPlaneCertificateStatusTelemetry.AdmissionDecision.UNKNOWN;
+        }
+        return ControlPlaneCertificateStatusTelemetry.AdmissionDecision.ALLOWED;
     }
 
     /** @return fixed-cardinality admission posture without target or certificate identity */

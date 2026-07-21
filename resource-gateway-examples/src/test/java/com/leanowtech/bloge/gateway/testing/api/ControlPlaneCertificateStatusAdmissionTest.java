@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -130,6 +131,57 @@ class ControlPlaneCertificateStatusAdmissionTest {
         ticker.addAndGet(Duration.ofSeconds(61).toNanos());
 
         assertThat(admission.servingPermitted(TARGET, 1, FINGERPRINT)).isFalse();
+    }
+
+    @Test
+    void exportsEveryClosedDecisionWithoutTargetOrCertificateTags() {
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        var telemetry = new ControlPlaneCertificateStatusTelemetry(meters);
+        MutableClock clock = new MutableClock(NOW);
+        var admission = new ControlPlaneCertificateStatusAdmission(
+                clock, () -> 1, telemetry);
+
+        admission.servingPermitted(TARGET, 1, FINGERPRINT);
+        admission.refresh(snapshot(1, FINGERPRINT, NOW, NOW.plusSeconds(60),
+                target(1, FINGERPRINT, good())));
+        admission.servingPermitted(TARGET, 1, FINGERPRINT);
+        admission.servingPermitted("missing-target", 1, FINGERPRINT);
+        admission.servingPermitted(TARGET, 2, FINGERPRINT);
+        admission.servingPermitted(TARGET, 1, fingerprint('b'));
+
+        var revoked = new ControlPlaneCertificateStatusAdmission(
+                clock, () -> 1, telemetry);
+        revoked.refresh(snapshot(1, fingerprint('b'), NOW, NOW.plusSeconds(60),
+                target(1, FINGERPRINT, status(
+                        ControlPlaneCertificateStatusPublication.CertificateStatus.REVOKED,
+                        ControlPlaneCertificateStatusPublication.CertificateStatus.GOOD))));
+        revoked.servingPermitted(TARGET, 1, FINGERPRINT);
+        var unknown = new ControlPlaneCertificateStatusAdmission(
+                clock, () -> 1, telemetry);
+        unknown.refresh(snapshot(1, fingerprint('c'), NOW, NOW.plusSeconds(60),
+                target(1, FINGERPRINT, status(
+                        ControlPlaneCertificateStatusPublication.CertificateStatus.GOOD,
+                        ControlPlaneCertificateStatusPublication.CertificateStatus.UNKNOWN))));
+        unknown.servingPermitted(TARGET, 1, FINGERPRINT);
+        clock.advance(Duration.ofSeconds(61));
+        admission.servingPermitted(TARGET, 1, FINGERPRINT);
+
+        for (ControlPlaneCertificateStatusTelemetry.AdmissionDecision decision
+                : ControlPlaneCertificateStatusTelemetry.AdmissionDecision.values()) {
+            assertThat(meters.get(ControlPlaneCertificateStatusTelemetry.PREFIX
+                            + "admission.checks")
+                    .tag("decision", decision.name().toLowerCase())
+                    .counter().count()).isOne();
+        }
+        assertThat(telemetry.snapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.admissionChecks()).isEqualTo(8);
+            assertThat(snapshot.admissionDenials()).isEqualTo(7);
+        });
+        String meterIdentity = meters.getMeters().stream()
+                .map(meter -> meter.getId().toString()).toList().toString();
+        assertThat(meterIdentity).doesNotContain(
+                TARGET, "missing-target", FINGERPRINT, "authority",
+                "https://", "secret");
     }
 
     private static ControlPlaneCertificateStatusFloor.Snapshot snapshot(

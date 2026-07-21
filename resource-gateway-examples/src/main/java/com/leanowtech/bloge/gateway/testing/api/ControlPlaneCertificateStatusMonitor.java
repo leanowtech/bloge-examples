@@ -42,6 +42,7 @@ public final class ControlPlaneCertificateStatusMonitor {
     private final ControlPlaneCertificateStatusAdmission admission;
     private final Clock clock;
     private final int maximumBatch;
+    private final ControlPlaneCertificateStatusTelemetry telemetry;
     private final AtomicReference<Descriptor> latest;
 
     /**
@@ -59,10 +60,32 @@ public final class ControlPlaneCertificateStatusMonitor {
             ControlPlaneCertificateStatusAdmission admission,
             Clock clock,
             int maximumBatch) {
+        this(floor, source, admission, clock, maximumBatch,
+                ControlPlaneCertificateStatusTelemetry.noop());
+    }
+
+    /**
+     * Creates one bounded watcher with fixed-cardinality operational telemetry.
+     *
+     * @param floor durable database-time status authority
+     * @param source untrusted normalized publication source
+     * @param admission local non-blocking request-path cache
+     * @param clock local health observation clock
+     * @param maximumBatch one through 32 successors per refresh
+     * @param telemetry refresh recorder without source or certificate identity tags
+     */
+    public ControlPlaneCertificateStatusMonitor(
+            ControlPlaneCertificateStatusFloor floor,
+            ControlPlaneCertificateStatusSource source,
+            ControlPlaneCertificateStatusAdmission admission,
+            Clock clock,
+            int maximumBatch,
+            ControlPlaneCertificateStatusTelemetry telemetry) {
         this.floor = Objects.requireNonNull(floor, "floor");
         this.source = Objects.requireNonNull(source, "source");
         this.admission = Objects.requireNonNull(admission, "admission");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry");
         if (!floor.durable() || maximumBatch < 1 || maximumBatch > 32) {
             throw new IllegalArgumentException(
                     "Certificate status monitor configuration is invalid");
@@ -163,6 +186,7 @@ public final class ControlPlaneCertificateStatusMonitor {
             RefreshStatus status, long sequence, int applied, Instant expiresAt) {
         Descriptor descriptor = descriptor(status, sequence, applied, expiresAt);
         latest.set(descriptor);
+        telemetry.recordRefresh(descriptor, admission.descriptor());
         return descriptor;
     }
 
