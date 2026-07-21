@@ -21,9 +21,10 @@ Resource Gateway 的运行期 authority：
 核心实现是 `DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority`；
 `ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration` 提供可选的 test/staging
 composition。调用方仍负责提供 public trust keys、唯一 reviewed lane resolver 和固定 deployment binding；
-可以接受默认 database floor，也可以替换为唯一 custom durable floor。本步不宣称 production profile、动态
-trust-root 轮换、publisher mTLS/pinning、外部 transparency、跨区 Byzantine anchor、非 H2 数据库、
-HA/DR/chaos 或容量认证。
+可以接受默认 database floor，也可以替换为唯一 custom durable floor。后续子步已闭合 dynamic trust-root
+原子双根协议、验证器和 durable floor 内核，但尚未闭合其 HTTPS refresh、unknown-key refresh 与 consumer
+接线。本步也不宣称 production profile、publisher mTLS/pinning、外部 transparency、跨区 Byzantine anchor、
+非 H2 数据库、HA/DR/chaos 或容量认证。
 
 ## 2. 根因与不变量
 

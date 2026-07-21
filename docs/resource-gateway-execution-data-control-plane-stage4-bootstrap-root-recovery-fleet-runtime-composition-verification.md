@@ -169,7 +169,7 @@ Spring Boot 可执行 JAR。
 
 ## 9. 未完成的生产门禁
 
-- dynamic authority 的信任根在线轮换；
+- dynamic authority 的原子双信任根内核已闭合，在线 HTTPS refresh/unknown-key/consumer 接线未闭合；
 - capability/schema discovery 已由后续子步闭合；运维配置 metadata、外部告警/SLO 与跨副本
   convergence readiness 仍未完成；
 - enterprise IAM 对 worker/inventory/lane membership 的授权；

@@ -535,6 +535,19 @@ publication advances the floor without resolving removed lanes and immediately c
 admission. Any refresh, protocol, signature, runtime-binding, or floor failure also fails closed;
 the last verified object remains diagnostics-only and cannot be used as stale admission authority.
 
+The next trust-root kernel now defines how the deployment and witness runtime verification keys
+themselves rotate as one signed generation. Independent deployment-root and witness-root quorums
+approve the same strict, short-lived material; exact scope/fleet/protocol/policy binding, four-domain
+independence, canonical Ed25519 keys, dual thresholds, and sequence/predecessor continuity are
+verified before a durable database floor advances. Only then can one immutable dual-key set become
+observable. A signed emergency revocation advances the floor but closes runtime admission when a
+threshold is no longer satisfiable. This increment intentionally does not yet connect the kernel to
+HTTPS refresh, unknown-key refresh, the dynamic inventory authority, Spring, or capability output,
+so restart-free recovery-fleet key rotation is not yet a product claim. See the
+[recovery fleet trust-root kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-trust-root-kernel-verification.md)
+and its strict
+[trust-root publication JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-trust-root-publication-v1.schema.json).
+
 Embedders that share the test-runtime database can also construct a
 `DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator` and pass it, one stable
 `fleetId`, and one fixed partition count to every worker replica. The coordinator uses database-clock
