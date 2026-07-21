@@ -121,11 +121,22 @@
 > 固定容量、零队列 supervisor 对 descriptor/start 使用 caller-owned wall-clock deadline；timeout/interrupt
 > 只计本地 disposition，忽略 interrupt 的 adapter 持续占 slot 并进入 lingering。17 项 start protocol/
 > verifier/supervisor 测试与 1 项 cancellation supervisor null-result 计数回归全绿，五个新增公共类型
-> strict JavaDoc 零告警。当前尚无 durable start journal、provider sequence floor、真实 process/container
+> strict JavaDoc 零告警。该 proof-kernel 增量本身尚无 durable start journal、provider sequence floor、真实 process/container
 > adapter 或 worker 接线；超时调用可能已产生远端副作用，必须进入下一步 orphan reconciliation，
 > capability 继续关闭。隔离提交快照上的全量 `clean verify` 已执行 3950 tests（0 failures、0 errors、
 > 2 skips），并完成 Surefire XML、可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-proof-kernel-verification.md)。
+
+> Stage 4 physical attempt 第三增量建立 database-authoritative durable start journal。首次 `prepare`
+> 在同一事务锁定 exact attempt 与 queue row，完整复验 reservation/job integrity、owner、positive epoch、
+> lease/deadline，并冻结 command/provider descriptor；每次 provider I/O 前再以 database time 执行
+> `authorizeInvocation`。`accept` 不因 dispatch 后失租而抹掉真实 provider fact，且区分 provider 在 deadline
+> 前确认但网络迟到与 `confirmedAt < preparedAt` 的非法因果倒置。签名 receipt、immutable provider sequence、
+> deployment floor 和 terminal entry 原子提交；本地 unknown 保持 `PREPARED`，签名 `REJECTED` 只进入
+> `UNCONFIRMED`。22 项 H2 行为/并发/篡改测试与 127 项跨 queue/runtime 联合门禁全绿，两个公共类型
+> strict JavaDoc 零告警。start coordinator、真实 provider、queue/cancel/natural-terminal 投影、slot 延迟释放
+> 和 orphan reconciliation 仍未接线，capability 继续关闭。验证见
+> [physical attempt start durable-journal verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-durable-journal-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |

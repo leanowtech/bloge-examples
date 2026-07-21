@@ -103,10 +103,20 @@
 > `STARTED/ALREADY_STARTED` 才是 start proof，签名 `REJECTED` 与本地 timeout 均不证明“未启动”。
 > pinned Ed25519 verifier 和 fixed-capacity/zero-queue supervisor 已落地，interrupt-ignoring adapter 保持
 > slot occupancy 与 lingering observation。17 项 start 测试及 1 项 cancellation null-result 回归全绿，
-> 五个新增公共类型 strict JavaDoc 零告警。durable start journal、真实隔离 provider、worker/queue 投影
+> 五个新增公共类型 strict JavaDoc 零告警。该 proof-kernel 增量本身尚无 durable start journal、真实隔离 provider、worker/queue 投影
 > 和 orphan reconciliation 仍未接线，capability 继续关闭。隔离提交快照上的全量 `clean verify` 已执行
 > 3950 tests（0 failures、0 errors、2 skips），并完成 Surefire XML、可执行 JAR 与残留进程交叉核验。验证见
 > [physical attempt start proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-proof-kernel-verification.md)。
+
+> Stage 4 physical attempt 第三增量新增 database-authoritative durable start journal。首次 prepare 原子锁定
+> attempt 与 queue row，复验完整 reservation/job、owner、positive epoch、lease/deadline，并冻结 exact
+> command/descriptor；provider I/O 前按 database time 再授权。acceptance 即使 dispatch 后失租也保留真实
+> start fact，允许 deadline 前确认但网络迟到的 receipt，拒绝早于 durable prepare 的 provider 声明，并将
+> 签名 receipt、immutable provider sequence、deployment floor 与 `CONFIRMED/UNCONFIRMED` 原子提交。
+> timeout/unknown 保持 `PREPARED`，签名 `REJECTED` 也不是 non-start proof。22 项 journal 与 127 项跨
+> queue/runtime 门禁全绿，两个公共类型 strict JavaDoc 零告警。coordinator、真实 provider、queue/cancel/
+> natural-terminal 投影、slot 延迟释放与 orphan reconciliation 未接线，capability 继续关闭。验证见
+> [physical attempt start durable-journal verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-durable-journal-verification.md)。
 
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
