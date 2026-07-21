@@ -327,10 +327,18 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest {
         var authority = mock(
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.class);
         when(authority.snapshot()).thenReturn(emptyInventory().snapshot());
-        when(authority.observation()).thenReturn(new Observation(
+        var observation = new Observation(
                 Observation.SCHEMA_VERSION, true, "VERIFIED",
                 "STATIC_SIGNED_ED25519_M_OF_N", observedGeneration, laneCount,
-                java.time.Instant.parse("2026-07-21T12:00:00Z"), 2, 2));
+                java.time.Instant.parse("2026-07-21T12:00:00Z"), 2, 2);
+        when(authority.observation()).thenReturn(observation);
+        when(authority.descriptor()).thenReturn(new
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor
+                        .SCHEMA_VERSION,
+                true, true, true, "VERIFIED", observedGeneration, laneCount,
+                Map.of("sourceType", "STATIC_SIGNED_ED25519_M_OF_N",
+                        "fleetTopologyBound", true)));
         when(authority.verifiedBinding()).thenReturn(new VerifiedBinding(
                 "recovery-prod", "fleet-sensitive", "sha256:" + "a".repeat(64),
                 partitionCount));

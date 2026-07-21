@@ -22,7 +22,12 @@ public interface ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthor
             "sourceType", "protocolVersion", "privateMaterialPresent",
             "signatureThreshold", "runtimeExpiryFence", "fleetTopologyBound",
             "exactRuntimeBinding", "automaticRefresh", "signedRevocation",
-            "durableGenerationFloor");
+            "durableGenerationFloor", "refreshState", "publicationState",
+            "publicationSequence", "conditionalRequests", "failClosedOnRefreshFailure",
+            "witnessedPublications", "witnessSignatureThreshold",
+            "refreshIntervalSeconds", "maximumSnapshotAgeSeconds",
+            "externallyAnchoredPublicationFloor",
+            "byzantineQuorumAnchoredPublicationFloor");
 
     /**
      * Returns current verified authority state without network or database I/O.

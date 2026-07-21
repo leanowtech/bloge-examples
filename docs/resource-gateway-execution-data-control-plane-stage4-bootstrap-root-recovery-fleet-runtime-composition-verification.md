@@ -12,9 +12,11 @@ composition root。它装配：
 - aggregate fleet health；
 - 当 inventory 是 signed authority 时，额外装配 aggregate inventory health。
 
-它仍不是 production fleet service，也不负责 inventory discovery、签名生成、远端 refresh、IAM、secret、
-provider transport、capability 或 HTTP。这个边界是刻意的：composition root 只消费已经本地化且授权完成的
-inventory，把已有内核以严格配置和生命周期交付出来。
+它仍不是 production fleet service，也不负责 inventory discovery、签名生成、IAM、secret、capability 或
+HTTP endpoint。远端 refresh 可由调用方构造的
+`DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority` 完成；composition root 仍只
+消费一个已经本地化的 inventory bean。这个 ownership 边界使信任根、HTTPS client、lane resolver 和
+publication floor 的生命周期不会被隐式环境变量拼装。
 
 ## 2. 根因
 
@@ -35,7 +37,8 @@ mutual exclusion 和失败顺序。
 调用方必须先提供唯一 inventory bean。普通实现必须返回 immutable、bounded、non-blocking local snapshot；
 更强模式可提供
 `ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority`，由 composition preflight 额外校验其
-observation 与 signed topology。
+observation 与 signed topology。dynamic authority 同样实现该接口，因此可直接作为唯一 inventory bean；
+其构造阶段必须先成功取得一个可用的 `ACTIVE` publication，随后才启动后台 fixed-delay refresh。
 
 最小配置：
 
@@ -113,9 +116,10 @@ scheduler.close -> worker.close -> caller closes lane services/resolvers/databas
 `durable() == true`；不能用 in-memory mock 冒充跨副本协调。也可替换 worker/scheduler/health bean，但
 替换方必须自己保持相同 ownership、profile 和关闭语义。
 
-普通 inventory 只代表“调用方已授权的本地事实”。signed authority 才代表 static external attestation，
-并自动获得独立 inventory health。composition 不把前者宣传为 externally attested，也不把后者宣传为
-dynamic refresh、revocation 或 durable floor。
+普通 inventory 只代表“调用方已授权的本地事实”。signed authority 才代表 external attestation，并自动
+获得独立 inventory health。static 与 dynamic 能力由 authority descriptor 逐项投影；health 同时读取
+observation 与 descriptor，若刷新恰好跨越两次读取导致 generation/status 不一致，则本次采样 fail closed，
+而不是拼接两个时代的健康事实。
 
 ## 8. 验证矩阵
 
@@ -148,7 +152,7 @@ inventory health 与 runtime configuration 共 11 个公共类型通过
 
 ## 9. 未完成的生产门禁
 
-- dynamic signed inventory publication/revocation/witness 与 durable generation floor；
+- dynamic authority 的 Spring 属性化自动装配、信任根在线轮换与 capability discovery；
 - capability/schema discovery endpoint 和运维配置 metadata；
 - enterprise IAM 对 worker/inventory/lane membership 的授权；
 - production profile、PostgreSQL/MySQL 方言、连接池/锁超时与 rolling-upgrade certification；

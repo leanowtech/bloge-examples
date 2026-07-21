@@ -98,7 +98,7 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInv
             expiresAt = validated.expiresAt();
         }
 
-        private ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey delegate() {
+        ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey delegate() {
             return new ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey(
                     authorityId, keyId, publicKey, notBefore, expiresAt, enabled, revoked);
         }
@@ -261,7 +261,7 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInv
         }
     }
 
-    private static int verifyEnvelope(
+    static int verifyEnvelope(
             ObjectMapper objectMapper,
             String trustDomain,
             Set<String> acceptedPolicies,
@@ -302,7 +302,7 @@ public final class ConfiguredExternalSequenceAnchorBootstrapRootRecoveryFleetInv
                         "Bootstrap-root recovery fleet inventory");
     }
 
-    private static Snapshot resolveSnapshot(Material material, LaneResolver resolver) {
+    static Snapshot resolveSnapshot(Material material, LaneResolver resolver) {
         try {
             List<Lane> lanes = material.laneDescriptors().stream().map(descriptor ->
                     exactLane(descriptor, resolver)).toList();

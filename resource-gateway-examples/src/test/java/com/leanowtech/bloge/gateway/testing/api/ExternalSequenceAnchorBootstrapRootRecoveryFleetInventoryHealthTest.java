@@ -91,6 +91,25 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealthTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void mismatchedObservationAndDescriptorGenerationFailsHealthClosed() {
+        var observed = observation(true, "VERIFIED", 17L, 1);
+        var descriptor = new
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor
+                        .SCHEMA_VERSION,
+                true, true, true, "VERIFIED", 18L, 1, java.util.Map.of(
+                "sourceType", "STATIC_SIGNED_ED25519_M_OF_N"));
+
+        var result = new ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth(
+                () -> observed, () -> descriptor).health();
+
+        assertThat(result.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(result.getDetails())
+                .containsEntry("inventoryStatus", "UNAVAILABLE")
+                .doesNotContainKeys("generation", "message", "exception");
+    }
+
     private static Observation observation(
             boolean available, String status, long generation, int lanes) {
         return new Observation(Observation.SCHEMA_VERSION, available, status,

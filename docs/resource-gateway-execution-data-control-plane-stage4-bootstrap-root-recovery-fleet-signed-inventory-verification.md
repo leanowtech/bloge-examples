@@ -207,6 +207,8 @@ browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JA
 - PostgreSQL/MySQL、multi-region HA、DR/chaos/soak 和 production SLO 认证。
 
 后续 publication/floor kernel 已复用本步 attestation contract 冻结 witnessed `ACTIVE/REVOKED` 双链和数据库
-durable floor；尚待 bounded HTTPS/ETag dynamic authority 真正消费该协议。static green tests 只证明签名
-入口和运行时 fencing，不证明控制面失联或撤销已经传播。验证见
+durable floor，bounded HTTPS/ETag dynamic authority 也已真正消费该协议。static green tests 仍只证明本步
+签名入口和运行时 fencing；动态失联、撤销与原子刷新验证见
+[dynamic inventory verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-verification.md)，
+底层 floor 见
 [publication floor kernel verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-publication-floor-kernel-verification.md)。

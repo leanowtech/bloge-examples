@@ -526,10 +526,14 @@ verified heads by scope and fleet, survives process reconstruction, and rejects 
 same-sequence forks, gaps, broken predecessors, nested-inventory rollback or same-generation drift,
 same-inventory reactivation after revocation, corrupt rows, and cross-fleet reuse. Its v2 record
 upgrades a v1 row only after an exact cryptographically verified replay of the stored dual head;
-it never guesses missing legacy inventory state. This increment
-is the governance kernel only: the static authority does not yet fetch or consume remote
-publications, so runtime revocation still requires the dynamic authority described in the next
-stage.
+it never guesses missing legacy inventory state. The
+`DynamicExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority` now consumes that
+protocol through bounded HTTPS/ETag refresh, independently verifies deployment and witness
+M-of-N signatures, revalidates the nested inventory, advances the durable floor before local
+publication, and atomically exposes only an exact `ACTIVE` runtime snapshot. A verified `REVOKED`
+publication advances the floor without resolving removed lanes and immediately closes recovery
+admission. Any refresh, protocol, signature, runtime-binding, or floor failure also fails closed;
+the last verified object remains diagnostics-only and cannot be used as stale admission authority.
 
 Embedders that share the test-runtime database can also construct a
 `DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator` and pass it, one stable
@@ -539,9 +543,12 @@ failure abandonment, and durable per-partition cursors; the worker heartbeats in
 lane execution. A busy coordinator is reported separately from an empty completed inventory. The
 lane journal remains the only execution/write fence.
 
-The Spring path still consumes a caller-supplied local inventory; it does not generate or discover
-one. Signed dynamic inventory publication/revocation, online partition rebalance, capability/HTTP
-discovery, production-profile wiring, publisher
+The Spring path still consumes a caller-supplied inventory bean; it does not generate trust roots,
+discover lane runtimes, or construct the dynamic authority from properties. Embedders may supply
+either the static configured authority or the dynamic authority, and the existing worker fences
+every lane and cursor commit against its current generation and availability. Dynamic authority
+automatic Spring wiring, online partition rebalance, capability/HTTP discovery,
+production-profile wiring, publisher
 mTLS/client identity and certificate pinning, response-key hot rotation,
 publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
@@ -558,6 +565,8 @@ The witnessed publication wire contract is the strict
 [fleet inventory publication JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-inventory-publication-v1.schema.json),
 with kernel verification in the
 [publication floor verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-publication-floor-kernel-verification.md).
+The dynamic consumer, revocation, refresh, runtime-fence, health, and failure semantics are in the
+[dynamic fleet inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-verification.md).
 The profile/configuration/lifecycle contract and H2 context-rebuild proof are in the
 [recovery fleet runtime composition verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-runtime-composition-verification.md).
 

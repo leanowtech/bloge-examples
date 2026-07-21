@@ -12,9 +12,10 @@
 - 数据库时钟、跨副本线性化、跨重启 durable floor；
 - strict machine JSON Schema。
 
-它还没有接入 HTTPS/ETag refresh authority。当前 static authority 不会自动消费 publication，worker 也不会
-仅因为 floor 表出现新行就感知撤销。这个边界刻意保留：先把治理事实和单调状态机冻结，再让动态消费者只
-能沿同一协议前进，避免远端 transport、密码学验证、运行时发布与数据库 mutation 同时设计而留下旁路。
+本页只验证协议与 floor 内核，不把后继 transport 消费逻辑混入其证明范围。该协议现已由 bounded
+HTTPS/ETag dynamic authority 消费；完整的远端验签、撤销传播、floor-before-publish、运行期围栏和健康
+真值见本页第 7 节链接。这样的分层保留了一个重要审计边界：floor 永远只接受已经完成全部外部验证的
+private generation，不负责联网、验签或构造 runtime port。
 
 ## 2. 根因
 
@@ -115,9 +116,11 @@ predecessor、nested inventory rollback/fork、撤销后重激活、v1→v2 精�
 row corruption、双副本竞争和数据库关闭。三个公共类型通过
 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
 
-## 7. 下一闭环
+## 7. 后继消费闭环
 
-下一子步必须实现同一协议的 bounded HTTPS/ETag dynamic authority：严格 media/protocol negotiation、
-M-of-N publication 签名、独立 witness quorum、nested inventory 复验、ACTIVE-only runtime resolution、
-atomic last-known-good replacement、refresh failure hard fence、signed revocation、maximum snapshot age、
-floor-before-publish 和 worker in-flight fence。不得另建 unsigned revocation flag 或把 ETag 当作治理代际。
+同一协议的 bounded HTTPS/ETag dynamic authority 已实现：严格 media/protocol negotiation、M-of-N
+publication 签名、独立 witness quorum、nested inventory 复验、`ACTIVE`-only runtime resolution、原子
+本地发布、refresh failure hard fence、signed revocation、maximum snapshot age、floor-before-publish 和
+既有 worker in-flight generation fence 已贯通。ETag 始终只是条件请求缓存键，`304` 仍会重做全部本地
+验证，不充当治理代际。验证见
+[bootstrap-root recovery fleet dynamic inventory verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-verification.md)。

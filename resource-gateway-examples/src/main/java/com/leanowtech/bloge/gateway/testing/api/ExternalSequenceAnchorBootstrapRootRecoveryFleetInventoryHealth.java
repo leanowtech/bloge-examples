@@ -22,6 +22,9 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHeal
     private final Supplier<
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Observation>
             observation;
+    private final Supplier<
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor>
+            descriptor;
 
     /**
      * Creates health over one signed inventory authority.
@@ -30,13 +33,26 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHeal
      */
     public ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth(
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority authority) {
-        this(Objects.requireNonNull(authority, "authority")::observation);
+        ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority validated =
+                Objects.requireNonNull(authority, "authority");
+        this.observation = validated::observation;
+        this.descriptor = validated::descriptor;
     }
 
     ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth(
             Supplier<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Observation>
                     observation) {
         this.observation = Objects.requireNonNull(observation, "observation");
+        this.descriptor = () -> staticDescriptor(this.observation.get());
+    }
+
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth(
+            Supplier<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Observation>
+                    observation,
+            Supplier<ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor>
+                    descriptor) {
+        this.observation = Objects.requireNonNull(observation, "observation");
+        this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
     }
 
     /**
@@ -48,8 +64,10 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHeal
     public Health health() {
         try {
             var observed = Objects.requireNonNull(observation.get(), "inventory observation");
+            var described = Objects.requireNonNull(descriptor.get(), "inventory descriptor");
+            requireSameGeneration(observed, described);
             return (observed.available() ? Health.up() : Health.down())
-                    .withDetails(details(observed)).build();
+                    .withDetails(details(observed, described)).build();
         } catch (RuntimeException unavailable) {
             return Health.down()
                     .withDetail("schemaVersion", SnapshotSchema.VERSION)
@@ -60,7 +78,9 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHeal
 
     private static Map<String, Object> details(
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Observation
-                    observed) {
+                    observed,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor
+                    descriptor) {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("schemaVersion", SnapshotSchema.VERSION);
         details.put("inventoryStatus", observed.status());
@@ -70,13 +90,47 @@ public final class ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHeal
         details.put("laneCount", observed.laneCount());
         details.put("validSignatureCount", observed.validSignatureCount());
         details.put("requiredSignatureCount", observed.requiredSignatureCount());
-        details.put("runtimeExpiryFence", true);
-        details.put("fleetTopologyBound", true);
-        details.put("exactRuntimeBinding", true);
-        details.put("automaticRefresh", false);
-        details.put("signedRevocation", false);
-        details.put("durableGenerationFloor", false);
+        details.putAll(descriptor.properties());
         return Map.copyOf(details);
+    }
+
+    private static void requireSameGeneration(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Observation
+                    observation,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor
+                    descriptor) {
+        Object sourceType = descriptor.properties().get("sourceType");
+        if (observation.available() != descriptor.available()
+                || !observation.status().equals(descriptor.status())
+                || observation.generation() != descriptor.generation()
+                || observation.laneCount() != descriptor.laneCount()
+                || !observation.sourceType().equals(sourceType)) {
+            throw new IllegalStateException(
+                    "Recovery-fleet inventory health generation changed during projection");
+        }
+    }
+
+    private static ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor
+            staticDescriptor(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Observation
+                    observed) {
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.Descriptor
+                        .SCHEMA_VERSION,
+                true, true, observed.available(), observed.status(), observed.generation(),
+                observed.laneCount(), Map.of(
+                "sourceType", observed.sourceType(),
+                "protocolVersion",
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAttestation
+                        .SCHEMA_VERSION,
+                "privateMaterialPresent", false,
+                "signatureThreshold", observed.requiredSignatureCount(),
+                "runtimeExpiryFence", true,
+                "fleetTopologyBound", true,
+                "exactRuntimeBinding", true,
+                "automaticRefresh", false,
+                "signedRevocation", false,
+                "durableGenerationFloor", false));
     }
 
     private static final class SnapshotSchema {
