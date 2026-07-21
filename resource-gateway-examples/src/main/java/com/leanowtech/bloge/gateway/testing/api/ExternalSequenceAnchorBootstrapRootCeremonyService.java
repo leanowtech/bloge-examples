@@ -363,6 +363,16 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyService implements
     }
 
     /**
+     * Returns the immutable public root-set binding enforced by the producer behind this service.
+     *
+     * @return exact scope, root-set, trust-domain, quorum, and lifecycle policy
+     */
+    public ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding
+            expectedBinding() {
+        return producer.expectedBinding();
+    }
+
+    /**
      * Returns process-local lifecycle and signer-call capacity without ceremony identity or data.
      *
      * @return payload-free runtime projection

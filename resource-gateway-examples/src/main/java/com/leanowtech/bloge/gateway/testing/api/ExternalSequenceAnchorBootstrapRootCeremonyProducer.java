@@ -115,6 +115,20 @@ public final class ExternalSequenceAnchorBootstrapRootCeremonyProducer {
     }
 
     /**
+     * Returns the immutable root-set and lifecycle binding enforced by this producer.
+     *
+     * <p>The value contains public deployment metadata only. Fleet composition uses it to reject a
+     * recovery lane whose advertised scope or root-set identity does not match the service that
+     * will execute the ceremony.</p>
+     *
+     * @return exact public producer binding
+     */
+    public ConfiguredExternalSequenceAnchorBootstrapRootTrustStore.ExpectedBinding
+            expectedBinding() {
+        return binding;
+    }
+
+    /**
      * Produces sequence one from the deployment-pinned genesis.
      *
      * @param request immutable successor command with genesis fingerprint as expected predecessor

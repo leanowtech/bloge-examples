@@ -11,8 +11,9 @@ lingering-call 观测；`PRODUCED` 与 content-addressed publication outbox 已�
 顺序 claim、退避/attempt budget、旧行回填和 receipt fence；strict HTTPS + Ed25519 signed-response
 publisher adapter、固定容量调用监督、数据库驱动 publication service、单 lane scheduler 和冲突永久
 quarantine 亦已闭合；test/staging 单 root-set 的严格 Spring publication/recovery composition、生命周期与
-aggregate-only health 也已接通。它仍不等于带企业 IAM、HSM/KMS、cross-root worker/resolver inventory、
-root publisher HA 和外部审计留存的生产 ceremony 产品。
+aggregate-only health 也已接通；跨 root-set recovery 的进程内强绑定 inventory、有界公平 worker、代际
+防回滚/同代漂移和 poison-lane 隔离 kernel 亦已闭合。它仍不等于带企业 IAM、HSM/KMS、签名动态
+resolver inventory、durable 跨副本 cursor/sharding、root publisher HA 和外部审计留存的生产 ceremony 产品。
 所有消费路径必须使用同一原子 root snapshot，不能另造一个只验证最新 root snapshot 的旁路。
 
 ## 2. 根因
@@ -288,6 +289,12 @@ strict configuration/profile isolation 和真实数据库组合测试，把 cere
 `clean verify` 执行 3344 tests，0 failures、0 errors、2 skips，Browser DOM 34 项中 32 项及 browser
 workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
 
+跨 root-set recovery fleet kernel 子步新增 14 项测试，并把 ceremony/publication/fleet 联合聚焦门禁
+扩展到 129 tests，0 failures、0 errors、0 skips。producer、service、fleet inventory 与 fleet worker
+4 个公共类型通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors；完整 Resource
+Gateway `clean verify` 执行 3358 tests，0 failures、0 errors、2 skips，Browser DOM 34 项中 32 项及
+browser workflow 1 项真实执行，并成功重打包 Spring Boot 可执行 JAR。
+
 ## 11. 双域部署接线
 
 Spring 组合根现已在 suite-stability 与 test-secret 两个域分别创建：
@@ -475,7 +482,7 @@ Schema 不变，本地细分类只存在 supervisor snapshot。
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootPublisherCallSupervisorTest,HttpExternalSequenceAnchorBootstrapRootPublisherTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoverySchedulerTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoveryHealthTest,ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationHealthTest \
+  -Dtest=ExternalSequenceAnchorBootstrapRootSignerCallSupervisorTest,ExternalSequenceAnchorBootstrapRootPublisherCallSupervisorTest,HttpExternalSequenceAnchorBootstrapRootPublisherTest,ExternalSequenceAnchorBootstrapRootCeremonyProducerTest,ExternalSequenceAnchorBootstrapRootProtocolSchemaTest,DatabaseExternalSequenceAnchorBootstrapRootCeremonyJournalTest,ExternalSequenceAnchorBootstrapRootCeremonyServiceTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoverySchedulerTest,ExternalSequenceAnchorBootstrapRootCeremonyRecoveryHealthTest,ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationRuntimeConfigurationTest,ExternalSequenceAnchorBootstrapRootPublicationHealthTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryTest,ExternalSequenceAnchorBootstrapRootRecoveryFleetWorkerTest \
   test
 ```
 
@@ -490,9 +497,11 @@ mvn -f resource-gateway-examples/pom.xml \
   orphan/provider-side reconciliation 和 provider 级重试预算；当前本地 timeout 只中断 adapter，
   忽略 interrupt 的调用会占用一个固定槽位直到真实返回，但不能形成无界线程/队列，也不能提交过期
   artifact；
-- recovery/publication 跨 root-set 发现、分片、公平、fleet rollout jitter、resolver inventory
-  publication/revocation、policy 维护迁移、外部 SLO/告警和目标数据库多副本认证；当前 Spring 组合只闭合
-  一个显式 root-set lane，不能被描述为部署级 worker platform；
+- recovery 已具备进程内 canonical lane discovery、代际防回滚/同代漂移、单 worker 有界 round-robin 和
+  poison-lane 隔离，但 signed dynamic resolver inventory publication/revocation、durable 跨副本 cursor、
+  shard assignment、跨副本公平、fleet rollout jitter、scheduler/health/Spring 产品接线、policy 维护迁移、
+  外部 SLO/告警和目标数据库多副本认证仍未完成；publication 仍无跨 root-set fleet。当前能力不能被描述为
+  部署级 worker platform；
 - publisher mTLS/client identity、certificate pinning、静态 response key 热轮换、跨 root-set fleet SLO；
   当前 adapter 依赖 JVM HTTPS server trust 并额外验证 Ed25519 响应，
   不等于双向 TLS 或证书 pinning；

@@ -467,14 +467,30 @@ attempt. Its aggregate-only Actuator health treats no work, approval wait, compe
 retry delay as healthy workflow states, but fails on attempt exhaustion, latest scheduler/execution
 failure, fence loss, or fully lingering signer capacity.
 
-This remains a single-root authoring runtime, not a new Resource Gateway endpoint or
-deployment-wide worker registry; cross-root discovery, governed resolver inventory/rollout,
-publisher mTLS/client identity and certificate pinning, response-key hot rotation,
+Embedders that already compose multiple root-set services can place exact service/resolver pairs in
+an `ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory`. Each `Lane` must carry the service's
+exact immutable `ExpectedBinding` and a reviewed `sha256:` runtime-binding fingerprint; mismatched or
+duplicate scope/root-set identities are rejected before polling. Publish every add/remove/rebind as a
+strictly newer inventory generation, then call
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker.runCycle()`. A cycle visits at most the
+configured lane budget and resumes after the last attempted canonical key, including after a failed
+lane, so a poison prefix cannot starve later root sets. Generation rollback, same-generation
+descriptor drift, and same-generation service/resolver replacement fail closed. Lane failures are
+returned without exception text or provider diagnostics; the underlying per-root journal remains the
+only acquisition, retry, attempt-budget, and fence authority. Close the worker before its caller-owned
+services; close waits for an admitted cycle but never closes inventory, resolvers, or services.
+
+The default Spring composition remains a single-root authoring runtime, not a new Resource Gateway
+endpoint or deployment-wide worker registry. The fleet cursor is process-local: signed dynamic
+resolver inventory publication/revocation, durable cross-replica cursor/sharding/fairness,
+fleet scheduler/health/Spring wiring, publisher mTLS/client identity and certificate pinning,
+response-key hot rotation,
 publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
 bundle, and publication HTTP Schemas, failure matrix, runtime wiring, and remaining ceremony limits
 are documented in the
-[bootstrap-root ceremony verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md).
+[bootstrap-root ceremony verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-ceremony-kernel-verification.md)
+and [recovery fleet kernel verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-kernel-verification.md).
 
 Scope, cohort, inventory/witness trust, managed-root freshness, external-anchor quorum/timing, and
 lease settings are checked by
