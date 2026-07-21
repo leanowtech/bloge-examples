@@ -84,6 +84,12 @@
 > trust inventory、worker/job 双线性化、orphan reconciliation、Spring/HTTP/Schema/test-kit/capability，
 > 因此仍不是可启用的 hard-cancellation 产品能力。验证见
 > [durable cancellation journal verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-durable-journal-verification.md)。
+
+> Stage 4 attempt cancellation 第三增量以 coordinator 固化 `find -> supervised descriptor -> durable
+> prepare -> supervised idempotent cancel -> verified accept`，terminal replay 零 provider I/O，失败保持
+> `PREPARED`。9 项单元和 3 项真实 journal/verifier 组合门禁全绿，公共类型 strict JavaDoc 零告警。
+> `UNCONFIRMED` 与旧 deployment 漂移仍只失败关闭，必须由后续 reconciliation/orphan lane 消化。验证见
+> [attempt cancellation coordinator verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-coordinator-verification.md)。
 > 下表仍写的“durable cancellation receipt 待完成”特指 retention/tombstone、worker 消费与产品协议；
 > 不再指本增量已经落地的 journal correctness core。
 

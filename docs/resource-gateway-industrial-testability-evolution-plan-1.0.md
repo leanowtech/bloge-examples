@@ -72,6 +72,13 @@
 > 下表仍写的“durable cancellation receipt 待完成”特指 retention/tombstone、worker 消费与产品协议；
 > 不再指本增量已经落地的 journal correctness core。
 
+> Stage 4 attempt cancellation 第三增量新增 coordinator，冻结 `find -> bounded descriptor -> durable
+> prepare -> bounded idempotent cancel -> verified accept` 顺序。terminal exact replay 不再触发 provider；
+> timeout/adapter/attestation failure 保持 `PREPARED`；descriptor drift 失败关闭。9 项单元与 3 项真实
+> journal/verifier 组合门禁共同全绿，公共类型 strict JavaDoc 零告警。`UNCONFIRMED` 不自动重试，旧
+> deployment 不由当前 authority 猜测解析，仍须进入未实现的 reconciliation/orphan lane。验证见
+> [attempt cancellation coordinator verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-coordinator-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

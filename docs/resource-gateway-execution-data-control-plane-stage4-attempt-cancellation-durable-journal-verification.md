@@ -79,7 +79,8 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DatabaseTestSuiteStabilityAttemptCancellationJournalTest test
 ```
 
-结果为 15 tests，0 failures、0 errors、0 skips，覆盖：
+journal core 结果为 15 tests，0 failures、0 errors、0 skips；加入 coordinator 后该测试类为 18 tests，
+其中新增 3 项真实组合门禁。journal core 覆盖：
 
 - prepare/confirmed accept/find 的完整往返和 payload-free sequence 落库；
 - exact prepare/terminal replay、deadline 关闭后的 retained replay；
@@ -98,6 +99,9 @@ mvn -f resource-gateway-examples/pom.xml \
 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。下述 `3893` 全量数字对应此前冻结的
 `3c08bb7c`；当前增量提交后的精确全量基线需在独占 `clean verify` 完成后再前移。
 
+coordinator 的 9 项单元测试与 3 项真实 journal 组合测试见
+[attempt cancellation coordinator verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-coordinator-verification.md)。
+
 最终隔离全量门禁：
 
 ```bash
@@ -115,7 +119,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 1. command/receipt retention、HMAC tombstone、legal hold 与容量/SLO；
 2. dynamic signed provider inventory、key revocation、trust-generation floor 与 N/N-1 rollout；
-3. queue `CANCEL_REQUESTED` 与 journal `CONFIRMED` 的双线性化状态机；
+3. 已有 coordinator 与 queue `CANCEL_REQUESTED` / journal `CONFIRMED` 的双线性化状态机接线；
 4. worker slot 只在 confirmed receipt 后释放，unconfirmed/timeout 进入 bounded orphan lane；
 5. process/container provider 的 start identity、exit watcher、late receipt 与 orphan reconciliation；
 6. crash/DR/非 H2/并发负载认证及外部 tamper-evident anchor；

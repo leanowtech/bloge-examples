@@ -2,7 +2,9 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationCallSupervisor;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationCommand;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationCoordinator;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationVerifier;
@@ -28,6 +30,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -216,6 +219,95 @@ class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
         assertThat(accepted.entry().attestation()).get()
                 .extracting(value -> value.receipt().terminationConfirmed())
                 .isEqualTo(false);
+    }
+
+    @Test
+    void coordinatorPersistsVerifiedTerminationAndReplaysWithoutProvider() throws Exception {
+        TestSuiteStabilityAttemptCancellationCommand command = command(1, 7, 'a');
+        var signed = attestation(command, 11,
+                TestSuiteStabilityAttemptCancellationReceipt.Outcome.TERMINATED);
+        AtomicInteger descriptorCalls = new AtomicInteger();
+        AtomicInteger cancellationCalls = new AtomicInteger();
+        TestSuiteStabilityAttemptCancellationAuthority authority = authority(
+                descriptorCalls, cancellationCalls, ignored -> signed);
+
+        try (var supervisor = supervisor(Duration.ofSeconds(1))) {
+            var coordinator = new TestSuiteStabilityAttemptCancellationCoordinator(
+                    journal, supervisor);
+
+            assertThat(coordinator.cancel(authority, command).status()).isEqualTo(
+                    TestSuiteStabilityAttemptCancellationJournal.AcceptanceStatus.CONFIRMED);
+            assertThat(coordinator.cancel(authority, command).status()).isEqualTo(
+                    TestSuiteStabilityAttemptCancellationJournal.AcceptanceStatus.REPLAYED);
+        }
+
+        assertThat(descriptorCalls).hasValue(1);
+        assertThat(cancellationCalls).hasValue(1);
+        assertThat(journal.find("tenant-a", "test", command.commandId()))
+                .get().extracting(TestSuiteStabilityAttemptCancellationJournal.Entry::status)
+                .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.Status.CONFIRMED);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_cancel_provider_sequences
+                """, Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void coordinatorPersistsVerifiedNotFoundAsUnconfirmed() throws Exception {
+        TestSuiteStabilityAttemptCancellationCommand command = command(1, 7, 'a');
+        var signed = attestation(command, 11,
+                TestSuiteStabilityAttemptCancellationReceipt.Outcome.NOT_FOUND);
+        TestSuiteStabilityAttemptCancellationAuthority authority = authority(
+                new AtomicInteger(), new AtomicInteger(), ignored -> signed);
+
+        TestSuiteStabilityAttemptCancellationJournal.Acceptance accepted;
+        try (var supervisor = supervisor(Duration.ofSeconds(1))) {
+            accepted = new TestSuiteStabilityAttemptCancellationCoordinator(journal, supervisor)
+                    .cancel(authority, command);
+        }
+
+        assertThat(accepted.status()).isEqualTo(
+                TestSuiteStabilityAttemptCancellationJournal.AcceptanceStatus.UNCONFIRMED);
+        assertThat(accepted.entry().status()).isEqualTo(
+                TestSuiteStabilityAttemptCancellationJournal.Status.UNCONFIRMED);
+        assertThat(accepted.entry().attestation()).get()
+                .extracting(value -> value.receipt().terminationConfirmed())
+                .isEqualTo(false);
+    }
+
+    @Test
+    void coordinatorTimeoutLeavesDurablePreparationWithoutProviderSequence() throws Exception {
+        TestSuiteStabilityAttemptCancellationCommand command = command(1, 7, 'a');
+        var signed = attestation(command, 11,
+                TestSuiteStabilityAttemptCancellationReceipt.Outcome.TERMINATED);
+        TestSuiteStabilityAttemptCancellationAuthority authority = authority(
+                new AtomicInteger(), new AtomicInteger(), ignored -> {
+                    try {
+                        Thread.sleep(Duration.ofSeconds(5));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return signed;
+                });
+
+        try (var supervisor = supervisor(Duration.ofMillis(100))) {
+            var coordinator = new TestSuiteStabilityAttemptCancellationCoordinator(
+                    journal, supervisor);
+
+            assertThatThrownBy(() -> coordinator.cancel(authority, command))
+                    .isInstanceOfSatisfying(
+                            TestSuiteStabilityAttemptCancellationCallSupervisor
+                                    .InvocationException.class,
+                            failure -> assertThat(failure.disposition()).isEqualTo(
+                                    TestSuiteStabilityAttemptCancellationCallSupervisor
+                                            .Disposition.TIMED_OUT));
+        }
+
+        assertThat(journal.find("tenant-a", "test", command.commandId()))
+                .get().extracting(TestSuiteStabilityAttemptCancellationJournal.Entry::status)
+                .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.Status.PREPARED);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_cancel_provider_sequences
+                """, Integer.class)).isZero();
     }
 
     @Test
@@ -509,6 +601,33 @@ class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
                 latency);
     }
 
+    private TestSuiteStabilityAttemptCancellationAuthority authority(
+            AtomicInteger descriptorCalls,
+            AtomicInteger cancellationCalls,
+            Cancellation cancellation) {
+        return new TestSuiteStabilityAttemptCancellationAuthority() {
+            @Override
+            public Descriptor descriptor() {
+                descriptorCalls.incrementAndGet();
+                return descriptor;
+            }
+
+            @Override
+            public TestSuiteStabilityAttemptCancellationReceipt.Attestation cancel(
+                    TestSuiteStabilityAttemptCancellationCommand command) {
+                cancellationCalls.incrementAndGet();
+                return cancellation.cancel(command);
+            }
+        };
+    }
+
+    private static TestSuiteStabilityAttemptCancellationCallSupervisor supervisor(
+            Duration cancellationTimeout) {
+        return new TestSuiteStabilityAttemptCancellationCallSupervisor(
+                new TestSuiteStabilityAttemptCancellationCallSupervisor.Policy(
+                        Duration.ofSeconds(1), cancellationTimeout, 1));
+    }
+
     private TestSuiteStabilityAttemptCancellationVerifier verifierFor(KeyPair pair) {
         Instant now = databaseTime();
         return new TestSuiteStabilityAttemptCancellationVerifier(
@@ -534,6 +653,12 @@ class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
         byte[] challenge = new byte[32];
         java.util.Arrays.fill(challenge, (byte) value);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(challenge);
+    }
+
+    @FunctionalInterface
+    private interface Cancellation {
+        TestSuiteStabilityAttemptCancellationReceipt.Attestation cancel(
+                TestSuiteStabilityAttemptCancellationCommand command);
     }
 
     private record ConcurrentAcceptance(
