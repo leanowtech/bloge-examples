@@ -27,6 +27,8 @@ public final class ControlPlaneCertificateStatusMonitor {
         BATCH_LIMIT,
         /** The source could not provide a response. */
         SOURCE_UNAVAILABLE,
+        /** The source response violated the strict transport or publication protocol. */
+        SOURCE_REJECTED,
         /** The durable floor was unavailable or corrupt. */
         FLOOR_UNAVAILABLE,
         /** A supplied publication failed durable verification or cursor admission. */
@@ -106,6 +108,16 @@ public final class ControlPlaneCertificateStatusMonitor {
                 return publish(applied == 0 ? RefreshStatus.CURRENT : RefreshStatus.APPLIED,
                         current.sequence(), applied, current.expiresAt());
             }
+            if (fetched.status()
+                    == ControlPlaneCertificateStatusSource.FetchStatus.SOURCE_UNAVAILABLE) {
+                return publish(RefreshStatus.SOURCE_UNAVAILABLE,
+                        current.sequence(), applied, current.expiresAt());
+            }
+            if (fetched.status()
+                    == ControlPlaneCertificateStatusSource.FetchStatus.PROTOCOL_REJECTED) {
+                return publish(RefreshStatus.SOURCE_REJECTED,
+                        current.sequence(), applied, current.expiresAt());
+            }
             ControlPlaneCertificateStatusFloor.Acceptance accepted;
             try {
                 accepted = floor.accept(fetched.publication());
@@ -159,7 +171,8 @@ public final class ControlPlaneCertificateStatusMonitor {
         return new Descriptor(Descriptor.SCHEMA_VERSION, status, floor.durable(),
                 status == RefreshStatus.CURRENT || status == RefreshStatus.APPLIED
                         || status == RefreshStatus.BATCH_LIMIT
-                        || status == RefreshStatus.PUBLICATION_REJECTED,
+                        || status == RefreshStatus.PUBLICATION_REJECTED
+                        || status == RefreshStatus.SOURCE_REJECTED,
                 admission.descriptor().fresh(), sequence, applied, clock.instant(), expiresAt);
     }
 

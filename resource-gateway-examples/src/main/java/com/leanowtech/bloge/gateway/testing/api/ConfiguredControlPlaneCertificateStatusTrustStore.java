@@ -1,15 +1,19 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.Signature;
+import java.security.spec.X509EncodedKeySpec;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -245,6 +249,58 @@ public final class ConfiguredControlPlaneCertificateStatusTrustStore
                 "maximumEvidenceAgeSeconds", MAXIMUM_EVIDENCE_AGE.toSeconds()));
     }
 
+    /**
+     * Parses bounded public-key-only deployment configuration.
+     *
+     * @param objectMapper strict JSON decoder and canonical mapper
+     * @param clock authoritative key-lifecycle observation clock
+     * @param trustDomain expected external status trust domain
+     * @param acceptedPolicies comma-separated exact policy fingerprints
+     * @param signatureThreshold required distinct authority signatures
+     * @param authorityKeysJson bounded JSON array of public authority keys
+     * @return immutable configured trust store
+     */
+    public static ConfiguredControlPlaneCertificateStatusTrustStore fromJson(
+            ObjectMapper objectMapper,
+            Clock clock,
+            String trustDomain,
+            String acceptedPolicies,
+            int signatureThreshold,
+            String authorityKeysJson) {
+        try {
+            ObjectMapper mapper = objectMapper == null
+                    ? new ObjectMapper().findAndRegisterModules() : objectMapper;
+            JsonNode root = mapper.readTree(normalized(authorityKeysJson));
+            if (root == null || !root.isArray() || root.isEmpty()
+                    || root.size() > MAXIMUM_KEYS) {
+                throw invalid();
+            }
+            List<AuthorityKey> parsed = new ArrayList<>();
+            for (JsonNode node : root) {
+                if (!node.isObject() || node.size() != 7) {
+                    throw invalid();
+                }
+                Set<String> names = new HashSet<>();
+                node.fieldNames().forEachRemaining(names::add);
+                if (!names.equals(Set.of("authorityId", "keyId", "publicKeyBase64",
+                        "notBefore", "expiresAt", "enabled", "revoked"))) {
+                    throw invalid();
+                }
+                parsed.add(new AuthorityKey(text(node, "authorityId"), text(node, "keyId"),
+                        publicKey(text(node, "publicKeyBase64")),
+                        Instant.parse(text(node, "notBefore")),
+                        Instant.parse(text(node, "expiresAt")),
+                        bool(node, "enabled"), bool(node, "revoked")));
+            }
+            return new ConfiguredControlPlaneCertificateStatusTrustStore(
+                    mapper, clock, trustDomain, fingerprints(acceptedPolicies),
+                    signatureThreshold, parsed);
+        } catch (RuntimeException | java.io.IOException invalid) {
+            throw new IllegalArgumentException(
+                    "Control-plane certificate status trust configuration is invalid", invalid);
+        }
+    }
+
     private Verification rejected(
             VerificationStatus status, String reasonCode, int validCount) {
         return new Verification(status, reasonCode, "", "", 0, validCount,
@@ -292,6 +348,47 @@ public final class ConfiguredControlPlaneCertificateStatusTrustStore
         verifier.initVerify(publicKey);
         verifier.update(fingerprint.getBytes(StandardCharsets.UTF_8));
         return verifier.verify(Base64.getDecoder().decode(encoded));
+    }
+
+    private static PublicKey publicKey(String encoded) {
+        try {
+            byte[] bytes = Base64.getDecoder().decode(encoded);
+            if (bytes.length < 32 || bytes.length > 128) {
+                throw invalid();
+            }
+            return KeyFactory.getInstance("Ed25519")
+                    .generatePublic(new X509EncodedKeySpec(bytes));
+        } catch (GeneralSecurityException | IllegalArgumentException invalid) {
+            throw new IllegalArgumentException(
+                    "Certificate status public key is invalid", invalid);
+        }
+    }
+
+    private static Set<String> fingerprints(String configured) {
+        Set<String> values = new HashSet<>();
+        for (String value : normalized(configured).split(",", -1)) {
+            String normalized = normalized(value);
+            if (!normalized.isBlank()) {
+                values.add(normalized);
+            }
+        }
+        return values;
+    }
+
+    private static String text(JsonNode object, String field) {
+        JsonNode value = object.get(field);
+        if (value == null || !value.isTextual()) {
+            throw invalid();
+        }
+        return value.textValue();
+    }
+
+    private static boolean bool(JsonNode object, String field) {
+        JsonNode value = object.get(field);
+        if (value == null || !value.isBoolean()) {
+            throw invalid();
+        }
+        return value.booleanValue();
     }
 
     private static String normalized(String value) {

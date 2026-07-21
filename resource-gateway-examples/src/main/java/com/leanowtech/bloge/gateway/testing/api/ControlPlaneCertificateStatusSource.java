@@ -35,7 +35,11 @@ public interface ControlPlaneCertificateStatusSource {
         /** No publication follows the supplied durable cursor. */
         UNCHANGED,
         /** One candidate successor publication is present. */
-        PUBLICATION
+        PUBLICATION,
+        /** The remote source is temporarily unavailable. */
+        SOURCE_UNAVAILABLE,
+        /** The remote response violates the strict transport or publication protocol. */
+        PROTOCOL_REJECTED
     }
 
     /**
@@ -46,13 +50,18 @@ public interface ControlPlaneCertificateStatusSource {
      */
     record FetchResult(
             FetchStatus status,
-            ControlPlaneCertificateStatusPublication publication) {
+            ControlPlaneCertificateStatusPublication publication,
+            String reasonCode) {
 
         /** Enforces all-or-none status and candidate publication. */
         public FetchResult {
             status = Objects.requireNonNull(status, "status");
+            reasonCode = reasonCode == null ? "" : reasonCode.trim();
             if (status == FetchStatus.PUBLICATION && publication == null
-                    || status == FetchStatus.UNCHANGED && publication != null) {
+                    || status != FetchStatus.PUBLICATION && publication != null
+                    || status == FetchStatus.PUBLICATION && !reasonCode.isBlank()
+                    || status != FetchStatus.PUBLICATION
+                    && !reasonCode.matches("[A-Z][A-Z0-9_.-]{0,127}")) {
                 throw new IllegalArgumentException(
                         "Certificate status source result is invalid");
             }
@@ -60,14 +69,24 @@ public interface ControlPlaneCertificateStatusSource {
 
         /** @return a source response containing no successor */
         public static FetchResult unchanged() {
-            return new FetchResult(FetchStatus.UNCHANGED, null);
+            return new FetchResult(FetchStatus.UNCHANGED, null, "NO_CHANGE");
         }
 
         /** @return a source response containing one untrusted candidate */
         public static FetchResult publication(
                 ControlPlaneCertificateStatusPublication publication) {
             return new FetchResult(FetchStatus.PUBLICATION,
-                    Objects.requireNonNull(publication, "publication"));
+                    Objects.requireNonNull(publication, "publication"), "");
+        }
+
+        /** @return a bounded transient source-failure result */
+        public static FetchResult unavailable(String reasonCode) {
+            return new FetchResult(FetchStatus.SOURCE_UNAVAILABLE, null, reasonCode);
+        }
+
+        /** @return a bounded strict-protocol rejection result */
+        public static FetchResult rejected(String reasonCode) {
+            return new FetchResult(FetchStatus.PROTOCOL_REJECTED, null, reasonCode);
         }
     }
 
@@ -78,6 +97,55 @@ public interface ControlPlaneCertificateStatusSource {
      * @return unchanged or one candidate successor
      */
     FetchResult fetch(Cursor cursor);
+
+    /** @return fixed-cardinality transport-security posture */
+    default Descriptor descriptor() {
+        return Descriptor.unavailable();
+    }
+
+    /**
+     * Public source transport posture without endpoint or identity material.
+     *
+     * @param schemaVersion descriptor protocol version
+     * @param available whether the source adapter is configured
+     * @param privateTrustStore whether JVM system trust is excluded
+     * @param serverSpkiPinned whether remote key identity is pinned
+     * @param mutualTls whether a client workload certificate is configured
+     * @param certificateIdentityBound whether both workload roles are policy bound
+     * @param strictProtocol whether media type, version, bounds, and redirects are strict
+     */
+    record Descriptor(
+            String schemaVersion,
+            boolean available,
+            boolean privateTrustStore,
+            boolean serverSpkiPinned,
+            boolean mutualTls,
+            boolean certificateIdentityBound,
+            boolean strictProtocol) {
+
+        /** Current source descriptor protocol version. */
+        public static final String SCHEMA_VERSION =
+                "bloge.controlPlaneCertificateStatusSourceDescriptor.v1";
+
+        /** Rejects partial or downgrade-prone source posture. */
+        public Descriptor {
+            schemaVersion = schemaVersion == null ? "" : schemaVersion.trim();
+            if (!SCHEMA_VERSION.equals(schemaVersion)
+                    || available && (!privateTrustStore || !serverSpkiPinned || !mutualTls
+                    || !certificateIdentityBound || !strictProtocol)
+                    || !available && (privateTrustStore || serverSpkiPinned || mutualTls
+                    || certificateIdentityBound || strictProtocol)) {
+                throw new IllegalArgumentException(
+                        "Certificate status source descriptor is invalid");
+            }
+        }
+
+        /** @return canonical unavailable source posture */
+        public static Descriptor unavailable() {
+            return new Descriptor(SCHEMA_VERSION, false, false, false,
+                    false, false, false);
+        }
+    }
 
     private static String normalized(String value) {
         return value == null ? "" : value.trim();
