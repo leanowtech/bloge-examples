@@ -85,15 +85,15 @@ final class ScopedProcessTree {
      */
     void terminate() {
         List<Target> targets = terminationTargets();
+        targets.forEach(Target::requireIdentityIfAlive);
         for (Target target : targets) {
-            target.requireIdentityIfAlive();
             if (target.isOriginalAlive()
                     && !target.process().destroyForcibly()
-                    && target.isOriginalAlive()) {
+                    && target.process().isAlive()) {
                 throw new ScopeException(Disposition.TERMINATION_REFUSED);
             }
         }
-        while (targets.stream().anyMatch(Target::isOriginalAlive)) {
+        while (targets.stream().map(Target::process).anyMatch(ProcessHandle::isAlive)) {
             if (Thread.currentThread().isInterrupted()) {
                 throw new ScopeException(Disposition.TERMINATION_INTERRUPTED);
             }
@@ -108,7 +108,8 @@ final class ScopedProcessTree {
      * @throws ScopeException when the captured process is still alive
      */
     void verifyTerminated() {
-        if (capturedTargets.stream().anyMatch(Target::isOriginalAlive)) {
+        capturedTargets.forEach(Target::requireIdentityIfAlive);
+        if (capturedTargets.stream().map(Target::process).anyMatch(ProcessHandle::isAlive)) {
             throw new ScopeException(Disposition.STILL_RUNNING);
         }
     }
@@ -116,7 +117,8 @@ final class ScopedProcessTree {
     private List<Target> terminationTargets() {
         Map<Long, Target> targets = new LinkedHashMap<>();
         capturedTargets.forEach(target -> targets.put(target.process().pid(), target));
-        if (root.isOriginalAlive()) {
+        root.requireIdentityIfAlive();
+        if (root.process().isAlive()) {
             try (var descendants = root.process().descendants()) {
                 descendants.forEach(process -> captureLive(process)
                         .ifPresent(target -> targets.putIfAbsent(process.pid(), target)));
