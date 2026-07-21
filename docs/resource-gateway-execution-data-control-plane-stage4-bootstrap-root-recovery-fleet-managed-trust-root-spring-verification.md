@@ -179,10 +179,12 @@ zero errors, and two existing conditional browser skips, then rebuilds the Sprin
 JAR successfully.
 
 One earlier full-suite attempt observed the pre-existing ceremony auto-heartbeat timing assertion
-at one committed heartbeat instead of two after the browser-heavy suite. Its exact test passed on
-immediate isolated replay and the subsequent independent full suite passed. No product-path failure
-was observed, but the wall-clock-dependent ceremony test remains explicit suite-stability debt; it
-must not be silently classified as deterministic evidence until its scheduler clock is controllable.
+at one committed heartbeat instead of two after the browser-heavy suite. The subsequent testability
+step removed that scheduler-count assumption: the signer is latch-controlled, the test waits for
+same-request response-loss recovery, crosses the original lease deadline using database authority
+time, proves the rival remains `BUSY`, and checks `claimVersion = heartbeatCount + 1`. The exact path
+passes five consecutive repetitions and the complete 15-case ceremony service suite. Database time
+remains the real lease authority; the test no longer substitutes wall-clock luck for protocol proof.
 
 ## 8. Honest boundary
 

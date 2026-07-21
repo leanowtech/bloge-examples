@@ -1242,8 +1242,9 @@ Schema/integration/script 聚焦门禁全绿；验证见
 [managed recovery-fleet trust-root Spring verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-managed-trust-root-spring-verification.md)。
 联合 recovery-fleet/profile/integration 门禁 270 tests 全绿，5 个本轮公共类型 strict JavaDoc 零告警；
 最终独占 `clean verify` 执行 3556 tests，0 failures、0 errors、2 个条件浏览器跳过并成功重打包可执行 JAR。
-一次先行全量运行暴露既有 ceremony auto-heartbeat 的 wall-clock 时序抖动，精确复跑与后续独占全量均通过；
-该测试仍作为可控时钟改造债务记录，不能被“重跑通过”抹去。
+一次先行全量运行暴露既有 ceremony auto-heartbeat 把“两次调度”误当安全条件的 wall-clock 抖动；后续
+以 latch 控制 signer、等待同 request-id 丢响应恢复、跨越数据库权威原租约截止点、竞争者 `BUSY` 和
+`claimVersion = heartbeatCount + 1` 关系式根治，精确路径连续 5 次及完整 ceremony 15 tests 全绿。
 该步仍不提供默认 external/Byzantine root floor、mTLS/pinning、publisher HA/anti-equivocation、HSM/KMS、
 跨副本 convergence alert、production/目标数据库/backup-restore/多区 DR/chaos 认证，不能据此宣称生产闭环。
 
