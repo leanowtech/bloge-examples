@@ -310,6 +310,64 @@ class RotatingControlPlaneHttpTransportTest {
         assertThat(transport.activeGeneration()).isEqualTo(72);
     }
 
+    @Test
+    void exactCertificateStatusGatesEveryRequestAndSuccessorActivation() throws Exception {
+        var current = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "rotation-status-current");
+        var successor = current.rotateClient(temporaryDirectory, "rotation-status-next");
+        Instant now = Instant.now();
+        MutableClock clock = new MutableClock(now);
+        String currentFingerprint = "sha256:" + "a".repeat(64);
+        String successorFingerprint = "sha256:" + "b".repeat(64);
+        AtomicReference<String> admittedFingerprint = new AtomicReference<>("");
+        var transport = new RotatingControlPlaneHttpTransport(
+                81, settings(current), secretResolver(new AtomicInteger()), clock,
+                Duration.ofMinutes(1), Duration.ofHours(1),
+                RotatingControlPlaneHttpTransport.ActivationGate.permitAll(),
+                currentFingerprint,
+                (generation, settingsFingerprint) -> generation == 81
+                        && currentFingerprint.equals(admittedFingerprint.get())
+                        && currentFingerprint.equals(settingsFingerprint)
+                        || generation == 82
+                        && successorFingerprint.equals(admittedFingerprint.get())
+                        && successorFingerprint.equals(settingsFingerprint));
+        var client = transport.client(Duration.ofSeconds(2));
+        AtomicReference<String> peer = new AtomicReference<>();
+
+        try (var server = RecoveryFleetPublicationTlsFixture.startPublication(current, peer)) {
+            assertThatThrownBy(() -> send(client, server.uri()))
+                    .isInstanceOf(java.io.IOException.class)
+                    .hasMessage("Control-plane client identity is unavailable");
+            assertThat(server.requests()).isZero();
+
+            admittedFingerprint.set(currentFingerprint);
+            assertThat(send(client, server.uri())).isEqualTo("publication");
+            transport.stage(82, now.plusSeconds(10), settings(successor),
+                    successorFingerprint);
+            clock.advance(Duration.ofSeconds(10));
+            assertThat(transport.reconcileGeneration()).isEqualTo(81);
+            assertThat(send(client, server.uri())).isEqualTo("publication");
+
+            admittedFingerprint.set(successorFingerprint);
+            assertThat(transport.reconcileGeneration()).isEqualTo(82);
+            assertThat(send(client, server.uri())).isEqualTo("publication");
+            assertThat(peer.get()).contains("CN=recovery-client-rotation-status-next");
+        }
+    }
+
+    @Test
+    void statusManagedTransportRequiresAnExactInitialSettingsFingerprint() throws Exception {
+        var current = RecoveryFleetPublicationTlsFixture.Material.create(
+                temporaryDirectory, "rotation-status-fingerprint");
+
+        assertThatThrownBy(() -> new RotatingControlPlaneHttpTransport(
+                1, settings(current), secretResolver(new AtomicInteger()), Clock.systemUTC(),
+                Duration.ofMinutes(1), Duration.ofHours(1),
+                RotatingControlPlaneHttpTransport.ActivationGate.permitAll(), "",
+                RotatingControlPlaneHttpTransport.CertificateStatusGate.permitAll()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static String send(java.net.http.HttpClient client, java.net.URI uri)
             throws Exception {
         return client.send(HttpRequest.newBuilder(uri).GET().timeout(Duration.ofSeconds(2)).build(),

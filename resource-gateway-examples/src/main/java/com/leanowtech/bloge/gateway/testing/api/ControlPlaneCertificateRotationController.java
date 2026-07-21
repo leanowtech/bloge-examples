@@ -404,16 +404,17 @@ public final class ControlPlaneCertificateRotationController {
                     && durableAcceptance.snapshot().activeGeneration()
                     == material.generation()) {
                 state.target.reconcileActive(material.generation(),
-                        durableAcceptance.snapshot().activatedAt(), resolved.settings());
+                        durableAcceptance.snapshot().activatedAt(), resolved.settings(),
+                        material.settingsFingerprint());
             } else if (durableAcceptance != null
                     && durableAcceptance.snapshot().pendingGeneration()
                     == material.generation()
                     && !clock.instant().isBefore(material.activateAt())) {
                 state.target.restorePending(material.generation(), material.activateAt(),
-                        resolved.settings());
+                        resolved.settings(), material.settingsFingerprint());
             } else {
                 state.target.stage(material.generation(), material.activateAt(),
-                        resolved.settings());
+                        resolved.settings(), material.settingsFingerprint());
             }
         } catch (RuntimeException rejected) {
             lifecycleFailed(event, "LOCAL_STAGING_REJECTED");

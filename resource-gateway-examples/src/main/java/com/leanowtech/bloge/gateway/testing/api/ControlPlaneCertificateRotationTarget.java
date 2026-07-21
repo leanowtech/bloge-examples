@@ -30,6 +30,26 @@ public interface ControlPlaneCertificateRotationTarget {
             PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings);
 
     /**
+     * Preloads one successor with its externally authorized settings identity.
+     *
+     * <p>Status-aware transports override this method so two settings materials sharing a
+     * generation cannot be confused. Compatibility implementations retain the original method.
+     * </p>
+     *
+     * @param generation exact active generation plus one
+     * @param activateAt deterministic activation instant
+     * @param settings complete successor settings
+     * @param settingsFingerprint signed path- and credential-free settings identity
+     */
+    default void stage(
+            long generation,
+            Instant activateAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings,
+            String settingsFingerprint) {
+        stage(generation, activateAt, settings);
+    }
+
+    /**
      * Atomically catches up one already-active durable successor.
      *
      * <p>Only a controller backed by a durable floor may invoke this operation. Implementations
@@ -49,6 +69,22 @@ public interface ControlPlaneCertificateRotationTarget {
     }
 
     /**
+     * Catches up an active successor with its externally authorized settings identity.
+     *
+     * @param generation exact active generation plus one
+     * @param activatedAt signed activation instant already reached by the durable authority
+     * @param settings complete successor settings
+     * @param settingsFingerprint signed path- and credential-free settings identity
+     */
+    default void reconcileActive(
+            long generation,
+            Instant activatedAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings,
+            String settingsFingerprint) {
+        reconcileActive(generation, activatedAt, settings);
+    }
+
+    /**
      * Restores one successor already authorized and staged by the durable floor.
      *
      * @param generation exact active generation plus one
@@ -61,5 +97,21 @@ public interface ControlPlaneCertificateRotationTarget {
             PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings) {
         throw new UnsupportedOperationException(
                 "Pending certificate generation restoration is unsupported");
+    }
+
+    /**
+     * Restores a pending successor with its externally authorized settings identity.
+     *
+     * @param generation exact active generation plus one
+     * @param activateAt signed activation instant
+     * @param settings complete successor settings
+     * @param settingsFingerprint signed path- and credential-free settings identity
+     */
+    default void restorePending(
+            long generation,
+            Instant activateAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings,
+            String settingsFingerprint) {
+        restorePending(generation, activateAt, settings);
     }
 }

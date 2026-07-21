@@ -13,7 +13,9 @@
 > traffic fence 时启动即拒绝。吊销链第一子步已冻结完整、签名、硬过期且 cursor 连续的
 > `bloge.controlPlaneCertificateStatusPublication.v1`，独立 M-of-N trust store 可验证外部 adapter
 > 归一化的 CA event/OCSP/CRL commitment；database-clock floor 已闭合连续 cursor、完整清单、发布 ID
-> 唯一、整行指纹和吊销不可逆。watcher、逐请求 gate、enterprise custody、
+> 唯一、整行指纹和吊销不可逆。bounded watcher、wall-clock + monotonic hard-expiry cache 以及精确
+> target/generation/settings 的逐请求 gate 已形成可嵌入内核；Spring/source transport 产品接线、
+> enterprise custody、
 > 生产 HA/DR/chaos 仍未闭合，因此 production readiness 继续关闭。
 
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability

@@ -31,7 +31,13 @@ live serving fence：数据库时间到达签名时刻且全副本 `STAGED` 后�
 校验 deployment-pinned baseline、连续 cursor、前序指纹、发布 ID 唯一性和完整 target inventory，并原子
 替换 status head；同一 target generation/settings 下证书 identity 不得漂移，`REVOKED` 不得复活为
 `GOOD/UNKNOWN`。head、target 与当前 journal 均带 canonical whole-record fingerprint。该持久化内核
-仍不等于运行时吊销已开放；watcher、硬过期 cache 和 request gate 仍是后继门禁。
+之后第三子步新增 `ControlPlaneCertificateStatusMonitor` 与
+`ControlPlaneCertificateStatusAdmission`：watcher 先从 durable floor 恢复，再有界拉取连续 publication；
+source/floor 失败不会抹掉仍新鲜的本地状态。request gate 只做 immutable local lookup，精确匹配
+target/generation/settings fingerprint，并同时使用 signed wall-clock expiry 与从 database observation
+推导的 monotonic deadline；任一时钟观察到过期后该 publication 永久关闭，时钟回拨不能复活。
+`RotatingControlPlaneHttpTransport` 在 successor activation 和每个 send 前同时执行 fleet gate 与 status
+gate。该内核已经具备真实 mTLS 行为证据，但 Spring/source transport/health 产品接线仍是后继门禁。
 CA 事件分发的 page-chain/cursor 子步也已冻结：每页绑定 scope、连续 sequence、previous page
 fingerprint 和最多 12 个不同 target 的独立签名事件；每个 stable serving slot 以数据库
 `stage -> apply -> commit` 游标防止部分处理后误推进，并对 exact replay、gap、fork、baseline drift 与
@@ -252,8 +258,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 7. 下一门禁
 
-下一门禁不再重复定义轮换/吊销 JSON 或数据库 cursor，而是把已冻结的 rotation event cursor 接入
-CA event watcher，并把 status publication/floor 接入硬过期缓存和逐请求 admission，
+下一门禁不再重复定义轮换/吊销 JSON、数据库 cursor 或本地 gate，而是把已冻结的 rotation event
+watcher 与 status monitor/admission 接入 strict HTTPS source、Spring composition、health/capability 和
+test/staging preflight，
 随后补齐 convergence SLO/alert、
 受控 switch-forward recovery 与独立运维演练。`FENCED_QUORUM` 只有在部署权威能证明缺失副本已
 无法继续服务旧 generation 后才可开放。尚未闭合的外部生产责任

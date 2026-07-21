@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.regex.Pattern;
 
 /**
  * Atomically rotates pinned mutual-TLS control-plane client identities without process restart.
@@ -57,15 +58,35 @@ public final class RotatingControlPlaneHttpTransport
         }
     }
 
+    /**
+     * Process-local certificate-status decision evaluated before activation and every request.
+     *
+     * <p>Implementations must use immutable locally cached state. CA, database, OCSP, or CRL I/O
+     * on this path is forbidden. The settings fingerprint prevents a status decision for one TLS
+     * material from admitting another material that happens to use the same generation.</p>
+     */
+    public interface CertificateStatusGate {
+
+        /** @return true only when this exact generation and settings identity may serve */
+        boolean servingPermitted(long generation, String settingsFingerprint);
+
+        /** @return an explicit compatibility gate for status-unmanaged transports */
+        static CertificateStatusGate permitAll() {
+            return (generation, settingsFingerprint) -> true;
+        }
+    }
+
     private static final Duration MINIMUM_LEAD = Duration.ofSeconds(1);
     private static final Duration MAXIMUM_LEAD = Duration.ofDays(30);
     private static final Duration MAXIMUM_OVERLAP = Duration.ofDays(30);
+    private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     private final SecretResolver secretResolver;
     private final Clock clock;
     private final Duration minimumOverlap;
     private final Duration maximumLeadTime;
     private final ActivationGate activationGate;
+    private final CertificateStatusGate certificateStatusGate;
     private final Object monitor = new Object();
 
     private volatile ActiveGeneration active;
@@ -89,7 +110,8 @@ public final class RotatingControlPlaneHttpTransport
             Duration minimumOverlap,
             Duration maximumLeadTime) {
         this(initialGeneration, initialSettings, secretResolver, clock, minimumOverlap,
-                maximumLeadTime, ActivationGate.permitAll());
+                maximumLeadTime, ActivationGate.permitAll(), "",
+                CertificateStatusGate.permitAll(), true);
     }
 
     /**
@@ -111,6 +133,49 @@ public final class RotatingControlPlaneHttpTransport
             Duration minimumOverlap,
             Duration maximumLeadTime,
             ActivationGate activationGate) {
+        this(initialGeneration, initialSettings, secretResolver, clock, minimumOverlap,
+                maximumLeadTime, activationGate, "", CertificateStatusGate.permitAll(), true);
+    }
+
+    /**
+     * Loads an active generation behind independent fleet and certificate-status gates.
+     *
+     * @param initialGeneration positive initial generation
+     * @param initialSettings complete pinned mutual-TLS settings with a bound identity policy
+     * @param secretResolver resolver returning fresh caller-owned credential characters
+     * @param clock authoritative local activation clock
+     * @param minimumOverlap minimum time the old identity remains valid after activation
+     * @param maximumLeadTime maximum allowed delay between staging and activation
+     * @param activationGate non-blocking cached fleet-convergence decision
+     * @param initialSettingsFingerprint exact durable active settings identity
+     * @param certificateStatusGate non-blocking cached revocation decision
+     */
+    public RotatingControlPlaneHttpTransport(
+            long initialGeneration,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings initialSettings,
+            SecretResolver secretResolver,
+            Clock clock,
+            Duration minimumOverlap,
+            Duration maximumLeadTime,
+            ActivationGate activationGate,
+            String initialSettingsFingerprint,
+            CertificateStatusGate certificateStatusGate) {
+        this(initialGeneration, initialSettings, secretResolver, clock, minimumOverlap,
+                maximumLeadTime, activationGate, initialSettingsFingerprint,
+                certificateStatusGate, false);
+    }
+
+    private RotatingControlPlaneHttpTransport(
+            long initialGeneration,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings initialSettings,
+            SecretResolver secretResolver,
+            Clock clock,
+            Duration minimumOverlap,
+            Duration maximumLeadTime,
+            ActivationGate activationGate,
+            String initialSettingsFingerprint,
+            CertificateStatusGate certificateStatusGate,
+            boolean compatibilityEmptyFingerprint) {
         if (initialGeneration < 1) {
             throw invalid();
         }
@@ -119,13 +184,17 @@ public final class RotatingControlPlaneHttpTransport
         this.minimumOverlap = bounded(minimumOverlap, Duration.ZERO, MAXIMUM_OVERLAP);
         this.maximumLeadTime = bounded(maximumLeadTime, MINIMUM_LEAD, MAXIMUM_LEAD);
         this.activationGate = Objects.requireNonNull(activationGate, "activationGate");
+        this.certificateStatusGate = Objects.requireNonNull(
+                certificateStatusGate, "certificateStatusGate");
+        String initialFingerprint = normalizedFingerprint(
+                initialSettingsFingerprint, compatibilityEmptyFingerprint);
         Instant now = clock.instant();
         var transport = load(initialSettings, now);
         requireBound(transport);
         if (!transport.clientIdentityExpiresAt().isAfter(now.plus(this.minimumOverlap))) {
             throw invalidMaterial();
         }
-        this.active = new ActiveGeneration(initialGeneration, now, transport);
+        this.active = new ActiveGeneration(initialGeneration, initialFingerprint, now, transport);
     }
 
     /**
@@ -144,8 +213,19 @@ public final class RotatingControlPlaneHttpTransport
             long generation,
             Instant activateAt,
             PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings) {
+        stage(generation, activateAt, settings, "");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void stage(
+            long generation,
+            Instant activateAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings,
+            String settingsFingerprint) {
         Objects.requireNonNull(activateAt, "activateAt");
         Objects.requireNonNull(settings, "settings");
+        String candidateFingerprint = normalizedFingerprint(settingsFingerprint, true);
         ActiveGeneration baseline;
         synchronized (monitor) {
             Instant now = clock.instant();
@@ -177,7 +257,8 @@ public final class RotatingControlPlaneHttpTransport
                     activateAt.plus(minimumOverlap))) {
                 throw invalid();
             }
-            pending = new PendingGeneration(generation, activateAt, candidate);
+            pending = new PendingGeneration(generation, candidateFingerprint,
+                    activateAt, candidate);
         }
     }
 
@@ -187,8 +268,19 @@ public final class RotatingControlPlaneHttpTransport
             long generation,
             Instant activatedAt,
             PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings) {
+        reconcileActive(generation, activatedAt, settings, "");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void reconcileActive(
+            long generation,
+            Instant activatedAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings,
+            String settingsFingerprint) {
         Objects.requireNonNull(activatedAt, "activatedAt");
         Objects.requireNonNull(settings, "settings");
+        String candidateFingerprint = normalizedFingerprint(settingsFingerprint, true);
         ActiveGeneration baseline;
         Instant now;
         synchronized (monitor) {
@@ -217,10 +309,14 @@ public final class RotatingControlPlaneHttpTransport
                     observedAt.plus(minimumOverlap))) {
                 throw invalid();
             }
-            if (activationGate.activationPermitted(generation, activatedAt)) {
-                active = new ActiveGeneration(generation, activatedAt, candidate);
+            if (activationGate.activationPermitted(generation, activatedAt)
+                    && certificateStatusGate.servingPermitted(
+                    generation, candidateFingerprint)) {
+                active = new ActiveGeneration(generation, candidateFingerprint,
+                        activatedAt, candidate);
             } else {
-                pending = new PendingGeneration(generation, activatedAt, candidate);
+                pending = new PendingGeneration(generation, candidateFingerprint,
+                        activatedAt, candidate);
             }
         }
     }
@@ -231,8 +327,19 @@ public final class RotatingControlPlaneHttpTransport
             long generation,
             Instant activateAt,
             PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings) {
+        restorePending(generation, activateAt, settings, "");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void restorePending(
+            long generation,
+            Instant activateAt,
+            PinnedMutualTlsRecoveryFleetPublicationTransport.Settings settings,
+            String settingsFingerprint) {
         Objects.requireNonNull(activateAt, "activateAt");
         Objects.requireNonNull(settings, "settings");
+        String candidateFingerprint = normalizedFingerprint(settingsFingerprint, true);
         ActiveGeneration baseline;
         synchronized (monitor) {
             baseline = promoteIfDue(clock.instant());
@@ -259,12 +366,17 @@ public final class RotatingControlPlaneHttpTransport
                 throw invalid();
             }
             if (now.isBefore(activateAt)) {
-                pending = new PendingGeneration(generation, activateAt, candidate);
+                pending = new PendingGeneration(generation, candidateFingerprint,
+                        activateAt, candidate);
             } else if (candidate.clientIdentityExpiresAt().isAfter(now.plus(minimumOverlap))
-                    && activationGate.activationPermitted(generation, activateAt)) {
-                active = new ActiveGeneration(generation, activateAt, candidate);
+                    && activationGate.activationPermitted(generation, activateAt)
+                    && certificateStatusGate.servingPermitted(
+                    generation, candidateFingerprint)) {
+                active = new ActiveGeneration(generation, candidateFingerprint,
+                        activateAt, candidate);
             } else if (candidate.clientIdentityExpiresAt().isAfter(now.plus(minimumOverlap))) {
-                pending = new PendingGeneration(generation, activateAt, candidate);
+                pending = new PendingGeneration(generation, candidateFingerprint,
+                        activateAt, candidate);
             } else {
                 throw invalidMaterial();
             }
@@ -326,6 +438,11 @@ public final class RotatingControlPlaneHttpTransport
                 throw new IllegalStateException(
                         "Control-plane client identity is not fleet-admitted");
             }
+            if (!certificateStatusGate.servingPermitted(
+                    selected.generation(), selected.settingsFingerprint())) {
+                throw new IllegalStateException(
+                        "Control-plane client identity has no fresh certificate status");
+            }
             if (!selected.transport().clientIdentityExpiresAt().isAfter(now)) {
                 throw new IllegalStateException(
                         "Control-plane client identity has no active certificate generation");
@@ -338,8 +455,11 @@ public final class RotatingControlPlaneHttpTransport
         PendingGeneration candidate = pending;
         if (candidate != null && !now.isBefore(candidate.activateAt())
                 && activationGate.activationPermitted(
-                candidate.generation(), candidate.activateAt())) {
-            active = new ActiveGeneration(candidate.generation(), candidate.activateAt(),
+                candidate.generation(), candidate.activateAt())
+                && certificateStatusGate.servingPermitted(
+                candidate.generation(), candidate.settingsFingerprint())) {
+            active = new ActiveGeneration(candidate.generation(),
+                    candidate.settingsFingerprint(), candidate.activateAt(),
                     candidate.transport());
             pending = null;
         }
@@ -368,6 +488,15 @@ public final class RotatingControlPlaneHttpTransport
         return required;
     }
 
+    private static String normalizedFingerprint(String value, boolean compatibilityEmpty) {
+        String normalized = Objects.requireNonNullElse(value, "").trim();
+        if (!FINGERPRINT.matcher(normalized).matches()
+                && !(compatibilityEmpty && normalized.isEmpty())) {
+            throw invalid();
+        }
+        return normalized;
+    }
+
     private static IllegalArgumentException invalid() {
         return new IllegalArgumentException(
                 "Control-plane certificate rotation configuration is invalid");
@@ -380,12 +509,14 @@ public final class RotatingControlPlaneHttpTransport
 
     private record ActiveGeneration(
             long generation,
+            String settingsFingerprint,
             Instant activatedAt,
             PinnedMutualTlsRecoveryFleetPublicationTransport transport) {
     }
 
     private record PendingGeneration(
             long generation,
+            String settingsFingerprint,
             Instant activateAt,
             PinnedMutualTlsRecoveryFleetPublicationTransport transport) {
     }
