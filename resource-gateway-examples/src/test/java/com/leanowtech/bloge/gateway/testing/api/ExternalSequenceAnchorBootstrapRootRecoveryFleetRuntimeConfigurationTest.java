@@ -28,6 +28,12 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest {
     private static final String PREFIX =
             ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
                     .FleetProperties.PREFIX + ".";
+    private static final String SLO_PREFIX =
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
+                    .RecoveryFleetSloProperties.PREFIX + ".";
+    private static final String DYNAMIC_PREFIX =
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
+                    .DynamicInventoryProperties.PREFIX + ".";
     private static final String SINGLE_LANE_ENABLED =
             ExternalSequenceAnchorBootstrapRootRecoveryRuntimeConfiguration
                     .RecoveryProperties.PREFIX + ".enabled";
@@ -72,6 +78,12 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest {
                 assertThat(context.getBeansOfType(
                         ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler.class))
                         .hasSize(1);
+                assertThat(context.getBeansOfType(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetTelemetry.class))
+                        .hasSize(1);
+                assertThat(context.getBeansOfType(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.class))
+                        .hasSize(1);
 
                 var cycle = scheduler.runOnce();
                 assertThat(cycle.disposition()).isEqualTo(CycleDisposition.COMPLETED);
@@ -87,6 +99,15 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest {
                 assertThat(health.getDetails().toString()).doesNotContain(
                         "fleet-sensitive", "replica-sensitive", "scope-sensitive",
                         "root-sensitive", "sha256:", "jdbc:h2");
+                var slo = context.getBean(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.class)
+                        .assessment();
+                assertThat(slo.state()).isEqualTo(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.State
+                                .SLO_VIOLATED);
+                assertThat(slo.violations()).containsExactly(
+                        ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.Violation
+                                .UNATTESTED_INVENTORY);
             } finally {
                 context.close();
             }
@@ -112,6 +133,57 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest {
                     .containsEntry("fleetTopologyBound", true);
             assertThat(health.getDetails().toString()).doesNotContain(
                     "fleet-sensitive", "replica-sensitive", "recovery-prod");
+            assertThat(context.getBean(
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.class)
+                    .assessment().state()).isEqualTo(
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.State
+                            .INITIALIZING);
+        }
+    }
+
+    @Test
+    void testProfileMayExplicitlyDisableLocalSloWhileStagingCannot() {
+        Map<String, Object> testProperties = enabledProperties();
+        testProperties.put(SLO_PREFIX + "enabled", "false");
+        try (var database = database();
+             var context = context(testProperties, emptyInventory(), database,
+                     null, "test")) {
+            assertThat(context.getBeansOfType(
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetTelemetry.class))
+                    .isEmpty();
+            assertThat(context.getBeansOfType(
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.class))
+                    .isEmpty();
+        }
+
+        Map<String, Object> stagingProperties = enabledProperties();
+        stagingProperties.put(SLO_PREFIX + "enabled", "false");
+        stagingProperties.put(DYNAMIC_PREFIX + "required", "true");
+        assertInvalidConfiguration(stagingProperties, emptyInventory(), null, "staging");
+    }
+
+    @Test
+    void localSloPolicyMustCoverSchedulerCadenceAndRejectUnknownFields() {
+        Map<String, Object> shortGrace = enabledProperties();
+        shortGrace.put(SLO_PREFIX + "startup-grace-millis", "300000");
+        assertInvalidConfiguration(shortGrace, emptyInventory(), null);
+
+        Map<String, Object> shortFreshness = enabledProperties();
+        shortFreshness.put(SLO_PREFIX + "maximum-poll-success-age-millis", "1999");
+        assertInvalidConfiguration(shortFreshness, emptyInventory(), null);
+
+        try (var database = database()) {
+            Map<String, Object> unknown = enabledProperties();
+            unknown.put(SLO_PREFIX + "alert-webhook-uri", "https://must-not-bind.example");
+            var context = unrefreshedContext(unknown, emptyInventory(), database,
+                    null, "test");
+            try {
+                assertThatThrownBy(context::refresh)
+                        .hasStackTraceContaining("alert-webhook-uri")
+                        .hasStackTraceContaining("ignoreUnknownFields");
+            } finally {
+                context.close();
+            }
         }
     }
 
@@ -251,9 +323,17 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest {
             Map<String, Object> properties,
             ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
             ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator) {
+        assertInvalidConfiguration(properties, inventory, coordinator, "test");
+    }
+
+    private static void assertInvalidConfiguration(
+            Map<String, Object> properties,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator coordinator,
+            String profile) {
         try (var database = database()) {
             var context = unrefreshedContext(properties, inventory, database,
-                    coordinator, "test");
+                    coordinator, profile);
             try {
                 assertThatThrownBy(context::refresh)
                         .rootCause()
@@ -357,6 +437,8 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest {
         properties.put(PREFIX + "poll-interval-millis", "1000");
         properties.put(PREFIX + "maximum-cycle-duration-millis", "10000");
         properties.put(PREFIX + "drain-timeout-millis", "1000");
+        properties.put(SLO_PREFIX + "startup-grace-millis", "301000");
+        properties.put(SLO_PREFIX + "maximum-poll-success-age-millis", "2000");
         return properties;
     }
 
@@ -371,5 +453,9 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest {
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetHealth.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryHealth.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetTelemetry.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.class)).isEmpty();
     }
 }

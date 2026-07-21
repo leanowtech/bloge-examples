@@ -570,7 +570,7 @@ The Spring path does not generate trust roots or discover lane runtimes. The exi
 `GET /api/integration/capabilities` endpoint now publishes an identity-free, versioned recovery-fleet
 state machine and conservative boolean projections. Its probe reads only startup-frozen bean
 candidates and fresh process-local snapshots; it does not perform bootstrap I/O. Online partition
-rebalance, operational configuration metadata, external alert/SLO wiring, production-profile wiring, publisher
+rebalance, external fleet-wide alert/convergence wiring, production-profile wiring, publisher
 mTLS/client identity and certificate pinning, response-key hot rotation,
 publisher HA/anti-equivocation, target-database/DR/chaos certification,
 provider-confirmed cancellation, and HSM custody remain deployment gates. The genesis, complete
@@ -599,6 +599,21 @@ are in the
 [recovery fleet capability verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-capability-verification.md),
 with its machine contract in the
 [recovery fleet capability JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-capability-v1.schema.json).
+
+Enabled test/staging fleets also install a versioned process-local SLO assessment and 41
+fixed-cardinality Micrometer series. The monitor reuses the authority-bracketed immutable capability
+projection and performs no inventory, lane, database, network, or payload I/O. It evaluates current
+runtime failure independently from startup grace, successful-poll freshness, and mature poll/cycle/
+lane failure ratios. An unattested local inventory, snapshot tear, or observation failure is never
+healthy; unavailable value gauges use `-1`, not a false zero. Staging cannot disable this monitor.
+Configure the strict policy with `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_*`; startup grace must
+cover initial delay plus one poll interval, and maximum success age must cover two poll intervals.
+The assessment carries the exact policy used, while metric tags are limited to closed status,
+violation, outcome, and scope vocabularies. Registry/exporter configuration, alert routing,
+long-lived SLI storage, and fleet-wide convergence remain deployment responsibilities. See the
+[recovery fleet SLO verification](../docs/resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-slo-verification.md)
+and strict
+[SLO assessment JSON Schema](../docs/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-slo-assessment-v1.schema.json).
 
 Scope, cohort, inventory/witness trust, managed-root freshness, external-anchor quorum/timing, and
 lease settings are checked by

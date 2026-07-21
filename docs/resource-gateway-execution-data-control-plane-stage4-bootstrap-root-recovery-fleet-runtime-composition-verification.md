@@ -11,10 +11,11 @@ composition root。它装配：
 - bounded `ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker`；
 - fixed-delay `ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler`；
 - aggregate fleet health；
+- versioned process-local progress SLO、aggregate health 与固定基数 Micrometer telemetry；
 - 当 inventory 是 signed authority 时，额外装配 aggregate inventory health；
 - dynamic 模式默认装配 durable database publication/witness floor。
 
-它仍不是 production fleet service，也不负责签名生成、lane discovery、IAM、secret、capability 或 HTTP
+它仍不是 production fleet service，也不负责签名生成、lane discovery、IAM、secret 或 HTTP
 endpoint。dynamic composition 只绑定 public trust、exact deployment/fleet binding 和 bounded transport
 policy；lane resolver 仍是 caller-reviewed 唯一本地 catalog。这个 ownership 边界不会把 signer private key
 或 provider credential 引入 Resource Gateway。
@@ -64,11 +65,21 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID="${HOSTNAME}"
 | `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_POLL_INTERVAL_MS` | `5000` | 至少 100 ms |
 | `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_MAX_CYCLE_MS` | `600000` | scheduler overdue budget |
 | `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DRAIN_TIMEOUT_MS` | `5000` | bounded shutdown wait |
+| `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_ENABLED` | `true` | test 可关闭；staging fleet 强制 true |
+| `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_OBSERVATION_INTERVAL_MS` | `30000` | 本地 assessment refresh，`1000..3600000` |
+| `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_STARTUP_GRACE_MS` | `30000` | 至少 initial delay + poll interval |
+| `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MAX_SUCCESS_AGE_MS` | `30000` | 至少 2 x poll interval |
+| `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MINIMUM_SAMPLES` | `20` | ratio denominator，`1..1000000` |
+| `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MAX_POLL_FAILURE_BP` | `500` | inclusive `0..10000` |
+| `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MAX_CYCLE_FAILURE_BP` | `500` | inclusive `0..10000` |
+| `RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MAX_LANE_FAILURE_BP` | `1000` | inclusive `0..10000` |
 
 配置源位于 `application-test.yml` 与 `application-staging.yml`。对应
 `FleetProperties` 使用 `ignoreUnknownFields=false`；拼错字段和试图注入 signer private key 的未知字段都
 直接阻断启动。dynamic inventory 的完整环境变量表与示例见
 [dynamic inventory verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-dynamic-inventory-verification.md)。
+SLO 状态、指标和外部告警边界见
+[recovery fleet SLO verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-slo-verification.md)。
 
 ## 4. Profile 与互斥
 
@@ -81,6 +92,7 @@ export RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_WORKER_ID="${HOSTNAME}"
 - fleet mode 与
   `gateway.testing.external-sequence-anchor.bootstrap-root-recovery.enabled=true` 启动前互斥。
 - staging fleet 强制 `dynamic-inventory.required=true`，不能用环境变量降级到 static fallback；
+- staging fleet 强制 local SLO enabled，不能静默关闭 progress/failure observation；
 - `allow-insecure-loopback=true` 只允许 test，staging 拒绝 localhost HTTP 逃生口。
 
 互斥的病根是两套 scheduler 没有共享外层扫描 fence；允许同时运行不会增加安全性，只会增加重复 poll 和
@@ -94,7 +106,8 @@ preflight 拆成两个有依赖顺序的 token。`ValidatedFleetConfiguration` �
 1. 单 lane/fleet 互斥检查；
 2. staging required policy；
 3. fleet identity、partition 和 strict property validation；
-4. dynamic 模式的 public key、独立 trust domain、resolver 唯一性、binding、URI 与 duration validation。
+4. SLO policy bounds，以及 startup grace/success freshness 与 scheduler cadence 的交叉校验；
+5. dynamic 模式的 public key、独立 trust domain、resolver 唯一性、binding、URI 与 duration validation。
 
 随后才允许默认 floor DDL 和 dynamic remote bootstrap。最终 `ValidatedFleetRuntime` 再完成：
 
@@ -111,7 +124,7 @@ preflight 拆成两个有依赖顺序的 token。`ValidatedFleetConfiguration` �
 
 ## 6. Bean ownership 与关闭顺序
 
-composition root 拥有默认 coordinator、worker、scheduler 和两个 health indicator。启用内置 dynamic
+composition root 拥有默认 coordinator、worker、scheduler、SLO monitor/telemetry 和 health indicator。启用内置 dynamic
 模式时，它还拥有 authority refresh scheduler 和默认 database floor；inventory、lane service、authority
 resolver、`TestRuntimeDatabase`、`ObjectMapper` 仍由调用方拥有。
 
@@ -147,6 +160,7 @@ runtime configuration 的 11 项既有测试，加上 dynamic composition 的真
 - invalid partition/schedule、unknown private-like property；
 - inventory exception 脱敏且 stateful table 尚未创建；
 - signed authority health 自动装配与 topology/generation preflight 失败。
+- local SLO 自动装配、test 显式关闭、staging downgrade fence、cadence cross-check 和 unknown policy failure；
 - 默认 database floor、staging required、test fallback、insecure-loopback profile fence；
 - malformed/unknown/half configuration、缺失/重复 resolver、non-durable floor 和重复 inventory 均在
   网络或 recovery state 前 fail closed。
@@ -159,8 +173,8 @@ mvn -f resource-gateway-examples/pom.xml \
   test
 ```
 
-`ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest` 11 项与
-`ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurationTest` 10 项联合执行 21 tests，
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfigurationTest` 13 项与
+`ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurationTest` 10 项联合执行 23 tests，
 0 failures、0 errors、0 skips；后者显式覆盖两种 configuration 注册顺序。包含后续 capability protocol 的
 完整 recovery-fleet 18 类门禁执行 142 tests，0 failures、0 errors、
 0 skips；相关公共类型通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。完整
@@ -170,8 +184,8 @@ Spring Boot 可执行 JAR。
 ## 9. 未完成的生产门禁
 
 - dynamic authority 的原子双信任根内核已闭合，在线 HTTPS refresh/unknown-key/consumer 接线未闭合；
-- capability/schema discovery 已由后续子步闭合；运维配置 metadata、外部告警/SLO 与跨副本
-  convergence readiness 仍未完成；
+- capability/schema discovery、local SLO policy/assessment/metric vocabulary 已由后续子步闭合；外部告警
+  routing、durable SLI window 与跨副本 convergence readiness 仍未完成；
 - enterprise IAM 对 worker/inventory/lane membership 的授权；
 - production profile、PostgreSQL/MySQL 方言、连接池/锁超时与 rolling-upgrade certification；
 - multi-region HA、backup/restore rollback、DR、chaos、soak 与外部 SLO；

@@ -138,7 +138,8 @@ mvn -f resource-gateway-examples/pom.xml \
 
 本子步只关闭 capability truth，不把下列事项伪装成已完成：
 
-1. 运维配置 metadata、外部 metrics/alert routing、SLO 与跨副本 convergence readiness；
+1. local SLO policy/assessment/metric vocabulary 已由后续子步闭合；外部 metrics backend/alert routing、
+   durable SLI window 与跨副本 convergence readiness 仍未完成；
 2. deployment/witness 原子双 trust-root publication、验证器与 durable key floor 内核已闭合，但 strict
    HTTPS/ETag refresh、unknown-key refresh、dynamic authority 与 capability 接线仍待完成；
 3. publication floor 的外部 Byzantine anchor、publisher/witness HA 与 split-view/equivocation 检测；

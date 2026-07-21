@@ -62,6 +62,15 @@ gateway:
         poll-interval-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_POLL_INTERVAL_MS:5000}
         maximum-cycle-duration-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_MAX_CYCLE_MS:600000}
         drain-timeout-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DRAIN_TIMEOUT_MS:5000}
+      bootstrap-root-recovery-fleet-slo:
+        enabled: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_ENABLED:true}
+        observation-interval-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_OBSERVATION_INTERVAL_MS:30000}
+        startup-grace-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_STARTUP_GRACE_MS:30000}
+        maximum-poll-success-age-millis: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MAX_SUCCESS_AGE_MS:30000}
+        minimum-samples: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MINIMUM_SAMPLES:20}
+        maximum-poll-failure-basis-points: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MAX_POLL_FAILURE_BP:500}
+        maximum-cycle-failure-basis-points: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MAX_CYCLE_FAILURE_BP:500}
+        maximum-lane-failure-basis-points: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_SLO_MAX_LANE_FAILURE_BP:1000}
       bootstrap-root-recovery-fleet-dynamic-inventory:
         enabled: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_ENABLED:false}
         required: ${RG_TEST_BOOTSTRAP_ROOT_RECOVERY_FLEET_DYNAMIC_INVENTORY_REQUIRED:true}

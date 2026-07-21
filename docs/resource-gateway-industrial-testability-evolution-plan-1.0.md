@@ -1160,9 +1160,26 @@ capability kernel、strict Schema、service/Spring/HTTP 聚焦门禁执行 49 te
 执行 142 tests，均为 0 failures、0 errors、0 skips；新增公共 capability 类型通过 strict JavaDoc。完整
 Resource Gateway `clean verify` 执行 3493 tests，0 failures、0 errors、2 条环境条件跳过并重打包可执行 JAR；
 验证见
-[bootstrap-root recovery fleet capability verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-capability-verification.md)。该步只关闭 capability truth；运维配置 metadata、外部告警/SLO、
+[bootstrap-root recovery fleet capability verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-capability-verification.md)。该步只关闭 capability truth；local SLO 由下一子步闭合，外部告警与
 跨副本 convergence readiness、restart-free trust-root、mTLS/pinning、external Byzantine anchor、目标数据库/
 HA/DR/chaos、online rebalance、enterprise IAM/HSM 与 production composition 仍是硬门禁。
+
+Stage 4 该增量第二十三子步关闭“只有瞬时 capability，没有稳定进程级 progress/reliability 协议”的根因。
+新增 strict `bloge.externalSequenceAnchorBootstrapRootRecoveryFleetSloAssessment.v1`，把 state、canonical
+violation、当前 capability status、inventory generation/lane count、poll/cycle/lane 累计计数与 overflow-safe
+basis-point ratio、最新成功年龄及 exact policy 固化为 identity-free contract。`HEALTHY`、`INITIALIZING`、
+`SLO_VIOLATED`、`CLOSED`、`OBSERVATION_UNAVAILABLE` 分别映射 Actuator；unknown 统一为 `-1`，不伪装成
+零失败。当前 runtime failure 不受 minimum-sample 豁免，历史 ratio 只在样本成熟后执行，active bounded
+cycle 不因上一成功过旧重复误报。
+
+monitor 只复用 authority 前后夹读的 process-local capability/worker/scheduler immutable snapshot，不读取
+inventory、lane、数据库、网络、provider 或 payload；unattested inventory、generation/counter tear 和本地
+异常全部 fail closed。strict sibling properties 对 startup grace/success freshness 与 scheduler cadence 做交叉
+校验，staging fleet 禁止关闭；41 个 Micrometer series 仅使用 closed status/violation/outcome/scope 标签。
+聚焦 46 tests 覆盖 SLO kernel、telemetry、Schema 与 Spring downgrade/configuration 门禁，验证见
+[bootstrap-root recovery fleet SLO verification](resource-gateway-execution-data-control-plane-stage4-bootstrap-root-recovery-fleet-slo-verification.md)。该步关闭 local policy/assessment/metric vocabulary；外部 metrics backend、alert routing、durable
+SLI window、expected replica inventory 与跨副本 convergence、production/目标数据库/HA/DR/chaos 仍是
+部署硬门禁。
 
 第五十三增量第十八子步把 exact cohort 的 expected set 从 replica-local 配置提升为外部可验签事实。
 deployment governance 生成 strict `bloge.testSuiteStabilityServingInventory.v1`，以 canonical material 绑定

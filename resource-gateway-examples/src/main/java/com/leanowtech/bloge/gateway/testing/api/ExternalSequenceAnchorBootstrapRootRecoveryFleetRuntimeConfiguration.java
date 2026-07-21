@@ -6,6 +6,9 @@ import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapR
 import com.leanowtech.bloge.gateway.testing.api.ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory.Snapshot;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseExternalSequenceAnchorBootstrapRootRecoveryFleetCoordinator;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -46,6 +49,8 @@ import java.util.Objects;
 @EnableConfigurationProperties(
         {ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
                 .FleetProperties.class,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
+                        .RecoveryFleetSloProperties.class,
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
                         .DynamicInventoryProperties.class})
 public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration {
@@ -59,6 +64,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
      *
      * @param environment active profile and mutually exclusive single-lane configuration
      * @param properties strict durable fleet runtime policy
+     * @param sloProperties strict local progress SLO policy
      * @param dynamicInventory strict dynamic-source policy and staging requirement
      * @return immutable token required by dynamic inventory and stateful runtime beans
      */
@@ -66,6 +72,7 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
     ValidatedFleetConfiguration externalSequenceAnchorBootstrapRootRecoveryFleetConfiguration(
             Environment environment,
             FleetProperties properties,
+            RecoveryFleetSloProperties sloProperties,
             ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfiguration
                     .DynamicInventoryProperties dynamicInventory) {
         try {
@@ -78,6 +85,17 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
             }
             if (environment.acceptsProfiles(Profiles.of("staging"))
                     && !dynamicInventory.required()) {
+                throw FleetProperties.invalid();
+            }
+            if (environment.acceptsProfiles(Profiles.of("staging"))
+                    && !sloProperties.enabled()) {
+                throw FleetProperties.invalid();
+            }
+            if (sloProperties.enabled()
+                    && (sloProperties.startupGrace().compareTo(
+                    properties.initialDelay().plus(properties.pollInterval())) < 0
+                    || sloProperties.maximumPollSuccessAge().compareTo(
+                    properties.pollInterval().multipliedBy(2L)) < 0)) {
                 throw FleetProperties.invalid();
             }
             return new ValidatedFleetConfiguration(
@@ -203,6 +221,37 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
         return new ExternalSequenceAnchorBootstrapRootRecoveryFleetHealth(worker, scheduler);
     }
 
+    /** Registers identity-free fixed-cardinality recovery-fleet SLO gauges. */
+    @Bean
+    @ConditionalOnProperty(prefix = RecoveryFleetSloProperties.PREFIX,
+            name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnMissingBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetTelemetry.class)
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetTelemetry
+            externalSequenceAnchorBootstrapRootRecoveryFleetTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
+    }
+
+    /** Exposes versioned local progress SLO truth separately from instantaneous readiness. */
+    @Bean
+    @ConditionalOnProperty(prefix = RecoveryFleetSloProperties.PREFIX,
+            name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnMissingBean(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.class)
+    ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor
+            externalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor(
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetInventory inventory,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetWorker worker,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler scheduler,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetTelemetry telemetry,
+            RecoveryFleetSloProperties properties,
+            ValidatedFleetRuntime validated) {
+        Objects.requireNonNull(validated, "validated");
+        return new ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor(
+                inventory, worker, scheduler, telemetry, properties.policy());
+    }
+
     /** Exposes signed-inventory validity separately from fleet execution readiness. */
     @Bean
     @ConditionalOnBean(ExternalSequenceAnchorBootstrapRootRecoveryFleetInventoryAuthority.class)
@@ -314,6 +363,14 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
                     Duration.ofMillis(drainTimeoutMillis));
         }
 
+        private Duration initialDelay() {
+            return Duration.ofMillis(initialDelayMillis);
+        }
+
+        private Duration pollInterval() {
+            return Duration.ofMillis(pollIntervalMillis);
+        }
+
         private static long defaulted(Long value, long fallback) {
             return value == null ? fallback : value;
         }
@@ -325,6 +382,83 @@ public class ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguratio
         private static IllegalArgumentException invalid() {
             return new IllegalArgumentException(
                     "Bootstrap-root recovery fleet runtime configuration is invalid");
+        }
+    }
+
+    /**
+     * Strict process-local recovery-fleet progress SLO policy.
+     *
+     * @param enabled local assessment and metric activation; mandatory in staging fleet mode
+     * @param observationIntervalMillis fixed local assessment refresh interval
+     * @param startupGraceMillis grace before the first missing success violates SLO
+     * @param maximumPollSuccessAgeMillis oldest acceptable latest successful poll
+     * @param minimumSamples minimum denominator before cumulative ratios are enforced
+     * @param maximumPollFailureBasisPoints maximum inclusive scheduler failure ratio
+     * @param maximumCycleFailureBasisPoints maximum inclusive worker-cycle failure ratio
+     * @param maximumLaneFailureBasisPoints maximum inclusive lane failure ratio
+     */
+    @ConfigurationProperties(prefix = RecoveryFleetSloProperties.PREFIX,
+            ignoreUnknownFields = false)
+    public record RecoveryFleetSloProperties(
+            Boolean enabled,
+            Long observationIntervalMillis,
+            Long startupGraceMillis,
+            Long maximumPollSuccessAgeMillis,
+            Integer minimumSamples,
+            Integer maximumPollFailureBasisPoints,
+            Integer maximumCycleFailureBasisPoints,
+            Integer maximumLaneFailureBasisPoints) {
+
+        /** Prefix shared by profile configuration, scheduling, tests, and operations docs. */
+        public static final String PREFIX = "gateway.testing.external-sequence-anchor."
+                + "bootstrap-root-recovery-fleet-slo";
+
+        /** Applies conservative finite defaults and validates the complete policy eagerly. */
+        public RecoveryFleetSloProperties {
+            enabled = enabled == null || enabled;
+            observationIntervalMillis = defaulted(observationIntervalMillis, 30_000L);
+            startupGraceMillis = defaulted(startupGraceMillis, 30_000L);
+            maximumPollSuccessAgeMillis = defaulted(
+                    maximumPollSuccessAgeMillis, 30_000L);
+            minimumSamples = minimumSamples == null ? 20 : minimumSamples;
+            maximumPollFailureBasisPoints = maximumPollFailureBasisPoints == null
+                    ? 500 : maximumPollFailureBasisPoints;
+            maximumCycleFailureBasisPoints = maximumCycleFailureBasisPoints == null
+                    ? 500 : maximumCycleFailureBasisPoints;
+            maximumLaneFailureBasisPoints = maximumLaneFailureBasisPoints == null
+                    ? 1_000 : maximumLaneFailureBasisPoints;
+            try {
+                if (observationIntervalMillis < 1_000L
+                        || observationIntervalMillis > Duration.ofHours(1).toMillis()) {
+                    throw FleetProperties.invalid();
+                }
+                new ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.Policy(
+                        Duration.ofMillis(startupGraceMillis),
+                        Duration.ofMillis(maximumPollSuccessAgeMillis), minimumSamples,
+                        maximumPollFailureBasisPoints, maximumCycleFailureBasisPoints,
+                        maximumLaneFailureBasisPoints);
+            } catch (RuntimeException invalid) {
+                throw FleetProperties.invalid();
+            }
+        }
+
+        private Duration startupGrace() {
+            return Duration.ofMillis(startupGraceMillis);
+        }
+
+        private Duration maximumPollSuccessAge() {
+            return Duration.ofMillis(maximumPollSuccessAgeMillis);
+        }
+
+        private ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.Policy policy() {
+            return new ExternalSequenceAnchorBootstrapRootRecoveryFleetSloMonitor.Policy(
+                    startupGrace(), maximumPollSuccessAge(), minimumSamples,
+                    maximumPollFailureBasisPoints, maximumCycleFailureBasisPoints,
+                    maximumLaneFailureBasisPoints);
+        }
+
+        private static long defaulted(Long value, long fallback) {
+            return value == null ? fallback : value;
         }
     }
 }

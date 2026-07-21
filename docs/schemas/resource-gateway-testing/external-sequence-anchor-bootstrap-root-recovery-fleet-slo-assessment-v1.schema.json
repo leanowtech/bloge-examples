@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/external-sequence-anchor-bootstrap-root-recovery-fleet-slo-assessment-v1.schema.json",
+  "title": "Resource Gateway External Sequence-Anchor Bootstrap-Root Recovery Fleet SLO Assessment v1",
+  "description": "Identity-free process-local progress, freshness, and aggregate reliability assessment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "state", "violations", "observedAt", "runtimeStatus",
+    "inventoryGeneration", "laneCount", "pollCount", "completedPollCount",
+    "pollFailureCount", "pollFailureBasisPoints", "cycleCount",
+    "cycleFailureCount", "cycleFailureBasisPoints", "laneAttemptCount",
+    "laneFailureCount", "laneFailureBasisPoints", "lastPollSuccessAgeMillis",
+    "policy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.externalSequenceAnchorBootstrapRootRecoveryFleetSloAssessment.v1"
+    },
+    "state": {
+      "enum": [
+        "HEALTHY", "INITIALIZING", "SLO_VIOLATED", "CLOSED",
+        "OBSERVATION_UNAVAILABLE"
+      ]
+    },
+    "violations": {
+      "type": "array",
+      "maxItems": 14,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "UNATTESTED_INVENTORY", "INVENTORY_UNAVAILABLE", "RUNTIME_CLOSED",
+          "SCHEDULER_STALLED", "SCHEDULER_FAILED", "CYCLE_FAILED",
+          "LATEST_LANE_FAILURES", "SNAPSHOT_INCONSISTENT",
+          "OBSERVATION_UNAVAILABLE", "POLL_NEVER_SUCCEEDED",
+          "POLL_SUCCESS_STALE", "POLL_FAILURE_RATE_EXCEEDED",
+          "CYCLE_FAILURE_RATE_EXCEEDED", "LANE_FAILURE_RATE_EXCEEDED"
+        ]
+      }
+    },
+    "observedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "runtimeStatus": {
+      "enum": [
+        "DISABLED", "INCOMPLETE_COMPOSITION", "AMBIGUOUS_COMPOSITION",
+        "UNATTESTED_INVENTORY", "READY", "INVENTORY_UNAVAILABLE",
+        "RUNTIME_CLOSED", "SCHEDULER_STALLED", "SCHEDULER_FAILED",
+        "CYCLE_FAILED", "LANE_FAILURES", "INCONSISTENT", "UNAVAILABLE"
+      ]
+    },
+    "inventoryGeneration": { "type": "integer", "minimum": -1 },
+    "laneCount": { "type": "integer", "minimum": -1, "maximum": 256 },
+    "pollCount": { "type": "integer", "minimum": -1 },
+    "completedPollCount": { "type": "integer", "minimum": -1 },
+    "pollFailureCount": { "type": "integer", "minimum": -1 },
+    "pollFailureBasisPoints": { "type": "integer", "minimum": -1, "maximum": 10000 },
+    "cycleCount": { "type": "integer", "minimum": -1 },
+    "cycleFailureCount": { "type": "integer", "minimum": -1 },
+    "cycleFailureBasisPoints": { "type": "integer", "minimum": -1, "maximum": 10000 },
+    "laneAttemptCount": { "type": "integer", "minimum": -1 },
+    "laneFailureCount": { "type": "integer", "minimum": -1 },
+    "laneFailureBasisPoints": { "type": "integer", "minimum": -1, "maximum": 10000 },
+    "lastPollSuccessAgeMillis": { "type": "integer", "minimum": -1 },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startupGraceMillis", "maximumPollSuccessAgeMillis", "minimumSamples",
+        "maximumPollFailureBasisPoints", "maximumCycleFailureBasisPoints",
+        "maximumLaneFailureBasisPoints"
+      ],
+      "properties": {
+        "startupGraceMillis": { "type": "integer", "minimum": 1, "maximum": 86400000 },
+        "maximumPollSuccessAgeMillis": { "type": "integer", "minimum": 1, "maximum": 604800000 },
+        "minimumSamples": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "maximumPollFailureBasisPoints": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "maximumCycleFailureBasisPoints": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "maximumLaneFailureBasisPoints": { "type": "integer", "minimum": 0, "maximum": 10000 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "state": { "const": "OBSERVATION_UNAVAILABLE" } },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "violations": {
+            "prefixItems": [{ "const": "OBSERVATION_UNAVAILABLE" }],
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "observedAt": { "type": "null" },
+          "runtimeStatus": { "const": "UNAVAILABLE" },
+          "inventoryGeneration": { "const": -1 },
+          "laneCount": { "const": -1 },
+          "pollCount": { "const": -1 },
+          "completedPollCount": { "const": -1 },
+          "pollFailureCount": { "const": -1 },
+          "pollFailureBasisPoints": { "const": -1 },
+          "cycleCount": { "const": -1 },
+          "cycleFailureCount": { "const": -1 },
+          "cycleFailureBasisPoints": { "const": -1 },
+          "laneAttemptCount": { "const": -1 },
+          "laneFailureCount": { "const": -1 },
+          "laneFailureBasisPoints": { "const": -1 },
+          "lastPollSuccessAgeMillis": { "const": -1 }
+        }
+      },
+      "else": {
+        "properties": {
+          "observedAt": { "type": "string", "format": "date-time" },
+          "inventoryGeneration": { "minimum": 0 },
+          "laneCount": { "minimum": 0 },
+          "pollCount": { "minimum": 0 },
+          "completedPollCount": { "minimum": 0 },
+          "pollFailureCount": { "minimum": 0 },
+          "pollFailureBasisPoints": { "minimum": 0 },
+          "cycleCount": { "minimum": 0 },
+          "cycleFailureCount": { "minimum": 0 },
+          "cycleFailureBasisPoints": { "minimum": 0 },
+          "laneAttemptCount": { "minimum": 0 },
+          "laneFailureCount": { "minimum": 0 },
+          "laneFailureBasisPoints": { "minimum": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "enum": ["HEALTHY", "INITIALIZING"] } },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "violations": { "maxItems": 0 },
+          "runtimeStatus": { "const": "READY" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "const": "SLO_VIOLATED" } },
+        "required": ["state"]
+      },
+      "then": { "properties": { "violations": { "minItems": 1 } } }
+    },
+    {
+      "if": {
+        "properties": { "state": { "const": "CLOSED" } },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "runtimeStatus": { "const": "RUNTIME_CLOSED" },
+          "violations": { "contains": { "const": "RUNTIME_CLOSED" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "violations": { "contains": { "const": "OBSERVATION_UNAVAILABLE" } }
+        },
+        "required": ["violations"]
+      },
+      "then": { "properties": { "state": { "const": "OBSERVATION_UNAVAILABLE" } } }
+    }
+  ]
+}

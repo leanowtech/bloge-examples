@@ -446,6 +446,11 @@ class ExternalSequenceAnchorBootstrapRootRecoveryFleetDynamicInventoryConfigurat
         properties.put(FLEET_PREFIX + "poll-interval-millis", "1000");
         properties.put(FLEET_PREFIX + "maximum-cycle-duration-millis", "10000");
         properties.put(FLEET_PREFIX + "drain-timeout-millis", "1000");
+        properties.put(ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
+                .RecoveryFleetSloProperties.PREFIX + ".startup-grace-millis", "301000");
+        properties.put(ExternalSequenceAnchorBootstrapRootRecoveryFleetRuntimeConfiguration
+                .RecoveryFleetSloProperties.PREFIX
+                + ".maximum-poll-success-age-millis", "2000");
         return properties;
     }
 
