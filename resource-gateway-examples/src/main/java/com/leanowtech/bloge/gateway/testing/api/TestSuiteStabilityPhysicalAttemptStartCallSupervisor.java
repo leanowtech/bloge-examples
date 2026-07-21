@@ -18,14 +18,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Fixed-capacity, zero-queue boundary for opaque attempt-cancellation providers.
+ * Fixed-capacity, zero-queue boundary for physical-attempt start providers.
  *
- * <p>Descriptor and cancellation calls either begin immediately or fail closed. A local timeout
- * requests interruption but never claims that the provider stopped the process or container. If
- * an adapter ignores interruption, it remains in {@link Snapshot#lingeringCalls()} and continues
- * to occupy one fixed slot until it actually returns.</p>
+ * <p>Descriptor and start calls either begin immediately or fail closed. A local timeout requests
+ * interruption but proves neither that dispatch failed nor that no process was started. An adapter
+ * that ignores interruption remains in {@link Snapshot#lingeringCalls()} and occupies its fixed
+ * slot until the provider call actually returns.</p>
  */
-public final class TestSuiteStabilityAttemptCancellationCallSupervisor
+public final class TestSuiteStabilityPhysicalAttemptStartCallSupervisor
         implements AutoCloseable {
 
     private static final AtomicLong POOL_SEQUENCE = new AtomicLong();
@@ -46,22 +46,22 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
     private final AtomicLong activeCalls = new AtomicLong();
     private final AtomicLong lingeringCalls = new AtomicLong();
 
-    /** Creates the conservative default provider boundary. */
-    public TestSuiteStabilityAttemptCancellationCallSupervisor() {
+    /** Creates the conservative default physical-attempt start boundary. */
+    public TestSuiteStabilityPhysicalAttemptStartCallSupervisor() {
         this(Policy.DEFAULT);
     }
 
     /**
-     * Creates a provider boundary with an explicit capacity and deadline policy.
+     * Creates a provider boundary with explicit capacity and deadline policy.
      *
-     * @param policy descriptor/cancellation deadlines and fixed process-local capacity
+     * @param policy descriptor/start deadlines and fixed process-local capacity
      */
-    public TestSuiteStabilityAttemptCancellationCallSupervisor(Policy policy) {
+    public TestSuiteStabilityPhysicalAttemptStartCallSupervisor(Policy policy) {
         this.policy = Objects.requireNonNull(policy, "policy");
         long poolId = POOL_SEQUENCE.incrementAndGet();
         AtomicLong threadSequence = new AtomicLong();
         ThreadFactory factory = task -> Thread.ofPlatform().daemon(true).name(
-                "resource-gateway-attempt-cancellation-" + poolId + '-'
+                "resource-gateway-physical-attempt-start-" + poolId + '-'
                         + threadSequence.incrementAndGet()).unstarted(task);
         executor = new ThreadPoolExecutor(
                 policy.maximumConcurrentCalls(), policy.maximumConcurrentCalls(),
@@ -70,40 +70,40 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
     }
 
     /**
-     * Obtains a provider descriptor within the dedicated descriptor deadline.
+     * Obtains a provider descriptor within its dedicated deadline.
      *
-     * @param authority opaque provider adapter
+     * @param authority opaque isolated-runtime provider adapter
      * @return untrusted descriptor for subsequent exact binding
      */
-    public TestSuiteStabilityAttemptCancellationAuthority.Descriptor descriptor(
-            TestSuiteStabilityAttemptCancellationAuthority authority) {
-        TestSuiteStabilityAttemptCancellationAuthority required =
+    public TestSuiteStabilityPhysicalAttemptStartAuthority.Descriptor descriptor(
+            TestSuiteStabilityPhysicalAttemptStartAuthority authority) {
+        TestSuiteStabilityPhysicalAttemptStartAuthority required =
                 Objects.requireNonNull(authority, "authority");
         return invoke(CallType.DESCRIPTOR, policy.descriptorTimeout(), required::descriptor);
     }
 
     /**
-     * Sends one idempotent cancellation command within the cancellation deadline.
+     * Sends one idempotent start command within the configured start deadline.
      *
-     * @param authority opaque provider adapter
-     * @param command exact content-addressed command
+     * @param authority opaque isolated-runtime provider adapter
+     * @param command exact content-addressed start command
      * @return untrusted detached attestation for independent verification
      */
-    public TestSuiteStabilityAttemptCancellationReceipt.Attestation cancel(
-            TestSuiteStabilityAttemptCancellationAuthority authority,
-            TestSuiteStabilityAttemptCancellationCommand command) {
-        TestSuiteStabilityAttemptCancellationAuthority required =
+    public TestSuiteStabilityPhysicalAttemptStartReceipt.Attestation start(
+            TestSuiteStabilityPhysicalAttemptStartAuthority authority,
+            TestSuiteStabilityPhysicalAttemptStartCommand command) {
+        TestSuiteStabilityPhysicalAttemptStartAuthority required =
                 Objects.requireNonNull(authority, "authority");
-        TestSuiteStabilityAttemptCancellationCommand safeCommand =
+        TestSuiteStabilityPhysicalAttemptStartCommand safeCommand =
                 Objects.requireNonNull(command, "command");
-        return invoke(CallType.CANCELLATION, policy.cancellationTimeout(),
-                () -> required.cancel(safeCommand));
+        return invoke(CallType.START, policy.startTimeout(),
+                () -> required.start(safeCommand));
     }
 
     /**
-     * Captures the current local call occupancy and closed outcome counters.
+     * Captures current process-local occupancy and closed outcome counters.
      *
-     * @return payload-free monotonic local capacity and liveness observation
+     * @return payload-free monotonic capacity and liveness observation
      */
     public Snapshot snapshot() {
         synchronized (outcomeLock) {
@@ -116,9 +116,7 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
         }
     }
 
-    /**
-     * Rejects new operations and requests interruption of active adapters without waiting.
-     */
+    /** Rejects new operations and requests interruption of active adapters without waiting. */
     @Override
     public void close() {
         boolean closing;
@@ -194,49 +192,48 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
     public enum CallType {
         /** Provider identity/capability lookup. */
         DESCRIPTOR,
-        /** Idempotent attempt termination command. */
-        CANCELLATION
+        /** Idempotent physical-attempt start command. */
+        START
     }
 
-    /** Closed local call outcome; none proves provider termination. */
+    /** Closed local call outcome; none proves whether a remote start occurred. */
     public enum Disposition {
-        /** The wall-clock deadline elapsed and local interrupt was requested. */
+        /** Wall-clock deadline elapsed and local interrupt was requested. */
         TIMED_OUT,
         /** Every fixed worker slot was occupied, so no call started. */
         SATURATED,
-        /** The supervisor had already closed. */
+        /** Supervisor had already closed. */
         CLOSED,
-        /** The waiting caller was interrupted and its interrupt flag restored. */
+        /** Waiting caller was interrupted and its interrupt flag restored. */
         CALLER_INTERRUPTED,
-        /** The adapter failed, returned null, or was cancelled locally. */
+        /** Adapter failed, returned null, or was cancelled locally. */
         UNAVAILABLE
     }
 
     /**
-     * Fixed local provider-call limits.
+     * Fixed process-local provider-call limits.
      *
      * @param descriptorTimeout provider descriptor timeout from 100 ms through 30 s
-     * @param cancellationTimeout cancellation timeout from 100 ms through 5 min
+     * @param startTimeout provider start timeout from 100 ms through 5 min
      * @param maximumConcurrentCalls fixed process-local worker count from 1 through 32
      */
     public record Policy(
             Duration descriptorTimeout,
-            Duration cancellationTimeout,
+            Duration startTimeout,
             int maximumConcurrentCalls) {
 
-        /** Default 5 s descriptor, 30 s cancellation, and 8 fixed workers. */
+        /** Default 5 s descriptor, 30 s start, and 8 fixed workers. */
         public static final Policy DEFAULT =
                 new Policy(Duration.ofSeconds(5), Duration.ofSeconds(30), 8);
 
-        /** Enforces millisecond-exact, bounded deadlines and capacity. */
+        /** Enforces millisecond-exact bounded deadlines and capacity. */
         public Policy {
             descriptorTimeout = timeout(
                     descriptorTimeout, Duration.ofSeconds(30), "descriptorTimeout");
-            cancellationTimeout = timeout(
-                    cancellationTimeout, Duration.ofMinutes(5), "cancellationTimeout");
+            startTimeout = timeout(startTimeout, Duration.ofMinutes(5), "startTimeout");
             if (maximumConcurrentCalls < 1 || maximumConcurrentCalls > 32) {
                 throw new IllegalArgumentException(
-                        "Attempt cancellation provider capacity is invalid");
+                        "Physical-attempt start provider capacity is invalid");
             }
         }
 
@@ -246,7 +243,7 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
                     || required.compareTo(maximum) > 0
                     || !required.equals(Duration.ofMillis(required.toMillis()))) {
                 throw new IllegalArgumentException(
-                        "Attempt cancellation provider timeout is invalid");
+                        "Physical-attempt start provider timeout is invalid");
             }
             return required;
         }
@@ -260,7 +257,7 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
      * @param acceptedCalls calls admitted to a fixed worker
      * @param completedCalls calls returning normally before deadline
      * @param failedCalls adapters failing or returning null before deadline
-     * @param timedOutCalls callers observing the wall-clock timeout
+     * @param timedOutCalls callers observing wall-clock timeout
      * @param saturatedCalls calls rejected because every worker was occupied
      * @param interruptedCalls calls abandoned after caller interruption
      * @param closedCalls calls rejected after shutdown
@@ -282,9 +279,9 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
             long lingeringCalls,
             boolean closed) {
 
-        /** Exact local supervisor snapshot generation. */
+        /** Exact local start-call supervisor snapshot generation. */
         public static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityAttemptCancellationCallSnapshot.v1";
+                "bloge.testSuiteStabilityPhysicalAttemptStartCallSnapshot.v1";
 
         /** Validates monotonic counters and physically possible occupancy. */
         public Snapshot {
@@ -299,7 +296,7 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
                     || completedCalls + failedCalls + timedOutCalls + interruptedCalls
                     > acceptedCalls) {
                 throw new IllegalArgumentException(
-                        "Attempt cancellation provider snapshot is invalid");
+                        "Physical-attempt start provider snapshot is invalid");
             }
         }
     }
@@ -313,7 +310,7 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
         private final Disposition disposition;
 
         private InvocationException(CallType callType, Disposition disposition) {
-            super("Suite-stability attempt cancellation provider call was "
+            super("Suite-stability physical-attempt start provider call was "
                     + Objects.requireNonNull(disposition, "disposition")
                     .name().toLowerCase(java.util.Locale.ROOT));
             this.callType = Objects.requireNonNull(callType, "callType");
@@ -330,7 +327,7 @@ public final class TestSuiteStabilityAttemptCancellationCallSupervisor
         }
 
         /**
-         * Identifies the local call disposition without implying remote termination.
+         * Identifies the local disposition without implying remote start or non-start.
          *
          * @return bounded local outcome
          */

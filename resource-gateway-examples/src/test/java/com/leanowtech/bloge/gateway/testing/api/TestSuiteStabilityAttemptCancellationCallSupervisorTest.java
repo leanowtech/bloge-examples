@@ -120,6 +120,30 @@ class TestSuiteStabilityAttemptCancellationCallSupervisorTest {
     }
 
     @Test
+    void nullProviderResultCountsOnlyAsFailureAndKeepsSnapshotConsistent() {
+        TestSuiteStabilityAttemptCancellationAuthority authority = authority(
+                this::descriptor, ignored -> null);
+
+        assertThatThrownBy(() -> supervisor.cancel(authority, command))
+                .isInstanceOfSatisfying(
+                        TestSuiteStabilityAttemptCancellationCallSupervisor
+                                .InvocationException.class,
+                        failure -> assertThat(failure.disposition()).isEqualTo(
+                                TestSuiteStabilityAttemptCancellationCallSupervisor
+                                        .Disposition.UNAVAILABLE));
+
+        assertThat(supervisor.snapshot())
+                .extracting(
+                        TestSuiteStabilityAttemptCancellationCallSupervisor.Snapshot
+                                ::acceptedCalls,
+                        TestSuiteStabilityAttemptCancellationCallSupervisor.Snapshot
+                                ::completedCalls,
+                        TestSuiteStabilityAttemptCancellationCallSupervisor.Snapshot
+                                ::failedCalls)
+                .containsExactly(1L, 0L, 1L);
+    }
+
+    @Test
     void callerInterruptionIsPreserved() throws Exception {
         AtomicBoolean release = new AtomicBoolean();
         CountDownLatch entered = new CountDownLatch(1);

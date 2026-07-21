@@ -113,6 +113,18 @@
 > dispatch、queue/cancellation journal 原子投影、slot 延迟释放和 orphan reconciliation 仍待后续增量。
 > 验证见 [physical attempt reservation verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-reservation-verification.md)。
 
+> Stage 4 physical attempt 第二增量冻结 provider-signed start proof kernel。内容寻址 start command
+> 嵌入完整 reserved identity，并绑定 opaque execution-envelope ref/fingerprint、confirmation deadline 与
+> 32-byte challenge；provider receipt 回绑 provider/deployment/key/attempt/identity/positive lease epoch/
+> isolation/process identity/runtime state/provider sequence/time window。只有 `STARTED/ALREADY_STARTED`
+> 构成 start proof，签名 `REJECTED` 仍是 non-confirming。Ed25519 verifier 独立重算 identity 与 command，
+> 固定容量、零队列 supervisor 对 descriptor/start 使用 caller-owned wall-clock deadline；timeout/interrupt
+> 只计本地 disposition，忽略 interrupt 的 adapter 持续占 slot 并进入 lingering。17 项 start protocol/
+> verifier/supervisor 测试与 1 项 cancellation supervisor null-result 计数回归全绿，五个新增公共类型
+> strict JavaDoc 零告警。当前尚无 durable start journal、provider sequence floor、真实 process/container
+> adapter 或 worker 接线；超时调用可能已产生远端副作用，必须进入下一步 orphan reconciliation，
+> capability 继续关闭。验证见 [physical attempt start proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-proof-kernel-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |

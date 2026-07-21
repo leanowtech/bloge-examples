@@ -97,6 +97,16 @@
 > reconciliation 尚未接线，capability 继续关闭。验证见
 > [physical attempt reservation verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-reservation-verification.md)。
 
+> Stage 4 physical attempt 第二增量冻结 provider-signed start proof kernel：start command 嵌入 reserved
+> identity，并内容寻址 opaque execution envelope、deadline 与 challenge；receipt 精确回绑 provider/
+> deployment/key/attempt/identity/positive epoch/isolation/process/runtime state/provider sequence/time。
+> `STARTED/ALREADY_STARTED` 才是 start proof，签名 `REJECTED` 与本地 timeout 均不证明“未启动”。
+> pinned Ed25519 verifier 和 fixed-capacity/zero-queue supervisor 已落地，interrupt-ignoring adapter 保持
+> slot occupancy 与 lingering observation。17 项 start 测试及 1 项 cancellation null-result 回归全绿，
+> 五个新增公共类型 strict JavaDoc 零告警。durable start journal、真实隔离 provider、worker/queue 投影
+> 和 orphan reconciliation 仍未接线，capability 继续关闭。验证见
+> [physical attempt start proof-kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-start-proof-kernel-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS
