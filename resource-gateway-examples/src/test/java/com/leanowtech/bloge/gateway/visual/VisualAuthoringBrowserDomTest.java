@@ -97,6 +97,7 @@ class VisualAuthoringBrowserDomTest {
     private static String chromeWebDriverUnavailableReason;
 
     private WebDriver driver;
+    private ChromeDriverService driverService;
 
     @BeforeEach
     void seedDemoDescriptorsForRandomPort() {
@@ -121,8 +122,19 @@ class VisualAuthoringBrowserDomTest {
 
     @AfterEach
     void closeBrowser() {
-        if (driver != null) {
-            driver.quit();
+        WebDriver browser = driver;
+        ChromeDriverService service = driverService;
+        driver = null;
+        driverService = null;
+        if (browser != null) {
+            BoundedBrowserSessionLauncher.launch(
+                    WEBDRIVER_TIMEOUT,
+                    () -> {
+                        browser.quit();
+                        return Boolean.TRUE;
+                    },
+                    service == null ? () -> { } : service::stop,
+                    ignored -> { });
         }
     }
 
@@ -2239,18 +2251,41 @@ class VisualAuthoringBrowserDomTest {
                 .withTimeout(WEBDRIVER_TIMEOUT)
                 .withSilent(true)
                 .build();
+        ChromeDriver browser = null;
         try {
-            ChromeDriver browser = new ChromeDriver(service, options, webdriverClientConfig());
+            browser = BoundedBrowserSessionLauncher.launch(
+                    WEBDRIVER_TIMEOUT,
+                    () -> new ChromeDriver(service, options, webdriverClientConfig()),
+                    service::stop,
+                    VisualAuthoringBrowserDomTest::quitQuietly);
             browser.manage().timeouts()
                     .pageLoadTimeout(WEBDRIVER_TIMEOUT)
                     .scriptTimeout(WEBDRIVER_TIMEOUT)
                     .implicitlyWait(Duration.ZERO);
+            driverService = service;
             return browser;
-        } catch (WebDriverException ex) {
-            service.stop();
-            chromeWebDriverUnavailableReason = "Chrome/WebDriver is unavailable: " + ex.getMessage();
+        } catch (BoundedBrowserSessionLauncher.LaunchException ex) {
+            chromeWebDriverUnavailableReason = "Chrome/WebDriver session launch is unavailable: "
+                    + ex.disposition();
             Assumptions.abort(chromeWebDriverUnavailableReason);
             return null;
+        } catch (WebDriverException ex) {
+            BoundedBrowserSessionLauncher.cleanupAfterFailedLaunch(
+                    browser, service::stop, VisualAuthoringBrowserDomTest::quitQuietly);
+            chromeWebDriverUnavailableReason = "Chrome/WebDriver session setup is unavailable";
+            Assumptions.abort(chromeWebDriverUnavailableReason);
+            return null;
+        }
+    }
+
+    private static void quitQuietly(WebDriver browser) {
+        if (browser == null) {
+            return;
+        }
+        try {
+            browser.quit();
+        } catch (WebDriverException ignored) {
+            // The session has already been abandoned; setup diagnostics stay outside test output.
         }
     }
 
