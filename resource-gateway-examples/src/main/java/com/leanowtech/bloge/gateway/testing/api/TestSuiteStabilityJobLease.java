@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  * @param environmentId non-production environment scope
  * @param requestFingerprint immutable execution intent
  * @param ownerId server-owned worker identity
- * @param epoch monotonically increasing ownership generation
+ * @param epoch positive monotonically increasing ownership generation
  * @param expiresAt database-authority lease expiry
  */
 public record TestSuiteStabilityJobLease(
@@ -36,7 +36,7 @@ public record TestSuiteStabilityJobLease(
         if (jobId.isBlank() || tenantId.isBlank()
                 || !java.util.Set.of("test", "staging").contains(environmentId)
                 || !FINGERPRINT.matcher(requestFingerprint).matches()
-                || ownerId.isBlank() || epoch < 0) {
+                || ownerId.isBlank() || epoch < 1) {
             throw new IllegalArgumentException("Invalid suite-stability job lease");
         }
     }

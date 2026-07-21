@@ -85,6 +85,17 @@
 > deployment 不由当前 authority 猜测解析，仍须进入未实现的 reconciliation/orphan lane。验证见
 > [attempt cancellation coordinator verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-coordinator-verification.md)。
 
+> Stage 4 physical attempt 第一增量建立内容寻址 identity 与 database-authoritative reservation
+> registry。它在 provider dispatch 前冻结 exact queue fence、request/runtime fingerprint、provider
+> deployment 与 PROCESS/CONTAINER/VM boundary；同一事务锁定 queue row，复用完整 job integrity
+> verification，并按 database time 复验 `RUNNING`、deadline、owner、positive epoch 和 lease expiry。
+> exact replay 幂等、同 lease epoch 改绑运行时代际失败；调用 provider 前必须再次
+> `authorizeDispatch`，取消或 retry 后不可继续派发。队列首 claim 已从历史 `0` 语义统一为 positive
+> epoch，兼容既有 cancellation command/receipt。11 项 registry 与 58 项相关回归全绿。reservation
+> 不等于 provider start/terminal proof；签名 start receipt、真实隔离 dispatch、slot/queue 投影和 orphan
+> reconciliation 尚未接线，capability 继续关闭。验证见
+> [physical attempt reservation verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-reservation-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

@@ -99,6 +99,19 @@
 > 下表仍写的“durable cancellation receipt 待完成”特指 retention/tombstone、worker 消费与产品协议；
 > 不再指本增量已经落地的 journal correctness core。
 
+> Stage 4 physical attempt 第一增量新增内容寻址的
+> `TestSuiteStabilityPhysicalAttemptIdentity` 与 database-authoritative registry。identity 在 provider
+> dispatch 前冻结 tenant/environment/job/request fingerprint/owner/positive lease epoch/runtime binding/
+> provider/deployment/isolation mode；registry 在同一事务锁定真实 queue row、复用 queue repository
+> 的整行完整性校验，并以 database time 验证 `RUNNING`、deadline、owner、epoch 与 lease expiry。
+> 同一 job lease epoch 只能保留一个 physical identity，exact replay 幂等；dispatch 前必须再次
+> `authorizeDispatch`，取消、retry、lease loss 或 deadline 后均失败关闭。队列首 claim 同步统一为
+> positive epoch，使其与既有 cancellation command/receipt 契约一致。11 项 registry 行为/并发/篡改测试
+> 与 58 项 queue/worker/coordinator 回归全绿。该 reservation 只证明“某个隔离派发身份曾获准”，不证明
+> provider 已启动进程，也不允许 worker 改报 `RUNNING/CANCELLED`；start attestation、真实 process/container
+> dispatch、queue/cancellation journal 原子投影、slot 延迟释放和 orphan reconciliation 仍待后续增量。
+> 验证见 [physical attempt reservation verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-reservation-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |

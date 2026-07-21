@@ -278,7 +278,7 @@ public final class DatabaseTestSuiteStabilityJobRepository
                     submission.principal(), submission.priority(),
                     TestSuiteStabilityJobRecord.Status.QUEUED, 0, observedAt,
                     submission.deadlineAt(), observedAt, observedAt, expiresAt,
-                    "", -1, null, policy.generation(), "", "", "", "", "");
+                    "", 0, null, policy.generation(), "", "", "", "", "");
             try {
                 insert(inserted);
             } catch (DuplicateKeyException collision) {
@@ -325,7 +325,8 @@ public final class DatabaseTestSuiteStabilityJobRepository
                             .thenComparing(value -> value.record().jobId()))
                     .orElseThrow(() -> new IllegalStateException(
                             "Eligible tenant had no integrity-verified queued job"));
-            long epoch = Math.addExact(selected.leaseEpoch(), 1);
+            long epoch = selected.leaseEpoch() < 1
+                    ? 1 : Math.addExact(selected.leaseEpoch(), 1);
             Instant leaseExpiresAt = observedAt.plus(policy.leaseDuration());
             TestSuiteStabilityJobRecord.Status claimedStatus =
                     selected.record().status()
