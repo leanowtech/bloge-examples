@@ -103,7 +103,9 @@ coordinator 后该测试类为 19 tests，其中新增 3 项真实组合门禁�
 
 两个新增并发门禁和 JavaDoc 修订完成后，两个公共 journal 类型通过
 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。下述 `3893` 全量数字对应此前冻结的
-`3c08bb7c`；当前增量提交后的精确全量基线需在独占 `clean verify` 完成后再前移。
+`3c08bb7c`，用于保留 journal 初始增量的历史证据。后续 coordinator、调用前数据库时间栅栏与浏览器
+生命周期修复提交 `d5fadc32` 的不可变源码快照全量基线已前移为 3921 tests、0 failures、0 errors、
+2 个条件浏览器跳过，并成功重打包 Spring Boot 可执行 JAR。
 
 coordinator 的 10 项单元测试与 3 项真实 journal 组合测试见
 [attempt cancellation coordinator verification](resource-gateway-execution-data-control-plane-stage4-attempt-cancellation-coordinator-verification.md)。
