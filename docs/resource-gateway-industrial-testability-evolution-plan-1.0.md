@@ -228,6 +228,17 @@
 > 包含 8 个新增匹配 class entry，耗时 9:51，构建/测试浏览器残留进程均为零。验证见
 > [physical attempt terminal projection work registration verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-work-registration-verification.md)。
 
+> Stage 4 physical attempt 第十三增量补齐 durable projection work 的 database-clock lifecycle authority。
+> `claimNext` 以 owner/token/epoch/claimedAt/deadline/fence fingerprint 原子 claim 到期 work，live lease 跨副本
+> 互斥，expired lease 由更高 epoch 接管，旧 owner 失败关闭。payload-free Result 保留 coordinator stage、fixed
+> reason、proof/projection conflict detail 和成功 projection identity；completion 对 success、proof pending、
+> unavailable、permanent conflict 分别执行 completed、独立有界指数退避、或 quarantine，exact response-loss
+> replay 与 changed-result conflict 明确分离。新增 10 项 H2/双副本状态机测试，registration 组合 63 项、完整
+> 物理链聚合 262 项全绿，两个公共类型严格 JavaDoc 零告警。bounded one-shot worker、lease heartbeat/deadline、
+> tenant fairness、policy cohort、immutable attempt history、旧终态 backfill 和 Spring 产品接线尚未完成，能力
+> 继续关闭。验证见
+> [physical attempt terminal projection work lifecycle verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-work-lifecycle-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -28,6 +29,13 @@ import java.util.regex.Pattern;
 public interface TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal {
 
     /**
+     * Returns the exact lease and retry policy shared by this worker authority.
+     *
+     * @return immutable worker policy
+     */
+    Policy policy();
+
+    /**
      * Binds one exact work registration to a future test-runtime database transaction.
      *
      * <p>The returned mutation must use only the supplied JDBC facade. Exact replay is a no-op;
@@ -39,6 +47,27 @@ public interface TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal 
     TestRuntimeTransactionMutation boundRegister(Trigger trigger);
 
     /**
+     * Claims one database-clock-due item or takes over one expired lease.
+     *
+     * @param ownerId stable replica and worker identity, never a user credential
+     * @return one fenced claim, otherwise empty
+     */
+    Optional<Claim> claimNext(String ownerId);
+
+    /**
+     * Completes one exact worker execution under its database lease.
+     *
+     * <p>Success closes the work, proof-pending and unavailable results reschedule with bounded
+     * exponential delay, and a permanent conflict quarantines it. Exact response-loss replay is
+     * returned without another transition.</p>
+     *
+     * @param lease exact database fence returned by {@link #claimNext(String)}
+     * @param result payload-free coordinator result projection
+     * @return persisted work transition
+     */
+    Completion complete(Lease lease, Result result);
+
+    /**
      * Resolves one integrity-verified work row inside its exact caller scope.
      *
      * @param tenantId exact tenant scope
@@ -47,6 +76,13 @@ public interface TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal 
      * @return validated work row, otherwise empty
      */
     Optional<Entry> find(String tenantId, String environmentId, String attemptId);
+
+    /**
+     * Returns aggregate database-clock backlog state without tenant or attempt identity.
+     *
+     * @return fixed-cardinality worker snapshot
+     */
+    Snapshot snapshot();
 
     /** Durable projection-work lifecycle. */
     enum Status {
@@ -74,6 +110,381 @@ public interface TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal 
         UNAVAILABLE,
         /** A source, proof, or projection authority permanently rejected closure. */
         PERMANENT_CONFLICT
+    }
+
+    /** Work completion disposition returned to a caller. */
+    enum CompletionStatus {
+        /** A projected or replayed exact queue closure completed the work. */
+        COMPLETED,
+        /** Proof or infrastructure availability delayed the next attempt. */
+        RESCHEDULED,
+        /** A permanent source, proof, or projection conflict stopped automation. */
+        QUARANTINED,
+        /** The exact lease and result were already committed. */
+        REPLAYED
+    }
+
+    /**
+     * Database lease and retry policy shared by every worker replica.
+     *
+     * @param leaseDuration live claim duration from one second through ten minutes
+     * @param initialProofPendingDelay first delay while an authoritative proof is pending
+     * @param initialUnavailableDelay first delay after infrastructure unavailability
+     * @param maximumRetryDelay exponential retry ceiling
+     * @param claimInspectionLimit maximum raced candidates inspected by one claim call
+     */
+    record Policy(
+            Duration leaseDuration,
+            Duration initialProofPendingDelay,
+            Duration initialUnavailableDelay,
+            Duration maximumRetryDelay,
+            int claimInspectionLimit) {
+
+        /** Conservative default for registration-only composition and local examples. */
+        public static final Policy DEFAULT = new Policy(
+                Duration.ofSeconds(30), Duration.ofSeconds(1), Duration.ofSeconds(1),
+                Duration.ofMinutes(5), 32);
+
+        /** Enforces millisecond-exact operational bounds without silent clamping. */
+        public Policy {
+            leaseDuration = exactDuration(leaseDuration, "leaseDuration");
+            initialProofPendingDelay = exactDuration(
+                    initialProofPendingDelay, "initialProofPendingDelay");
+            initialUnavailableDelay = exactDuration(
+                    initialUnavailableDelay, "initialUnavailableDelay");
+            maximumRetryDelay = exactDuration(maximumRetryDelay, "maximumRetryDelay");
+            if (leaseDuration.compareTo(Duration.ofSeconds(1)) < 0
+                    || leaseDuration.compareTo(Duration.ofMinutes(10)) > 0
+                    || initialProofPendingDelay.compareTo(Duration.ofMillis(100)) < 0
+                    || initialProofPendingDelay.compareTo(Duration.ofHours(1)) > 0
+                    || initialUnavailableDelay.compareTo(Duration.ofMillis(100)) < 0
+                    || initialUnavailableDelay.compareTo(Duration.ofHours(1)) > 0
+                    || maximumRetryDelay.compareTo(initialProofPendingDelay) < 0
+                    || maximumRetryDelay.compareTo(initialUnavailableDelay) < 0
+                    || maximumRetryDelay.compareTo(Duration.ofDays(1)) > 0
+                    || claimInspectionLimit < 1 || claimInspectionLimit > 1000) {
+                throw new IllegalArgumentException(
+                        "Invalid physical-attempt terminal projection-work policy");
+            }
+        }
+    }
+
+    /**
+     * Opaque database lease fencing one work execution.
+     *
+     * @param workId exact content-addressed work identity
+     * @param attemptId exact physical attempt
+     * @param ownerId stable worker identity
+     * @param token unpredictable non-credential token
+     * @param epoch positive monotonic claim generation
+     * @param claimedAt database claim time
+     * @param leaseUntil exclusive database lease deadline
+     * @param fenceFingerprint complete lease commitment
+     */
+    record Lease(
+            String workId,
+            String attemptId,
+            String ownerId,
+            String token,
+            long epoch,
+            Instant claimedAt,
+            Instant leaseUntil,
+            String fenceFingerprint) {
+
+        /** Enforces an exact millisecond lease shape. */
+        public Lease {
+            workId = required(workId, "workId");
+            attemptId = required(attemptId, "attemptId");
+            ownerId = required(ownerId, "ownerId");
+            token = required(token, "token");
+            claimedAt = exactInstant(claimedAt, "claimedAt");
+            leaseUntil = exactInstant(leaseUntil, "leaseUntil");
+            fenceFingerprint = required(fenceFingerprint, "fenceFingerprint");
+            try {
+                UUID.fromString(token);
+            } catch (IllegalArgumentException invalid) {
+                throw new IllegalArgumentException(
+                        "Invalid physical-attempt terminal projection-work lease token");
+            }
+            if (!workId.matches("stability-attempt-terminal-work-[a-f0-9]{64}")
+                    || !attemptId.matches("stability-attempt-[a-f0-9]{64}")
+                    || !Trigger.IDENTIFIER.matcher(ownerId).matches()
+                    || epoch < 1 || !leaseUntil.isAfter(claimedAt)
+                    || !fenceFingerprint.matches("sha256:[a-f0-9]{64}")) {
+                throw new IllegalArgumentException(
+                        "Invalid physical-attempt terminal projection-work lease");
+            }
+        }
+    }
+
+    /**
+     * One claimed work item and its retry history.
+     *
+     * @param lease exact database fence
+     * @param trigger immutable terminal source
+     * @param executionAttempts previously completed worker executions
+     * @param consecutiveProofPending current proof-pending streak
+     * @param consecutiveUnavailable current infrastructure-unavailable streak
+     * @param registeredAt original database registration time
+     */
+    record Claim(
+            Lease lease,
+            Trigger trigger,
+            long executionAttempts,
+            int consecutiveProofPending,
+            int consecutiveUnavailable,
+            Instant registeredAt) {
+
+        /** Enforces an exact work, attempt, and non-negative counter binding. */
+        public Claim {
+            lease = Objects.requireNonNull(lease, "lease");
+            trigger = Objects.requireNonNull(trigger, "trigger");
+            registeredAt = exactInstant(registeredAt, "registeredAt");
+            if (!lease.workId().equals(trigger.workId())
+                    || !lease.attemptId().equals(trigger.attemptId())
+                    || executionAttempts < 0 || consecutiveProofPending < 0
+                    || consecutiveUnavailable < 0
+                    || registeredAt.isAfter(lease.claimedAt())) {
+                throw new IllegalArgumentException(
+                        "Invalid physical-attempt terminal projection-work claim");
+            }
+        }
+    }
+
+    /**
+     * Payload-free durable projection of one coordinator result.
+     *
+     * @param schemaVersion exact result generation
+     * @param kind closed worker result
+     * @param failureReason fixed-cardinality coordinator reason
+     * @param proofReason proof detail only for proof pending or proof conflict
+     * @param projectionConflictReason journal detail only for projection conflict
+     * @param projectionId exact projection only for success
+     * @param projectionRecordFingerprint exact retained projection commitment only for success
+     */
+    record Result(
+            String schemaVersion,
+            ResultKind kind,
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                    failureReason,
+            Optional<TestSuiteStabilityPhysicalAttemptTerminalProjectionProofResolver.Reason>
+                    proofReason,
+            Optional<TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.ConflictReason>
+                    projectionConflictReason,
+            String projectionId,
+            String projectionRecordFingerprint) {
+
+        /** Exact terminal projection-work result generation. */
+        public static final String SCHEMA_VERSION =
+                "bloge.testSuiteStabilityPhysicalAttemptTerminalProjectionWorkResult.v1";
+        private static final Pattern PROJECTION_ID = Pattern.compile(
+                "stability-attempt-terminal-project-[a-f0-9]{64}");
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+
+        /** Enforces the coordinator result truth table without carrying its source payload. */
+        public Result {
+            schemaVersion = required(schemaVersion, "schemaVersion");
+            kind = Objects.requireNonNull(kind, "kind");
+            failureReason = Objects.requireNonNull(failureReason, "failureReason");
+            proofReason = Objects.requireNonNull(proofReason, "proofReason");
+            projectionConflictReason = Objects.requireNonNull(
+                    projectionConflictReason, "projectionConflictReason");
+            projectionId = normalized(projectionId);
+            projectionRecordFingerprint = normalized(projectionRecordFingerprint);
+            boolean success = kind == ResultKind.PROJECTED || kind == ResultKind.REPLAYED;
+            boolean proofOutcome = kind == ResultKind.PROOF_PENDING
+                    || failureReason
+                    == TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator
+                    .FailureReason.PROOF_CONFLICT;
+            boolean projectionConflict = failureReason
+                    == TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator
+                    .FailureReason.PROJECTION_CONFLICT;
+            if (!SCHEMA_VERSION.equals(schemaVersion) || kind == ResultKind.NONE
+                    || success != (failureReason
+                    == TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator
+                    .FailureReason.NONE
+                    && PROJECTION_ID.matcher(projectionId).matches()
+                    && FINGERPRINT.matcher(projectionRecordFingerprint).matches())
+                    || !success && (!projectionId.isEmpty()
+                    || !projectionRecordFingerprint.isEmpty())
+                    || success && (!proofReason.isEmpty()
+                    || !projectionConflictReason.isEmpty())
+                    || proofOutcome != proofReason.isPresent()
+                    || projectionConflict != projectionConflictReason.isPresent()
+                    || kind == ResultKind.PROOF_PENDING
+                    && failureReason
+                    != TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator
+                    .FailureReason.PROOF_NOT_READY
+                    || kind == ResultKind.UNAVAILABLE && !unavailable(failureReason)
+                    || kind == ResultKind.PERMANENT_CONFLICT && !permanent(failureReason)) {
+                throw new IllegalArgumentException(
+                        "Invalid physical-attempt terminal projection-work result");
+            }
+        }
+
+        /**
+         * Projects the complete coordinator result into its durable payload-free shape.
+         *
+         * @param attempt exact coordinator result
+         * @return validated durable worker result
+         */
+        public static Result from(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.Attempt attempt) {
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.Attempt exact =
+                    Objects.requireNonNull(attempt, "attempt");
+            ResultKind kind = ResultKind.valueOf(exact.stage().name());
+            String projectionId = exact.projection().map(value ->
+                    value.entry().command().projectionId()).orElse("");
+            String projectionFingerprint = exact.projection().map(value ->
+                    value.entry().recordFingerprint()).orElse("");
+            return new Result(SCHEMA_VERSION, kind, exact.failureReason(), exact.proofReason(),
+                    exact.projectionConflictReason(), projectionId, projectionFingerprint);
+        }
+
+        /**
+         * Reconstructs canonical result material for exact response-loss replay.
+         *
+         * @return immutable ordered result commitment material
+         */
+        public Map<String, Object> canonicalMaterial() {
+            Map<String, Object> material = new LinkedHashMap<>();
+            material.put("schemaVersion", schemaVersion);
+            material.put("kind", kind);
+            material.put("failureReason", failureReason);
+            material.put("proofReason", proofReason.map(Enum::name).orElse(""));
+            material.put("projectionConflictReason",
+                    projectionConflictReason.map(Enum::name).orElse(""));
+            material.put("projectionId", projectionId);
+            material.put("projectionRecordFingerprint", projectionRecordFingerprint);
+            return Map.copyOf(material);
+        }
+
+        private static boolean unavailable(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                        reason) {
+            return Set.of(
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                            .SOURCE_UNAVAILABLE,
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                            .PROOF_RESOLUTION_UNAVAILABLE,
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                            .PROJECTION_UNAVAILABLE,
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                            .PROJECTION_CONTRACT_VIOLATION).contains(reason);
+        }
+
+        private static boolean permanent(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                        reason) {
+            return Set.of(
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                            .SOURCE_NOT_RETAINED,
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                            .TERMINAL_NOT_CONFIRMED,
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                            .SOURCE_CHAIN_CONFLICT,
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                            .PROOF_CONFLICT,
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                            .PROJECTION_CONFLICT).contains(reason);
+        }
+    }
+
+    /**
+     * Persisted completion projection returned under one lease.
+     *
+     * @param status caller-visible completion disposition
+     * @param workStatus resulting durable lifecycle
+     * @param executionAttempts completed worker executions after this result
+     * @param consecutiveProofPending proof-pending streak after this result
+     * @param consecutiveUnavailable unavailable streak after this result
+     * @param nextAttemptAt next database-clock eligibility only when ready
+     * @param result exact payload-free result
+     * @param completedAt database transition time
+     */
+    record Completion(
+            CompletionStatus status,
+            Status workStatus,
+            long executionAttempts,
+            int consecutiveProofPending,
+            int consecutiveUnavailable,
+            Optional<Instant> nextAttemptAt,
+            Result result,
+            Instant completedAt) {
+
+        /** Enforces completion, lifecycle, result, and retry-time consistency. */
+        public Completion {
+            status = Objects.requireNonNull(status, "status");
+            workStatus = Objects.requireNonNull(workStatus, "workStatus");
+            nextAttemptAt = Objects.requireNonNull(nextAttemptAt, "nextAttemptAt")
+                    .map(value -> exactInstant(value, "nextAttemptAt"));
+            result = Objects.requireNonNull(result, "result");
+            completedAt = exactInstant(completedAt, "completedAt");
+            boolean success = result.kind() == ResultKind.PROJECTED
+                    || result.kind() == ResultKind.REPLAYED;
+            boolean retry = result.kind() == ResultKind.PROOF_PENDING
+                    || result.kind() == ResultKind.UNAVAILABLE;
+            if (executionAttempts < 1 || consecutiveProofPending < 0
+                    || consecutiveUnavailable < 0
+                    || (workStatus == Status.READY) != nextAttemptAt.isPresent()
+                    || nextAttemptAt.isPresent()
+                    && !nextAttemptAt.orElseThrow().isAfter(completedAt)
+                    || status == CompletionStatus.COMPLETED
+                    && (workStatus != Status.COMPLETED || !success)
+                    || status == CompletionStatus.RESCHEDULED
+                    && (workStatus != Status.READY || !retry)
+                    || status == CompletionStatus.QUARANTINED
+                    && (workStatus != Status.QUARANTINED
+                    || result.kind() != ResultKind.PERMANENT_CONFLICT)
+                    || status == CompletionStatus.REPLAYED
+                    && (workStatus == Status.LEASED
+                    || workStatus == Status.COMPLETED && !success
+                    || workStatus == Status.READY && !retry
+                    || workStatus == Status.QUARANTINED
+                    && result.kind() != ResultKind.PERMANENT_CONFLICT)) {
+                throw new IllegalArgumentException(
+                        "Invalid physical-attempt terminal projection-work completion");
+            }
+        }
+    }
+
+    /**
+     * Aggregate payload-free worker observation.
+     *
+     * @param observedAt database observation time
+     * @param ready ready row count
+     * @param leased leased row count
+     * @param completed completed row count
+     * @param quarantined quarantined row count
+     * @param dueReady currently due ready count
+     * @param expiredLeases currently expired lease count
+     * @param oldestActionableAt oldest due or expired database time
+     */
+    record Snapshot(
+            Instant observedAt,
+            long ready,
+            long leased,
+            long completed,
+            long quarantined,
+            long dueReady,
+            long expiredLeases,
+            Optional<Instant> oldestActionableAt) {
+
+        /** Enforces non-negative aggregate counts and exact database time. */
+        public Snapshot {
+            observedAt = exactInstant(observedAt, "observedAt");
+            oldestActionableAt = Objects.requireNonNull(
+                    oldestActionableAt, "oldestActionableAt")
+                    .map(value -> exactInstant(value, "oldestActionableAt"));
+            if (ready < 0 || leased < 0 || completed < 0 || quarantined < 0
+                    || dueReady < 0 || expiredLeases < 0 || dueReady > ready
+                    || expiredLeases > leased
+                    || oldestActionableAt.isPresent()
+                    != (dueReady + expiredLeases > 0)) {
+                throw new IllegalArgumentException(
+                        "Invalid physical-attempt terminal projection-work snapshot");
+            }
+        }
     }
 
     /**
@@ -275,10 +686,34 @@ public interface TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal 
             boolean projectionShape = PROJECTION_ID.matcher(projectionId).matches();
             boolean resultShape = lastResultKind != ResultKind.NONE
                     && FINGERPRINT.matcher(lastResultFingerprint).matches();
+            boolean successResult = lastResultKind == ResultKind.PROJECTED
+                    || lastResultKind == ResultKind.REPLAYED;
+            boolean retryResult = lastResultKind == ResultKind.PROOF_PENDING
+                    || lastResultKind == ResultKind.UNAVAILABLE;
+            boolean resultReasonShape = switch (lastResultKind) {
+                case NONE, PROJECTED, REPLAYED -> lastFailureReason
+                        == TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator
+                        .FailureReason.NONE;
+                case PROOF_PENDING -> lastFailureReason
+                        == TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator
+                        .FailureReason.PROOF_NOT_READY;
+                case UNAVAILABLE -> Result.unavailable(lastFailureReason);
+                case PERMANENT_CONFLICT -> Result.permanent(lastFailureReason);
+            };
+            boolean counterShape = switch (lastResultKind) {
+                case PROOF_PENDING -> consecutiveProofPending > 0
+                        && consecutiveUnavailable == 0;
+                case UNAVAILABLE -> consecutiveProofPending == 0
+                        && consecutiveUnavailable > 0;
+                case NONE, PROJECTED, REPLAYED, PERMANENT_CONFLICT ->
+                        consecutiveProofPending == 0 && consecutiveUnavailable == 0;
+            };
             if (!SCHEMA_VERSION.equals(schemaVersion)
                     || executionAttempts < 0 || consecutiveProofPending < 0
                     || consecutiveUnavailable < 0 || leaseEpoch < 0
                     || updatedAt.isBefore(registeredAt)
+                    || !leaseOwner.isEmpty()
+                    && !Trigger.IDENTIFIER.matcher(leaseOwner).matches()
                     || ready != nextAttemptAt.isAfter(Instant.EPOCH)
                     || leased != leaseShape
                     || !leased && (!leaseOwner.isEmpty() || !leaseToken.isEmpty()
@@ -287,19 +722,11 @@ public interface TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal 
                     || completed != projectionShape
                     || quarantined && projectionShape
                     || resultShape != (executionAttempts > 0)
-                    || lastResultKind == ResultKind.NONE
-                    && (lastFailureReason
-                    != TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator
-                    .FailureReason.NONE || !projectionId.isEmpty())
-                    || completed && lastResultKind != ResultKind.PROJECTED
-                    && lastResultKind != ResultKind.REPLAYED
-                    || completed && lastFailureReason
-                    != TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator
-                    .FailureReason.NONE
+                    || !resultReasonShape || !counterShape
+                    || executionAttempts == 0 && lastResultKind != ResultKind.NONE
+                    || executionAttempts > 0 && (ready || leased) && !retryResult
+                    || completed && !successResult
                     || quarantined && lastResultKind != ResultKind.PERMANENT_CONFLICT
-                    || quarantined && lastFailureReason
-                    == TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator
-                    .FailureReason.NONE
                     || !FINGERPRINT.matcher(recordFingerprint).matches()) {
                 throw new IllegalArgumentException(
                         "Invalid physical-attempt terminal projection-work entry");
@@ -319,6 +746,10 @@ public interface TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal 
     enum ConflictReason {
         /** The same attempt is already bound to another immutable terminal source. */
         IDEMPOTENCY_CONFLICT,
+        /** The worker no longer owns the exact live database lease. */
+        LEASE_LOST,
+        /** The same lease was already completed with another exact result. */
+        RESULT_CONFLICT,
         /** A retained work trigger or row failed content-integrity validation. */
         INTEGRITY_FAILURE
     }
@@ -354,6 +785,15 @@ public interface TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal 
         Instant required = Objects.requireNonNull(value, field);
         if (required.getNano() % 1_000_000 != 0) {
             throw new IllegalArgumentException(field + " must be millisecond exact");
+        }
+        return required;
+    }
+
+    private static Duration exactDuration(Duration value, String field) {
+        Duration required = Objects.requireNonNull(value, field);
+        if (required.isNegative() || required.isZero()
+                || required.toNanos() % 1_000_000 != 0) {
+            throw new IllegalArgumentException(field + " must be positive millisecond exact");
         }
         return required;
     }

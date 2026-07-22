@@ -253,6 +253,17 @@
 > 残留进程均为零。验证见
 > [physical attempt terminal projection work registration verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-work-registration-verification.md)。
 
+> Stage 4 physical attempt 第十三增量将 durable projection work 从 registration fact 扩展为 database-clock
+> worker lifecycle authority。claim 冻结 owner/token/positive epoch/database claimedAt/exclusive deadline 与完整
+> fence fingerprint；live lease 跨副本互斥，expired lease 可 takeover，旧 owner completion 失败关闭。Result
+> 严格投影 coordinator stage、fixed failure、proof/projection conflict detail 与成功 projection identity；
+> completion 对 proof pending 和 unavailable 使用相互独立的数据库时间指数退避，对 exact success 完成，对
+> permanent conflict 隔离，并区分 exact replay、changed result 与 lease loss。10 项 H2/双副本状态机测试、
+> 63 项 registration 组合和 262 项 physical/cancellation/queue 聚合门禁全绿，两个公共类型严格 JavaDoc 零
+> 告警。one-shot worker、lease heartbeat/deadline、tenant fairness、policy cohort、attempt history、旧终态
+> backfill 和 Spring 产品接线仍未实现，capability 继续关闭。验证见
+> [physical attempt terminal projection work lifecycle verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-work-lifecycle-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |

@@ -1203,6 +1203,11 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal failingWork =
                 new TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal() {
                     @Override
+                    public Policy policy() {
+                        return Policy.DEFAULT;
+                    }
+
+                    @Override
                     public TestRuntimeTransactionMutation boundRegister(Trigger trigger) {
                         return ignored -> {
                             throw new IllegalStateException("injected registration failure");
@@ -1213,6 +1218,22 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                     public Optional<Entry> find(
                             String tenantId, String environmentId, String attemptId) {
                         return Optional.empty();
+                    }
+
+                    @Override
+                    public Optional<Claim> claimNext(String ownerId) {
+                        return Optional.empty();
+                    }
+
+                    @Override
+                    public Completion complete(Lease lease, Result result) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public Snapshot snapshot() {
+                        return new Snapshot(Instant.EPOCH, 0, 0, 0, 0, 0, 0,
+                                Optional.empty());
                     }
                 };
         var failing = reconciliationJournal(10, failingWork);
