@@ -130,6 +130,12 @@ resolver provenance, dynamic invocation budgets, evidence vNext, production egre
 remain open, so the runtime feature flags above intentionally stay false. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
+The strict `resourceGateway.mirrorResolution.v1` protocol is also frozen. It binds every future resolver outcome to
+the exact run, plan, capability and invocation attempt; separates resolved null, visible/redacted output, hash-only
+evidence, resolved error, rejection and abstention; and fingerprints both visible output and the complete artifact.
+The model is implemented and schema-tested, but the fixed-priority resolver chain has not yet been wired into the
+run kernel and the protocol is not yet advertised by the capability probe.
+
 Useful variants:
 
 ```bash
@@ -272,7 +278,7 @@ exact suite execution, signed bounded stability analysis,
 signed retained-window and compact-range trend reconstruction, pinned-key-set offline verification, payload-free
 assertions/XML, and the fail-closed CLI instead of
 hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The same independent JAR
-now packages all capability-mirror schemas plus the shared Stage 0 compatibility fixture. ANEKE and
+now packages all Stage 0 capability-mirror schemas plus the shared compatibility fixture. ANEKE and
 other governance consumers can negotiate `/api/integration/capabilities` and verify snapshot/closure
 schema, canonical fingerprint, exact dependency closure, and enterprise scope without linking this
 Spring Boot application. See the test-kit's capability-mirror section and

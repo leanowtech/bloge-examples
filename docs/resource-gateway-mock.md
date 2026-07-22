@@ -71,7 +71,7 @@
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - Stage 0 验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
   Chrome 示例投影用例 `1/1` 全绿。纳入 Stage 1 compiler 与内部 mirror runtime kernel 后，Resource Gateway
-  最新 `clean verify` 为 4390 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
+  最新 `clean verify` 为 4398 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
   重打可执行 Spring Boot JAR。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -94,6 +94,12 @@
 - 上述 runtime 仍是内部 kernel，不等于 serving ready：固定优先级 `MirrorResolver` 与 `MirrorResolution`
   provenance、动态 occurrence budget、mirror evidence vNext、生产 composition/egress 证明、受保护 API 和幂等
   仓储尚未闭合。因此 `mirrorPlanCompilation`、`mirrorExternalLeafInterception`、`mirrorServing` 继续保持 false。
+- Stage 1 第四增量已冻结 `resourceGateway.mirrorResolution.v1` Java 线模型与 strict JSON Schema。每个结果绑定
+  exact run/plan/capability/site/occurrence/attempt/request fingerprint，并区分 `RESOLVED`、`ABSTAINED`、
+  `REJECTED`。协议显式区分 resolved null、可见/脱敏 payload、hash-only 与无输出，分别封印 output 和完整
+  resolution 指纹；非拒答结果必须携带 exact artifact provenance、置信区间、新鲜度和限制，普通日志表示不会
+  输出 payload 或 error message。协议聚焦测试 `10/10`、mirror 协议包 `69/69` 全绿；固定优先级 resolver runtime
+  wiring 仍是下一增量。
 
 ---
 
@@ -449,11 +455,26 @@ type MirrorSource =
 
 ```ts
 interface MirrorResolution {
+  schemaVersion: "resourceGateway.mirrorResolution.v1"
+  resolutionFingerprint: string
+  runId: string
+  planFingerprint: string
+  capabilityRef: RevisionRef
+  invocationSiteId: string
+  graphPath: string
+  correlationKey: string
+  occurrence: number
+  attempt: number
+  requestFingerprint: string
   status: "RESOLVED" | "ABSTAINED" | "REJECTED"
   source: MirrorSource
-  output?: JsonValue
+  payloadVisibility: "FULL" | "REDACTED" | "HASH_ONLY" | "NONE"
+  outputIncluded: boolean
+  output: JsonValue | null
+  outputFingerprint: string
   error?: MirrorError
   matchedArtifactRefs: RevisionRef[]
+  matchedRuleRefs: string[]
   confidence: {
     point: number
     lowerBound: number
@@ -465,7 +486,9 @@ interface MirrorResolution {
 }
 ```
 
-低置信度不是 warning 后继续，而是由 capability risk policy 决定降级或拒答。
+`outputIncluded` 用于区分“合法返回 null”和“payload 未进入证据”。`HASH_ONLY` 必须有 output fingerprint 且
+不能携带 payload；`ABSTAINED` 不得携带 output、error、match 或非零置信度；`REJECTED` 必须携带 payload-free
+错误。低置信度不是 warning 后继续，而是由 capability risk policy 决定降级或拒答。
 
 ## 8. 语料蒸馏与数据治理
 

@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,6 +41,9 @@ class CapabilityProtocolSchemaTest {
         MirrorPlan plan = mirrorPlan(closure);
         JsonNode planValue = mapper.valueToTree(plan);
         JsonNode planSchema = schema("mirror-plan-v1.schema.json");
+        MirrorResolution resolution = mirrorResolution(plan);
+        JsonNode resolutionValue = mapper.valueToTree(resolution);
+        JsonNode resolutionSchema = schema("mirror-resolution-v1.schema.json");
 
         assertProperties(snapshotValue, snapshotSchema.path("properties"));
         assertProperties(closureValue, closureSchema.path("properties"));
@@ -48,6 +52,7 @@ class CapabilityProtocolSchemaTest {
         assertProperties(provenanceValue, provenanceSchema.path("properties"));
         assertProperties(transitionValue, transitionSchema.path("properties"));
         assertProperties(planValue, planSchema.path("properties"));
+        assertProperties(resolutionValue, resolutionSchema.path("properties"));
         assertProperties(snapshotValue.path("source"), snapshotSchema.at("/$defs/source/properties"));
         assertProperties(snapshotValue.path("scope"), snapshotSchema.at("/$defs/scope/properties"));
         assertProperties(snapshotValue.path("runtime"), snapshotSchema.at("/$defs/runtime/properties"));
@@ -63,6 +68,13 @@ class CapabilityProtocolSchemaTest {
         assertProperties(planValue.path("executionServices"),
                 planSchema.at("/$defs/executionServices/properties"));
         assertProperties(planValue.path("policy"), planSchema.at("/$defs/policy/properties"));
+        assertProperties(resolutionValue.path("capabilityRef"),
+                resolutionSchema.at("/$defs/artifactRef/properties"));
+        assertProperties(resolutionValue.path("confidence"),
+                resolutionSchema.at("/$defs/confidence/properties"));
+        assertProperties(mapper.valueToTree(new MirrorResolution.MirrorError(
+                        "CUSTOMER_NOT_FOUND", "BUSINESS", "")),
+                resolutionSchema.at("/$defs/error/properties"));
         assertThat(snapshotSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(closureSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(contractSchema.path("additionalProperties").asBoolean()).isFalse();
@@ -70,7 +82,21 @@ class CapabilityProtocolSchemaTest {
         assertThat(provenanceSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(transitionSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(planSchema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(resolutionSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(snapshotValue.at("/contract/slo/timeout").asText()).isEqualTo("PT3S");
+    }
+
+    private MirrorResolution mirrorResolution(MirrorPlan plan) {
+        MirrorPlan.ExternalBinding binding = plan.externalBindings().getFirst();
+        return MirrorResolutionIntegrity.seal(mapper, new MirrorResolution("", "", "run-orders-1",
+                plan.planFingerprint(), binding.capabilityRef(), binding.invocationSiteId(),
+                binding.graphPath(), "O-1", 1, 1, "sha256:" + "8".repeat(64),
+                MirrorResolution.Status.RESOLVED, MirrorPlan.MirrorSource.OWNER_SPECIFIED,
+                MirrorResolution.PayloadVisibility.REDACTED, true,
+                Map.of("orderId", "[redacted]"), "", null,
+                List.of(plan.fixtureBundleRef()), binding.fixtureRuleRefs(),
+                new ArtifactProvenance.Confidence(1, 1, 1, "owner-rule-v1"), 1,
+                List.of("PAYLOAD_REDACTED")));
     }
 
     private MirrorPlan mirrorPlan(CapabilityClosure closure) {
@@ -106,6 +132,7 @@ class CapabilityProtocolSchemaTest {
         JsonNode snapshot = schema("capability-snapshot-v1.schema.json");
         JsonNode effect = schema("effect-contract-v1.schema.json");
         JsonNode provenance = schema("artifact-provenance-v1.schema.json");
+        JsonNode resolution = schema("mirror-resolution-v1.schema.json");
 
         assertThat(snapshot.at("/properties/lifecycle/enum"))
                 .extracting(JsonNode::asText)
@@ -116,6 +143,17 @@ class CapabilityProtocolSchemaTest {
         assertThat(provenance.at("/properties/sourceType/enum"))
                 .extracting(JsonNode::asText)
                 .containsExactly("OWNER", "RECORDED", "INFERRED", "SYNTHESIZED");
+        assertThat(resolution.at("/$defs/source/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("SESSION_STATE", "OWNER_SPECIFIED", "RECORDED_EXACT",
+                        "RECORDED_TRAJECTORY", "RECORDED_CLUSTER", "GOVERNED_REPLAY",
+                        "SCHEMA_SYNTHESIZED", "CONTRACT_MOCK", "ABSTAINED");
+        assertThat(resolution.at("/properties/status/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("RESOLVED", "ABSTAINED", "REJECTED");
+        assertThat(resolution.at("/properties/payloadVisibility/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly("FULL", "REDACTED", "HASH_ONLY", "NONE");
     }
 
     private JsonNode schema(String file) throws Exception {

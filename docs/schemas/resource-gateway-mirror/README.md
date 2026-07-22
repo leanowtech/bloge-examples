@@ -13,6 +13,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-snapshot-v1.schema.json` | `CapabilitySnapshot` | Immutable Resource/Operator/Graph projection consumed by mirror planning |
 | `capability-closure-v1.schema.json` | `CapabilityClosure` | Exact root plus every transitively reachable snapshot for registry-free planning |
 | `mirror-plan-v1.schema.json` | `MirrorPlan` | Sealed payload-free execution generation with exact external-edge bindings and isolation policy |
+| `mirror-resolution-v1.schema.json` | `MirrorResolution` | Fingerprinted per-attempt source, confidence, freshness, payload visibility, output/error, and abstention provenance |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -55,14 +56,19 @@ source fingerprint without becoming false business capabilities.
   and EffectiveExecutionPlan generation. Resolver sources follow the fixed v1 precedence and end in `ABSTAINED`; real external
   calls, external credentials, network egress, stale/revoked artifacts, unknown effects, incomplete state-model
   closure, cross-purpose/cross-scope material, and plans longer than 24 hours are rejected before sealing.
+- A mirror resolution is tied to an exact run, plan, capability, invocation site, occurrence, attempt, and canonical
+  request fingerprint. `RESOLVED`, `ABSTAINED`, and `REJECTED` have disjoint payload/error invariants. A resolved
+  `null` is represented by `outputIncluded=true`; `HASH_ONLY` never pretends that payload is present; every
+  non-abstained result carries exact artifact provenance. Visible output and the complete artifact have separate
+  canonical fingerprints, and generic string rendering omits output and error diagnostics.
 - Revision one must be `DRAFT`; later revisions are contiguous, append-only, and accepted only through the
   lifecycle transition matrix. `REVOKED` is terminal.
 
 ## Independent client admission
 
-The test-kit currently packages the seven Stage 0 schemas and compatibility fixture in its JAR. MirrorPlan is the
-first Stage 1 schema; its independent client verifier is intentionally not advertised until compiler and runtime
-integration are complete. A Stage 0 consumer first
+The test-kit currently packages the seven Stage 0 schemas and compatibility fixture in its JAR. MirrorPlan and
+MirrorResolution are Stage 1 schemas; their independent client verifiers are intentionally not advertised until
+runtime provenance integration and offline verification are complete. A Stage 0 consumer first
 calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
 It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before
 persisting or compiling the artifact.
@@ -116,7 +122,8 @@ not become an asset-existence oracle.
 The Stage 0 baseline verifies all seven shipped resource graphs plus all three frontend visual examples. The
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
-compiler and internal mirror runtime kernels, the latest complete Resource Gateway gate passes 4390 tests with no
+compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
+passes 4398 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
 the executable Spring Boot JAR.
 

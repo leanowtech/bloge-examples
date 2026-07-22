@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-resolution-v1.schema.json",
+  "title": "Resource Gateway Mirror Resolution v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "resolutionFingerprint", "runId", "planFingerprint", "capabilityRef",
+    "invocationSiteId", "graphPath", "correlationKey", "occurrence", "attempt",
+    "requestFingerprint", "status", "source", "payloadVisibility", "outputIncluded",
+    "output", "outputFingerprint", "error", "matchedArtifactRefs", "matchedRuleRefs",
+    "confidence", "freshness", "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorResolution.v1" },
+    "resolutionFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "capabilityRef": { "$ref": "#/$defs/capabilityRef" },
+    "invocationSiteId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "graphPath": { "type": "string", "pattern": "^/", "maxLength": 2048 },
+    "correlationKey": { "type": "string", "maxLength": 1024 },
+    "occurrence": { "type": "integer", "minimum": 1 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "status": { "enum": ["RESOLVED", "ABSTAINED", "REJECTED"] },
+    "source": { "$ref": "#/$defs/source" },
+    "payloadVisibility": { "enum": ["FULL", "REDACTED", "HASH_ONLY", "NONE"] },
+    "outputIncluded": { "type": "boolean" },
+    "output": true,
+    "outputFingerprint": {
+      "oneOf": [
+        { "const": "" },
+        { "$ref": "#/$defs/fingerprint" }
+      ]
+    },
+    "error": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/error" }
+      ]
+    },
+    "matchedArtifactRefs": {
+      "type": "array",
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/artifactRef" }
+    },
+    "matchedRuleRefs": {
+      "type": "array",
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    },
+    "confidence": { "$ref": "#/$defs/confidence" },
+    "freshness": { "type": "number", "minimum": 0, "maximum": 1 },
+    "limitations": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "ABSTAINED" } } },
+      "then": {
+        "properties": {
+          "source": { "const": "ABSTAINED" },
+          "payloadVisibility": { "const": "NONE" },
+          "outputIncluded": { "const": false },
+          "output": { "type": "null" },
+          "outputFingerprint": { "const": "" },
+          "error": { "type": "null" },
+          "matchedArtifactRefs": { "maxItems": 0 },
+          "matchedRuleRefs": { "maxItems": 0 },
+          "confidence": {
+            "properties": {
+              "point": { "const": 0 },
+              "lowerBound": { "const": 0 },
+              "upperBound": { "const": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "REJECTED" } } },
+      "then": {
+        "properties": {
+          "source": { "$ref": "#/$defs/concreteSource" },
+          "payloadVisibility": { "const": "NONE" },
+          "outputIncluded": { "const": false },
+          "output": { "type": "null" },
+          "outputFingerprint": { "const": "" },
+          "error": { "$ref": "#/$defs/error" },
+          "matchedArtifactRefs": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "RESOLVED" } } },
+      "then": {
+        "properties": {
+          "source": { "$ref": "#/$defs/concreteSource" },
+          "matchedArtifactRefs": { "minItems": 1 }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "payloadVisibility": { "enum": ["FULL", "REDACTED"] },
+              "outputIncluded": { "const": true },
+              "outputFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "error": { "type": "null" }
+            }
+          },
+          {
+            "properties": {
+              "payloadVisibility": { "const": "HASH_ONLY" },
+              "outputIncluded": { "const": false },
+              "output": { "type": "null" },
+              "outputFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "error": { "type": "null" }
+            }
+          },
+          {
+            "properties": {
+              "payloadVisibility": { "const": "NONE" },
+              "outputIncluded": { "const": false },
+              "output": { "type": "null" },
+              "outputFingerprint": { "const": "" },
+              "error": { "$ref": "#/$defs/error" }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "source": {
+      "enum": [
+        "SESSION_STATE", "OWNER_SPECIFIED", "RECORDED_EXACT", "RECORDED_TRAJECTORY",
+        "RECORDED_CLUSTER", "GOVERNED_REPLAY", "SCHEMA_SYNTHESIZED", "CONTRACT_MOCK",
+        "ABSTAINED"
+      ]
+    },
+    "concreteSource": {
+      "enum": [
+        "SESSION_STATE", "OWNER_SPECIFIED", "RECORDED_EXACT", "RECORDED_TRAJECTORY",
+        "RECORDED_CLUSTER", "GOVERNED_REPLAY", "SCHEMA_SYNTHESIZED", "CONTRACT_MOCK"
+      ]
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "type", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "type": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "message": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["point", "lowerBound", "upperBound", "method"],
+      "properties": {
+        "point": { "type": "number", "minimum": 0, "maximum": 1 },
+        "lowerBound": { "type": "number", "minimum": 0, "maximum": 1 },
+        "upperBound": { "type": "number", "minimum": 0, "maximum": 1 },
+        "method": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    }
+  }
+}
