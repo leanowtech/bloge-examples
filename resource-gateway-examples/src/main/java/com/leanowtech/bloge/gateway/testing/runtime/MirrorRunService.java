@@ -36,9 +36,10 @@ import java.util.Set;
  * independent BLOGE engine. The execution context receives the plan's logical deadline budget;
  * production credentials, interceptors, context carriers, and durable stores are never attached.</p>
  *
- * <p>This Stage 1 kernel intentionally exposes no Spring bean or HTTP endpoint. Durable evidence,
- * independent client verification, and deployment-level egress isolation remain release gates, so
- * capability probes must continue to report mirror serving as unavailable.</p>
+ * <p>The class itself is framework-neutral. Resource Gateway can expose it through the isolated
+ * test/staging composition root, but no HTTP endpoint is implied by this service. Protected API
+ * admission and deployment-level egress attestation remain release gates, so capability probes
+ * must continue to report mirror serving as unavailable until those surfaces are complete.</p>
  */
 public class MirrorRunService {
     private static final Duration EVIDENCE_FINALIZATION_RESERVE = Duration.ZERO;
@@ -84,9 +85,27 @@ public class MirrorRunService {
             ResourceFixtureRuntime resourceRuntime,
             Clock clock,
             VisualEvidenceSigner evidenceSigner) {
-        this(mapper, new TestRunService(registry, mapper, resourceRuntime), clock,
-                new MirrorRunEvidenceProjector(mapper),
+        this(registry, mapper, resourceRuntime, clock,
                 new MirrorEvidenceIntegrityService(mapper, evidenceSigner, Clock.systemUTC()));
+    }
+
+    /**
+     * Creates a mirror runtime that shares one integrity boundary with durable evidence storage.
+     *
+     * @param registry operator registry used only to construct the independent engine
+     * @param mapper canonical protocol mapper
+     * @param resourceRuntime optional descriptor protocol adapter for transport fixtures
+     * @param clock server admission clock
+     * @param evidenceIntegrity shared detached-signature integrity boundary
+     */
+    public MirrorRunService(
+            OperatorRegistry registry,
+            ObjectMapper mapper,
+            ResourceFixtureRuntime resourceRuntime,
+            Clock clock,
+            MirrorEvidenceIntegrityService evidenceIntegrity) {
+        this(mapper, new TestRunService(registry, mapper, resourceRuntime), clock,
+                new MirrorRunEvidenceProjector(mapper), evidenceIntegrity);
     }
 
     /**

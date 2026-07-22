@@ -126,10 +126,13 @@ frozen BLOGE invocation inventory, adapt the existing FixtureBundle into mandato
 the exact Graph/fixture/control generation in process, and execute it through the independent test engine after
 scope, purpose, TTL, fingerprint, coverage, and logical deadline checks. Mirror fixtures cannot replace internal
 business nodes, and unmatched external leaves fail closed. Set `RG_MIRROR_RUNTIME_ENABLED=true` only with the
-`test` or `staging` profile to assemble this internal kernel. The `production` profile physically excludes the
-compiler and runtime even when `test` is also active. This is not yet an API or persisted serving surface; durable
-plan/evidence storage, protected endpoint authorization, deployment egress proof, and authenticated storage remain
-open, so the runtime feature flags above intentionally stay false. The fixture reuse decision is in
+`test` or `staging` profile to assemble this internal kernel and its append-only mirror stores. The `production`
+profile physically excludes the compiler, runtime, integrity service, and repositories even when `test` is also
+active. Sealed public plans and independently verified `HASH_ONLY` evidence now persist under a complete
+tenant/organization/project/environment/region compound key; exact retries are idempotent, conflicting identities
+and tampered rows fail closed, and no fixture/replay/context/result payload column exists. This is still not a
+serving API: protected endpoint authorization, durable fixture/graph rehydration, deployment egress proof, and
+authenticated access remain open, so the runtime feature flags above intentionally stay false. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
 The strict `resourceGateway.mirrorResolution.v1` protocol is also frozen. It binds every future resolver outcome to
@@ -150,7 +153,7 @@ same-source runtime ambiguity. Mirror controls now execute through that chain an
 sealed, coordinate-ordered `MirrorResolution` records. Requests and outputs are represented by bounded canonical
 fingerprints; owner and replay results retain exact artifact provenance; business error, rejection, and abstention
 remain distinct. Ordinary tests keep their previous selection path. Capability probes remain disabled until API,
-durable evidence, deployment egress attestation, and endpoint-level production-isolation gates close.
+deployment egress attestation, and endpoint-level production-isolation gates close.
 
 The portable evidence protocol is now frozen as `resourceGateway.mirrorRunEvidence.v1`,
 `resourceGateway.mirrorEvidenceAttestation.v1`, and `resourceGateway.mirrorEvidenceBundle.v1`. It signs only a
@@ -160,8 +163,9 @@ Ed25519 signatures and the complete bundle fingerprint are verified immediately.
 projects its real node/attempt/edge values to bounded fingerprints, proves exact closure against every external
 resolution, and refuses to return a result when no explicit signer exists or immediate signature verification
 fails. A cryptographically signed run is still exploratory unless deployment egress denial is bound to an exact
-isolation attestation and every limitation is closed. Persistence, serving API, deployment attestation, and
-cross-language canonicalization remain release gates. The Spring kernel now has profile/property isolation and
+isolation attestation and every limitation is closed. Payload-free persistence is complete; serving API,
+deployment attestation, and cross-language canonicalization remain release gates. The Spring kernel now has
+profile/property isolation and
 ordinary business run APIs reject nested mirror, replay, replacement, and scenario controls before DTO binding,
 but no readiness flag is enabled by internal execution alone.
 

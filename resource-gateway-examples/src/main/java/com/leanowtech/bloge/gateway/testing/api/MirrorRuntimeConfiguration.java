@@ -3,6 +3,11 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunService;
@@ -13,6 +18,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Clock;
 
@@ -25,9 +31,9 @@ import java.time.Clock;
  * cannot acquire mirror execution capability by setting one property or adding a permissive
  * profile.</p>
  *
- * <p>This configuration assembles only the internal Stage 1 kernel. Protected HTTP adapters and
- * durable plan/evidence stores are added separately so the capability probe can remain closed
- * until those end-to-end surfaces are complete.</p>
+ * <p>This configuration assembles the internal Stage 1 kernel and append-only payload-free plan
+ * and evidence stores. Protected HTTP adapters are added separately, so the capability probe must
+ * remain closed until authenticated API admission and deployment isolation are complete.</p>
  */
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
@@ -69,10 +75,56 @@ public class MirrorRuntimeConfiguration {
                                              ObjectMapper objectMapper,
                                              ResourceRegistry resourceRegistry,
                                              BlgeExpressionEvaluator expressionEvaluator,
-                                             VisualEvidenceSigner evidenceSigner) {
+                                             MirrorEvidenceIntegrityService evidenceIntegrity) {
         ResourceFixtureRuntime resourceRuntime = new ResourceFixtureRuntime(
                 resourceRegistry, expressionEvaluator, objectMapper);
         return new MirrorRunService(operatorRegistry, objectMapper, resourceRuntime,
-                Clock.systemUTC(), evidenceSigner);
+                Clock.systemUTC(), evidenceIntegrity);
+    }
+
+    /**
+     * Creates the one signing and verification boundary shared by execution and durable evidence.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param evidenceSigner governed evidence signer and verification key ring
+     * @return mirror evidence integrity service
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorEvidenceIntegrityService mirrorEvidenceIntegrityService(
+            ObjectMapper objectMapper, VisualEvidenceSigner evidenceSigner) {
+        return new MirrorEvidenceIntegrityService(
+                objectMapper, evidenceSigner, Clock.systemUTC());
+    }
+
+    /**
+     * Creates the append-only sealed mirror-plan store.
+     *
+     * @param jdbc application JDBC boundary
+     * @param objectMapper canonical protocol mapper
+     * @return scope-isolated durable plan repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorPlanRepository mirrorPlanRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseMirrorPlanRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Creates the append-only independently verified evidence store.
+     *
+     * @param jdbc application JDBC boundary
+     * @param objectMapper canonical protocol mapper
+     * @param evidenceIntegrity shared detached-signature integrity boundary
+     * @return scope-isolated durable evidence repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorEvidenceRepository mirrorEvidenceRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            MirrorEvidenceIntegrityService evidenceIntegrity) {
+        return new DatabaseMirrorEvidenceRepository(jdbc, objectMapper, evidenceIntegrity);
     }
 }
