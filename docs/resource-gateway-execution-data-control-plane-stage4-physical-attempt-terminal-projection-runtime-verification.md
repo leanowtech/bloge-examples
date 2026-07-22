@@ -135,7 +135,29 @@ javadoc --release 25 -Werror -Xdoclint:all
 0 warnings, 0 errors
 ```
 
-完整 immutable snapshot `clean verify` 结果将在提交冻结后补录。
+实现提交 `93b00cfe` 冻结后，从 `git archive` 创建
+`/tmp/bloge-examples-verify-93b00cfe` immutable snapshot，并在其中执行完整门禁。首轮
+`clean verify` 执行 4165 项测试，0 failures、1 error、2 skips，耗时 8:32；错误来自既有
+`ManagedEvidenceSigningApplicationIntegrationTest` 的首次 capabilities HTTP 读取：应用已启动且远端签名已
+成功，但客户端收到无 JSON content type 的 `application/octet-stream`。同一 snapshot 中该类立即独立复跑
+1/1 全绿。为避免把单类复跑冒充全量门禁，随后再次从 `clean` 开始执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 4165, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 10:10 min
+```
+
+第二轮同样经过长套件上下文复用与真实浏览器段，原偶发类 1/1 全绿。独立读取 463 份 Surefire XML 得到
+`tests=4165 failures=0 errors=0 skipped=2`，与 Maven 汇总一致。39,775,312 bytes 可执行 JAR 包含 telemetry、
+scheduler、health 和 runtime configuration 的 11 个匹配 class entry。构建完成后 snapshot 路径下 Maven/Java
+进程以及 Chrome for Testing/ChromeDriver 残留均为零。
+
+首轮错误未被归因于本增量，且第二轮完整门禁能够通过，但它仍暴露出长套件 HTTP/Spring context 的偶发性
+债务。后续应单独重复运行该应用集成类与相邻 context-heavy 类，采集原始 status/header/body 和 context cache
+统计；在取得稳定复现前，不把猜测写成产品根因。
 
 ## 7. 能力边界与下一病根
 
