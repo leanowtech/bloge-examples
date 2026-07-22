@@ -74,7 +74,7 @@ class MirrorRunCommitServiceTest {
 
         databaseTime.set(NOW.plusSeconds(11));
         assertThatThrownBy(() -> transactions.executeWithoutResult(status ->
-                commits.commit(first.lease(), bundle)))
+                commits.commit(first.lease(), bundle, observation())))
                 .isInstanceOf(MirrorRunLeaseLostException.class);
         assertThat(evidence.find(scope, "run-1")).isEmpty();
         assertThat(requests.find(scope, "request-1")).get().satisfies(state -> {
@@ -87,13 +87,13 @@ class MirrorRunCommitServiceTest {
                 bundle.evidence().requestContextFingerprint());
         databaseTime.set(NOW.plusSeconds(12));
         assertThatThrownBy(() -> transactions.executeWithoutResult(status ->
-                commits.commit(current.lease(), wrongRequest)))
+                commits.commit(current.lease(), wrongRequest, observation())))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(evidence.find(scope, "run-wrong")).isEmpty();
 
         databaseTime.set(NOW.plusSeconds(13));
         MirrorEvidenceBundle persisted = transactions.execute(status ->
-                commits.commit(current.lease(), bundle));
+                commits.commit(current.lease(), bundle, observation()));
 
         assertThat(persisted).isEqualTo(bundle);
         assertThat(evidence.find(scope, "run-1")).contains(bundle);
@@ -127,7 +127,7 @@ class MirrorRunCommitServiceTest {
         MirrorRunCommitService racedCommit = new MirrorRunCommitService(evidence, raced);
 
         assertThatThrownBy(() -> transactions.executeWithoutResult(status ->
-                racedCommit.commit(lease, bundle)))
+                racedCommit.commit(lease, bundle, observation())))
                 .isInstanceOf(MirrorRunLeaseLostException.class);
 
         assertThat(evidence.find(scope, "run-race")).isEmpty();
@@ -147,7 +147,7 @@ class MirrorRunCommitServiceTest {
 
         databaseTime.set(NOW.plusSeconds(10));
         assertThatThrownBy(() -> transactions.executeWithoutResult(status ->
-                commits.commit(claim.lease(), bundle)))
+                commits.commit(claim.lease(), bundle, observation())))
                 .isInstanceOf(MirrorRunLeaseLostException.class);
 
         assertThat(evidence.find(scope, "run-expired")).isEmpty();
@@ -164,5 +164,12 @@ class MirrorRunCommitServiceTest {
         databaseTime.set(now);
         return transactions.execute(status -> requests.claim(
                 registration, owner, Duration.between(now, expiresAt)));
+    }
+
+    private static MirrorOperationObservability.Observation observation() {
+        return MirrorOperationObservability.noop().start(
+                MirrorOperationAuditEvent.Operation.RUN_CREATE,
+                MirrorPersistenceTestFixtures.identity("org-a"),
+                "request-1", "plan-1", "");
     }
 }

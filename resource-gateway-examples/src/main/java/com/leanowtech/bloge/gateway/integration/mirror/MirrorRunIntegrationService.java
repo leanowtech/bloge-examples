@@ -53,6 +53,7 @@ public class MirrorRunIntegrationService {
     private final MirrorEvidenceRepository evidence;
     private final MirrorRunCommitService commits;
     private final ObjectMapper mapper;
+    private final MirrorOperationObservability observations;
     private final Clock clock;
 
     /** Creates the protected execution boundary using the server UTC clock. */
@@ -63,8 +64,10 @@ public class MirrorRunIntegrationService {
             MirrorRunRequestRepository requests,
             MirrorEvidenceRepository evidence,
             MirrorRunCommitService commits,
-            ObjectMapper mapper) {
-        this(plans, runtime, requests, evidence, commits, mapper, Clock.systemUTC());
+            ObjectMapper mapper,
+            MirrorOperationObservability observations) {
+        this(plans, runtime, requests, evidence, commits, mapper, observations,
+                Clock.systemUTC());
     }
 
     /** Full constructor for deterministic admission and lease tests. */
@@ -75,6 +78,7 @@ public class MirrorRunIntegrationService {
             MirrorEvidenceRepository evidence,
             MirrorRunCommitService commits,
             ObjectMapper mapper,
+            MirrorOperationObservability observations,
             Clock clock) {
         this.plans = Objects.requireNonNull(plans, "plans");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
@@ -82,6 +86,7 @@ public class MirrorRunIntegrationService {
         this.evidence = Objects.requireNonNull(evidence, "evidence");
         this.commits = Objects.requireNonNull(commits, "commits");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.observations = Objects.requireNonNull(observations, "observations");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -94,9 +99,24 @@ public class MirrorRunIntegrationService {
      */
     public MirrorRunSummary execute(
             MirrorExecutionRequest request, IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation observation = observations.start(
+                MirrorOperationAuditEvent.Operation.RUN_CREATE, identity,
+                request == null ? "" : request.requestId(),
+                request == null ? "" : request.planId(), "");
+        try {
+            return executeObserved(request, identity, observation);
+        } catch (RuntimeException failure) {
+            throw observation.failed(failure);
+        }
+    }
+
+    private MirrorRunSummary executeObserved(
+            MirrorExecutionRequest request,
+            IntegrationRequestContext identity,
+            MirrorOperationObservability.Observation observation) {
         Objects.requireNonNull(request, "request");
         CapabilitySnapshot.Scope scope = MirrorPlanIntegrationService.requireMirrorIdentity(identity);
-        MirrorPlan plan = plans.find(request.planId(), identity);
+        MirrorPlan plan = plans.findForExecution(request.planId(), identity);
         if (!plan.planFingerprint().equals(request.expectedPlanFingerprint())) {
             throw conflict(identity, "RG.MIRROR.PLAN_FINGERPRINT_CONFLICT",
                     "The persisted plan differs from the execution generation reviewed by the caller.",
@@ -136,7 +156,9 @@ public class MirrorRunIntegrationService {
                             "retryAfterSeconds", claim.retryAfterSeconds())));
         }
         if (claim.outcome() == MirrorRunRequestRepository.Outcome.COMPLETED) {
-            return completedRetry(claim.state(), identity);
+            MirrorRunSummary completed = completedRetry(claim.state(), identity);
+            observation.succeeded(completed.runId());
+            return completed;
         }
 
         MirrorRunRequestRepository.Lease lease = claim.lease();
@@ -150,8 +172,9 @@ public class MirrorRunIntegrationService {
             MirrorRunResult result = runtime.execute(new MirrorRunRequest(request.requestId(),
                     generation, effectiveContext, scope,
                     MirrorPlanIntegrationService.AUTHORIZED_PURPOSE));
-            MirrorEvidenceBundle persisted = commits.commit(lease, result.evidenceBundle());
-            return MirrorRunSummary.from(persisted);
+            MirrorRunSummary summary = MirrorRunSummary.from(result.evidenceBundle());
+            commits.commit(lease, result.evidenceBundle(), observation);
+            return summary;
         } catch (IntegrationProblemException expected) {
             release(lease, expected.problem().code());
             throw expected;
@@ -172,12 +195,30 @@ public class MirrorRunIntegrationService {
 
     /** Reads one payload-free terminal run summary in the exact authenticated scope. */
     public MirrorRunSummary find(String runId, IntegrationRequestContext identity) {
-        return MirrorRunSummary.from(requireEvidence(runId, identity));
+        MirrorOperationObservability.Observation observation = observations.start(
+                MirrorOperationAuditEvent.Operation.RUN_READ, identity, "", "", runId);
+        MirrorRunSummary summary;
+        try {
+            summary = MirrorRunSummary.from(requireEvidence(runId, identity));
+        } catch (RuntimeException failure) {
+            throw observation.failed(failure);
+        }
+        observation.succeeded(summary.runId());
+        return summary;
     }
 
     /** Reads one independently verified payload-free evidence bundle in the exact scope. */
     public MirrorEvidenceBundle evidence(String runId, IntegrationRequestContext identity) {
-        return requireEvidence(runId, identity);
+        MirrorOperationObservability.Observation observation = observations.start(
+                MirrorOperationAuditEvent.Operation.EVIDENCE_READ, identity, "", "", runId);
+        MirrorEvidenceBundle bundle;
+        try {
+            bundle = requireEvidence(runId, identity);
+        } catch (RuntimeException failure) {
+            throw observation.failed(failure);
+        }
+        observation.succeeded(bundle.evidence().runId());
+        return bundle;
     }
 
     private MirrorRunRequestRepository.Claim claim(

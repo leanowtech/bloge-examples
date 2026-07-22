@@ -75,6 +75,7 @@ class MirrorPlanIntegrationServiceTest {
                 new MirrorPlanCompiler(operators, mapper), plans,
                 new FixedFixtureRepository(storedFixture), fixtureScopes, null,
                 graphService, mapper,
+                MirrorOperationObservability.noop(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 

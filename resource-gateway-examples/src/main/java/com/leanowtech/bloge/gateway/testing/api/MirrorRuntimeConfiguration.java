@@ -5,11 +5,16 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorFixtureScopeRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorOperationAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationAuditRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationFailureAuditService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationObservability;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
@@ -20,6 +25,9 @@ import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunService;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,6 +35,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.Clock;
 
@@ -158,6 +167,64 @@ public class MirrorRuntimeConfiguration {
     @ConditionalOnMissingBean
     public MirrorRunRequestRepository mirrorRunRequestRepository(JdbcTemplate jdbc) {
         return new DatabaseMirrorRunRequestRepository(jdbc);
+    }
+
+    /**
+     * Creates the append-only payload-free terminal operation audit.
+     *
+     * @param jdbc transaction-aware application JDBC boundary
+     * @return exact-scope Mirror operation audit repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorOperationAuditRepository mirrorOperationAuditRepository(JdbcTemplate jdbc) {
+        return new DatabaseMirrorOperationAuditRepository(jdbc);
+    }
+
+    /**
+     * Creates the independent transaction boundary that preserves failure audits across rollback.
+     *
+     * @param audit durable payload-free operation audit
+     * @param transactionManager transaction manager shared by Mirror persistence
+     * @return isolated failure audit writer
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorOperationFailureAuditService mirrorOperationFailureAuditService(
+            MirrorOperationAuditRepository audit,
+            PlatformTransactionManager transactionManager) {
+        return new MirrorOperationFailureAuditService(audit, transactionManager);
+    }
+
+    /**
+     * Registers fixed-cardinality operation counters and latency timers.
+     *
+     * @param meterRegistry deployment meter registry when Actuator is installed
+     * @return metric adapter that never labels tenant or resource identities
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorOperationTelemetry mirrorOperationTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new MirrorOperationTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
+    }
+
+    /**
+     * Creates the mandatory audit-before-publish operation observer.
+     *
+     * @param audit durable payload-free operation audit
+     * @param failureAudit independent failure-audit transaction boundary
+     * @param telemetry fixed-cardinality metric adapter
+     * @return observer injected into protected plan and run services
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorOperationObservability mirrorOperationObservability(
+            MirrorOperationAuditRepository audit,
+            MirrorOperationFailureAuditService failureAudit,
+            MirrorOperationTelemetry telemetry) {
+        return new MirrorOperationObservability(audit, failureAudit, telemetry);
     }
 
     /**

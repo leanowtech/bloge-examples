@@ -121,10 +121,11 @@ and a classification no higher than the caller's clearance. Tenant, organization
 purpose, ownership, and `DRAFT` lifecycle are server-derived. The capability probe reports snapshot/closure
 protocol, projection, seven built-in graph closures, visual draft closure projection, API, lifecycle, and the
 sealed `resourceGateway.mirrorPlan.v1` wire model as available. Protocol availability is deliberately separate from
-runtime readiness. With the mirror switch disabled, all three runtime flags remain false and no `/api/mirror/**`
+runtime readiness. With the mirror switch disabled, every mirror runtime flag remains false and no `/api/mirror/**`
 route exists. With `RG_MIRROR_RUNTIME_ENABLED=true` under `test` or `staging`, the protected plan adapter now reports
 `mirrorPlanCompilation=true` and `mirrorExternalLeafInterception=true`; the fully assembled durable run/evidence
-adapter additionally reports `mirrorServing=true` while its signer is usable. Signer readiness is re-evaluated on each
+adapter additionally reports `mirrorOperationObservability=true` and reports `mirrorServing=true` while its signer
+is usable. Signer readiness is re-evaluated on each
 probe; a signer outage leaves the installed endpoints discoverable but changes serving to false and execution fails
 closed with `503`. Serving means the isolated exploratory API is callable. Evidence
 remains `EXPLORATORY` until an exact deployment egress attestation closes its declared limitation. The complete protocol and lifecycle rules are in the
@@ -158,6 +159,42 @@ expiry. H2 time is sampled through an independent short connection after locking
 frozen; configure the datasource with capacity for the transaction connection plus the clock connection. Deployment
 egress proof remains open, so evidence stays exploratory. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
+
+### Mirror operation observability
+
+Every protected Plan, Run, and Evidence operation now reaches exactly one terminal observer before its service
+result is returned. The observer pre-registers a fixed set of Micrometer series; no tenant, organization, actor,
+correlation, request, plan, run, exception, or business value can become a tag.
+
+| Metric | Tags | Meaning |
+|---|---|---|
+| `resource.gateway.mirror.operations` | `operation`, `outcome` | Terminal operation count |
+| `resource.gateway.mirror.duration` | `operation`, `outcome` | Terminal service duration timer |
+| `resource.gateway.mirror.failures` | `operation`, `reason` | Rejected/failed count by bounded reason class |
+
+The closed `operation` vocabulary is `plan_create`, `plan_read`, `run_create`, `run_read`, and `evidence_read`.
+Outcomes are `succeeded`, `rejected`, and `failed`; failure reasons are `invalid_request`, `forbidden`, `not_found`,
+`conflict`, `expired`, `capacity`, `unavailable`, `audit_unavailable`, and `unexpected`. This produces 75 bounded
+series in total. Registry exporters may rename timer units according to their normal conventions.
+
+The append-only `mirror_operation_audit` table is the durable authority. Each row contains database sequence/time,
+complete enterprise scope, correlation and actor coordinates, the closed operation/outcome/reason, exact stable
+`RG.MIRROR.*` code, optional request/plan/run ids, and duration. Its schema cannot represent context, fixture,
+replay, node/edge input or output, exception message, or stack trace. There is deliberately no public audit-read
+endpoint in this increment; platform audit pipelines should consume the restricted database projection.
+
+Success audit is written in the same local transaction as plan persistence or the evidence/request terminal commit.
+If that audit cannot commit, the business mutation rolls back and the caller receives retryable
+`503 RG.MIRROR.OPERATION_AUDIT_UNAVAILABLE`. A rejection/failure audit uses an independent `REQUIRES_NEW`
+transaction so it survives the business rollback it explains; if this mandatory write also fails, the original
+result is replaced by the same sanitized 503. Metrics remain advisory and never weaken this fail-closed rule.
+
+Operations should page immediately on any `audit_unavailable`, alert on sustained `unavailable`/`unexpected`, and
+track rejection ratios by operation without adding identity tags. Size the JDBC pool for an outer business
+transaction plus the independent failure-audit transaction. The current table has no in-process deletion path;
+production rollout still requires deployment-owned partitioning, access control, retention/archive policy, capacity
+alerts, and a tested full-disk response. `mirrorOperationObservability=true` means this bounded observer is assembled,
+not that an active audit-store health probe or those deployment controls have been certified.
 
 The Plan command is recursively strict and its canonical JSON tree is capped at 16 MiB. Because MVC materializes
 JSON before the command decoder runs, deployments must also enforce raw request-body size, connection, and rate

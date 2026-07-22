@@ -23,6 +23,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -66,6 +67,7 @@ public class MirrorPlanIntegrationService {
     private final TestReplayPayloadService replayPayloads;
     private final GatewayGraphService graphs;
     private final ObjectMapper mapper;
+    private final MirrorOperationObservability observations;
     private final Clock clock;
 
     /**
@@ -78,6 +80,7 @@ public class MirrorPlanIntegrationService {
      * @param replayPayloads governed replay resolver
      * @param graphs authoritative registered graph catalog
      * @param mapper canonical protocol mapper
+     * @param observations mandatory audit-before-publish operation observer
      */
     @Autowired
     public MirrorPlanIntegrationService(
@@ -87,9 +90,10 @@ public class MirrorPlanIntegrationService {
             MirrorFixtureScopeRepository fixtureScopes,
             TestReplayPayloadService replayPayloads,
             GatewayGraphService graphs,
-            ObjectMapper mapper) {
+            ObjectMapper mapper,
+            MirrorOperationObservability observations) {
         this(compiler, plans, fixtures, fixtureScopes, replayPayloads, graphs, mapper,
-                Clock.systemUTC());
+                observations, Clock.systemUTC());
     }
 
     /** Full constructor for deterministic application-service tests. */
@@ -101,6 +105,7 @@ public class MirrorPlanIntegrationService {
             TestReplayPayloadService replayPayloads,
             GatewayGraphService graphs,
             ObjectMapper mapper,
+            MirrorOperationObservability observations,
             Clock clock) {
         this.compiler = Objects.requireNonNull(compiler, "compiler");
         this.plans = Objects.requireNonNull(plans, "plans");
@@ -109,6 +114,7 @@ public class MirrorPlanIntegrationService {
         this.replayPayloads = replayPayloads;
         this.graphs = Objects.requireNonNull(graphs, "graphs");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.observations = Objects.requireNonNull(observations, "observations");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -119,7 +125,23 @@ public class MirrorPlanIntegrationService {
      * @param identity authenticated enterprise identity and purpose
      * @return newly persisted plan or the byte-equivalent result of an exact retry
      */
+    @Transactional
     public MirrorPlan create(MirrorPlanCreateRequest request, IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation observation = observations.start(
+                MirrorOperationAuditEvent.Operation.PLAN_CREATE, identity, "",
+                request == null ? "" : request.planId(), "");
+        MirrorPlan created;
+        try {
+            created = createPlan(request, identity);
+        } catch (RuntimeException failure) {
+            throw observation.failed(failure);
+        }
+        observation.succeeded("");
+        return created;
+    }
+
+    private MirrorPlan createPlan(
+            MirrorPlanCreateRequest request, IntegrationRequestContext identity) {
         CapabilitySnapshot.Scope scope = requireMirrorIdentity(identity);
         validateRequest(request, identity);
         requireClosureScope(request.capabilityClosure(), scope, identity);
@@ -181,7 +203,22 @@ public class MirrorPlanIntegrationService {
      * @param identity authenticated enterprise identity and purpose
      * @return verified payload-free plan
      */
+    @Transactional
     public MirrorPlan find(String planId, IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation observation = observations.start(
+                MirrorOperationAuditEvent.Operation.PLAN_READ, identity, "", planId, "");
+        MirrorPlan found;
+        try {
+            found = findForExecution(planId, identity);
+        } catch (RuntimeException failure) {
+            throw observation.failed(failure);
+        }
+        observation.succeeded("");
+        return found;
+    }
+
+    /** Reads one plan for an already-observed execution operation without double-counting it. */
+    MirrorPlan findForExecution(String planId, IntegrationRequestContext identity) {
         CapabilitySnapshot.Scope scope = requireMirrorIdentity(identity);
         if (!IDENTIFIER.matcher(normalize(planId)).matches()) {
             throw badRequest(identity, "RG.MIRROR.PLAN_ID_INVALID",

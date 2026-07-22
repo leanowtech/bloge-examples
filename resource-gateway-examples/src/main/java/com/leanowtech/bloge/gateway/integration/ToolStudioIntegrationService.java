@@ -382,6 +382,7 @@ public class ToolStudioIntegrationService {
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorServing", mirrorExecutionReady);
+        features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());

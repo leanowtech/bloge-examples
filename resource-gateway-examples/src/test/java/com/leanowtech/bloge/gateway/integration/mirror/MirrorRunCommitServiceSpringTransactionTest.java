@@ -20,6 +20,8 @@ import javax.sql.DataSource;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,7 +55,8 @@ class MirrorRunCommitServiceSpringTransactionTest {
             Thread.sleep(20);
 
             assertThat(AopUtils.isCglibProxy(commits)).isTrue();
-            assertThatThrownBy(() -> commits.commit(claim.lease(), bundle))
+            assertThatThrownBy(() -> commits.commit(
+                    claim.lease(), bundle, observation(scope)))
                     .isInstanceOf(MirrorRunLeaseLostException.class);
             assertThat(evidence.find(scope, bundle.evidence().runId())).isEmpty();
             assertThat(requests.find(scope, registration.requestId())).get()
@@ -62,11 +65,107 @@ class MirrorRunCommitServiceSpringTransactionTest {
         }
     }
 
+    @Test
+    void springProxyCommitsEvidenceRequestStateAndSuccessAuditAtomically() {
+        try (AnnotationConfigApplicationContext context = context()) {
+            ObjectMapper mapper = context.getBean(ObjectMapper.class);
+            VisualEvidenceSigner signer = context.getBean(VisualEvidenceSigner.class);
+            MirrorRunRequestRepository requests =
+                    context.getBean(MirrorRunRequestRepository.class);
+            MirrorEvidenceRepository evidence = context.getBean(MirrorEvidenceRepository.class);
+            MirrorOperationAuditRepository audit =
+                    context.getBean(MirrorOperationAuditRepository.class);
+            MirrorOperationObservability observations =
+                    context.getBean(MirrorOperationObservability.class);
+            MirrorRunCommitService commits = context.getBean(MirrorRunCommitService.class);
+            CapabilitySnapshot.Scope scope = MirrorPersistenceTestFixtures.scope("org-success");
+            MirrorPlan plan = MirrorPersistenceTestFixtures.plan(
+                    mapper, scope, "plan-success", '4');
+            MirrorEvidenceBundle bundle = MirrorPersistenceTestFixtures.evidence(
+                    mapper, signer, plan, "run-success", '5');
+            MirrorRunRequestRepository.Claim claim = requests.claim(
+                    registration(plan, bundle), "owner-success", Duration.ofMinutes(1));
+            MirrorOperationObservability.Observation observation = observations.start(
+                    MirrorOperationAuditEvent.Operation.RUN_CREATE,
+                    MirrorPersistenceTestFixtures.identity("org-success"),
+                    bundle.evidence().requestId(), plan.planId(), "");
+
+            assertThat(commits.commit(claim.lease(), bundle, observation)).isEqualTo(bundle);
+
+            assertThat(evidence.find(scope, bundle.evidence().runId())).contains(bundle);
+            assertThat(requests.find(scope, bundle.evidence().requestId())).get()
+                    .extracting(MirrorRunRequestRepository.State::status)
+                    .isEqualTo(MirrorRunRequestRepository.Status.COMPLETED);
+            assertThat(audit.recent(scope, 10)).singleElement().satisfies(event -> {
+                assertThat(event.operation())
+                        .isEqualTo(MirrorOperationAuditEvent.Operation.RUN_CREATE);
+                assertThat(event.outcome())
+                        .isEqualTo(MirrorOperationAuditEvent.Outcome.SUCCEEDED);
+                assertThat(event.runId()).isEqualTo("run-success");
+            });
+        }
+    }
+
+    @Test
+    void mandatorySuccessAuditFailureRollsBackEvidenceAndRequestCompletion() {
+        try (AnnotationConfigApplicationContext context = context()) {
+            ObjectMapper mapper = context.getBean(ObjectMapper.class);
+            VisualEvidenceSigner signer = context.getBean(VisualEvidenceSigner.class);
+            MirrorRunRequestRepository requests =
+                    context.getBean(MirrorRunRequestRepository.class);
+            MirrorEvidenceRepository evidence = context.getBean(MirrorEvidenceRepository.class);
+            ControlledAuditRepository audit = context.getBean(ControlledAuditRepository.class);
+            MirrorOperationObservability observations =
+                    context.getBean(MirrorOperationObservability.class);
+            MirrorRunCommitService commits = context.getBean(MirrorRunCommitService.class);
+            CapabilitySnapshot.Scope scope = MirrorPersistenceTestFixtures.scope("org-audit-down");
+            MirrorPlan plan = MirrorPersistenceTestFixtures.plan(
+                    mapper, scope, "plan-audit-down", '6');
+            MirrorEvidenceBundle bundle = MirrorPersistenceTestFixtures.evidence(
+                    mapper, signer, plan, "run-audit-down", '7');
+            MirrorRunRequestRepository.Claim claim = requests.claim(
+                    registration(plan, bundle), "owner-audit-down", Duration.ofMinutes(1));
+            MirrorOperationObservability.Observation observation = observations.start(
+                    MirrorOperationAuditEvent.Operation.RUN_CREATE,
+                    MirrorPersistenceTestFixtures.identity("org-audit-down"),
+                    bundle.evidence().requestId(), plan.planId(), "");
+            audit.fail.set(true);
+
+            assertThatThrownBy(() -> commits.commit(claim.lease(), bundle, observation))
+                    .isInstanceOfSatisfying(
+                            com.leanowtech.bloge.gateway.integration.IntegrationProblemException.class,
+                            failure -> assertThat(failure.problem().code())
+                                    .isEqualTo("RG.MIRROR.OPERATION_AUDIT_UNAVAILABLE"));
+
+            assertThat(evidence.find(scope, bundle.evidence().runId())).isEmpty();
+            assertThat(requests.find(scope, bundle.evidence().requestId())).get()
+                    .extracting(MirrorRunRequestRepository.State::status)
+                    .isEqualTo(MirrorRunRequestRepository.Status.ACTIVE);
+        }
+    }
+
+    private static MirrorRunRequestRepository.Registration registration(
+            MirrorPlan plan, MirrorEvidenceBundle bundle) {
+        return new MirrorRunRequestRepository.Registration(plan.scope(),
+                bundle.evidence().requestId(), MirrorPersistenceTestFixtures.fingerprint('8'),
+                bundle.evidence().requestContextFingerprint(), plan.planId(),
+                plan.planFingerprint(),
+                MirrorPersistenceTestFixtures.COMPILED_AT.plus(Duration.ofDays(30)));
+    }
+
     private static AnnotationConfigApplicationContext context() {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.register(TransactionConfiguration.class);
         context.refresh();
         return context;
+    }
+
+    private static MirrorOperationObservability.Observation observation(
+            CapabilitySnapshot.Scope scope) {
+        return MirrorOperationObservability.noop().start(
+                MirrorOperationAuditEvent.Operation.RUN_CREATE,
+                MirrorPersistenceTestFixtures.identity(scope.organizationId()),
+                "request-1", "plan-1", "");
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -119,10 +218,54 @@ class MirrorRunCommitServiceSpringTransactionTest {
         }
 
         @Bean
+        ControlledAuditRepository operationAuditRepository(JdbcTemplate jdbc) {
+            return new ControlledAuditRepository(jdbc);
+        }
+
+        @Bean
+        MirrorOperationFailureAuditService failureAudit(
+                ControlledAuditRepository audit,
+                PlatformTransactionManager transactionManager) {
+            return new MirrorOperationFailureAuditService(audit, transactionManager);
+        }
+
+        @Bean
+        MirrorOperationObservability observability(
+                ControlledAuditRepository audit,
+                MirrorOperationFailureAuditService failureAudit) {
+            return new MirrorOperationObservability(
+                    audit, failureAudit, MirrorOperationTelemetry.noop());
+        }
+
+        @Bean
         MirrorRunCommitService commitService(
                 MirrorEvidenceRepository evidence,
                 MirrorRunRequestRepository requests) {
             return new MirrorRunCommitService(evidence, requests);
+        }
+    }
+
+    static final class ControlledAuditRepository implements MirrorOperationAuditRepository {
+        private final DatabaseMirrorOperationAuditRepository delegate;
+        private final AtomicBoolean fail = new AtomicBoolean();
+
+        ControlledAuditRepository(JdbcTemplate jdbc) {
+            delegate = new DatabaseMirrorOperationAuditRepository(jdbc);
+            delegate.init();
+        }
+
+        @Override
+        public MirrorOperationAuditEvent append(MirrorOperationAuditEvent event) {
+            if (fail.get()) {
+                throw new IllegalStateException("audit store unavailable");
+            }
+            return delegate.append(event);
+        }
+
+        @Override
+        public List<MirrorOperationAuditEvent> recent(
+                CapabilitySnapshot.Scope scope, int limit) {
+            return delegate.recent(scope, limit);
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 
@@ -9,6 +10,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 
 final class MirrorPersistenceTestFixtures {
     static final Instant COMPILED_AT = Instant.parse("2026-07-23T00:00:00Z");
@@ -20,6 +22,12 @@ final class MirrorPersistenceTestFixtures {
     static CapabilitySnapshot.Scope scope(String organization) {
         return new CapabilitySnapshot.Scope(
                 "tenant-a", organization, "support", "test", "sg");
+    }
+
+    static IntegrationRequestContext identity(String organization) {
+        return new IntegrationRequestContext("tenant-a", organization, "support", "test", "sg",
+                "SERVICE", "mirror-test-client", "", PURPOSE, "corr-mirror-test",
+                Set.of("quality"), "CONFIDENTIAL", "");
     }
 
     static MirrorPlan plan(ObjectMapper mapper,

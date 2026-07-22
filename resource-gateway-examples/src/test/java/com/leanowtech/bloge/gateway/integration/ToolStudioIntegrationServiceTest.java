@@ -149,6 +149,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("capabilityLifecycleFencing", true)
                 .containsEntry("mirrorPlanCompilation", false)
                 .containsEntry("mirrorExternalLeafInterception", false)
+                .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("structuredExecutionFacts", true)
@@ -252,12 +253,14 @@ class ToolStudioIntegrationServiceTest {
         assertThat(disabledCapabilities.features())
                 .containsEntry("mirrorPlanCompilation", false)
                 .containsEntry("mirrorExternalLeafInterception", false)
+                .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false);
         assertThat(disabledCapabilities.endpoints())
                 .noneMatch(endpoint -> endpoint.path().startsWith("/api/mirror/"));
         assertThat(enabledCapabilities.features())
                 .containsEntry("mirrorPlanCompilation", true)
                 .containsEntry("mirrorExternalLeafInterception", true)
+                .containsEntry("mirrorOperationObservability", true)
                 .containsEntry("mirrorServing", true);
         assertThat(enabledCapabilities.supportedObjects())
                 .containsEntry("mirrorPlanCreateRequest", List.of(
@@ -290,11 +293,15 @@ class ToolStudioIntegrationServiceTest {
         ready.set(true);
         IntegrationCapabilities available = service.capabilities().payload();
 
-        assertThat(unavailable.features()).containsEntry("mirrorServing", false);
+        assertThat(unavailable.features())
+                .containsEntry("mirrorOperationObservability", true)
+                .containsEntry("mirrorServing", false);
         assertThat(unavailable.endpoints())
                 .anyMatch(endpoint -> endpoint.path().equals("/api/mirror/executions"));
         assertThat(unavailable.supportedObjects()).containsKey("mirrorExecutionRequest");
-        assertThat(available.features()).containsEntry("mirrorServing", true);
+        assertThat(available.features())
+                .containsEntry("mirrorOperationObservability", true)
+                .containsEntry("mirrorServing", true);
         assertThat(available.endpoints())
                 .anyMatch(endpoint -> endpoint.path().equals("/api/mirror/executions"));
         assertThat(available.supportedObjects()).containsKey("mirrorExecutionRequest");

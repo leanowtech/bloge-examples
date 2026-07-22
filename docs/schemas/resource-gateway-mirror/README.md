@@ -139,6 +139,14 @@ replay values. The evidence endpoint remains the authoritative detailed trace. U
 attestation is bound, evidence is explicitly `EXPLORATORY` with `DEPLOYMENT_EGRESS_NOT_ATTESTED`; protected serving
 availability is not equivalent to `CERTIFIABLE` evidence.
 
+Every protected operation also commits a payload-free terminal audit before returning. Plan creation and Run
+evidence/request completion share their successful audit transaction; failed operations use an independent
+transaction so the audit survives the rollback it explains. Audit construction or persistence failure returns
+retryable `503 RG.MIRROR.OPERATION_AUDIT_UNAVAILABLE` and suppresses the protected result. The audit stores only
+scope/trace coordinates, closed outcome dimensions, stable resource ids, stable `RG.MIRROR.*` reason code, and
+duration. Request context, fixture/replay values, trace values, exception messages, and stacks are not representable.
+The capability probe reports `mirrorOperationObservability=true` only with the isolated Plan and Run adapters.
+
 Stable execution transport failures are grouped by caller action rather than by internal exception type:
 
 | HTTP | Representative code | Retry | Meaning |
@@ -155,6 +163,7 @@ Stable execution transport failures are grouped by caller action rather than by 
 | 410 | `RG.MIRROR.RUN_EXPIRED` | No | Plan TTL elapsed before a new execution could start |
 | 503 | `RG.MIRROR.RUN_COORDINATION_UNAVAILABLE` / `RG.MIRROR.RUN_EVIDENCE_UNAVAILABLE` | Yes | Durable coordination or verified evidence storage is unavailable |
 | 503 | `RG.MIRROR.EVIDENCE_SIGNER_UNAVAILABLE` | Yes | No governed signing authority can finalize evidence |
+| 503 | `RG.MIRROR.OPERATION_AUDIT_UNAVAILABLE` | Yes | Mandatory terminal audit failed, so no protected result was published |
 
 Problem details never contain request context, fixture/replay values, node/edge values, lease owner, or epoch.
 
@@ -272,7 +281,7 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4499 tests with no
+passes 4514 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
 the executable Spring Boot JAR. The independent test-kit gate passes 254 tests with no failures, errors, or skips,
 packages all 17 mirror schemas, and rebuilds its ordinary/shaded JAR plus public Javadocs.

@@ -59,7 +59,8 @@ class MirrorRunIntegrationServiceTest {
         evidence = mock(MirrorEvidenceRepository.class);
         commits = mock(MirrorRunCommitService.class);
         service = new MirrorRunIntegrationService(plans, runtime, requests, evidence,
-                commits, mapper, Clock.fixed(NOW, ZoneOffset.UTC));
+                commits, mapper, MirrorOperationObservability.noop(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
         plan = MirrorPersistenceTestFixtures.plan(mapper, SCOPE, "plan-1", 'a');
         generation = mock(CompiledMirrorPlan.class);
         String contextFingerprint = ProtocolFingerprint.of(mapper, Map.of(
@@ -69,7 +70,7 @@ class MirrorRunIntegrationServiceTest {
         bundle = MirrorPersistenceTestFixtures.evidence(mapper,
                 new InMemoryVisualEvidenceSigner(), plan, "run-1", 'b',
                 "request-1", contextFingerprint);
-        when(plans.find("plan-1", identity())).thenReturn(plan);
+        when(plans.findForExecution("plan-1", identity())).thenReturn(plan);
         when(plans.materialize(plan, identity())).thenReturn(generation);
     }
 
@@ -80,7 +81,11 @@ class MirrorRunIntegrationServiceTest {
         MirrorRunResult result = mock(MirrorRunResult.class);
         when(result.evidenceBundle()).thenReturn(bundle);
         when(runtime.execute(any())).thenReturn(result);
-        when(commits.commit(any(), any())).thenReturn(bundle);
+        when(commits.commit(any(), any(), any())).thenAnswer(invocation -> {
+            MirrorOperationObservability.Observation observation = invocation.getArgument(2);
+            observation.succeeded(bundle.evidence().runId());
+            return bundle;
+        });
 
         MirrorRunSummary summary = service.execute(request(), identity());
 
@@ -117,7 +122,7 @@ class MirrorRunIntegrationServiceTest {
         assertThat(summary.evidenceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
         verify(plans, never()).materialize(any(), any());
         verify(runtime, never()).execute(any());
-        verify(commits, never()).commit(any(), any());
+        verify(commits, never()).commit(any(), any(), any());
     }
 
     @Test

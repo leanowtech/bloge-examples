@@ -715,6 +715,7 @@ public record IntegrationCapabilities(
         features.put("mirrorPlanCompilation", false);
         features.put("mirrorExternalLeafInterception", false);
         features.put("mirrorServing", false);
+        features.put("mirrorOperationObservability", false);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);

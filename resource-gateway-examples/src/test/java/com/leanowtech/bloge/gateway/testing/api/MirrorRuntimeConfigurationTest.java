@@ -8,6 +8,10 @@ import com.leanowtech.bloge.gateway.exception.ResourceNotFoundException;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationAuditRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationFailureAuditService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationObservability;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
@@ -136,6 +140,10 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorEvidenceRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunRequestRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(MirrorOperationAuditRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(MirrorOperationFailureAuditService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(MirrorOperationObservability.class)).hasSize(1);
+        assertThat(context.getBeansOfType(MirrorOperationTelemetry.class)).hasSize(1);
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorPlanRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorFixtureScopeRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorEvidenceRepository.class))).isTrue();
@@ -160,6 +168,10 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorEvidenceRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorRunRequestRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(MirrorOperationAuditRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(MirrorOperationFailureAuditService.class)).isEmpty();
+        assertThat(context.getBeansOfType(MirrorOperationObservability.class)).isEmpty();
+        assertThat(context.getBeansOfType(MirrorOperationTelemetry.class)).isEmpty();
     }
 
     private static final class EmptyResourceRegistry implements ResourceRegistry {

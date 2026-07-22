@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API 与 durable request fencing 已完成；部署隔离证明、ingress 预解析防护、跨语言 canonicalization 与 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、payload-free operation audit 与固定基数指标已完成；部署隔离证明、ingress 预解析防护、跨语言 canonicalization 与 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -75,7 +75,7 @@
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - Stage 0 验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
   Chrome 示例投影用例 `1/1` 全绿。纳入 Stage 1 compiler 与内部 mirror runtime kernel 后，Resource Gateway
-  最新 `clean verify` 为 4499 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
+  最新 `clean verify` 为 4514 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
   重打可执行 Spring Boot JAR。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -207,8 +207,22 @@
   profile 路由、真实 Spring Boot 装配、并发首抢、重启、到期拒绝、接管、旧 epoch、原子回滚、payload omission、原始
   请求 duplicate-key/类型/空白严格解码、
   exact rehydration 与 API service 测试均已覆盖。完整链装配时 probe 报告 `mirrorServing=true`；因部署 egress 尚无
-  exact attestation，输出仍为 `EXPLORATORY` 而非 `CERTIFIABLE`。本增量的 Mirror 聚焦回归 `122/122` 全绿；所有
-  fail-closed 分支的低基数指标、审计事件和告警路由仍是下一运维增量，未闭合前不能把 API 可用等同于生产可运营。
+  exact attestation，输出仍为 `EXPLORATORY` 而非 `CERTIFIABLE`。本增量的 Mirror 聚焦回归 `122/122` 全绿。
+- Stage 1 第十五增量闭合受保护 Mirror 操作的最小可运营观测协议。`PLAN_CREATE`、`PLAN_READ`、
+  `RUN_CREATE`、`RUN_READ`、`EVIDENCE_READ` 每次只允许提交一个 terminal observation；成功、调用方拒绝和服务失败
+  分开计数，失败再归入 `INVALID_REQUEST`、`FORBIDDEN`、`NOT_FOUND`、`CONFLICT`、`EXPIRED`、`CAPACITY`、
+  `UNAVAILABLE`、`AUDIT_UNAVAILABLE`、`UNEXPECTED` 九个封闭原因。Micrometer 预注册 operation/outcome/reason
+  枚举组合，总计 75 条固定基数 series；tenant、scope、actor、correlation、request、plan、run、异常或业务值在类型上
+  都不能成为 tag。`mirror_operation_audit` 只保存数据库 sequence/time、完整 scope、trace/actor 坐标、封闭结果、
+  stable `RG.MIRROR.*` code、request/plan/run id 和 duration；表结构没有 context、fixture、replay、node/edge value、
+  exception message 或 stack 列。Plan 创建与 Run evidence/request completion 的成功审计加入同一业务事务，审计失败
+  会回滚未发布结果；业务失败审计通过 `REQUIRES_NEW` 独立提交，因而不会随被解释的外层失败一起消失。审计事实
+  无法构造或持久化时统一以脱敏、可重试的 `503 RG.MIRROR.OPERATION_AUDIT_UNAVAILABLE` 失败关闭；指标仅为旁路
+  信号，绝不降级这一规则。完整隔离链装配后 probe 新增 `mirrorOperationObservability=true`。数据库重启/scope
+  隔离/payload omission、固定标签白名单、异常归类、single-completion、成功原子回滚、失败审计跨回滚存活、audit
+  outage 回滚 evidence/request 的专项回归当前 `15/15` 全绿；纳入既有服务/能力探针的本增量精准回归 `62/62`
+  全绿，完整 Mirror 聚焦回归 `137/137` 全绿。部署侧 audit 分区/归档/保留期、磁盘容量演练、受限导出、dashboard 和 page route 仍是客户生产准入项，
+  feature 为 true 不冒充这些环境控制已完成。
 
 ---
 
@@ -935,6 +949,9 @@ mirror_run_request(scope, request_id, request_fingerprint, context_fingerprint,
                    lease_expires_at, run_id, evidence_bundle_fingerprint, retain_until)
 mirror_run_evidence(scope, run_id, plan_id, plan_fingerprint,
                     bundle_fingerprint, completed_at, signed_hash_only_json)
+mirror_operation_audit(sequence, occurred_at, scope, correlation_id, actor_type, actor_id,
+                       operation, outcome, reason, reason_code, request_id, plan_id, run_id,
+                       duration_millis)
 artifact_revision(artifact_type, artifact_id, revision, fingerprint, state,
                   provenance_json, payload_ref, created_at)
 contract_mock_grant(grant_id, subtool_ref, consumer_scope, max_ratio, state,
@@ -966,6 +983,12 @@ shadow/outcome inbox        -> durable event log + idempotent consumer cursor
   独立短连接采样，连接池至少能同时提供外层事务连接与时钟连接；容量不足时协调请求失败关闭为 503。
 - request coordination 只保存 fingerprint，不保存 context；completed request 与 evidence 的 run/request/plan/context/scope/
   bundle identities 在每次 retry projection 时重新交叉验证。
+- protected Plan/Run/Evidence 结果只有在 terminal operation audit 成功后才可发布。Plan create 与 Run terminal
+  evidence/request state 的成功审计参与同一事务；任一写失败，业务结果与“成功”事实一起回滚。失败/拒绝审计必须以
+  `REQUIRES_NEW` 独立提交，避免外层事务回滚抹掉根因；独立写也失败时以稳定 503 替换原结果。失败审计意味着单次
+  请求在外层事务尚占用连接时还需一条短连接，连接池和数据库 admission 必须按并发预算配置。
+- operation audit 是 append-only payload-free 事实流，不是业务 evidence 的替代品。生产部署必须定义分区、只读
+  导出角色、归档锚点、删除/保留证明、磁盘水位和全盘故障演练；当前应用不提供可绕过治理的删除或公开读取 API。
 - corpus 是 append-only revision；删除通过 payload tombstone 和删除证明表达。
 - mirror plan 创建后不追随 registry 变化。
 - fidelity profile 是派生投影，可重建；其 source closure 必须可追溯。
@@ -985,7 +1008,8 @@ shadow/outcome inbox        -> durable event log + idempotent consumer cursor
 | Outcome connector 不可用 | run 可完成，但不产生 outcome-calibrated 结论 | 非校准证据 |
 | Shadow source 不可用 | shadow job 可重试，不能报告零 drift | 不产生 observation |
 | 依赖 fingerprint 漂移 | plan 编译或恢复失败，要求重新冻结 | 失败 |
-| 证据签名不可用 | 运行结果可暂存但不可标记 certifiable | exploratory |
+| 证据签名不可用 | 拒绝 terminal publication，不保存或交付 unsigned evidence | 失败 |
+| operation audit 不可构造或持久化 | 回滚未发布成功结果；失败路径也无法留痕时以脱敏可重试 503 替换原结果 | 失败 |
 
 ## 16. NFR、容量与 SLO
 
@@ -1024,6 +1048,24 @@ shadow/outcome inbox        -> durable event log + idempotent consumer cursor
 - shadow mismatch、outcome lag、校准样本和 bias warning；
 - tenant quota、queue lag、vault/store/error budget；
 - 所有 fail-closed 原因的低基数指标与可追踪审计事件。
+
+第十五增量已落地最小 protected-operation 子集：
+
+| 名称 | 只允许的标签 | 运维用途 |
+|---|---|---|
+| `resource.gateway.mirror.operations` | `operation`,`outcome` | 成功/拒绝/失败吞吐与错误预算 |
+| `resource.gateway.mirror.duration` | `operation`,`outcome` | 各 API 终态耗时，不混入资源身份 |
+| `resource.gateway.mirror.failures` | `operation`,`reason` | 封闭失败原因告警和故障域路由 |
+
+上述指标在启动时预注册完整 75 条 series，不能按客户、scope、actor、request、plan、run 或 exception 动态扩张。
+`mirror_operation_audit` 才是可追踪的持久事实，指标不是审计替代品。告警分级至少为：任一
+`AUDIT_UNAVAILABLE` 立即 page；持续 `UNAVAILABLE`/`UNEXPECTED` page；`CAPACITY` 按预算触发扩容或 admission；
+`INVALID_REQUEST`/`FORBIDDEN`/`NOT_FOUND`/`CONFLICT` 的突增进入安全和集成质量队列。告警上下文通过受限审计查询
+关联 correlation/resource id，绝不把这些高基数坐标复制到 metric tag。
+
+本增量未实现 active audit-store health probe、审计归档/外部不可变锚、保留期执行器、dashboard 或告警平台适配。
+这些由部署环境闭合；数据库空间耗尽会有意导致 protected Mirror API 失败关闭，不能为了可用性丢弃审计后继续
+交付结果。上线前必须以容量模型和故障演练证明这一行为受控。
 
 ## 17. UX 与 DX
 
@@ -1190,7 +1232,7 @@ SRE runbook 和生产认证包。
 | RG-MIR-003 | 实现 transitive EffectContract 汇总 | `gateway/integration/mirror` | read/write/mixed/unknown、递归环和声明冲突测试齐全 |
 | RG-MIR-004 | 冻结 provenance 与 lifecycle 状态机 | mirror schema + repository interface | 非法跃迁拒绝；stale/revoke 行为有协议测试 |
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
-| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、payload-free durable store、受保护 Plan/Run/Evidence API 与 durable request fencing；待动态 occurrence budget 和 deployment attestation |
+| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing 与 fail-closed operation observability；待动态 occurrence budget 和 deployment attestation |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
 | RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝及 Plan/Run/Evidence route 在 production/mixed profile 物理不存在已完成；待部署 egress 证明和 pre-materialization ingress 门禁 |
 | RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure 与 MirrorEvidence 独立复验；共享 signed fixture；不依赖 server/Spring |
@@ -1207,7 +1249,7 @@ Integration API、诚实 probe、7 张内置 graph 加 3 张 visual example 确�
 run kernel；E3 已完成 payload-free evidence/attestation/bundle 协议、真实运行时投影、服务端签名完整性内核、
 external attempt/resolution exact closure、Java test-kit independent verifier、共享 signed fixture 与 full-scope
 append-only plan/evidence 仓储、受保护 Plan/Run/Evidence API、payload-free durable request coordination 与
-fenced atomic commit；语言中立数字 canonicalization 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
+fenced atomic commit、同事务成功审计、跨回滚失败审计与固定基数指标；语言中立数字 canonicalization 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
 错误码注册与持续 CI。
 企业客户准入仍必须关闭第 22.2 节的环境级开放决策。
 

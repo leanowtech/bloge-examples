@@ -39,15 +39,18 @@ public class MirrorRunCommitService {
      *
      * @param lease fenced execution authority
      * @param bundle independently verified payload-free terminal evidence
+     * @param observation single-use audit token started by the authenticated run operation
      * @return persisted bundle
      * @throws MirrorRunLeaseLostException when the lease expired, was released, or was replaced
      */
     @Transactional
     public MirrorEvidenceBundle commit(
             MirrorRunRequestRepository.Lease lease,
-            MirrorEvidenceBundle bundle) {
+            MirrorEvidenceBundle bundle,
+            MirrorOperationObservability.Observation observation) {
         Objects.requireNonNull(lease, "lease");
         Objects.requireNonNull(bundle, "bundle");
+        Objects.requireNonNull(observation, "observation");
         MirrorRunEvidence run = bundle.evidence();
         MirrorRunRequestRepository.State state = requests.find(
                 lease.scope(), lease.requestId()).orElseThrow(MirrorRunLeaseLostException::new);
@@ -70,6 +73,7 @@ public class MirrorRunCommitService {
         if (!requests.complete(lease, run.runId(), persisted.bundleFingerprint())) {
             throw new MirrorRunLeaseLostException();
         }
+        observation.succeeded(run.runId());
         return persisted;
     }
 }
