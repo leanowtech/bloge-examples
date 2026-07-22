@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCancellationCommand;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobClaim;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobParentAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobPrincipal;
@@ -26,6 +27,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemp
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartVerifier;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -69,6 +71,11 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                     1, 20, 10, 4, 2, Duration.ofSeconds(30), Duration.ofMinutes(5),
                     Duration.ofSeconds(1), Duration.ofMinutes(1), 3, Duration.ofDays(1),
                     Duration.ofDays(7));
+    private static final TestSuiteStabilityQueuePolicy FENCING_POLICY =
+            new TestSuiteStabilityQueuePolicy(
+                    1, 10, 10, 3, 3, Duration.ofSeconds(5), Duration.ofMinutes(5),
+                    Duration.ofSeconds(1), Duration.ofMinutes(1), 3, Duration.ofDays(1),
+                    Duration.ofDays(7));
 
     private ObjectMapper mapper;
     private JdbcTemplate jdbc;
@@ -96,7 +103,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                 jdbc, mapper, new StoppedParentAuthority(),
                 new TestSuiteStabilityJobRequestKeyProtector(
                         "request-key-a", Map.of("request-key-a", new byte[32])),
-                "retention-a", Duration.ofSeconds(30), transactions);
+                "retention-a", Duration.ofSeconds(30), transactions, true);
         jobs.init();
         attempts = new DatabaseTestSuiteStabilityPhysicalAttemptRegistry(
                 jdbc, mapper, jobs, transactions);
@@ -141,6 +148,78 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                 SELECT COUNT(*)
                 FROM rg_test_stability_attempt_observation_provider_sequences
                 """, Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void possibleProviderStartsHoldExpiredQueueFencesAcrossReplicas() throws Exception {
+        Instant preparedDeadline = Instant.now().plusSeconds(6);
+        AttemptContext prepared = retainedStart(
+                'a', false, "tenant-a", FENCING_POLICY, preparedDeadline);
+        AttemptContext confirmed = retainedStart(
+                'b', true, "tenant-a", FENCING_POLICY);
+        AttemptContext rejected = retainedStart(
+                'c', false, "tenant-a", FENCING_POLICY);
+        starts.accept(rejected.start().commandId(), startObservation(
+                rejected.start(), startSequence.incrementAndGet(),
+                TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome.REJECTED));
+        jobs.prepareCompletion(confirmed.claim().lease(), FENCING_POLICY);
+        jobs.submit(submission('d'), FENCING_POLICY);
+
+        Thread.sleep(5_100);
+
+        DatabaseTestSuiteStabilityJobRepository replica =
+                new DatabaseTestSuiteStabilityJobRepository(
+                        jdbc, mapper, new StoppedParentAuthority(),
+                        new TestSuiteStabilityJobRequestKeyProtector(
+                                "request-key-a", Map.of("request-key-a", new byte[32])),
+                        "retention-b", Duration.ofSeconds(30), transactions, true);
+        replica.init();
+        var claims = concurrently(
+                () -> jobs.claimNext("test", "worker-b", FENCING_POLICY),
+                () -> replica.claimNext("test", "worker-c", FENCING_POLICY));
+
+        assertThat(claims).allSatisfy(claim -> assertThat(claim.outcome())
+                .isEqualTo(TestSuiteStabilityJobClaim.Outcome.NO_WORK));
+        assertThat(jobs.find("tenant-a", "test", prepared.identity().jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.RUNNING);
+        assertThat(jobs.find("tenant-a", "test", confirmed.identity().jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.COMMITTING);
+        assertThat(jobs.find("tenant-a", "test", rejected.identity().jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.RUNNING);
+        assertThat(jobs.find("tenant-a", "test", submission('d').jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.QUEUED);
+        assertThat(jdbc.queryForObject("""
+                SELECT MAX(lease_epoch) FROM rg_test_suite_stability_jobs
+                WHERE job_id IN (?, ?, ?)
+                """, Long.class, prepared.identity().jobId(), confirmed.identity().jobId(),
+                rejected.identity().jobId())).isEqualTo(1L);
+
+        Thread.sleep(Math.max(0L,
+                Duration.between(Instant.now(), preparedDeadline).toMillis() + 150L));
+        assertThat(replica.claimNext("test", "worker-deadline", FENCING_POLICY).outcome())
+                .isEqualTo(TestSuiteStabilityJobClaim.Outcome.NO_WORK);
+        assertThat(jdbc.queryForObject("""
+                SELECT failure_code FROM rg_test_suite_stability_jobs
+                WHERE job_id = ?
+                """, String.class, prepared.identity().jobId()))
+                .isEqualTo("RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED");
+
+        TestSuiteStabilityJobRecord rejectedJob = jobs.find(
+                "tenant-a", "test", rejected.identity().jobId()).orElseThrow();
+        var cancelled = jobs.cancel(new TestSuiteStabilityJobCancellationCommand(
+                        "tenant-a", "test", rejectedJob.jobId(), "cancel-c",
+                        fingerprint('8'), rejectedJob.principal()),
+                FENCING_POLICY, ignored -> TestRuntimeTransactionMutation.noop());
+
+        assertThat(cancelled.job().status())
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED);
+        assertThat(replica.claimNext("test", "worker-d", FENCING_POLICY).outcome())
+                .isEqualTo(TestSuiteStabilityJobClaim.Outcome.NO_WORK);
+        assertThat(jobs.observe("test").expiredLiveLeases()).isEqualTo(3);
     }
 
     @Test
@@ -1153,7 +1232,25 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     }
 
     private AttemptContext retainedStart(char id, boolean confirmed, String tenantId) {
-        TestSuiteStabilityJobClaim claim = claimed(id, tenantId);
+        return retainedStart(id, confirmed, tenantId, POLICY);
+    }
+
+    private AttemptContext retainedStart(
+            char id,
+            boolean confirmed,
+            String tenantId,
+            TestSuiteStabilityQueuePolicy policy) {
+        return retainedStart(id, confirmed, tenantId, policy,
+                Instant.now().plus(Duration.ofHours(1)));
+    }
+
+    private AttemptContext retainedStart(
+            char id,
+            boolean confirmed,
+            String tenantId,
+            TestSuiteStabilityQueuePolicy policy,
+            Instant deadline) {
+        TestSuiteStabilityJobClaim claim = claimed(id, tenantId, policy, deadline);
         TestSuiteStabilityPhysicalAttemptIdentity identity =
                 TestSuiteStabilityPhysicalAttemptIdentity.create(
                         mapper, claim.lease(), fingerprint(id), PROVIDER_ID, DEPLOYMENT_ID,
@@ -1183,8 +1280,21 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     }
 
     private TestSuiteStabilityJobClaim claimed(char id, String tenantId) {
-        jobs.submit(submission(id, tenantId), POLICY);
-        TestSuiteStabilityJobClaim claim = jobs.claimNext("test", "worker-a", POLICY);
+        return claimed(id, tenantId, POLICY);
+    }
+
+    private TestSuiteStabilityJobClaim claimed(
+            char id, String tenantId, TestSuiteStabilityQueuePolicy policy) {
+        return claimed(id, tenantId, policy, Instant.now().plus(Duration.ofHours(1)));
+    }
+
+    private TestSuiteStabilityJobClaim claimed(
+            char id,
+            String tenantId,
+            TestSuiteStabilityQueuePolicy policy,
+            Instant deadline) {
+        jobs.submit(submission(id, tenantId, deadline), policy);
+        TestSuiteStabilityJobClaim claim = jobs.claimNext("test", "worker-a", policy);
         assertThat(claim.outcome()).isEqualTo(TestSuiteStabilityJobClaim.Outcome.ACQUIRED);
         return claim;
     }
@@ -1329,7 +1439,17 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     private TestSuiteStabilityPhysicalAttemptStartReceipt.Attestation startObservation(
             TestSuiteStabilityPhysicalAttemptStartCommand command,
             long providerSequence) throws Exception {
+        return startObservation(command, providerSequence,
+                TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome.STARTED);
+    }
+
+    private TestSuiteStabilityPhysicalAttemptStartReceipt.Attestation startObservation(
+            TestSuiteStabilityPhysicalAttemptStartCommand command,
+            long providerSequence,
+            TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome outcome) throws Exception {
         Instant confirmedAt = databaseTime();
+        boolean confirmed = outcome
+                != TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome.REJECTED;
         TestSuiteStabilityPhysicalAttemptStartReceipt receipt =
                 new TestSuiteStabilityPhysicalAttemptStartReceipt(
                         TestSuiteStabilityPhysicalAttemptStartReceipt.SCHEMA_VERSION,
@@ -1338,8 +1458,8 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                         command.identity().identityFingerprint(),
                         command.identity().leaseEpoch(), providerSequence,
                         command.identity().isolationMode(),
-                        TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome.STARTED,
-                        fingerprint('4'), fingerprint('5'), confirmedAt);
+                        outcome, confirmed ? fingerprint('4') : "",
+                        confirmed ? fingerprint('5') : "", confirmedAt);
         Signature signature = Signature.getInstance("Ed25519");
         signature.initSign(keyPair.getPrivate());
         signature.update(TestSuiteStabilityPhysicalAttemptStartVerifier.signingBytes(
@@ -1456,6 +1576,11 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     }
 
     private static TestSuiteStabilityJobSubmission submission(char id, String tenantId) {
+        return submission(id, tenantId, Instant.now().plus(Duration.ofHours(1)));
+    }
+
+    private static TestSuiteStabilityJobSubmission submission(
+            char id, String tenantId, Instant deadline) {
         TestSuiteStabilityExecutionRequest request = new TestSuiteStabilityExecutionRequest(
                 "", TestSuiteStabilityProtocolFixtures.SUITE_REF,
                 "request-" + id, 3, Map.of("pipeline", "nightly"));
@@ -1467,7 +1592,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                         "ci-runner", "", "TEST_EXECUTION", "correlation-" + id,
                         Set.of("test-runners"), "INTERNAL", ""),
                 TestSuiteStabilityJobSubmission.Priority.NORMAL,
-                Instant.now().plus(Duration.ofHours(1)));
+                deadline);
     }
 
     private static void assertConflict(

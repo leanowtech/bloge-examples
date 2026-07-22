@@ -84,9 +84,12 @@ public final class DatabaseTestSuiteStabilityJobRepository
     private final TestSuiteStabilityJobRequestKeyProtector requestKeys;
     private final String retentionOwnerId;
     private final Duration retentionLeaseDuration;
+    private final boolean physicalAttemptFencingEnabled;
     private final TransactionTemplate mutations;
 
     /**
+     * Creates a queue repository with physical-attempt fencing disabled for legacy deployments.
+     *
      * @param jdbc isolated test-runtime JDBC adapter
      * @param objectMapper canonical protocol mapper
      * @param parentAuthority parent-first stop or signed-winner resolver
@@ -103,12 +106,43 @@ public final class DatabaseTestSuiteStabilityJobRepository
             String retentionOwnerId,
             Duration retentionLeaseDuration,
             PlatformTransactionManager transactionManager) {
+        this(jdbc, objectMapper, parentAuthority, requestKeys, retentionOwnerId,
+                retentionLeaseDuration, transactionManager, false);
+    }
+
+    /**
+     * Creates a queue repository with optional fail-closed physical-attempt slot fencing.
+     *
+     * <p>When fencing is enabled, the physical-attempt registry and start-journal tables must use
+     * the same datasource and exist before the first queue mutation. Any prepared start command is
+     * treated as a possible provider side effect: an expired queue lease remains capacity-bearing
+     * and cannot be reclaimed until a later verified terminal projection closes that attempt.</p>
+     *
+     * @param jdbc isolated test-runtime JDBC adapter
+     * @param objectMapper canonical protocol mapper
+     * @param parentAuthority parent-first stop or signed-winner resolver
+     * @param requestKeys non-reversible retired request identity authority
+     * @param retentionOwnerId stable process identity for cross-replica maintenance
+     * @param retentionLeaseDuration database-clock page ownership window
+     * @param transactionManager transaction manager for the same datasource
+     * @param physicalAttemptFencingEnabled whether possible provider starts retain queue capacity
+     */
+    public DatabaseTestSuiteStabilityJobRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            TestSuiteStabilityJobParentAuthority parentAuthority,
+            TestSuiteStabilityJobRequestKeyProtector requestKeys,
+            String retentionOwnerId,
+            Duration retentionLeaseDuration,
+            PlatformTransactionManager transactionManager,
+            boolean physicalAttemptFencingEnabled) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.parentAuthority = Objects.requireNonNull(parentAuthority, "parentAuthority");
         this.requestKeys = Objects.requireNonNull(requestKeys, "requestKeys");
         this.retentionOwnerId = requiredRetentionOwner(retentionOwnerId);
         this.retentionLeaseDuration = boundedRetentionLease(retentionLeaseDuration);
+        this.physicalAttemptFencingEnabled = physicalAttemptFencingEnabled;
         mutations = new TransactionTemplate(
                 Objects.requireNonNull(transactionManager, "transactionManager"));
         mutations.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -964,17 +998,50 @@ public final class DatabaseTestSuiteStabilityJobRepository
             Instant observedAt,
             TestSuiteStabilityQueuePolicy policy) {
         List<StoredJob> stale = jdbc.query("""
-                SELECT * FROM rg_test_suite_stability_jobs
+                SELECT job.* FROM rg_test_suite_stability_jobs job
                 WHERE environment_id = ? AND (
                     (status = 'QUEUED' AND deadline_at <= ?)
-                    OR (status IN ('RUNNING', 'CANCEL_REQUESTED')
+                    OR (status IN ('RUNNING', 'CANCEL_REQUESTED', 'COMMITTING')
                         AND lease_expires_at <= ?)
+                    OR (status IN ('RUNNING', 'CANCEL_REQUESTED', 'COMMITTING')
+                        AND lease_expires_at IS NULL AND deadline_at <= ?
+                        AND failure_code <> 'RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED'
+                        AND
+                """ + possiblePhysicalSideEffectPredicate() + """
+                    )
                 )
-                ORDER BY updated_at, job_id
+                ORDER BY job.updated_at, job.job_id
                 FETCH FIRST ? ROWS ONLY
                 """, this::storedJob, environment, Timestamp.from(observedAt),
-                Timestamp.from(observedAt), RECONCILIATION_BATCH);
+                Timestamp.from(observedAt), Timestamp.from(observedAt),
+                RECONCILIATION_BATCH);
         for (StoredJob job : stale) {
+            if (hasPossiblePhysicalSideEffect(job)) {
+                String failureCode =
+                        "RG.TEST.STABILITY_JOB_PHYSICAL_ATTEMPT_RECONCILING";
+                if (job.record().status()
+                        == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
+                    stopParent(job.record(), TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                            "RG.TEST.STABILITY_JOB_CANCELLED", policy.terminalRetention());
+                    failureCode = "RG.TEST.STABILITY_JOB_CANCELLED";
+                } else if (!job.record().deadlineAt().isAfter(observedAt)) {
+                    stopParent(job.record(),
+                            TestSuiteStabilityExecutionStop.Reason.DEADLINE_EXCEEDED,
+                            "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED",
+                            policy.terminalRetention());
+                    failureCode = "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED";
+                }
+                StoredJob fenced = transition(job, job.record().status(),
+                        job.record().retryCount(), job.record().nextEligibleAt(), observedAt,
+                        job.record().expiresAt(), "", job.leaseEpoch(), null, "", "",
+                        failureCode, job.record().cancellationRequestId(),
+                        job.record().cancellationFingerprint());
+                updateExact(job, fenced);
+                continue;
+            }
+            if (job.record().status() == TestSuiteStabilityJobRecord.Status.COMMITTING) {
+                continue;
+            }
             StoredJob successor;
             if (job.record().status() == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
                 successor = parentTerminal(job,
@@ -1097,14 +1164,15 @@ public final class DatabaseTestSuiteStabilityJobRepository
 
     private List<String> eligibleTenants(String environment, Instant observedAt) {
         return jdbc.query("""
-                SELECT DISTINCT tenant_id
-                FROM rg_test_suite_stability_jobs
+                SELECT DISTINCT job.tenant_id
+                FROM rg_test_suite_stability_jobs job
                 WHERE environment_id = ? AND (
                     (status = 'QUEUED' AND next_eligible_at <= ? AND deadline_at > ?)
                     OR (status = 'COMMITTING' AND next_eligible_at <= ?
                         AND (lease_expires_at IS NULL OR lease_expires_at <= ?))
                 )
-                ORDER BY tenant_id
+                """ + claimablePhysicalAttemptClause() + """
+                ORDER BY job.tenant_id
                 """, (rs, rowNum) -> rs.getString("tenant_id"), environment,
                 Timestamp.from(observedAt), Timestamp.from(observedAt),
                 Timestamp.from(observedAt), Timestamp.from(observedAt));
@@ -1113,13 +1181,14 @@ public final class DatabaseTestSuiteStabilityJobRepository
     private List<StoredJob> eligibleJobs(
             String environment, String tenant, Instant observedAt) {
         return jdbc.query("""
-                SELECT * FROM rg_test_suite_stability_jobs
+                SELECT job.* FROM rg_test_suite_stability_jobs job
                 WHERE environment_id = ? AND tenant_id = ? AND (
                     (status = 'QUEUED' AND next_eligible_at <= ? AND deadline_at > ?)
                     OR (status = 'COMMITTING' AND next_eligible_at <= ?
                         AND (lease_expires_at IS NULL OR lease_expires_at <= ?))
                 )
-                ORDER BY created_at, job_id
+                """ + claimablePhysicalAttemptClause() + """
+                ORDER BY job.created_at, job.job_id
                 """, this::storedJob, environment, tenant, Timestamp.from(observedAt),
                 Timestamp.from(observedAt), Timestamp.from(observedAt),
                 Timestamp.from(observedAt));
@@ -1128,12 +1197,15 @@ public final class DatabaseTestSuiteStabilityJobRepository
     private long activeCount(String environment, String tenant, Instant observedAt) {
         String tenantClause = tenant == null ? "" : " AND tenant_id = ?";
         String sql = """
-                SELECT COUNT(*) FROM rg_test_suite_stability_jobs
+                SELECT COUNT(*) FROM rg_test_suite_stability_jobs job
                 WHERE environment_id = ? AND (
                     (status = 'QUEUED' AND deadline_at > ?)
                     OR status = 'COMMITTING'
                     OR (status IN ('RUNNING', 'CANCEL_REQUESTED')
                         AND lease_expires_at > ?)
+                    OR (status IN ('RUNNING', 'CANCEL_REQUESTED') AND
+                """ + possiblePhysicalSideEffectPredicate() + """
+                    )
                 )
                 """ + tenantClause;
         Long count = tenant == null
@@ -1147,16 +1219,70 @@ public final class DatabaseTestSuiteStabilityJobRepository
     private long liveRunningCount(String environment, String tenant, Instant observedAt) {
         String tenantClause = tenant == null ? "" : " AND tenant_id = ?";
         String sql = """
-                SELECT COUNT(*) FROM rg_test_suite_stability_jobs
+                SELECT COUNT(*) FROM rg_test_suite_stability_jobs job
                 WHERE environment_id = ?
                   AND status IN ('RUNNING', 'CANCEL_REQUESTED', 'COMMITTING')
-                  AND lease_expires_at > ?
+                  AND (lease_expires_at > ? OR
+                """ + possiblePhysicalSideEffectPredicate() + """
+                  )
                 """ + tenantClause;
         Long count = tenant == null
                 ? jdbc.queryForObject(sql, Long.class, environment, Timestamp.from(observedAt))
                 : jdbc.queryForObject(sql, Long.class, environment,
                 Timestamp.from(observedAt), tenant);
         return count == null ? 0 : count;
+    }
+
+    private boolean hasPossiblePhysicalSideEffect(StoredJob job) {
+        if (!physicalAttemptFencingEnabled) {
+            return false;
+        }
+        Long count = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_stability_physical_attempts attempt
+                JOIN rg_test_stability_attempt_start_entries start_entry
+                  ON start_entry.attempt_id = attempt.attempt_id
+                 AND start_entry.tenant_id = attempt.tenant_id
+                 AND start_entry.environment_id = attempt.environment_id
+                 AND start_entry.lease_epoch = attempt.lease_epoch
+                 AND start_entry.provider_id = attempt.provider_id
+                 AND start_entry.deployment_id = attempt.deployment_id
+                WHERE attempt.tenant_id = ?
+                  AND attempt.environment_id = ?
+                  AND attempt.job_id = ?
+                  AND attempt.lease_epoch = ?
+                """, Long.class, job.record().tenantId(), job.record().environmentId(),
+                job.record().jobId(), job.leaseEpoch());
+        return count != null && count > 0;
+    }
+
+    private String claimablePhysicalAttemptClause() {
+        return physicalAttemptFencingEnabled
+                ? " AND NOT (" + possiblePhysicalSideEffectPredicate() + ")"
+                : "";
+    }
+
+    private String possiblePhysicalSideEffectPredicate() {
+        if (!physicalAttemptFencingEnabled) {
+            return "FALSE";
+        }
+        return """
+                EXISTS (
+                    SELECT 1
+                    FROM rg_test_stability_physical_attempts attempt
+                    JOIN rg_test_stability_attempt_start_entries start_entry
+                      ON start_entry.attempt_id = attempt.attempt_id
+                     AND start_entry.tenant_id = attempt.tenant_id
+                     AND start_entry.environment_id = attempt.environment_id
+                     AND start_entry.lease_epoch = attempt.lease_epoch
+                     AND start_entry.provider_id = attempt.provider_id
+                     AND start_entry.deployment_id = attempt.deployment_id
+                    WHERE attempt.tenant_id = job.tenant_id
+                      AND attempt.environment_id = job.environment_id
+                      AND attempt.job_id = job.job_id
+                      AND attempt.lease_epoch = job.lease_epoch
+                )
+                """;
     }
 
     private StoredJob requireLive(TestSuiteStabilityJobLease lease, Instant observedAt) {
