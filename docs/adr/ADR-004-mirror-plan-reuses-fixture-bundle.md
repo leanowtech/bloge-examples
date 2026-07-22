@@ -35,6 +35,9 @@ replay 治理和证据字段，最终出现“测试通过但镜像失败”或�
 7. 普通测试按 selector specificity 选择；mirror 固定先按 `MirrorSource` 协议顺序、再在同一 source 内按 selector
    specificity 选择。`OWNER_SPECIFIED` 和 `GOVERNED_REPLAY` 的重叠是合法 fallback；同一 source、同一 selector
    precedence 的重叠仍失败关闭。
+8. runtime 通过 `MirrorResolver` SPI 扩展来源，`MirrorResolverChain` 只消费编译期冻结的顺序。resolver 不得保留或
+   记录业务输入；缺少已编译来源、重复注册同一来源、普通 control 误入 mirror chain、同来源运行时歧义均失败关闭。
+   `ABSTAINED` 由 chain 统一产生，单一 resolver 无权伪造终局拒答。
 
 ## 映射矩阵
 
@@ -95,3 +98,5 @@ abstention 和 provenance 属于 mirror serving 协议；owner 明确输入的�
 漏报 external、deterministic services、classification、schema waiver 和未就绪能力拒绝。额外回归证明 registry
 在 inventory freeze 后发生替换不会改变 runtime control；新增用例验证 owner source 优先于更具体的 governed
 replay、跨 source fallback 合法、空 external closure 仍拒绝内部 fixture，且 mirror mode 在 fingerprint 中可见。
+`MirrorResolverChainTest` 进一步验证 owner-first、replay fallback、显式 abstention、缺失来源、重复注册、普通 control
+隔离和运行时同来源歧义。

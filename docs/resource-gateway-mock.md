@@ -106,6 +106,12 @@
   mandatory external site 集合都进入 execution-control fingerprint；即使 closure 没有 external edge，也会拒绝
   FixtureBundle 替换内部节点。规划/运行聚焦回归 `77/77`、完整 planning/runtime package `162/162` 全绿；
   实际结果 provenance wiring 尚未完成。
+- Stage 1 第六增量实现 `MirrorResolver` SPI 与 `MirrorResolverChain`。每个 resolver 只拥有一个具体来源，接收
+  ephemeral input、规范 request fingerprint 和已匹配候选，但不得保留或记录业务输入；返回规则、置信区间、
+  freshness 和显式 limitations。chain 严格执行 control 中冻结的 resolver order，统一产生 `ABSTAINED`，对缺失来源、
+  重复来源、普通 control 越界和同来源运行时歧义失败关闭。Stage 1 先提供 OWNER_SPECIFIED 与 GOVERNED_REPLAY 两个
+  exact FixtureRule adapter，planning/runtime package `169/169` 全绿；算子执行接线与 `MirrorResolution` journal 是
+  下一增量。
 
 ---
 

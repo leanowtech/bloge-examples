@@ -146,6 +146,13 @@ across those sources is fallback rather than ambiguity; unresolved overlap insid
 The strategy, per-site resolver order, and even an empty mandatory-site set participate in the execution-control
 fingerprint. An empty external closure still cannot authorize fixtures for internal business nodes.
 
+The runtime extension boundary is now explicit: one `MirrorResolver` owns one concrete source and returns either a
+bounded claim or source-local abstention; `MirrorResolverChain` alone applies the compiled order and emits terminal
+`ABSTAINED`. The Stage 1 adapters cover exact owner FixtureRules and governed replay FixtureRules. Missing compiled
+sources, duplicate registrations, ordinary-control entry, and same-source runtime ambiguity fail closed. The chain
+and surrounding planning/runtime package pass 169 tests; execution observation and sealed `MirrorResolution` output
+remain the next increment.
+
 The accepted reuse decision and behavior-loss matrix are recorded in
 [`ADR-004`](../../adr/ADR-004-mirror-plan-reuses-fixture-bundle.md). `CompiledMirrorPlan` now retains the exact Graph,
 FixtureBundle, governed replay closure, and execution control in process. The internal `MirrorRunService` re-verifies

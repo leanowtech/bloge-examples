@@ -141,6 +141,11 @@ governed replay before selector specificity is considered, while ambiguity withi
 The exact strategy and per-site order are fingerprinted, and a mirror with no external edges still rejects fixtures
 that target internal business nodes. Runtime result provenance remains the next gate.
 
+`MirrorResolver` and `MirrorResolverChain` now provide the bounded runtime extension point. The first adapters serve
+exact owner rules and governed replay rules; future sources can be added without changing source precedence. The
+chain owns final abstention and fails closed for unavailable or duplicate sources, ordinary controls, and
+same-source runtime ambiguity. It is not yet connected to operator execution, so capability probes remain disabled.
+
 Useful variants:
 
 ```bash
