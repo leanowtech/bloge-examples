@@ -100,3 +100,5 @@ abstention 和 provenance 属于 mirror serving 协议；owner 明确输入的�
 replay、跨 source fallback 合法、空 external closure 仍拒绝内部 fixture，且 mirror mode 在 fingerprint 中可见。
 `MirrorResolverChainTest` 进一步验证 owner-first、replay fallback、显式 abstention、缺失来源、重复注册、普通 control
 隔离和运行时同来源歧义。
+`MirrorRunServiceTest` 端到端验证普通路径隔离、owner hash-only output、governed replay 双重 artifact provenance、
+resolved business error、显式 abstention、request/output fingerprint、resolution seal 与 journal 单次完成生命周期。

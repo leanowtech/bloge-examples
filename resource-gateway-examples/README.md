@@ -126,25 +126,29 @@ frozen BLOGE invocation inventory, adapt the existing FixtureBundle into mandato
 the exact Graph/fixture/control generation in process, and execute it through the independent test engine after
 scope, purpose, TTL, fingerprint, coverage, and logical deadline checks. Mirror fixtures cannot replace internal
 business nodes, and unmatched external leaves fail closed. This is not yet an API or persisted serving surface;
-resolver provenance, dynamic invocation budgets, evidence vNext, production egress proof, and authenticated storage
+dynamic invocation budgets, durable evidence vNext, production egress proof, and authenticated storage
 remain open, so the runtime feature flags above intentionally stay false. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
 The strict `resourceGateway.mirrorResolution.v1` protocol is also frozen. It binds every future resolver outcome to
 the exact run, plan, capability and invocation attempt; separates resolved null, visible/redacted output, hash-only
 evidence, resolved error, rejection and abstention; and fingerprints both visible output and the complete artifact.
-The model is implemented and schema-tested, but the fixed-priority resolver chain has not yet been wired into the
-run kernel and the protocol is not yet advertised by the capability probe.
+The protocol is implemented, schema-tested, and produced by the internal run kernel, but it is not yet advertised
+by the capability probe because no authenticated, durable serving surface exists.
 
 Mirror compilation now freezes source-first selection separately from ordinary test selection. Owner rules precede
 governed replay before selector specificity is considered, while ambiguity within one source remains fail-closed.
 The exact strategy and per-site order are fingerprinted, and a mirror with no external edges still rejects fixtures
-that target internal business nodes. Runtime result provenance remains the next gate.
+that target internal business nodes.
 
 `MirrorResolver` and `MirrorResolverChain` now provide the bounded runtime extension point. The first adapters serve
 exact owner rules and governed replay rules; future sources can be added without changing source precedence. The
 chain owns final abstention and fails closed for unavailable or duplicate sources, ordinary controls, and
-same-source runtime ambiguity. It is not yet connected to operator execution, so capability probes remain disabled.
+same-source runtime ambiguity. Mirror controls now execute through that chain and a single-completion journal emits
+sealed, coordinate-ordered `MirrorResolution` records. Requests and outputs are represented by bounded canonical
+fingerprints; owner and replay results retain exact artifact provenance; business error, rejection, and abstention
+remain distinct. Ordinary tests keep their previous selection path. Capability probes remain disabled until API,
+durable evidence, dynamic budget, and production isolation gates close.
 
 Useful variants:
 

@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
+import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.SelectorResolver;
 
 import java.time.Duration;
@@ -29,15 +30,32 @@ public class TestDoubleFactory {
     private final ObjectMapper objectMapper;
     private final FixtureMatcher matcher;
     private final ResourceFixtureRuntime resourceRuntime;
+    private final MirrorResolverChain mirrorResolverChain;
 
     /**
      * @param objectMapper mapper for canonical input matching and schema-visible values
      * @param resourceRuntime optional descriptor-backed protocol runtime; required by raw HTTP fixtures
      */
     public TestDoubleFactory(ObjectMapper objectMapper, ResourceFixtureRuntime resourceRuntime) {
+        this(objectMapper, resourceRuntime, MirrorResolverChain.fixtureRules());
+    }
+
+    /**
+     * Creates a factory with an explicitly assembled mirror resolver chain.
+     *
+     * @param objectMapper mapper for canonical input matching and schema-visible values
+     * @param resourceRuntime optional descriptor-backed protocol runtime
+     * @param mirrorResolverChain exact resolver implementations admitted by this runtime
+     */
+    public TestDoubleFactory(
+            ObjectMapper objectMapper,
+            ResourceFixtureRuntime resourceRuntime,
+            MirrorResolverChain mirrorResolverChain) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.matcher = new FixtureMatcher(objectMapper);
         this.resourceRuntime = resourceRuntime;
+        this.mirrorResolverChain = Objects.requireNonNull(
+                mirrorResolverChain, "mirrorResolverChain");
     }
 
     /**
@@ -83,7 +101,42 @@ public class TestDoubleFactory {
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
         }
         Operator<Object, Object> controlled = new ControlledOperator(node, binding, rules,
-                (Operator<Object, Object>) typed, implicitDeny, recorder, replayPayloads);
+                (Operator<Object, Object>) typed, implicitDeny, recorder, replayPayloads,
+                null, MirrorResolutionObserver.noop());
+        return observed(node, binding, controlled, recorder);
+    }
+
+    /**
+     * Creates a control that preserves its compiled ordinary or mirror resolution strategy.
+     *
+     * @param node frozen node specification
+     * @param binding occurrence-specific invocation coordinates
+     * @param control exact compiled site control
+     * @param realOperator frozen real binding
+     * @param recorder shared test evidence recorder
+     * @param replayPayloads exact replay closure
+     * @param mirrorObserver mirror provenance sink
+     * @return isolated controlled operator
+     */
+    @SuppressWarnings("unchecked")
+    public Operator<Object, Object> create(
+            NodeSpec node,
+            InvocationRecorder.InvocationBinding binding,
+            CompiledExecutionControl.ResolvedControl control,
+            Object realOperator,
+            InvocationRecorder recorder,
+            ResolvedReplayPayloads replayPayloads,
+            MirrorResolutionObserver mirrorObserver) {
+        if (!(realOperator instanceof Operator<?, ?> typed)) {
+            throw new IllegalArgumentException("Node '" + node.id()
+                    + "' is not a synchronous Operator and cannot use v1 execution control.");
+        }
+        CompiledExecutionControl.ResolvedControl requiredControl = Objects.requireNonNull(
+                control, "control");
+        Operator<Object, Object> controlled = new ControlledOperator(
+                node, binding, requiredControl.rules(), (Operator<Object, Object>) typed,
+                requiredControl.implicitDeny(), recorder, replayPayloads, requiredControl,
+                Objects.requireNonNull(mirrorObserver, "mirrorObserver"));
         return observed(node, binding, controlled, recorder);
     }
 
@@ -124,12 +177,16 @@ public class TestDoubleFactory {
         private final boolean implicitDeny;
         private final InvocationRecorder recorder;
         private final ResolvedReplayPayloads replayPayloads;
+        private final CompiledExecutionControl.ResolvedControl compiledControl;
+        private final MirrorResolutionObserver mirrorObserver;
 
         private ControlledOperator(NodeSpec node, InvocationRecorder.InvocationBinding binding,
                                    List<FixtureRule> rules,
                                    Operator<Object, Object> real, boolean implicitDeny,
                                    InvocationRecorder recorder,
-                                   ResolvedReplayPayloads replayPayloads) {
+                                   ResolvedReplayPayloads replayPayloads,
+                                   CompiledExecutionControl.ResolvedControl compiledControl,
+                                   MirrorResolutionObserver mirrorObserver) {
             this.node = node;
             this.binding = Objects.requireNonNull(binding, "binding");
             this.site = binding.site();
@@ -139,6 +196,8 @@ public class TestDoubleFactory {
             this.recorder = recorder;
             this.replayPayloads = replayPayloads == null
                     ? ResolvedReplayPayloads.empty() : replayPayloads;
+            this.compiledControl = compiledControl;
+            this.mirrorObserver = Objects.requireNonNull(mirrorObserver, "mirrorObserver");
         }
 
         @Override
@@ -148,6 +207,11 @@ public class TestDoubleFactory {
             List<FixtureRule> matched = rules.stream()
                     .filter(rule -> matcher.matches(rule, input, site.correlationKey(),
                             attempt, binding.occurrence())).toList();
+            if (compiledControl != null && compiledControl.resolutionStrategy()
+                    == CompiledExecutionControl.ResolvedControl.ResolutionStrategy
+                    .MIRROR_SOURCE_THEN_SELECTOR) {
+                return executeMirror(input, context, attempt, matched);
+            }
             if (matched.isEmpty()) {
                 if (!implicitDeny && rules.stream().anyMatch(rule -> rule.consumption().onUnmatched()
                         == FixtureRule.UnmatchedAction.ALLOW_REAL)) {
@@ -183,6 +247,42 @@ public class TestDoubleFactory {
                         "Fixture rule '" + rule.ruleId() + "' exceeded maxUses.");
             }
             return apply(rule, input, context);
+        }
+
+        private Object executeMirror(
+                Object input,
+                OperatorContext context,
+                int attempt,
+                List<FixtureRule> matched) throws Exception {
+            String requestFingerprint = MirrorResolutionJournal.requestFingerprint(
+                    objectMapper, input);
+            MirrorResolver.Request request = new MirrorResolver.Request(
+                    site, binding.occurrence(), attempt, requestFingerprint, input, matched);
+            MirrorResolverChain.Decision decision = mirrorResolverChain.resolve(
+                    compiledControl, request);
+            if (decision.abstained()) {
+                recorder.markFidelity(site, "OUTPUT_LEVEL");
+                recorder.markControlMode(site, "ABSTAINED");
+                mirrorObserver.abstained(binding, attempt, requestFingerprint);
+                throw new TestControlException("FIXTURE_UNMATCHED", "FIXTURE_MATCH",
+                        "Every admitted mirror source abstained from this invocation.");
+            }
+            FixtureRule rule = decision.match().rule();
+            if (recorder.consumeIfAvailable(rule.ruleId(), rule.consumption().maxUses()) < 0) {
+                TestControlException exhausted = new TestControlException(
+                        "FIXTURE_EXHAUSTED", "FIXTURE_CONSUMPTION",
+                        "Selected mirror rule exceeded maxUses.");
+                mirrorObserver.failed(binding, attempt, requestFingerprint, decision, exhausted);
+                throw exhausted;
+            }
+            try {
+                Object output = apply(rule, input, context);
+                mirrorObserver.resolved(binding, attempt, requestFingerprint, decision, output);
+                return output;
+            } catch (Exception failure) {
+                mirrorObserver.failed(binding, attempt, requestFingerprint, decision, failure);
+                throw failure;
+            }
         }
 
         private Object apply(FixtureRule rule, Object input, OperatorContext context) throws Exception {

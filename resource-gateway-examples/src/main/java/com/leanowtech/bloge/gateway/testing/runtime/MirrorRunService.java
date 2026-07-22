@@ -101,9 +101,11 @@ public class MirrorRunService {
                 TestExecutionRequest.FixtureSource.STORED, metadata,
                 true, compiled.executionControl().replayPayloads(), ResolvedTestSecrets.empty());
         TestExecutionResult execution;
+        MirrorResolutionJournal resolutionJournal = new MirrorResolutionJournal(
+                mapper, plan, compiled.executionControl().replayPayloads());
         try {
             execution = testRunService.executeCompiled(executionRequest,
-                    compiled.executionControl());
+                    compiled.executionControl(), resolutionJournal);
         } catch (RuntimeException failure) {
             throw reject("RG.MIRROR.RUNTIME_GENERATION_REJECTED",
                     "Compiled mirror generation failed shared-kernel admission.");
@@ -113,7 +115,13 @@ public class MirrorRunService {
             throw reject("RG.MIRROR.RUNTIME_GENERATION_DRIFT",
                     "Executed control generation differs from the sealed mirror plan.");
         }
-        return new MirrorRunResult(plan, admittedAt, execution);
+        try {
+            return new MirrorRunResult(plan, admittedAt, execution,
+                    resolutionJournal.complete(execution.evidence().runId()));
+        } catch (RuntimeException failure) {
+            throw reject("RG.MIRROR.RESOLUTION_EVIDENCE_REJECTED",
+                    "Mirror resolution evidence could not be sealed for this run.");
+        }
     }
 
     /** @return structural isolation facts for architecture tests and future capability probes */

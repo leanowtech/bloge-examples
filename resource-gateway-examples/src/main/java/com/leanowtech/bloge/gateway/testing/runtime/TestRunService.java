@@ -150,13 +150,29 @@ public class TestRunService {
     public TestExecutionResult executeCompiled(
             TestExecutionRequest request,
             CompiledExecutionControl compiled) {
+        return executeCompiled(request, compiled, MirrorResolutionObserver.noop());
+    }
+
+    /**
+     * Executes one compiled generation with a run-scoped mirror provenance observer.
+     *
+     * @param request exact graph, context, fixture, purpose, and evidence provenance
+     * @param compiled exact previously compiled execution control
+     * @param mirrorObserver observer used only by mirror controls
+     * @return effective plan, graph result, and terminal evidence
+     */
+    public TestExecutionResult executeCompiled(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled,
+            MirrorResolutionObserver mirrorObserver) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(compiled, "compiled");
+        Objects.requireNonNull(mirrorObserver, "mirrorObserver");
         validateCompiledBinding(request, compiled);
         String runId = "test-run-" + UUID.randomUUID();
         Instant startedAt = Instant.now();
         try (AdmissionGuard admission = noAdmissionGuard()) {
-            return runCompiled(request, runId, startedAt, compiled, admission);
+            return runCompiled(request, runId, startedAt, compiled, admission, mirrorObserver);
         }
     }
 
@@ -191,7 +207,8 @@ public class TestRunService {
 
         try (AdmissionGuard admission = Objects.requireNonNull(
                 admissionFactory.admit(compiled), "admission guard")) {
-            return runCompiled(request, runId, startedAt, compiled, admission);
+            return runCompiled(request, runId, startedAt, compiled, admission,
+                    MirrorResolutionObserver.noop());
         }
     }
 
@@ -200,7 +217,8 @@ public class TestRunService {
             String runId,
             Instant startedAt,
             CompiledExecutionControl compiled,
-            AdmissionGuard admission) {
+            AdmissionGuard admission,
+            MirrorResolutionObserver mirrorObserver) {
         InvocationRecorder recorder = new InvocationRecorder(objectMapper);
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
@@ -209,7 +227,7 @@ public class TestRunService {
         GraphContext executionContext = new GraphContext(request.context().asMap());
         executionContext.bindExecutionBudget(request.context().executionBudget());
         try {
-            ExecutionOptions options = runtimeOptions.options(compiled, recorder);
+            ExecutionOptions options = runtimeOptions.options(compiled, recorder, mirrorObserver);
             graphResult = engine.execute(request.graph(), executionContext, options);
         } catch (RuntimeException ex) {
             diagnostics.add(bounded("Test engine failed before producing GraphResult: " + ex.getMessage()));

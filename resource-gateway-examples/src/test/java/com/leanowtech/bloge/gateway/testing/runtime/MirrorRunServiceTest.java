@@ -19,8 +19,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.EffectContract;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolutionIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledMirrorPlan;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompilationRequest;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
@@ -47,6 +50,8 @@ class MirrorRunServiceTest {
     private static final String TARGET = fingerprint('a');
     private static final Instant COMPILED_AT = Instant.parse("2026-07-22T08:00:00Z");
     private static final String PURPOSE = "MIRROR_REHEARSAL";
+    private static final String REPLAY_REF = "bloge-replay:customer-approved@7#"
+            + fingerprint('9');
     private static final CapabilitySnapshot.Scope SCOPE = new CapabilitySnapshot.Scope(
             "tenant-a", "org-a", "support", "test", "sg");
 
@@ -95,6 +100,34 @@ class MirrorRunServiceTest {
                     assertThat(trace.status()).isEqualTo("MOCKED");
                     assertThat(trace.output()).isEqualTo(Map.of("customerId", "C-1"));
                 });
+        var externalTrace = result.execution().evidence().nodeTrace().stream()
+                .filter(trace -> trace.invocationSiteId().equals(
+                        "/root/loadCustomer#PRIMARY"))
+                .findFirst().orElseThrow();
+        assertThat(result.resolutions()).singleElement().satisfies(resolution -> {
+            assertThat(resolution.runId()).isEqualTo(result.execution().evidence().runId());
+            assertThat(resolution.planFingerprint()).isEqualTo(compiled.plan().planFingerprint());
+            assertThat(resolution.invocationSiteId())
+                    .isEqualTo("/root/loadCustomer#PRIMARY");
+            assertThat(resolution.occurrence()).isEqualTo(1);
+            assertThat(resolution.attempt()).isEqualTo(1);
+            assertThat(resolution.status()).isEqualTo(MirrorResolution.Status.RESOLVED);
+            assertThat(resolution.source()).isEqualTo(MirrorPlan.MirrorSource.OWNER_SPECIFIED);
+            assertThat(resolution.payloadVisibility())
+                    .isEqualTo(MirrorResolution.PayloadVisibility.HASH_ONLY);
+            assertThat(resolution.outputIncluded()).isFalse();
+            assertThat(resolution.output()).isNull();
+            assertThat(resolution.outputFingerprint()).isEqualTo(
+                    ProtocolFingerprint.of(mapper, Map.of("customerId", "C-1")));
+            assertThat(resolution.requestFingerprint()).isEqualTo(
+                    ProtocolFingerprint.of(mapper, externalTrace.input()));
+            assertThat(resolution.capabilityRef()).isEqualTo(
+                    compiled.plan().externalBindings().getFirst().capabilityRef());
+            assertThat(resolution.matchedArtifactRefs())
+                    .containsExactly(compiled.plan().fixtureBundleRef());
+            assertThat(resolution.matchedRuleRefs()).containsExactly("customer-response");
+            MirrorResolutionIntegrity.verify(mapper, resolution);
+        });
         assertThat(runtime.engineConfiguration().interceptorTypes()).isEmpty();
         assertThat(runtime.engineConfiguration().durableStores()).isFalse();
         assertThat(runtime.engineConfiguration().productionContextCarriers()).isFalse();
@@ -116,6 +149,66 @@ class MirrorRunServiceTest {
                         "/root/loadCustomer#PRIMARY"))
                 .singleElement().satisfies(trace ->
                         assertThat(trace.errorCode()).isEqualTo("FIXTURE_UNMATCHED"));
+        assertThat(result.resolutions()).singleElement().satisfies(resolution -> {
+            assertThat(resolution.status()).isEqualTo(MirrorResolution.Status.ABSTAINED);
+            assertThat(resolution.source()).isEqualTo(MirrorPlan.MirrorSource.ABSTAINED);
+            assertThat(resolution.payloadVisibility())
+                    .isEqualTo(MirrorResolution.PayloadVisibility.NONE);
+            assertThat(resolution.matchedArtifactRefs()).isEmpty();
+            assertThat(resolution.matchedRuleRefs()).isEmpty();
+            assertThat(resolution.confidence().point()).isZero();
+            MirrorResolutionIntegrity.verify(mapper, resolution);
+        });
+    }
+
+    @Test
+    void exportsGovernedReplayWithExactPayloadProvenance() {
+        FixtureRule replayRule = rule("customer-replay", "loadCustomer",
+                FixtureRule.Behavior.replaying(REPLAY_REF));
+        ResolvedReplayPayloads replayPayloads = replayPayloads();
+        CompiledMirrorPlan compiled = compile(fixture(replayRule), replayPayloads);
+
+        MirrorRunResult result = runtime.execute(request(compiled, SCOPE, PURPOSE));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(externalCalls).hasValue(0);
+        assertThat(result.resolutions()).singleElement().satisfies(resolution -> {
+            assertThat(resolution.source())
+                    .isEqualTo(MirrorPlan.MirrorSource.GOVERNED_REPLAY);
+            assertThat(resolution.status()).isEqualTo(MirrorResolution.Status.RESOLVED);
+            assertThat(resolution.outputFingerprint()).isEqualTo(
+                    ProtocolFingerprint.of(mapper, Map.of("customerId", "C-replay")));
+            assertThat(resolution.matchedArtifactRefs()).hasSize(2);
+            assertThat(resolution.matchedArtifactRefs())
+                    .extracting(ref -> ref.kind() + ":" + ref.id())
+                    .containsExactly("FIXTURE_BUNDLE:customer-fixture",
+                            "REPLAY_PAYLOAD:customer-approved");
+            assertThat(resolution.matchedRuleRefs()).containsExactly("customer-replay");
+            MirrorResolutionIntegrity.verify(mapper, resolution);
+        });
+    }
+
+    @Test
+    void exportsAnOwnerSpecifiedBusinessErrorAsAResolvedOutcome() {
+        CompiledMirrorPlan compiled = compile(fixture(rule(
+                "customer-error", "loadCustomer",
+                FixtureRule.Behavior.throwing(
+                        "CUSTOMER_NOT_FOUND", "BUSINESS", "fixture-only diagnostic"))));
+
+        MirrorRunResult result = runtime.execute(request(compiled, SCOPE, PURPOSE));
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.resolutions()).singleElement().satisfies(resolution -> {
+            assertThat(resolution.status()).isEqualTo(MirrorResolution.Status.RESOLVED);
+            assertThat(resolution.source()).isEqualTo(MirrorPlan.MirrorSource.OWNER_SPECIFIED);
+            assertThat(resolution.payloadVisibility())
+                    .isEqualTo(MirrorResolution.PayloadVisibility.NONE);
+            assertThat(resolution.error().code()).isEqualTo("CUSTOMER_NOT_FOUND");
+            assertThat(resolution.error().type()).isEqualTo("BUSINESS");
+            assertThat(resolution.error().message()).isEmpty();
+            assertThat(resolution.outputFingerprint()).isEmpty();
+            MirrorResolutionIntegrity.verify(mapper, resolution);
+        });
     }
 
     @Test
@@ -183,11 +276,37 @@ class MirrorRunServiceTest {
                                 "CONTROL_PLAN_COMPILED_BINDING_MISMATCH"));
     }
 
+    @Test
+    void mirrorResolutionJournalHasAStrictSingleCompletionLifecycle() {
+        CompiledMirrorPlan compiled = compile(fixture());
+        MirrorResolutionJournal journal = new MirrorResolutionJournal(
+                mapper, compiled.plan(), compiled.executionControl().replayPayloads());
+
+        assertThat(journal.complete("test-run-1")).isEmpty();
+        assertThatThrownBy(() -> journal.complete("test-run-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already complete");
+    }
+
     private CompiledMirrorPlan compile(FixtureBundle fixture) {
+        return compile(fixture, ResolvedReplayPayloads.empty());
+    }
+
+    private CompiledMirrorPlan compile(
+            FixtureBundle fixture, ResolvedReplayPayloads replayPayloads) {
         return compiler.compile(new MirrorPlanCompilationRequest(
                 "plan-customer-view", graph, TARGET, closure, fixture,
-                ResolvedReplayPayloads.empty(), policy(), null,
+                replayPayloads, policy(), null,
                 COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(1))));
+    }
+
+    private static ResolvedReplayPayloads replayPayloads() {
+        return new ResolvedReplayPayloads(Map.of(REPLAY_REF,
+                new ResolvedReplayPayloads.Payload(
+                        REPLAY_REF, "CONFIDENTIAL", "{\"customerId\":\"C-replay\"}",
+                        "source-run-1", "loadCustomer", 1, fingerprint('6'),
+                        fingerprint('9'), COMPILED_AT.plus(Duration.ofHours(2)),
+                        true, List.of())));
     }
 
     private static MirrorRunRequest request(

@@ -123,7 +123,7 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4400 tests with no
+passes 4410 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
 the executable Spring Boot JAR.
 
@@ -150,8 +150,11 @@ The runtime extension boundary is now explicit: one `MirrorResolver` owns one co
 bounded claim or source-local abstention; `MirrorResolverChain` alone applies the compiled order and emits terminal
 `ABSTAINED`. The Stage 1 adapters cover exact owner FixtureRules and governed replay FixtureRules. Missing compiled
 sources, duplicate registrations, ordinary-control entry, and same-source runtime ambiguity fail closed. The chain
-and surrounding planning/runtime package pass 169 tests; execution observation and sealed `MirrorResolution` output
-remain the next increment.
+is now wired only for controls carrying `MIRROR_SOURCE_THEN_SELECTOR`; ordinary tests preserve their existing path.
+`MirrorResolutionJournal` fingerprints bounded requests, retains successful outputs as hash-only evidence, binds
+owner rules to the exact FixtureBundle and replay rules to both FixtureBundle and ReplayPayload, and seals results
+after the shared kernel supplies its run id. Resolved business errors, policy rejection, and terminal abstention stay
+distinct. The surrounding planning/runtime package passes 172 tests.
 
 The accepted reuse decision and behavior-loss matrix are recorded in
 [`ADR-004`](../../adr/ADR-004-mirror-plan-reuses-fixture-bundle.md). `CompiledMirrorPlan` now retains the exact Graph,
@@ -160,7 +163,6 @@ the public seal, authenticated scope and purpose, TTL, graph/fixture/control gen
 the static invocation floor before executing through the independent test engine. It carries the plan's logical
 timeout into BLOGE `ExecutionBudget`; an unmatched external remains implicit deny and cannot reach the real binding.
 
-This is still a kernel rather than a service endpoint. Fixed-priority resolver provenance, dynamic occurrence
-budgeting, mirror evidence vNext, production composition and egress proofs, exact artifact storage, and authenticated
-API admission remain open. Capability discovery therefore continues to report compilation, external interception,
-and serving as unavailable.
+This is still a kernel rather than a service endpoint. Dynamic occurrence budgeting, durable mirror evidence vNext,
+production composition and egress proofs, exact artifact storage, and authenticated API admission remain open.
+Capability discovery therefore continues to report compilation, external interception, and serving as unavailable.

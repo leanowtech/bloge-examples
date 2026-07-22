@@ -65,13 +65,14 @@
   24 小时以内的 expiry；`executionControlFingerprint` 额外固定 BLOGE runtime binding inventory 与实际
   EffectiveExecutionPlan generation。封印前会拒绝缺/重 external binding、调用点复用、state-model closure 缺失、未知 effect、
   stale/revoked/过期 artifact，以及任何真实 external call、真实凭据或网络出口授权。
-- probe 已声明 `mirrorPlanProtocol=true`；MirrorPlan compiler 与 external-leaf runtime 已形成未暴露的内部 kernel，
-  resolver provenance、生产隔离证明和 mirror serving 尚未完成，对应三个可对外消费的 feature 继续诚实保持
+- probe 已声明 `mirrorPlanProtocol=true`；MirrorPlan compiler、external-leaf runtime 和 payload-free resolver
+  provenance 已形成未暴露的内部 kernel，生产隔离证明、受保护 API、持久化 evidence 和 mirror serving 尚未完成，
+  对应三个可对外消费的 feature 继续诚实保持
   `false`。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - Stage 0 验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
   Chrome 示例投影用例 `1/1` 全绿。纳入 Stage 1 compiler 与内部 mirror runtime kernel 后，Resource Gateway
-  最新 `clean verify` 为 4400 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
+  最新 `clean verify` 为 4410 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
   重打可执行 Spring Boot JAR。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -91,27 +92,33 @@
   FixtureBundle 若试图替换内部业务算子会在编译时拒绝。运行仍复用独立短生命周期 BLOGE test engine，external
   read-only operator 的真实调用测试计数为 0，内部算子真实执行，并继承 plan logical timeout 对应的
   `ExecutionBudget`。本增量聚焦回归 `75/75`、planning/runtime package 回归 `160/160` 全绿。
-- 上述 runtime 仍是内部 kernel，不等于 serving ready：固定优先级 `MirrorResolver` 与 `MirrorResolution`
-  provenance、动态 occurrence budget、mirror evidence vNext、生产 composition/egress 证明、受保护 API 和幂等
+- 上述 runtime 仍是内部 kernel，不等于 serving ready：动态 occurrence budget、mirror evidence vNext、生产
+  composition/egress 证明、受保护 API 和幂等
   仓储尚未闭合。因此 `mirrorPlanCompilation`、`mirrorExternalLeafInterception`、`mirrorServing` 继续保持 false。
 - Stage 1 第四增量已冻结 `resourceGateway.mirrorResolution.v1` Java 线模型与 strict JSON Schema。每个结果绑定
   exact run/plan/capability/site/occurrence/attempt/request fingerprint，并区分 `RESOLVED`、`ABSTAINED`、
   `REJECTED`。协议显式区分 resolved null、可见/脱敏 payload、hash-only 与无输出，分别封印 output 和完整
   resolution 指纹；非拒答结果必须携带 exact artifact provenance、置信区间、新鲜度和限制，普通日志表示不会
-  输出 payload 或 error message。协议聚焦测试 `10/10`、mirror 协议包 `69/69` 全绿；固定优先级 resolver runtime
-  wiring 仍是下一增量。
+  输出 payload 或 error message。协议聚焦测试 `10/10`、mirror 协议包 `69/69` 全绿；第七增量已完成 runtime wiring。
 - Stage 1 第五增量把 resolver precedence 固定进 `CompiledExecutionControl`：普通测试继续按 selector specificity，
   mirror 则先按协议 `MirrorSource`、再按 source 内 selector specificity。因而 owner fallback 必然先于更具体的
   governed replay；跨 source 重叠合法，同 source 歧义仍失败关闭。strategy、每个 site 的 resolver order 和空/非空
   mandatory external site 集合都进入 execution-control fingerprint；即使 closure 没有 external edge，也会拒绝
-  FixtureBundle 替换内部节点。规划/运行聚焦回归 `77/77`、完整 planning/runtime package `162/162` 全绿；
-  实际结果 provenance wiring 尚未完成。
+  FixtureBundle 替换内部节点。规划/运行聚焦回归 `77/77`、完整 planning/runtime package `162/162` 全绿。
 - Stage 1 第六增量实现 `MirrorResolver` SPI 与 `MirrorResolverChain`。每个 resolver 只拥有一个具体来源，接收
   ephemeral input、规范 request fingerprint 和已匹配候选，但不得保留或记录业务输入；返回规则、置信区间、
   freshness 和显式 limitations。chain 严格执行 control 中冻结的 resolver order，统一产生 `ABSTAINED`，对缺失来源、
   重复来源、普通 control 越界和同来源运行时歧义失败关闭。Stage 1 先提供 OWNER_SPECIFIED 与 GOVERNED_REPLAY 两个
-  exact FixtureRule adapter，planning/runtime package `169/169` 全绿；算子执行接线与 `MirrorResolution` journal 是
-  下一增量。
+  exact FixtureRule adapter，planning/runtime package `169/169` 全绿。
+- Stage 1 第七增量已把 resolver chain 接入 `TestDoubleFactory` 的 mirror 专用分支，普通测试继续走原有 selector
+  路径。`MirrorResolutionJournal` 对每个 external occurrence/attempt 立即计算最大 16 MiB 的 canonical request
+  fingerprint；成功输出只保留 hash，不复制业务 payload；异常文本不进入 resolution。OWNER_SPECIFIED 绑定 exact
+  FixtureBundle，GOVERNED_REPLAY 额外绑定 exact ReplayPayload；显式 THROW/TIMEOUT 作为 resolved business error，
+  abstention 与 policy/runtime rejection 分开表达。共享 kernel 生成 runId 后，journal 按 site/correlation/occurrence/
+  attempt 排序、去重并封印每条 resolution；journal 只允许完成一次，结果再次校验 exact plan/run 与坐标唯一性。
+  resolver chain 可由 `TestDoubleFactory` 显式注入。端到端覆盖 owner output、governed replay、business error、
+  abstention、hash-only 输出和 artifact provenance，planning/runtime package `172/172` 全绿。该内核尚未暴露 API，
+  也尚未写入 durable mirror evidence bundle。
 
 ---
 

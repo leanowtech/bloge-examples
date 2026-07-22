@@ -39,12 +39,29 @@ public class CompiledTestRuntimeOptions {
      */
     public ExecutionOptions options(
             CompiledExecutionControl compiled, InvocationRecorder recorder) {
+        return options(compiled, recorder, MirrorResolutionObserver.noop());
+    }
+
+    /**
+     * Binds one compiled plan to its test evidence and optional mirror-resolution observers.
+     *
+     * @param compiled exact compiled execution control
+     * @param recorder run-scoped fixture cursor and trace recorder
+     * @param mirrorObserver run-scoped mirror provenance sink
+     * @return isolated execution options
+     */
+    public ExecutionOptions options(
+            CompiledExecutionControl compiled,
+            InvocationRecorder recorder,
+            MirrorResolutionObserver mirrorObserver) {
         CompiledExecutionControl requiredControl = Objects.requireNonNull(
                 compiled, "compiled");
         InvocationRecorder requiredRecorder = Objects.requireNonNull(recorder, "recorder");
+        MirrorResolutionObserver requiredObserver = Objects.requireNonNull(
+                mirrorObserver, "mirrorObserver");
         return ExecutionOptions.builder()
                 .operatorResolver(resolution -> resolveOperator(
-                        resolution, requiredControl, requiredRecorder))
+                        resolution, requiredControl, requiredRecorder, requiredObserver))
                 .executionServices(requiredControl.executionServices().services())
                 .build();
     }
@@ -52,7 +69,8 @@ public class CompiledTestRuntimeOptions {
     private Object resolveOperator(
             OperatorResolutionRequest resolution,
             CompiledExecutionControl compiled,
-            InvocationRecorder recorder) {
+            InvocationRecorder recorder,
+            MirrorResolutionObserver mirrorObserver) {
         InvocationInventory.Entry entry = compiled.inventory().byEngineStructuralId()
                 .get(resolution.site().structuralId());
         if (entry == null || entry.graph() != resolution.graph()) {
@@ -72,8 +90,7 @@ public class CompiledTestRuntimeOptions {
             return doubleFactory.observe(
                     entry.node(), binding, entry.frozenOperator(), recorder);
         }
-        return doubleFactory.create(entry.node(), binding, control.rules(),
-                entry.frozenOperator(), control.implicitDeny(), recorder,
-                compiled.replayPayloads());
+        return doubleFactory.create(entry.node(), binding, control,
+                entry.frozenOperator(), recorder, compiled.replayPayloads(), mirrorObserver);
     }
 }
