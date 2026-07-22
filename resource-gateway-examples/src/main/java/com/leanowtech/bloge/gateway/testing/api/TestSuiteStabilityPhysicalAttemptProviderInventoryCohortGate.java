@@ -66,8 +66,8 @@ public interface TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate {
                     || distinctInventoryGenerations > expectedReplicas
                     || observedAt == null
                     || "CONVERGED".equals(status)
-                    != (readyReplicas == expectedReplicas
-                    && distinctInventoryGenerations == 1)) {
+                    && (readyReplicas != expectedReplicas
+                    || distinctInventoryGenerations != 1)) {
                 throw new IllegalArgumentException(
                         "Physical-attempt provider inventory cohort observation is invalid");
             }
