@@ -46,7 +46,7 @@
 > 截至 physical-attempt lifecycle observation proof/durable journal/call supervisor/coordinator/bounded reconciler、
 > start proof/durable start journal、positive queue lease epoch、attempt cancellation coordinator、exact-source
 > terminal projection transaction/proof-aware coordinator、调用前数据库时间栅栏与浏览器生命周期修复的
-> 最终全量基线为 Resource Gateway 4083 tests（0 failures、
+> 最终全量基线为 Resource Gateway 4086 tests（0 failures、
 > 0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
@@ -247,7 +247,10 @@
 > 与 `READY` registration 放入同一 datasource commit；任一失败全部回滚，exact replay 不重复注册，非
 > terminal outcome 不触碰 work table。53 项真实 H2/Ed25519 journal 测试、252 项 physical/cancellation/queue
 > 聚合门禁全绿，三个相关公共类型严格 JavaDoc 零告警。claim/retry/takeover、旧版本 orphan terminal
-> backfill、Spring worker/health/capability 仍未实现，产品能力继续关闭。验证见
+> backfill、Spring worker/health/capability 仍未实现，产品能力继续关闭。实现提交 `56dd5986` 的 immutable
+> snapshot 完整 `clean verify` 执行 4086 tests（0 failures、0 errors、2 skips），456 份 Surefire XML
+> 独立汇总一致；39,677,384 bytes 可执行 JAR 包含 8 个新增匹配 class entry，耗时 9:51，构建/测试浏览器
+> 残留进程均为零。验证见
 > [physical attempt terminal projection work registration verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-work-registration-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |

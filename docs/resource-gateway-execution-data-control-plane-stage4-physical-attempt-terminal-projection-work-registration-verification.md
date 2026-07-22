@@ -72,6 +72,21 @@ Tests run: 252, Failures: 0, Errors: 0, Skipped: 0
 新增 work contract、数据库适配器和修改后的 reconciliation journal 使用 Maven 完整 compile classpath
 通过 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
 
+实现提交 `56dd5986` 已从 `git archive` 解包到 immutable source snapshot
+`/tmp/bloge-examples-verify-56dd5986` 并执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 4086, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 09:51 min
+```
+
+456 份 Surefire XML 使用独立 XML parser 汇总为同一 `4086/0/0/2` 结果。重打包可执行 JAR 为
+39,677,384 bytes，包含 8 个 terminal-projection-work journal class entry。门禁退出后，snapshot
+Java/Maven 进程和 ChromeDriver/Chrome for Testing 进程残留均为零。
+
 ## 5. 尚未闭合
 
 - work journal 尚未实现 database-clock claim、lease renewal、expired takeover、fenced completion 与 retry；
@@ -79,7 +94,6 @@ Tests run: 252, Failures: 0, Errors: 0, Skipped: 0
 - coordinator 的 cancellation-by-attempt 与 parent-success proof resolver 尚无产品实现；
 - 没有 bounded worker、scheduler、retention fence、backlog SLO、telemetry、health/readiness 或 capability；
 - 没有 Spring test/staging composition，产品能力继续关闭；
-- 尚未执行本提交 immutable snapshot 的完整 `clean verify`、JAR 内容和残留进程核验；
 - 生产数据库、跨副本 contention、断电 crash point、真实 process/container provider 与 HA/partition/chaos
   认证仍未完成。
 
