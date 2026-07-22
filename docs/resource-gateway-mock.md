@@ -38,7 +38,7 @@
   条件依赖进入闭包；raw DSL digest 进入 graph source fingerprint，避免 importer 尚未平铺的 DSL 变化逃逸。
 - `aiEnrichedSearch` 的三个 streaming Java operator 会进入闭包，但因 visual runtime 尚不支持该执行模式而保持
   runtime blocked；`resourceDispatch` 的动态资源选择保持 effect unknown/runtime blocked，其余五张静态资源图 ready。
-- 七份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
+- 八份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
   矛盾 effect、伪造统计置信度和无 lineage 的 recorded/inferred provenance。
 - Stage 0 第三增量已完成 full-scope H2 append-only repository、lifecycle 状态机和受身份/用途/clearance
   约束的 Integration API。revision gap、内容篡改、非法跃迁、跨 scope 与越级读取均 fail closed；同 fingerprint
@@ -59,7 +59,13 @@
 - 3 个画布复杂示例现在各有稳定 graph identity，导出文件名也随 graphName 变化。真实 Chrome 用例逐个加载示例，
   读取浏览器实际导出的 GraphDraft，经鉴权调用 projection API 两次，并验证 root identity、snapshot 数量、完整
   scope 和 fingerprint 确定性。因此 7 个 resource graph 加 3 个 visual examples 的 Stage 0 仓库内工程门禁已闭合。
-- MirrorPlan、external-leaf runtime 和 mirror serving 属于 Stage 1，probe 继续诚实保持 `false`。客户环境的数据
+- Stage 1 第一增量已冻结 `resourceGateway.mirrorPlan.v1` 与 strict JSON Schema。plan 内嵌 exact capability
+  closure，逐条绑定 external dependency edge 到唯一 BLOGE invocation site，并固定 resolver precedence、现有
+  FixtureBundle revision、logical clock/random seed、scope、purpose、classification、region、lifecycle、预算和
+  24 小时以内的 expiry。封印前会拒绝缺/重 external binding、调用点复用、state-model closure 缺失、未知 effect、
+  stale/revoked/过期 artifact，以及任何真实 external call、真实凭据或网络出口授权。
+- probe 已声明 `mirrorPlanProtocol=true`；MirrorPlan compiler、external-leaf runtime 和 mirror serving 尚未完成，
+  对应三个 feature 继续诚实保持 `false`。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - 本增量验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的新增真实
   Chrome 示例投影用例 `1/1` 全绿；Resource Gateway `clean verify` 为 4362 项测试、0 失败、0 错误、3 条
@@ -1013,7 +1019,7 @@ SRE runbook 和生产认证包。
 | RG-MIR-003 | 实现 transitive EffectContract 汇总 | `gateway/integration/mirror` | read/write/mixed/unknown、递归环和声明冲突测试齐全 |
 | RG-MIR-004 | 冻结 provenance 与 lifecycle 状态机 | mirror schema + repository interface | 非法跃迁拒绝；stale/revoke 行为有协议测试 |
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
-| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | exact dependency closure；漂移、缺失、环和过期全部 fail closed |
+| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 协议/验封已完成；待接 exact FixtureBundle adapter 与 runtime inventory；漂移、缺失、环和过期全部 fail closed |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/` + adapter interface | 不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
 | RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | production profile 无 mirror endpoint/bean；普通请求控制字段被拒绝 |
 | RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 不依赖 server/Spring；schema 与 Java round-trip 一致 |

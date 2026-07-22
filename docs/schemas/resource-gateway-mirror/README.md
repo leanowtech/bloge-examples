@@ -12,6 +12,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-contract-v1.schema.json` | `CapabilityContract` | Input/output/error/effect/idempotency/security/SLO contract |
 | `capability-snapshot-v1.schema.json` | `CapabilitySnapshot` | Immutable Resource/Operator/Graph projection consumed by mirror planning |
 | `capability-closure-v1.schema.json` | `CapabilityClosure` | Exact root plus every transitively reachable snapshot for registry-free planning |
+| `mirror-plan-v1.schema.json` | `MirrorPlan` | Sealed payload-free execution generation with exact external-edge bindings and isolation policy |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -49,12 +50,18 @@ source fingerprint without becoming false business capabilities.
   The Java protocol and JSON Schema both cap the root-plus-dependency set at 10001 snapshots; iterative graph
   validation prevents deep dependency chains from consuming the JVM call stack. Its fingerprint covers the
   complete normalized closure.
+- A mirror plan embeds one verified closure and binds every external dependency edge exactly once to a unique
+  BLOGE invocation site. Resolver sources follow the fixed v1 precedence and end in `ABSTAINED`; real external
+  calls, external credentials, network egress, stale/revoked artifacts, unknown effects, incomplete state-model
+  closure, cross-purpose/cross-scope material, and plans longer than 24 hours are rejected before sealing.
 - Revision one must be `DRAFT`; later revisions are contiguous, append-only, and accepted only through the
   lifecycle transition matrix. `REVOKED` is terminal.
 
 ## Independent client admission
 
-The test-kit packages all seven schemas and the compatibility fixture in its JAR. A consumer first
+The test-kit currently packages the seven Stage 0 schemas and compatibility fixture in its JAR. MirrorPlan is the
+first Stage 1 schema; its independent client verifier is intentionally not advertised until compiler and runtime
+integration are complete. A Stage 0 consumer first
 calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
 It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before
 persisting or compiling the artifact.
@@ -105,13 +112,13 @@ All three endpoints derive scope, actor, and clearance from the verified workloa
 cross-scope, and above-clearance reads deliberately share `404 RG.MIRROR.SNAPSHOT_NOT_FOUND` so the API does
 not become an asset-existence oracle.
 
-The closure/projection/schema/nested-DSL/real-Spring increment has 25 green focused tests. The compatibility and
-offline-verifier increment adds 12 focused test-kit cases plus a server-to-fixture drift gate. Full
-`resource-gateway-test-kit` verification passes 243 tests with no failures, errors, or skips. Full Resource Gateway
-verification passes 4350 tests with no failures or errors and 2 skipped browser cases, and repackages the executable
-Spring Boot JAR. This verifies the seven shipped resource graphs, not the three frontend-only visual examples or the
-complete Stage 0 exit gate.
+The Stage 0 baseline verifies all seven shipped resource graphs plus all three frontend visual examples. The
+MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
+focused protocol and probe suite passes 32 tests with no failures, errors, or skips. The latest complete Resource Gateway gate
+before this protocol-only increment passed 4362 tests with no failures or errors and 3 conditional frontend skips;
+the next compiler increment must run the complete gate again before advertising compilation readiness.
 
-The Stage 0 schema presence does not make mirror execution available. Capability discovery must keep
-runtime feature flags disabled until built-in asset closure, API authorization, plan compilation,
-external-leaf interception, isolation, and evidence paths have all passed their own release gates.
+The Stage 1 `MirrorPlan` protocol presence does not make mirror execution available. Capability discovery reports
+`mirrorPlanProtocol=true`, while `mirrorPlanCompilation`, `mirrorExternalLeafInterception`, and `mirrorServing`
+remain false until compiler, interception, isolation, independent verification, and evidence paths pass their own
+release gates.

@@ -37,6 +37,9 @@ class CapabilityProtocolSchemaTest {
         JsonNode transitionSchema = schema("capability-lifecycle-transition-v1.schema.json");
         JsonNode transitionValue = mapper.valueToTree(new CapabilityLifecycleTransitionRequest("", 4,
                 CapabilitySnapshot.Lifecycle.REVIEWED, Instant.parse("2026-08-22T00:00:00Z"), ""));
+        MirrorPlan plan = mirrorPlan(closure);
+        JsonNode planValue = mapper.valueToTree(plan);
+        JsonNode planSchema = schema("mirror-plan-v1.schema.json");
 
         assertProperties(snapshotValue, snapshotSchema.path("properties"));
         assertProperties(closureValue, closureSchema.path("properties"));
@@ -44,6 +47,7 @@ class CapabilityProtocolSchemaTest {
         assertProperties(effectValue, effectSchema.path("properties"));
         assertProperties(provenanceValue, provenanceSchema.path("properties"));
         assertProperties(transitionValue, transitionSchema.path("properties"));
+        assertProperties(planValue, planSchema.path("properties"));
         assertProperties(snapshotValue.path("source"), snapshotSchema.at("/$defs/source/properties"));
         assertProperties(snapshotValue.path("scope"), snapshotSchema.at("/$defs/scope/properties"));
         assertProperties(snapshotValue.path("runtime"), snapshotSchema.at("/$defs/runtime/properties"));
@@ -53,13 +57,47 @@ class CapabilityProtocolSchemaTest {
         assertProperties(contractValue.path("compatibility"), contractSchema.at("/$defs/compatibility/properties"));
         assertProperties(contractValue.path("security"), contractSchema.at("/$defs/security/properties"));
         assertProperties(contractValue.path("slo"), contractSchema.at("/$defs/slo/properties"));
+        assertProperties(planValue.path("scope"), planSchema.at("/$defs/scope/properties"));
+        assertProperties(planValue.path("externalBindings").get(0),
+                planSchema.at("/$defs/externalBinding/properties"));
+        assertProperties(planValue.path("executionServices"),
+                planSchema.at("/$defs/executionServices/properties"));
+        assertProperties(planValue.path("policy"), planSchema.at("/$defs/policy/properties"));
         assertThat(snapshotSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(closureSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(contractSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(effectSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(provenanceSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(transitionSchema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(planSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(snapshotValue.at("/contract/slo/timeout").asText()).isEqualTo("PT3S");
+    }
+
+    private MirrorPlan mirrorPlan(CapabilityClosure closure) {
+        CapabilitySnapshot root = closure.snapshots().stream()
+                .filter(value -> value.kind() == CapabilitySnapshot.Kind.COMPOSED)
+                .findFirst().orElseThrow();
+        CapabilitySnapshot child = closure.snapshots().stream()
+                .filter(value -> value.kind() == CapabilitySnapshot.Kind.EXTERNAL)
+                .findFirst().orElseThrow();
+        MirrorPlan.ExternalBinding binding = new MirrorPlan.ExternalBinding(
+                closure.rootRef(), root.dependencies().getFirst().nodeId(),
+                CapabilityClosureIntegrity.reference(child), "/root/loadOrders#RESOURCE", "/root",
+                child.source().sourceKind(), child.source().sourceRef(),
+                List.of(MirrorPlan.MirrorSource.OWNER_SPECIFIED,
+                        MirrorPlan.MirrorSource.ABSTAINED), List.of("orders-response"));
+        return MirrorPlanIntegrity.seal(mapper, new MirrorPlan("", "orders-mirror", "",
+                closure.rootRef(), closure.fingerprint(), closure.snapshots(), root.scope(),
+                new MirrorArtifactRef("FIXTURE_BUNDLE", "orders-fixture", 1,
+                        "sha256:" + "e".repeat(64)), List.of(binding), null, List.of(),
+                new MirrorPlan.ExecutionServices(Instant.parse("2026-07-22T00:00:00Z"),
+                        42L, null, null),
+                new MirrorPlan.ExecutionPolicy("MIRROR_REHEARSAL", false, false, false,
+                        false, true, MirrorPlan.UnmatchedResolution.ABSTAINED, 1000,
+                        Duration.ofMinutes(5), CapabilityContract.DataClassification.CONFIDENTIAL,
+                        List.of("sg"), List.of(CapabilitySnapshot.Lifecycle.ACTIVE)),
+                Instant.parse("2026-07-22T00:00:00Z"),
+                Instant.parse("2026-07-22T01:00:00Z")));
     }
 
     @Test

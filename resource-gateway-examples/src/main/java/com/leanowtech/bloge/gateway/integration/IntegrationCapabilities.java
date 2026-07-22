@@ -281,6 +281,8 @@ public record IntegrationCapabilities(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.SCHEMA_VERSION));
         objects.put("capabilityClosure", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure.SCHEMA_VERSION));
+        objects.put("mirrorPlan", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION));
         objects.put("capabilityClosureProjectionRequest", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .CapabilityClosureProjectionRequest.SCHEMA_VERSION));
@@ -705,6 +707,7 @@ public record IntegrationCapabilities(
         features.put("capabilitySnapshotProtocol", true);
         features.put("capabilityProjection", true);
         features.put("capabilityClosureProtocol", true);
+        features.put("mirrorPlanProtocol", true);
         features.put("builtInCapabilityClosureProjection", true);
         features.put("visualCapabilityClosureProjection", true);
         features.put("capabilitySnapshotApi", true);

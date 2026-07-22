@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-plan-v1.schema.json",
+  "title": "Resource Gateway Mirror Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "planId", "planFingerprint", "rootCapability",
+    "capabilityClosureFingerprint", "capabilityClosure", "scope", "fixtureBundleRef",
+    "externalBindings", "scenarioPackRef", "stateModelRefs", "executionServices",
+    "policy", "compiledAt", "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorPlan.v1" },
+    "planId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "rootCapability": { "$ref": "#/$defs/capabilityRef" },
+    "capabilityClosureFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "capabilityClosure": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10001,
+      "items": { "$ref": "capability-snapshot-v1.schema.json" }
+    },
+    "scope": { "$ref": "#/$defs/scope" },
+    "fixtureBundleRef": { "$ref": "#/$defs/fixtureBundleRef" },
+    "externalBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/externalBinding" }
+    },
+    "scenarioPackRef": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/scenarioPackRef" }
+      ]
+    },
+    "stateModelRefs": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/stateModelRef" }
+    },
+    "executionServices": { "$ref": "#/$defs/executionServices" },
+    "policy": { "$ref": "#/$defs/policy" },
+    "compiledAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "fixtureBundleRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "FIXTURE_BUNDLE" } } }
+      ]
+    },
+    "scenarioPackRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "SCENARIO_PACK" } } }
+      ]
+    },
+    "stateModelRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "STATE_MODEL" } } }
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "projectId": { "type": "string", "maxLength": 256 },
+        "environmentId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "region": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "externalBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parentCapabilityRef", "dependencyNodeId", "capabilityRef", "invocationSiteId",
+        "graphPath", "sourceKind", "sourceRef", "resolverOrder", "fixtureRuleRefs"
+      ],
+      "properties": {
+        "parentCapabilityRef": { "$ref": "#/$defs/capabilityRef" },
+        "dependencyNodeId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "capabilityRef": { "$ref": "#/$defs/capabilityRef" },
+        "invocationSiteId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "graphPath": { "type": "string", "pattern": "^/", "maxLength": 2048 },
+        "sourceKind": { "enum": ["RESOURCE", "OPERATOR", "GRAPH"] },
+        "sourceRef": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "resolverOrder": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "SESSION_STATE", "OWNER_SPECIFIED", "RECORDED_EXACT", "RECORDED_TRAJECTORY",
+              "RECORDED_CLUSTER", "GOVERNED_REPLAY", "SCHEMA_SYNTHESIZED", "CONTRACT_MOCK",
+              "ABSTAINED"
+            ]
+          }
+        },
+        "fixtureRuleRefs": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+        }
+      }
+    },
+    "executionServices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logicalClock", "randomSeed", "identityFixtureRef", "featureFlagFixtureRef"],
+      "properties": {
+        "logicalClock": { "type": "string", "format": "date-time" },
+        "randomSeed": { "type": "integer" },
+        "identityFixtureRef": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/artifactRef" }
+          ]
+        },
+        "featureFlagFixtureRef": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/artifactRef" }
+          ]
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorizedPurpose", "realExternalCallsAllowed", "externalCredentialsAllowed",
+        "networkEgressAllowed", "schemaSynthesisAllowed", "certificationRequired",
+        "unmatchedResolution", "maximumInvocations", "timeout", "maximumClassification",
+        "allowedRegions", "allowedLifecycles"
+      ],
+      "properties": {
+        "authorizedPurpose": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "realExternalCallsAllowed": { "const": false },
+        "externalCredentialsAllowed": { "const": false },
+        "networkEgressAllowed": { "const": false },
+        "schemaSynthesisAllowed": { "type": "boolean" },
+        "certificationRequired": { "type": "boolean" },
+        "unmatchedResolution": { "const": "ABSTAINED" },
+        "maximumInvocations": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "timeout": { "type": "string", "minLength": 3, "maxLength": 64 },
+        "maximumClassification": {
+          "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+        },
+        "allowedRegions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
+        "allowedLifecycles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": { "enum": ["DRAFT", "REVIEWED", "ACTIVE", "DEPRECATED", "STALE", "REVOKED"] }
+        }
+      }
+    }
+  }
+}

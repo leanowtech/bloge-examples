@@ -114,8 +114,9 @@ enterprise deployments should issue separate author, governor, and rehearsal ide
 closure projection request carries only the portable draft, positive target revision, deterministic creation time,
 and a classification no higher than the caller's clearance. Tenant, organization, project, environment, region,
 purpose, ownership, and `DRAFT` lifecycle are server-derived. The capability probe reports snapshot/closure
-protocol, projection, seven built-in graph closures, visual draft closure projection, API, and lifecycle support as
-available, but keeps
+protocol, projection, seven built-in graph closures, visual draft closure projection, API, lifecycle, and the
+sealed `resourceGateway.mirrorPlan.v1` wire model as available. Protocol availability is deliberately separate from
+runtime readiness: the probe keeps
 `mirrorPlanCompilation`, `mirrorExternalLeafInterception`, and `mirrorServing` false until those paths pass
 their later release gates. The complete protocol and lifecycle rules are in the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md).
