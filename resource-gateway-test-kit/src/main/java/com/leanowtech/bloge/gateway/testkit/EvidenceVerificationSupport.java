@@ -29,8 +29,18 @@ final class EvidenceVerificationSupport {
     }
 
     static String sha256(JsonNode value) {
+        return sha256Bounded(value, Integer.MAX_VALUE);
+    }
+
+    static String sha256Bounded(JsonNode value, int maximumBytes) {
+        if (value == null || maximumBytes < 1) {
+            throw new IllegalArgumentException("Canonical evidence and a positive byte limit are required");
+        }
         try {
             byte[] bytes = JSON.writeValueAsBytes(canonical(value));
+            if (bytes.length > maximumBytes) {
+                throw new IllegalArgumentException("Canonical evidence exceeds its byte limit");
+            }
             return "sha256:" + HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (JsonProcessingException | GeneralSecurityException failure) {

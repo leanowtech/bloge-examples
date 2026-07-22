@@ -22,7 +22,11 @@ class CapabilityMirrorSchemaPackagingTest {
                 "capability-snapshot-v1.schema.json",
                 "capability-closure-v1.schema.json",
                 "capability-lifecycle-transition-v1.schema.json",
-                "capability-mirror-compatibility-v1.schema.json")) {
+                "capability-mirror-compatibility-v1.schema.json",
+                "mirror-resolution-v1.schema.json",
+                "mirror-run-evidence-v1.schema.json",
+                "mirror-evidence-attestation-v1.schema.json",
+                "mirror-evidence-bundle-v1.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
                 assertThat(input).as(resource).isNotNull();
@@ -48,5 +52,22 @@ class CapabilityMirrorSchemaPackagingTest {
 
         assertThat(CapabilityMirrorProtocol.compatibilityBaseline().path("protocol").asText())
                 .isEqualTo(CapabilityMirrorProtocol.INTEGRATION_PROTOCOL);
+    }
+
+    @Test
+    void packagesOneFixedIndependentlyVerifiableStageOneEvidenceFixture() {
+        MirrorEvidenceCompatibilityFixture fixture =
+                CapabilityMirrorProtocol.mirrorEvidenceCompatibilityFixture();
+
+        MirrorEvidenceVerifier.VerificationResult verified = new MirrorEvidenceVerifier()
+                .verify(fixture.bundle(), fixture.verificationKey());
+
+        assertThat(verified.verified()).isTrue();
+        assertThat(verified.runId()).isEqualTo("mirror-run-schema");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) fixture.bundle())
+                .put("bundleFingerprint", "changed");
+        assertThat(new MirrorEvidenceVerifier().verify(
+                CapabilityMirrorProtocol.mirrorEvidenceCompatibilityFixture().bundle(),
+                fixture.verificationKey()).verified()).isTrue();
     }
 }

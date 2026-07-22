@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -27,6 +28,7 @@ import java.util.regex.Pattern;
  * @param executionControlFingerprint exact effective execution-control generation
  * @param rootCapability exact composed capability executed by this run
  * @param fixtureBundleRef exact fixture bundle revision used by the resolver chain
+ * @param externalBindings payload-free external dependency-to-invocation closure
  * @param scope authenticated enterprise namespace
  * @param authorizedPurpose server-authorized non-production purpose
  * @param status normalized terminal run status
@@ -51,6 +53,7 @@ public record MirrorRunEvidence(
         String executionControlFingerprint,
         MirrorArtifactRef rootCapability,
         MirrorArtifactRef fixtureBundleRef,
+        List<ExternalBinding> externalBindings,
         CapabilitySnapshot.Scope scope,
         String authorizedPurpose,
         Status status,
@@ -111,6 +114,7 @@ public record MirrorRunEvidence(
                 "executionControlFingerprint");
         rootCapability = requireKind(rootCapability, "CAPABILITY", "rootCapability");
         fixtureBundleRef = requireKind(fixtureBundleRef, "FIXTURE_BUNDLE", "fixtureBundleRef");
+        externalBindings = orderedExternalBindings(externalBindings);
         scope = Objects.requireNonNull(scope, "scope");
         authorizedPurpose = required(authorizedPurpose, "authorizedPurpose", 256);
         if (authorizedPurpose.toUpperCase(java.util.Locale.ROOT).contains("PRODUCTION")) {
@@ -128,6 +132,7 @@ public record MirrorRunEvidence(
         nodeTraces = orderedNodes(nodeTraces);
         edgeTraces = orderedEdges(edgeTraces);
         resolutions = orderedResolutions(resolutions, runId, planFingerprint);
+        validateResolutionBindings(externalBindings, resolutions);
         isolation = Objects.requireNonNull(isolation, "isolation");
         limitations = orderedStrings(limitations, "limitations", MAXIMUM_LIMITATIONS, 512);
         if (evidenceClass == EvidenceClass.CERTIFIABLE
@@ -135,6 +140,33 @@ public record MirrorRunEvidence(
                 || !limitations.isEmpty())) {
             throw new IllegalArgumentException(
                     "certifiable mirror evidence requires proven egress isolation and no limitations");
+        }
+    }
+
+    /**
+     * Payload-free external dependency binding required for independent resolution-closure checks.
+     *
+     * @param parentCapabilityRef exact composed parent capability
+     * @param dependencyNodeId dependency node declared by the parent capability
+     * @param capabilityRef exact external capability
+     * @param invocationSiteId stable BLOGE invocation site
+     * @param graphPath stable path of the graph that owns the invocation
+     */
+    public record ExternalBinding(
+            MirrorArtifactRef parentCapabilityRef,
+            String dependencyNodeId,
+            MirrorArtifactRef capabilityRef,
+            String invocationSiteId,
+            String graphPath
+    ) {
+        /** Validates one exact payload-free external execution boundary. */
+        public ExternalBinding {
+            parentCapabilityRef = requireKind(parentCapabilityRef, "CAPABILITY",
+                    "parentCapabilityRef");
+            dependencyNodeId = required(dependencyNodeId, "dependencyNodeId", 512);
+            capabilityRef = requireKind(capabilityRef, "CAPABILITY", "capabilityRef");
+            invocationSiteId = required(invocationSiteId, "invocationSiteId", 2_048);
+            graphPath = normalizeGraphPath(graphPath);
         }
     }
 
@@ -358,6 +390,33 @@ public record MirrorRunEvidence(
                 + value.graphPath() + '\0' + value.correlationKey() + '\0'
                 + value.graphOccurrence() + '\0' + value.occurrence()).toList(), "nodeTraces");
         return result;
+    }
+
+    private static List<ExternalBinding> orderedExternalBindings(List<ExternalBinding> values) {
+        List<ExternalBinding> result = values == null ? List.of() : values.stream()
+                .map(value -> Objects.requireNonNull(value, "externalBinding"))
+                .sorted(Comparator.comparing(ExternalBinding::invocationSiteId)
+                        .thenComparing(ExternalBinding::dependencyNodeId)
+                        .thenComparing(value -> value.capabilityRef().id()))
+                .toList();
+        boundedSize(result, "externalBindings", MirrorPlan.MAXIMUM_EXTERNAL_BINDINGS);
+        requireUnique(result.stream().map(ExternalBinding::invocationSiteId).toList(),
+                "externalBindings");
+        return result;
+    }
+
+    private static void validateResolutionBindings(
+            List<ExternalBinding> bindings, List<MirrorResolution> resolutions) {
+        Map<String, ExternalBinding> bySite = new java.util.LinkedHashMap<>();
+        bindings.forEach(binding -> bySite.put(binding.invocationSiteId(), binding));
+        for (MirrorResolution resolution : resolutions) {
+            ExternalBinding binding = bySite.get(resolution.invocationSiteId());
+            if (binding == null || !binding.graphPath().equals(resolution.graphPath())
+                    || !binding.capabilityRef().equals(resolution.capabilityRef())) {
+                throw new IllegalArgumentException(
+                        "mirror resolution must match an exact external binding");
+            }
+        }
     }
 
     private static List<AttemptTrace> orderedAttempts(List<AttemptTrace> values) {

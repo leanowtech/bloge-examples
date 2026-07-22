@@ -83,12 +83,19 @@ public final class MirrorRunEvidenceProjector {
         return new MirrorRunEvidence("", source.runId(), request.requestId(),
                 fingerprint(request.context().asMap()), plan.planId(), plan.planFingerprint(),
                 plan.capabilityClosureFingerprint(), plan.executionControlFingerprint(),
-                plan.rootCapability(), plan.fixtureBundleRef(), plan.scope(),
+                plan.rootCapability(), plan.fixtureBundleRef(), projectBindings(plan), plan.scope(),
                 plan.policy().authorizedPurpose(), MirrorRunEvidence.Status.valueOf(source.status().name()),
                 MirrorRunEvidence.EvidenceClass.EXPLORATORY,
                 source.semanticResultFingerprint(), source.startedAt(), source.completedAt(),
                 projectNodes(source.nodeTrace()), projectEdges(source.edgeTrace()), exactResolutions,
                 isolation, List.copyOf(limitations));
+    }
+
+    private static List<MirrorRunEvidence.ExternalBinding> projectBindings(MirrorPlan plan) {
+        return plan.externalBindings().stream().map(binding ->
+                new MirrorRunEvidence.ExternalBinding(binding.parentCapabilityRef(),
+                        binding.dependencyNodeId(), binding.capabilityRef(),
+                        binding.invocationSiteId(), binding.graphPath())).toList();
     }
 
     private void validateSource(

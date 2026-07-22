@@ -1,0 +1,192 @@
+{
+  "schemaVersion": "resourceGateway.mirrorEvidenceCompatibility.v1",
+  "verificationKey": {
+    "schemaVersion": "toolStudio.resourceGateway.evidenceVerificationKey.v1",
+    "keyId": "memory-ed25519:eecca57d-41e4-4e37-a70c-a96219d20038",
+    "algorithm": "Ed25519",
+    "encodedPublicKey": "MCowBQYDK2VwAyEAB8K4qQ0S2XNyjYWoB/77Sogq0ILt3/ViZI61TE7dbjw=",
+    "createdAt": "2026-07-22T17:40:56.024264Z",
+    "state": "ACTIVE",
+    "provider": "IN_MEMORY"
+  },
+  "bundle": {
+    "schemaVersion": "resourceGateway.mirrorEvidenceBundle.v1",
+    "bundleFingerprint": "sha256:80ec175be742eb1fc55953a91cc3e90e2de9ee4a58c990cc805b807e41e3e28b",
+    "payloadPolicy": "HASH_ONLY",
+    "attestation": {
+      "schemaVersion": "resourceGateway.mirrorEvidenceAttestation.v1",
+      "signatureStatus": "VERIFIED",
+      "runId": "mirror-run-schema",
+      "planFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "evidenceFingerprint": "sha256:ec4502a3f41d2b163972f942ba1b07b3231e82856362d8045e3786d8e2d33886",
+      "signedAt": "2026-07-23T00:00:02Z",
+      "keyId": "memory-ed25519:eecca57d-41e4-4e37-a70c-a96219d20038",
+      "algorithm": "Ed25519",
+      "signature": "3CP1FTC0PuaijzFa+ZdMZ8pxQ/83P7Ce+H/iiNRciqcGNaOY+MlRiSV0JVIXPppNaooAbew8Dq86+1WlRpZ2AQ==",
+      "independentlyVerifiable": true
+    },
+    "evidence": {
+      "schemaVersion": "resourceGateway.mirrorRunEvidence.v1",
+      "runId": "mirror-run-schema",
+      "requestId": "request-1",
+      "requestContextFingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "planId": "plan-1",
+      "planFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "capabilityClosureFingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "executionControlFingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "rootCapability": {
+        "kind": "CAPABILITY",
+        "id": "graph:support",
+        "revision": 1,
+        "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      "fixtureBundleRef": {
+        "kind": "FIXTURE_BUNDLE",
+        "id": "customer-fixture",
+        "revision": 1,
+        "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "externalBindings": [
+        {
+          "parentCapabilityRef": {
+            "kind": "CAPABILITY",
+            "id": "graph:support",
+            "revision": 1,
+            "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+          },
+          "dependencyNodeId": "loadCustomer",
+          "capabilityRef": {
+            "kind": "CAPABILITY",
+            "id": "resource:customer.lookup",
+            "revision": 1,
+            "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "invocationSiteId": "/root/loadCustomer#PRIMARY",
+          "graphPath": "/root"
+        }
+      ],
+      "scope": {
+        "tenantId": "tenant-a",
+        "organizationId": "org-a",
+        "projectId": "support",
+        "environmentId": "test",
+        "region": "sg"
+      },
+      "authorizedPurpose": "MIRROR_REHEARSAL",
+      "status": "PASSED",
+      "evidenceClass": "EXPLORATORY",
+      "semanticResultFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "startedAt": "2026-07-23T00:00:00Z",
+      "completedAt": "2026-07-23T00:00:01Z",
+      "nodeTraces": [
+        {
+          "nodeId": "loadCustomer",
+          "operatorRef": "customer.lookup",
+          "status": "MOCKED",
+          "fidelity": "OUTPUT_LEVEL",
+          "inputFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "outputFingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "errorCode": "",
+          "durationMs": 1,
+          "invocationSiteId": "/root/loadCustomer#PRIMARY",
+          "graphPath": "/root",
+          "correlationKey": "C-1",
+          "occurrence": 1,
+          "graphOccurrence": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "MOCKED",
+              "fidelity": "OUTPUT_LEVEL",
+              "inputFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+              "outputFingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+              "errorCode": "",
+              "durationMs": 1
+            }
+          ]
+        }
+      ],
+      "edgeTraces": [
+        {
+          "edgeId": "loadCustomer->format",
+          "status": "TRANSFERRED",
+          "valueFingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "graphPath": "/root",
+          "correlationKey": "C-1",
+          "graphOccurrence": 1,
+          "fromInvocationSiteId": "/root/loadCustomer#PRIMARY",
+          "toInvocationSiteId": "/root/format#PRIMARY"
+        }
+      ],
+      "resolutions": [
+        {
+          "schemaVersion": "resourceGateway.mirrorResolution.v1",
+          "resolutionFingerprint": "sha256:2a0ce9c60b9fc68d955ec1a274b257c3197e7f801d287f5b3126ff51f418b3bc",
+          "runId": "mirror-run-schema",
+          "planFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "capabilityRef": {
+            "kind": "CAPABILITY",
+            "id": "resource:customer.lookup",
+            "revision": 1,
+            "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "invocationSiteId": "/root/loadCustomer#PRIMARY",
+          "graphPath": "/root",
+          "correlationKey": "C-1",
+          "occurrence": 1,
+          "attempt": 1,
+          "requestFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "status": "RESOLVED",
+          "source": "OWNER_SPECIFIED",
+          "payloadVisibility": "HASH_ONLY",
+          "outputIncluded": false,
+          "output": null,
+          "outputFingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "error": null,
+          "matchedArtifactRefs": [
+            {
+              "kind": "FIXTURE_BUNDLE",
+              "id": "customer-fixture",
+              "revision": 1,
+              "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+            }
+          ],
+          "matchedRuleRefs": [
+            "customer-response"
+          ],
+          "confidence": {
+            "point": 1.0,
+            "lowerBound": 1.0,
+            "upperBound": 1.0,
+            "method": "owner-rule-v1"
+          },
+          "freshness": 1.0,
+          "limitations": [
+            "PAYLOAD_HASH_ONLY"
+          ]
+        }
+      ],
+      "isolation": {
+        "engineMode": "INDEPENDENT_TEST_ENGINE",
+        "interceptorTypes": [],
+        "listenerTypes": [
+          "InvocationRecorder"
+        ],
+        "durableStoresAttached": false,
+        "productionContextCarriersAttached": false,
+        "productionExtensionListenersAttached": false,
+        "realExternalCallsAllowed": false,
+        "externalCredentialsAllowed": false,
+        "networkEgressAllowed": false,
+        "deploymentEgressEnforced": false,
+        "deploymentIsolationRef": null,
+        "limitations": [
+          "DEPLOYMENT_EGRESS_NOT_ATTESTED"
+        ]
+      },
+      "limitations": [
+        "DEPLOYMENT_EGRESS_NOT_ATTESTED"
+      ]
+    }
+  }
+}

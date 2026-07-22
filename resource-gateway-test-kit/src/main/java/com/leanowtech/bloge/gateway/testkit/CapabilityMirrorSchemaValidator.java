@@ -26,7 +26,11 @@ final class CapabilityMirrorSchemaValidator {
             "capability-snapshot-v1.schema.json",
             "capability-closure-v1.schema.json",
             "capability-lifecycle-transition-v1.schema.json",
-            "capability-mirror-compatibility-v1.schema.json");
+            "capability-mirror-compatibility-v1.schema.json",
+            "mirror-resolution-v1.schema.json",
+            "mirror-run-evidence-v1.schema.json",
+            "mirror-evidence-attestation-v1.schema.json",
+            "mirror-evidence-bundle-v1.schema.json");
     private static final Map<String, String> RESOURCE_TO_ID = resourceIds();
 
     private CapabilityMirrorSchemaValidator() {

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.runtime;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence;
 
 import java.time.Instant;
 import java.util.Comparator;
@@ -66,12 +67,33 @@ public record MirrorRunResult(
                 || !evidenceBundle.evidence().executionControlFingerprint()
                 .equals(plan.executionControlFingerprint())
                 || !evidenceBundle.evidence().fixtureBundleRef().equals(plan.fixtureBundleRef())
+                || !externalBindingsMatch(plan, evidenceBundle.evidence().externalBindings())
                 || !evidenceBundle.evidence().semanticResultFingerprint()
                 .equals(execution.evidence().semanticResultFingerprint())
                 || !evidenceBundle.evidence().resolutions().equals(resolutions)) {
             throw new IllegalArgumentException(
                     "mirror evidence bundle must bind the exact plan, run, and resolutions");
         }
+    }
+
+    private static boolean externalBindingsMatch(
+            MirrorPlan plan,
+            List<MirrorRunEvidence.ExternalBinding> evidenceBindings) {
+        if (plan.externalBindings().size() != evidenceBindings.size()) {
+            return false;
+        }
+        for (int index = 0; index < evidenceBindings.size(); index++) {
+            MirrorPlan.ExternalBinding expected = plan.externalBindings().get(index);
+            var actual = evidenceBindings.get(index);
+            if (!expected.parentCapabilityRef().equals(actual.parentCapabilityRef())
+                    || !expected.dependencyNodeId().equals(actual.dependencyNodeId())
+                    || !expected.capabilityRef().equals(actual.capabilityRef())
+                    || !expected.invocationSiteId().equals(actual.invocationSiteId())
+                    || !expected.graphPath().equals(actual.graphPath())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** @return whether graph execution and all fixture assertions passed */

@@ -24,6 +24,12 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 server capability test and standalone test-kit both consume this exact file, preventing either side
 from passing against a separately maintained expectation.
 
+`mirror-evidence-stage1-v1.fixture.json` is the fixed Stage 1 cryptographic compatibility fixture.
+It contains a server-produced `HASH_ONLY` bundle and public Ed25519 key, but no private key or
+business payload. The server rehydrates and verifies it through its Java protocol model; the
+standalone test-kit validates the strict schemas and independently re-derives every nested seal,
+closure, aggregate fingerprint, key policy, and signature from the same file.
+
 ## Visual Graph Projection Boundary
 
 `POST /api/integration/capability-closures/project` accepts
@@ -66,7 +72,10 @@ source fingerprint without becoming false business capabilities.
   canonical fingerprints, and generic string rendering omits output and error diagnostics.
 - A portable mirror evidence bundle never embeds node input, node output, edge value, or resolver output payloads.
   It binds the request-context, plan, capability closure, execution-control generation, fixture revision, semantic
-  result, ordered node/edge traces, every sealed external resolution, and explicit isolation facts. A claimed
+  result, the exact payload-free external binding inventory, ordered node/edge traces, every sealed external
+  resolution, and explicit isolation facts. An independent verifier requires every attempt at an external binding
+  site to have exactly one resolution with the same capability, graph path, request hash, and non-empty output hash;
+  omitted and invented resolutions both fail closed. A claimed
   deployment egress proof must bind an exact `DEPLOYMENT_ISOLATION_ATTESTATION`; an unproven environment remains
   explicitly limited. A bundle is
   emitted only after its domain-separated Ed25519 signature and complete bundle fingerprint verify immediately.
@@ -77,19 +86,26 @@ source fingerprint without becoming false business capabilities.
 
 ## Independent client admission
 
-The test-kit currently packages the seven Stage 0 schemas and compatibility fixture in its JAR. MirrorPlan,
-MirrorResolution, and the three MirrorEvidence objects are Stage 1 schemas; their independent client verifiers are
-intentionally not advertised until offline verification is complete. A Stage 0 consumer first
+The test-kit packages the seven Stage 0 schemas, four Stage 1 evidence schemas, and both shared compatibility
+fixtures in its JAR. A Stage 0 consumer first
 calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
 It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before
-persisting or compiling the artifact.
+persisting or compiling the artifact. A mirror evidence consumer resolves the attestation key id and calls
+`MirrorEvidenceVerifier.verify(bundle, key)` before accepting a run into a correctness workbook or release gate.
 
-The verifier does not deserialize server Java models. It validates wire JSON, re-derives the same
-canonical SHA-256 material, and checks complete exact dependency closure with an explicit-stack
-traversal. Stable `RG.MIRROR.CLIENT.*` failures contain no business payload. Additional future probe
+The verifiers do not deserialize server Java models. They validate wire JSON and independently re-derive canonical
+SHA-256 material. Mirror evidence verification additionally proves trace ordering, external-attempt/resolution
+closure, nested resolution seals, evidence and bundle fingerprints, signing time, key policy, and the
+domain-separated Ed25519 signature. Results contain only bounded reason codes, ids, and fingerprints. Stable
+`RG.MIRROR.CLIENT.*` admission failures contain no business payload. Additional future probe
 fields and object versions are accepted, while a missing required version or false required feature
 fails closed. Stage 1 deferred features are observational and may move from `false` to `true`
 without breaking Stage 0 clients.
+
+The current independently supported consumer is the Java test-kit. Non-Java implementations must first pass the
+fixed Stage 1 fixture byte-for-byte; they must not parse and re-emit numeric values through a representation that
+collapses producer lexical forms such as `1.0` to `1` before hashing. A language-neutral RFC 8785-or-equivalent
+numeric canonicalization profile and N/N-1 consumer conformance matrix remain a production serving gate.
 
 ## Projection implementation
 
@@ -134,7 +150,7 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4410 tests with no
+passes 4429 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
 the executable Spring Boot JAR.
 

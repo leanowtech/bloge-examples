@@ -7,7 +7,7 @@
   "required": [
     "schemaVersion", "runId", "requestId", "requestContextFingerprint", "planId",
     "planFingerprint", "capabilityClosureFingerprint", "executionControlFingerprint",
-    "rootCapability", "fixtureBundleRef", "scope", "authorizedPurpose", "status",
+    "rootCapability", "fixtureBundleRef", "externalBindings", "scope", "authorizedPurpose", "status",
     "evidenceClass", "semanticResultFingerprint", "startedAt", "completedAt",
     "nodeTraces", "edgeTraces", "resolutions", "isolation", "limitations"
   ],
@@ -31,6 +31,11 @@
         { "$ref": "#/$defs/artifactRef" },
         { "properties": { "kind": { "const": "FIXTURE_BUNDLE" } } }
       ]
+    },
+    "externalBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/externalBinding" }
     },
     "scope": { "$ref": "#/$defs/scope" },
     "authorizedPurpose": {
@@ -115,6 +120,30 @@
         "projectId": { "type": "string", "maxLength": 512 },
         "environmentId": { "type": "string", "minLength": 1, "maxLength": 512 },
         "region": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "externalBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parentCapabilityRef", "dependencyNodeId", "capabilityRef", "invocationSiteId", "graphPath"
+      ],
+      "properties": {
+        "parentCapabilityRef": {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "CAPABILITY" } } }
+          ]
+        },
+        "dependencyNodeId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "capabilityRef": {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "CAPABILITY" } } }
+          ]
+        },
+        "invocationSiteId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "graphPath": { "type": "string", "pattern": "^/", "maxLength": 2048 }
       }
     },
     "attemptTrace": {

@@ -102,6 +102,44 @@ same-id/revision fingerprint conflict. It uses iterative graph traversal and acc
 snapshots, while canonical snapshot and closure material is bounded to 2 MiB and 16 MiB respectively.
 No mutable server registry or Spring class is consulted.
 
+Mirror run evidence has a separate fail-closed verifier. Resolve the public key named by the
+attestation, then verify the decoded bundle before admitting it into a correctness workbook:
+
+```java
+JsonNode mirrorBundle = objectMapper.readTree(mirrorEvidenceJson);
+String keyId = mirrorBundle.path("attestation").path("keyId").asText();
+EvidenceVerificationKey key = client.findEvidenceVerificationKey(keyId);
+
+MirrorEvidenceVerifier.VerificationResult result =
+        new MirrorEvidenceVerifier().verify(mirrorBundle, key);
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+Verification re-derives strict Schema admission, deterministic ordering, exact external-attempt to
+resolution closure, request/output hash binding, nested resolution seals, evidence and bundle
+fingerprints, signing-time key policy, and the domain-separated Ed25519 signature. Its result is
+payload-free and suitable for CI logs. Canonical evidence, bundle, and resolution material is
+bounded to 64 MiB, 72 MiB, and 20 MiB respectively.
+
+Run the packaged fixed fixture in dependency-upgrade and startup probes:
+
+```java
+MirrorEvidenceCompatibilityFixture fixture =
+        CapabilityMirrorProtocol.mirrorEvidenceCompatibilityFixture();
+MirrorEvidenceVerifier.VerificationResult compatibility =
+        new MirrorEvidenceVerifier().verify(
+                fixture.bundle(), fixture.verificationKey());
+if (!compatibility.verified()) {
+    throw new IllegalStateException("Mirror evidence provider is incompatible");
+}
+```
+
+The fixture is produced by the server and independently consumed here. It includes no private key
+or business payload. Non-Java implementations are not certified merely by matching field names;
+they must pass this cryptographic fixture without lossy numeric reserialization.
+
 ## Use
 
 Start Resource Gateway with its `test` or `staging` profile, then discover the

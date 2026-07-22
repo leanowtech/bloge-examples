@@ -238,7 +238,7 @@ class MirrorEvidenceIntegrityServiceTest {
         MirrorRunEvidence certifiable = new MirrorRunEvidence("", base.runId(), base.requestId(),
                 base.requestContextFingerprint(), base.planId(), base.planFingerprint(),
                 base.capabilityClosureFingerprint(), base.executionControlFingerprint(),
-                base.rootCapability(), base.fixtureBundleRef(), base.scope(),
+                base.rootCapability(), base.fixtureBundleRef(), base.externalBindings(), base.scope(),
                 base.authorizedPurpose(), base.status(), MirrorRunEvidence.EvidenceClass.CERTIFIABLE,
                 base.semanticResultFingerprint(), base.startedAt(), base.completedAt(),
                 base.nodeTraces(), base.edgeTraces(), base.resolutions(), proven, List.of());
@@ -247,7 +247,7 @@ class MirrorEvidenceIntegrityServiceTest {
         assertThatThrownBy(() -> new MirrorRunEvidence("", base.runId(), base.requestId(),
                 base.requestContextFingerprint(), base.planId(), base.planFingerprint(),
                 base.capabilityClosureFingerprint(), base.executionControlFingerprint(),
-                base.rootCapability(), base.fixtureBundleRef(), base.scope(),
+                base.rootCapability(), base.fixtureBundleRef(), base.externalBindings(), base.scope(),
                 base.authorizedPurpose(), base.status(), MirrorRunEvidence.EvidenceClass.CERTIFIABLE,
                 base.semanticResultFingerprint(), base.startedAt(), base.completedAt(),
                 base.nodeTraces(), base.edgeTraces(), base.resolutions(), falselyLimited, List.of()))
@@ -268,7 +268,7 @@ class MirrorEvidenceIntegrityServiceTest {
         MirrorRunEvidence value = new MirrorRunEvidence("", base.runId(), base.requestId(),
                 base.requestContextFingerprint(), base.planId(), base.planFingerprint(),
                 base.capabilityClosureFingerprint(), base.executionControlFingerprint(),
-                base.rootCapability(), base.fixtureBundleRef(), base.scope(),
+                base.rootCapability(), base.fixtureBundleRef(), base.externalBindings(), base.scope(),
                 base.authorizedPurpose(), base.status(), base.evidenceClass(),
                 base.semanticResultFingerprint(), base.startedAt(), base.completedAt(),
                 base.nodeTraces(), base.edgeTraces(), base.resolutions(), isolation,
@@ -290,7 +290,7 @@ class MirrorEvidenceIntegrityServiceTest {
                 false, false, false, false, null,
                 List.of("DEPLOYMENT_EGRESS_NOT_ATTESTED"));
         return new MirrorRunEvidence("", RUN_ID, "mirror-request-1", CONTEXT,
-                "support-plan", PLAN, CLOSURE, CONTROL, ROOT, FIXTURE, SCOPE,
+                "support-plan", PLAN, CLOSURE, CONTROL, ROOT, FIXTURE, List.of(binding()), SCOPE,
                 "MIRROR_REHEARSAL", MirrorRunEvidence.Status.PASSED,
                 MirrorRunEvidence.EvidenceClass.EXPLORATORY, SEMANTIC, started,
                 started.plusSeconds(1), List.of(node(OUTPUT)), List.of(edge()),
@@ -344,7 +344,8 @@ class MirrorEvidenceIntegrityServiceTest {
         return new MirrorRunEvidence(source.schemaVersion(), source.runId(), source.requestId(),
                 source.requestContextFingerprint(), source.planId(), source.planFingerprint(),
                 source.capabilityClosureFingerprint(), source.executionControlFingerprint(),
-                source.rootCapability(), source.fixtureBundleRef(), source.scope(),
+                source.rootCapability(), source.fixtureBundleRef(), source.externalBindings(),
+                source.scope(),
                 source.authorizedPurpose(), source.status(),
                 evidenceClass == null ? source.evidenceClass() : evidenceClass,
                 source.semanticResultFingerprint(), source.startedAt(), source.completedAt(),
@@ -368,5 +369,10 @@ class MirrorEvidenceIntegrityServiceTest {
 
     private static String fingerprint(char value) {
         return "sha256:" + String.valueOf(value).repeat(64);
+    }
+
+    private static MirrorRunEvidence.ExternalBinding binding() {
+        return new MirrorRunEvidence.ExternalBinding(ROOT, "loadCustomer", EXTERNAL,
+                "/root/loadCustomer#PRIMARY", "/root");
     }
 }
