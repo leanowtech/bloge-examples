@@ -13,6 +13,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - a dependency-closed `TestSuiteBuilder` with exact target/fixture references and typed semantic
   branch, decision, retry, fallback, timeout, and compensation requirements;
 - runtime validation against the packaged Draft 2020-12 schema plus request/response identity binding;
+- all capability-mirror Draft 2020-12 schemas, a machine-readable Stage 0 compatibility baseline,
+  forward-compatible capability-probe negotiation, and registry-free offline verification of sealed
+  `CapabilitySnapshot` and `CapabilityClosure` artifacts;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -53,6 +56,51 @@ backed by BLOGE suspend state. This test-kit deliberately does not yet expose th
 surface as a typed Java client; it packages the checkpoint schema and only the narrow request-index
 rollout proof needed by the fleet gate. Direct durable-control consumers should use the authoritative
 testing API/schema until a generation-matched typed client is added.
+
+## Capability mirror compatibility and offline verification
+
+Mirror consumers should negotiate the server before importing artifacts. Pass the decoded
+`/api/integration/capabilities` payload to `CapabilityMirrorCompatibility`; the integration envelope
+is not part of this method's input:
+
+```java
+JsonNode capabilityPayload = objectMapper.readTree(capabilityResponseBody)
+        .path("payload");
+
+CapabilityMirrorCompatibility.Assessment compatibility =
+        CapabilityMirrorCompatibility.assess(capabilityPayload);
+compatibility.requireCompatible();
+
+String snapshotVersion = compatibility.negotiatedObjectVersions()
+        .get("capabilitySnapshot");
+boolean planCompilationAvailable = compatibility.deferredFeatures()
+        .get("mirrorPlanCompilation");
+```
+
+Required protocol/object versions and feature facts fail closed. Deferred Stage 1 features are
+reported but do not make a Stage 0 server incompatible when they are later enabled. Unknown probe
+fields and additional object versions are intentionally tolerated. `reasonCodes()` and
+`requireCompatible()` contain only stable `RG.MIRROR.CLIENT.*` codes, never server payload values.
+
+After negotiation, verify every exported artifact before registry ingestion, impact analysis, or
+mirror-plan compilation:
+
+```java
+JsonNode snapshot = objectMapper.readTree(snapshotJson);
+CapabilityMirrorVerifier.VerifiedArtifact verifiedSnapshot =
+        CapabilityMirrorVerifier.verifySnapshot(snapshot);
+
+JsonNode closure = objectMapper.readTree(closureJson);
+CapabilityMirrorVerifier.VerifiedClosure verifiedClosure =
+        CapabilityMirrorVerifier.verifyClosure(closure);
+```
+
+The verifier uses the exact schemas packaged in the JAR and independently re-derives canonical
+fingerprints. Closure verification additionally requires one exact composed root, one enterprise
+scope, all and only reachable snapshots, no dependency cycle, no duplicate exact reference, and no
+same-id/revision fingerprint conflict. It uses iterative graph traversal and accepts up to 10,001
+snapshots, while canonical snapshot and closure material is bounded to 2 MiB and 16 MiB respectively.
+No mutable server registry or Spring class is consulted.
 
 ## Use
 

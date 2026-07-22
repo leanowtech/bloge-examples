@@ -1,8 +1,9 @@
 # Resource Gateway Mirror Protocol Schemas
 
 This directory is the wire-contract authority for the Resource Gateway capability-mirror protocol.
-Every schema is strict (`additionalProperties: false`), versioned independently, and paired with a
-Java protocol model and field-closure test in `resource-gateway-examples`.
+Every schema is strict (`additionalProperties: false`) and independently versioned. Server protocol
+objects have field-closure tests in `resource-gateway-examples`; cross-system compatibility and
+offline artifact verification live in the independent `resource-gateway-test-kit`.
 
 | Schema | Java model | Purpose |
 |---|---|---|
@@ -12,6 +13,11 @@ Java protocol model and field-closure test in `resource-gateway-examples`.
 | `capability-snapshot-v1.schema.json` | `CapabilitySnapshot` | Immutable Resource/Operator/Graph projection consumed by mirror planning |
 | `capability-closure-v1.schema.json` | `CapabilityClosure` | Exact root plus every transitively reachable snapshot for registry-free planning |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
+| `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
+
+`capability-mirror-stage0-v1.fixture.json` is the authoritative Stage 0 compatibility fixture. The
+server capability test and standalone test-kit both consume this exact file, preventing either side
+from passing against a separately maintained expectation.
 
 ## Invariants
 
@@ -31,6 +37,20 @@ Java protocol model and field-closure test in `resource-gateway-examples`.
   complete normalized closure.
 - Revision one must be `DRAFT`; later revisions are contiguous, append-only, and accepted only through the
   lifecycle transition matrix. `REVOKED` is terminal.
+
+## Independent client admission
+
+The test-kit packages all seven schemas and the compatibility fixture in its JAR. A consumer first
+calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
+It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before
+persisting or compiling the artifact.
+
+The verifier does not deserialize server Java models. It validates wire JSON, re-derives the same
+canonical SHA-256 material, and checks complete exact dependency closure with an explicit-stack
+traversal. Stable `RG.MIRROR.CLIENT.*` failures contain no business payload. Additional future probe
+fields and object versions are accepted, while a missing required version or false required feature
+fails closed. Stage 1 deferred features are observational and may move from `false` to `true`
+without breaking Stage 0 clients.
 
 ## Projection implementation
 
@@ -71,10 +91,12 @@ All three endpoints derive scope, actor, and clearance from the verified workloa
 cross-scope, and above-clearance reads deliberately share `404 RG.MIRROR.SNAPSHOT_NOT_FOUND` so the API does
 not become an asset-existence oracle.
 
-The closure/projection/schema/nested-DSL/real-Spring increment has 25 green focused tests. The broader selected
-protocol/repository/API/probe suite has 66 green tests. The full `clean verify` baseline is 4349 tests, 0 failures,
-0 errors, and 2 skipped; the executable Spring Boot JAR was also repackaged successfully. This verifies the seven
-shipped resource graphs, not the three frontend-only visual examples or the complete Stage 0 exit gate.
+The closure/projection/schema/nested-DSL/real-Spring increment has 25 green focused tests. The compatibility and
+offline-verifier increment adds 12 focused test-kit cases plus a server-to-fixture drift gate. Full
+`resource-gateway-test-kit` verification passes 243 tests with no failures, errors, or skips. Full Resource Gateway
+verification passes 4350 tests with no failures or errors and 2 skipped browser cases, and repackages the executable
+Spring Boot JAR. This verifies the seven shipped resource graphs, not the three frontend-only visual examples or the
+complete Stage 0 exit gate.
 
 The Stage 0 schema presence does not make mirror execution available. Capability discovery must keep
 runtime feature flags disabled until built-in asset closure, API authorization, plan compilation,

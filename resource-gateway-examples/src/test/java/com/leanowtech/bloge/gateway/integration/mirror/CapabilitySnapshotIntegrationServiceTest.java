@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationCapabilities;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
@@ -16,6 +17,8 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 
@@ -134,6 +137,34 @@ class CapabilitySnapshotIntegrationServiceTest {
         assertThat(capabilities.endpoints())
                 .contains(new IntegrationCapabilities.Endpoint("GET",
                         "/api/integration/capability-snapshots/{capabilityId}"));
+    }
+
+    @Test
+    void capabilityProbeSatisfiesTheSharedStageZeroCompatibilityFixture() throws Exception {
+        JsonNode baseline = mapper.readTree(Files.readString(Path.of("..", "docs", "schemas",
+                "resource-gateway-mirror", "capability-mirror-stage0-v1.fixture.json")));
+        IntegrationCapabilities capabilities = IntegrationCapabilities.current();
+
+        assertThat(capabilities.protocol()).isEqualTo(baseline.path("protocol").asText());
+        assertThat(baseline.path("protocolVersions"))
+                .extracting(JsonNode::asText)
+                .contains(capabilities.protocolVersion());
+        baseline.path("requiredObjects").fields().forEachRemaining(required ->
+                assertThat(capabilities.supportedObjects().get(required.getKey()))
+                        .as(required.getKey())
+                        .containsAnyElementsOf(textValues(required.getValue())));
+        baseline.path("requiredFeatures").forEach(required ->
+                assertThat(capabilities.features().get(required.asText()))
+                        .as(required.asText()).isTrue());
+        baseline.path("deferredFeatures").forEach(deferred ->
+                assertThat(capabilities.features().get(deferred.asText()))
+                        .as(deferred.asText()).isFalse());
+    }
+
+    private static List<String> textValues(JsonNode array) {
+        java.util.ArrayList<String> values = new java.util.ArrayList<>();
+        array.forEach(value -> values.add(value.asText()));
+        return List.copyOf(values);
     }
 
     private static void assertNotFound(org.assertj.core.api.ThrowableAssert.ThrowingCallable callable) {

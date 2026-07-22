@@ -90,6 +90,15 @@
                     <include>evidence-key-set-trust-bundle-v1.schema.json</include>
                 </includes>
             </resource>
+            <resource>
+                <directory>../docs/schemas/resource-gateway-mirror</directory>
+                <targetPath>schemas/resource-gateway-mirror</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>*.schema.json</include>
+                    <include>*.fixture.json</include>
+                </includes>
+            </resource>
         </resources>
         <plugins>
             <plugin>

@@ -256,7 +256,14 @@ builders, bounded deterministic identity/feature-flag fixture controls, typed ca
 exact suite execution, signed bounded stability analysis,
 signed retained-window and compact-range trend reconstruction, pinned-key-set offline verification, payload-free
 assertions/XML, and the fail-closed CLI instead of
-hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The stability protocol's
+hand-assembling HTTP requests or interpreting aggregate evidence ad hoc. The same independent JAR
+now packages all capability-mirror schemas plus the shared Stage 0 compatibility fixture. ANEKE and
+other governance consumers can negotiate `/api/integration/capabilities` and verify snapshot/closure
+schema, canonical fingerprint, exact dependency closure, and enterprise scope without linking this
+Spring Boot application. See the test-kit's capability-mirror section and
+[`docs/schemas/resource-gateway-mirror`](../docs/schemas/resource-gateway-mirror/README.md).
+
+The stability protocol's
 terminal publication now also verifies and signs a payload-free compact observation, then commits
 that observation, its contiguous per-suite ledger coordinate, the full terminal record, progress
 consumption, and lease consumption in one database transaction. This is the durable write-side

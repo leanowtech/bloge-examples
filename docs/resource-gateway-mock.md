@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 通用协议、projection、生命周期仓储、Integration API、probe 与 7 张内置资源图闭包已完成，3 个画布示例和 test-kit 进行中 |
+| 状态 | Accepted / In implementation；Stage 0 通用协议、projection、生命周期仓储、Integration API、probe、7 张内置资源图闭包与独立 test-kit 验证已完成，剩余 3 个画布示例闭包 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -38,17 +38,21 @@
   条件依赖进入闭包；raw DSL digest 进入 graph source fingerprint，避免 importer 尚未平铺的 DSL 变化逃逸。
 - `aiEnrichedSearch` 的三个 streaming Java operator 会进入闭包，但因 visual runtime 尚不支持该执行模式而保持
   runtime blocked；`resourceDispatch` 的动态资源选择保持 effect unknown/runtime blocked，其余五张静态资源图 ready。
-- 六份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
+- 七份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
   矛盾 effect、伪造统计置信度和无 lineage 的 recorded/inferred provenance。
 - Stage 0 第三增量已完成 full-scope H2 append-only repository、lifecycle 状态机和受身份/用途/clearance
   约束的 Integration API。revision gap、内容篡改、非法跃迁、跨 scope 与越级读取均 fail closed；同 fingerprint
   的 exact retry 幂等。
 - capability probe 已如实声明 snapshot/closure protocol、projection、7 图 closure projection、API/lifecycle 为可用，
   同时将 MirrorPlan、external-leaf interception 和 mirror serving 保持为 `false`。
-- 当前仍未完成 3 个 visual examples 的 capability closure、test-kit、MirrorPlan 与 external-leaf runtime，因此
-  Stage 0 尚未通过退出门禁。本增量新增/强化的 closure、projection、schema、nested DSL 与真实 Spring 组合门禁
-  共 25 tests 全绿；相关协议/API/probe 聚合验证 66 tests 全绿。完整 `clean verify` 基线为 4349 tests、
-  0 failures、0 errors、2 skipped，且 Spring Boot 可执行 JAR 已成功重打包。
+- 独立 `resource-gateway-test-kit` 已打包全部 Mirror Schema 和共享 Stage 0 compatibility fixture；
+  `CapabilityMirrorCompatibility` 对 capability probe 做前向兼容的协议/对象/feature 协商，
+  `CapabilityMirrorVerifier` 可离线复验 Snapshot/Closure 的 strict Schema、canonical fingerprint、完整 scope、
+  exact dependency、环和孤儿，无需依赖服务端 Spring 类。服务端测试直接读取同一 fixture，阻止双边预期漂移。
+- 当前仍未完成 3 个 visual examples 的 capability closure、MirrorPlan 与 external-leaf runtime，因此 Stage 0
+  尚未通过退出门禁。本增量新增 12 个 test-kit compatibility/verifier 测试和 1 个 server-to-fixture 漂移门禁；
+  `resource-gateway-test-kit` 全量 `clean verify` 为 243 项测试全绿，Resource Gateway 全量 `clean verify`
+  为 4350 项测试、0 失败、0 错误、2 跳过，并成功重打可执行 Spring Boot JAR。
 
 ---
 
@@ -135,7 +139,7 @@ Resource Gateway 已有的工业底座应直接复用：
 
 | 能力域 | 当前成熟度 | 主要缺口 |
 |---|---:|---|
-| Resource/Graph/Schema | 82% | Capability/Effect/Closure、7 张内置图投影、生命周期仓储与 snapshot API 已落地；缺 3 个画布示例、closure API、test-kit compatibility fixture |
+| Resource/Graph/Schema | 85% | Capability/Effect/Closure、7 张内置图投影、生命周期仓储、snapshot API、共享 compatibility fixture 与独立离线 verifier 已落地；缺 3 个画布示例和 closure API |
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
 | Evidence/Replay | 75% | 缺 mirror provenance、state trace、fidelity observation 和 outcome lineage |
 | 递归 DAG 测试 | 65% | 缺统一镜像编译计划和 contract-mock 展开治理 |
@@ -1010,9 +1014,10 @@ SRE runbook 和生产认证包。
 真实 mirror serving，避免协议尚未冻结时把临时模型固化进运行时。
 
 当前领取状态：RG-MIR-001/004/005 已完成通用协议、生命周期、仓储、Integration API 与诚实 probe；
-RG-MIR-002/003 已完成通用 projection、effect 汇总、7 张内置 graph closure 和闭包完整性验证，但仍须补齐
-3 个 visual example closure 与 test-kit compatibility fixture。RG-MIR-006 至 012 仍按上述依赖推进。这里的“完成”只指 ticket 内已列明的增量，
-不代表 Stage 0 已过退出门禁。
+RG-MIR-002/003 已完成通用 projection、effect 汇总、7 张内置 graph closure 和闭包完整性验证；
+RG-MIR-009 已完成独立 compatibility 协商、Schema/fixture 打包和 Snapshot/Closure 离线复验。
+仍须补齐 3 个 visual example closure；RG-MIR-006/007/008/010/011/012 按上述依赖推进。这里的“完成”
+只指 ticket 内已列明的增量，不代表 Stage 0 已过退出门禁。
 
 ## 20. 测试策略与 Definition of Done
 

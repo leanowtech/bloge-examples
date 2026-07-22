@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "resourceGateway.capabilityMirrorCompatibility.v1",
+  "protocol": "ToolStudioResourceGatewayProtocol",
+  "protocolVersions": [
+    "1.0.0"
+  ],
+  "requiredObjects": {
+    "artifactProvenance": [
+      "resourceGateway.artifactProvenance.v1"
+    ],
+    "effectContract": [
+      "resourceGateway.effectContract.v1"
+    ],
+    "capabilityContract": [
+      "resourceGateway.capabilityContract.v1"
+    ],
+    "capabilitySnapshot": [
+      "resourceGateway.capabilitySnapshot.v1"
+    ],
+    "capabilityClosure": [
+      "resourceGateway.capabilityClosure.v1"
+    ],
+    "capabilityLifecycleTransition": [
+      "resourceGateway.capabilityLifecycleTransition.v1"
+    ]
+  },
+  "requiredFeatures": [
+    "capabilitySnapshotProtocol",
+    "capabilityProjection",
+    "capabilityClosureProtocol",
+    "builtInCapabilityClosureProjection",
+    "capabilitySnapshotApi",
+    "capabilityLifecycleFencing"
+  ],
+  "deferredFeatures": [
+    "mirrorPlanCompilation",
+    "mirrorExternalLeafInterception",
+    "mirrorServing"
+  ]
+}
