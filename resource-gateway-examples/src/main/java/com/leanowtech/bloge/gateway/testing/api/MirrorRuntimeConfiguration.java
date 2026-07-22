@@ -4,16 +4,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
+import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunService;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,8 +37,9 @@ import java.time.Clock;
  * profile.</p>
  *
  * <p>This configuration assembles the internal Stage 1 kernel and append-only payload-free plan
- * and evidence stores. Protected HTTP adapters are added separately, so the capability probe must
- * remain closed until authenticated API admission and deployment isolation are complete.</p>
+ * and evidence stores. The profile-gated mirror controller and plan application service add the
+ * protected planning adapter; the availability marker is emitted only after that service has been
+ * assembled. Execution serving remains closed until its protected adapter is complete.</p>
  */
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
@@ -112,6 +118,18 @@ public class MirrorRuntimeConfiguration {
     }
 
     /**
+     * Creates the append-only full-enterprise-scope fixture authorization index.
+     *
+     * @param jdbc application JDBC boundary
+     * @return payload-free mirror fixture scope repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorFixtureScopeRepository mirrorFixtureScopeRepository(JdbcTemplate jdbc) {
+        return new DatabaseMirrorFixtureScopeRepository(jdbc);
+    }
+
+    /**
      * Creates the append-only independently verified evidence store.
      *
      * @param jdbc application JDBC boundary
@@ -126,5 +144,19 @@ public class MirrorRuntimeConfiguration {
             ObjectMapper objectMapper,
             MirrorEvidenceIntegrityService evidenceIntegrity) {
         return new DatabaseMirrorEvidenceRepository(jdbc, objectMapper, evidenceIntegrity);
+    }
+
+    /**
+     * Publishes honest protected-API readiness to the integration capability probe.
+     *
+     * @param planService fully assembled authoritative plan application boundary
+     * @return profile-owned mirror capability marker
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(MirrorPlanIntegrationService.class)
+    public MirrorRuntimeAvailability mirrorRuntimeAvailability(
+            MirrorPlanIntegrationService planService) {
+        return new MirrorRuntimeAvailability(true, false);
     }
 }

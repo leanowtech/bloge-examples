@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice(assignableTypes = {
         ToolStudioIntegrationController.class,
-        CapabilityClosureIntegrationController.class
+        CapabilityClosureIntegrationController.class,
+        MirrorIntegrationController.class
 })
 public class IntegrationProblemHandler {
 

@@ -1,0 +1,428 @@
+package com.leanowtech.bloge.gateway.integration.mirror;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.api.FixtureBundleIntegrityException;
+import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRepository;
+import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
+import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundleIntegrity;
+import com.leanowtech.bloge.gateway.testing.api.TestReplayPayloadService;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.evidence.GraphArtifactFingerprint;
+import com.leanowtech.bloge.gateway.testing.planning.CompiledMirrorPlan;
+import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompilationRequest;
+import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
+import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanRejectedException;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Service;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.regex.Pattern;
+
+/**
+ * Authenticated application boundary for compiling and reading immutable mirror plans.
+ *
+ * <p>This service is deliberately not a thin wrapper around {@link MirrorPlanCompiler}. It closes
+ * every mutable lookup first: the current graph is fingerprinted, the fixture envelope is
+ * independently verified against the full lookup key, governed replay values are frozen, and the
+ * sealed capability scope is compared with the authenticated enterprise scope. Only then is the
+ * pure compiler invoked. Exact retries reuse the original server compilation instant and therefore
+ * produce the same plan fingerprint; a changed request under the same plan id is rejected.</p>
+ */
+@Service
+@Profile("!production & (test | staging)")
+@ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
+public class MirrorPlanIntegrationService {
+    /** Only the dedicated non-production purpose may compile or read mirror plans. */
+    public static final String AUTHORIZED_PURPOSE = "MIRROR_REHEARSAL";
+    /** Bounded Stage 1 plan lifetime. */
+    public static final Duration MAXIMUM_PLAN_LIFETIME = Duration.ofHours(24);
+    /** Bounded Stage 1 execution timeout. */
+    public static final Duration MAXIMUM_TIMEOUT = Duration.ofMinutes(15);
+    /** Bounded Stage 1 static and dynamic invocation budget. */
+    public static final int MAXIMUM_INVOCATIONS = 100_000;
+
+    private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,511}");
+    private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+
+    private final MirrorPlanCompiler compiler;
+    private final MirrorPlanRepository plans;
+    private final FixtureBundleRepository fixtures;
+    private final MirrorFixtureScopeRepository fixtureScopes;
+    private final TestReplayPayloadService replayPayloads;
+    private final GatewayGraphService graphs;
+    private final ObjectMapper mapper;
+    private final Clock clock;
+
+    /**
+     * Creates the protected plan application service.
+     *
+     * @param compiler pure exact-artifact mirror compiler
+     * @param plans append-only plan repository
+     * @param fixtures immutable governed fixture registry
+     * @param fixtureScopes full-enterprise-scope fixture authorization index
+     * @param replayPayloads governed replay resolver
+     * @param graphs authoritative registered graph catalog
+     * @param mapper canonical protocol mapper
+     */
+    @Autowired
+    public MirrorPlanIntegrationService(
+            MirrorPlanCompiler compiler,
+            MirrorPlanRepository plans,
+            FixtureBundleRepository fixtures,
+            MirrorFixtureScopeRepository fixtureScopes,
+            TestReplayPayloadService replayPayloads,
+            GatewayGraphService graphs,
+            ObjectMapper mapper) {
+        this(compiler, plans, fixtures, fixtureScopes, replayPayloads, graphs, mapper,
+                Clock.systemUTC());
+    }
+
+    /** Full constructor for deterministic application-service tests. */
+    public MirrorPlanIntegrationService(
+            MirrorPlanCompiler compiler,
+            MirrorPlanRepository plans,
+            FixtureBundleRepository fixtures,
+            MirrorFixtureScopeRepository fixtureScopes,
+            TestReplayPayloadService replayPayloads,
+            GatewayGraphService graphs,
+            ObjectMapper mapper,
+            Clock clock) {
+        this.compiler = Objects.requireNonNull(compiler, "compiler");
+        this.plans = Objects.requireNonNull(plans, "plans");
+        this.fixtures = Objects.requireNonNull(fixtures, "fixtures");
+        this.fixtureScopes = Objects.requireNonNull(fixtureScopes, "fixtureScopes");
+        this.replayPayloads = replayPayloads;
+        this.graphs = Objects.requireNonNull(graphs, "graphs");
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    /**
+     * Resolves authoritative artifacts, compiles a sealed plan, and persists it append-only.
+     *
+     * @param request caller-reviewed content-addressed compile command
+     * @param identity authenticated enterprise identity and purpose
+     * @return newly persisted plan or the byte-equivalent result of an exact retry
+     */
+    public MirrorPlan create(MirrorPlanCreateRequest request, IntegrationRequestContext identity) {
+        CapabilitySnapshot.Scope scope = requireMirrorIdentity(identity);
+        validateRequest(request, identity);
+        requireClosureScope(request.capabilityClosure(), scope, identity);
+
+        Optional<MirrorPlan> existing = findStored(scope, request.planId(), identity);
+        Instant compiledAt = existing.map(MirrorPlan::compiledAt).orElseGet(clock::instant);
+        validateTemporalPolicy(request.expiresAt(), compiledAt, clock.instant(), identity);
+
+        Graph graph = requireGraph(request.graphName(), identity);
+        String currentGraphFingerprint = GraphArtifactFingerprint.of(mapper, graph);
+        if (!currentGraphFingerprint.equals(request.expectedGraphArtifactFingerprint())) {
+            throw conflict(identity, "RG.MIRROR.GRAPH_ARTIFACT_STALE",
+                    "The registered graph differs from the reviewed graph artifact.",
+                    Map.of("currentGraphArtifactFingerprint", currentGraphFingerprint));
+        }
+
+        StoredFixtureBundle storedFixture = requireFixture(
+                request.fixtureBundleRef(), scope, identity);
+        FixtureBundle fixture = storedFixture.bundle();
+        ResolvedReplayPayloads replays = resolveReplayPayloads(fixture, identity);
+        MirrorPlan.ExecutionPolicy policy = serverPolicy(request, identity, scope);
+
+        CompiledMirrorPlan compiled;
+        try {
+            compiled = compiler.compile(new MirrorPlanCompilationRequest(
+                    request.planId(), graph, currentGraphFingerprint,
+                    request.capabilityClosure(), fixture, replays, policy, null,
+                    compiledAt, request.expiresAt()));
+        } catch (MirrorPlanRejectedException rejected) {
+            throw conflict(identity, rejected.code(),
+                    "Mirror plan compilation rejected an inconsistent artifact closure.",
+                    rejected.diagnostics().isEmpty()
+                            ? Map.of() : Map.of("diagnostics", rejected.diagnostics()));
+        } catch (IllegalArgumentException invalid) {
+            throw badRequest(identity, "RG.MIRROR.PLAN_COMPILE_REQUEST_INVALID",
+                    "Mirror plan compilation inputs are invalid.", Map.of());
+        }
+
+        if (existing.isPresent()
+                && !existing.get().planFingerprint().equals(compiled.plan().planFingerprint())) {
+            throw conflict(identity, "RG.MIRROR.PLAN_IDEMPOTENCY_CONFLICT",
+                    "The plan id already identifies different immutable compile inputs.", Map.of());
+        }
+        try {
+            return plans.create(compiled.plan());
+        } catch (IllegalArgumentException conflict) {
+            throw conflict(identity, "RG.MIRROR.PLAN_IDEMPOTENCY_CONFLICT",
+                    "The plan id already identifies different immutable compile inputs.", Map.of());
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.MIRROR.PLAN_STORE_UNAVAILABLE",
+                    "The isolated mirror plan store is unavailable.");
+        }
+    }
+
+    /**
+     * Reads one verified plan in the exact authenticated enterprise scope.
+     *
+     * @param planId scoped plan id
+     * @param identity authenticated enterprise identity and purpose
+     * @return verified payload-free plan
+     */
+    public MirrorPlan find(String planId, IntegrationRequestContext identity) {
+        CapabilitySnapshot.Scope scope = requireMirrorIdentity(identity);
+        if (!IDENTIFIER.matcher(normalize(planId)).matches()) {
+            throw badRequest(identity, "RG.MIRROR.PLAN_ID_INVALID",
+                    "Mirror plan id is invalid.", Map.of());
+        }
+        return findStored(scope, normalize(planId), identity)
+                .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
+                        "RG.MIRROR.PLAN_NOT_FOUND",
+                        "Mirror plan was not found in the authorized scope.",
+                        identity.correlationId(), Map.of())));
+    }
+
+    private Optional<MirrorPlan> findStored(
+            CapabilitySnapshot.Scope scope,
+            String planId,
+            IntegrationRequestContext identity) {
+        try {
+            return plans.find(scope, normalize(planId));
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.MIRROR.PLAN_STORE_UNAVAILABLE",
+                    "The isolated mirror plan store is unavailable.");
+        }
+    }
+
+    private StoredFixtureBundle requireFixture(
+            MirrorArtifactRef ref,
+            CapabilitySnapshot.Scope scope,
+            IntegrationRequestContext identity) {
+        if (ref == null || !"FIXTURE_BUNDLE".equals(ref.kind())) {
+            throw badRequest(identity, "RG.MIRROR.FIXTURE_REF_INVALID",
+                    "An exact FIXTURE_BUNDLE reference is required.", Map.of());
+        }
+        MirrorFixtureScopeBinding binding;
+        try {
+            binding = fixtureScopes.find(scope, ref.id(), ref.revision())
+                    .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
+                            "RG.MIRROR.FIXTURE_NOT_FOUND",
+                            "Fixture bundle was not found in the authorized scope.",
+                            identity.correlationId(), Map.of())));
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.MIRROR.FIXTURE_SCOPE_STORE_UNAVAILABLE",
+                    "The mirror fixture authorization index is unavailable.");
+        }
+        if (!binding.fixtureBundleRef().equals(ref)) {
+            throw conflict(identity, "RG.MIRROR.FIXTURE_FINGERPRINT_CONFLICT",
+                    "Fixture authorization differs from the requested immutable reference.", Map.of());
+        }
+        try {
+            StoredFixtureBundle stored = fixtures.find(scope.tenantId(), scope.environmentId(),
+                            ref.id(), ref.revision())
+                    .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
+                            "RG.MIRROR.FIXTURE_NOT_FOUND",
+                            "Fixture bundle was not found in the authorized scope.",
+                            identity.correlationId(), Map.of())));
+            stored = StoredFixtureBundleIntegrity.verifiedSnapshot(mapper, stored,
+                    scope.tenantId(), scope.environmentId(), ref.id(), ref.revision());
+            if (!ref.fingerprint().equals(stored.fingerprint())) {
+                throw conflict(identity, "RG.MIRROR.FIXTURE_FINGERPRINT_CONFLICT",
+                        "Stored fixture differs from the requested immutable reference.", Map.of());
+            }
+            requireClassification(stored.bundle().classification(), identity);
+            return stored;
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (FixtureBundleIntegrityException corrupt) {
+            throw unavailable(identity, "RG.MIRROR.FIXTURE_INTEGRITY_INVALID",
+                    "The stored fixture failed immutable-content verification.");
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.MIRROR.FIXTURE_STORE_UNAVAILABLE",
+                    "The isolated fixture registry is unavailable.");
+        }
+    }
+
+    private ResolvedReplayPayloads resolveReplayPayloads(
+            FixtureBundle fixture,
+            IntegrationRequestContext identity) {
+        boolean requiresReplay = fixture.rules().stream().filter(Objects::nonNull)
+                .anyMatch(rule -> rule.behavior().kind() == FixtureRule.BehaviorKind.REPLAY);
+        if (!requiresReplay) {
+            return ResolvedReplayPayloads.empty();
+        }
+        if (replayPayloads == null) {
+            throw unavailable(identity, "RG.MIRROR.REPLAY_RESOLVER_UNAVAILABLE",
+                    "Governed replay payload resolution is unavailable.");
+        }
+        return replayPayloads.resolveForMirror(fixture, identity);
+    }
+
+    private Graph requireGraph(String graphName, IntegrationRequestContext identity) {
+        try {
+            return graphs.requireGraph(graphName);
+        } catch (IllegalArgumentException absent) {
+            throw new IntegrationProblemException(IntegrationProblem.notFound(
+                    "RG.MIRROR.GRAPH_NOT_FOUND",
+                    "Graph was not found in the authorized mirror runtime.",
+                    identity.correlationId(), Map.of()));
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.MIRROR.GRAPH_CATALOG_UNAVAILABLE",
+                    "The authoritative graph catalog is unavailable.");
+        }
+    }
+
+    private static MirrorPlan.ExecutionPolicy serverPolicy(
+            MirrorPlanCreateRequest request,
+            IntegrationRequestContext identity,
+            CapabilitySnapshot.Scope scope) {
+        return new MirrorPlan.ExecutionPolicy(AUTHORIZED_PURPOSE,
+                false, false, false, false, request.certificationRequired(),
+                MirrorPlan.UnmatchedResolution.ABSTAINED,
+                request.maximumInvocations(), request.timeout(),
+                classification(identity), List.of(scope.region()),
+                List.of(CapabilitySnapshot.Lifecycle.ACTIVE,
+                        CapabilitySnapshot.Lifecycle.DEPRECATED));
+    }
+
+    private static CapabilitySnapshot.Scope requireMirrorIdentity(IntegrationRequestContext identity) {
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        if (!AUTHORIZED_PURPOSE.equals(identity.purpose())) {
+            throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                    "RG.MIRROR.PURPOSE_REQUIRED",
+                    "Mirror plan operations require the verified MIRROR_REHEARSAL purpose.",
+                    identity.correlationId(), Map.of()));
+        }
+        if (identity.projectId().isBlank() || identity.region().isBlank()) {
+            throw badRequest(identity, "RG.MIRROR.SCOPE_INCOMPLETE",
+                    "Mirror operations require project and region scope coordinates.", Map.of());
+        }
+        if (!("test".equalsIgnoreCase(identity.environmentId())
+                || "staging".equalsIgnoreCase(identity.environmentId()))) {
+            throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                    "RG.MIRROR.ENVIRONMENT_FORBIDDEN",
+                    "Mirror operations are restricted to test and staging identities.",
+                    identity.correlationId(), Map.of()));
+        }
+        return new CapabilitySnapshot.Scope(identity.tenantId(), identity.organizationId(),
+                identity.projectId(), identity.environmentId(), identity.region());
+    }
+
+    private static void validateRequest(
+            MirrorPlanCreateRequest request,
+            IntegrationRequestContext identity) {
+        if (request == null
+                || !MirrorPlanCreateRequest.SCHEMA_VERSION.equals(request.schemaVersion())
+                || !IDENTIFIER.matcher(request.planId()).matches()
+                || !IDENTIFIER.matcher(request.graphName()).matches()
+                || !FINGERPRINT.matcher(request.expectedGraphArtifactFingerprint()).matches()
+                || request.capabilityClosure() == null
+                || request.fixtureBundleRef() == null
+                || request.maximumInvocations() < 1
+                || request.maximumInvocations() > MAXIMUM_INVOCATIONS
+                || request.timeout() == null || request.timeout().isZero()
+                || request.timeout().isNegative()
+                || request.timeout().compareTo(MAXIMUM_TIMEOUT) > 0
+                || request.expiresAt() == null) {
+            throw badRequest(identity, "RG.MIRROR.PLAN_REQUEST_INVALID",
+                    "A versioned, bounded, content-addressed mirror plan request is required.",
+                    Map.of("maximumInvocations", MAXIMUM_INVOCATIONS,
+                            "maximumTimeoutSeconds", MAXIMUM_TIMEOUT.toSeconds(),
+                            "maximumPlanLifetimeSeconds", MAXIMUM_PLAN_LIFETIME.toSeconds()));
+        }
+    }
+
+    private static void validateTemporalPolicy(
+            Instant expiresAt,
+            Instant compiledAt,
+            Instant now,
+            IntegrationRequestContext identity) {
+        if (!expiresAt.isAfter(now) || !expiresAt.isAfter(compiledAt)
+                || expiresAt.isAfter(compiledAt.plus(MAXIMUM_PLAN_LIFETIME))) {
+            throw badRequest(identity, "RG.MIRROR.PLAN_EXPIRY_INVALID",
+                    "Mirror plan expiry must be future-dated and inside the server lifetime bound.",
+                    Map.of("maximumPlanLifetimeSeconds", MAXIMUM_PLAN_LIFETIME.toSeconds()));
+        }
+    }
+
+    private static void requireClosureScope(
+            CapabilityClosure closure,
+            CapabilitySnapshot.Scope scope,
+            IntegrationRequestContext identity) {
+        if (closure.snapshots().stream().anyMatch(snapshot -> !scope.equals(snapshot.scope()))) {
+            throw new IntegrationProblemException(IntegrationProblem.notFound(
+                    "RG.MIRROR.CAPABILITY_CLOSURE_NOT_FOUND",
+                    "Capability closure was not found in the authorized scope.",
+                    identity.correlationId(), Map.of()));
+        }
+    }
+
+    private static void requireClassification(
+            String classification,
+            IntegrationRequestContext identity) {
+        String required = normalize(classification).toUpperCase(java.util.Locale.ROOT);
+        if (!identity.hasClearanceAtLeast(required)) {
+            throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                    "RG.MIRROR.FIXTURE_CLEARANCE_REQUIRED",
+                    "Workload clearance cannot use the governed fixture bundle.",
+                    identity.correlationId(), Map.of("classification", required)));
+        }
+    }
+
+    private static CapabilityContract.DataClassification classification(
+            IntegrationRequestContext identity) {
+        try {
+            return CapabilityContract.DataClassification.valueOf(
+                    normalize(identity.clearance()).toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException invalid) {
+            throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                    "RG.MIRROR.CLEARANCE_INVALID",
+                    "Workload clearance is not recognized by mirror policy.",
+                    identity.correlationId(), Map.of()));
+        }
+    }
+
+    private static IntegrationProblemException badRequest(
+            IntegrationRequestContext identity,
+            String code,
+            String title,
+            Map<String, Object> details) {
+        return new IntegrationProblemException(IntegrationProblem.badRequest(
+                code, title, identity == null ? "" : identity.correlationId(), details));
+    }
+
+    private static IntegrationProblemException conflict(
+            IntegrationRequestContext identity,
+            String code,
+            String title,
+            Map<String, Object> details) {
+        return new IntegrationProblemException(IntegrationProblem.conflict(
+                code, title, identity.correlationId(), details));
+    }
+
+    private static IntegrationProblemException unavailable(
+            IntegrationRequestContext identity,
+            String code,
+            String title) {
+        return new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                code, title, identity.correlationId(), Map.of()));
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim();
+    }
+}

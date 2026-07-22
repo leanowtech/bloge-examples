@@ -241,6 +241,34 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void capabilitiesAdvertiseProtectedMirrorPlanningOnlyFromItsProfileOwnedMarker() {
+        ToolStudioIntegrationService disabled = service(null, null, null, null);
+        ToolStudioIntegrationService enabled = service(null, null, null, null);
+        enabled.configureMirrorRuntime(new MirrorRuntimeAvailability(true, false));
+
+        IntegrationCapabilities disabledCapabilities = disabled.capabilities().payload();
+        IntegrationCapabilities enabledCapabilities = enabled.capabilities().payload();
+
+        assertThat(disabledCapabilities.features())
+                .containsEntry("mirrorPlanCompilation", false)
+                .containsEntry("mirrorExternalLeafInterception", false)
+                .containsEntry("mirrorServing", false);
+        assertThat(disabledCapabilities.endpoints())
+                .noneMatch(endpoint -> endpoint.path().startsWith("/api/mirror/"));
+        assertThat(enabledCapabilities.features())
+                .containsEntry("mirrorPlanCompilation", true)
+                .containsEntry("mirrorExternalLeafInterception", true)
+                .containsEntry("mirrorServing", false);
+        assertThat(enabledCapabilities.supportedObjects())
+                .containsEntry("mirrorPlanCreateRequest", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorPlanCreateRequest.SCHEMA_VERSION));
+        assertThat(enabledCapabilities.endpoints())
+                .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
+                .contains("POST /api/mirror/plans", "GET /api/mirror/plans/{planId}");
+    }
+
+    @Test
     void capabilitiesAdvertiseSecretProtocolAndReevaluateAuthorityReadiness() {
         ToolStudioIntegrationService service = service(null, null, null, null);
         service.configureTestability(new TestabilityAvailability(

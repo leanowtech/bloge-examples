@@ -98,6 +98,8 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/gateway/graphs/contracts/tests/suites/run-all` | Run every stored contract suite with coverage policy checks |
 | `POST http://localhost:8080/api/visual/operators/tests/draft` | Generate editable operator mock/table suites from operator schemas |
 | `POST http://localhost:8080/api/visual/operators/tests/suites/run-all` | Run every stored operator schema mock/table suite |
+| `POST http://localhost:8080/api/mirror/plans` | Resolve reviewed graph/closure/fixture/replay artifacts and compile an immutable mirror plan (explicit mirror switch plus test/staging only) |
+| `GET http://localhost:8080/api/mirror/plans/{planId}` | Read a verified payload-free mirror plan in the complete authenticated enterprise scope |
 
 Stop it with:
 
@@ -116,12 +118,13 @@ and a classification no higher than the caller's clearance. Tenant, organization
 purpose, ownership, and `DRAFT` lifecycle are server-derived. The capability probe reports snapshot/closure
 protocol, projection, seven built-in graph closures, visual draft closure projection, API, lifecycle, and the
 sealed `resourceGateway.mirrorPlan.v1` wire model as available. Protocol availability is deliberately separate from
-runtime readiness: the probe keeps
-`mirrorPlanCompilation`, `mirrorExternalLeafInterception`, and `mirrorServing` false until those paths pass
-their later release gates. The complete protocol and lifecycle rules are in the
+runtime readiness. With the mirror switch disabled, all three runtime flags remain false and no `/api/mirror/**`
+route exists. With `RG_MIRROR_RUNTIME_ENABLED=true` under `test` or `staging`, the protected plan adapter now reports
+`mirrorPlanCompilation=true` and `mirrorExternalLeafInterception=true`, while `mirrorServing` remains false until
+the run/evidence adapter and deployment egress gate are complete. The complete protocol and lifecycle rules are in the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md).
 
-The Stage 1 compiler and run kernels now exist internally: they verify Capability Closure against the recursively
+The Stage 1 compiler and run kernels verify Capability Closure against the recursively
 frozen BLOGE invocation inventory, adapt the existing FixtureBundle into mandatory external-site controls, retain
 the exact Graph/fixture/control generation in process, and execute it through the independent test engine after
 scope, purpose, TTL, fingerprint, coverage, and logical deadline checks. Mirror fixtures cannot replace internal
@@ -131,9 +134,20 @@ profile physically excludes the compiler, runtime, integrity service, and reposi
 active. Sealed public plans and independently verified `HASH_ONLY` evidence now persist under a complete
 tenant/organization/project/environment/region compound key; exact retries are idempotent, conflicting identities
 and tampered rows fail closed, and no fixture/replay/context/result payload column exists. This is still not a
-serving API: protected endpoint authorization, durable fixture/graph rehydration, deployment egress proof, and
-authenticated access remain open, so the runtime feature flags above intentionally stay false. The fixture reuse decision is in
+run-serving API. The protected plan endpoint now authenticates `MIRROR_REHEARSAL`, requires complete project and
+region scope, fingerprints the current registered graph, independently verifies the exact stored fixture envelope,
+freezes governed replay dependencies without changing caller purpose, derives all isolation policy on the server,
+and persists only the payload-free plan. Because the legacy testing fixture registry is tenant/environment scoped,
+fixture registration also creates an append-only payload-free organization/project/region authorization binding
+when mirror is assembled; plan compilation requires that exact binding before reading the fixture. Historical
+fixtures must be re-registered idempotently to gain a binding. Plan requests expose no real-call, credential, egress, region, lifecycle,
+or clearance override. The execution/evidence endpoint and deployment egress proof remain open, so
+`mirrorServing` intentionally stays false. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
+
+The Plan command is recursively strict and its canonical JSON tree is capped at 16 MiB. Because MVC materializes
+JSON before the command decoder runs, deployments must also enforce raw request-body size, connection, and rate
+limits at the ingress boundary; the application decoder alone is not a denial-of-service boundary.
 
 The strict `resourceGateway.mirrorResolution.v1` protocol is also frozen. It binds every future resolver outcome to
 the exact run, plan, capability and invocation attempt; separates resolved null, visible/redacted output, hash-only
@@ -152,8 +166,9 @@ chain owns final abstention and fails closed for unavailable or duplicate source
 same-source runtime ambiguity. Mirror controls now execute through that chain and a single-completion journal emits
 sealed, coordinate-ordered `MirrorResolution` records. Requests and outputs are represented by bounded canonical
 fingerprints; owner and replay results retain exact artifact provenance; business error, rejection, and abstention
-remain distinct. Ordinary tests keep their previous selection path. Capability probes remain disabled until API,
-deployment egress attestation, and endpoint-level production-isolation gates close.
+remain distinct. Ordinary tests keep their previous selection path. The probe advertises interception only when
+the protected plan adapter is assembled; execution serving still waits for authenticated run/evidence APIs and
+deployment egress attestation.
 
 The portable evidence protocol is now frozen as `resourceGateway.mirrorRunEvidence.v1`,
 `resourceGateway.mirrorEvidenceAttestation.v1`, and `resourceGateway.mirrorEvidenceBundle.v1`. It signs only a
@@ -163,11 +178,12 @@ Ed25519 signatures and the complete bundle fingerprint are verified immediately.
 projects its real node/attempt/edge values to bounded fingerprints, proves exact closure against every external
 resolution, and refuses to return a result when no explicit signer exists or immediate signature verification
 fails. A cryptographically signed run is still exploratory unless deployment egress denial is bound to an exact
-isolation attestation and every limitation is closed. Payload-free persistence is complete; serving API,
-deployment attestation, and cross-language canonicalization remain release gates. The Spring kernel now has
+isolation attestation and every limitation is closed. Payload-free persistence and protected plan serving are
+complete; run/evidence serving, deployment attestation, and cross-language canonicalization remain release gates.
+The Spring kernel now has
 profile/property isolation and
 ordinary business run APIs reject nested mirror, replay, replacement, and scenario controls before DTO binding,
-but no readiness flag is enabled by internal execution alone.
+while runtime readiness is derived from profile-owned assembled adapters rather than configuration text.
 
 Useful variants:
 

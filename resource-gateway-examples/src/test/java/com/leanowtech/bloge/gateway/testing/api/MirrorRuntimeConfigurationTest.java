@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.exception.ResourceNotFoundException;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
@@ -90,8 +91,10 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(MirrorRunService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorEvidenceIntegrityService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorPlanRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorEvidenceRepository.class)).hasSize(1);
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorPlanRepository.class))).isTrue();
+        assertThat(AopUtils.isCglibProxy(context.getBean(MirrorFixtureScopeRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorEvidenceRepository.class))).isTrue();
         assertThat(context.getBean(MirrorRunService.class).engineConfiguration())
                 .satisfies(configuration -> {
@@ -110,6 +113,7 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(MirrorRunService.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorEvidenceIntegrityService.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorPlanRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorEvidenceRepository.class)).isEmpty();
     }
 

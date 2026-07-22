@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-plan-create-request-v1.schema.json",
+  "title": "Resource Gateway Mirror Plan Create Request v1",
+  "description": "Payload-free authenticated command. Isolation, purpose, clearance, region and lifecycle policy are server-owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "planId",
+    "graphName",
+    "expectedGraphArtifactFingerprint",
+    "capabilityClosure",
+    "fixtureBundleRef",
+    "maximumInvocations",
+    "timeout",
+    "certificationRequired",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorPlanCreateRequest.v1" },
+    "planId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+    },
+    "graphName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+    },
+    "expectedGraphArtifactFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "capabilityClosure": { "$ref": "capability-closure-v1.schema.json" },
+    "fixtureBundleRef": { "$ref": "#/$defs/fixtureBundleRef" },
+    "maximumInvocations": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000
+    },
+    "timeout": {
+      "type": "string",
+      "pattern": "^PT(?=.+)(?:[0-9]+H)?(?:[0-9]+M)?(?:[0-9]+(?:\\.[0-9]+)?S)?$",
+      "maxLength": 64,
+      "description": "Positive ISO-8601 duration no greater than PT15M; the upper bound is enforced semantically by the server."
+    },
+    "certificationRequired": { "type": "boolean" },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Future instant no more than 24 hours after the first successful compilation."
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "fixtureBundleRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "const": "FIXTURE_BUNDLE" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

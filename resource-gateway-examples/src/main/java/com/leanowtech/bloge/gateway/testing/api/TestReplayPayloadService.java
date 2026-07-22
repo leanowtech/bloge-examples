@@ -42,6 +42,8 @@ public final class TestReplayPayloadService {
 
     /** Dedicated workload purpose required for capture and payload reads. */
     public static final String AUTHORIZED_PURPOSE = "TEST_REPLAY";
+    /** Dedicated mirror purpose allowed only for pre-execution replay closure resolution. */
+    public static final String MIRROR_AUTHORIZED_PURPOSE = "MIRROR_REHEARSAL";
 
     private static final Set<String> ENABLED_ENVIRONMENTS = Set.of("test", "staging");
     private static final List<String> CLASSIFICATIONS = List.of(
@@ -183,6 +185,11 @@ public final class TestReplayPayloadService {
     public StoredReplayPayload find(String replayPayloadId, long revision,
                                     IntegrationRequestContext identity) {
         requireReplayIdentity(identity);
+        return findAuthorized(replayPayloadId, revision, identity);
+    }
+
+    private StoredReplayPayload findAuthorized(String replayPayloadId, long revision,
+                                               IntegrationRequestContext identity) {
         String payloadId = normalized(replayPayloadId);
         StoredReplayPayload stored;
         try {
@@ -228,6 +235,30 @@ public final class TestReplayPayloadService {
      * @return exact run-scoped replay payload closure
      */
     public ResolvedReplayPayloads resolve(FixtureBundle bundle, IntegrationRequestContext identity) {
+        return resolve(bundle, identity, AUTHORIZED_PURPOSE);
+    }
+
+    /**
+     * Resolves an immutable replay closure for an authenticated mirror-plan compilation.
+     *
+     * <p>This path grants no capture or direct payload-read API. It exists so the mirror planner can
+     * preserve the caller's verified {@code MIRROR_REHEARSAL} purpose while applying the same
+     * scope, lifecycle, clearance, classification, integrity, retention, and memory checks as the
+     * test replay path.</p>
+     *
+     * @param bundle authorized mirror fixture bundle
+     * @param identity verified mirror workload identity
+     * @return exact run-scoped replay payload closure
+     */
+    public ResolvedReplayPayloads resolveForMirror(
+            FixtureBundle bundle, IntegrationRequestContext identity) {
+        return resolve(bundle, identity, MIRROR_AUTHORIZED_PURPOSE);
+    }
+
+    private ResolvedReplayPayloads resolve(
+            FixtureBundle bundle,
+            IntegrationRequestContext identity,
+            String requiredPurpose) {
         Objects.requireNonNull(bundle, "bundle");
         List<String> rawRefs = bundle.rules().stream().filter(Objects::nonNull)
                 .filter(rule -> rule.behavior().kind() == FixtureRule.BehaviorKind.REPLAY)
@@ -235,7 +266,7 @@ public final class TestReplayPayloadService {
         if (rawRefs.isEmpty()) {
             return ResolvedReplayPayloads.empty();
         }
-        requireReplayIdentity(identity);
+        requireReplayIdentity(identity, requiredPurpose);
         if (rawRefs.size() > MAX_REPLAY_REFERENCES) {
             throw badRequest(identity, "RG.TEST.REPLAY_REFERENCE_LIMIT",
                     "Fixture exceeds the bounded replay dependency count.",
@@ -257,7 +288,8 @@ public final class TestReplayPayloadService {
                 throw badRequest(identity, "RG.TEST.REPLAY_REF_INVALID",
                         "REPLAY requires an exact canonical governed payload reference.", Map.of());
             }
-            StoredReplayPayload stored = find(ref.replayPayloadId(), ref.revision(), identity);
+            StoredReplayPayload stored = findAuthorized(
+                    ref.replayPayloadId(), ref.revision(), identity);
             ReplayPayloadDescriptor descriptor = stored.descriptor();
             if (!ref.fingerprint().equals(descriptor.fingerprint())) {
                 throw conflict(identity, "RG.TEST.REPLAY_FINGERPRINT_CONFLICT",
@@ -426,11 +458,16 @@ public final class TestReplayPayloadService {
     }
 
     private void requireReplayIdentity(IntegrationRequestContext identity) {
+        requireReplayIdentity(identity, AUTHORIZED_PURPOSE);
+    }
+
+    private void requireReplayIdentity(
+            IntegrationRequestContext identity, String requiredPurpose) {
         Objects.requireNonNull(identity, "identity").requireComplete();
-        if (!AUTHORIZED_PURPOSE.equals(identity.purpose())) {
+        if (!requiredPurpose.equals(identity.purpose())) {
             throw new IntegrationProblemException(IntegrationProblem.forbidden(
                     "RG.TEST.REPLAY_PURPOSE_REQUIRED",
-                    "Replay payload operations require a verified TEST_REPLAY workload purpose.",
+                    "Replay payload operation purpose is not authorized for this boundary.",
                     identity.correlationId(), Map.of()));
         }
         if (!ENABLED_ENVIRONMENTS.contains(identity.environmentId().toLowerCase(Locale.ROOT))) {

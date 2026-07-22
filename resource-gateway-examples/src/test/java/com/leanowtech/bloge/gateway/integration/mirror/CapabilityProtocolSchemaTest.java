@@ -41,6 +41,11 @@ class CapabilityProtocolSchemaTest {
         MirrorPlan plan = mirrorPlan(closure);
         JsonNode planValue = mapper.valueToTree(plan);
         JsonNode planSchema = schema("mirror-plan-v1.schema.json");
+        JsonNode planCreateValue = mapper.valueToTree(new MirrorPlanCreateRequest("",
+                plan.planId(), "ordersView", "sha256:" + "d".repeat(64), closure,
+                plan.fixtureBundleRef(), 1000, Duration.ofMinutes(5), true,
+                Instant.parse("2026-07-22T01:00:00Z")));
+        JsonNode planCreateSchema = schema("mirror-plan-create-request-v1.schema.json");
         MirrorResolution resolution = mirrorResolution(plan);
         JsonNode resolutionValue = mapper.valueToTree(resolution);
         JsonNode resolutionSchema = schema("mirror-resolution-v1.schema.json");
@@ -52,6 +57,7 @@ class CapabilityProtocolSchemaTest {
         assertProperties(provenanceValue, provenanceSchema.path("properties"));
         assertProperties(transitionValue, transitionSchema.path("properties"));
         assertProperties(planValue, planSchema.path("properties"));
+        assertProperties(planCreateValue, planCreateSchema.path("properties"));
         assertProperties(resolutionValue, resolutionSchema.path("properties"));
         assertProperties(snapshotValue.path("source"), snapshotSchema.at("/$defs/source/properties"));
         assertProperties(snapshotValue.path("scope"), snapshotSchema.at("/$defs/scope/properties"));
@@ -68,6 +74,8 @@ class CapabilityProtocolSchemaTest {
         assertProperties(planValue.path("executionServices"),
                 planSchema.at("/$defs/executionServices/properties"));
         assertProperties(planValue.path("policy"), planSchema.at("/$defs/policy/properties"));
+        assertProperties(planCreateValue.path("fixtureBundleRef"),
+                planCreateSchema.at("/$defs/fixtureBundleRef/properties"));
         assertProperties(resolutionValue.path("capabilityRef"),
                 resolutionSchema.at("/$defs/artifactRef/properties"));
         assertProperties(resolutionValue.path("confidence"),
@@ -82,6 +90,7 @@ class CapabilityProtocolSchemaTest {
         assertThat(provenanceSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(transitionSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(planSchema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(planCreateSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(resolutionSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(snapshotValue.at("/contract/slo/timeout").asText()).isEqualTo("PT3S");
     }

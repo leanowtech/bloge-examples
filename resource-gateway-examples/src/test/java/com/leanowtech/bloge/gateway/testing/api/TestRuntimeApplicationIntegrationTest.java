@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.integration.IntegrationCapabilities;
 import com.leanowtech.bloge.gateway.integration.IntegrationEnvelope;
+import com.leanowtech.bloge.gateway.integration.MirrorIntegrationController;
+import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
@@ -44,13 +47,14 @@ import static org.assertj.core.api.Assertions.assertThat;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "spring.profiles.active=test",
+                "gateway.testing.mirror.enabled=true",
                 "gateway.seed-descriptors=true",
                 "gateway.base-url=http://127.0.0.1:1",
                 "gateway.integration.identity.environment-id=test",
                 "gateway.integration.identity.region=region-a",
                 "gateway.integration.identity.groups=resource-gateway-test-runtime-operators",
                 "gateway.integration.identity.clearance=RESTRICTED",
-                "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_REPLAY,TEST_SUITE_READ,TEST_SUITE_WRITE,TEST_RUNTIME_MAINTENANCE",
+                "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_REPLAY,TEST_SUITE_READ,TEST_SUITE_WRITE,TEST_RUNTIME_MAINTENANCE,MIRROR_REHEARSAL",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id=integration-test-v1",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring=integration-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
                 "gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id=integration-request-index-v1",
@@ -82,6 +86,13 @@ class TestRuntimeApplicationIntegrationTest {
     @Test
     void realApplicationAdvertisesAndServesTheProfileGatedTargetProtocol() throws Exception {
         assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(MirrorIntegrationController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(MirrorPlanIntegrationService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(MirrorRuntimeAvailability.class)).hasSize(1);
+        assertThat(context.getBean(MirrorRuntimeAvailability.class)).satisfies(availability -> {
+            assertThat(availability.planCompilationApi()).isTrue();
+            assertThat(availability.executionApi()).isFalse();
+        });
         assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunLeaseCoordinator.class)).hasSize(1);
@@ -129,7 +140,13 @@ class TestRuntimeApplicationIntegrationTest {
                         .DISABLED);
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("bootstrapRootRecoveryFleetConfigured", false)
-                .containsEntry("bootstrapRootRecoveryFleetReady", false);
+                .containsEntry("bootstrapRootRecoveryFleetReady", false)
+                .containsEntry("mirrorPlanCompilation", true)
+                .containsEntry("mirrorExternalLeafInterception", true)
+                .containsEntry("mirrorServing", false);
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("POST")
+                        && endpoint.path().equals("/api/mirror/plans"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->

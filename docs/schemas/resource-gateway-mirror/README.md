@@ -13,6 +13,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-snapshot-v1.schema.json` | `CapabilitySnapshot` | Immutable Resource/Operator/Graph projection consumed by mirror planning |
 | `capability-closure-v1.schema.json` | `CapabilityClosure` | Exact root plus every transitively reachable snapshot for registry-free planning |
 | `mirror-plan-v1.schema.json` | `MirrorPlan` | Sealed payload-free execution generation with exact external-edge bindings and isolation policy |
+| `mirror-plan-create-request-v1.schema.json` | `MirrorPlanCreateRequest` | Payload-free protected compile command containing only reviewed artifact identities and bounded requested budgets |
 | `mirror-resolution-v1.schema.json` | `MirrorResolution` | Fingerprinted per-attempt source, confidence, freshness, payload visibility, output/error, and abstention provenance |
 | `mirror-run-evidence-v1.schema.json` | `MirrorRunEvidence` | Payload-free node, edge, resolution, semantic-result, request-context, and isolation facts for one terminal run |
 | `mirror-evidence-attestation-v1.schema.json` | `MirrorEvidenceAttestation` | Domain-separated detached Ed25519 signature over one complete mirror run evidence value |
@@ -43,6 +44,43 @@ resource-backed external leaves from the authoritative registry, and seals the r
 stale operators, duplicate node identities, missing resources, and nested graph boundaries without an exact child
 closure fail closed with stable `RG.MIRROR.*` codes. Pure implementation operators remain covered by the graph
 source fingerprint without becoming false business capabilities.
+
+## Protected plan compilation boundary
+
+`POST /api/mirror/plans` accepts `resourceGateway.mirrorPlanCreateRequest.v1` only when
+`gateway.testing.mirror.enabled=true` and the active profile is `test` or `staging`. The same controller is excluded
+when `production` is active, including a mixed `production,test` profile set. `GET /api/mirror/plans/{planId}` reads
+the verified result under the same complete scope.
+
+The request contains a stable plan id, registered graph name and reviewed graph fingerprint, one sealed capability
+closure, one exact `FIXTURE_BUNDLE` reference, bounded invocation/timeout requests, a certification requirement,
+and an exact expiry. It deliberately contains no execution purpose, isolation booleans, clearance, region,
+lifecycle allowlist, credential policy, or fixture/replay value. The authenticated service boundary:
+
+1. requires `MIRROR_REHEARSAL`, a test/staging identity, and non-empty tenant/organization/project/environment/region;
+2. hides cross-scope closure and plan existence behind `404`;
+3. fingerprints the current registered BLOGE graph and compares it with both request and root capability;
+4. resolves and independently verifies the exact stored fixture revision and caller clearance;
+5. freezes governed replay dependencies through a mirror-only resolution path that does not grant capture or direct payload-read permission;
+6. derives deny-real-call, deny-credential, deny-egress, lifecycle, region, purpose and maximum-classification policy on the server;
+7. compiles and append-only persists the payload-free plan.
+
+An exact retry reuses the original `compiledAt` and returns the existing fingerprint. A changed graph, closure,
+fixture, timeout, budget, certification flag, expiry, scope, or policy under the same `planId` returns an idempotency
+conflict. Stage 1 caps timeout at 15 minutes, invocation budget at 100,000, and plan lifetime at 24 hours.
+
+The application decoder recursively rejects unknown fields and bounds the canonical request tree to 16 MiB.
+Servlet JSON materialization still occurs before that decoder runs, so this is not an ingress denial-of-service
+control. An enterprise deployment must enforce raw-body size, connection, and request-rate limits at the proxy or
+container boundary. A repository-owned pre-materialization limit remains a release gate for execution serving.
+
+The underlying testing fixture registry predates full organization/project/region coordinates. Mirror does not
+inherit that wider lookup. When the mirror composition is active, fixture registration appends or idempotently
+recovers a payload-free `MirrorFixtureScopeBinding`; if the second write is unavailable, the API returns a
+retryable failure and the exact registration retry completes it. Plan compilation requires an exact binding
+before reading the tenant/environment fixture row. A historical unbound revision is not grandfathered in and must
+be re-registered with identical content under the intended full scope. The companion table contains only scope,
+fixture identity/fingerprint, timestamp, and actor, never fixture or replay values.
 
 ## Invariants
 
@@ -86,7 +124,7 @@ source fingerprint without becoming false business capabilities.
 
 ## Independent client admission
 
-The test-kit packages the seven Stage 0 schemas, four Stage 1 evidence schemas, and both shared compatibility
+The test-kit packages the Stage 0 schemas, the protected plan command, four Stage 1 evidence schemas, and both shared compatibility
 fixtures in its JAR. A Stage 0 consumer first
 calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
 It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before
@@ -141,8 +179,10 @@ The protected Tool Studio integration surface exposes:
 | `PUT /api/integration/capability-snapshots/{id}/revisions/{revision}` | Append an exact sealed revision | `CAPABILITY_PROJECTION` or `CHANGE_SYNC` |
 | `GET /api/integration/capability-snapshots/{id}?revision=0` | Read latest, or set a positive exact revision | `MIRROR_REHEARSAL`, `CHANGE_SYNC`, or `GOVERNANCE_EVIDENCE_INGESTION` |
 | `POST /api/integration/capability-snapshots/{id}/lifecycle-transitions` | Append a lifecycle-only revision | `CAPABILITY_GOVERNANCE` |
+| `POST /api/mirror/plans` | Compile exact authoritative artifacts into an append-only payload-free plan | `MIRROR_REHEARSAL` |
+| `GET /api/mirror/plans/{planId}` | Read one verified plan in the full authenticated scope | `MIRROR_REHEARSAL` |
 
-All three endpoints derive scope, actor, and clearance from the verified workload identity. Absent,
+All endpoints derive scope, actor, and clearance from the verified workload identity. Absent,
 cross-scope, and above-clearance reads deliberately share `404 RG.MIRROR.SNAPSHOT_NOT_FOUND` so the API does
 not become an asset-existence oracle.
 
@@ -150,14 +190,15 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4429 tests with no
+passes 4465 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
 the executable Spring Boot JAR.
 
-The Stage 1 `MirrorPlan` protocol presence does not make mirror execution available. Capability discovery reports
-`mirrorPlanProtocol=true`, while `mirrorPlanCompilation`, `mirrorExternalLeafInterception`, and `mirrorServing`
-remain false until compiler, interception, isolation, independent verification, and evidence paths pass their own
-release gates.
+The Stage 1 `MirrorPlan` protocol presence alone does not make mirror execution available. Capability discovery
+always reports `mirrorPlanProtocol=true`. It reports `mirrorPlanCompilation` and
+`mirrorExternalLeafInterception` only when the protected test/staging plan adapter is physically assembled; it
+continues to report `mirrorServing=false` until protected execution/evidence routes and deployment egress controls
+pass their own release gates.
 
 ## Stage 1 compiler kernel
 
@@ -190,9 +231,9 @@ the public seal, authenticated scope and purpose, TTL, graph/fixture/control gen
 the static invocation floor before executing through the independent test engine. It carries the plan's logical
 timeout into BLOGE `ExecutionBudget`; an unmatched external remains implicit deny and cannot reach the real binding.
 
-This is still a kernel rather than a service endpoint. It now projects every real node/edge/attempt value to a
+The plan compiler now has a protected service endpoint; the execution kernel does not yet. The kernel projects every real node/edge/attempt value to a
 bounded canonical fingerprint, proves exact closure against resolver provenance, requires an explicit signer, and
-returns an immediately verified portable bundle. Dynamic occurrence budgeting, durable evidence storage,
-independent test-kit verification, production composition and egress proofs, exact artifact storage, and
-authenticated API admission remain open.
-Capability discovery therefore continues to report compilation, external interception, and serving as unavailable.
+returns an immediately verified portable bundle. Durable payload-free plan/evidence storage and independent
+test-kit verification are complete. Protected run admission, request-id coordination, deployment egress proof, and
+the run/evidence HTTP projection remain open. Capability discovery therefore reports protected compilation and
+external interception when assembled, but not execution serving.

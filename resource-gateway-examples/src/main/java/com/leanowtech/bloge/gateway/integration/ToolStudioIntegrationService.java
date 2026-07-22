@@ -76,6 +76,8 @@ public class ToolStudioIntegrationService {
     private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
     private boolean suiteStabilityJobSubmissionEnabled;
+    private MirrorRuntimeAvailability mirrorRuntimeAvailability =
+            new MirrorRuntimeAvailability(false, false);
     private WorkerQuarantineRequestIndexMode workerQuarantineRequestIndexMode;
     private WorkerQuarantineChangeAuthorizationTrustStore.Descriptor
             workerQuarantineChangeAuthorizationTrust =
@@ -156,6 +158,13 @@ public class ToolStudioIntegrationService {
                 ? new TestSuiteStabilityJobAuthorizer.Descriptor(
                 "", false, "UNAVAILABLE", "", Map.of())
                 : availability.suiteStabilityCurrentAuthority();
+    }
+
+    /** Receives the marker only when protected mirror routes are physically assembled. */
+    @Autowired(required = false)
+    void configureMirrorRuntime(MirrorRuntimeAvailability availability) {
+        this.mirrorRuntimeAvailability = availability == null
+                ? new MirrorRuntimeAvailability(false, false) : availability;
     }
 
     /** Resolves time-sensitive current-authority readiness on every capability request. */
@@ -367,6 +376,10 @@ public class ToolStudioIntegrationService {
         TestSecretAuthority.Descriptor testSecretAuthority = currentTestSecretAuthority();
         boolean secretAuthorityReady = testSecretAuthority.available();
         Map<String, Boolean> features = new LinkedHashMap<>(current.features());
+        features.put("mirrorPlanCompilation", mirrorRuntimeAvailability.planCompilationApi());
+        features.put("mirrorExternalLeafInterception",
+                mirrorRuntimeAvailability.planCompilationApi());
+        features.put("mirrorServing", mirrorRuntimeAvailability.executionApi());
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());
@@ -697,13 +710,25 @@ public class ToolStudioIntegrationService {
                 eventDelivery.sourceCertificateIdentityBound());
         features.put("controlPlaneCertificateRotationProductionReady",
                 rotation.productionReady());
+        Map<String, List<String>> supportedObjects = new LinkedHashMap<>(current.supportedObjects());
+        if (mirrorRuntimeAvailability.planCompilationApi()) {
+            supportedObjects.put("mirrorPlanCreateRequest", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorPlanCreateRequest.SCHEMA_VERSION));
+        }
+        List<IntegrationCapabilities.Endpoint> endpoints =
+                new java.util.ArrayList<>(current.endpoints());
+        if (mirrorRuntimeAvailability.planCompilationApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/plans"));
+            endpoints.add(new IntegrationCapabilities.Endpoint("GET", "/api/mirror/plans/{planId}"));
+        }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
-                current.supportedObjects(), features, current.identityProvider(),
+                supportedObjects, features, current.identityProvider(),
                 current.evidenceSigner(), current.payloadGovernance(),
                 current.testability().withRecoveryFleet(recoveryFleet)
                         .withPhysicalAttemptRuntime(physicalAttempt),
-                current.endpoints());
+                endpoints);
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 augmented);
     }

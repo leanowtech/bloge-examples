@@ -11,6 +11,8 @@ import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeBinding;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
@@ -28,6 +30,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -240,6 +243,28 @@ class TestExecutionApiServiceTest {
                 .isInstanceOf(IntegrationProblemException.class)
                 .satisfies(failure -> assertThat(((IntegrationProblemException) failure).problem().status())
                         .isEqualTo(404));
+    }
+
+    @Test
+    void fixtureRegistrationCreatesAFullScopeMirrorAuthorizationWhenMirrorIsAssembled() {
+        MirrorFixtureScopeRepository scopeRepository = mock(MirrorFixtureScopeRepository.class);
+        when(scopeRepository.create(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        service.configureMirrorFixtureScopes(scopeRepository);
+        FixtureBundle bundle = bundle("mirror-scoped");
+
+        StoredFixtureBundle stored = service.registerFixture("mirror-scoped",
+                new FixtureBundleRegistrationRequest("", target(), bundle), identity("test"));
+
+        ArgumentCaptor<MirrorFixtureScopeBinding> binding =
+                ArgumentCaptor.forClass(MirrorFixtureScopeBinding.class);
+        verify(scopeRepository).create(binding.capture());
+        assertThat(binding.getValue().scope()).isEqualTo(
+                new com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.Scope(
+                        "tenant-a", "org-a", "project-a", "test", "local"));
+        assertThat(binding.getValue().fixtureBundleRef().id()).isEqualTo("mirror-scoped");
+        assertThat(binding.getValue().fixtureBundleRef().fingerprint())
+                .isEqualTo(stored.fingerprint());
+        assertThat(binding.getValue().boundBy()).isEqualTo("test-runner");
     }
 
     @Test

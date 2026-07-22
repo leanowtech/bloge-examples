@@ -157,8 +157,15 @@ class TestReplayPayloadServiceTest {
         FixtureBundle replayBundle = replayBundle(ref);
 
         ResolvedReplayPayloads resolved = service.resolve(replayBundle, replayIdentity());
+        IntegrationRequestContext mirrorIdentity = identity(
+                "MIRROR_REHEARSAL", "test", Set.of("quality"), "RESTRICTED");
+        ResolvedReplayPayloads mirrorResolved = service.resolveForMirror(
+                replayBundle, mirrorIdentity);
 
         assertThat(resolved.references()).containsExactly(ref);
+        assertThat(mirrorResolved.references()).containsExactly(ref);
+        assertThat(mirrorResolved.require(ref).canonicalJson())
+                .isEqualTo(resolved.require(ref).canonicalJson());
         assertThat(resolved.require(ref).materialize(new ObjectMapper(), "business.operator"))
                 .isEqualTo(Map.of("orderId", "O-1", "decision", "approved",
                         "apiToken", "[REDACTED]"));
@@ -172,6 +179,13 @@ class TestReplayPayloadServiceTest {
         });
         assertProblem(() -> service.resolve(replayBundle,
                         identity("TEST_EXECUTION", "test", Set.of("quality"), "RESTRICTED")),
+                403, "RG.TEST.REPLAY_PURPOSE_REQUIRED");
+        assertProblem(() -> service.find("orders-approved", 1, mirrorIdentity),
+                403, "RG.TEST.REPLAY_PURPOSE_REQUIRED");
+        assertProblem(() -> service.capture("mirror-capture",
+                        request(source, "CONFIDENTIAL", 1,
+                                source.payloadRetention().expiresAt().minusSeconds(1)),
+                        mirrorIdentity),
                 403, "RG.TEST.REPLAY_PURPOSE_REQUIRED");
         assertThat(service.resolve(emptyBundle(),
                 identity("TEST_EXECUTION", "test", Set.of(), "PUBLIC")).references()).isEmpty();

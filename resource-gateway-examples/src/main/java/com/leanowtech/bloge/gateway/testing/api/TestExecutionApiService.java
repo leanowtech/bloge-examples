@@ -10,6 +10,10 @@ import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeBinding;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
@@ -44,6 +48,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.JavaOperatorInventoryProjecto
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -92,6 +97,7 @@ public final class TestExecutionApiService {
     private final TestDslMutationPlanner mutationCases;
     private final TestPropertyCasePlanner propertyCases;
     private final Duration retention;
+    private MirrorFixtureScopeRepository mirrorFixtureScopes;
 
     public TestExecutionApiService(GatewayGraphService graphService,
                                    OperatorRegistry operatorRegistry,
@@ -238,6 +244,18 @@ public final class TestExecutionApiService {
         this.sanitizer = new TestEvidenceSanitizer(objectMapper);
         this.retention = retention == null || retention.isNegative() || retention.isZero()
                 ? Duration.ofDays(30) : retention;
+    }
+
+    /**
+     * Receives the optional profile-owned mirror fixture authorization index.
+     *
+     * <p>Normal testing remains tenant/environment compatible. When mirror planning is enabled,
+     * every successful fixture registration also records the authenticated organization, project,
+     * and region so mirror reads cannot inherit the older registry's broader scope.</p>
+     */
+    @Autowired(required = false)
+    void configureMirrorFixtureScopes(MirrorFixtureScopeRepository repository) {
+        this.mirrorFixtureScopes = repository;
     }
 
     /** Executes one request after authorization and stores full sanitized evidence. */
@@ -845,9 +863,10 @@ public final class TestExecutionApiService {
         String fingerprint = ProtocolFingerprint.of(objectMapper, bundle);
         StoredFixtureBundle stored = new StoredFixtureBundle("", identity.tenantId(), identity.environmentId(),
                 bundle.fixtureBundleId(), bundle.revision(), fingerprint, bundle, Instant.now(), identity.actorId());
+        StoredFixtureBundle persisted;
         try {
             StoredFixtureBundle requested = StoredFixtureBundleIntegrity.verifiedSnapshot(objectMapper, stored);
-            return StoredFixtureBundleIntegrity.verifiedSnapshot(
+            persisted = StoredFixtureBundleIntegrity.verifiedSnapshot(
                     objectMapper, fixtureRepository.create(requested), requested);
         } catch (FixtureBundleConflictException conflict) {
             throw conflict(identity, "RG.TEST.FIXTURE_REVISION_CONFLICT", conflict.getMessage(), Map.of());
@@ -859,6 +878,29 @@ public final class TestExecutionApiService {
         } catch (RuntimeException unavailable) {
             throw unavailable(identity, "RG.TEST.FIXTURE_STORE_UNAVAILABLE",
                     "The independent fixture registry is unavailable.");
+        }
+        bindMirrorFixtureScope(persisted, identity);
+        return persisted;
+    }
+
+    private void bindMirrorFixtureScope(
+            StoredFixtureBundle fixture,
+            IntegrationRequestContext identity) {
+        if (mirrorFixtureScopes == null
+                || identity.projectId().isBlank() || identity.region().isBlank()) {
+            return;
+        }
+        CapabilitySnapshot.Scope scope = new CapabilitySnapshot.Scope(
+                identity.tenantId(), identity.organizationId(), identity.projectId(),
+                identity.environmentId(), identity.region());
+        MirrorArtifactRef ref = new MirrorArtifactRef("FIXTURE_BUNDLE",
+                fixture.fixtureBundleId(), fixture.revision(), fixture.fingerprint());
+        try {
+            mirrorFixtureScopes.create(new MirrorFixtureScopeBinding(
+                    scope, ref, fixture.createdAt(), identity.actorId()));
+        } catch (RuntimeException unavailable) {
+            throw unavailable(identity, "RG.TEST.MIRROR_FIXTURE_SCOPE_STORE_UNAVAILABLE",
+                    "Fixture was stored but its mirror scope authorization is unavailable; retry the exact registration.");
         }
     }
 
