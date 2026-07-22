@@ -160,6 +160,43 @@ class CapabilityProjectionServiceTest {
     }
 
     @Test
+    void resolvesGenericHttpResourceNodeFromItsConstantResourceIdBinding() {
+        OperatorDefinition httpResource = operator("httpResource",
+                OperatorDefinition.Source.builtIn("bloge-operator"),
+                new OperatorDefinition.Capabilities("EXTERNAL", "UNKNOWN", false, false, true), Map.of());
+        GraphDraft draft = graphDraft(Map.of("load", httpResource), List.of(), Map.of(),
+                Map.of("load", Map.of("resourceId", GraphDraft.Binding.constant("customers.get"))));
+        CapabilitySnapshot customer = projection.projectResource(resource("customers.get", "GET", null),
+                objectSchema("customerId"), objectSchema("customer"), context(1));
+
+        CapabilitySnapshot graph = projection.projectGraph(draft, context(2), List.of(customer));
+
+        assertThat(graph.dependencies()).singleElement().satisfies(dependency -> {
+            assertThat(dependency.nodeId()).isEqualTo("load");
+            assertThat(dependency.capabilityRef().id()).isEqualTo("resource:customers.get");
+            assertThat(dependency.capabilityRef().fingerprint()).isEqualTo(customer.fingerprint());
+        });
+        assertThat(graph.contract().effect().mode()).isEqualTo(EffectContract.Mode.READ_ONLY);
+    }
+
+    @Test
+    void keepsDynamicHttpResourceNodeAsConservativeGenericOperatorCapability() {
+        OperatorDefinition httpResource = operator("httpResource",
+                OperatorDefinition.Source.builtIn("bloge-operator"),
+                new OperatorDefinition.Capabilities("EXTERNAL", "UNKNOWN", false, false, true), Map.of());
+        GraphDraft draft = graphDraft(Map.of("dispatch", httpResource), List.of(), Map.of(),
+                Map.of("dispatch", Map.of("resourceId", GraphDraft.Binding.contextPath("resourceId"))));
+        CapabilitySnapshot genericHttp = projection.projectOperator(httpResource, context(1));
+
+        CapabilitySnapshot graph = projection.projectGraph(draft, context(2), List.of(genericHttp));
+
+        assertThat(graph.dependencies()).singleElement().satisfies(dependency ->
+                assertThat(dependency.capabilityRef().id()).isEqualTo("operator:httpResource"));
+        assertThat(graph.contract().effect().mode()).isEqualTo(EffectContract.Mode.UNKNOWN);
+        assertThat(graph.runtime().ready()).isFalse();
+    }
+
+    @Test
     void failsClosedWhenExternalChildIsMissingOrUnsealed() {
         OperatorDefinition read = resourceOperator("loadCustomer", "customers.get", "READ_EXTERNAL", false);
         GraphDraft draft = graphDraft(Map.of("load", read), List.of(), Map.of());
@@ -275,9 +312,17 @@ class CapabilityProjectionServiceTest {
     private static GraphDraft graphDraft(Map<String, OperatorDefinition> operators,
                                          List<GraphDraft.DraftEdge> edges,
                                          Map<String, GraphDraft.NodeFixture> fixtures) {
+        return graphDraft(operators, edges, fixtures, Map.of());
+    }
+
+    private static GraphDraft graphDraft(Map<String, OperatorDefinition> operators,
+                                         List<GraphDraft.DraftEdge> edges,
+                                         Map<String, GraphDraft.NodeFixture> fixtures,
+                                         Map<String, Map<String, GraphDraft.Binding>> inputs) {
         List<GraphDraft.DraftNode> nodes = operators.entrySet().stream().sorted(Map.Entry.comparingByKey())
                 .map(entry -> new GraphDraft.DraftNode(entry.getKey(), entry.getValue().operatorRef(),
-                        entry.getKey(), Map.of(), Map.of(), new GraphDraft.Position(0, 0)))
+                        entry.getKey(), inputs.getOrDefault(entry.getKey(), Map.of()), Map.of(),
+                        new GraphDraft.Position(0, 0)))
                 .toList();
         Map<String, String> fingerprints = new LinkedHashMap<>();
         operators.forEach((nodeId, operator) -> fingerprints.put(nodeId, operator.fingerprint()));

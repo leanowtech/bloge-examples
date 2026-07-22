@@ -258,8 +258,8 @@ public class CapabilityProjectionService {
     private CapabilitySnapshot resolveChild(GraphDraft.DraftNode node,
                                             OperatorDefinition operator,
                                             List<CapabilitySnapshot> children) {
-        CapabilitySnapshot.SourceKind sourceKind = expectedChildSource(operator);
-        String sourceRef = expectedChildSourceRef(operator, sourceKind);
+        CapabilitySnapshot.SourceKind sourceKind = expectedChildSource(node, operator);
+        String sourceRef = expectedChildSourceRef(node, operator, sourceKind);
         List<CapabilitySnapshot> matches = children.stream()
                 .filter(child -> child.source().sourceKind() == sourceKind)
                 .filter(child -> child.source().sourceRef().equals(sourceRef))
@@ -290,23 +290,41 @@ public class CapabilityProjectionService {
         return child;
     }
 
-    private static CapabilitySnapshot.SourceKind expectedChildSource(OperatorDefinition operator) {
+    private static CapabilitySnapshot.SourceKind expectedChildSource(GraphDraft.DraftNode node,
+                                                                     OperatorDefinition operator) {
         String sourceKind = normalize(operator.source().kind());
         if (GRAPH_SOURCE_KINDS.contains(sourceKind)) {
             return CapabilitySnapshot.SourceKind.GRAPH;
         }
-        if (!operator.source().resourceId().isBlank()) {
+        if (!operator.source().resourceId().isBlank() || staticResourceId(node, operator) != null) {
             return CapabilitySnapshot.SourceKind.RESOURCE;
         }
         return CapabilitySnapshot.SourceKind.OPERATOR;
     }
 
-    private static String expectedChildSourceRef(OperatorDefinition operator,
+    private static String expectedChildSourceRef(GraphDraft.DraftNode node,
+                                                 OperatorDefinition operator,
                                                  CapabilitySnapshot.SourceKind sourceKind) {
-        return sourceKind != CapabilitySnapshot.SourceKind.OPERATOR
-                && !operator.source().resourceId().isBlank()
-                ? operator.source().resourceId()
-                : operator.operatorRef();
+        if (sourceKind == CapabilitySnapshot.SourceKind.OPERATOR) {
+            return operator.operatorRef();
+        }
+        if (!operator.source().resourceId().isBlank()) {
+            return operator.source().resourceId();
+        }
+        String resourceId = staticResourceId(node, operator);
+        return resourceId == null ? operator.operatorRef() : resourceId;
+    }
+
+    private static String staticResourceId(GraphDraft.DraftNode node, OperatorDefinition operator) {
+        if (!"httpResource".equals(operator.operatorRef())) {
+            return null;
+        }
+        GraphDraft.Binding binding = node.inputs().get("resourceId");
+        if (binding == null || !"constant".equals(binding.kind()) || !(binding.value() instanceof String value)) {
+            return null;
+        }
+        String resourceId = value.trim();
+        return resourceId.isEmpty() ? null : resourceId;
     }
 
     private static boolean capabilityBoundary(OperatorDefinition operator) {

@@ -33,6 +33,9 @@ Java protocol model and field-closure test in `resource-gateway-examples`.
 - Resource descriptors become sealed external capability snapshots.
 - Only external/resource-backed/runtime-bound operators become standalone capabilities; pure internal
   operators remain covered by their parent graph fingerprint.
+- Generic `httpResource` nodes with a constant `resourceId` binding close over that exact Resource
+  capability. A context/expression-driven `resourceId` remains a generic Operator capability with an
+  `UNKNOWN` effect and blocked runtime readiness until a bounded dispatch contract is supplied.
 - Graph drafts close over exact sealed external or nested capability snapshots and conservatively inherit
   effects, errors, determinism, security, state-model references, route conditions, and runtime limitations.
 - Unknown effects, unresolved child identity, unsealed children, conflicting errors, and ambiguous state

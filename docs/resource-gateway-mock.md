@@ -20,6 +20,8 @@
 - Stage 0 第二增量已完成 `CapabilityProjectionService`、`CapabilityProjectionContext` 和
   `CapabilityEffectAnalyzer`：Resource、外部 Operator、Graph 可生成 sealed snapshot；Graph 只闭包 external/nested
   capability，PURE 内部节点仍由 graph source fingerprint 完整覆盖。
+- Graph projection 已补齐节点级 `httpResource` 身份解析：常量 `resourceId` 精确闭包到 Resource snapshot；
+  动态 `ctx`/表达式绑定保留为 effect unknown、runtime blocked 的通用 Operator snapshot，不用虚假精确换取可运行假象。
 - CapabilitySnapshot 已将 tenant/organization/project/environment/region 作为一等 immutable scope；
   capabilityId 只在完整 scope 内唯一，scope 与 provenance tenant 不一致时拒绝封印。
 - HTTP read、受管 external write、未受管 external write、operator ports、条件分支、图级 read/write/mixed/unknown
