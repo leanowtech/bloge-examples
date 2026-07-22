@@ -1,11 +1,14 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.ToolStudioResourceGatewayProtocol;
 import com.leanowtech.bloge.gateway.testing.api.ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.ExpectedBinding;
 import com.leanowtech.bloge.gateway.testing.api.ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityPhysicalAttemptProviderInventoryCohortRepository;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor;
+import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -14,6 +17,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.context.properties.NestedConfigurationProperty;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -67,7 +71,10 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
         boolean staging = Objects.requireNonNull(environment, "environment")
                 .acceptsProfiles(Profiles.of("staging"));
         var anchor = properties.externalAnchor();
+        var roots = properties.trustRoots();
         if (staging && (properties.allowInsecureLoopback()
+                || !roots.enabled() || !roots.required()
+                || roots.allowInsecureLoopback()
                 || !anchor.enabled() || !anchor.required()
                 || anchor.maximumFaults() < 1 || anchor.minimumFaults() < 1
                 || anchor.allowInsecureLoopback()
@@ -88,6 +95,56 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
             throw Properties.invalid();
         }
         return new ValidatedRuntimeConfiguration(staging);
+    }
+
+    /**
+     * Strictly parses and freezes managed bootstrap-root trust before any table or remote fetch.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = ManagedTrustRootProperties.PREFIX,
+            name = "enabled", havingValue = "true")
+    ValidatedManagedTrustRoots physicalProviderInventoryManagedTrustRootPreflight(
+            ObjectMapper objectMapper,
+            Properties properties,
+            ValidatedRuntimeConfiguration validated) {
+        Objects.requireNonNull(validated, "validated");
+        try {
+            ManagedTrustRootProperties roots = properties.trustRoots();
+            ObjectMapper strict = Objects.requireNonNull(objectMapper, "objectMapper").copy()
+                    .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                    .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+            List<AuthorityKey> deploymentRoots =
+                    ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
+                            strict, roots.deploymentRootAuthorityKeysJson());
+            List<AuthorityKey> witnessRoots =
+                    ConfiguredTestSuiteStabilityServingInventoryAuthority.parseKeys(
+                            strict, roots.witnessRootAuthorityKeysJson());
+            ConfiguredTestSuiteStabilityServingInventoryAuthority.indexedKeys(
+                    deploymentRoots, roots.deploymentRootSignatureThreshold());
+            ConfiguredTestSuiteStabilityServingInventoryAuthority.indexedKeys(
+                    witnessRoots, roots.witnessRootSignatureThreshold());
+            if (!ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    .independentAuthorities(deploymentRoots, witnessRoots)
+                    || properties.sourceSettings().publicationUri().equals(
+                    roots.settings().publicationUri())) {
+                throw Properties.invalid();
+            }
+            var binding = new
+                    ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    .ExpectedBinding(properties.scopeId(), roots.trustRootSetId(),
+                    ToolStudioResourceGatewayProtocol.VERSION,
+                    roots.deploymentRootDomain(), roots.witnessRootDomain());
+            Set<String> policies =
+                    ConfiguredTestSuiteStabilityServingInventoryAuthority.parsePolicies(
+                            roots.acceptedPolicyFingerprints());
+            return new ValidatedManagedTrustRoots(binding, policies,
+                    roots.deploymentRootSignatureThreshold(), deploymentRoots,
+                    roots.witnessRootSignatureThreshold(), witnessRoots, roots.settings());
+        } catch (RuntimeException | java.security.GeneralSecurityException
+                 | java.io.IOException rejected) {
+            throw Properties.invalid();
+        }
     }
 
     /**
@@ -171,27 +228,98 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
                 objectMapper, local, external);
     }
 
-    /** Bootstraps one dynamic signed publication from exactly one installed adapter catalog. */
+    /** Creates the local root floor and externally anchors it before local advancement. */
+    @Bean
+    @ConditionalOnProperty(prefix = ManagedTrustRootProperties.PREFIX,
+            name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(
+            TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor.class)
+    TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor
+            testSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor(
+            TestRuntimeDatabase database,
+            ObjectMapper objectMapper,
+            Properties properties,
+            Environment environment,
+            ValidatedManagedTrustRoots roots,
+            ObjectProvider<
+                    TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor>
+                    externalAnchors) {
+        var local = new
+                DatabaseTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor(
+                database.jdbc(), objectMapper, properties.scopeId(),
+                roots.binding().trustRootSetId(), database.transactionManager());
+        local.init();
+        TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor external =
+                externalAnchor(externalAnchors, properties.externalAnchor(), environment);
+        return external == null ? local : new
+                ExternallyAnchoredTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor(
+                local, external);
+    }
+
+    /** Bootstraps and owns the restart-free atomic deployment/witness runtime-key source. */
     @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = ManagedTrustRootProperties.PREFIX,
+            name = "enabled", havingValue = "true")
+    DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+            dynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority(
+            ObjectMapper objectMapper,
+            TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor floor,
+            ValidatedManagedTrustRoots roots) {
+        return new DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority(
+                objectMapper, roots.binding(), roots.acceptedPolicies(),
+                roots.deploymentRootSignatureThreshold(), roots.deploymentRootKeys(),
+                roots.witnessRootSignatureThreshold(), roots.witnessRootKeys(), floor,
+                roots.settings());
+    }
+
+    /** Bootstraps the inventory consumer with explicit static migration keys. */
+    @Bean(name = "dynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority",
+            destroyMethod = "close")
+    @ConditionalOnProperty(prefix = ManagedTrustRootProperties.PREFIX,
+            name = "enabled", havingValue = "false", matchIfMissing = true)
     DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority
-            dynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
+            staticKeyDynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
             ObjectMapper objectMapper,
             ObjectProvider<TestSuiteStabilityPhysicalAttemptRuntimeAdapterCatalog> catalogs,
             TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor floor,
             Properties properties) {
-        List<TestSuiteStabilityPhysicalAttemptRuntimeAdapterCatalog> installed =
-                catalogs.orderedStream().toList();
-        if (installed.size() != 1) {
-            throw Properties.invalid();
-        }
         Map<TestSuiteStabilityPhysicalAttemptProviderInventory.ProviderDeployment,
                 TestSuiteStabilityPhysicalAttemptObservationAuthority> adapters =
-                installed.getFirst().adapters();
+                installedAdapters(catalogs);
         return new DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
                 objectMapper, properties.expectedBinding(), properties.signatureThreshold(),
                 properties.deploymentKeys(objectMapper), adapters, floor,
                 properties.witnessDomain(), properties.witnessSignatureThreshold(),
                 properties.witnessKeys(objectMapper), properties.sourceSettings());
+    }
+
+    /** Bootstraps the inventory consumer from the exact current managed-root generation. */
+    @Bean(name = "dynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority",
+            destroyMethod = "close")
+    @ConditionalOnProperty(prefix = ManagedTrustRootProperties.PREFIX,
+            name = "enabled", havingValue = "true")
+    DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority
+            managedKeyDynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
+            ObjectMapper objectMapper,
+            ObjectProvider<TestSuiteStabilityPhysicalAttemptRuntimeAdapterCatalog> catalogs,
+            TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor floor,
+            DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority roots,
+            Properties properties) {
+        return new DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
+                objectMapper, properties.expectedBinding(), installedAdapters(catalogs), floor,
+                roots, properties.sourceSettings());
+    }
+
+    /** Exposes aggregate-only managed-root lifecycle and floor strength through Actuator. */
+    @Bean
+    @ConditionalOnBean(
+            DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority.class)
+    @ConditionalOnMissingBean(
+            TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootHealth.class)
+    TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootHealth
+            testSuiteStabilityPhysicalAttemptProviderInventoryTrustRootHealth(
+            DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority roots) {
+        return new TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootHealth(roots);
     }
 
     /** Creates the database-clock exact cohort whose expected set comes only from publication. */
@@ -252,6 +380,7 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
      * @param leaseDurationMillis database-clock live-member lease
      * @param recordRetentionSeconds expired-row retention before bounded purge
      * @param externalAnchor optional physical-domain external non-equivocation policy
+     * @param trustRoots optional managed atomic runtime-key source
      */
     @ConfigurationProperties(prefix = Properties.PREFIX, ignoreUnknownFields = false)
     public record Properties(
@@ -278,7 +407,9 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
             Long recordRetentionSeconds,
             @NestedConfigurationProperty
             ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
-                    externalAnchor) {
+                    externalAnchor,
+            @NestedConfigurationProperty
+            ManagedTrustRootProperties trustRoots) {
 
         /** Prefix shared by Spring configuration, deployment examples, and startup tests. */
         public static final String PREFIX =
@@ -286,7 +417,68 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
         /** Nested prefix for physical provider-inventory external non-equivocation. */
         public static final String EXTERNAL_ANCHOR_PREFIX = PREFIX + ".external-anchor";
 
+        /**
+         * Backward-compatible constructor for explicit static-key migration configurations.
+         *
+         * @param enabled explicit test/staging activation switch
+         * @param trustDomain deployment publication trust domain
+         * @param scopeId stable physical provider-fleet scope
+         * @param cohortId exact Resource Gateway rollout cohort
+         * @param providerProtocolVersion exact physical provider adapter protocol
+         * @param acceptedPolicyFingerprints comma-separated accepted policy identities
+         * @param signatureThreshold deployment-authority M-of-N threshold
+         * @param authorityKeysJson deployment-authority public Ed25519 key array
+         * @param publicationUri HTTPS current-publication endpoint
+         * @param refreshIntervalSeconds fixed-delay refresh interval
+         * @param requestTimeoutMillis bounded HTTPS request timeout
+         * @param maximumSnapshotAgeSeconds hard local source freshness fence
+         * @param allowInsecureLoopback local-test-only HTTP loopback escape hatch
+         * @param witnessDomain independent witness trust domain
+         * @param witnessSignatureThreshold independent witness M-of-N threshold
+         * @param witnessAuthorityKeysJson witness public Ed25519 key array
+         * @param replicaId stable local deployment slot identity
+         * @param artifactFingerprint immutable Resource Gateway artifact identity
+         * @param heartbeatIntervalMillis local database lease renewal interval
+         * @param leaseDurationMillis database-clock live-member lease
+         * @param recordRetentionSeconds expired-row retention before bounded purge
+         * @param externalAnchor optional physical-domain external non-equivocation policy
+         */
+        public Properties(
+                Boolean enabled,
+                String trustDomain,
+                String scopeId,
+                String cohortId,
+                String providerProtocolVersion,
+                String acceptedPolicyFingerprints,
+                Integer signatureThreshold,
+                String authorityKeysJson,
+                String publicationUri,
+                Long refreshIntervalSeconds,
+                Long requestTimeoutMillis,
+                Long maximumSnapshotAgeSeconds,
+                Boolean allowInsecureLoopback,
+                String witnessDomain,
+                Integer witnessSignatureThreshold,
+                String witnessAuthorityKeysJson,
+                String replicaId,
+                String artifactFingerprint,
+                Long heartbeatIntervalMillis,
+                Long leaseDurationMillis,
+                Long recordRetentionSeconds,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                        externalAnchor) {
+            this(enabled, trustDomain, scopeId, cohortId, providerProtocolVersion,
+                    acceptedPolicyFingerprints, signatureThreshold, authorityKeysJson,
+                    publicationUri, refreshIntervalSeconds, requestTimeoutMillis,
+                    maximumSnapshotAgeSeconds, allowInsecureLoopback, witnessDomain,
+                    witnessSignatureThreshold, witnessAuthorityKeysJson, replicaId,
+                    artifactFingerprint, heartbeatIntervalMillis, leaseDurationMillis,
+                    recordRetentionSeconds, externalAnchor,
+                    ManagedTrustRootProperties.disabled());
+        }
+
         /** Applies finite defaults and rejects incomplete or unsafe enabled policy. */
+        @ConstructorBinding
         public Properties {
             enabled = Boolean.TRUE.equals(enabled);
             trustDomain = normalized(trustDomain);
@@ -313,6 +505,8 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
             externalAnchor = externalAnchor == null
                     ? ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
                     .disabled() : externalAnchor;
+            trustRoots = trustRoots == null
+                    ? ManagedTrustRootProperties.disabled() : trustRoots;
             try {
                 ExpectedBinding binding = expectedBinding(trustDomain, scopeId, cohortId,
                         providerProtocolVersion, acceptedPolicyFingerprints);
@@ -324,9 +518,18 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
                         .LocalPolicy local = localPolicy(replicaId, artifactFingerprint,
                         leaseDurationMillis, recordRetentionSeconds);
                 Duration heartbeat = Duration.ofMillis(heartbeatIntervalMillis);
-                if (!enabled || signatureThreshold < 1 || signatureThreshold > 32
+                boolean staticKeyMaterial = signatureThreshold != 0
+                        || !"[]".equals(authorityKeysJson)
+                        || witnessSignatureThreshold != 0
+                        || !"[]".equals(witnessAuthorityKeysJson);
+                boolean invalidStaticMode = !trustRoots.enabled()
+                        && (signatureThreshold < 1 || signatureThreshold > 32
                         || witnessSignatureThreshold < 1
                         || witnessSignatureThreshold > 32
+                        || "[]".equals(authorityKeysJson)
+                        || "[]".equals(witnessAuthorityKeysJson));
+                if (!enabled || trustRoots.enabled() && staticKeyMaterial
+                        || invalidStaticMode
                         || binding.trustDomain().equals(witnessDomain)
                         || heartbeat.compareTo(Duration.ofMillis(250)) < 0
                         || heartbeat.multipliedBy(2).compareTo(
@@ -454,8 +657,196 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
         }
     }
 
+    /**
+     * Public-only managed runtime-key source nested below physical provider inventory.
+     *
+     * @param enabled selects restart-free atomic dual-key generations instead of static keys
+     * @param required rejects static-key migration mode; mandatory in staging
+     * @param trustRootSetId stable managed deployment/witness key-set identity
+     * @param acceptedPolicyFingerprints accepted signed root-rotation policy fingerprints
+     * @param deploymentRootDomain deployment bootstrap-root trust domain
+     * @param deploymentRootSignatureThreshold deployment bootstrap-root M-of-N threshold
+     * @param deploymentRootAuthorityKeysJson public deployment bootstrap Ed25519 keys
+     * @param witnessRootDomain independent witness bootstrap-root trust domain
+     * @param witnessRootSignatureThreshold witness bootstrap-root M-of-N threshold
+     * @param witnessRootAuthorityKeysJson public witness bootstrap Ed25519 keys
+     * @param publicationUri strict HTTPS atomic dual-key publication endpoint
+     * @param refreshIntervalSeconds fixed-delay refresh interval
+     * @param requestTimeoutMillis bounded connect and request timeout
+     * @param unknownKeyRefreshIntervalSeconds synchronous unknown-key refresh cooldown
+     * @param maximumSnapshotAgeSeconds hard local root-source freshness fence
+     * @param allowInsecureLoopback local-test-only HTTP loopback escape hatch
+     */
+    public record ManagedTrustRootProperties(
+            Boolean enabled,
+            Boolean required,
+            String trustRootSetId,
+            String acceptedPolicyFingerprints,
+            String deploymentRootDomain,
+            Integer deploymentRootSignatureThreshold,
+            String deploymentRootAuthorityKeysJson,
+            String witnessRootDomain,
+            Integer witnessRootSignatureThreshold,
+            String witnessRootAuthorityKeysJson,
+            String publicationUri,
+            Long refreshIntervalSeconds,
+            Long requestTimeoutMillis,
+            Long unknownKeyRefreshIntervalSeconds,
+            Long maximumSnapshotAgeSeconds,
+            Boolean allowInsecureLoopback) {
+
+        /** Prefix shared by Spring profiles, deployment metadata, and conditional beans. */
+        public static final String PREFIX = Properties.PREFIX + ".trust-roots";
+
+        /** Applies finite defaults and rejects disabled, partial, or mixed root policy. */
+        public ManagedTrustRootProperties {
+            enabled = Boolean.TRUE.equals(enabled);
+            required = Boolean.TRUE.equals(required);
+            trustRootSetId = normalized(trustRootSetId);
+            acceptedPolicyFingerprints = normalized(acceptedPolicyFingerprints);
+            deploymentRootDomain = normalized(deploymentRootDomain);
+            deploymentRootSignatureThreshold = defaulted(
+                    deploymentRootSignatureThreshold, 0);
+            deploymentRootAuthorityKeysJson = defaultedJson(
+                    deploymentRootAuthorityKeysJson);
+            witnessRootDomain = normalized(witnessRootDomain);
+            witnessRootSignatureThreshold = defaulted(witnessRootSignatureThreshold, 0);
+            witnessRootAuthorityKeysJson = defaultedJson(witnessRootAuthorityKeysJson);
+            publicationUri = normalized(publicationUri);
+            refreshIntervalSeconds = defaulted(refreshIntervalSeconds, 30L);
+            requestTimeoutMillis = defaulted(requestTimeoutMillis, 3_000L);
+            unknownKeyRefreshIntervalSeconds = defaulted(
+                    unknownKeyRefreshIntervalSeconds, 5L);
+            maximumSnapshotAgeSeconds = defaulted(maximumSnapshotAgeSeconds, 60L);
+            allowInsecureLoopback = Boolean.TRUE.equals(allowInsecureLoopback);
+            if (required && !enabled) {
+                throw Properties.invalid();
+            }
+            boolean configured = !trustRootSetId.isBlank()
+                    || !acceptedPolicyFingerprints.isBlank()
+                    || !deploymentRootDomain.isBlank()
+                    || deploymentRootSignatureThreshold != 0
+                    || !"[]".equals(deploymentRootAuthorityKeysJson)
+                    || !witnessRootDomain.isBlank()
+                    || witnessRootSignatureThreshold != 0
+                    || !"[]".equals(witnessRootAuthorityKeysJson)
+                    || !publicationUri.isBlank() || allowInsecureLoopback;
+            if (!enabled && configured) {
+                throw Properties.invalid();
+            }
+            if (enabled && (trustRootSetId.isBlank()
+                    || acceptedPolicyFingerprints.isBlank()
+                    || deploymentRootDomain.isBlank()
+                    || deploymentRootSignatureThreshold < 1
+                    || deploymentRootSignatureThreshold > 32
+                    || "[]".equals(deploymentRootAuthorityKeysJson)
+                    || witnessRootDomain.isBlank()
+                    || witnessRootSignatureThreshold < 1
+                    || witnessRootSignatureThreshold > 32
+                    || "[]".equals(witnessRootAuthorityKeysJson)
+                    || deploymentRootDomain.equals(witnessRootDomain)
+                    || publicationUri.isBlank())) {
+                throw Properties.invalid();
+            }
+            if (enabled) {
+                settings(publicationUri, refreshIntervalSeconds, requestTimeoutMillis,
+                        unknownKeyRefreshIntervalSeconds, maximumSnapshotAgeSeconds,
+                        allowInsecureLoopback);
+            }
+        }
+
+        /**
+         * Returns the canonical disabled managed-root policy.
+         *
+         * @return fully normalized disabled policy
+         */
+        public static ManagedTrustRootProperties disabled() {
+            return new ManagedTrustRootProperties(false, false, "", "", "", 0,
+                    "[]", "", 0, "[]", "", 30L, 3_000L, 5L, 60L, false);
+        }
+
+        private DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                .Settings settings() {
+            return settings(publicationUri, refreshIntervalSeconds, requestTimeoutMillis,
+                    unknownKeyRefreshIntervalSeconds, maximumSnapshotAgeSeconds,
+                    allowInsecureLoopback);
+        }
+
+        private static DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                .Settings settings(
+                String publicationUri,
+                long refreshIntervalSeconds,
+                long requestTimeoutMillis,
+                long unknownKeyRefreshIntervalSeconds,
+                long maximumSnapshotAgeSeconds,
+                boolean allowInsecureLoopback) {
+            URI uri;
+            try {
+                uri = URI.create(publicationUri);
+            } catch (RuntimeException rejected) {
+                throw Properties.invalid();
+            }
+            return new
+                    DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    .Settings(uri, Duration.ofSeconds(refreshIntervalSeconds),
+                    Duration.ofMillis(requestTimeoutMillis),
+                    Duration.ofSeconds(unknownKeyRefreshIntervalSeconds),
+                    Duration.ofSeconds(maximumSnapshotAgeSeconds),
+                    allowInsecureLoopback).validated();
+        }
+
+        private static String normalized(String value) {
+            return Objects.requireNonNullElse(value, "").trim();
+        }
+
+        private static String defaultedJson(String value) {
+            String normalized = normalized(value);
+            return normalized.isEmpty() ? "[]" : normalized;
+        }
+
+        private static int defaulted(Integer value, int fallback) {
+            return value == null ? fallback : value;
+        }
+
+        private static long defaulted(Long value, long fallback) {
+            return value == null ? fallback : value;
+        }
+    }
+
     /** Successful stateless profile preflight required by every stateful bean. */
     record ValidatedRuntimeConfiguration(boolean staging) {
+    }
+
+    /** Immutable strictly parsed bootstrap-root policy consumed by all managed-root beans. */
+    record ValidatedManagedTrustRoots(
+            ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    .ExpectedBinding binding,
+            Set<String> acceptedPolicies,
+            int deploymentRootSignatureThreshold,
+            List<AuthorityKey> deploymentRootKeys,
+            int witnessRootSignatureThreshold,
+            List<AuthorityKey> witnessRootKeys,
+            DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority.Settings
+                    settings) {
+
+        ValidatedManagedTrustRoots {
+            binding = Objects.requireNonNull(binding, "binding");
+            acceptedPolicies = Set.copyOf(acceptedPolicies);
+            deploymentRootKeys = List.copyOf(deploymentRootKeys);
+            witnessRootKeys = List.copyOf(witnessRootKeys);
+            settings = Objects.requireNonNull(settings, "settings");
+        }
+    }
+
+    private static Map<TestSuiteStabilityPhysicalAttemptProviderInventory.ProviderDeployment,
+            TestSuiteStabilityPhysicalAttemptObservationAuthority> installedAdapters(
+            ObjectProvider<TestSuiteStabilityPhysicalAttemptRuntimeAdapterCatalog> catalogs) {
+        List<TestSuiteStabilityPhysicalAttemptRuntimeAdapterCatalog> installed =
+                catalogs.orderedStream().toList();
+        if (installed.size() != 1) {
+            throw Properties.invalid();
+        }
+        return installed.getFirst().adapters();
     }
 
     private static TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor

@@ -414,9 +414,23 @@ containing `production`. The embedding deployment must register exactly one
 superset. The signed publication remains the sole admission authority and must name every expected
 Resource Gateway replica. There is deliberately no local expected-replica list that could narrow a
 fleet. Configure the trust domain, scope, cohort, accepted policy fingerprints, independent
-deployment/witness Ed25519 thresholds and public keys, local replica/artifact identities, and the
-HTTPS source using the `RG_TEST_PHYSICAL_ATTEMPT_PROVIDER_INVENTORY_*` variables documented in
-`application-test.yml` and `application-staging.yml`.
+deployment/witness trust domains, local replica/artifact identities, and the HTTPS source using the
+`RG_TEST_PHYSICAL_ATTEMPT_PROVIDER_INVENTORY_*` variables documented in `application-test.yml` and
+`application-staging.yml`. Exactly one verification mode is allowed. Static migration mode supplies
+the deployment/witness thresholds and public Ed25519 keys directly. Managed mode sets those four
+static fields to `0`/`[]` and enables
+`RG_TEST_PHYSICAL_ATTEMPT_PROVIDER_INVENTORY_TRUST_ROOT_ENABLED=true`.
+
+Managed mode consumes one atomically signed deployment/witness runtime-key publication. Configure
+`..._TRUST_ROOT_SET_ID`, accepted root policy fingerprints, independent deployment/witness bootstrap
+root domains, thresholds and public-key arrays, the root publication URI, refresh/timeout/unknown-key
+budgets, and the hard maximum age. The root endpoint must return
+`application/vnd.bloge.physical-attempt-provider-inventory-trust-root-publication.v1+json` and the
+exact `X-BLOGE-Physical-Provider-Inventory-Trust-Root-Protocol` value
+`bloge.testSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication.v1`. It must not reuse
+the inventory publication URI. The root authority bootstraps before the inventory consumer, owns an
+independent database sequence floor and Actuator health contributor, supports restart-free atomic
+dual-key rotation, and closes only after its consumer during context shutdown.
 
 The publication endpoint must return
 `application/vnd.bloge.physical-attempt-provider-inventory-publication.v1+json`, the exact
@@ -461,7 +475,9 @@ Configure this path below
 the notary set and timing policy, `..._TRANSPORT_*` for the notary HTTPS identity,
 `..._TRUST_*` plus `..._TRUST_TRANSPORT_*` for managed receipt-key publication, and
 `..._BOOTSTRAP_ROOT_*` plus `..._BOOTSTRAP_ROOT_TRANSPORT_*` for its complete-chain root source.
-Staging refuses the physical inventory unless external anchoring is enabled and required with
+Staging also requires managed roots with `..._TRUST_ROOT_ENABLED=true`,
+`..._TRUST_ROOT_REQUIRED=true`, strict HTTPS, and every insecure-loopback escape hatch off. It
+refuses the physical inventory unless external anchoring is enabled and required with
 `minimum-faults >= 1` and `maximum-faults >= 1`; managed receipt trust, complete-chain bootstrap
 roots, and all three private-PKIX/SPKI/mTLS/workload-identity transports must also be enabled and
 required and carry exact client/server certificate identities, with every insecure-loopback escape
@@ -472,12 +488,15 @@ part of the shared 15-target restart-free certificate-rotation inventory. Aggreg
 only strength and availability facts. The strict product entry point is the
 [physical external-anchor configuration Schema](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-external-anchor-configuration-v1.schema.json).
 
-Managed deployment/witness signing-root hot rotation, N/N-1 backfill, bounded evidence retention, a
-certified process/container adapter, external notary production certification, and production
-profile wiring remain open. See the
+N/N-1 root and publication backfill, bounded evidence retention, HSM/KMS custody, root-publisher
+HA/anti-equivocation certification, a certified process/container adapter, external notary
+production certification, fleet failover/chaos evidence, and production profile wiring remain
+open. See the
 [dynamic provider-inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-dynamic-physical-provider-inventory-verification.md),
 [external non-equivocation core verification](../docs/resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-external-non-equivocation-core-verification.md),
 [external non-equivocation runtime verification](../docs/resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-external-non-equivocation-runtime-verification.md),
+[managed trust-root consumer verification](../docs/resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-managed-trust-root-consumer-verification.md),
+[managed trust-root product-composition verification](../docs/resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-managed-trust-root-product-composition-verification.md),
 and the strict
 [publication](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-publication-v1.schema.json),
 [generation floor](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-publication-generation-v1.schema.json), and

@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.ToolStudioResourceGatewayProtocol;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationReceipt.IsolationMode;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptProviderInventory.Binding;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -50,12 +51,16 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
     private static final String EXTERNAL_PREFIX =
             TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfiguration.Properties
                     .EXTERNAL_ANCHOR_PREFIX + ".";
+    private static final String ROOT_PREFIX = PREFIX + "trust-roots.";
     private static final String POLICY = fingerprint('b');
+    private static final String ROOT_POLICY = fingerprint('c');
     private static final String ARTIFACT = fingerprint('a');
 
     private ObjectMapper objectMapper;
     private KeyPair deployment;
     private KeyPair witness;
+    private KeyPair deploymentRoot;
+    private KeyPair witnessRoot;
     private TestSuiteStabilityPhysicalAttemptObservationAuthority provider;
     private HttpServer server;
     private Map<String, Object> enabledProperties;
@@ -66,10 +71,13 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
         KeyPairGenerator generator = KeyPairGenerator.getInstance("Ed25519");
         deployment = generator.generateKeyPair();
         witness = generator.generateKeyPair();
+        deploymentRoot = generator.generateKeyPair();
+        witnessRoot = generator.generateKeyPair();
         provider = mock(TestSuiteStabilityPhysicalAttemptObservationAuthority.class);
         when(provider.descriptor()).thenReturn(binding().descriptor());
 
         byte[] publication = objectMapper.writeValueAsBytes(publication());
+        byte[] rootPublication = objectMapper.writeValueAsBytes(rootPublication());
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/inventory", exchange -> {
             exchange.getResponseHeaders().set("Content-Type",
@@ -83,6 +91,20 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
             exchange.getResponseHeaders().set("ETag", "\"generation-1\"");
             exchange.sendResponseHeaders(200, publication.length);
             exchange.getResponseBody().write(publication);
+            exchange.close();
+        });
+        server.createContext("/trust-roots", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type",
+                    DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                            .MEDIA_TYPE);
+            exchange.getResponseHeaders().set(
+                    DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                            .PROTOCOL_HEADER,
+                    TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+                            .SCHEMA_VERSION);
+            exchange.getResponseHeaders().set("ETag", "\"root-generation-1\"");
+            exchange.sendResponseHeaders(200, rootPublication.length);
+            exchange.getResponseBody().write(rootPublication);
             exchange.close();
         });
         server.start();
@@ -180,6 +202,51 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
     }
 
     @Test
+    void managedTestProfileComposesExternalFirstRootsHealthAndInventoryConsumer()
+            throws Exception {
+        Map<String, Object> properties = new LinkedHashMap<>(enabledProperties);
+        managedRootProperties(properties, true);
+        externalProperties(properties, 1, 1);
+        var anchor = anchor(true, true);
+
+        DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority roots;
+        DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority inventory;
+        try (var context = context(properties, true, anchor, "test")) {
+            roots = context.getBean(
+                    DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                            .class);
+            inventory = context.getBean(
+                    DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.class);
+
+            assertThat(context.getBean(
+                    TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor.class))
+                    .isInstanceOf(
+                            ExternallyAnchoredTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor
+                                    .class);
+            assertThat(context.getBean(
+                    TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootHealth.class)
+                    .health().getStatus()).isEqualTo(Status.UP);
+            assertThat(roots.snapshot()).satisfies(snapshot -> {
+                assertThat(snapshot.available()).isTrue();
+                assertThat(snapshot.status()).isEqualTo("HEALTHY");
+                assertThat(snapshot.externalNonEquivocation()).isTrue();
+                assertThat(snapshot.byzantineQuorumNonEquivocation()).isTrue();
+                assertThat(snapshot.automaticRefresh()).isTrue();
+            });
+            assertThat(inventory.descriptor().properties())
+                    .containsEntry("managedTrustRootRefresh", true)
+                    .containsEntry("managedTrustRootAvailable", true)
+                    .containsEntry("atomicDualTrustRootPublication", true)
+                    .containsEntry("durableTrustRootFloor", true)
+                    .containsEntry("externallyAnchoredTrustRootFloor", true)
+                    .containsEntry("byzantineQuorumAnchoredTrustRootFloor", true);
+        }
+
+        assertThat(inventory.observation().status()).isEqualTo("CLOSED");
+        assertThat(roots.snapshot().status()).isEqualTo("CLOSED");
+    }
+
+    @Test
     void defaultTestAdapterBuildsOneStaticChallengeBoundPhysicalDomainAnchor()
             throws Exception {
         var configuration =
@@ -261,6 +328,28 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
     }
 
     @Test
+    void profileMetadataExposesTheCompleteManagedTrustRootContract() throws Exception {
+        Map<String, Object> test = managedTrustRootMetadata("application-test.yml");
+        Map<String, Object> staging = managedTrustRootMetadata("application-staging.yml");
+
+        assertThat(test).hasSize(TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfiguration
+                .ManagedTrustRootProperties.class.getRecordComponents().length);
+        assertThat(staging).isEqualTo(test);
+        assertThat(test.keySet()).contains(
+                ROOT_PREFIX + "enabled",
+                ROOT_PREFIX + "required",
+                ROOT_PREFIX + "trust-root-set-id",
+                ROOT_PREFIX + "deployment-root-authority-keys-json",
+                ROOT_PREFIX + "witness-root-authority-keys-json",
+                ROOT_PREFIX + "publication-uri",
+                ROOT_PREFIX + "maximum-snapshot-age-seconds");
+        assertThat(test.values()).allSatisfy(value -> assertThat(value)
+                .isInstanceOf(String.class)
+                .asString()
+                .startsWith("${RG_TEST_PHYSICAL_ATTEMPT_PROVIDER_INVENTORY_TRUST_ROOT_"));
+    }
+
+    @Test
     void stagingRequiresWorkloadIdentityOnEveryExternalAnchorTransport() {
         var configuration =
                 new TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfiguration();
@@ -282,6 +371,68 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
 
         assertThat(configuration.physicalProviderInventoryRuntimePreflight(
                 stagingProperties(true, true, true), staging).staging()).isTrue();
+    }
+
+    @Test
+    void stagingRequiresManagedStrictProviderInventoryTrustRoots() {
+        var configuration =
+                new TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfiguration();
+        var staging = new MockEnvironment();
+        staging.setActiveProfiles("staging");
+
+        assertThatThrownBy(() -> configuration.physicalProviderInventoryRuntimePreflight(
+                stagingProperties(true, true, true, false, false, false), staging))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Physical provider-inventory runtime configuration is invalid");
+        assertThatThrownBy(() -> configuration.physicalProviderInventoryRuntimePreflight(
+                stagingProperties(true, true, true, true, false, false), staging))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Physical provider-inventory runtime configuration is invalid");
+        assertThatThrownBy(() -> configuration.physicalProviderInventoryRuntimePreflight(
+                stagingProperties(true, true, true, true, true, true), staging))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Physical provider-inventory runtime configuration is invalid");
+
+        assertThat(configuration.physicalProviderInventoryRuntimePreflight(
+                stagingProperties(true, true, true, true, true, false), staging).staging())
+                .isTrue();
+    }
+
+    @Test
+    void staticAndManagedTrustModesCannotBeMixed() throws Exception {
+        Map<String, Object> properties = new LinkedHashMap<>(enabledProperties);
+        managedRootProperties(properties, true);
+        properties.put(PREFIX + "signature-threshold", "1");
+        properties.put(PREFIX + "authority-keys-json",
+                keysJson("deployment-a", "deployment-key-a", deployment));
+        var context = unrefreshedContext(properties, true, "test");
+
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Physical provider-inventory runtime configuration is invalid");
+        } finally {
+            context.close();
+        }
+    }
+
+    @Test
+    void managedTrustRootAndInventoryPublicationsMustBeIndependent() throws Exception {
+        Map<String, Object> properties = new LinkedHashMap<>(enabledProperties);
+        managedRootProperties(properties, true);
+        properties.put(ROOT_PREFIX + "publication-uri", properties.get(
+                PREFIX + "publication-uri"));
+        var context = unrefreshedContext(properties, true, "test");
+
+        try {
+            assertThatThrownBy(context::refresh)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Physical provider-inventory runtime configuration is invalid");
+        } finally {
+            context.close();
+        }
     }
 
     @Test
@@ -476,6 +627,16 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
     }
 
     private static Map<String, Object> externalAnchorMetadata(String resource) throws IOException {
+        return profileMetadata(resource, EXTERNAL_PREFIX);
+    }
+
+    private static Map<String, Object> managedTrustRootMetadata(String resource)
+            throws IOException {
+        return profileMetadata(resource, ROOT_PREFIX);
+    }
+
+    private static Map<String, Object> profileMetadata(String resource, String prefix)
+            throws IOException {
         Map<String, Object> result = new LinkedHashMap<>();
         var sources = new YamlPropertySourceLoader().load(
                 resource, new FileSystemResource(Path.of(
@@ -484,7 +645,7 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
             assertThat(source).isInstanceOf(EnumerablePropertySource.class);
             var enumerable = (EnumerablePropertySource<?>) source;
             Arrays.stream(enumerable.getPropertyNames())
-                    .filter(name -> name.startsWith(EXTERNAL_PREFIX))
+                    .filter(name -> name.startsWith(prefix))
                     .forEach(name -> result.put(name, enumerable.getProperty(name)));
         }
         return Map.copyOf(result);
@@ -495,9 +656,24 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
             boolean notaryIdentity,
             boolean managedTrustIdentity,
             boolean bootstrapRootIdentity) {
+        return stagingProperties(notaryIdentity, managedTrustIdentity, bootstrapRootIdentity,
+                true, true, false);
+    }
+
+    private static TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfiguration.Properties
+            stagingProperties(
+            boolean notaryIdentity,
+            boolean managedTrustIdentity,
+            boolean bootstrapRootIdentity,
+            boolean rootsEnabled,
+            boolean rootsRequired,
+            boolean rootsAllowInsecureLoopback) {
         var properties = mock(
                 TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfiguration
                         .Properties.class);
+        var roots = mock(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfiguration
+                        .ManagedTrustRootProperties.class);
         var anchor = mock(
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties.class);
         var managedTrust = mock(
@@ -511,6 +687,10 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
         var bootstrapRootTransport = mock(RecoveryFleetPublicationTransportProperties.class);
 
         when(properties.allowInsecureLoopback()).thenReturn(false);
+        when(properties.trustRoots()).thenReturn(roots);
+        when(roots.enabled()).thenReturn(rootsEnabled);
+        when(roots.required()).thenReturn(rootsRequired);
+        when(roots.allowInsecureLoopback()).thenReturn(rootsAllowInsecureLoopback);
         when(properties.externalAnchor()).thenReturn(anchor);
         when(anchor.enabled()).thenReturn(true);
         when(anchor.required()).thenReturn(true);
@@ -592,6 +772,35 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
         properties.put(EXTERNAL_PREFIX + "endpoints-json",
                 "[{\"authorityId\":\"notary-a\",\"failureDomain\":\"region-a\","
                         + "\"uri\":\"https://notary.example/v1/append\"}]");
+    }
+
+    private void managedRootProperties(Map<String, Object> properties, boolean required)
+            throws Exception {
+        properties.put(PREFIX + "signature-threshold", "0");
+        properties.put(PREFIX + "authority-keys-json", "[]");
+        properties.put(PREFIX + "witness-signature-threshold", "0");
+        properties.put(PREFIX + "witness-authority-keys-json", "[]");
+        properties.put(ROOT_PREFIX + "enabled", "true");
+        properties.put(ROOT_PREFIX + "required", Boolean.toString(required));
+        properties.put(ROOT_PREFIX + "trust-root-set-id", "provider-inventory-roots");
+        properties.put(ROOT_PREFIX + "accepted-policy-fingerprints", ROOT_POLICY);
+        properties.put(ROOT_PREFIX + "deployment-root-domain",
+                "provider.inventory.bootstrap.example");
+        properties.put(ROOT_PREFIX + "deployment-root-signature-threshold", "1");
+        properties.put(ROOT_PREFIX + "deployment-root-authority-keys-json",
+                keysJson("deployment-root-a", "deployment-root-key-a", deploymentRoot));
+        properties.put(ROOT_PREFIX + "witness-root-domain",
+                "provider.inventory.bootstrap-witness.example");
+        properties.put(ROOT_PREFIX + "witness-root-signature-threshold", "1");
+        properties.put(ROOT_PREFIX + "witness-root-authority-keys-json",
+                keysJson("witness-root-a", "witness-root-key-a", witnessRoot));
+        properties.put(ROOT_PREFIX + "publication-uri", "http://127.0.0.1:"
+                + server.getAddress().getPort() + "/trust-roots");
+        properties.put(ROOT_PREFIX + "refresh-interval-seconds", "10");
+        properties.put(ROOT_PREFIX + "request-timeout-millis", "1000");
+        properties.put(ROOT_PREFIX + "unknown-key-refresh-interval-seconds", "5");
+        properties.put(ROOT_PREFIX + "maximum-snapshot-age-seconds", "30");
+        properties.put(ROOT_PREFIX + "allow-insecure-loopback", "true");
     }
 
     private static TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor anchor(
@@ -695,6 +904,45 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
                 checkpoint);
     }
 
+    private TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+            rootPublication() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        var material = new
+                TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication.Material(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication.Material
+                        .SCHEMA_VERSION,
+                "provider-inventory-roots", 1, "", "physical-attempt-providers",
+                ToolStudioResourceGatewayProtocol.VERSION,
+                "provider.inventory.bootstrap.example",
+                "provider.inventory.bootstrap-witness.example",
+                "provider.inventory.example", "provider.inventory.witness.example",
+                1, 1,
+                List.of(rootKeyMaterial(
+                        "deployment-a", "deployment-key-a", deployment, now)),
+                List.of(rootKeyMaterial("witness-a", "witness-key-a", witness, now)),
+                ROOT_POLICY, now.minusSeconds(60), now.minusSeconds(60),
+                now.plusSeconds(600));
+        String materialFingerprint = ProtocolFingerprint.of(objectMapper, material);
+        return new TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+                        .SCHEMA_VERSION,
+                material, materialFingerprint,
+                signatures(materialFingerprint, signer(
+                        "deployment-root-a", "deployment-root-key-a", deploymentRoot, now)),
+                signatures(materialFingerprint, signer(
+                        "witness-root-a", "witness-root-key-a", witnessRoot, now)));
+    }
+
+    private static TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+            .AuthorityKeyMaterial rootKeyMaterial(
+            String authorityId, String keyId, KeyPair pair, Instant now) {
+        return new TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+                .AuthorityKeyMaterial(
+                authorityId, keyId,
+                Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()),
+                now.minusSeconds(3_600), now.plusSeconds(7_200), true, false);
+    }
+
     private static Binding binding() {
         return new Binding(Binding.SCHEMA_VERSION, "provider-a", "deployment-1",
                 ARTIFACT, "observation-key-a", List.of(IsolationMode.PROCESS),
@@ -746,6 +994,15 @@ class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurationTest
                 .isEmpty();
         assertThat(context.getBeansOfType(
                 TestSuiteStabilityPhysicalAttemptProviderInventoryHealth.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootHealth.class))
+                .isEmpty();
         assertThat(context.getBeansOfType(
                 TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor.class))
                 .isEmpty();
