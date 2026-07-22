@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 协议内核已完成，projection 与 probe 接线进行中 |
+| 状态 | Accepted / In implementation；Stage 0 协议与基础 projection 已完成，内置资产闭包、API 与 probe 接线进行中 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -17,12 +17,19 @@
 
 - Stage 0 第一增量已完成 `CapabilitySnapshot`、`CapabilityContract`、`EffectContract`、
   `ArtifactProvenance` 和 exact `MirrorArtifactRef` Java 协议内核。
+- Stage 0 第二增量已完成 `CapabilityProjectionService`、`CapabilityProjectionContext` 和
+  `CapabilityEffectAnalyzer`：Resource、外部 Operator、Graph 可生成 sealed snapshot；Graph 只闭包 external/nested
+  capability，PURE 内部节点仍由 graph source fingerprint 完整覆盖。
+- HTTP read、受管 external write、未受管 external write、operator ports、条件分支、图级 read/write/mixed/unknown
+  effect 与 runtime readiness 已按 fail-closed 语义投影。未知 effect、缺失/未封印/身份不匹配的 child snapshot、
+  冲突 error contract 和不明确 state model 均不会被静默放行。
 - capability snapshot 采用完整 canonical JSON 内容寻址；source、contract、effect、runtime、dependency、
   ownership、lifecycle、provenance 或时间字段被修改都会导致完整性校验失败。
 - 四份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
   矛盾 effect、伪造统计置信度和无 lineage 的 recorded/inferred provenance。
-- 当前只完成协议内核，projection、API、MirrorPlan 和 runtime 尚未闭合，因此 capability probe 不得宣称
-  mirror serving 可用。聚焦验证为 7 tests、0 failures、0 errors、0 skips。
+- 当前仍未完成内置 7 graph/3 visual examples 的 capability closure、snapshot API、lifecycle repository、test-kit、
+  MirrorPlan 与 external-leaf runtime，因此 capability probe 不得宣称 mirror serving 可用。聚焦验证为
+  17 tests、0 failures、0 errors、0 skips。
 
 ---
 
@@ -106,7 +113,7 @@ Resource Gateway 已有的工业底座应直接复用：
 
 | 能力域 | 当前成熟度 | 主要缺口 |
 |---|---:|---|
-| Resource/Graph/Schema | 70% | 缺 CapabilitySnapshot、EffectContract 和统一依赖投影 |
+| Resource/Graph/Schema | 75% | Capability/Effect 协议与基础投影已落地；缺内置资产 closure、生命周期仓储、API 和跨系统 compatibility fixture |
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
 | Evidence/Replay | 75% | 缺 mirror provenance、state trace、fidelity observation 和 outcome lineage |
 | 递归 DAG 测试 | 65% | 缺统一镜像编译计划和 contract-mock 展开治理 |
@@ -189,7 +196,19 @@ interface CapabilityContract {
 }
 ```
 
-### 5.3 EffectContract
+### 5.3 当前 projection 规则（已实现）
+
+| 权威资产 | Capability 边界 | effect 与 runtime 规则 | 失败关闭条件 |
+|---|---|---|---|
+| `ResourceDescriptor` | 每个 resource 投为 `EXTERNAL` | GET/HEAD/OPTIONS 为 read-only；其他方法保留 external mutation；只有 conformant managed-write 才 runtime ready | unsafe method 缺 managed-write 时 runtime blocked，effect 仍为 CRITICAL write |
+| `OperatorDefinition` | external effect、resource-backed、remote/AI/event/webhook 或 nested graph source | ports 组合成形式化 object schema；UNKNOWN effect 即使 executor 可运行也 runtime blocked | PURE 内部 operator 不创建独立 capability；外部身份却声明 PURE 时投为 UNKNOWN |
+| `GraphDraft` | graph 投为 `COMPOSED`，dependency 只包含 external/nested child | child effect、error、determinism、security 和 readiness 保守汇总；route condition 投入 conditional effect | 缺 operator snapshot、fingerprint 漂移、child 缺失/未封印/歧义、错误契约冲突、多个 state model、virtual/external 双写世界均拒绝 |
+
+Graph source fingerprint 与现有 Tool Studio draft fingerprint 口径一致：排除非语义 `nodeFixtures`，保留节点、边、
+binding、schema、operator snapshot 和内部 PURE 节点变化。也就是说，治理依赖图不会被内部实现节点撑爆，但内部逻辑
+变化仍必然推动 graph source fingerprint 和 capability snapshot fingerprint 变化。
+
+### 5.4 EffectContract
 
 composed capability 不是天然纯函数。其 effect 是所有可达依赖的保守汇总：
 
@@ -209,7 +228,7 @@ interface EffectContract {
 编译器必须检查递归依赖环、版本漂移、未解析依赖、effect 汇总不完整和高风险声明冲突。任何未知 effect
 按最危险语义处理，不允许从 `UNKNOWN` 推断为只读。
 
-### 5.4 递归组合规则
+### 5.5 递归组合规则
 
 1. 每条依赖必须固定 capability revision 和 fingerprint。
 2. 编译时展开完整 invocation inventory，并检测静态环。
@@ -947,6 +966,10 @@ SRE runbook 和生产认证包。
 
 推荐领取顺序：001/004/007/010 可并行；随后 002/003/009/011；最后 005/006/008/012。Stage 0 不实现
 真实 mirror serving，避免协议尚未冻结时把临时模型固化进运行时。
+
+当前领取状态：RG-MIR-001 已完成 Java/schema 协议内核；RG-MIR-002/003 已完成通用 projection 与 effect
+汇总的第一纵向切片，但必须继续补内置 7 graph/3 visual example closure、递归闭包验证和 API 集成验收；其余 ticket
+仍按上述依赖推进。这里的“完成”只指 ticket 内已列明的增量，不代表 Stage 0 已过退出门禁。
 
 ## 20. 测试策略与 Definition of Done
 

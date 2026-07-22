@@ -21,6 +21,21 @@ Java protocol model and field-closure test in `resource-gateway-examples`.
 - A composed capability must freeze at least one exact dependency.
 - A snapshot fingerprint covers the complete normalized object with only its own fingerprint field blanked.
 
+## Projection implementation
+
+`CapabilityProjectionService` is the current Java projection boundary:
+
+- Resource descriptors become sealed external capability snapshots.
+- Only external/resource-backed/runtime-bound operators become standalone capabilities; pure internal
+  operators remain covered by their parent graph fingerprint.
+- Graph drafts close over exact sealed external or nested capability snapshots and conservatively inherit
+  effects, errors, determinism, security, state-model references, route conditions, and runtime limitations.
+- Unknown effects, unresolved child identity, unsealed children, conflicting errors, and ambiguous state
+  models fail closed with stable `RG.MIRROR.*` error codes.
+
+The focused protocol/projection suite currently contains 17 green tests. This verifies the kernel and generic
+projection behavior, not the full Stage 0 exit gate.
+
 The Stage 0 schema presence does not make mirror execution available. Capability discovery must keep
-runtime feature flags disabled until projection, plan compilation, external-leaf interception, isolation,
-and evidence paths have all passed their own release gates.
+runtime feature flags disabled until built-in asset closure, API authorization, plan compilation,
+external-leaf interception, isolation, and evidence paths have all passed their own release gates.

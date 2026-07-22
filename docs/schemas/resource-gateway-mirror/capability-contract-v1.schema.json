@@ -48,7 +48,7 @@
       "additionalProperties": false,
       "required": ["mode", "keyPath", "replayReturnsOriginal"],
       "properties": {
-        "mode": { "enum": ["DETERMINISTIC", "KEYED", "NON_IDEMPOTENT", "UNKNOWN"] },
+        "mode": { "enum": ["DETERMINISTIC", "IDEMPOTENT", "KEYED", "NON_IDEMPOTENT", "UNKNOWN"] },
         "keyPath": { "type": "string", "maxLength": 1024 },
         "replayReturnsOriginal": { "type": "boolean" }
       }

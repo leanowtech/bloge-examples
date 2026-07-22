@@ -130,6 +130,7 @@ public record CapabilityContract(
     /** Capability idempotency modes. */
     public enum IdempotencyMode {
         DETERMINISTIC,
+        IDEMPOTENT,
         KEYED,
         NON_IDEMPOTENT,
         UNKNOWN
