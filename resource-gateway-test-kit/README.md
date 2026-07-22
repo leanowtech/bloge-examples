@@ -16,7 +16,7 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - all capability-mirror Draft 2020-12 schemas, a machine-readable Stage 0 compatibility baseline,
   forward-compatible capability-probe negotiation, and registry-free offline verification of sealed
   `CapabilitySnapshot` and `CapabilityClosure` artifacts, including protected execution-command and
-  payload-free run-summary schemas;
+  payload-free run-summary schemas, plus independent deployment-isolation attestation verification;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -150,6 +150,56 @@ if (!compatibility.verified()) {
 The fixture is produced by the server and independently consumed here. It includes no private key
 or business payload. Non-Java implementations are not certified merely by matching field names;
 they must pass this cryptographic fixture without lossy numeric reserialization.
+
+Deployment isolation uses a separate authority and verifier. Never reuse the mirror evidence key or
+trust deployment coordinates copied from the attestation. Obtain the public key from the
+SRE/security trust channel and build `expectedDeployment` from immutable local scheduler/runtime
+metadata:
+
+```java
+MirrorDeploymentIsolationVerificationKey authorityKey = isolationTrustStore
+        .findRequired(attestation.path("seal").path("keyId").asText());
+MirrorDeploymentIdentity expectedDeployment = localDeploymentIdentity.current();
+
+MirrorDeploymentIsolationAttestationVerifier.VerificationResult isolation =
+        new MirrorDeploymentIsolationAttestationVerifier().verify(
+                attestation,
+                authorityKey,
+                expectedDeployment,
+                executionStartedAt,
+                executionCompletedAt);
+if (!isolation.verified()) {
+    throw new IllegalStateException(isolation.reasonCode());
+}
+```
+
+Verification requires the strict Schema, canonical UTC time and Base64 forms, deterministic
+collection ordering, unique `(kind, id, revision)` policy-proof coordinates, both canonical fingerprints,
+exact issuer/key policy, Ed25519 signature, exact local deployment generation, and a
+run wholly inside `[max(validFrom, signedAt), expiresAt)`. Attestations last at most 15 minutes and
+may be signed at most 5 minutes after observation. Results expose only bounded reason codes and
+artifact coordinates.
+
+Run the second packaged fixed fixture during dependency upgrades and startup probes:
+
+```java
+MirrorDeploymentIsolationCompatibilityFixture fixture =
+        CapabilityMirrorProtocol.mirrorDeploymentIsolationCompatibilityFixture();
+MirrorDeploymentIsolationAttestationVerifier.VerificationResult compatibility =
+        new MirrorDeploymentIsolationAttestationVerifier().verify(
+                fixture.attestation(),
+                fixture.verificationKey(),
+                fixture.expectedDeployment(),
+                fixture.executionStartedAt(),
+                fixture.executionCompletedAt());
+if (!compatibility.verified()) {
+    throw new IllegalStateException("Deployment isolation verifier is incompatible");
+}
+```
+
+The packaged key is only a fixture trust root. It must never be accepted for a real deployment.
+The protocol/verifier are available now; server-side attestation distribution and per-run evidence
+binding remain intentionally unimplemented, so current mirror evidence is still exploratory.
 
 ## Use
 

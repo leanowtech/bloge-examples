@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit 与固定基数指标已完成；部署隔离证明、ingress 预解析防护、跨语言 canonicalization 与 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标与部署隔离证明协议/离线验真已完成；隔离证明可信分发和运行时绑定、ingress 预解析防护、跨语言 canonicalization 与 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -75,7 +75,7 @@
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - Stage 0 验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
   Chrome 示例投影用例 `1/1` 全绿。纳入 Stage 1 compiler 与内部 mirror runtime kernel 后，Resource Gateway
-  最新 `clean verify` 为 4520 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
+  最新 `clean verify` 为 4529 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
   重打可执行 Spring Boot JAR。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -96,7 +96,8 @@
   read-only operator 的真实调用测试计数为 0，内部算子真实执行，并继承 plan logical timeout 对应的
   `ExecutionBudget`。本增量聚焦回归 `75/75`、planning/runtime package 回归 `160/160` 全绿。
 - 第三增量落地时上述 runtime 仍只是内部 kernel；第十四增量已补齐受保护执行/证据 API 和 durable execution
-  request coordination，第十六增量已补齐动态 occurrence budget。部署 composition/egress 证明仍是更高认证等级门禁，当前
+  request coordination，第十六增量已补齐动态 occurrence budget，第十七增量已冻结部署隔离证明协议与离线验真。
+  可信分发、部署侧签发和运行时绑定仍是更高认证等级门禁，当前
   evidence 因 `DEPLOYMENT_EGRESS_NOT_ATTESTED` 明确保持 `EXPLORATORY`。
 - Stage 1 第四增量已冻结 `resourceGateway.mirrorResolution.v1` Java 线模型与 strict JSON Schema。每个结果绑定
   exact run/plan/capability/site/occurrence/attempt/request fingerprint，并区分 `RESOLVED`、`ABSTAINED`、
@@ -130,7 +131,8 @@
   evidence fingerprint 与 signedAt，新签名会被立即复验，完整 bundle 另有 canonical fingerprint；签名器不可用、
   嵌套 seal 篡改、签名时间/签名篡改、payload 可见性违规、重复坐标与越界集合均失败关闭。密码学来源可信不等于
   可认证：只有 deployment egress 已证明且不存在 limitation 时才能声明 `CERTIFIABLE`。协议/完整性聚焦测试
-  `15/15` 全绿。test-kit 独立 verifier、durable store 已在后续增量完成；API 与生产 egress attestation 仍是门禁，因此 probe
+  `15/15` 全绿。test-kit 独立 verifier、durable store 已在后续增量完成；部署隔离证明的协议和 verifier 已完成，但
+  可信分发与运行时 binding 仍是门禁，因此 probe
   不变。
 - Stage 1 第九增量已将 evidence vNext 接入真实 `MirrorRunService`。`MirrorRunEvidenceProjector` 对 request context、
   node/attempt input/output 和 edge value 分别执行最大 16 MiB 的 canonical hash，并在签名前证明 external node 的
@@ -141,7 +143,8 @@
   `RG.MIRROR.EVIDENCE_INTEGRITY_REJECTED` 失败关闭。`MirrorRunResult` 现在强制携带与 exact plan/run/resolution/
   semantic result 一致的 verified bundle。当前部署尚无 exact `DEPLOYMENT_ISOLATION_ATTESTATION`，所以运行证据
   诚实降级为 `EXPLORATORY`；布尔 egress 声明不能脱离 exact attestation ref 自证。真实运行、缺 provenance、
-  request mismatch、无 signer 和坏签名故障注入套件 `12/12` 全绿。第十四增量已开放受保护服务 API；部署隔离证明仍未完成；
+  request mismatch、无 signer 和坏签名故障注入套件 `12/12` 全绿。第十四增量已开放受保护服务 API；部署隔离证明协议
+  已在第十七增量完成，但尚未接入每次运行；
   mirror integration 加 testing planning/runtime 扩大回归 `259/259` 全绿。
 - Stage 1 第十增量已完成不依赖 Spring/服务端类的 `MirrorEvidenceVerifier`。portable evidence 新增 exact
   `externalBindings`，使离线消费者能证明每个已执行 external attempt 恰有一条 resolution，并拒绝漏记、多记、
@@ -186,7 +189,8 @@
   `!production & (test | staging)` 加显式开关约束；production 与 `production,test` 下 HTTP mapping 物理不存在。
   Probe 只有在真实 adapter 装配后才报告 `mirrorPlanCompilation=true` 和
   `mirrorExternalLeafInterception=true`。服务、replay 权限隔离、路由隔离与装配聚焦回归及 fixture scope 根治
-  聚焦门禁全绿；执行/evidence HTTP 与 request lease 已由第十四增量闭合，deployment egress attestation 仍是下一门禁。
+  聚焦门禁全绿；执行/evidence HTTP 与 request lease 已由第十四增量闭合，deployment egress attestation 的可信分发与
+  runtime binding 仍是下一门禁。
 - Stage 1 第十四增量开放 `POST /api/mirror/executions`、`GET /api/mirror/runs/{runId}` 与
   `GET /api/mirror/runs/{runId}/evidence`，冻结 `resourceGateway.mirrorExecutionRequest.v1` 和
   `resourceGateway.mirrorRunSummary.v1`。请求只能提交 stable requestId、planId、expected plan fingerprint 与业务
@@ -237,6 +241,20 @@
   并发不超卖、非法快照、真实五项 foreach 在预算 3 下仅准入 root + 两个 child、retry 两次 attempt 只扣一个
   occurrence、external 调用保持 0、快照篡改失败和 evidence 复验的本增量新增场景 `6/6` 全绿；完整 Mirror
   聚焦回归 `143/143`、Mirror 加共享 kernel 扩大回归 `181/181` 全绿，并纳入 `4520/4520` 全量门禁。
+- Stage 1 第十七增量把 `deploymentIsolationRef` 背后的外部证明冻结为
+  `resourceGateway.mirrorDeploymentIsolationAttestation.v1`。短生命周期 material 绑定 exact deployment scope、cluster、
+  namespace、workload、service account、immutable image digest、独立 enforcement layers、六项 mandatory fail-closed
+  deny fact、network/credential/allowlist fingerprint、非业务 egress class 与 payload-free policy proof refs；proof ref
+  以 `(kind, id, revision)` 唯一，同坐标不同 fingerprint 会失败关闭；有效期最多
+  15 分钟，观察到签发最多 5 分钟，执行必须完整落在 `[max(validFrom, signedAt), expiresAt)`。
+  `MirrorDeploymentIsolationAttestationIntegrity` 使用独立 SRE/security authority key 校验双层 canonical fingerprint、
+  key/issuer/algorithm/lifecycle/signing window、local immutable deployment identity 和 Ed25519 signature；evidence signer
+  不能冒充隔离权威。strict Schema、固定签名 fixture 和无 Spring/server 依赖的 test-kit verifier 同步落地，服务端
+  producer/schema/compatibility 场景 `9/9`、test-kit identity drift、policy tamper、wrong/revoked key、window、unknown field
+  与 detached-copy 场景 `6/6` 全绿。当前仍没有 attestation repository/API、authority key-set 分发与轮换、部署 agent
+  刷新、原子缓存或 `MirrorRunEvidenceProjector` 绑定，所以这一步证明的是协议可验，不是部署已经隔离；run 仍必须保留
+  `DEPLOYMENT_EGRESS_NOT_ATTESTED` 和 `EXPLORATORY`。完整 Mirror 回归 `152/152`，独立 test-kit `clean verify`
+  `260/260`，Resource Gateway 全量门禁 `4529/4529`（另有 3 条条件跳过），真实 Chrome 与可执行 JAR 构建均通过。
 
 ---
 
@@ -908,7 +926,13 @@ Outcome 分为：
 |---|---|
 | 协议 | 普通 run API 不接受 test/mirror 字段；独立 endpoint 和 purpose |
 | 进程 | mirror runtime 独立 profile、进程或 namespace，生产应用不装载相关 bean |
-| 权限与网络 | 独立 workload identity、无生产写 secret、egress allowlist、外部写域名默认拒绝 |
+| 权限与网络 | 独立 workload identity、无生产写 secret、egress allowlist、外部写域名默认拒绝；由外部权威对 exact deployment generation 短期签名证明 |
+
+仓库内已经定义并可离线验证 `resourceGateway.mirrorDeploymentIsolationAttestation.v1`，但
+“存在一个合法 JSON”不等于“部署控制真实生效”。生产链必须由 Resource Gateway 之外的 SRE/security
+authority 从 scheduler、network policy、service identity 和 image registry 的权威状态生成证明；Resource
+Gateway 只接受独立信任通道分发的 key set，并用本机不可变坐标匹配。证明过期、吊销、身份漂移、刷新失败或
+运行窗口越界必须在执行前/提交前失败关闭。可信分发、刷新原子性、回滚/吊销时延和运行时绑定仍未实现。
 
 ### 12.2 权限
 
@@ -928,6 +952,11 @@ Outcome 分为：
 必须覆盖：fixture 注入生产、漏标写能力、SSRF 绕过、secret 泄漏、跨租户 corpus 命中、语料投毒、
 恶意 owner 规则、payload reference 猜测、过期 grant 继续使用、证据重签、删除不彻底、shadow 放大真实流量、
 session 重放造成重复状态、运行时依赖漂移。
+
+部署证明专项还必须覆盖：伪造 issuer、复用 evidence signing key、旧 image digest 重放、namespace/service account
+漂移、network/credential/allowlist policy 漂移、过期缓存、key 轮换裂脑、吊销传播延迟、签发器时钟偏差、证明签发成功
+但控制面应用失败，以及执行跨越证明 expiry。当前协议/离线 verifier 已根治字段漂移和本地盲信，剩余问题必须在
+外部签发、可信分发和 runtime admission/commit 双重检查中闭合。
 
 ## 13. 协议与 API 表面
 
@@ -951,6 +980,10 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/shadow-jobs` | 提交 shadow comparison | job fingerprint 幂等 | 待实现 |
 | `GET /api/mirror/fidelity/domains/{domainId}` | 查询 fidelity profile | 只读 | 待实现 |
 | `POST /api/mirror/outcomes` | 回填 outcome | outcome identity 幂等 | 待实现 |
+
+部署隔离证明当前只有 strict artifact protocol 与离线 verifier，没有 ingest/read endpoint。下一增量应先定义
+authority key-set 与 attestation 的 full-scope、append-only、content-addressed distribution boundary，再接入
+execution admission 和 evidence commit；在此之前不得仅凭调用方上传的证明提升 trust class。
 
 外部集成协议扩展 `ToolStudioResourceGatewayProtocol`，新增能力快照、镜像证据和保真度 feature flags；
 旧 GraphDraft/RunEvidence 协议保持兼容，不在 v1 中删除。
@@ -1252,10 +1285,10 @@ SRE runbook 和生产认证包。
 | RG-MIR-003 | 实现 transitive EffectContract 汇总 | `gateway/integration/mirror` | read/write/mixed/unknown、递归环和声明冲突测试齐全 |
 | RG-MIR-004 | 冻结 provenance 与 lifecycle 状态机 | mirror schema + repository interface | 非法跃迁拒绝；stale/revoke 行为有协议测试 |
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
-| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing 与 fail-closed operation observability；待 deployment attestation |
+| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability 与 deployment-attestation 协议/离线验真；待可信分发和 runtime binding |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
-| RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝及 Plan/Run/Evidence route 在 production/mixed profile 物理不存在已完成；待部署 egress 证明和 pre-materialization ingress 门禁 |
-| RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure 与 MirrorEvidence 独立复验；共享 signed fixture；不依赖 server/Spring |
+| RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝及 Plan/Run/Evidence route 在 production/mixed profile 物理不存在已完成；deployment-attestation strict protocol/producer/verifier 已完成；待外部签发/分发、运行时 egress 证明绑定和 pre-materialization ingress 门禁 |
+| RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence 与 DeploymentIsolationAttestation 独立复验；三份共享 fixture（含两份 signed fixture）；不依赖 server/Spring |
 | RG-MIR-010 | 建立退款域资产清单 | `docs/examples/resource-gateway-mirror/refund/` | capability closure、entity、baseline read、write effect、outcome owner 完整 |
 | RG-MIR-011 | 增加协议版本与错误码注册表 | mirror protocol docs | 每个拒绝路径有稳定 code、HTTP 语义和重试分类 |
 | RG-MIR-012 | 建立 Stage 0 CI 门禁 | Maven/schema/doc verification | projection、schema、compatibility、production isolation 在 PR 必跑 |
@@ -1269,7 +1302,9 @@ Integration API、诚实 probe、7 张内置 graph 加 3 张 visual example 确�
 run kernel；E3 已完成 payload-free evidence/attestation/bundle 协议、真实运行时投影、服务端签名完整性内核、
 external attempt/resolution exact closure、Java test-kit independent verifier、共享 signed fixture 与 full-scope
 append-only plan/evidence 仓储、受保护 Plan/Run/Evidence API、payload-free durable request coordination 与
-fenced atomic commit、静态/动态 occurrence budget、同事务成功审计、跨回滚失败审计与固定基数指标；语言中立数字 canonicalization 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
+fenced atomic commit、静态/动态 occurrence budget、同事务成功审计、跨回滚失败审计、固定基数指标，以及
+deployment-isolation strict protocol、producer integrity、共享 signed fixture 与独立 verifier；可信 key/attestation
+分发、运行时 binding、语言中立数字 canonicalization 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
 错误码注册与持续 CI。
 企业客户准入仍必须关闭第 22.2 节的环境级开放决策。
 

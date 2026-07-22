@@ -58,6 +58,12 @@ public final class CapabilityMirrorProtocol {
     /** Portable signed mirror evidence bundle wire version. */
     public static final String MIRROR_EVIDENCE_BUNDLE_V1 =
             "resourceGateway.mirrorEvidenceBundle.v1";
+    /** Externally signed deployment-isolation attestation wire version. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_V1 =
+            "resourceGateway.mirrorDeploymentIsolationAttestation.v1";
+    /** Signed deployment-isolation compatibility fixture version. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_COMPATIBILITY_V1 =
+            "resourceGateway.mirrorDeploymentIsolationCompatibility.v1";
     /** Signed Stage 1 mirror evidence compatibility fixture version. */
     public static final String MIRROR_EVIDENCE_COMPATIBILITY_V1 =
             "resourceGateway.mirrorEvidenceCompatibility.v1";
@@ -70,6 +76,9 @@ public final class CapabilityMirrorProtocol {
     /** Packaged signed Stage 1 mirror evidence compatibility fixture. */
     public static final String MIRROR_EVIDENCE_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-stage1-v1.fixture.json";
+    /** Packaged signed deployment-isolation compatibility fixture. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-deployment-isolation-stage1-v1.fixture.json";
     /** Packaged compatibility fixture schema. */
     public static final String COMPATIBILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-mirror-compatibility-v1.schema.json";
@@ -97,6 +106,10 @@ public final class CapabilityMirrorProtocol {
     /** Packaged portable mirror evidence bundle schema. */
     public static final String MIRROR_EVIDENCE_BUNDLE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-bundle-v1.schema.json";
+    /** Packaged deployment-isolation attestation schema. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-deployment-isolation-attestation-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -128,6 +141,21 @@ public final class CapabilityMirrorProtocol {
      */
     public static MirrorEvidenceCompatibilityFixture mirrorEvidenceCompatibilityFixture() {
         return MirrorFixtureHolder.FIXTURE.detachedCopy();
+    }
+
+    /**
+     * Returns the fixed independently verified deployment-isolation compatibility fixture.
+     *
+     * <p>The fixture proves strict-schema loading, canonical nested fingerprints, immutable local
+     * identity comparison, validity-window handling, public-key parsing, and Ed25519 verification
+     * without contacting a Resource Gateway service.</p>
+     *
+     * @return detached signed attestation, pinned authority key, and expected execution window
+     * @throws IllegalStateException when the packaged fixture is absent, malformed, or unverifiable
+     */
+    public static MirrorDeploymentIsolationCompatibilityFixture
+    mirrorDeploymentIsolationCompatibilityFixture() {
+        return IsolationFixtureHolder.FIXTURE.detachedCopy();
     }
 
     private static final class BaselineHolder {
@@ -189,6 +217,60 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.EVIDENCE_FIXTURE_UNAVAILABLE");
+            }
+        }
+
+        private static Set<String> fieldNames(JsonNode value) {
+            java.util.HashSet<String> names = new java.util.HashSet<>();
+            value.fieldNames().forEachRemaining(names::add);
+            return Set.copyOf(names);
+        }
+    }
+
+    private static final class IsolationFixtureHolder {
+        private static final MirrorDeploymentIsolationCompatibilityFixture FIXTURE = load();
+
+        private static MirrorDeploymentIsolationCompatibilityFixture load() {
+            try (InputStream input = CapabilityMirrorProtocol.class.getResourceAsStream(
+                    MIRROR_DEPLOYMENT_ISOLATION_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException("Deployment isolation fixture is absent");
+                }
+                JsonNode value = JSON.readTree(input);
+                if (!value.isObject() || value.size() != 5
+                        || !Set.of("schemaVersion", "verificationKey", "expectedDeployment",
+                        "executionWindow", "attestation").equals(fieldNames(value))
+                        || !MIRROR_DEPLOYMENT_ISOLATION_COMPATIBILITY_V1.equals(
+                        value.path("schemaVersion").asText())) {
+                    throw new IOException("Deployment isolation fixture envelope is invalid");
+                }
+                MirrorDeploymentIsolationVerificationKey key =
+                        MirrorDeploymentIsolationVerificationKey.from(
+                                value.path("verificationKey"));
+                MirrorDeploymentIdentity expected = MirrorDeploymentIdentity.from(
+                                value.path("expectedDeployment"));
+                JsonNode executionWindow = value.path("executionWindow");
+                if (!executionWindow.isObject() || executionWindow.size() != 2
+                        || !Set.of("startedAt", "completedAt")
+                        .equals(fieldNames(executionWindow))) {
+                    throw new IOException("Deployment isolation execution window is invalid");
+                }
+                Instant startedAt = Instant.parse(
+                        executionWindow.path("startedAt").asText());
+                Instant completedAt = Instant.parse(
+                        executionWindow.path("completedAt").asText());
+                JsonNode attestation = value.path("attestation");
+                var verification = new MirrorDeploymentIsolationAttestationVerifier().verify(
+                        attestation, key, expected, startedAt, completedAt);
+                if (!verification.verified()) {
+                    throw new IOException("Deployment isolation fixture cannot be verified: "
+                            + verification.reasonCode());
+                }
+                return new MirrorDeploymentIsolationCompatibilityFixture(attestation, key,
+                        expected, startedAt, completedAt);
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.DEPLOYMENT_ISOLATION_FIXTURE_UNAVAILABLE", failure);
             }
         }
 

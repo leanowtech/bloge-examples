@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "resourceGateway.mirrorDeploymentIsolationCompatibility.v1",
+  "verificationKey": {
+    "schemaVersion": "resourceGateway.mirrorDeploymentIsolationVerificationKey.v1",
+    "keyId": "mirror-isolation-fixture-key-1",
+    "algorithm": "Ed25519",
+    "encodedPublicKey": "MCowBQYDK2VwAyEA8OMu8Vtl0/UXmWnhiLZYurJ/WZIxBN7yZqzej7C0Jcc=",
+    "issuer": "sre:mirror-isolation",
+    "notBefore": "2026-07-22T00:00:00Z",
+    "notAfter": "2026-08-01T00:00:00Z",
+    "state": "ACTIVE"
+  },
+  "expectedDeployment": {
+    "deploymentScopeId": "deployment:staging",
+    "clusterId": "cluster-a",
+    "namespace": "rg-mirror",
+    "workloadName": "resource-gateway",
+    "serviceAccount": "rg-mirror",
+    "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "executionWindow": {
+    "startedAt": "2026-07-23T00:00:11Z",
+    "completedAt": "2026-07-23T00:00:20Z"
+  },
+  "attestation": {
+    "schemaVersion": "resourceGateway.mirrorDeploymentIsolationAttestation.v1",
+    "attestationFingerprint": "sha256:df9059a0cd8f2dcc498a0fede82f64ae76f5b13a0c097fc47611e8d4bd4ec098",
+    "material": {
+      "attestationId": "mirror-staging-isolation",
+      "revision": 7,
+      "deployment": {
+        "deploymentScopeId": "deployment:staging",
+        "clusterId": "cluster-a",
+        "namespace": "rg-mirror",
+        "workloadName": "resource-gateway",
+        "serviceAccount": "rg-mirror",
+        "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "enforcement": {
+        "enforcementLayers": [
+          "KUBERNETES_NETWORK_POLICY",
+          "WORKLOAD_SANDBOX"
+        ],
+        "failClosed": true,
+        "defaultDenyEgress": true,
+        "externalBusinessEgressDenied": true,
+        "productionCredentialsDenied": true,
+        "productionIdentityDenied": true,
+        "continuousEnforcement": true,
+        "networkPolicyFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "credentialPolicyFingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "allowedDestinationsFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "allowedEgressClasses": [
+          "DNS",
+          "EVIDENCE_SIGNER",
+          "PAYLOAD_FREE_DATABASE"
+        ],
+        "proofRefs": [
+          {
+            "kind": "DEPLOYMENT_POLICY_PROOF",
+            "id": "policy-evaluation:staging",
+            "revision": 19,
+            "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+          }
+        ]
+      },
+      "observedAt": "2026-07-23T00:00:00Z",
+      "validFrom": "2026-07-23T00:00:05Z",
+      "expiresAt": "2026-07-23T00:10:00Z",
+      "issuer": "sre:mirror-isolation"
+    },
+    "seal": {
+      "materialFingerprint": "sha256:86380d04069fb74fe9e4985aed6d62a16004d15300d2d9c609dfa401695bd861",
+      "algorithm": "Ed25519",
+      "keyId": "mirror-isolation-fixture-key-1",
+      "signedAt": "2026-07-23T00:00:10Z",
+      "signature": "NXiY1JOPyYpzVIVH6d0ZT7tWtZy0HMTFAOCnJEcOeYBx8YAtZx1t6QsshpjnLq4R4qJ+mL8ZyL8UHTITPWuFAw=="
+    }
+  }
+}

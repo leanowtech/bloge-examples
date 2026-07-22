@@ -21,6 +21,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-run-evidence-v1.schema.json` | `MirrorRunEvidence` | Payload-free node, edge, resolution, semantic-result, request-context, and isolation facts for one terminal run |
 | `mirror-evidence-attestation-v1.schema.json` | `MirrorEvidenceAttestation` | Domain-separated detached Ed25519 signature over one complete mirror run evidence value |
 | `mirror-evidence-bundle-v1.schema.json` | `MirrorEvidenceBundle` | Portable `HASH_ONLY` evidence, attestation, and complete bundle fingerprint closure |
+| `mirror-deployment-isolation-attestation-v1.schema.json` | `MirrorDeploymentIsolationAttestation` | Short-lived external proof binding an exact deployment generation to fail-closed egress and credential controls |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -33,6 +34,47 @@ It contains a server-produced `HASH_ONLY` bundle and public Ed25519 key, but no 
 business payload. The server rehydrates and verifies it through its Java protocol model; the
 standalone test-kit validates the strict schemas and independently re-derives every nested seal,
 closure, aggregate fingerprint, key policy, and signature from the same file.
+
+`mirror-deployment-isolation-stage1-v1.fixture.json` is a second fixed Stage 1 cryptographic
+fixture. It contains one short-lived deployment-isolation attestation, the external authority's
+public key, immutable expected deployment coordinates, and a covered execution window. It contains
+neither a private key nor business payload. Both the producer implementation and the standalone
+test-kit verify this exact file.
+
+## Deployment isolation attestation boundary
+
+`resourceGateway.mirrorDeploymentIsolationAttestation.v1` turns the previous untyped
+`deploymentIsolationRef` into a verifiable artifact protocol. Its signed material binds:
+
+- an exact deployment scope, cluster, namespace, workload, service account, and immutable image
+  digest;
+- an ordered set of out-of-process enforcement layers;
+- mandatory fail-closed, default-deny egress, external-business-egress denial, production
+  credential denial, production identity denial, and continuous-enforcement facts;
+- exact network-policy, credential-policy, and destination-allowlist fingerprints;
+- a bounded allowlist of non-business egress classes and payload-free
+  `DEPLOYMENT_POLICY_PROOF` references;
+- observation, effective, expiry, issuer, and immutable attestation revision coordinates.
+
+The validity interval is at most 15 minutes, issuance may lag observation by at most 5 minutes,
+and a mirror execution must fit wholly inside
+`[max(validFrom, signedAt), expiresAt)`. The signature domain is
+`RESOURCE_GATEWAY_MIRROR_DEPLOYMENT_ISOLATION_V1`; Ed25519 signs the lowercase canonical SHA-256
+material fingerprint. Timestamps must use canonical UTC `Instant` text, Base64 values must use
+their unique padded encoding, and protocol collections must already be in canonical order. Policy proof
+references are unique by `(kind, id, revision)`; a second fingerprint at the same coordinate is a conflict,
+not another proof. Consumers must reject rather than silently normalize alternate wire forms. The complete artifact has a second
+content fingerprint. Consumers must use
+an independently distributed SRE/security authority key whose key id, issuer, algorithm, signing
+window, and lifecycle state all match. The Resource Gateway evidence-signing key is deliberately
+not an isolation authority.
+
+This increment freezes the artifact, strict Schema, producer integrity kernel, independent test-kit
+verifier, and shared signed compatibility fixture. It does **not** yet provide an attestation
+repository or API, authority key-set distribution/rotation protocol, deployment-agent integration,
+atomic runtime refresh, or evidence-projector binding. Current mirror runs therefore remain
+`EXPLORATORY` with `DEPLOYMENT_EGRESS_NOT_ATTESTED`; protocol availability alone must not produce
+`CERTIFIABLE` evidence.
 
 ## Visual Graph Projection Boundary
 
@@ -218,22 +260,34 @@ Problem details never contain request context, fixture/replay values, node/edge 
   emitted only after its domain-separated Ed25519 signature and complete bundle fingerprint verify immediately.
   Cryptographic provenance does not imply production certification: `CERTIFIABLE` additionally requires proven
   deployment egress isolation and zero declared limitations.
+- A deployment-isolation attestation is accepted only when its strict structure, deterministic
+  ordering, domain-separated material fingerprint, complete artifact fingerprint, external
+  Ed25519 authority, exact local deployment generation, and complete execution interval all
+  verify. Every deny control is mandatory; mutable image tags and non-policy proof references are
+  illegal. A missing, revoked, wrong-issuer, wrong-key, stale, future, expired, or identity-drifted
+  artifact fails closed.
 - Revision one must be `DRAFT`; later revisions are contiguous, append-only, and accepted only through the
   lifecycle transition matrix. `REVOKED` is terminal.
 
 ## Independent client admission
 
-The test-kit packages the Stage 0 schemas, protected plan/execution commands, payload-free run summary, four Stage 1
-evidence schemas, and both shared compatibility fixtures in its JAR. A Stage 0 consumer first
+The test-kit packages the Stage 0 schemas, protected plan/execution commands, payload-free run
+summary, Stage 1 evidence and deployment-isolation schemas, and all three shared compatibility
+fixtures in its JAR. A Stage 0 consumer first
 calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
 It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before
 persisting or compiling the artifact. A mirror evidence consumer resolves the attestation key id and calls
 `MirrorEvidenceVerifier.verify(bundle, key)` before accepting a run into a correctness workbook or release gate.
+Before treating an isolation reference as certification evidence, a consumer separately calls
+`MirrorDeploymentIsolationAttestationVerifier.verify(attestation, authorityKey,
+expectedDeployment, executionStartedAt, executionCompletedAt)` with local immutable deployment
+coordinates and an externally pinned isolation-authority key.
 
 The verifiers do not deserialize server Java models. They validate wire JSON and independently re-derive canonical
 SHA-256 material. Mirror evidence verification additionally proves trace ordering, external-attempt/resolution
 closure, nested resolution seals, evidence and bundle fingerprints, signing time, key policy, and the
-domain-separated Ed25519 signature. Results contain only bounded reason codes, ids, and fingerprints. Stable
+domain-separated Ed25519 signature. Deployment-isolation verification additionally proves exact
+runtime identity and full-window coverage. Results contain only bounded reason codes, ids, and fingerprints. Stable
 `RG.MIRROR.CLIENT.*` admission failures contain no business payload. Additional future probe
 fields and object versions are accepted, while a missing required version or false required feature
 fails closed. Stage 1 deferred features are observational and may move from `false` to `true`
@@ -292,10 +346,10 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4520 tests with no
+passes 4529 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
-the executable Spring Boot JAR. The independent test-kit gate passes 254 tests with no failures, errors, or skips,
-packages all 17 mirror schemas, and rebuilds its ordinary/shaded JAR plus public Javadocs.
+the executable Spring Boot JAR. The independent test-kit gate passes 260 tests with no failures, errors, or skips,
+packages all 19 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
 
 The Stage 1 `MirrorPlan` protocol presence alone does not make mirror execution available. Capability discovery
 always reports `mirrorPlanProtocol=true`. It reports `mirrorPlanCompilation` and

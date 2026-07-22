@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-deployment-isolation-attestation-v1.schema.json",
+  "title": "Resource Gateway Mirror Deployment Isolation Attestation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "attestationFingerprint", "material", "seal"],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorDeploymentIsolationAttestation.v1"
+    },
+    "attestationFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "material": { "$ref": "#/$defs/material" },
+    "seal": { "$ref": "#/$defs/seal" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "canonicalInstant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3}(?:[0-9]{3})?(?:[0-9]{3})?)?Z$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "const": "DEPLOYMENT_POLICY_PROOF" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deploymentScopeId", "clusterId", "namespace", "workloadName",
+        "serviceAccount", "imageDigest"
+      ],
+      "properties": {
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "clusterId": { "$ref": "#/$defs/identifier" },
+        "namespace": { "$ref": "#/$defs/identifier" },
+        "workloadName": { "$ref": "#/$defs/identifier" },
+        "serviceAccount": { "$ref": "#/$defs/identifier" },
+        "imageDigest": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "enforcement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enforcementLayers", "failClosed", "defaultDenyEgress",
+        "externalBusinessEgressDenied", "productionCredentialsDenied",
+        "productionIdentityDenied", "continuousEnforcement",
+        "networkPolicyFingerprint", "credentialPolicyFingerprint",
+        "allowedDestinationsFingerprint", "allowedEgressClasses", "proofRefs"
+      ],
+      "properties": {
+        "enforcementLayers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "CLOUD_NETWORK_POLICY", "HOST_FIREWALL", "KUBERNETES_NETWORK_POLICY",
+              "SERVICE_MESH_AUTHORIZATION", "WORKLOAD_SANDBOX"
+            ]
+          }
+        },
+        "failClosed": { "const": true },
+        "defaultDenyEgress": { "const": true },
+        "externalBusinessEgressDenied": { "const": true },
+        "productionCredentialsDenied": { "const": true },
+        "productionIdentityDenied": { "const": true },
+        "continuousEnforcement": { "const": true },
+        "networkPolicyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "credentialPolicyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "allowedDestinationsFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "allowedEgressClasses": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "DNS", "EVIDENCE_SIGNER", "MIRROR_CONTROL_PLANE", "OBSERVABILITY",
+              "PAYLOAD_FREE_DATABASE"
+            ]
+          }
+        },
+        "proofRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/artifactRef" }
+        }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attestationId", "revision", "deployment", "enforcement", "observedAt",
+        "validFrom", "expiresAt", "issuer"
+      ],
+      "properties": {
+        "attestationId": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "deployment": { "$ref": "#/$defs/deployment" },
+        "enforcement": { "$ref": "#/$defs/enforcement" },
+        "observedAt": { "$ref": "#/$defs/canonicalInstant" },
+        "validFrom": { "$ref": "#/$defs/canonicalInstant" },
+        "expiresAt": { "$ref": "#/$defs/canonicalInstant" },
+        "issuer": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "seal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["materialFingerprint", "algorithm", "keyId", "signedAt", "signature"],
+      "properties": {
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "algorithm": { "const": "Ed25519" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "signedAt": { "$ref": "#/$defs/canonicalInstant" },
+        "signature": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 4096,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        }
+      }
+    }
+  }
+}

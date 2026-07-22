@@ -156,8 +156,9 @@ takeover, release, commit fencing, and `retryAfterSeconds` all use the coordinat
 skew cannot change execution authority. Signed evidence and terminal request state commit atomically. Expired authority
 cannot publish even before takeover, and authority-row locking occurs before time sampling so lock wait cannot bypass
 expiry. H2 time is sampled through an independent short connection after locking because its transaction timestamp is
-frozen; configure the datasource with capacity for the transaction connection plus the clock connection. Deployment
-egress proof remains open, so evidence stays exploratory. The fixture reuse decision is in
+frozen; configure the datasource with capacity for the transaction connection plus the clock connection. The
+deployment-egress proof protocol is frozen, but trusted distribution and runtime binding remain open, so evidence
+stays exploratory. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
 ### Mirror dynamic occurrence budget
@@ -291,12 +292,34 @@ projects its real node/attempt/edge values to bounded fingerprints, proves exact
 resolution, and refuses to return a result when no explicit signer exists or immediate signature verification
 fails. A cryptographically signed run is still exploratory unless deployment egress denial is bound to an exact
 isolation attestation and every limitation is closed. Payload-free persistence and protected plan serving are
-complete; run/evidence serving is also complete for isolated test/staging use. Deployment attestation,
+complete; run/evidence serving is also complete for isolated test/staging use. Deployment-attestation runtime wiring,
 pre-materialization ingress controls, and cross-language canonicalization remain production/certification gates.
 The Spring kernel now has
 profile/property isolation and
 ordinary business run APIs reject nested mirror, replay, replacement, and scenario controls before DTO binding,
 while runtime readiness is derived from profile-owned assembled adapters rather than configuration text.
+
+### Mirror deployment-isolation attestation protocol
+
+The strict `resourceGateway.mirrorDeploymentIsolationAttestation.v1` protocol now defines the
+external proof required to close `DEPLOYMENT_EGRESS_NOT_ATTESTED`. It binds an exact deployment
+scope, cluster, namespace, workload, service account, immutable image digest, out-of-process
+enforcement layers, fail-closed deny facts, policy fingerprints, bounded non-business egress
+classes, and payload-free policy-proof references. Its validity is at most 15 minutes, signing may
+lag observation by at most 5 minutes, and the complete mirror execution must fit inside the signed
+window.
+
+`MirrorDeploymentIsolationAttestationIntegrity` independently checks both canonical fingerprints,
+the detached Ed25519 signature, an externally pinned authority key and issuer, key lifecycle and
+signing window, exact local deployment identity, and execution-window coverage. The authority key
+is separate from the mirror evidence signer. The independent test-kit verifies the same fixed
+signed fixture without server or Spring classes.
+
+This is a protocol and verification increment, not a runtime-readiness claim. There is not yet an
+attestation repository/API, trusted authority key-set distribution, deployment-agent refresh path,
+or binding into `MirrorRunEvidenceProjector`; consequently current runs remain `EXPLORATORY` and
+the capability probe does not advertise deployment isolation as ready. See the
+[mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md#deployment-isolation-attestation-boundary).
 
 Useful variants:
 
