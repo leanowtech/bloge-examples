@@ -381,6 +381,20 @@
 > provider 与 production composition 仍待完成。相对完整计划估计约 12% 实质差距，仍未进入正负 8%
 > 完成区间。验证见 [physical provider inventory external non-equivocation runtime verification](resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-external-non-equivocation-runtime-verification.md)。
 
+> Stage 4 physical attempt 第二十二增量先冻结 managed publication signing-root 的独立协议内核。
+> deployment-root 与 witness-root quorum 共同签署同一份原子 runtime key-set material，四个 trust domain
+> 与两套 authority/key 强制独立；strict HTTPS/ETag refresh、unknown-key cooldown refresh、signed lifecycle、
+> hard source age、database-clock durable generation floor、rollback/fork/gap/predecessor fence 和 aggregate-only
+> health 已闭合。物理域拥有独立 media type、protocol header、Schema 与数据库 namespace，只复用中性的
+> Ed25519 key/signature 值对象。28 项聚焦门禁全绿；Resource Gateway `clean verify` 通过 4289 tests
+>（0 failures、0 errors、2 skips），480 份 Surefire XML 独立汇总一致；49 项 Browser tests 中 47 项执行、
+> 2 项条件跳过；40,013,876 bytes 可执行 JAR 包含 21 个本轮 trust-root class entries。独立 test-kit
+> `clean verify` 通过 231 tests（0 failures、0 errors、0 skips），普通/CLI JAR 均包含新 Schema；6 个新增
+> 公共类型通过严格 JavaDoc，0 warnings、0 errors。该步是 kernel freeze，尚未把 managed roots 注入现有
+> dynamic physical inventory consumer 或 Spring composition，因此 restart-free product capability 继续关闭；
+> 相对完整计划估计约 10% 实质差距，仍未进入正负 8% 完成区间。验证见
+> [physical provider inventory managed trust-root kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-trust-root-kernel-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

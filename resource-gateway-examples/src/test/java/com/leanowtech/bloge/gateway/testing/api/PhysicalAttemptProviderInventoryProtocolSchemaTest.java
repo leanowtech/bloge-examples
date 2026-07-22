@@ -81,6 +81,25 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
     }
 
     @Test
+    void trustRootSchemaMatchesAtomicDualDomainPublicationWireFields() throws Exception {
+        JsonNode schema = schema(
+                "physical-attempt-provider-inventory-trust-root-publication-v1.schema.json");
+        JsonNode publication = objectMapper.valueToTree(trustRootPublication());
+
+        assertFields(publication, schema.at("/$defs/publication/properties"));
+        assertFields(publication.path("material"), schema.at("/$defs/material/properties"));
+        assertFields(publication.at("/material/deploymentKeys/0"),
+                schema.at("/$defs/authorityKeyMaterial/properties"));
+        assertThat(schema.at("/$defs/publication/additionalProperties").asBoolean()).isFalse();
+        assertThat(schema.at("/$defs/material/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+                        .Material.SCHEMA_VERSION);
+        assertThat(schema.at("/$defs/publication/properties/schemaVersion/const").asText())
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+                        .SCHEMA_VERSION);
+    }
+
+    @Test
     void privateGenerationAndSignedCohortBindingSchemasMatchJavaFields() throws Exception {
         JsonNode generationSchema = schema(
                 "physical-attempt-provider-inventory-publication-generation-v1.schema.json");
@@ -140,6 +159,7 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
         for (String name : List.of(
                 "physical-attempt-provider-inventory-v1.schema.json",
                 "physical-attempt-provider-inventory-publication-v1.schema.json",
+                "physical-attempt-provider-inventory-trust-root-publication-v1.schema.json",
                 "physical-attempt-provider-inventory-publication-generation-v1.schema.json",
                 "physical-attempt-provider-inventory-cohort-binding-v1.schema.json",
                 "physical-attempt-provider-inventory-descriptor-v1.schema.json",
@@ -203,6 +223,36 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
                 TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.SCHEMA_VERSION,
                 inventory, material, materialFingerprint,
                 List.of(signature("authority-a", "key-a")), witness);
+    }
+
+    private static TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+            trustRootPublication() {
+        Instant issuedAt = Instant.parse("2026-07-22T00:00:00Z");
+        Instant expiresAt = Instant.parse("2026-07-23T00:00:00Z");
+        var deploymentKey = new TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+                .AuthorityKeyMaterial("deployment-authority-a", "deployment-key-a",
+                java.util.Base64.getEncoder().encodeToString(new byte[44]),
+                issuedAt, expiresAt, true, false);
+        var witnessKey = new TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+                .AuthorityKeyMaterial("witness-authority-a", "witness-key-a",
+                java.util.Base64.getEncoder().encodeToString(
+                        "w".repeat(44).getBytes(java.nio.charset.StandardCharsets.US_ASCII)),
+                issuedAt, expiresAt, true, false);
+        var material = new TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+                .Material(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication.Material
+                        .SCHEMA_VERSION,
+                "physical-provider-root-set", 1, "", "provider-fleet",
+                "1.0", "deployment-root.example", "witness-root.example",
+                "deployment.example", "witness.example", 1, 1,
+                List.of(deploymentKey), List.of(witnessKey),
+                "sha256:" + "9".repeat(64), issuedAt, issuedAt, expiresAt);
+        return new TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication
+                        .SCHEMA_VERSION,
+                material, "sha256:" + "8".repeat(64),
+                List.of(signature("deployment-root-a", "deployment-root-key-a")),
+                List.of(signature("witness-root-a", "witness-root-key-a")));
     }
 
     private static TestSuiteStabilityServingInventory.AuthoritySignature signature(

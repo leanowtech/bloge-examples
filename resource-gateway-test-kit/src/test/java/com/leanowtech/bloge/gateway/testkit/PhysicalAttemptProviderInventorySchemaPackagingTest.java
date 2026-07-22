@@ -17,6 +17,10 @@ class PhysicalAttemptProviderInventorySchemaPackagingTest {
     void testKitPackagesEveryPhysicalAttemptInventoryAndCapabilitySchema() throws Exception {
         for (String name : List.of(
                 "physical-attempt-provider-inventory-v1.schema.json",
+                "physical-attempt-provider-inventory-publication-v1.schema.json",
+                "physical-attempt-provider-inventory-trust-root-publication-v1.schema.json",
+                "physical-attempt-provider-inventory-publication-generation-v1.schema.json",
+                "physical-attempt-provider-inventory-cohort-binding-v1.schema.json",
                 "physical-attempt-provider-inventory-descriptor-v1.schema.json",
                 "physical-attempt-provider-inventory-cohort-observation-v1.schema.json",
                 "physical-attempt-provider-inventory-external-anchor-configuration-v1.schema.json",

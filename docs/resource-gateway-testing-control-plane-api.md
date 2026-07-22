@@ -4029,6 +4029,10 @@ The dynamic serving-inventory publication is separately versioned in
 [`suite-stability-serving-inventory-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-publication-v1.schema.json).
 The atomic dual-root runtime-key publication is defined by
 [`suite-stability-serving-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-serving-inventory-trust-root-publication-v1.schema.json).
+The separate physical-attempt provider-inventory dual-root kernel is defined by
+[`physical-attempt-provider-inventory-trust-root-publication-v1.schema.json`](schemas/resource-gateway-testing/physical-attempt-provider-inventory-trust-root-publication-v1.schema.json).
+Its protocol is currently a verified embedding boundary; the physical inventory runtime does not
+advertise restart-free managed-root rotation until consumer and Spring composition wiring is present.
 The external compare-and-append request/receipt contract is defined by
 [`suite-stability-external-sequence-checkpoint-v1.schema.json`](schemas/resource-gateway-testing/suite-stability-external-sequence-checkpoint-v1.schema.json).
 The bootstrap-signed managed notary-key publication is defined by
