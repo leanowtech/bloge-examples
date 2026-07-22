@@ -27,6 +27,24 @@ public interface TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFl
     boolean durable();
 
     /**
+     * Reports whether every accepted generation is committed to an independent failure domain.
+     *
+     * @return true only when external compare-and-append precedes local floor advancement
+     */
+    default boolean externallyAnchored() {
+        return false;
+    }
+
+    /**
+     * Reports whether the external authority satisfies a non-zero Byzantine fault model.
+     *
+     * @return true only for an externally anchored {@code 3f+1 / 2f+1} quorum with {@code f > 0}
+     */
+    default boolean byzantineQuorumAnchored() {
+        return false;
+    }
+
+    /**
      * Private publication and witness chain identity.
      *
      * @param schemaVersion generation protocol version

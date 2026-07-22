@@ -218,7 +218,9 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
                         "automaticRefresh", true,
                         "signedRevocation", true,
                         "witnessedPublications", true,
-                        "durablePublicationFloor", true));
+                        "durablePublicationFloor", true,
+                        "externalNonEquivocation", true,
+                        "byzantineQuorumNonEquivocation", true));
     }
 
     private static TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate.Observation

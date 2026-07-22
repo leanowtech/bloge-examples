@@ -231,7 +231,10 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
                         "automaticRefresh", scheduler != null && !closed,
                         "signedRevocation", true,
                         "durablePublicationFloor", publicationFloor.durable(),
-                        "witnessedPublications", true));
+                        "witnessedPublications", true,
+                        "externalNonEquivocation", publicationFloor.externallyAnchored(),
+                        "byzantineQuorumNonEquivocation",
+                        publicationFloor.byzantineQuorumAnchored()));
     }
 
     /**

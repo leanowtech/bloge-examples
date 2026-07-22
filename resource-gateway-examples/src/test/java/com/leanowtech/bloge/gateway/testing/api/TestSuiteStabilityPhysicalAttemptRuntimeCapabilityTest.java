@@ -52,6 +52,18 @@ class TestSuiteStabilityPhysicalAttemptRuntimeCapabilityTest {
     }
 
     @Test
+    void capabilityOrdersExternalAndByzantineNonEquivocationRequirements() {
+        assertThat(fixture(properties(
+                true, true, true, true, true, false, false)).project().status())
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
+                        .EXTERNAL_ANCHOR_REQUIRED);
+        assertThat(fixture(properties(
+                true, true, true, true, true, true, false)).project().status())
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
+                        .BYZANTINE_QUORUM_REQUIRED);
+    }
+
+    @Test
     void mismatchedCohortGenerationFailsClosed() {
         Fixture fixture = fixture(properties(true, true, true, true, true));
         when(fixture.cohort().observation()).thenReturn(cohort("sha256:" + "9".repeat(64),
@@ -160,13 +172,26 @@ class TestSuiteStabilityPhysicalAttemptRuntimeCapabilityTest {
             boolean revocation,
             boolean witness,
             boolean floor) {
+        return properties(dynamic, refresh, revocation, witness, floor, floor, floor);
+    }
+
+    private static Map<String, Object> properties(
+            boolean dynamic,
+            boolean refresh,
+            boolean revocation,
+            boolean witness,
+            boolean floor,
+            boolean external,
+            boolean byzantine) {
         return Map.of("sourceType", dynamic ? "DYNAMIC_SIGNED" : "STATIC_SIGNED",
                 "privateMaterialPresent", false,
                 "dynamicInventory", dynamic,
                 "automaticRefresh", refresh,
                 "signedRevocation", revocation,
                 "witnessedPublications", witness,
-                "durablePublicationFloor", floor);
+                "durablePublicationFloor", floor,
+                "externalNonEquivocation", external,
+                "byzantineQuorumNonEquivocation", byzantine);
     }
 
     private static TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Observation

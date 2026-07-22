@@ -29,7 +29,9 @@
         "automaticRefresh": { "type": "boolean" },
         "signedRevocation": { "type": "boolean" },
         "durablePublicationFloor": { "type": "boolean" },
-        "witnessedPublications": { "type": "boolean" }
+        "witnessedPublications": { "type": "boolean" },
+        "externalNonEquivocation": { "type": "boolean" },
+        "byzantineQuorumNonEquivocation": { "type": "boolean" }
       }
     }
   },

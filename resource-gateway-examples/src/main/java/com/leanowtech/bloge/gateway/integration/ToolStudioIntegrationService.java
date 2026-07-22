@@ -625,6 +625,12 @@ public class ToolStudioIntegrationService {
                 physicalAttempt.witnessedPublications());
         features.put("physicalAttemptProviderInventoryDurablePublicationFloor",
                 physicalAttempt.durablePublicationFloor());
+        features.put("physicalAttemptProviderInventoryExternalNonEquivocation",
+                Boolean.TRUE.equals(physicalAttempt.providerInventory().properties()
+                        .get("externalNonEquivocation")));
+        features.put("physicalAttemptProviderInventoryByzantineNonEquivocation",
+                Boolean.TRUE.equals(physicalAttempt.providerInventory().properties()
+                        .get("byzantineQuorumNonEquivocation")));
         features.put("physicalAttemptProviderInventoryCohortConverged",
                 physicalAttempt.cohortConverged());
         features.put("physicalAttemptObservationReconciliationReady",

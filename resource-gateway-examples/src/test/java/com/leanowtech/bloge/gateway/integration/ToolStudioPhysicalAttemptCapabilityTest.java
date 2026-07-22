@@ -39,6 +39,9 @@ class ToolStudioPhysicalAttemptCapabilityTest {
                 .containsEntry("physicalAttemptRuntimeConfigured", false)
                 .containsEntry("physicalAttemptRuntimeReady", false)
                 .containsEntry("physicalAttemptProviderInventoryDynamic", false)
+                .containsEntry("physicalAttemptProviderInventoryExternalNonEquivocation", false)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryByzantineNonEquivocation", false)
                 .containsEntry("physicalAttemptProviderInventoryCohortConverged", false);
         assertThat(capabilities.testability().physicalAttemptRuntime().status())
                 .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
@@ -111,6 +114,9 @@ class ToolStudioPhysicalAttemptCapabilityTest {
                 .containsEntry("physicalAttemptProviderInventorySignedRevocation", true)
                 .containsEntry("physicalAttemptProviderInventoryWitnessedPublications", true)
                 .containsEntry("physicalAttemptProviderInventoryDurablePublicationFloor", true)
+                .containsEntry("physicalAttemptProviderInventoryExternalNonEquivocation", true)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryByzantineNonEquivocation", true)
                 .containsEntry("physicalAttemptProviderInventoryCohortConverged", true)
                 .containsEntry("physicalAttemptObservationReconciliationReady", true)
                 .containsEntry("physicalAttemptTerminalProjectionReady", true);
@@ -175,7 +181,9 @@ class ToolStudioPhysicalAttemptCapabilityTest {
                         "automaticRefresh", dynamic,
                         "signedRevocation", dynamic,
                         "witnessedPublications", dynamic,
-                        "durablePublicationFloor", dynamic)));
+                        "durablePublicationFloor", dynamic,
+                        "externalNonEquivocation", dynamic,
+                        "byzantineQuorumNonEquivocation", dynamic)));
         return inventory;
     }
 

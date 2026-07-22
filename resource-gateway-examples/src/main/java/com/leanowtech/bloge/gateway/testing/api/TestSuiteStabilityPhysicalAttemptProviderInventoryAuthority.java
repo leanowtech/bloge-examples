@@ -20,7 +20,8 @@ public interface TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority ext
     /** Closed aggregate properties shared by static and future dynamic authorities. */
     Set<String> DESCRIPTOR_PROPERTIES = Set.of(
             "sourceType", "privateMaterialPresent", "dynamicInventory", "automaticRefresh",
-            "signedRevocation", "durablePublicationFloor", "witnessedPublications");
+            "signedRevocation", "durablePublicationFloor", "witnessedPublications",
+            "externalNonEquivocation", "byzantineQuorumNonEquivocation");
 
     /**
      * Returns the current privately fenced inventory state without external I/O.
@@ -46,7 +47,9 @@ public interface TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority ext
                         "automaticRefresh", false,
                         "signedRevocation", false,
                         "durablePublicationFloor", false,
-                        "witnessedPublications", false));
+                        "witnessedPublications", false,
+                        "externalNonEquivocation", false,
+                        "byzantineQuorumNonEquivocation", false));
     }
 
     /**

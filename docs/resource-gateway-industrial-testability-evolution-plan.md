@@ -371,6 +371,18 @@
 >（0 failures、0 errors、0 skips），25 份 XML 一致，普通/CLI JAR 均包含三份新 Schema；两次全量构建
 > 耗时分别为 7:40 和 11.493s。
 
+> Stage 4 physical attempt 第二十增量先冻结 external/non-database anti-rollback 的协议核心。新增物理
+> provider-inventory 独立 marker port，把 deployment publication 与 witness 指纹归约为同一 domain-separated
+> composite head，并强制 external compare-and-append 成功后才推进本地 durable floor；外部成功而本地提交
+> 不确定时可用完全相同 head 幂等重试修复。能力协议区分 external 与非零 `3f+1 / 2f+1` Byzantine quorum，
+> 单点外部服务不能进入 `READY`；Tool Studio、strict Schema 与 aggregate-only health 同步暴露事实且不泄漏
+> scope/stream/endpoint/authority/key/challenge/fingerprint。36 项聚焦门禁全绿，其中 6 项新增 core test 覆盖
+> 顺序、前驱绑定、失败隔离、精确重试、非法构造、诚实降级与健康脱敏。该步尚未把 strict HTTP/quorum
+> adapter 接入 physical Spring composition，因此升级不会自动获得外部锚；staging fail-fast、managed receipt
+> trust/bootstrap roots、deployment/witness trust-root 热轮换、N/N-1 backfill、retention/evidence lifecycle、
+> 真实 provider 与生产认证仍待完成。相对完整计划估计约 15% 实质差距，仍未进入正负 8% 完成区间。验证见
+> [physical provider inventory external non-equivocation core verification](resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-external-non-equivocation-core-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |

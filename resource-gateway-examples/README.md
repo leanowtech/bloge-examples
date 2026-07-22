@@ -448,10 +448,14 @@ Micrometer uses only closed labels. Tool Studio publishes the typed, identity-fr
 `physicalAttemptRuntime` capability and reaches `READY` only while the dynamic authority, exact cohort,
 terminal projection, and observation reconciliation are simultaneously healthy. All switches remain
 disabled by default, and the standalone demo script intentionally enables none of these physical
-lanes. External/non-database rollback anchoring, managed provider-inventory trust-root rotation,
+lanes. The external/non-database rollback protocol core now binds publication and witness into one
+domain-separated, external-first composite head and reports external versus Byzantine quorum truth
+separately. It is not yet installed by the physical Spring composition, so existing deployments
+remain database-floor-only and cannot report `READY`. Managed provider-inventory trust-root rotation,
 N/N-1 backfill, bounded evidence retention, a certified process/container adapter, and production
 certification remain open. See the
 [dynamic provider-inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-dynamic-physical-provider-inventory-verification.md)
+[external non-equivocation core verification](../docs/resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-external-non-equivocation-core-verification.md),
 and the strict
 [publication](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-publication-v1.schema.json),
 [generation floor](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-publication-generation-v1.schema.json), and

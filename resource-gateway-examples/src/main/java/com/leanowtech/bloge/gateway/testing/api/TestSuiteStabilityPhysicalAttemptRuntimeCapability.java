@@ -11,8 +11,9 @@ import java.util.Objects;
  * <p>The projection brackets runtime and cohort reads with two inventory observations. A refresh
  * that tears the read is reported as {@link CapabilityStatus#INVENTORY_INCONSISTENT}. Readiness
  * requires a fresh externally attested dynamic inventory, automatic refresh, signed revocation,
- * witnessed publication ordering, a durable anti-rollback floor, exact cross-replica generation
- * convergence, and healthy observation-reconciliation and terminal-projection runtimes.</p>
+ * witnessed publication ordering, a durable anti-rollback floor, externally durable Byzantine
+ * non-equivocation, exact cross-replica generation convergence, and healthy
+ * observation-reconciliation and terminal-projection runtimes.</p>
  *
  * <p>All reads are aggregate and must perform no provider, network, or payload operation.</p>
  *
@@ -63,7 +64,10 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
                 && providerInventory.externallyAttested() && providerInventory.available()
                 && terminalProjectionReady && observationReconciliationReady
                 && dynamicInventory && automaticRefresh && signedRevocation
-                && witnessedPublications && durablePublicationFloor && cohortConverged
+                && witnessedPublications && durablePublicationFloor
+                && flag(providerInventory.properties(), "externalNonEquivocation")
+                && flag(providerInventory.properties(), "byzantineQuorumNonEquivocation")
+                && cohortConverged
                 && expectedReplicaCount > 0 && readyReplicaCount == expectedReplicaCount;
         if (!SCHEMA_VERSION.equals(schemaVersion) || configured == disabled
                 || ready != (status == CapabilityStatus.READY) || ready != completeReadyShape
@@ -77,6 +81,8 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
                 || cohortConverged && (expectedReplicaCount < 1
                 || readyReplicaCount != expectedReplicaCount)
                 || automaticRefresh && !dynamicInventory
+                || flag(providerInventory.properties(), "byzantineQuorumNonEquivocation")
+                && !flag(providerInventory.properties(), "externalNonEquivocation")
                 || (signedRevocation || witnessedPublications || durablePublicationFloor)
                 && !dynamicInventory) {
             throw new IllegalArgumentException(
@@ -114,6 +120,9 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
             boolean revocation = flag(descriptor.properties(), "signedRevocation");
             boolean witnessed = flag(descriptor.properties(), "witnessedPublications");
             boolean durableFloor = flag(descriptor.properties(), "durablePublicationFloor");
+            boolean external = flag(descriptor.properties(), "externalNonEquivocation");
+            boolean byzantine = flag(
+                    descriptor.properties(), "byzantineQuorumNonEquivocation");
             boolean stableInventory = first.equals(last)
                     && descriptor.revision() == first.revision();
             boolean exactCohort = stableInventory && cohortObservation.available()
@@ -126,7 +135,7 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
                     && cohortObservation.distinctInventoryGenerations() == 1;
             CapabilityStatus status = classify(
                     first.available(), stableInventory, dynamic, refresh, revocation, witnessed,
-                    durableFloor, exactCohort, converged,
+                    durableFloor, external, byzantine, exactCohort, converged,
                     reconciliationReady && terminalReady);
             return new TestSuiteStabilityPhysicalAttemptRuntimeCapability(
                     SCHEMA_VERSION, true, status == CapabilityStatus.READY, status, descriptor,
@@ -190,6 +199,8 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
             boolean revocation,
             boolean witnessed,
             boolean durableFloor,
+            boolean external,
+            boolean byzantine,
             boolean exactCohort,
             boolean converged,
             boolean runtimesReady) {
@@ -213,6 +224,12 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
         }
         if (!durableFloor) {
             return CapabilityStatus.DURABLE_FLOOR_REQUIRED;
+        }
+        if (!external) {
+            return CapabilityStatus.EXTERNAL_ANCHOR_REQUIRED;
+        }
+        if (!byzantine) {
+            return CapabilityStatus.BYZANTINE_QUORUM_REQUIRED;
         }
         if (!exactCohort) {
             return CapabilityStatus.COHORT_UNAVAILABLE;
@@ -249,6 +266,10 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
         WITNESS_REQUIRED,
         /** Publication rollback state does not survive restart. */
         DURABLE_FLOOR_REQUIRED,
+        /** Publication history is not committed outside the Resource Gateway database. */
+        EXTERNAL_ANCHOR_REQUIRED,
+        /** External ordering does not tolerate a non-zero Byzantine fault bound. */
+        BYZANTINE_QUORUM_REQUIRED,
         /** Cohort state is absent, stale, or for another inventory generation. */
         COHORT_UNAVAILABLE,
         /** Expected replicas do not all prove one exact inventory generation. */

@@ -103,6 +103,8 @@ class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthorityTest {
                         .containsEntry("signedRevocation", true)
                         .containsEntry("witnessedPublications", true)
                         .containsEntry("durablePublicationFloor", true)
+                        .containsEntry("externalNonEquivocation", false)
+                        .containsEntry("byzantineQuorumNonEquivocation", false)
                         .containsEntry("privateMaterialPresent", false)
                         .doesNotContainKeys("expectedReplicaIds", "publicationId", "etag",
                                 "materialFingerprint", "uri", "keyId");
