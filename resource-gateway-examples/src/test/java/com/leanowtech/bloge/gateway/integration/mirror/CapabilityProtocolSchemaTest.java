@@ -35,6 +35,7 @@ class CapabilityProtocolSchemaTest {
         assertProperties(effectValue, effectSchema.path("properties"));
         assertProperties(provenanceValue, provenanceSchema.path("properties"));
         assertProperties(snapshotValue.path("source"), snapshotSchema.at("/$defs/source/properties"));
+        assertProperties(snapshotValue.path("scope"), snapshotSchema.at("/$defs/scope/properties"));
         assertProperties(snapshotValue.path("runtime"), snapshotSchema.at("/$defs/runtime/properties"));
         assertProperties(snapshotValue.path("ownership"), snapshotSchema.at("/$defs/ownership/properties"));
         assertProperties(contractValue.path("idempotency"), contractSchema.at("/$defs/idempotency/properties"));
@@ -101,6 +102,7 @@ class CapabilityProtocolSchemaTest {
                 new CapabilityContract.SloContract(Duration.ofSeconds(3), 0.999, 150L, "orders-team"));
         return new CapabilitySnapshot("", "resource:orders.get", 4, "",
                 CapabilitySnapshot.Kind.EXTERNAL,
+                new CapabilitySnapshot.Scope("tenant-a", "org-a", "orders", "test", "sg"),
                 new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.RESOURCE,
                         "orders.get", sourceFingerprint), contract,
                 new CapabilitySnapshot.RuntimeBinding("HTTP_RESOURCE", "orders.get@4",

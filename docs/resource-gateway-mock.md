@@ -20,6 +20,8 @@
 - Stage 0 第二增量已完成 `CapabilityProjectionService`、`CapabilityProjectionContext` 和
   `CapabilityEffectAnalyzer`：Resource、外部 Operator、Graph 可生成 sealed snapshot；Graph 只闭包 external/nested
   capability，PURE 内部节点仍由 graph source fingerprint 完整覆盖。
+- CapabilitySnapshot 已将 tenant/organization/project/environment/region 作为一等 immutable scope；
+  capabilityId 只在完整 scope 内唯一，scope 与 provenance tenant 不一致时拒绝封印。
 - HTTP read、受管 external write、未受管 external write、operator ports、条件分支、图级 read/write/mixed/unknown
   effect 与 runtime readiness 已按 fail-closed 语义投影。未知 effect、缺失/未封印/身份不匹配的 child snapshot、
   冲突 error contract 和不明确 state model 均不会被静默放行。
@@ -29,7 +31,7 @@
   矛盾 effect、伪造统计置信度和无 lineage 的 recorded/inferred provenance。
 - 当前仍未完成内置 7 graph/3 visual examples 的 capability closure、snapshot API、lifecycle repository、test-kit、
   MirrorPlan 与 external-leaf runtime，因此 capability probe 不得宣称 mirror serving 可用。聚焦验证为
-  17 tests、0 failures、0 errors、0 skips。
+  18 tests、0 failures、0 errors、0 skips。
 
 ---
 
@@ -96,6 +98,8 @@
 8. control plane 不持有原始业务 payload；payload 只驻留在经授权的数据面或 TEE vault。
 9. 要求状态一致性的场景在 state store 不可用时必须失败关闭，不能静默退化为无状态运行。
 10. 低保真结果不能伪装成高保真结果，未知必须可表达为 `ABSTAINED`。
+11. Capability 的命名、仓储和查询必须使用 tenant/organization/project/environment 完整 scope，不能退化为
+    tenant-wide id；region 作为驻留与执行约束被指纹覆盖。
 
 ## 3. 当前基础与理想态差距
 
@@ -165,6 +169,13 @@ interface CapabilitySnapshot {
   revision: number
   fingerprint: string
   kind: CapabilityKind
+  scope: {
+    tenantId: string
+    organizationId: string
+    projectId: string
+    environmentId: string
+    region: string
+  }
   source: {
     sourceKind: "RESOURCE" | "OPERATOR" | "GRAPH"
     sourceRef: string

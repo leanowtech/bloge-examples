@@ -14,6 +14,8 @@ Java protocol model and field-closure test in `resource-gateway-examples`.
 ## Invariants
 
 - Every executable reference carries a positive revision and canonical `sha256:<hex>` fingerprint.
+- Capability ids are resolved only inside their sealed tenant/organization/project/environment scope;
+  scope tenant and provenance tenant must be identical.
 - `UNKNOWN` effects remain critical, require an unresolved reason, and cannot collapse to read-only.
 - Recorded and inferred provenance requires exact source references.
 - Statistical confidence is not legal for owner-declared artifacts.
@@ -33,7 +35,7 @@ Java protocol model and field-closure test in `resource-gateway-examples`.
 - Unknown effects, unresolved child identity, unsealed children, conflicting errors, and ambiguous state
   models fail closed with stable `RG.MIRROR.*` error codes.
 
-The focused protocol/projection suite currently contains 17 green tests. This verifies the kernel and generic
+The focused protocol/projection suite currently contains 18 green tests. This verifies the kernel and generic
 projection behavior, not the full Stage 0 exit gate.
 
 The Stage 0 schema presence does not make mirror execution available. Capability discovery must keep

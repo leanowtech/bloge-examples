@@ -14,6 +14,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CapabilityProtocolTest {
     private static final String SOURCE_FINGERPRINT = "sha256:" + "a".repeat(64);
+    private static final CapabilitySnapshot.Scope SCOPE = new CapabilitySnapshot.Scope(
+            "tenant-a", "org-a", "support", "test", "sg");
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     @Test
@@ -37,7 +39,7 @@ class CapabilityProtocolTest {
                         new CapabilitySnapshot.Ownership("owner-a", "team-a", "pager-a")));
         CapabilitySnapshot tampered = new CapabilitySnapshot(
                 sealed.schemaVersion(), sealed.capabilityId(), sealed.revision(), sealed.fingerprint(),
-                sealed.kind(), sealed.source(), sealed.contract(), sealed.runtime(), sealed.dependencies(),
+                sealed.kind(), sealed.scope(), sealed.source(), sealed.contract(), sealed.runtime(), sealed.dependencies(),
                 new CapabilitySnapshot.Ownership("owner-b", "team-a", "pager-a"), sealed.lifecycle(),
                 sealed.provenance(), sealed.createdAt());
 
@@ -92,6 +94,7 @@ class CapabilityProtocolTest {
 
         assertThatThrownBy(() -> new CapabilitySnapshot("", "resource:orders", 1, "",
                 CapabilitySnapshot.Kind.EXTERNAL,
+                SCOPE,
                 new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.RESOURCE,
                         "orders.get", SOURCE_FINGERPRINT), contract(),
                 CapabilitySnapshot.RuntimeBinding.unavailable("not assembled"), List.of(dependency),
@@ -101,6 +104,7 @@ class CapabilityProtocolTest {
                 .hasMessage("EXTERNAL capability must not declare dependencies");
         assertThatThrownBy(() -> new CapabilitySnapshot("", "graph:empty", 1, "",
                 CapabilitySnapshot.Kind.COMPOSED,
+                SCOPE,
                 new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.GRAPH,
                         "empty", SOURCE_FINGERPRINT), contract(),
                 CapabilitySnapshot.RuntimeBinding.unavailable("not assembled"), List.of(),
@@ -115,11 +119,28 @@ class CapabilityProtocolTest {
                                                         CapabilitySnapshot.Ownership ownership) {
         return new CapabilitySnapshot("", "resource:orders.get", 3, fingerprint,
                 CapabilitySnapshot.Kind.EXTERNAL,
+                SCOPE,
                 new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.RESOURCE,
                         "orders.get", SOURCE_FINGERPRINT), contract(),
                 new CapabilitySnapshot.RuntimeBinding("HTTP_RESOURCE", "orders.get@3",
                         "sha256:" + "c".repeat(64), true, List.of()), List.of(), ownership,
                 lifecycle, provenance(), Instant.parse("2026-07-22T00:00:00Z"));
+    }
+
+    @Test
+    void rejectsScopeAndProvenanceTenantMismatch() {
+        CapabilitySnapshot.Scope otherTenant = new CapabilitySnapshot.Scope(
+                "tenant-b", "org-a", "support", "test", "sg");
+
+        assertThatThrownBy(() -> new CapabilitySnapshot("", "resource:orders.get", 1, "",
+                CapabilitySnapshot.Kind.EXTERNAL, otherTenant,
+                new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.RESOURCE,
+                        "orders.get", SOURCE_FINGERPRINT), contract(),
+                CapabilitySnapshot.RuntimeBinding.unavailable("not assembled"), List.of(),
+                CapabilitySnapshot.Ownership.unassigned(), CapabilitySnapshot.Lifecycle.DRAFT,
+                provenance(), Instant.parse("2026-07-22T00:00:00Z")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("scope tenantId must match provenance tenantId");
     }
 
     private static CapabilityContract contract() {

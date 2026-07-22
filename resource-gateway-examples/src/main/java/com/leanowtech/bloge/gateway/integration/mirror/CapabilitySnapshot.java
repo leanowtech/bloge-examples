@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
  * @param revision positive immutable snapshot revision
  * @param fingerprint canonical fingerprint of the snapshot with this field blanked
  * @param kind external or composed capability kind
+ * @param scope exact enterprise namespace that owns and may resolve this snapshot
  * @param source authoritative source asset identity
  * @param contract complete capability contract
  * @param runtime current frozen runtime binding projection
@@ -33,6 +34,7 @@ public record CapabilitySnapshot(
         long revision,
         String fingerprint,
         Kind kind,
+        Scope scope,
         Source source,
         CapabilityContract contract,
         RuntimeBinding runtime,
@@ -76,6 +78,7 @@ public record CapabilitySnapshot(
             throw new IllegalArgumentException("fingerprint must be blank or canonical SHA-256");
         }
         kind = kind == null ? Kind.EXTERNAL : kind;
+        scope = java.util.Objects.requireNonNull(scope, "scope");
         source = java.util.Objects.requireNonNull(source, "source");
         contract = java.util.Objects.requireNonNull(contract, "contract");
         runtime = runtime == null ? RuntimeBinding.unavailable("runtime binding is absent") : runtime;
@@ -94,6 +97,9 @@ public record CapabilitySnapshot(
         if (kind == Kind.COMPOSED && dependencies.isEmpty()) {
             throw new IllegalArgumentException("COMPOSED capability requires at least one dependency");
         }
+        if (!scope.tenantId().equals(provenance.tenantId())) {
+            throw new IllegalArgumentException("scope tenantId must match provenance tenantId");
+        }
     }
 
     /**
@@ -103,8 +109,38 @@ public record CapabilitySnapshot(
      * @return copied snapshot
      */
     public CapabilitySnapshot withFingerprint(String value) {
-        return new CapabilitySnapshot(schemaVersion, capabilityId, revision, value, kind, source,
+        return new CapabilitySnapshot(schemaVersion, capabilityId, revision, value, kind, scope, source,
                 contract, runtime, dependencies, ownership, lifecycle, provenance, createdAt);
+    }
+
+    /**
+     * Exact enterprise namespace of a capability snapshot.
+     *
+     * <p>Capability identifiers are unique only inside this scope. Keeping organization, project,
+     * and environment in the sealed protocol prevents a tenant-wide repository or API lookup from
+     * accidentally crossing business-unit or deployment boundaries.</p>
+     *
+     * @param tenantId owning tenant
+     * @param organizationId owning enterprise organization or business unit
+     * @param projectId optional project namespace
+     * @param environmentId deployment environment namespace
+     * @param region optional residency/execution region
+     */
+    public record Scope(
+            String tenantId,
+            String organizationId,
+            String projectId,
+            String environmentId,
+            String region
+    ) {
+        /** Validates stable mandatory scope coordinates. */
+        public Scope {
+            tenantId = required(tenantId, "scope.tenantId");
+            organizationId = required(organizationId, "scope.organizationId");
+            projectId = normalized(projectId);
+            environmentId = required(environmentId, "scope.environmentId");
+            region = normalized(region);
+        }
     }
 
     /**

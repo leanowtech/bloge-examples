@@ -90,6 +90,7 @@ public class CapabilityProjectionService {
                 "external write descriptor is missing a conformant managed-write contract");
         CapabilitySnapshot snapshot = new CapabilitySnapshot("", "resource:" + descriptor.resourceId(),
                 context.revision(), "", CapabilitySnapshot.Kind.EXTERNAL,
+                context.scope(),
                 new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.RESOURCE,
                         descriptor.resourceId(), sourceFingerprint), contract, runtime, List.of(),
                 context.ownership(), context.lifecycle(), context.ownerProvenance(), context.createdAt());
@@ -132,6 +133,7 @@ public class CapabilityProjectionService {
                 ? "effect contract is unresolved" : runtimeLimitation(operator));
         CapabilitySnapshot snapshot = new CapabilitySnapshot("", "operator:" + operator.operatorRef(),
                 context.revision(), "", CapabilitySnapshot.Kind.EXTERNAL,
+                context.scope(),
                 new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.OPERATOR,
                         operator.operatorRef(), operator.fingerprint()), contract, runtime, List.of(),
                 context.ownership(), context.lifecycle(), context.ownerProvenance(), context.createdAt());
@@ -195,6 +197,7 @@ public class CapabilityProjectionService {
         String sourceRef = draft.draftId().isBlank() ? draft.graphName() : draft.draftId();
         CapabilitySnapshot snapshot = new CapabilitySnapshot("", "graph:" + draft.graphName(),
                 context.revision(), "", CapabilitySnapshot.Kind.COMPOSED,
+                context.scope(),
                 new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.GRAPH,
                         sourceRef, sourceFingerprint), contract, runtime, dependencies,
                 context.ownership(), context.lifecycle(), context.ownerProvenance(), context.createdAt());

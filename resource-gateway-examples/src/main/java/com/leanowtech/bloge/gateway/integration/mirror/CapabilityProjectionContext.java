@@ -12,6 +12,10 @@ import java.util.List;
  *
  * @param revision positive capability snapshot revision
  * @param tenantId owning tenant
+ * @param organizationId owning organization or business unit
+ * @param projectId optional project namespace
+ * @param environmentId deployment environment namespace
+ * @param region optional residency/execution region
  * @param purpose authorized projection purpose
  * @param ownership accountable owner metadata
  * @param lifecycle initial governed lifecycle
@@ -26,6 +30,10 @@ import java.util.List;
 public record CapabilityProjectionContext(
         long revision,
         String tenantId,
+        String organizationId,
+        String projectId,
+        String environmentId,
+        String region,
         String purpose,
         CapabilitySnapshot.Ownership ownership,
         CapabilitySnapshot.Lifecycle lifecycle,
@@ -43,6 +51,10 @@ public record CapabilityProjectionContext(
             throw new IllegalArgumentException("revision must be positive");
         }
         tenantId = required(tenantId, "tenantId");
+        organizationId = required(organizationId, "organizationId");
+        projectId = projectId == null ? "" : projectId.trim();
+        environmentId = required(environmentId, "environmentId");
+        region = region == null ? "" : region.trim();
         purpose = required(purpose, "purpose");
         ownership = ownership == null ? CapabilitySnapshot.Ownership.unassigned() : ownership;
         lifecycle = lifecycle == null ? CapabilitySnapshot.Lifecycle.DRAFT : lifecycle;
@@ -69,6 +81,11 @@ public record CapabilityProjectionContext(
     public ArtifactProvenance ownerProvenance() {
         return new ArtifactProvenance("", ArtifactProvenance.SourceType.OWNER, List.of(), tenantId,
                 purpose, null, null, null, null, List.of(), approvedBy, approvedAt, expiresAt, "");
+    }
+
+    /** @return exact enterprise namespace sealed into the projected snapshot */
+    public CapabilitySnapshot.Scope scope() {
+        return new CapabilitySnapshot.Scope(tenantId, organizationId, projectId, environmentId, region);
     }
 
     private static String required(String value, String field) {

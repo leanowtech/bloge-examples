@@ -292,7 +292,8 @@ class CapabilityProjectionServiceTest {
     }
 
     private static CapabilityProjectionContext context(long revision) {
-        return new CapabilityProjectionContext(revision, "tenant-a", "MIRROR_REHEARSAL",
+        return new CapabilityProjectionContext(revision, "tenant-a", "org-a", "support-platform",
+                "test", "sg", "MIRROR_REHEARSAL",
                 new CapabilitySnapshot.Ownership("owner-a", "support-platform", "pager-a"),
                 CapabilitySnapshot.Lifecycle.DRAFT,
                 CapabilityContract.DataClassification.CONFIDENTIAL, List.of("sg", "us"), true,

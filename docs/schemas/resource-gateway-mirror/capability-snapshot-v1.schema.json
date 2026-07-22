@@ -5,7 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schemaVersion", "capabilityId", "revision", "fingerprint", "kind", "source",
+    "schemaVersion", "capabilityId", "revision", "fingerprint", "kind", "scope", "source",
     "contract", "runtime", "dependencies", "ownership", "lifecycle", "provenance", "createdAt"
   ],
   "properties": {
@@ -14,6 +14,7 @@
     "revision": { "type": "integer", "minimum": 1 },
     "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "kind": { "enum": ["EXTERNAL", "COMPOSED"] },
+    "scope": { "$ref": "#/$defs/scope" },
     "source": { "$ref": "#/$defs/source" },
     "contract": { "$ref": "capability-contract-v1.schema.json" },
     "runtime": { "$ref": "#/$defs/runtime" },
@@ -24,6 +25,18 @@
     "createdAt": { "type": "string", "format": "date-time" }
   },
   "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "projectId": { "type": "string", "maxLength": 255 },
+        "environmentId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "region": { "type": "string", "maxLength": 64 }
+      }
+    },
     "source": {
       "type": "object",
       "additionalProperties": false,
