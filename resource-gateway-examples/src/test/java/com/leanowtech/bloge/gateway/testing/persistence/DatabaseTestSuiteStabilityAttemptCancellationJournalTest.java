@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.AuthoritativeTestSuiteStabilityPhysicalAttemptTerminalProjectionProofResolver;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationCallSupervisor;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationCommand;
@@ -8,8 +9,15 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancell
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationVerifier;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobParentAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobRepository;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptIdentity;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationReceipt;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionProofResolver;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -35,6 +43,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
 
@@ -93,6 +102,109 @@ class DatabaseTestSuiteStabilityAttemptCancellationJournalTest {
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM rg_test_stability_attempt_cancel_provider_sequences
                 """, Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void exactAttemptLookupTracksPreparedAndConfirmedLifecycle() throws Exception {
+        TestSuiteStabilityAttemptCancellationCommand command = command(1, 7, 'a');
+        TestSuiteStabilityAttemptCancellationJournal.Entry prepared =
+                journal.prepare(command, descriptor).entry();
+
+        assertThat(journal.findByAttempt(
+                "tenant-a", "test", command.attemptId(), command.leaseEpoch()))
+                .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.AttemptLookup.found(
+                        prepared));
+
+        TestSuiteStabilityAttemptCancellationJournal.Entry confirmed = journal.accept(
+                command.commandId(), attestation(command, 11,
+                        TestSuiteStabilityAttemptCancellationReceipt.Outcome.TERMINATED)).entry();
+
+        assertThat(journal.findByAttempt(
+                "tenant-a", "test", command.attemptId(), command.leaseEpoch()))
+                .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.AttemptLookup.found(
+                        confirmed));
+    }
+
+    @Test
+    void exactAttemptLookupPreservesScopeAndFenceNonDisclosure() {
+        TestSuiteStabilityAttemptCancellationCommand command = command(1, 7, 'a');
+        journal.prepare(command, descriptor);
+
+        assertThat(journal.findByAttempt(
+                "tenant-b", "test", command.attemptId(), command.leaseEpoch()))
+                .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.AttemptLookup.absent());
+        assertThat(journal.findByAttempt(
+                "tenant-a", "staging", command.attemptId(), command.leaseEpoch()))
+                .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.AttemptLookup.absent());
+        assertThat(journal.findByAttempt(
+                "tenant-a", "test", command.attemptId(), command.leaseEpoch() + 1))
+                .isEqualTo(TestSuiteStabilityAttemptCancellationJournal.AttemptLookup.absent());
+    }
+
+    @Test
+    void exactAttemptLookupReturnsTypedConflictForRetainedTamper() {
+        TestSuiteStabilityAttemptCancellationCommand command = command(1, 7, 'a');
+        journal.prepare(command, descriptor);
+        jdbc.update("""
+                UPDATE rg_test_stability_attempt_cancel_entries
+                SET record_fingerprint = ? WHERE command_id = ?
+                """, "sha256:" + "e".repeat(64), command.commandId());
+
+        TestSuiteStabilityAttemptCancellationJournal.AttemptLookup result =
+                journal.findByAttempt(
+                        "tenant-a", "test", command.attemptId(), command.leaseEpoch());
+
+        assertThat(result.status()).isEqualTo(
+                TestSuiteStabilityAttemptCancellationJournal.AttemptLookupStatus.CONFLICT);
+        assertThat(result.reason()).isEqualTo(
+                TestSuiteStabilityAttemptCancellationJournal.AttemptLookupReason
+                        .INTEGRITY_CONFLICT);
+        assertThat(result.entry()).isEmpty();
+    }
+
+    @Test
+    void exactAttemptLookupDoesNotMisclassifyStorageFailureAsProofConflict() throws Exception {
+        TestSuiteStabilityAttemptCancellationCommand command = command(1, 7, 'a');
+        journal.prepare(command, descriptor);
+        journal.accept(command.commandId(), attestation(command, 11,
+                TestSuiteStabilityAttemptCancellationReceipt.Outcome.TERMINATED));
+        jdbc.execute("DROP TABLE rg_test_stability_attempt_cancel_provider_sequences");
+
+        assertThatThrownBy(() -> journal.findByAttempt(
+                "tenant-a", "test", command.attemptId(), command.leaseEpoch()))
+                .isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
+    void productResolverConsumesRealVerifiedCancellationJournalEntry() throws Exception {
+        TestSuiteStabilityAttemptCancellationCommand command = command(1, 7, 'a');
+        journal.prepare(command, descriptor);
+        TestSuiteStabilityAttemptCancellationJournal.Entry confirmed = journal.accept(
+                command.commandId(), attestation(command, 11,
+                        TestSuiteStabilityAttemptCancellationReceipt.Outcome.TERMINATED)).entry();
+        TestSuiteStabilityPhysicalAttemptIdentity identity =
+                new TestSuiteStabilityPhysicalAttemptIdentity(
+                        TestSuiteStabilityPhysicalAttemptIdentity.SCHEMA_VERSION,
+                        command.attemptId(), "sha256:" + "1".repeat(64),
+                        command.tenantId(), command.environmentId(), command.jobId(),
+                        "sha256:" + "2".repeat(64), command.ownerId(), command.leaseEpoch(),
+                        command.runtimeBindingFingerprint(), PROVIDER_ID, DEPLOYMENT_ID,
+                        TestSuiteStabilityAttemptCancellationReceipt.IsolationMode.PROCESS);
+        var resolver =
+                new AuthoritativeTestSuiteStabilityPhysicalAttemptTerminalProjectionProofResolver(
+                        mapper, journal, mock(TestSuiteStabilityJobRepository.class),
+                        mock(TestSuiteStabilityRunRepository.class),
+                        mock(TestSuiteStabilityJobParentAuthority.class));
+
+        TestSuiteStabilityPhysicalAttemptTerminalProjectionProofResolver.Resolution result =
+                resolver.resolve(identity,
+                        TestSuiteStabilityPhysicalAttemptObservationReceipt.TerminalDisposition
+                                .CANCELLED);
+
+        assertThat(result.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionProofResolver.ResolutionStatus
+                        .READY);
+        assertThat(result.proof().orElseThrow().cancellation()).contains(confirmed);
     }
 
     @Test

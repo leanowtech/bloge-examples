@@ -64,6 +64,108 @@ public interface TestSuiteStabilityAttemptCancellationJournal {
      */
     Optional<Entry> find(String tenantId, String environmentId, String commandId);
 
+    /**
+     * Resolves the cancellation fact bound to one exact physical-attempt fence.
+     *
+     * <p>This lookup exists for recovery paths that retain the physical attempt but do not retain
+     * its cancellation command id. Implementations must use an indexed exact lookup, preserve
+     * tenant/environment non-disclosure, validate the complete retained entry, and report
+     * ambiguity or retained-integrity failure as {@link AttemptLookupStatus#CONFLICT}. Storage
+     * unavailability must still be raised as an exception; it is not proof conflict.</p>
+     *
+     * @param tenantId exact caller tenant
+     * @param environmentId exact {@code test} or {@code staging} environment
+     * @param attemptId exact content-addressed physical attempt
+     * @param leaseEpoch exact durable queue ownership generation
+     * @return closed found, absent, or conflicting lookup result
+     */
+    AttemptLookup findByAttempt(
+            String tenantId, String environmentId, String attemptId, long leaseEpoch);
+
+    /** Closed outcome for an exact physical-attempt cancellation lookup. */
+    enum AttemptLookupStatus {
+        /** One integrity-verified retained entry was found. */
+        FOUND,
+        /** No entry exists in the exact visible scope. */
+        ABSENT,
+        /** Retained candidates are ambiguous or fail integrity verification. */
+        CONFLICT
+    }
+
+    /** Fixed-cardinality reason for an exact physical-attempt cancellation lookup. */
+    enum AttemptLookupReason {
+        /** No failure applies to a found entry. */
+        NONE,
+        /** No exact retained entry is visible. */
+        NOT_RETAINED,
+        /** More than one retained row claims the exact physical-attempt fence. */
+        AMBIGUOUS,
+        /** A retained row or its provider continuity proof failed verification. */
+        INTEGRITY_CONFLICT
+    }
+
+    /**
+     * Closed, payload-free result of one physical-attempt cancellation lookup.
+     *
+     * @param status exact lookup outcome
+     * @param reason fixed-cardinality lookup reason
+     * @param entry present only for one verified retained entry
+     */
+    record AttemptLookup(
+            AttemptLookupStatus status,
+            AttemptLookupReason reason,
+            Optional<Entry> entry) {
+
+        /** Enforces the found, absent, and conflict truth table. */
+        public AttemptLookup {
+            status = Objects.requireNonNull(status, "status");
+            reason = Objects.requireNonNull(reason, "reason");
+            entry = Objects.requireNonNull(entry, "entry");
+            if (status == AttemptLookupStatus.FOUND
+                    && (reason != AttemptLookupReason.NONE || entry.isEmpty())
+                    || status == AttemptLookupStatus.ABSENT
+                    && (reason != AttemptLookupReason.NOT_RETAINED || entry.isPresent())
+                    || status == AttemptLookupStatus.CONFLICT
+                    && (reason != AttemptLookupReason.AMBIGUOUS
+                    && reason != AttemptLookupReason.INTEGRITY_CONFLICT
+                    || entry.isPresent())) {
+                throw new IllegalArgumentException(
+                        "Invalid attempt cancellation lookup result");
+            }
+        }
+
+        /**
+         * Creates a successful exact-attempt lookup.
+         *
+         * @param entry one verified exact retained entry
+         * @return found result
+         */
+        public static AttemptLookup found(Entry entry) {
+            return new AttemptLookup(AttemptLookupStatus.FOUND, AttemptLookupReason.NONE,
+                    Optional.of(Objects.requireNonNull(entry, "entry")));
+        }
+
+        /**
+         * Creates an exact-scope absence result.
+         *
+         * @return exact-scope absence
+         */
+        public static AttemptLookup absent() {
+            return new AttemptLookup(AttemptLookupStatus.ABSENT,
+                    AttemptLookupReason.NOT_RETAINED, Optional.empty());
+        }
+
+        /**
+         * Creates a permanent lookup conflict.
+         *
+         * @param reason ambiguity or retained-integrity conflict
+         * @return permanent conflicting lookup
+         */
+        public static AttemptLookup conflict(AttemptLookupReason reason) {
+            return new AttemptLookup(AttemptLookupStatus.CONFLICT, reason, Optional.empty());
+        }
+    }
+
     /** Durable journal lifecycle. */
     enum Status {
         /** Command is frozen but no provider response has been accepted. */

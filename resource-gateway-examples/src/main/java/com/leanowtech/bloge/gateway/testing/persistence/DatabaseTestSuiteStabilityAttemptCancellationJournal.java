@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancell
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationVerifier;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -50,6 +51,8 @@ public final class DatabaseTestSuiteStabilityAttemptCancellationJournal
             "bloge.testSuiteStabilityAttemptCancellationProviderSequence.v1";
     private static final Pattern COMMAND_ID =
             Pattern.compile("stability-attempt-cancel-[a-f0-9]{64}");
+    private static final Pattern ATTEMPT_ID =
+            Pattern.compile("stability-attempt-[a-f0-9]{64}");
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,210}");
     private static final Duration MAXIMUM_CALLER_CLOCK_SKEW = Duration.ofSeconds(30);
@@ -321,6 +324,53 @@ public final class DatabaseTestSuiteStabilityAttemptCancellationJournal
         return result == null ? Optional.empty() : result;
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public AttemptLookup findByAttempt(
+            String tenantId, String environmentId, String attemptId, long leaseEpoch) {
+        String tenant = requireIdentifier(tenantId, "tenantId");
+        String environment = normalized(environmentId);
+        String attempt = normalized(attemptId);
+        if (!java.util.Set.of("test", "staging").contains(environment)
+                || !ATTEMPT_ID.matcher(attempt).matches()
+                || leaseEpoch < 1) {
+            throw new IllegalArgumentException(
+                    "Invalid cancellation journal attempt lookup identity");
+        }
+        AttemptLookup result = reads.execute(status -> {
+            List<StoredEntry> rows = jdbc.query("""
+                    SELECT command_id, command_fingerprint, tenant_id, environment_id,
+                           attempt_id, lease_epoch, provider_id, deployment_id, status,
+                           provider_sequence, attestation_fingerprint, command_json,
+                           descriptor_json, attestation_json, prepared_at, updated_at,
+                           record_fingerprint
+                    FROM rg_test_stability_attempt_cancel_entries
+                    WHERE tenant_id = ? AND environment_id = ?
+                      AND attempt_id = ? AND lease_epoch = ?
+                    """, this::mapEntry, tenant, environment, attempt, leaseEpoch);
+            if (rows.size() > 1) {
+                return AttemptLookup.conflict(AttemptLookupReason.AMBIGUOUS);
+            }
+            if (rows.isEmpty()) {
+                return AttemptLookup.absent();
+            }
+            try {
+                return AttemptLookup.found(validateEntry(rows.getFirst()));
+            } catch (IllegalStateException integrityFailure) {
+                if (knownIntegrityFailure(integrityFailure.getMessage())) {
+                    return AttemptLookup.conflict(
+                            AttemptLookupReason.INTEGRITY_CONFLICT);
+                }
+                throw integrityFailure;
+            }
+        });
+        if (result == null) {
+            throw new IllegalStateException(
+                    "Attempt cancellation lookup returned no result");
+        }
+        return result;
+    }
+
     private void validateCommandIdentity(
             TestSuiteStabilityAttemptCancellationCommand command) {
         String derived = ProtocolFingerprint.of(objectMapper, command.canonicalMaterial());
@@ -427,6 +477,9 @@ public final class DatabaseTestSuiteStabilityAttemptCancellationJournal
                     Optional.ofNullable(attestation), stored.preparedAt(), stored.updatedAt(),
                     stored.recordFingerprint());
         } catch (RuntimeException invalid) {
+            if (invalid instanceof DataAccessException dataAccessFailure) {
+                throw dataAccessFailure;
+            }
             if (invalid instanceof IllegalStateException state
                     && knownIntegrityFailure(state.getMessage())) {
                 throw state;

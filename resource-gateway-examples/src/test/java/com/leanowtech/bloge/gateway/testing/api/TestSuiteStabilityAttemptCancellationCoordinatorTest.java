@@ -389,5 +389,12 @@ class TestSuiteStabilityAttemptCancellationCoordinatorTest {
             events.add("find");
             return retained;
         }
+
+        @Override
+        public AttemptLookup findByAttempt(
+                String tenantId, String environmentId, String attemptId, long leaseEpoch) {
+            events.add("findByAttempt");
+            return retained.map(AttemptLookup::found).orElseGet(AttemptLookup::absent);
+        }
     }
 }
