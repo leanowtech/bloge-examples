@@ -14,6 +14,9 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-closure-v1.schema.json` | `CapabilityClosure` | Exact root plus every transitively reachable snapshot for registry-free planning |
 | `mirror-plan-v1.schema.json` | `MirrorPlan` | Sealed payload-free execution generation with exact external-edge bindings and isolation policy |
 | `mirror-resolution-v1.schema.json` | `MirrorResolution` | Fingerprinted per-attempt source, confidence, freshness, payload visibility, output/error, and abstention provenance |
+| `mirror-run-evidence-v1.schema.json` | `MirrorRunEvidence` | Payload-free node, edge, resolution, semantic-result, request-context, and isolation facts for one terminal run |
+| `mirror-evidence-attestation-v1.schema.json` | `MirrorEvidenceAttestation` | Domain-separated detached Ed25519 signature over one complete mirror run evidence value |
+| `mirror-evidence-bundle-v1.schema.json` | `MirrorEvidenceBundle` | Portable `HASH_ONLY` evidence, attestation, and complete bundle fingerprint closure |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -61,6 +64,12 @@ source fingerprint without becoming false business capabilities.
   `null` is represented by `outputIncluded=true`; `HASH_ONLY` never pretends that payload is present; every
   non-abstained result carries exact artifact provenance. Visible output and the complete artifact have separate
   canonical fingerprints, and generic string rendering omits output and error diagnostics.
+- A portable mirror evidence bundle never embeds node input, node output, edge value, or resolver output payloads.
+  It binds the request-context, plan, capability closure, execution-control generation, fixture revision, semantic
+  result, ordered node/edge traces, every sealed external resolution, and explicit isolation facts. A bundle is
+  emitted only after its domain-separated Ed25519 signature and complete bundle fingerprint verify immediately.
+  Cryptographic provenance does not imply production certification: `CERTIFIABLE` additionally requires proven
+  deployment egress isolation and zero declared limitations.
 - Revision one must be `DRAFT`; later revisions are contiguous, append-only, and accepted only through the
   lifecycle transition matrix. `REVOKED` is terminal.
 

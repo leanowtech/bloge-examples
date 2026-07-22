@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-run-evidence-v1.schema.json",
+  "title": "Resource Gateway Mirror Run Evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "runId", "requestId", "requestContextFingerprint", "planId",
+    "planFingerprint", "capabilityClosureFingerprint", "executionControlFingerprint",
+    "rootCapability", "fixtureBundleRef", "scope", "authorizedPurpose", "status",
+    "evidenceClass", "semanticResultFingerprint", "startedAt", "completedAt",
+    "nodeTraces", "edgeTraces", "resolutions", "isolation", "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorRunEvidence.v1" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "requestContextFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "planId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "capabilityClosureFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "executionControlFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "rootCapability": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "fixtureBundleRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "FIXTURE_BUNDLE" } } }
+      ]
+    },
+    "scope": { "$ref": "#/$defs/scope" },
+    "authorizedPurpose": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "not": { "pattern": "[Pp][Rr][Oo][Dd][Uu][Cc][Tt][Ii][Oo][Nn]" }
+    },
+    "status": {
+      "enum": [
+        "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED",
+        "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE",
+        "EVIDENCE_INCOMPLETE", "CANCELLED", "TIMED_OUT"
+      ]
+    },
+    "evidenceClass": { "enum": ["EXPLORATORY", "CERTIFIABLE"] },
+    "semanticResultFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "nodeTraces": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/nodeTrace" }
+    },
+    "edgeTraces": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/edgeTrace" }
+    },
+    "resolutions": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "mirror-resolution-v1.schema.json" }
+    },
+    "isolation": { "$ref": "#/$defs/isolation" },
+    "limitations": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "evidenceClass": { "const": "CERTIFIABLE" } } },
+      "then": {
+        "properties": {
+          "limitations": { "maxItems": 0 },
+          "isolation": {
+            "properties": {
+              "deploymentEgressEnforced": { "const": true },
+              "limitations": { "maxItems": 0 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "projectId": { "type": "string", "maxLength": 512 },
+        "environmentId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "region": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "attemptTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt", "status", "fidelity", "inputFingerprint", "outputFingerprint",
+        "errorCode", "durationMs"
+      ],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 1 },
+        "status": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "fidelity": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "inputFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "outputFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "errorCode": { "type": "string", "maxLength": 256 },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "nodeTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId", "operatorRef", "status", "fidelity", "inputFingerprint",
+        "outputFingerprint", "errorCode", "durationMs", "invocationSiteId", "graphPath",
+        "correlationKey", "occurrence", "graphOccurrence", "attempts"
+      ],
+      "properties": {
+        "nodeId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "operatorRef": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "status": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "fidelity": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "inputFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "outputFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "errorCode": { "type": "string", "maxLength": 256 },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "invocationSiteId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "graphPath": { "type": "string", "pattern": "^/", "maxLength": 2048 },
+        "correlationKey": { "type": "string", "maxLength": 1024 },
+        "occurrence": { "type": "integer", "minimum": 1 },
+        "graphOccurrence": { "type": "integer", "minimum": 1 },
+        "attempts": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/attemptTrace" }
+        }
+      }
+    },
+    "edgeTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edgeId", "status", "valueFingerprint", "graphPath", "correlationKey",
+        "graphOccurrence", "fromInvocationSiteId", "toInvocationSiteId"
+      ],
+      "properties": {
+        "edgeId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "status": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "valueFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "graphPath": { "type": "string", "pattern": "^/", "maxLength": 2048 },
+        "correlationKey": { "type": "string", "maxLength": 1024 },
+        "graphOccurrence": { "type": "integer", "minimum": 1 },
+        "fromInvocationSiteId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "toInvocationSiteId": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "isolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineMode", "interceptorTypes", "listenerTypes", "durableStoresAttached",
+        "productionContextCarriersAttached", "productionExtensionListenersAttached",
+        "realExternalCallsAllowed", "externalCredentialsAllowed", "networkEgressAllowed",
+        "deploymentEgressEnforced", "limitations"
+      ],
+      "properties": {
+        "engineMode": { "const": "INDEPENDENT_TEST_ENGINE" },
+        "interceptorTypes": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "listenerTypes": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "durableStoresAttached": { "const": false },
+        "productionContextCarriersAttached": { "const": false },
+        "productionExtensionListenersAttached": { "const": false },
+        "realExternalCallsAllowed": { "const": false },
+        "externalCredentialsAllowed": { "const": false },
+        "networkEgressAllowed": { "const": false },
+        "deploymentEgressEnforced": { "type": "boolean" },
+        "limitations": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "deploymentEgressEnforced": { "const": false } } },
+          "then": { "properties": { "limitations": { "contains": { "const": "DEPLOYMENT_EGRESS_NOT_ATTESTED" } } } }
+        }
+      ]
+    }
+  }
+}

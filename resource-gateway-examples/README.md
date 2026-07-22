@@ -126,7 +126,7 @@ frozen BLOGE invocation inventory, adapt the existing FixtureBundle into mandato
 the exact Graph/fixture/control generation in process, and execute it through the independent test engine after
 scope, purpose, TTL, fingerprint, coverage, and logical deadline checks. Mirror fixtures cannot replace internal
 business nodes, and unmatched external leaves fail closed. This is not yet an API or persisted serving surface;
-dynamic invocation budgets, durable evidence vNext, production egress proof, and authenticated storage
+dynamic invocation budgets, runtime evidence projection, durable evidence storage, production egress proof, and authenticated storage
 remain open, so the runtime feature flags above intentionally stay false. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
@@ -149,6 +149,15 @@ sealed, coordinate-ordered `MirrorResolution` records. Requests and outputs are 
 fingerprints; owner and replay results retain exact artifact provenance; business error, rejection, and abstention
 remain distinct. Ordinary tests keep their previous selection path. Capability probes remain disabled until API,
 durable evidence, dynamic budget, and production isolation gates close.
+
+The portable evidence protocol is now frozen as `resourceGateway.mirrorRunEvidence.v1`,
+`resourceGateway.mirrorEvidenceAttestation.v1`, and `resourceGateway.mirrorEvidenceBundle.v1`. It signs only a
+`HASH_ONLY` projection that binds request context, plan, capability closure, execution control, fixture revision,
+semantic result, ordered node/edge traces, every sealed resolution, and explicit isolation facts. Newly produced
+Ed25519 signatures and the complete bundle fingerprint are verified immediately. A cryptographically signed run is
+still exploratory unless deployment egress denial is attested and every limitation is closed. Runtime projection,
+the standalone test-kit verifier, persistence, and serving API remain the next release gates; no readiness flag is
+enabled by protocol presence alone.
 
 Useful variants:
 
