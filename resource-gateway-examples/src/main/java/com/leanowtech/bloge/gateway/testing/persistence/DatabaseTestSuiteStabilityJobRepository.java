@@ -156,6 +156,15 @@ public final class DatabaseTestSuiteStabilityJobRepository
         mutations.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
+    /**
+     * Reports whether possible provider starts retain queue capacity after lease expiry.
+     *
+     * @return true only when physical-attempt orphan-slot fencing is active
+     */
+    public boolean physicalAttemptFencingEnabled() {
+        return physicalAttemptFencingEnabled;
+    }
+
     /** Creates queue, tombstone, environment lock, policy, cursor, and bounded lookup indexes. */
     @PostConstruct
     public void init() {

@@ -382,6 +382,25 @@ rejects rollback and same-revision forks. The optional local instance list is on
 assertion. Static document injection remains a `test` fallback and is forbidden with staging remote
 mode.
 
+Physical-attempt terminal projection has a separate opt-in local runtime. It remains disabled by
+default through `RG_TEST_PHYSICAL_ATTEMPT_TERMINAL_PROJECTION_ENABLED=false` and is physically absent
+from every profile containing `production`. An embedding deployment may enable it only after
+supplying pinned `TestSuiteStabilityPhysicalAttemptStartVerifier`,
+`TestSuiteStabilityPhysicalAttemptObservationVerifier`, and
+`TestSuiteStabilityAttemptCancellationVerifier` beans. Startup also requires the isolated database
+`DatabaseTestSuiteStabilityJobRepository`; a generic or remote queue adapter is rejected because the
+terminal queue transition and physical-slot release must share its transaction authority. The same
+switch activates physical-attempt orphan-slot fencing on that queue and startup verifies the fence is
+actually enabled; a legacy fence-off database queue is rejected. Set a
+stable replica identity with `RG_TEST_PHYSICAL_ATTEMPT_TERMINAL_PROJECTION_WORKER_ID`. The remaining
+`RG_TEST_PHYSICAL_ATTEMPT_TERMINAL_PROJECTION_*` settings bound pollers, zero-queue call capacity,
+lease/call/completion budgets, retry, and readiness SLOs; invalid combinations fail startup without
+echoing configured identities. Actuator health exposes aggregate work counts and local capacity only,
+and Micrometer labels are closed enums. This lane consumes already registered terminal work. The
+autonomous observation-reconciliation scheduler that discovers orphan starts and atomically registers
+new terminal work, dynamic provider trust inventory, and capability advertisement remain closed, so
+the standalone demo script intentionally does not enable this lane yet.
+
 Staging also requires managed serving-inventory runtime keys. One canonical publication atomically
 carries the deployment and witness key sets and is independently approved by an M-of-N deployment
 bootstrap-root quorum and an M-of-N witness bootstrap-root quorum. Configure

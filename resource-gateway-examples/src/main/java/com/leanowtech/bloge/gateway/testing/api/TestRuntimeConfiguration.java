@@ -669,14 +669,16 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.stability-jobs.retention.instance-id:}")
             String retentionInstanceId,
             @Value("${gateway.testing.stability-jobs.retention.lease-duration-seconds:120}")
-            long retentionLeaseDurationSeconds) {
+            long retentionLeaseDurationSeconds,
+            @Value("${gateway.testing.stability-physical-attempt.terminal-projection.enabled:false}")
+            boolean physicalAttemptFencingEnabled) {
         String retentionOwner = retentionInstanceId == null || retentionInstanceId.isBlank()
                 ? "stability-job-retention-" + UUID.randomUUID()
                 : retentionInstanceId.trim();
         return new DatabaseTestSuiteStabilityJobRepository(
                 database.jdbc(), objectMapper, parentAuthority, requestKeys,
                 retentionOwner, Duration.ofSeconds(retentionLeaseDurationSeconds),
-                database.transactionManager());
+                database.transactionManager(), physicalAttemptFencingEnabled);
     }
 
     /** Runs one database-leased, bounded stability-job retention page per scheduled tick. */
