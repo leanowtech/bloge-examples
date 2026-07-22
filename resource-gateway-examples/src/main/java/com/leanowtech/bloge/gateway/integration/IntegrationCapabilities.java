@@ -348,11 +348,14 @@ public record IntegrationCapabilities(
                 TestSuiteStabilityPhysicalAttemptProviderInventory.SCHEMA_VERSION));
         objects.put("physicalAttemptProviderInventoryDescriptor", List.of(
                 TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Descriptor
+                        .SCHEMA_VERSION_V1,
+                TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Descriptor
                         .SCHEMA_VERSION));
         objects.put("physicalAttemptProviderInventoryCohortObservation", List.of(
                 TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate.Observation
                         .SCHEMA_VERSION));
         objects.put("physicalAttemptRuntimeCapability", List.of(
+                TestSuiteStabilityPhysicalAttemptRuntimeCapability.SCHEMA_VERSION_V1,
                 TestSuiteStabilityPhysicalAttemptRuntimeCapability.SCHEMA_VERSION));
         if (testExecutionEndpointEnabled) {
             objects.put("testExecutionRequest", List.of(

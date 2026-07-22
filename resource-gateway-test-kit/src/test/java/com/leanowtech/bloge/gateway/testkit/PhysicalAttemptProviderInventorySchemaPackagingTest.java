@@ -22,9 +22,11 @@ class PhysicalAttemptProviderInventorySchemaPackagingTest {
                 "physical-attempt-provider-inventory-publication-generation-v1.schema.json",
                 "physical-attempt-provider-inventory-cohort-binding-v1.schema.json",
                 "physical-attempt-provider-inventory-descriptor-v1.schema.json",
+                "physical-attempt-provider-inventory-descriptor-v2.schema.json",
                 "physical-attempt-provider-inventory-cohort-observation-v1.schema.json",
                 "physical-attempt-provider-inventory-external-anchor-configuration-v1.schema.json",
-                "physical-attempt-runtime-capability-v1.schema.json")) {
+                "physical-attempt-runtime-capability-v1.schema.json",
+                "physical-attempt-runtime-capability-v2.schema.json")) {
             String resource = "/schemas/resource-gateway-testing/" + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
                 assertThat(input).as(resource).isNotNull();

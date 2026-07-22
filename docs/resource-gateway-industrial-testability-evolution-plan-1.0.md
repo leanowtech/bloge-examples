@@ -395,6 +395,19 @@
 > 相对完整计划估计约 10% 实质差距，仍未进入正负 8% 完成区间。验证见
 > [physical provider inventory managed trust-root kernel verification](resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-trust-root-kernel-verification.md)。
 
+> Stage 4 physical attempt 第二十三增量把 managed roots 注入 dynamic physical inventory consumer，
+> 并关闭 key/generation TOCTOU。`VerifiedKeySet` 现在携带产生该 key set 的 exact root fingerprint；
+> root 轮换后即使 inventory source 返回 `304` 也会完整重验 publication+witness，兼容轮换会形成新组合
+> generation 并 fence 旧 wrapper，撤销旧 signer 则直接关闭 provider resolution。descriptor 与 runtime
+> capability 升级为 strict v2，保留 v1 negotiation；`READY` 新增 managed-root availability、atomic dual-root、
+> durable/external/Byzantine root floor 硬门槛，Tool Studio 同步投影这些 aggregate-only facts。42 项联合聚焦
+> 门禁全绿；Resource Gateway `clean verify` 通过 4292 tests（0 failures、0 errors、2 skips），480 份
+> Surefire XML 独立汇总一致；独立 test-kit `clean verify` 通过 231 tests（0 failures、0 errors、0 skips），
+> 25 份 XML 独立汇总一致并完成普通/CLI JAR Schema 打包；相关公共类型严格 JavaDoc 0 warnings、0 errors。
+> 该步仍未提供 physical-domain external-first root floor 与 Spring test/staging composition，故
+> 产品默认不会把新事实置真；相对完整计划估计约 9% 实质差距，仍未进入正负 8% 完成区间。验证见
+> [physical provider inventory managed trust-root consumer verification](resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-managed-trust-root-consumer-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

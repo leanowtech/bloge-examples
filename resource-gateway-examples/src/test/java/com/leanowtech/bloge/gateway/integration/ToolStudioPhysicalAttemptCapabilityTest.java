@@ -34,6 +34,7 @@ class ToolStudioPhysicalAttemptCapabilityTest {
                 .containsEntry("physicalAttemptProviderInventory", List.of(
                         TestSuiteStabilityPhysicalAttemptProviderInventory.SCHEMA_VERSION))
                 .containsEntry("physicalAttemptRuntimeCapability", List.of(
+                        TestSuiteStabilityPhysicalAttemptRuntimeCapability.SCHEMA_VERSION_V1,
                         TestSuiteStabilityPhysicalAttemptRuntimeCapability.SCHEMA_VERSION));
         assertThat(capabilities.features())
                 .containsEntry("physicalAttemptRuntimeConfigured", false)
@@ -42,6 +43,10 @@ class ToolStudioPhysicalAttemptCapabilityTest {
                 .containsEntry("physicalAttemptProviderInventoryExternalNonEquivocation", false)
                 .containsEntry(
                         "physicalAttemptProviderInventoryByzantineNonEquivocation", false)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryManagedTrustRootRefresh", false)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryManagedTrustRootAvailable", false)
                 .containsEntry("physicalAttemptProviderInventoryCohortConverged", false);
         assertThat(capabilities.testability().physicalAttemptRuntime().status())
                 .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
@@ -117,6 +122,18 @@ class ToolStudioPhysicalAttemptCapabilityTest {
                 .containsEntry("physicalAttemptProviderInventoryExternalNonEquivocation", true)
                 .containsEntry(
                         "physicalAttemptProviderInventoryByzantineNonEquivocation", true)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryManagedTrustRootRefresh", true)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryManagedTrustRootAvailable", true)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryAtomicDualTrustRootPublication", true)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryDurableTrustRootFloor", true)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryExternallyAnchoredTrustRootFloor", true)
+                .containsEntry(
+                        "physicalAttemptProviderInventoryByzantineTrustRootFloor", true)
                 .containsEntry("physicalAttemptProviderInventoryCohortConverged", true)
                 .containsEntry("physicalAttemptObservationReconciliationReady", true)
                 .containsEntry("physicalAttemptTerminalProjectionReady", true);
@@ -175,15 +192,25 @@ class ToolStudioPhysicalAttemptCapabilityTest {
                 TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Descriptor
                         .SCHEMA_VERSION,
                 true, true, true, "VERIFIED", 17, 1,
-                Map.of("sourceType", dynamic ? "DYNAMIC_SIGNED" : "STATIC_SIGNED",
-                        "privateMaterialPresent", false,
-                        "dynamicInventory", dynamic,
-                        "automaticRefresh", dynamic,
-                        "signedRevocation", dynamic,
-                        "witnessedPublications", dynamic,
-                        "durablePublicationFloor", dynamic,
-                        "externalNonEquivocation", dynamic,
-                        "byzantineQuorumNonEquivocation", dynamic)));
+                Map.ofEntries(
+                        Map.entry("sourceType",
+                                dynamic ? "DYNAMIC_SIGNED" : "STATIC_SIGNED"),
+                        Map.entry("privateMaterialPresent", false),
+                        Map.entry("dynamicInventory", dynamic),
+                        Map.entry("automaticRefresh", dynamic),
+                        Map.entry("signedRevocation", dynamic),
+                        Map.entry("witnessedPublications", dynamic),
+                        Map.entry("durablePublicationFloor", dynamic),
+                        Map.entry("externalNonEquivocation", dynamic),
+                        Map.entry("byzantineQuorumNonEquivocation", dynamic),
+                        Map.entry("managedTrustRootRefresh", dynamic),
+                        Map.entry("managedTrustRootAvailable", dynamic),
+                        Map.entry("managedTrustRootStatus", dynamic ? "HEALTHY" : "DISABLED"),
+                        Map.entry("managedTrustRootSequence", dynamic ? 2L : 0L),
+                        Map.entry("atomicDualTrustRootPublication", dynamic),
+                        Map.entry("durableTrustRootFloor", dynamic),
+                        Map.entry("externallyAnchoredTrustRootFloor", dynamic),
+                        Map.entry("byzantineQuorumAnchoredTrustRootFloor", dynamic))));
         return inventory;
     }
 

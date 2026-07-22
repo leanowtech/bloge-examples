@@ -29,6 +29,14 @@ import java.util.Objects;
  * @param signedRevocation whether signed inventory revocation is enforced
  * @param witnessedPublications whether publication ordering has an independent witness
  * @param durablePublicationFloor whether anti-rollback state survives restart
+ * @param managedTrustRootRefresh whether both runtime verification-key domains rotate atomically
+ * @param managedTrustRootAvailable whether the current managed dual-domain root is usable
+ * @param managedTrustRootStatus bounded managed-root lifecycle state
+ * @param managedTrustRootSequence current accepted root sequence, or zero when disabled
+ * @param atomicDualTrustRootPublication whether one publication controls both key domains
+ * @param durableTrustRootFloor whether root anti-rollback state survives restart
+ * @param externallyAnchoredTrustRootFloor whether root ordering is committed outside this database
+ * @param byzantineQuorumAnchoredTrustRootFloor whether the root anchor tolerates faulty notaries
  * @param cohortConverged whether every expected replica proves one exact generation
  * @param expectedReplicaCount attested cohort cardinality
  * @param readyReplicaCount replicas proving the exact current inventory generation
@@ -46,19 +54,33 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
         boolean signedRevocation,
         boolean witnessedPublications,
         boolean durablePublicationFloor,
+        boolean managedTrustRootRefresh,
+        boolean managedTrustRootAvailable,
+        String managedTrustRootStatus,
+        long managedTrustRootSequence,
+        boolean atomicDualTrustRootPublication,
+        boolean durableTrustRootFloor,
+        boolean externallyAnchoredTrustRootFloor,
+        boolean byzantineQuorumAnchoredTrustRootFloor,
         boolean cohortConverged,
         int expectedReplicaCount,
         int readyReplicaCount) {
 
+    /** First physical-attempt runtime capability generation retained for negotiation. */
+    public static final String SCHEMA_VERSION_V1 =
+            "bloge.testSuiteStabilityPhysicalAttemptRuntimeCapability.v1";
+
     /** Current physical-attempt runtime capability generation. */
     public static final String SCHEMA_VERSION =
-            "bloge.testSuiteStabilityPhysicalAttemptRuntimeCapability.v1";
+            "bloge.testSuiteStabilityPhysicalAttemptRuntimeCapability.v2";
 
     /** Enforces that every readiness claim is justified by the projected aggregate facts. */
     public TestSuiteStabilityPhysicalAttemptRuntimeCapability {
         schemaVersion = Objects.requireNonNullElse(schemaVersion, "").trim();
         status = Objects.requireNonNull(status, "status");
         providerInventory = Objects.requireNonNull(providerInventory, "providerInventory");
+        managedTrustRootStatus = Objects.requireNonNullElse(
+                managedTrustRootStatus, "").trim();
         boolean disabled = status == CapabilityStatus.DISABLED;
         boolean completeReadyShape = configured && providerInventory.configured()
                 && providerInventory.externallyAttested() && providerInventory.available()
@@ -67,22 +89,70 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
                 && witnessedPublications && durablePublicationFloor
                 && flag(providerInventory.properties(), "externalNonEquivocation")
                 && flag(providerInventory.properties(), "byzantineQuorumNonEquivocation")
+                && managedTrustRootRefresh && managedTrustRootAvailable
+                && "HEALTHY".equals(managedTrustRootStatus)
+                && managedTrustRootSequence > 0 && atomicDualTrustRootPublication
+                && durableTrustRootFloor && externallyAnchoredTrustRootFloor
+                && byzantineQuorumAnchoredTrustRootFloor
                 && cohortConverged
                 && expectedReplicaCount > 0 && readyReplicaCount == expectedReplicaCount;
         if (!SCHEMA_VERSION.equals(schemaVersion) || configured == disabled
                 || ready != (status == CapabilityStatus.READY) || ready != completeReadyShape
                 || expectedReplicaCount < 0 || expectedReplicaCount > 256
                 || readyReplicaCount < 0 || readyReplicaCount > expectedReplicaCount
+                || managedTrustRootStatus.isBlank() || managedTrustRootSequence < 0
+                || dynamicInventory != flag(
+                providerInventory.properties(), "dynamicInventory")
+                || automaticRefresh != flag(
+                providerInventory.properties(), "automaticRefresh")
+                || signedRevocation != flag(
+                providerInventory.properties(), "signedRevocation")
+                || witnessedPublications != flag(
+                providerInventory.properties(), "witnessedPublications")
+                || durablePublicationFloor != flag(
+                providerInventory.properties(), "durablePublicationFloor")
+                || managedTrustRootRefresh != flag(
+                providerInventory.properties(), "managedTrustRootRefresh")
+                || managedTrustRootAvailable != flag(
+                providerInventory.properties(), "managedTrustRootAvailable")
+                || !managedTrustRootStatus.equals(text(
+                providerInventory.properties(), "managedTrustRootStatus", "DISABLED"))
+                || managedTrustRootSequence != nonNegativeLong(
+                providerInventory.properties(), "managedTrustRootSequence")
+                || atomicDualTrustRootPublication != flag(
+                providerInventory.properties(), "atomicDualTrustRootPublication")
+                || durableTrustRootFloor != flag(
+                providerInventory.properties(), "durableTrustRootFloor")
+                || externallyAnchoredTrustRootFloor != flag(
+                providerInventory.properties(), "externallyAnchoredTrustRootFloor")
+                || byzantineQuorumAnchoredTrustRootFloor != flag(
+                providerInventory.properties(), "byzantineQuorumAnchoredTrustRootFloor")
                 || !configured && (providerInventory.configured()
                 || terminalProjectionReady || observationReconciliationReady
                 || dynamicInventory || automaticRefresh || signedRevocation
-                || witnessedPublications || durablePublicationFloor || cohortConverged
+                || witnessedPublications || durablePublicationFloor
+                || managedTrustRootRefresh || managedTrustRootAvailable
+                || managedTrustRootSequence != 0 || atomicDualTrustRootPublication
+                || durableTrustRootFloor || externallyAnchoredTrustRootFloor
+                || byzantineQuorumAnchoredTrustRootFloor || cohortConverged
                 || expectedReplicaCount != 0 || readyReplicaCount != 0)
                 || cohortConverged && (expectedReplicaCount < 1
                 || readyReplicaCount != expectedReplicaCount)
                 || automaticRefresh && !dynamicInventory
                 || flag(providerInventory.properties(), "byzantineQuorumNonEquivocation")
                 && !flag(providerInventory.properties(), "externalNonEquivocation")
+                || managedTrustRootAvailable && (!managedTrustRootRefresh
+                || !"HEALTHY".equals(managedTrustRootStatus)
+                || managedTrustRootSequence < 1)
+                || !managedTrustRootRefresh && (!"DISABLED".equals(managedTrustRootStatus)
+                || managedTrustRootSequence != 0 || atomicDualTrustRootPublication
+                || durableTrustRootFloor || externallyAnchoredTrustRootFloor
+                || byzantineQuorumAnchoredTrustRootFloor)
+                || atomicDualTrustRootPublication && !managedTrustRootRefresh
+                || durableTrustRootFloor && !managedTrustRootRefresh
+                || externallyAnchoredTrustRootFloor && !durableTrustRootFloor
+                || byzantineQuorumAnchoredTrustRootFloor
+                && !externallyAnchoredTrustRootFloor
                 || (signedRevocation || witnessedPublications || durablePublicationFloor)
                 && !dynamicInventory) {
             throw new IllegalArgumentException(
@@ -123,6 +193,22 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
             boolean external = flag(descriptor.properties(), "externalNonEquivocation");
             boolean byzantine = flag(
                     descriptor.properties(), "byzantineQuorumNonEquivocation");
+            boolean managedRootRefresh = flag(
+                    descriptor.properties(), "managedTrustRootRefresh");
+            boolean managedRootAvailable = flag(
+                    descriptor.properties(), "managedTrustRootAvailable");
+            String managedRootStatus = text(
+                    descriptor.properties(), "managedTrustRootStatus", "DISABLED");
+            long managedRootSequence = nonNegativeLong(
+                    descriptor.properties(), "managedTrustRootSequence");
+            boolean atomicDualRootPublication = flag(
+                    descriptor.properties(), "atomicDualTrustRootPublication");
+            boolean durableRootFloor = flag(
+                    descriptor.properties(), "durableTrustRootFloor");
+            boolean externalRootFloor = flag(
+                    descriptor.properties(), "externallyAnchoredTrustRootFloor");
+            boolean byzantineRootFloor = flag(
+                    descriptor.properties(), "byzantineQuorumAnchoredTrustRootFloor");
             boolean stableInventory = first.equals(last)
                     && descriptor.revision() == first.revision();
             boolean exactCohort = stableInventory && cohortObservation.available()
@@ -135,12 +221,17 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
                     && cohortObservation.distinctInventoryGenerations() == 1;
             CapabilityStatus status = classify(
                     first.available(), stableInventory, dynamic, refresh, revocation, witnessed,
-                    durableFloor, external, byzantine, exactCohort, converged,
+                    durableFloor, external, byzantine, managedRootRefresh,
+                    managedRootAvailable, atomicDualRootPublication, durableRootFloor,
+                    externalRootFloor, byzantineRootFloor, exactCohort, converged,
                     reconciliationReady && terminalReady);
             return new TestSuiteStabilityPhysicalAttemptRuntimeCapability(
                     SCHEMA_VERSION, true, status == CapabilityStatus.READY, status, descriptor,
                     terminalReady, reconciliationReady, dynamic, refresh, revocation, witnessed,
-                    durableFloor, converged, cohortObservation.expectedReplicas(),
+                    durableFloor, managedRootRefresh, managedRootAvailable,
+                    managedRootStatus, managedRootSequence, atomicDualRootPublication,
+                    durableRootFloor, externalRootFloor, byzantineRootFloor,
+                    converged, cohortObservation.expectedReplicas(),
                     cohortObservation.readyReplicas());
         } catch (RuntimeException unavailable) {
             return unavailable();
@@ -188,7 +279,9 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
         return new TestSuiteStabilityPhysicalAttemptRuntimeCapability(
                 SCHEMA_VERSION, configured, false, status,
                 TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Descriptor.disabled(),
-                false, false, false, false, false, false, false, false, 0, 0);
+                false, false, false, false, false, false, false,
+                false, false, "DISABLED", 0, false, false, false, false,
+                false, 0, 0);
     }
 
     private static CapabilityStatus classify(
@@ -201,6 +294,12 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
             boolean durableFloor,
             boolean external,
             boolean byzantine,
+            boolean managedRootRefresh,
+            boolean managedRootAvailable,
+            boolean atomicDualRootPublication,
+            boolean durableRootFloor,
+            boolean externalRootFloor,
+            boolean byzantineRootFloor,
             boolean exactCohort,
             boolean converged,
             boolean runtimesReady) {
@@ -231,6 +330,21 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
         if (!byzantine) {
             return CapabilityStatus.BYZANTINE_QUORUM_REQUIRED;
         }
+        if (!managedRootRefresh || !atomicDualRootPublication) {
+            return CapabilityStatus.MANAGED_TRUST_ROOT_REQUIRED;
+        }
+        if (!managedRootAvailable) {
+            return CapabilityStatus.MANAGED_TRUST_ROOT_UNAVAILABLE;
+        }
+        if (!durableRootFloor) {
+            return CapabilityStatus.DURABLE_TRUST_ROOT_FLOOR_REQUIRED;
+        }
+        if (!externalRootFloor) {
+            return CapabilityStatus.EXTERNAL_TRUST_ROOT_ANCHOR_REQUIRED;
+        }
+        if (!byzantineRootFloor) {
+            return CapabilityStatus.BYZANTINE_TRUST_ROOT_QUORUM_REQUIRED;
+        }
         if (!exactCohort) {
             return CapabilityStatus.COHORT_UNAVAILABLE;
         }
@@ -242,6 +356,16 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
 
     private static boolean flag(Map<String, Object> properties, String name) {
         return Boolean.TRUE.equals(properties.get(name));
+    }
+
+    private static String text(
+            Map<String, Object> properties, String name, String defaultValue) {
+        return properties.get(name) instanceof String value ? value : defaultValue;
+    }
+
+    private static long nonNegativeLong(Map<String, Object> properties, String name) {
+        return properties.get(name) instanceof Number value
+                ? Math.max(0L, value.longValue()) : 0L;
     }
 
     /** Closed machine-readable physical-attempt readiness reason. */
@@ -270,6 +394,16 @@ public record TestSuiteStabilityPhysicalAttemptRuntimeCapability(
         EXTERNAL_ANCHOR_REQUIRED,
         /** External ordering does not tolerate a non-zero Byzantine fault bound. */
         BYZANTINE_QUORUM_REQUIRED,
+        /** Runtime verification keys are static or are not published as one dual-domain unit. */
+        MANAGED_TRUST_ROOT_REQUIRED,
+        /** The configured managed dual-domain verification-key set is not currently usable. */
+        MANAGED_TRUST_ROOT_UNAVAILABLE,
+        /** Managed-root rollback state does not survive restart. */
+        DURABLE_TRUST_ROOT_FLOOR_REQUIRED,
+        /** Managed-root history is not committed outside the Resource Gateway database. */
+        EXTERNAL_TRUST_ROOT_ANCHOR_REQUIRED,
+        /** Managed-root external ordering does not tolerate a faulty notary. */
+        BYZANTINE_TRUST_ROOT_QUORUM_REQUIRED,
         /** Cohort state is absent, stale, or for another inventory generation. */
         COHORT_UNAVAILABLE,
         /** Expected replicas do not all prove one exact inventory generation. */

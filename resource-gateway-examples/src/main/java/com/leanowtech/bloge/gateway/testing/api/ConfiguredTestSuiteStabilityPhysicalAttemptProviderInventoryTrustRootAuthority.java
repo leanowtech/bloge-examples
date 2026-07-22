@@ -158,7 +158,7 @@ public final class ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryT
                 this.publication.witnessRootSignatures(),
                 this.publication.materialFingerprint(), material.issuedAt(),
                 material.expiresAt(), now, "Physical provider-inventory witness root");
-        this.verifiedKeySet = verifiedKeySet(material);
+        this.verifiedKeySet = verifiedKeySet(material, publication.materialFingerprint());
         durableFloor.accept(new TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor.Generation(
                 TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootFloor.Generation.SCHEMA_VERSION,
                 material.scopeId(), material.trustRootSetId(), material.sequence(),
@@ -259,7 +259,8 @@ public final class ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryT
     }
 
     private static VerifiedKeySet verifiedKeySet(
-            TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication.Material material) {
+            TestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootPublication.Material material,
+            String generationFingerprint) {
         List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> deployment =
                 parseKeys(material.deploymentKeys());
         List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey> witness =
@@ -279,7 +280,7 @@ public final class ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryT
         return new VerifiedKeySet(material.deploymentTrustDomain(),
                 material.witnessTrustDomain(), material.deploymentSignatureThreshold(),
                 material.witnessSignatureThreshold(), indexedDeployment, indexedWitness,
-                material.sequence(), material.policyFingerprint());
+                material.sequence(), material.policyFingerprint(), generationFingerprint);
     }
 
     private static List<ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
@@ -349,6 +350,10 @@ public final class ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryT
         return !authorityIds.isEmpty() && right != null && !right.isEmpty();
     }
 
+    /**
+     * Immutable runtime verifier keys coupled to the exact signed root generation that
+     * produced them, preventing key/generation time-of-check-to-time-of-use mixing.
+     */
     record VerifiedKeySet(
             String deploymentTrustDomain,
             String witnessTrustDomain,
@@ -359,7 +364,8 @@ public final class ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryT
             Map<String, ConfiguredTestSuiteStabilityServingInventoryAuthority.AuthorityKey>
                     witnessKeys,
             long sequence,
-            String policyFingerprint) {
+            String policyFingerprint,
+            String generationFingerprint) {
     }
 
     /**

@@ -21,7 +21,11 @@ public interface TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority ext
     Set<String> DESCRIPTOR_PROPERTIES = Set.of(
             "sourceType", "privateMaterialPresent", "dynamicInventory", "automaticRefresh",
             "signedRevocation", "durablePublicationFloor", "witnessedPublications",
-            "externalNonEquivocation", "byzantineQuorumNonEquivocation");
+            "externalNonEquivocation", "byzantineQuorumNonEquivocation",
+            "managedTrustRootRefresh", "managedTrustRootAvailable",
+            "managedTrustRootStatus", "managedTrustRootSequence",
+            "atomicDualTrustRootPublication", "durableTrustRootFloor",
+            "externallyAnchoredTrustRootFloor", "byzantineQuorumAnchoredTrustRootFloor");
 
     /**
      * Returns the current privately fenced inventory state without external I/O.
@@ -41,15 +45,24 @@ public interface TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority ext
         return new Descriptor(Descriptor.SCHEMA_VERSION, true,
                 observed.externallyAttested(), observed.available(), observed.status(),
                 observed.revision(), observed.bindings().size(),
-                Map.of("sourceType", observed.sourceType(),
-                        "privateMaterialPresent", false,
-                        "dynamicInventory", dynamic,
-                        "automaticRefresh", false,
-                        "signedRevocation", false,
-                        "durablePublicationFloor", false,
-                        "witnessedPublications", false,
-                        "externalNonEquivocation", false,
-                        "byzantineQuorumNonEquivocation", false));
+                Map.ofEntries(
+                        Map.entry("sourceType", observed.sourceType()),
+                        Map.entry("privateMaterialPresent", false),
+                        Map.entry("dynamicInventory", dynamic),
+                        Map.entry("automaticRefresh", false),
+                        Map.entry("signedRevocation", false),
+                        Map.entry("durablePublicationFloor", false),
+                        Map.entry("witnessedPublications", false),
+                        Map.entry("externalNonEquivocation", false),
+                        Map.entry("byzantineQuorumNonEquivocation", false),
+                        Map.entry("managedTrustRootRefresh", false),
+                        Map.entry("managedTrustRootAvailable", false),
+                        Map.entry("managedTrustRootStatus", "DISABLED"),
+                        Map.entry("managedTrustRootSequence", 0L),
+                        Map.entry("atomicDualTrustRootPublication", false),
+                        Map.entry("durableTrustRootFloor", false),
+                        Map.entry("externallyAnchoredTrustRootFloor", false),
+                        Map.entry("byzantineQuorumAnchoredTrustRootFloor", false)));
     }
 
     /**
@@ -142,9 +155,13 @@ public interface TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority ext
             int providerBindingCount,
             Map<String, Object> properties) {
 
+        /** First public descriptor generation retained for protocol negotiation. */
+        public static final String SCHEMA_VERSION_V1 =
+                "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryDescriptor.v1";
+
         /** Current public provider-inventory descriptor generation. */
         public static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryDescriptor.v1";
+                "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryDescriptor.v2";
 
         /** Validates aggregate-only public state. */
         public Descriptor {
@@ -176,6 +193,8 @@ public interface TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority ext
 
         private static boolean safeValue(Object value) {
             return value instanceof Boolean
+                    || value instanceof Number number && number.longValue() >= 0
+                    && number.longValue() <= 1_000_000
                     || value instanceof String text && !text.isBlank() && text.length() <= 128
                     && text.chars().noneMatch(Character::isISOControl);
         }

@@ -631,6 +631,18 @@ public class ToolStudioIntegrationService {
         features.put("physicalAttemptProviderInventoryByzantineNonEquivocation",
                 Boolean.TRUE.equals(physicalAttempt.providerInventory().properties()
                         .get("byzantineQuorumNonEquivocation")));
+        features.put("physicalAttemptProviderInventoryManagedTrustRootRefresh",
+                physicalAttempt.managedTrustRootRefresh());
+        features.put("physicalAttemptProviderInventoryManagedTrustRootAvailable",
+                physicalAttempt.managedTrustRootAvailable());
+        features.put("physicalAttemptProviderInventoryAtomicDualTrustRootPublication",
+                physicalAttempt.atomicDualTrustRootPublication());
+        features.put("physicalAttemptProviderInventoryDurableTrustRootFloor",
+                physicalAttempt.durableTrustRootFloor());
+        features.put("physicalAttemptProviderInventoryExternallyAnchoredTrustRootFloor",
+                physicalAttempt.externallyAnchoredTrustRootFloor());
+        features.put("physicalAttemptProviderInventoryByzantineTrustRootFloor",
+                physicalAttempt.byzantineQuorumAnchoredTrustRootFloor());
         features.put("physicalAttemptProviderInventoryCohortConverged",
                 physicalAttempt.cohortConverged());
         features.put("physicalAttemptObservationReconciliationReady",

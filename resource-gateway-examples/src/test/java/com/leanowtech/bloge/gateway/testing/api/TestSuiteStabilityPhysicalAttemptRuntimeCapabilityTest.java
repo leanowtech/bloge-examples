@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,6 +62,35 @@ class TestSuiteStabilityPhysicalAttemptRuntimeCapabilityTest {
                 true, true, true, true, true, true, false)).project().status())
                 .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
                         .BYZANTINE_QUORUM_REQUIRED);
+    }
+
+    @Test
+    void capabilityOrdersManagedRootAvailabilityAndTrustFloorRequirements() {
+        assertThat(fixture(propertiesWithRoots(
+                false, false, "DISABLED", 0, false, false, false, false))
+                .project().status())
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
+                        .MANAGED_TRUST_ROOT_REQUIRED);
+        assertThat(fixture(propertiesWithRoots(
+                true, false, "REFRESH_UNAVAILABLE", 2, true, true, true, true))
+                .project().status())
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
+                        .MANAGED_TRUST_ROOT_UNAVAILABLE);
+        assertThat(fixture(propertiesWithRoots(
+                true, true, "HEALTHY", 2, true, false, false, false))
+                .project().status())
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
+                        .DURABLE_TRUST_ROOT_FLOOR_REQUIRED);
+        assertThat(fixture(propertiesWithRoots(
+                true, true, "HEALTHY", 2, true, true, false, false))
+                .project().status())
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
+                        .EXTERNAL_TRUST_ROOT_ANCHOR_REQUIRED);
+        assertThat(fixture(propertiesWithRoots(
+                true, true, "HEALTHY", 2, true, true, true, false))
+                .project().status())
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
+                        .BYZANTINE_TRUST_ROOT_QUORUM_REQUIRED);
     }
 
     @Test
@@ -145,6 +175,26 @@ class TestSuiteStabilityPhysicalAttemptRuntimeCapabilityTest {
                         .UNAVAILABLE);
     }
 
+    @Test
+    void directConstructionCannotContradictEmbeddedInventoryFacts() {
+        var descriptor = new
+                TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Descriptor(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Descriptor
+                        .SCHEMA_VERSION,
+                true, true, true, "VERIFIED", 17, 1,
+                properties(true, true, true, true, true));
+
+        assertThatThrownBy(() -> new TestSuiteStabilityPhysicalAttemptRuntimeCapability(
+                TestSuiteStabilityPhysicalAttemptRuntimeCapability.SCHEMA_VERSION,
+                true, false,
+                TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus
+                        .MANAGED_TRUST_ROOT_UNAVAILABLE,
+                descriptor, true, true, true, true, true, true, true,
+                true, false, "HEALTHY", 2, true, true, true, true,
+                false, 2, 2))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static final String FINGERPRINT = "sha256:" + "1".repeat(64);
     private static final String POLICY = "sha256:" + "2".repeat(64);
 
@@ -183,15 +233,53 @@ class TestSuiteStabilityPhysicalAttemptRuntimeCapabilityTest {
             boolean floor,
             boolean external,
             boolean byzantine) {
-        return Map.of("sourceType", dynamic ? "DYNAMIC_SIGNED" : "STATIC_SIGNED",
-                "privateMaterialPresent", false,
-                "dynamicInventory", dynamic,
-                "automaticRefresh", refresh,
-                "signedRevocation", revocation,
-                "witnessedPublications", witness,
-                "durablePublicationFloor", floor,
-                "externalNonEquivocation", external,
-                "byzantineQuorumNonEquivocation", byzantine);
+        return Map.ofEntries(
+                Map.entry("sourceType", dynamic ? "DYNAMIC_SIGNED" : "STATIC_SIGNED"),
+                Map.entry("privateMaterialPresent", false),
+                Map.entry("dynamicInventory", dynamic),
+                Map.entry("automaticRefresh", refresh),
+                Map.entry("signedRevocation", revocation),
+                Map.entry("witnessedPublications", witness),
+                Map.entry("durablePublicationFloor", floor),
+                Map.entry("externalNonEquivocation", external),
+                Map.entry("byzantineQuorumNonEquivocation", byzantine),
+                Map.entry("managedTrustRootRefresh", dynamic),
+                Map.entry("managedTrustRootAvailable", dynamic),
+                Map.entry("managedTrustRootStatus", dynamic ? "HEALTHY" : "DISABLED"),
+                Map.entry("managedTrustRootSequence", dynamic ? 2L : 0L),
+                Map.entry("atomicDualTrustRootPublication", dynamic),
+                Map.entry("durableTrustRootFloor", dynamic),
+                Map.entry("externallyAnchoredTrustRootFloor", dynamic),
+                Map.entry("byzantineQuorumAnchoredTrustRootFloor", dynamic));
+    }
+
+    private static Map<String, Object> propertiesWithRoots(
+            boolean managedRefresh,
+            boolean managedAvailable,
+            String managedStatus,
+            long managedSequence,
+            boolean atomicPublication,
+            boolean durableRootFloor,
+            boolean externalRootFloor,
+            boolean byzantineRootFloor) {
+        return Map.ofEntries(
+                Map.entry("sourceType", "DYNAMIC_SIGNED"),
+                Map.entry("privateMaterialPresent", false),
+                Map.entry("dynamicInventory", true),
+                Map.entry("automaticRefresh", true),
+                Map.entry("signedRevocation", true),
+                Map.entry("witnessedPublications", true),
+                Map.entry("durablePublicationFloor", true),
+                Map.entry("externalNonEquivocation", true),
+                Map.entry("byzantineQuorumNonEquivocation", true),
+                Map.entry("managedTrustRootRefresh", managedRefresh),
+                Map.entry("managedTrustRootAvailable", managedAvailable),
+                Map.entry("managedTrustRootStatus", managedStatus),
+                Map.entry("managedTrustRootSequence", managedSequence),
+                Map.entry("atomicDualTrustRootPublication", atomicPublication),
+                Map.entry("durableTrustRootFloor", durableRootFloor),
+                Map.entry("externallyAnchoredTrustRootFloor", externalRootFloor),
+                Map.entry("byzantineQuorumAnchoredTrustRootFloor", byzantineRootFloor));
     }
 
     private static TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Observation

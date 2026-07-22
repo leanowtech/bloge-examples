@@ -80,6 +80,8 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
     private final int witnessSignatureThreshold;
     private final List<AuthorityKey> witnessKeys;
     private final Map<String, AuthorityKey> indexedWitnessKeys;
+    private final DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+            managedTrustRoots;
     private final Settings settings;
     private final DocumentFetcher fetcher;
     private final Object refreshLock = new Object();
@@ -135,6 +137,29 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
             Settings settings,
             DocumentFetcher fetcher,
             boolean startScheduler) {
+        this(objectMapper, clock, expected, signatureThreshold, authorityKeys,
+                runtimeCatalog, publicationFloor, witnessDomain,
+                witnessSignatureThreshold, witnessKeys, settings, fetcher,
+                startScheduler, null);
+    }
+
+    private DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ExpectedBinding expected,
+            int signatureThreshold,
+            List<AuthorityKey> authorityKeys,
+            Map<ProviderDeployment, TestSuiteStabilityPhysicalAttemptObservationAuthority>
+                    runtimeCatalog,
+            TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor publicationFloor,
+            String witnessDomain,
+            int witnessSignatureThreshold,
+            List<AuthorityKey> witnessKeys,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler,
+            DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    managedTrustRoots) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper").copy()
                 .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -154,6 +179,7 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
         this.indexedWitnessKeys =
                 ConfiguredTestSuiteStabilityServingInventoryAuthority.indexedKeys(
                         this.witnessKeys, witnessSignatureThreshold);
+        this.managedTrustRoots = managedTrustRoots;
         this.settings = Objects.requireNonNull(settings, "settings").validated();
         if (!this.publicationFloor.durable()) {
             throw new IllegalArgumentException(
@@ -173,6 +199,65 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
         this.scheduler = startScheduler ? scheduler() : null;
     }
 
+    /**
+     * Bootstraps a physical provider inventory with restart-free atomic runtime verification keys.
+     *
+     * @param objectMapper application protocol mapper
+     * @param expected exact scope, cohort, provider protocol, and policy binding
+     * @param runtimeCatalog installed provider/deployment runtime adapters
+     * @param publicationFloor durable inventory publication and witness floor
+     * @param managedTrustRoots atomic dual-quorum runtime-key authority
+     * @param settings bounded HTTPS inventory refresh policy
+     */
+    public DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
+            ObjectMapper objectMapper,
+            ExpectedBinding expected,
+            Map<ProviderDeployment, TestSuiteStabilityPhysicalAttemptObservationAuthority>
+                    runtimeCatalog,
+            TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor publicationFloor,
+            DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    managedTrustRoots,
+            Settings settings) {
+        this(objectMapper, Clock.systemUTC(), expected, runtimeCatalog, publicationFloor,
+                managedTrustRoots, settings, null, true);
+    }
+
+    DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ExpectedBinding expected,
+            Map<ProviderDeployment, TestSuiteStabilityPhysicalAttemptObservationAuthority>
+                    runtimeCatalog,
+            TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor publicationFloor,
+            DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    managedTrustRoots,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler) {
+        this(objectMapper, clock, expected, runtimeCatalog, publicationFloor,
+                Objects.requireNonNull(managedTrustRoots, "managedTrustRoots"), settings,
+                fetcher, startScheduler, managedMaterial(managedTrustRoots));
+    }
+
+    private DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
+            ObjectMapper objectMapper,
+            Clock clock,
+            ExpectedBinding expected,
+            Map<ProviderDeployment, TestSuiteStabilityPhysicalAttemptObservationAuthority>
+                    runtimeCatalog,
+            TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor publicationFloor,
+            DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    managedTrustRoots,
+            Settings settings,
+            DocumentFetcher fetcher,
+            boolean startScheduler,
+            ManagedMaterial material) {
+        this(objectMapper, clock, expected, material.deploymentSignatureThreshold(),
+                material.deploymentKeys(), runtimeCatalog, publicationFloor,
+                material.witnessTrustDomain(), material.witnessSignatureThreshold(),
+                material.witnessKeys(), settings, fetcher, startScheduler, managedTrustRoots);
+    }
+
     /** Returns current verified local state without network, database, or provider I/O. */
     @Override
     public Observation observation() {
@@ -182,6 +267,8 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
                     "Physical provider-inventory publication is not bootstrapped");
         }
         Observation inventory = observed.inventoryAuthority().observation();
+        DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority.Snapshot
+                rootSnapshot = managedTrustRoots == null ? null : managedTrustRoots.snapshot();
         Instant now = clock.instant();
         boolean available = false;
         String status;
@@ -189,6 +276,12 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
             status = "CLOSED";
         } else if (observed.localState() != LocalState.HEALTHY) {
             status = "REFRESH_UNAVAILABLE";
+        } else if (rootSnapshot != null && !rootSnapshot.available()) {
+            status = "TRUST_ROOT_" + rootSnapshot.status();
+        } else if (managedTrustRoots != null
+                && !observed.trustRootGenerationFingerprint().equals(
+                managedTrustRoots.generationFingerprint())) {
+            status = "TRUST_ROOT_GENERATION_UNVERIFIED";
         } else if (observed.lastSuccessfulRefreshAt() == null
                 || !now.isBefore(observed.lastSuccessfulRefreshAt()
                 .plus(settings.maximumSnapshotAge()))) {
@@ -223,18 +316,38 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
     @Override
     public Descriptor descriptor() {
         Observation observed = observation();
+        DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority.Snapshot roots =
+                managedTrustRoots == null ? null : managedTrustRoots.snapshot();
         return new Descriptor(Descriptor.SCHEMA_VERSION, true, true, observed.available(),
                 observed.status(), observed.revision(), observed.bindings().size(),
-                Map.of("sourceType", SOURCE_TYPE,
-                        "privateMaterialPresent", false,
-                        "dynamicInventory", true,
-                        "automaticRefresh", scheduler != null && !closed,
-                        "signedRevocation", true,
-                        "durablePublicationFloor", publicationFloor.durable(),
-                        "witnessedPublications", true,
-                        "externalNonEquivocation", publicationFloor.externallyAnchored(),
-                        "byzantineQuorumNonEquivocation",
-                        publicationFloor.byzantineQuorumAnchored()));
+                Map.ofEntries(
+                        Map.entry("sourceType", SOURCE_TYPE),
+                        Map.entry("privateMaterialPresent", false),
+                        Map.entry("dynamicInventory", true),
+                        Map.entry("automaticRefresh", scheduler != null && !closed),
+                        Map.entry("signedRevocation", true),
+                        Map.entry("durablePublicationFloor", publicationFloor.durable()),
+                        Map.entry("witnessedPublications", true),
+                        Map.entry("externalNonEquivocation",
+                                publicationFloor.externallyAnchored()),
+                        Map.entry("byzantineQuorumNonEquivocation",
+                                publicationFloor.byzantineQuorumAnchored()),
+                        Map.entry("managedTrustRootRefresh", managedTrustRoots != null),
+                        Map.entry("managedTrustRootAvailable",
+                                roots != null && roots.available()),
+                        Map.entry("managedTrustRootStatus",
+                                roots == null ? "DISABLED" : roots.status()),
+                        Map.entry("managedTrustRootSequence",
+                                roots == null ? 0L : roots.sequence()),
+                        Map.entry("atomicDualTrustRootPublication",
+                                managedTrustRoots != null),
+                        Map.entry("durableTrustRootFloor", managedTrustRoots != null),
+                        Map.entry("externallyAnchoredTrustRootFloor",
+                                managedTrustRoots != null
+                                        && managedTrustRoots.externallyAnchoredFloor()),
+                        Map.entry("byzantineQuorumAnchoredTrustRootFloor",
+                                managedTrustRoots != null
+                                        && managedTrustRoots.byzantineQuorumAnchoredFloor())));
     }
 
     /**
@@ -278,14 +391,23 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
     public Snapshot snapshot() {
         RefreshState observed = state;
         Observation inventory = observation();
+        DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority.Snapshot roots =
+                managedTrustRoots == null ? null : managedTrustRoots.snapshot();
         return new Snapshot(Snapshot.SCHEMA_VERSION, inventory.available(),
                 effectiveRefreshState(observed), observed.publication().material().state().name(),
                 observed.publication().material().sequence(),
                 observed.lastSuccessfulRefreshAt(), observed.refreshSuccessCount(),
                 observed.refreshFailureCount(), observed.lastFailureCode(),
                 settings.refreshInterval().toSeconds(),
-                settings.maximumSnapshotAge().toSeconds(), witnessSignatureThreshold,
-                publicationFloor.durable());
+                settings.maximumSnapshotAge().toSeconds(),
+                currentWitnessSignatureThreshold(), publicationFloor.durable(),
+                managedTrustRoots != null, roots != null && roots.available(),
+                roots == null ? "DISABLED" : roots.status(),
+                roots == null ? 0L : roots.sequence(),
+                managedTrustRoots != null,
+                managedTrustRoots != null && managedTrustRoots.externallyAnchoredFloor(),
+                managedTrustRoots != null
+                        && managedTrustRoots.byzantineQuorumAnchoredFloor());
     }
 
     /** Stops refresh and immediately closes new provider resolution. */
@@ -323,6 +445,7 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
                         settings.publicationUri(), previous.etag(), settings.requestTimeout());
                 TestSuiteStabilityPhysicalAttemptProviderInventoryPublication publication;
                 ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority authority;
+                String trustRootGenerationFingerprint;
                 if (fetched.notModified()) {
                     if (previous.publication() == null
                             || previous.inventoryAuthority() == null) {
@@ -330,13 +453,28 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
                                 "Physical provider-inventory source returned 304 before bootstrap");
                     }
                     publication = previous.publication();
-                    authority = previous.inventoryAuthority();
+                    if (managedTrustRoots != null
+                            && !previous.trustRootGenerationFingerprint().equals(
+                            managedTrustRoots.generationFingerprint())) {
+                        VerifiedPublication verified = verify(publication, previous, now);
+                        authority = verified.inventoryAuthority();
+                        trustRootGenerationFingerprint =
+                                verified.trustRootGenerationFingerprint();
+                    } else {
+                        authority = previous.inventoryAuthority();
+                        trustRootGenerationFingerprint =
+                                previous.trustRootGenerationFingerprint();
+                    }
                 } else {
                     publication = parse(fetched.body());
-                    authority = verify(publication, previous, now);
+                    VerifiedPublication verified = verify(publication, previous, now);
+                    authority = verified.inventoryAuthority();
+                    trustRootGenerationFingerprint =
+                            verified.trustRootGenerationFingerprint();
                 }
                 String etag = fetched.etag().isBlank() ? previous.etag() : fetched.etag();
-                state = new RefreshState(publication, authority, etag, LocalState.HEALTHY, now,
+                state = new RefreshState(publication, authority,
+                        trustRootGenerationFingerprint, etag, LocalState.HEALTHY, now,
                         previous.refreshSuccessCount() + 1,
                         previous.refreshFailureCount(), "");
                 refreshFailureLogged.set(false);
@@ -362,13 +500,15 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
         }
     }
 
-    private ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority verify(
+    private VerifiedPublication verify(
             TestSuiteStabilityPhysicalAttemptProviderInventoryPublication publication,
             RefreshState previous,
             Instant now) {
+        VerificationTrust verificationTrust = verificationTrust(publication);
         if (!publication.fingerprintVerified(objectMapper)
                 || !publication.witness().fingerprintVerified(objectMapper)
-                || !expected.trustDomain().equals(publication.material().trustDomain())
+                || !verificationTrust.deploymentTrustDomain().equals(
+                publication.material().trustDomain())
                 || !expected.acceptedPolicyFingerprints().contains(
                 publication.material().policyFingerprint())) {
             throw new IllegalArgumentException(
@@ -378,13 +518,14 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
                 publication.material().notBefore(), publication.material().expiresAt(), now,
                 "Physical provider-inventory publication");
         ConfiguredTestSuiteStabilityServingInventoryAuthority.verifyDetachedSignatures(
-                indexedAuthorityKeys, signatureThreshold, publication.signatures(),
+                verificationTrust.deploymentKeys(),
+                verificationTrust.deploymentSignatureThreshold(), publication.signatures(),
                 publication.materialFingerprint(), publication.material().issuedAt(),
                 publication.material().expiresAt(), now,
                 "Physical provider-inventory publication");
 
         var witness = publication.witness().material();
-        if (!witnessDomain.equals(witness.witnessDomain())
+        if (!verificationTrust.witnessTrustDomain().equals(witness.witnessDomain())
                 || witness.notBefore().isAfter(
                 publication.material().notBefore().plus(CLOCK_SKEW))
                 || witness.expiresAt().isBefore(publication.material().expiresAt())) {
@@ -394,7 +535,8 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
         requireCurrentWindow(witness.issuedAt(), witness.notBefore(), witness.expiresAt(), now,
                 "Physical provider-inventory witness");
         ConfiguredTestSuiteStabilityServingInventoryAuthority.verifyDetachedSignatures(
-                indexedWitnessKeys, witnessSignatureThreshold,
+                verificationTrust.witnessKeys(),
+                verificationTrust.witnessSignatureThreshold(),
                 publication.witness().signatures(),
                 publication.witness().materialFingerprint(), witness.issuedAt(),
                 witness.expiresAt(), now, "Physical provider-inventory witness");
@@ -404,8 +546,9 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
                 selectRuntimeAdapters(publication.inventory().material().bindings());
         var authority =
                 new ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
-                        objectMapper, clock, expected, signatureThreshold, authorityKeys,
-                        publication.inventory(), active);
+                        objectMapper, clock, expected,
+                        verificationTrust.deploymentSignatureThreshold(),
+                        verificationTrust.deploymentKeyList(), publication.inventory(), active);
         publicationFloor.accept(new
                 TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor.Generation(
                 TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor.Generation
@@ -415,7 +558,29 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
                 publication.witness().materialFingerprint(),
                 publication.material().previousPublicationFingerprint(),
                 witness.previousWitnessFingerprint()));
-        return authority;
+        return new VerifiedPublication(authority,
+                verificationTrust.trustRootGenerationFingerprint());
+    }
+
+    private VerificationTrust verificationTrust(
+            TestSuiteStabilityPhysicalAttemptProviderInventoryPublication publication) {
+        if (managedTrustRoots == null) {
+            return new VerificationTrust(expected.trustDomain(), witnessDomain,
+                    signatureThreshold, witnessSignatureThreshold,
+                    indexedAuthorityKeys, indexedWitnessKeys, authorityKeys, "");
+        }
+        var keys = managedTrustRoots.keysFor(
+                publication.signatures(), publication.witness().signatures());
+        return new VerificationTrust(keys.deploymentTrustDomain(),
+                keys.witnessTrustDomain(), keys.deploymentSignatureThreshold(),
+                keys.witnessSignatureThreshold(), keys.deploymentKeys(), keys.witnessKeys(),
+                keys.deploymentKeys().values().stream().toList(),
+                keys.generationFingerprint());
+    }
+
+    private int currentWitnessSignatureThreshold() {
+        return managedTrustRoots == null ? witnessSignatureThreshold
+                : managedTrustRoots.snapshot().witnessSignatureThreshold();
     }
 
     private Map<ProviderDeployment, TestSuiteStabilityPhysicalAttemptObservationAuthority>
@@ -448,15 +613,28 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
             throw new IllegalStateException(
                     "Physical provider-inventory publication is unavailable");
         }
+        if (observed.trustRootGenerationFingerprint().isBlank()) {
+            return ProtocolFingerprint.of(objectMapper, Map.of(
+                    "schemaVersion",
+                    "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryGeneration.v1",
+                    "publicationMaterialFingerprint",
+                    observed.publication().materialFingerprint(),
+                    "witnessMaterialFingerprint",
+                    observed.publication().witness().materialFingerprint(),
+                    "inventoryMaterialFingerprint",
+                    observed.publication().inventory().materialFingerprint()));
+        }
         return ProtocolFingerprint.of(objectMapper, Map.of(
                 "schemaVersion",
-                "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryGeneration.v1",
+                "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryManagedGeneration.v1",
                 "publicationMaterialFingerprint",
                 observed.publication().materialFingerprint(),
                 "witnessMaterialFingerprint",
                 observed.publication().witness().materialFingerprint(),
                 "inventoryMaterialFingerprint",
-                observed.publication().inventory().materialFingerprint()));
+                observed.publication().inventory().materialFingerprint(),
+                "trustRootGenerationFingerprint",
+                observed.trustRootGenerationFingerprint()));
     }
 
     private static Instant effectiveExpiry(
@@ -725,6 +903,13 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
      * @param maximumSnapshotAgeSeconds hard local source freshness
      * @param witnessSignatureThreshold configured witness quorum
      * @param durablePublicationFloor whether ordering survives fleet restart
+     * @param managedTrustRootRefresh whether runtime verification keys refresh atomically
+     * @param managedTrustRootAvailable whether the current dual key set is usable
+     * @param managedTrustRootStatus bounded managed-root lifecycle state
+     * @param managedTrustRootSequence current accepted managed-root sequence, or zero when disabled
+     * @param durableTrustRootFloor whether managed-root ordering survives fleet restart
+     * @param externallyAnchoredTrustRootFloor whether roots are ordered outside the local database
+     * @param byzantineQuorumAnchoredTrustRootFloor whether the root anchor tolerates faulty notaries
      */
     public record Snapshot(
             String schemaVersion,
@@ -739,11 +924,18 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
             long refreshIntervalSeconds,
             long maximumSnapshotAgeSeconds,
             int witnessSignatureThreshold,
-            boolean durablePublicationFloor) {
+            boolean durablePublicationFloor,
+            boolean managedTrustRootRefresh,
+            boolean managedTrustRootAvailable,
+            String managedTrustRootStatus,
+            long managedTrustRootSequence,
+            boolean durableTrustRootFloor,
+            boolean externallyAnchoredTrustRootFloor,
+            boolean byzantineQuorumAnchoredTrustRootFloor) {
 
         /** Current identity-free refresh snapshot generation. */
         public static final String SCHEMA_VERSION =
-                "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryRefreshSnapshot.v1";
+                "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryRefreshSnapshot.v2";
 
         /** Enforces bounded aggregate-only operational state. */
         public Snapshot {
@@ -751,12 +943,22 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
             refreshState = normalized(refreshState);
             publicationState = normalized(publicationState);
             lastFailureCode = normalized(lastFailureCode);
+            managedTrustRootStatus = normalized(managedTrustRootStatus);
             if (!SCHEMA_VERSION.equals(schemaVersion) || refreshState.isBlank()
                     || publicationState.isBlank() || sequence < 1
                     || refreshSuccessCount < 0 || refreshFailureCount < 0
                     || refreshIntervalSeconds < 1 || maximumSnapshotAgeSeconds < 2
                     || witnessSignatureThreshold < 1 || witnessSignatureThreshold > 32
-                    || !durablePublicationFloor) {
+                    || !durablePublicationFloor || managedTrustRootStatus.isBlank()
+                    || managedTrustRootRefresh != durableTrustRootFloor
+                    || managedTrustRootRefresh && (managedTrustRootSequence < 1
+                    || managedTrustRootAvailable != "HEALTHY".equals(managedTrustRootStatus))
+                    || !managedTrustRootRefresh && (managedTrustRootAvailable
+                    || managedTrustRootSequence != 0
+                    || !"DISABLED".equals(managedTrustRootStatus))
+                    || externallyAnchoredTrustRootFloor && !durableTrustRootFloor
+                    || byzantineQuorumAnchoredTrustRootFloor
+                    && !externallyAnchoredTrustRootFloor) {
                 throw new IllegalArgumentException(
                         "Physical provider-inventory refresh snapshot is invalid");
             }
@@ -910,6 +1112,7 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
             TestSuiteStabilityPhysicalAttemptProviderInventoryPublication publication,
             ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority
                     inventoryAuthority,
+            String trustRootGenerationFingerprint,
             String etag,
             LocalState localState,
             Instant lastSuccessfulRefreshAt,
@@ -918,21 +1121,57 @@ public final class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuth
             String lastFailureCode) {
 
         private RefreshState {
+            trustRootGenerationFingerprint = normalized(trustRootGenerationFingerprint);
             etag = normalized(etag);
             localState = localState == null ? LocalState.UNAVAILABLE : localState;
             lastFailureCode = normalized(lastFailureCode);
         }
 
         private static RefreshState empty() {
-            return new RefreshState(null, null, "", LocalState.BOOTSTRAPPING,
+            return new RefreshState(null, null, "", "", LocalState.BOOTSTRAPPING,
                     null, 0, 0, "");
         }
 
         private RefreshState failed(String failureCode) {
-            return new RefreshState(publication, inventoryAuthority, etag,
+            return new RefreshState(publication, inventoryAuthority,
+                    trustRootGenerationFingerprint, etag,
                     LocalState.UNAVAILABLE, lastSuccessfulRefreshAt,
                     refreshSuccessCount, refreshFailureCount + 1, failureCode);
         }
+    }
+
+    private static ManagedMaterial managedMaterial(
+            DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority roots) {
+        var keys = Objects.requireNonNull(roots, "roots").keysFor(List.of(), List.of());
+        return new ManagedMaterial(keys.deploymentSignatureThreshold(),
+                keys.witnessTrustDomain(), keys.witnessSignatureThreshold(),
+                keys.deploymentKeys().values().stream().toList(),
+                keys.witnessKeys().values().stream().toList());
+    }
+
+    private record VerificationTrust(
+            String deploymentTrustDomain,
+            String witnessTrustDomain,
+            int deploymentSignatureThreshold,
+            int witnessSignatureThreshold,
+            Map<String, AuthorityKey> deploymentKeys,
+            Map<String, AuthorityKey> witnessKeys,
+            List<AuthorityKey> deploymentKeyList,
+            String trustRootGenerationFingerprint) {
+    }
+
+    private record VerifiedPublication(
+            ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority
+                    inventoryAuthority,
+            String trustRootGenerationFingerprint) {
+    }
+
+    private record ManagedMaterial(
+            int deploymentSignatureThreshold,
+            String witnessTrustDomain,
+            int witnessSignatureThreshold,
+            List<AuthorityKey> deploymentKeys,
+            List<AuthorityKey> witnessKeys) {
     }
 
     private static final class RemotePublicationUnavailableException extends RuntimeException {

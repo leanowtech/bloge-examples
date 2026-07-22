@@ -38,13 +38,16 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
     @Test
     void aggregateSchemasMatchJavaFieldsAndExcludePrivateResolverIdentity() throws Exception {
         JsonNode descriptorSchema = schema(
-                "physical-attempt-provider-inventory-descriptor-v1.schema.json");
+                "physical-attempt-provider-inventory-descriptor-v2.schema.json");
         JsonNode cohortSchema = schema(
                 "physical-attempt-provider-inventory-cohort-observation-v1.schema.json");
         JsonNode capabilitySchema = schema(
-                "physical-attempt-runtime-capability-v1.schema.json");
+                "physical-attempt-runtime-capability-v2.schema.json");
 
-        assertFields(objectMapper.valueToTree(descriptor()), descriptorSchema.path("properties"));
+        JsonNode descriptor = objectMapper.valueToTree(descriptor());
+        assertFields(descriptor, descriptorSchema.path("properties"));
+        assertFields(descriptor.path("properties"),
+                descriptorSchema.at("/properties/properties/properties"));
         assertFields(objectMapper.valueToTree(cohort()), cohortSchema.path("properties"));
         assertFields(objectMapper.valueToTree(ready()), capabilitySchema.path("properties"));
         assertFields(objectMapper.valueToTree(
@@ -127,7 +130,7 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
 
     @Test
     void capabilityStatusVocabularyExactlyMatchesJavaProtocol() throws Exception {
-        JsonNode schema = schema("physical-attempt-runtime-capability-v1.schema.json");
+        JsonNode schema = schema("physical-attempt-runtime-capability-v2.schema.json");
 
         assertThat(schema.at("/properties/status/enum"))
                 .extracting(JsonNode::asText)
@@ -163,9 +166,11 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
                 "physical-attempt-provider-inventory-publication-generation-v1.schema.json",
                 "physical-attempt-provider-inventory-cohort-binding-v1.schema.json",
                 "physical-attempt-provider-inventory-descriptor-v1.schema.json",
+                "physical-attempt-provider-inventory-descriptor-v2.schema.json",
                 "physical-attempt-provider-inventory-cohort-observation-v1.schema.json",
                 "physical-attempt-provider-inventory-external-anchor-configuration-v1.schema.json",
-                "physical-attempt-runtime-capability-v1.schema.json")) {
+                "physical-attempt-runtime-capability-v1.schema.json",
+                "physical-attempt-runtime-capability-v2.schema.json")) {
             JsonNode schema = schema(name);
             assertThat(schema.path("$schema").asText())
                     .isEqualTo("https://json-schema.org/draft/2020-12/schema");
@@ -277,15 +282,24 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
                 TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Descriptor
                         .SCHEMA_VERSION,
                 true, true, true, "VERIFIED", 17, 1,
-                Map.of("sourceType", "DYNAMIC_SIGNED",
-                        "privateMaterialPresent", false,
-                        "dynamicInventory", true,
-                        "automaticRefresh", true,
-                        "signedRevocation", true,
-                        "witnessedPublications", true,
-                        "durablePublicationFloor", true,
-                        "externalNonEquivocation", true,
-                        "byzantineQuorumNonEquivocation", true));
+                Map.ofEntries(
+                        Map.entry("sourceType", "DYNAMIC_SIGNED"),
+                        Map.entry("privateMaterialPresent", false),
+                        Map.entry("dynamicInventory", true),
+                        Map.entry("automaticRefresh", true),
+                        Map.entry("signedRevocation", true),
+                        Map.entry("witnessedPublications", true),
+                        Map.entry("durablePublicationFloor", true),
+                        Map.entry("externalNonEquivocation", true),
+                        Map.entry("byzantineQuorumNonEquivocation", true),
+                        Map.entry("managedTrustRootRefresh", true),
+                        Map.entry("managedTrustRootAvailable", true),
+                        Map.entry("managedTrustRootStatus", "HEALTHY"),
+                        Map.entry("managedTrustRootSequence", 2L),
+                        Map.entry("atomicDualTrustRootPublication", true),
+                        Map.entry("durableTrustRootFloor", true),
+                        Map.entry("externallyAnchoredTrustRootFloor", true),
+                        Map.entry("byzantineQuorumAnchoredTrustRootFloor", true)));
     }
 
     private static TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate.Observation
@@ -302,7 +316,9 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
                 TestSuiteStabilityPhysicalAttemptRuntimeCapability.SCHEMA_VERSION,
                 true, true,
                 TestSuiteStabilityPhysicalAttemptRuntimeCapability.CapabilityStatus.READY,
-                descriptor(), true, true, true, true, true, true, true, true, 2, 2);
+                descriptor(), true, true, true, true, true, true, true,
+                true, true, "HEALTHY", 2, true, true, true, true,
+                true, 2, 2);
     }
 
     private JsonNode schema(String name) throws Exception {

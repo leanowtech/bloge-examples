@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -52,8 +53,10 @@ class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthorityTest {
     private ObjectMapper objectMapper;
     private KeyPair deploymentA;
     private KeyPair deploymentB;
+    private KeyPair deploymentC;
     private KeyPair witnessA;
     private KeyPair witnessB;
+    private KeyPair witnessC;
     private TestSuiteStabilityPhysicalAttemptObservationAuthority providerA;
     private TestSuiteStabilityPhysicalAttemptObservationAuthority providerB;
     private MutableClock clock;
@@ -64,8 +67,10 @@ class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthorityTest {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("Ed25519");
         deploymentA = generator.generateKeyPair();
         deploymentB = generator.generateKeyPair();
+        deploymentC = generator.generateKeyPair();
         witnessA = generator.generateKeyPair();
         witnessB = generator.generateKeyPair();
+        witnessC = generator.generateKeyPair();
         providerA = mock(TestSuiteStabilityPhysicalAttemptObservationAuthority.class);
         providerB = mock(TestSuiteStabilityPhysicalAttemptObservationAuthority.class);
         when(providerA.descriptor()).thenReturn(bindingA().descriptor());
@@ -136,6 +141,81 @@ class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthorityTest {
                     .isEqualTo(generation);
             assertThat(authority.snapshot().refreshSuccessCount()).isEqualTo(2);
             assertThat(fetcher.seenEtags()).containsExactly("", "generation-1");
+        }
+    }
+
+    @Test
+    void managedRootRotationReverifiesNotModifiedInventoryAndFencesOldWrappers()
+            throws Exception {
+        var first = publication(1,
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.State.ACTIVE,
+                "", "", inventory(17));
+        QueueFetcher fetcher = fetcher(document(first, "generation-1"),
+                DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority
+                        .FetchedDocument.notModified("generation-1"),
+                DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority
+                        .FetchedDocument.notModified("generation-1"),
+                DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority
+                        .FetchedDocument.notModified("generation-1"));
+        AtomicReference<ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                .VerifiedKeySet> keys = new AtomicReference<>(managedKeys(
+                1, deploymentKeys(), witnessKeys(), fingerprint('4')));
+        AtomicReference<String> rootGeneration = new AtomicReference<>(fingerprint('4'));
+        var roots = managedRoots(keys, rootGeneration);
+
+        try (var authority = new
+                DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority(
+                objectMapper, clock, expected(), catalog(), durableFloor(), roots,
+                settings(), fetcher, false)) {
+            String firstGeneration = authority.observation().sourceGenerationFingerprint();
+            var resolvedBeforeRotation = authority.resolve("provider-a", "deployment-1");
+
+            keys.set(managedKeys(2,
+                    List.of(key("deployment-a", "deployment-key-a", deploymentA),
+                            key("deployment-b", "deployment-key-b", deploymentB),
+                            key("deployment-c", "deployment-key-c", deploymentC)),
+                    List.of(key("witness-a", "witness-key-a", witnessA),
+                            key("witness-b", "witness-key-b", witnessB),
+                            key("witness-c", "witness-key-c", witnessC)), fingerprint('5')));
+            rootGeneration.set(fingerprint('5'));
+
+            assertThat(authority.refreshNow()).isTrue();
+            assertThat(authority.observation().sourceGenerationFingerprint())
+                    .isNotEqualTo(firstGeneration);
+            assertThatThrownBy(resolvedBeforeRotation::descriptor)
+                    .isInstanceOf(IllegalStateException.class);
+            assertThat(authority.descriptor().properties())
+                    .containsEntry("managedTrustRootRefresh", true)
+                    .containsEntry("managedTrustRootAvailable", true)
+                    .containsEntry("managedTrustRootStatus", "HEALTHY")
+                    .containsEntry("managedTrustRootSequence", 2L)
+                    .containsEntry("atomicDualTrustRootPublication", true)
+                    .containsEntry("durableTrustRootFloor", true);
+            assertThat(authority.snapshot()).satisfies(snapshot -> {
+                assertThat(snapshot.managedTrustRootRefresh()).isTrue();
+                assertThat(snapshot.managedTrustRootAvailable()).isTrue();
+                assertThat(snapshot.managedTrustRootStatus()).isEqualTo("HEALTHY");
+                assertThat(snapshot.managedTrustRootSequence()).isEqualTo(2);
+            });
+
+            rootGeneration.set(fingerprint('6'));
+
+            assertThat(authority.refreshNow()).isTrue();
+            assertThat(authority.observation()).satisfies(observed -> {
+                assertThat(observed.available()).isFalse();
+                assertThat(observed.status())
+                        .isEqualTo("TRUST_ROOT_GENERATION_UNVERIFIED");
+            });
+
+            keys.set(managedKeys(3,
+                    List.of(key("deployment-c", "deployment-key-c", deploymentC)),
+                    List.of(key("witness-c", "witness-key-c", witnessC)), fingerprint('6')));
+
+            assertThat(authority.refreshNow()).isFalse();
+            assertThat(authority.observation()).satisfies(observed -> {
+                assertThat(observed.available()).isFalse();
+                assertThat(observed.status()).isEqualTo("REFRESH_UNAVAILABLE");
+            });
         }
     }
 
@@ -387,6 +467,48 @@ class DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthorityTest {
     private List<AuthorityKey> witnessKeys() {
         return List.of(key("witness-a", "witness-key-a", witnessA),
                 key("witness-b", "witness-key-b", witnessB));
+    }
+
+    private DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+            managedRoots(
+            AtomicReference<ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    .VerifiedKeySet> keys,
+            AtomicReference<String> generation) {
+        var roots = mock(
+                DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority.class);
+        when(roots.keysFor(anyList(), anyList())).thenAnswer(ignored -> keys.get());
+        when(roots.generationFingerprint()).thenAnswer(ignored -> generation.get());
+        when(roots.externallyAnchoredFloor()).thenReturn(true);
+        when(roots.byzantineQuorumAnchoredFloor()).thenReturn(true);
+        when(roots.snapshot()).thenAnswer(ignored -> {
+            var current = keys.get();
+            return new DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                    .Snapshot(
+                    DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                            .Snapshot.SCHEMA_VERSION,
+                    true, "HEALTHY", current.sequence(), NOW, current.sequence(), 0, "",
+                    10, 1_000, 5, 30, current.deploymentSignatureThreshold(),
+                    current.witnessSignatureThreshold(), current.deploymentKeys().size(),
+                    current.witnessKeys().size(), true, true, true, false);
+        });
+        return roots;
+    }
+
+    private static ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+            .VerifiedKeySet managedKeys(
+            long sequence,
+            List<AuthorityKey> deployment,
+            List<AuthorityKey> witness,
+            String generationFingerprint) {
+        return new ConfiguredTestSuiteStabilityPhysicalAttemptProviderInventoryTrustRootAuthority
+                .VerifiedKeySet(
+                TRUST_DOMAIN, WITNESS_DOMAIN,
+                Math.min(2, deployment.size()), Math.min(2, witness.size()),
+                ConfiguredTestSuiteStabilityServingInventoryAuthority.indexedKeys(
+                        deployment, Math.min(2, deployment.size())),
+                ConfiguredTestSuiteStabilityServingInventoryAuthority.indexedKeys(
+                        witness, Math.min(2, witness.size())),
+                sequence, POLICY, generationFingerprint);
     }
 
     private static AuthorityKey key(String authorityId, String keyId, KeyPair pair) {
