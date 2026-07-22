@@ -122,8 +122,20 @@ javadoc --release 25 -Werror -Xdoclint:all
 0 warnings, 0 errors
 ```
 
-实现提交的 immutable `clean verify` 证据将在提交后独立补录；在该证据完成前，不把聚焦门禁外推成完整
-项目通过声明。
+实现提交 `30f7a93a` 已通过 `git archive` 解包到 immutable source snapshot
+`/tmp/bloge-examples-verify-30f7a93a` 并执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 4142, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 07:45 min
+```
+
+460 份 Surefire XML 使用独立 XML parser 重算为同一 `4142/0/0/2`。重打包 Spring Boot JAR 为
+39,743,350 bytes，包含 5 个新增 resolver/attempt-lookup class entry。门禁退出后，snapshot Java/Maven
+进程和 ChromeDriver/Chrome for Testing 残留进程均为零。
 
 ## 6. 本轮质量与总体差距
 

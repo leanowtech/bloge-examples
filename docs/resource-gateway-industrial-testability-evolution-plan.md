@@ -288,7 +288,10 @@
 > authority 重算 fingerprint 和验证 detached signature。新增 23 项测试，52 项聚焦和 308 项 physical/
 > cancellation/queue 聚合全绿，三个公共 contract strict JavaDoc 零告警。scheduler/Spring、telemetry/
 > health/capability、fairness/cohort/history、backfill/retention 与生产认证仍待完成，能力继续关闭；相对
-> 完整计划估计约 29% 实质差距，未进入正负 8% 完成区间。immutable full gate 将在实现提交后独立补录。
+> 完整计划估计约 29% 实质差距，未进入正负 8% 完成区间。实现提交 `30f7a93a` 的 immutable snapshot
+> 完整 `clean verify` 执行 4142 tests（0 failures、0 errors、2 skips），460 份 Surefire XML 独立汇总一致；
+> 39,743,350 bytes 可执行 JAR 包含 5 个新增 resolver/lookup class entry，耗时 7:45，构建/测试浏览器
+> 残留进程均为零。
 > 验证见 [physical attempt terminal projection proof resolver verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-proof-resolver-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |
