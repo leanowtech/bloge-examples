@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityContract;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.EffectContract;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolutionIntegrity;
@@ -29,6 +30,9 @@ import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompilationReques
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanRejectedException;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +43,7 @@ import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -57,6 +62,7 @@ class MirrorRunServiceTest {
 
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+    private final InMemoryVisualEvidenceSigner evidenceSigner = new InMemoryVisualEvidenceSigner();
     private final AtomicInteger externalCalls = new AtomicInteger();
     private final AtomicInteger internalCalls = new AtomicInteger();
     private final AtomicReference<Instant> observedDeadline = new AtomicReference<>();
@@ -73,15 +79,16 @@ class MirrorRunServiceTest {
         closure = closure();
         compiler = new MirrorPlanCompiler(registry, mapper);
         runtime = new MirrorRunService(registry, mapper, null,
-                Clock.fixed(COMPILED_AT.plusSeconds(1), ZoneOffset.UTC));
+                Clock.fixed(COMPILED_AT.plusSeconds(1), ZoneOffset.UTC), evidenceSigner);
     }
 
     @Test
     void executesTheExactCompiledGenerationAndNeverCallsTheExternalLeaf() {
         CompiledMirrorPlan compiled = compile(fixture(rule("customer-response", "loadCustomer",
                 FixtureRule.Behavior.returning(Map.of("customerId", "C-1")))));
+        MirrorRunRequest request = request(compiled, SCOPE, PURPOSE);
 
-        MirrorRunResult result = runtime.execute(request(compiled, SCOPE, PURPOSE));
+        MirrorRunResult result = runtime.execute(request);
 
         assertThat(result.passed()).isTrue();
         assertThat(externalCalls).hasValue(0);
@@ -93,6 +100,20 @@ class MirrorRunServiceTest {
                 .containsEntry("mirrorPlanFingerprint", compiled.plan().planFingerprint())
                 .containsEntry("capabilityClosureFingerprint",
                         compiled.plan().capabilityClosureFingerprint());
+        assertThat(result.evidenceBundle().evidence().requestContextFingerprint())
+                .isEqualTo(ProtocolFingerprint.of(mapper, request.context().asMap()));
+        assertThat(result.evidenceBundle().evidence().planFingerprint())
+                .isEqualTo(compiled.plan().planFingerprint());
+        assertThat(result.evidenceBundle().evidence().resolutions())
+                .isEqualTo(result.resolutions());
+        assertThat(result.evidenceBundle().evidence().evidenceClass())
+                .isEqualTo(com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence
+                        .EvidenceClass.EXPLORATORY);
+        assertThat(result.evidenceBundle().evidence().limitations())
+                .contains("DEPLOYMENT_EGRESS_NOT_ATTESTED");
+        assertThat(new MirrorEvidenceIntegrityService(mapper, evidenceSigner, Clock.systemUTC())
+                .verify(result.evidenceBundle()))
+                .isEqualTo(MirrorEvidenceIntegrityService.Verification.VERIFIED);
         assertThat(result.execution().evidence().nodeTrace())
                 .filteredOn(trace -> trace.invocationSiteId().equals(
                         "/root/loadCustomer#PRIMARY"))
@@ -224,11 +245,80 @@ class MirrorRunServiceTest {
                 "RG.MIRROR.RUN_PURPOSE_MISMATCH");
 
         MirrorRunService expired = new MirrorRunService(registry, mapper, null,
-                Clock.fixed(compiled.plan().expiresAt(), ZoneOffset.UTC));
+                Clock.fixed(compiled.plan().expiresAt(), ZoneOffset.UTC), evidenceSigner);
         assertRunRejected(() -> expired.execute(request(compiled, SCOPE, PURPOSE)),
                 "RG.MIRROR.RUN_EXPIRED");
         assertThat(externalCalls).hasValue(0);
         assertThat(internalCalls).hasValue(0);
+    }
+
+    @Test
+    void refusesToDeliverAnExecutedRunWhenNoSigningAuthorityIsConfigured() {
+        CompiledMirrorPlan compiled = compile(fixture(rule("customer-response", "loadCustomer",
+                FixtureRule.Behavior.returning(Map.of("customerId", "C-1")))));
+        MirrorRunService unsigned = new MirrorRunService(registry, mapper, null,
+                Clock.fixed(COMPILED_AT.plusSeconds(1), ZoneOffset.UTC));
+
+        assertRunRejected(() -> unsigned.execute(request(compiled, SCOPE, PURPOSE)),
+                "RG.MIRROR.EVIDENCE_SIGNER_UNAVAILABLE");
+        assertThat(externalCalls).hasValue(0);
+        assertThat(internalCalls).hasValue(1);
+    }
+
+    @Test
+    void rejectsMissingOrMismatchedExternalResolutionClosure() {
+        CompiledMirrorPlan compiled = compile(fixture(rule("customer-response", "loadCustomer",
+                FixtureRule.Behavior.returning(Map.of("customerId", "C-1")))));
+        MirrorRunRequest request = request(compiled, SCOPE, PURPOSE);
+        MirrorRunResult result = runtime.execute(request);
+        MirrorRunEvidenceProjector projector = new MirrorRunEvidenceProjector(mapper);
+
+        assertThatThrownBy(() -> projector.project(request, result.execution(), List.of(),
+                runtime.engineConfiguration()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exact closure");
+
+        MirrorResolution source = result.resolutions().getFirst();
+        MirrorResolution mismatched = copyResolutionWithRequest(source, fingerprint('b'));
+        assertThatThrownBy(() -> projector.project(request, result.execution(),
+                List.of(mismatched), runtime.engineConfiguration()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("differs from its external delegate attempt");
+    }
+
+    @Test
+    void rejectsEvidenceWhenSignerCannotVerifyItsOwnSignature() {
+        VisualEvidenceSigner invalidSigner = new VisualEvidenceSigner() {
+            @Override
+            public VisualRunEvidenceSeal seal(String materialFingerprint) {
+                return evidenceSigner.seal(materialFingerprint);
+            }
+
+            @Override
+            public Verification verify(
+                    VisualRunEvidenceSeal seal, String actualMaterialFingerprint) {
+                return new Verification(false, "INVALID", "injected verification failure");
+            }
+
+            @Override
+            public Optional<VerificationKey> key(String keyId) {
+                return evidenceSigner.key(keyId);
+            }
+
+            @Override
+            public boolean available() {
+                return true;
+            }
+        };
+        MirrorRunService invalid = new MirrorRunService(registry, mapper, null,
+                Clock.fixed(COMPILED_AT.plusSeconds(1), ZoneOffset.UTC), invalidSigner);
+        CompiledMirrorPlan compiled = compile(fixture(rule("customer-response", "loadCustomer",
+                FixtureRule.Behavior.returning("value"))));
+
+        assertRunRejected(() -> invalid.execute(request(compiled, SCOPE, PURPOSE)),
+                "RG.MIRROR.EVIDENCE_INTEGRITY_REJECTED");
+        assertThat(externalCalls).hasValue(0);
+        assertThat(internalCalls).hasValue(1);
     }
 
     @Test
@@ -402,6 +492,18 @@ class MirrorRunServiceTest {
 
     private static String fingerprint(char value) {
         return "sha256:" + String.valueOf(value).repeat(64);
+    }
+
+    private static MirrorResolution copyResolutionWithRequest(
+            MirrorResolution source, String requestFingerprint) {
+        return new MirrorResolution(source.schemaVersion(), source.resolutionFingerprint(),
+                source.runId(), source.planFingerprint(), source.capabilityRef(),
+                source.invocationSiteId(), source.graphPath(), source.correlationKey(),
+                source.occurrence(), source.attempt(), requestFingerprint, source.status(),
+                source.source(), source.payloadVisibility(), source.outputIncluded(),
+                source.output(), source.outputFingerprint(), source.error(),
+                source.matchedArtifactRefs(), source.matchedRuleRefs(), source.confidence(),
+                source.freshness(), source.limitations());
     }
 
     private static void assertRunRejected(Runnable action, String code) {

@@ -188,7 +188,7 @@
         "engineMode", "interceptorTypes", "listenerTypes", "durableStoresAttached",
         "productionContextCarriersAttached", "productionExtensionListenersAttached",
         "realExternalCallsAllowed", "externalCredentialsAllowed", "networkEgressAllowed",
-        "deploymentEgressEnforced", "limitations"
+        "deploymentEgressEnforced", "deploymentIsolationRef", "limitations"
       ],
       "properties": {
         "engineMode": { "const": "INDEPENDENT_TEST_ENGINE" },
@@ -211,6 +211,17 @@
         "externalCredentialsAllowed": { "const": false },
         "networkEgressAllowed": { "const": false },
         "deploymentEgressEnforced": { "type": "boolean" },
+        "deploymentIsolationRef": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/artifactRef" },
+                { "properties": { "kind": { "const": "DEPLOYMENT_ISOLATION_ATTESTATION" } } }
+              ]
+            }
+          ]
+        },
         "limitations": {
           "type": "array",
           "maxItems": 256,
@@ -221,7 +232,25 @@
       "allOf": [
         {
           "if": { "properties": { "deploymentEgressEnforced": { "const": false } } },
-          "then": { "properties": { "limitations": { "contains": { "const": "DEPLOYMENT_EGRESS_NOT_ATTESTED" } } } }
+          "then": {
+            "properties": {
+              "deploymentIsolationRef": { "type": "null" },
+              "limitations": { "contains": { "const": "DEPLOYMENT_EGRESS_NOT_ATTESTED" } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "deploymentEgressEnforced": { "const": true } } },
+          "then": {
+            "properties": {
+              "deploymentIsolationRef": {
+                "allOf": [
+                  { "$ref": "#/$defs/artifactRef" },
+                  { "properties": { "kind": { "const": "DEPLOYMENT_ISOLATION_ATTESTATION" } } }
+                ]
+              }
+            }
+          }
         }
       ]
     }

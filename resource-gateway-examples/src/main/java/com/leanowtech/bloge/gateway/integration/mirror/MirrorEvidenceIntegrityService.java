@@ -72,7 +72,7 @@ public final class MirrorEvidenceIntegrityService {
         }
         try {
             Instant signedAt = clock.instant();
-            if (Instant.EPOCH.equals(signedAt)) {
+            if (Instant.EPOCH.equals(signedAt) || signedAt.isBefore(snapshot.completedAt())) {
                 return SealResult.failed(snapshot, unavailable, MATERIAL_INVALID);
             }
             String materialFingerprint = signatureMaterialFingerprint(
@@ -117,7 +117,8 @@ public final class MirrorEvidenceIntegrityService {
             MirrorEvidenceAttestation attestation = bundle.attestation();
             if (!evidenceFingerprint.equals(attestation.evidenceFingerprint())
                     || !evidence.runId().equals(attestation.runId())
-                    || !evidence.planFingerprint().equals(attestation.planFingerprint())) {
+                    || !evidence.planFingerprint().equals(attestation.planFingerprint())
+                    || attestation.signedAt().isBefore(evidence.completedAt())) {
                 return Verification.INVALID;
             }
             BundleMaterial bundleMaterial = new BundleMaterial(bundle.schemaVersion(),

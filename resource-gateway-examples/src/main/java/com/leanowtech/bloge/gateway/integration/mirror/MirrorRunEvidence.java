@@ -19,7 +19,8 @@ import java.util.regex.Pattern;
  * @param schemaVersion mirror run-evidence protocol version
  * @param runId terminal run identity
  * @param requestId caller idempotency or correlation identity
- * @param requestContextFingerprint canonical fingerprint of the detached input context
+ * @param requestContextFingerprint canonical fingerprint of the detached effective input context,
+ *                                  including BLOGE reserved tenant and namespace coordinates
  * @param planId admitted mirror plan identity
  * @param planFingerprint exact sealed mirror plan
  * @param capabilityClosureFingerprint exact capability closure admitted by the plan
@@ -282,6 +283,7 @@ public record MirrorRunEvidence(
      * @param externalCredentialsAllowed whether external credentials could be resolved
      * @param networkEgressAllowed whether the immutable plan allowed network egress
      * @param deploymentEgressEnforced whether an out-of-process deployment control proved egress denial
+     * @param deploymentIsolationRef exact attestation proving deployment egress denial, when enforced
      * @param limitations bounded isolation facts not yet independently proven
      */
     public record IsolationFacts(
@@ -295,6 +297,7 @@ public record MirrorRunEvidence(
             boolean externalCredentialsAllowed,
             boolean networkEgressAllowed,
             boolean deploymentEgressEnforced,
+            MirrorArtifactRef deploymentIsolationRef,
             List<String> limitations
     ) {
         /** Supported execution-engine isolation mode. */
@@ -313,6 +316,15 @@ public record MirrorRunEvidence(
                     || externalCredentialsAllowed || networkEgressAllowed) {
                 throw new IllegalArgumentException(
                         "mirror isolation facts must not carry production authority");
+            }
+            if (deploymentIsolationRef != null
+                    && !"DEPLOYMENT_ISOLATION_ATTESTATION".equals(deploymentIsolationRef.kind())) {
+                throw new IllegalArgumentException(
+                        "deploymentIsolationRef must reference DEPLOYMENT_ISOLATION_ATTESTATION");
+            }
+            if (deploymentEgressEnforced != (deploymentIsolationRef != null)) {
+                throw new IllegalArgumentException(
+                        "deployment egress enforcement requires an exact isolation attestation");
             }
             if (!deploymentEgressEnforced && limitations.stream()
                     .noneMatch("DEPLOYMENT_EGRESS_NOT_ATTESTED"::equals)) {

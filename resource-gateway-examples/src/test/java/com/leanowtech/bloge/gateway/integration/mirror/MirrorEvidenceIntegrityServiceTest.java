@@ -142,6 +142,19 @@ class MirrorEvidenceIntegrityServiceTest {
     }
 
     @Test
+    void refusesToSignBeforeTheRunReachedItsTerminalTime() {
+        MirrorEvidenceIntegrityService staleClock = new MirrorEvidenceIntegrityService(
+                mapper, signer, Clock.fixed(Instant.parse("2026-07-22T23:59:57Z"),
+                ZoneOffset.UTC));
+
+        MirrorEvidenceIntegrityService.SealResult result = staleClock.seal(evidence());
+
+        assertThat(result.verified()).isFalse();
+        assertThat(result.failureCode())
+                .isEqualTo(MirrorEvidenceIntegrityService.MATERIAL_INVALID);
+    }
+
+    @Test
     void failsClosedWhenSigningAuthorityIsUnavailable() {
         MirrorEvidenceIntegrityService unavailable = new MirrorEvidenceIntegrityService(
                 mapper, VisualEvidenceSigner.unavailable(),
@@ -212,11 +225,15 @@ class MirrorEvidenceIntegrityServiceTest {
         MirrorRunEvidence.IsolationFacts proven = new MirrorRunEvidence.IsolationFacts(
                 MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
                 List.of(), List.of("InvocationRecorder"), false, false, false,
-                false, false, false, true, List.of());
+                false, false, false, true,
+                new MirrorArtifactRef("DEPLOYMENT_ISOLATION_ATTESTATION", "sandbox-sg", 1,
+                        fingerprint('d')), List.of());
         MirrorRunEvidence.IsolationFacts falselyLimited = new MirrorRunEvidence.IsolationFacts(
                 MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
                 List.of(), List.of("InvocationRecorder"), false, false, false,
-                false, false, false, true, List.of("UNPROVEN_CREDENTIAL_SCAN"));
+                false, false, false, true,
+                new MirrorArtifactRef("DEPLOYMENT_ISOLATION_ATTESTATION", "sandbox-sg", 1,
+                        fingerprint('d')), List.of("UNPROVEN_CREDENTIAL_SCAN"));
         MirrorRunEvidence base = evidence();
         MirrorRunEvidence certifiable = new MirrorRunEvidence("", base.runId(), base.requestId(),
                 base.requestContextFingerprint(), base.planId(), base.planFingerprint(),
@@ -245,7 +262,7 @@ class MirrorEvidenceIntegrityServiceTest {
         MirrorRunEvidence.IsolationFacts isolation = new MirrorRunEvidence.IsolationFacts(
                 MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
                 List.of(), List.of("InvocationRecorder"), false, false, false,
-                false, false, false, false, isolationLimitations);
+                false, false, false, false, null, isolationLimitations);
         isolationLimitations.add("MUTATED_AFTER_CONSTRUCTION");
         MirrorRunEvidence base = evidence();
         MirrorRunEvidence value = new MirrorRunEvidence("", base.runId(), base.requestId(),
@@ -270,7 +287,7 @@ class MirrorEvidenceIntegrityServiceTest {
         MirrorRunEvidence.IsolationFacts isolation = new MirrorRunEvidence.IsolationFacts(
                 MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
                 List.of(), List.of("InvocationRecorder"), false, false, false,
-                false, false, false, false,
+                false, false, false, false, null,
                 List.of("DEPLOYMENT_EGRESS_NOT_ATTESTED"));
         return new MirrorRunEvidence("", RUN_ID, "mirror-request-1", CONTEXT,
                 "support-plan", PLAN, CLOSURE, CONTROL, ROOT, FIXTURE, SCOPE,

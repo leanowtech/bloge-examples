@@ -121,7 +121,7 @@ class MirrorEvidenceProtocolSchemaTest {
                 List.of(resolution), new MirrorRunEvidence.IsolationFacts(
                         MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
                         List.of(), List.of("InvocationRecorder"), false, false, false,
-                        false, false, false, false,
+                        false, false, false, false, null,
                         List.of("DEPLOYMENT_EGRESS_NOT_ATTESTED")),
                 List.of("DEPLOYMENT_EGRESS_NOT_ATTESTED"));
         return new MirrorEvidenceIntegrityService(mapper, new InMemoryVisualEvidenceSigner(),

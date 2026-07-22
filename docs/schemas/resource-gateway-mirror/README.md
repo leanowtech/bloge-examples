@@ -66,7 +66,9 @@ source fingerprint without becoming false business capabilities.
   canonical fingerprints, and generic string rendering omits output and error diagnostics.
 - A portable mirror evidence bundle never embeds node input, node output, edge value, or resolver output payloads.
   It binds the request-context, plan, capability closure, execution-control generation, fixture revision, semantic
-  result, ordered node/edge traces, every sealed external resolution, and explicit isolation facts. A bundle is
+  result, ordered node/edge traces, every sealed external resolution, and explicit isolation facts. A claimed
+  deployment egress proof must bind an exact `DEPLOYMENT_ISOLATION_ATTESTATION`; an unproven environment remains
+  explicitly limited. A bundle is
   emitted only after its domain-separated Ed25519 signature and complete bundle fingerprint verify immediately.
   Cryptographic provenance does not imply production certification: `CERTIFIABLE` additionally requires proven
   deployment egress isolation and zero declared limitations.
@@ -75,9 +77,9 @@ source fingerprint without becoming false business capabilities.
 
 ## Independent client admission
 
-The test-kit currently packages the seven Stage 0 schemas and compatibility fixture in its JAR. MirrorPlan and
-MirrorResolution are Stage 1 schemas; their independent client verifiers are intentionally not advertised until
-runtime provenance integration and offline verification are complete. A Stage 0 consumer first
+The test-kit currently packages the seven Stage 0 schemas and compatibility fixture in its JAR. MirrorPlan,
+MirrorResolution, and the three MirrorEvidence objects are Stage 1 schemas; their independent client verifiers are
+intentionally not advertised until offline verification is complete. A Stage 0 consumer first
 calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
 It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before
 persisting or compiling the artifact.
@@ -172,6 +174,9 @@ the public seal, authenticated scope and purpose, TTL, graph/fixture/control gen
 the static invocation floor before executing through the independent test engine. It carries the plan's logical
 timeout into BLOGE `ExecutionBudget`; an unmatched external remains implicit deny and cannot reach the real binding.
 
-This is still a kernel rather than a service endpoint. Dynamic occurrence budgeting, durable mirror evidence vNext,
-production composition and egress proofs, exact artifact storage, and authenticated API admission remain open.
+This is still a kernel rather than a service endpoint. It now projects every real node/edge/attempt value to a
+bounded canonical fingerprint, proves exact closure against resolver provenance, requires an explicit signer, and
+returns an immediately verified portable bundle. Dynamic occurrence budgeting, durable evidence storage,
+independent test-kit verification, production composition and egress proofs, exact artifact storage, and
+authenticated API admission remain open.
 Capability discovery therefore continues to report compilation, external interception, and serving as unavailable.

@@ -127,8 +127,19 @@
   evidence fingerprint 与 signedAt，新签名会被立即复验，完整 bundle 另有 canonical fingerprint；签名器不可用、
   嵌套 seal 篡改、签名时间/签名篡改、payload 可见性违规、重复坐标与越界集合均失败关闭。密码学来源可信不等于
   可认证：只有 deployment egress 已证明且不存在 limitation 时才能声明 `CERTIFIABLE`。协议/完整性聚焦测试
-  `14/14` 全绿。运行时自动 node/edge 投影、test-kit 独立 verifier、durable store/API 与生产 egress attestation
-  仍是后续门禁，因此 probe 不变。
+  `15/15` 全绿。test-kit 独立 verifier、durable store/API 与生产 egress attestation 仍是后续门禁，因此 probe
+  不变。
+- Stage 1 第九增量已将 evidence vNext 接入真实 `MirrorRunService`。`MirrorRunEvidenceProjector` 对 request context、
+  node/attempt input/output 和 edge value 分别执行最大 16 MiB 的 canonical hash，并在签名前证明 external node 的
+  每个 delegate attempt 与 `MirrorResolution` 在 site/correlation/occurrence/attempt、capability、graph path、request
+  fingerprint 和成功 output fingerprint 上形成 exact closure。projector 不复制 test diagnostics、assertion 或任何
+  业务值。`MirrorRunService` 不安装隐式开发密钥：默认无 signer 的执行最终以
+  `RG.MIRROR.EVIDENCE_SIGNER_UNAVAILABLE` 拒绝交付；显式 signer 的签名若不能立即自验，则以
+  `RG.MIRROR.EVIDENCE_INTEGRITY_REJECTED` 失败关闭。`MirrorRunResult` 现在强制携带与 exact plan/run/resolution/
+  semantic result 一致的 verified bundle。当前部署尚无 exact `DEPLOYMENT_ISOLATION_ATTESTATION`，所以运行证据
+  诚实降级为 `EXPLORATORY`；布尔 egress 声明不能脱离 exact attestation ref 自证。真实运行、缺 provenance、
+  request mismatch、无 signer 和坏签名故障注入套件 `12/12` 全绿。服务 API、持久化、独立 verifier 和生产隔离
+  仍未开放；mirror integration 加 testing planning/runtime 扩大回归 `259/259` 全绿。
 
 ---
 

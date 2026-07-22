@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 
@@ -16,18 +17,21 @@ import java.util.Objects;
  * @param admittedAt server admission time used for TTL enforcement
  * @param execution graph result and semantically fingerprinted evidence from the shared kernel
  * @param resolutions sealed payload-free resolver provenance ordered by invocation coordinate
+ * @param evidenceBundle independently verified portable payload-free run evidence
  */
 public record MirrorRunResult(
         MirrorPlan plan,
         Instant admittedAt,
         TestExecutionResult execution,
-        List<MirrorResolution> resolutions
+        List<MirrorResolution> resolutions,
+        MirrorEvidenceBundle evidenceBundle
 ) {
     /** Requires one complete admitted execution result. */
     public MirrorRunResult {
         plan = Objects.requireNonNull(plan, "plan");
         admittedAt = Objects.requireNonNull(admittedAt, "admittedAt");
         execution = Objects.requireNonNull(execution, "execution");
+        evidenceBundle = Objects.requireNonNull(evidenceBundle, "evidenceBundle");
         resolutions = resolutions == null ? List.of() : List.copyOf(resolutions);
         Comparator<MirrorResolution> order = Comparator
                 .comparing(MirrorResolution::invocationSiteId)
@@ -55,12 +59,19 @@ public record MirrorRunResult(
             }
             previous = resolution;
         }
-    }
-
-    /** Backward-compatible result without resolver provenance. */
-    public MirrorRunResult(
-            MirrorPlan plan, Instant admittedAt, TestExecutionResult execution) {
-        this(plan, admittedAt, execution, List.of());
+        if (!evidenceBundle.evidence().runId().equals(execution.evidence().runId())
+                || !evidenceBundle.evidence().planFingerprint().equals(plan.planFingerprint())
+                || !evidenceBundle.evidence().capabilityClosureFingerprint()
+                .equals(plan.capabilityClosureFingerprint())
+                || !evidenceBundle.evidence().executionControlFingerprint()
+                .equals(plan.executionControlFingerprint())
+                || !evidenceBundle.evidence().fixtureBundleRef().equals(plan.fixtureBundleRef())
+                || !evidenceBundle.evidence().semanticResultFingerprint()
+                .equals(execution.evidence().semanticResultFingerprint())
+                || !evidenceBundle.evidence().resolutions().equals(resolutions)) {
+            throw new IllegalArgumentException(
+                    "mirror evidence bundle must bind the exact plan, run, and resolutions");
+        }
     }
 
     /** @return whether graph execution and all fixture assertions passed */

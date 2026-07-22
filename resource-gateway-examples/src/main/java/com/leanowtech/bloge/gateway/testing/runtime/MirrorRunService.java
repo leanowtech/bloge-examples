@@ -6,13 +6,17 @@ import com.leanowtech.bloge.core.operator.ExecutionBudget;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosureIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledMirrorPlan;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -32,9 +36,9 @@ import java.util.Set;
  * independent BLOGE engine. The execution context receives the plan's logical deadline budget;
  * production credentials, interceptors, context carriers, and durable stores are never attached.</p>
  *
- * <p>This Stage 1 kernel intentionally exposes no Spring bean or HTTP endpoint. Deployment-level
- * egress isolation and resolver provenance remain release gates, so capability probes must continue
- * to report mirror serving as unavailable.</p>
+ * <p>This Stage 1 kernel intentionally exposes no Spring bean or HTTP endpoint. Durable evidence,
+ * independent client verification, and deployment-level egress isolation remain release gates, so
+ * capability probes must continue to report mirror serving as unavailable.</p>
  */
 public class MirrorRunService {
     private static final Duration EVIDENCE_FINALIZATION_RESERVE = Duration.ZERO;
@@ -42,6 +46,8 @@ public class MirrorRunService {
     private final ObjectMapper mapper;
     private final TestRunService testRunService;
     private final Clock clock;
+    private final MirrorRunEvidenceProjector evidenceProjector;
+    private final MirrorEvidenceIntegrityService evidenceIntegrity;
 
     /**
      * Creates a mirror runtime over the shared isolated testing kernel.
@@ -56,22 +62,75 @@ public class MirrorRunService {
             ObjectMapper mapper,
             ResourceFixtureRuntime resourceRuntime,
             Clock clock) {
-        this(mapper, new TestRunService(registry, mapper, resourceRuntime), clock);
+        this(registry, mapper, resourceRuntime, clock, VisualEvidenceSigner.unavailable());
     }
 
-    /** Constructor for focused runtime and architecture tests. */
+    /**
+     * Creates a mirror runtime with an explicit evidence-signing authority.
+     *
+     * <p>No in-memory or local-development key is installed implicitly. A caller that intends to
+     * execute a mirror must provide a governed signer; an unavailable signer causes terminal
+     * evidence finalization to fail closed after the isolated execution.</p>
+     *
+     * @param registry operator registry used only to construct the independent engine
+     * @param mapper canonical protocol mapper
+     * @param resourceRuntime optional descriptor protocol adapter for transport fixtures
+     * @param clock server admission clock
+     * @param evidenceSigner governed mirror evidence signing authority
+     */
+    public MirrorRunService(
+            OperatorRegistry registry,
+            ObjectMapper mapper,
+            ResourceFixtureRuntime resourceRuntime,
+            Clock clock,
+            VisualEvidenceSigner evidenceSigner) {
+        this(mapper, new TestRunService(registry, mapper, resourceRuntime), clock,
+                new MirrorRunEvidenceProjector(mapper),
+                new MirrorEvidenceIntegrityService(mapper, evidenceSigner, Clock.systemUTC()));
+    }
+
+    /**
+     * Creates an admission-test runtime that intentionally has no signing authority.
+     *
+     * @param mapper canonical protocol mapper
+     * @param testRunService isolated shared testing kernel
+     * @param clock server admission clock
+     */
     public MirrorRunService(ObjectMapper mapper, TestRunService testRunService, Clock clock) {
+        this(mapper, testRunService, clock, new MirrorRunEvidenceProjector(mapper),
+                new MirrorEvidenceIntegrityService(mapper, VisualEvidenceSigner.unavailable(),
+                        Clock.systemUTC()));
+    }
+
+    /**
+     * Full constructor for focused runtime, failure-injection, and architecture tests.
+     *
+     * @param mapper canonical protocol mapper
+     * @param testRunService isolated shared testing kernel
+     * @param clock server admission clock
+     * @param evidenceProjector payload-free execution projector
+     * @param evidenceIntegrity detached-signature integrity boundary
+     */
+    public MirrorRunService(
+            ObjectMapper mapper,
+            TestRunService testRunService,
+            Clock clock,
+            MirrorRunEvidenceProjector evidenceProjector,
+            MirrorEvidenceIntegrityService evidenceIntegrity) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.testRunService = Objects.requireNonNull(testRunService, "testRunService");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.evidenceProjector = Objects.requireNonNull(evidenceProjector, "evidenceProjector");
+        this.evidenceIntegrity = Objects.requireNonNull(evidenceIntegrity, "evidenceIntegrity");
     }
 
     /**
      * Executes one admitted mirror request against its exact compiled generation.
      *
      * @param request authenticated request and self-contained compiled plan
-     * @return graph result plus shared semantically fingerprinted testing evidence
-     * @throws MirrorRunRejectedException before scheduling when any immutable fact mismatches
+     * @return graph result, sealed resolution provenance, and a verified payload-free evidence bundle
+     * @throws MirrorRunRejectedException when admission, runtime generation, provenance, projection,
+     *                                    or signing fails; evidence failures occur after isolated execution
      */
     public MirrorRunResult execute(MirrorRunRequest request) {
         Objects.requireNonNull(request, "request");
@@ -115,13 +174,31 @@ public class MirrorRunService {
             throw reject("RG.MIRROR.RUNTIME_GENERATION_DRIFT",
                     "Executed control generation differs from the sealed mirror plan.");
         }
+        List<MirrorResolution> resolutions;
         try {
-            return new MirrorRunResult(plan, admittedAt, execution,
-                    resolutionJournal.complete(execution.evidence().runId()));
+            resolutions = resolutionJournal.complete(execution.evidence().runId());
         } catch (RuntimeException failure) {
             throw reject("RG.MIRROR.RESOLUTION_EVIDENCE_REJECTED",
                     "Mirror resolution evidence could not be sealed for this run.");
         }
+        MirrorRunEvidence evidence;
+        try {
+            evidence = evidenceProjector.project(request, execution, resolutions,
+                    engineConfiguration());
+        } catch (RuntimeException failure) {
+            throw reject("RG.MIRROR.RUN_EVIDENCE_REJECTED",
+                    "Mirror run evidence could not prove a complete payload-free execution closure.");
+        }
+        MirrorEvidenceIntegrityService.SealResult sealed = evidenceIntegrity.seal(evidence);
+        if (!sealed.verified()) {
+            String code = MirrorEvidenceIntegrityService.SIGNER_UNAVAILABLE
+                    .equals(sealed.failureCode())
+                    ? "RG.MIRROR.EVIDENCE_SIGNER_UNAVAILABLE"
+                    : "RG.MIRROR.EVIDENCE_INTEGRITY_REJECTED";
+            throw reject(code,
+                    "Mirror run evidence could not be signed and independently verified.");
+        }
+        return new MirrorRunResult(plan, admittedAt, execution, resolutions, sealed.bundle());
     }
 
     /** @return structural isolation facts for architecture tests and future capability probes */
