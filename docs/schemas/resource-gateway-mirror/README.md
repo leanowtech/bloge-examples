@@ -123,7 +123,7 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4398 tests with no
+passes 4400 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
 the executable Spring Boot JAR.
 
@@ -139,6 +139,12 @@ the frozen BLOGE `InvocationInventory`, and delegates all owner controls to the 
 `ExecutionControlCompiler.compileMirror` adapter. The public plan contains no FixtureBundle values or replay payloads;
 its `executionControlFingerprint` binds the exact internal `EffectiveExecutionPlan`. Missing owner rules become
 implicit deny plus `ABSTAINED`, and read-only external operators are still mandatory interception sites.
+
+Mirror controls freeze `MIRROR_SOURCE_THEN_SELECTOR`: protocol source order is evaluated before specificity inside
+one source. Owner rules therefore precede governed replay even when the replay selector is more specific. Overlap
+across those sources is fallback rather than ambiguity; unresolved overlap inside one source remains fail-closed.
+The strategy, per-site resolver order, and even an empty mandatory-site set participate in the execution-control
+fingerprint. An empty external closure still cannot authorize fixtures for internal business nodes.
 
 The accepted reuse decision and behavior-loss matrix are recorded in
 [`ADR-004`](../../adr/ADR-004-mirror-plan-reuses-fixture-bundle.md). `CompiledMirrorPlan` now retains the exact Graph,

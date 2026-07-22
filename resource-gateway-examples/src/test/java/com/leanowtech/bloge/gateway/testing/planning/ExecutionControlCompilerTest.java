@@ -7,6 +7,7 @@ import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
@@ -16,11 +17,11 @@ import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.time.Duration;
-import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -211,6 +212,11 @@ class ExecutionControlCompilerTest {
                 ResolvedReplayPayloads.empty(), Set.of("/root/subject#PRIMARY"));
 
         assertThat(compiled.controls().get("/root/subject#PRIMARY").implicitDeny()).isTrue();
+        assertThat(compiled.controls().get("/root/subject#PRIMARY").resolutionStrategy())
+                .isEqualTo(CompiledExecutionControl.ResolvedControl.ResolutionStrategy
+                        .MIRROR_SOURCE_THEN_SELECTOR);
+        assertThat(compiled.controls().get("/root/subject#PRIMARY").resolverOrder())
+                .containsExactly(MirrorPlan.MirrorSource.ABSTAINED);
         assertThat(compiled.effectivePlan().resolvedSites()).singleElement().satisfies(site -> {
             assertThat(site.resolution()).isEqualTo(EffectiveExecutionPlan.Resolution.DENIED);
             assertThat(site.ruleRefs()).containsExactly(
@@ -255,7 +261,7 @@ class ExecutionControlCompilerTest {
     }
 
     @Test
-    void emptyMirrorSiteSetPreservesTheOrdinaryControlPlanGeneration() {
+    void mirrorModeIsFingerprintVisibleEvenWhenItsExternalSiteSetIsEmpty() {
         Graph graph = graph(new ReadOnlyOperator());
         FixtureBundle fixture = logicalBundle();
 
@@ -266,7 +272,47 @@ class ExecutionControlCompilerTest {
                 ResolvedReplayPayloads.empty(), Set.of());
 
         assertThat(emptyMirror.effectivePlan().planFingerprint())
-                .isEqualTo(ordinary.effectivePlan().planFingerprint());
+                .isNotEqualTo(ordinary.effectivePlan().planFingerprint());
+        assertThat(emptyMirror.effectivePlan().defaultPolicies())
+                .containsEntry("mirrorResolverPrecedence", "FIXED_V1");
+    }
+
+    @Test
+    void mirrorCompilationOrdersOwnerRulesBeforeMoreSpecificGovernedReplayRules() {
+        FixtureRule replay = rule("governed-replay", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.replaying(REPLAY_REF));
+        FixtureRule owner = rule("owner-fallback", FixtureRule.Selector.any(),
+                FixtureRule.Behavior.returning("owner"));
+
+        CompiledExecutionControl compiled = compiler.compileMirror(
+                graph(new ReadOnlyOperator()), logicalBundle(replay, owner),
+                "MIRROR_REHEARSAL", TARGET, replays(true, "source-a"),
+                Set.of("/root/subject#PRIMARY"));
+        CompiledExecutionControl.ResolvedControl control =
+                compiled.controls().get("/root/subject#PRIMARY");
+
+        assertThat(control.rules()).extracting(FixtureRule::ruleId)
+                .containsExactly("owner-fallback", "governed-replay");
+        assertThat(control.resolverOrder()).containsExactly(
+                MirrorPlan.MirrorSource.OWNER_SPECIFIED,
+                MirrorPlan.MirrorSource.GOVERNED_REPLAY,
+                MirrorPlan.MirrorSource.ABSTAINED);
+        assertThat(compiled.effectivePlan().resolvedSites()).singleElement().satisfies(site ->
+                assertThat(site.ruleRefs()).containsExactly(
+                        "owner-fallback", "governed-replay"));
+    }
+
+    @Test
+    void mirrorCompilationWithNoExternalEdgesStillRejectsInternalFixtureControls() {
+        FixtureRule internal = rule("internal", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning("replaced"));
+
+        assertThatThrownBy(() -> compiler.compileMirror(
+                graph(new ReadOnlyOperator()), logicalBundle(internal),
+                "MIRROR_REHEARSAL", TARGET, ResolvedReplayPayloads.empty(), Set.of()))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, failure ->
+                        assertThat(failure.code()).isEqualTo(
+                                "CONTROL_PLAN_MIRROR_INTERNAL_CONTROL"));
     }
 
     @Test

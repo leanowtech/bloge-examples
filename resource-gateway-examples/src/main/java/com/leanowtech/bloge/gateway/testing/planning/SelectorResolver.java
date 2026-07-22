@@ -23,6 +23,29 @@ public class SelectorResolver {
     public Map<String, CompiledExecutionControl.ResolvedControl> resolve(
             InvocationInventory inventory,
             List<FixtureRule> rules) {
+        return resolve(inventory, rules, false);
+    }
+
+    /**
+     * Resolves mirror candidates by fixed source priority before selector specificity.
+     *
+     * <p>Overlap between OWNER_SPECIFIED and GOVERNED_REPLAY is intentional fallback, while
+     * ambiguity within the same source and selector precedence remains fail-closed.</p>
+     *
+     * @param inventory exact frozen invocation inventory
+     * @param rules frozen owner and governed replay rules
+     * @return mirror controls carrying exact resolver order
+     */
+    public Map<String, CompiledExecutionControl.ResolvedControl> resolveMirror(
+            InvocationInventory inventory,
+            List<FixtureRule> rules) {
+        return resolve(inventory, rules, true);
+    }
+
+    private Map<String, CompiledExecutionControl.ResolvedControl> resolve(
+            InvocationInventory inventory,
+            List<FixtureRule> rules,
+            boolean mirror) {
         Map<String, List<ScoredRule>> bySite = new LinkedHashMap<>();
         for (int ruleIndex = 0; ruleIndex < rules.size(); ruleIndex++) {
             FixtureRule rule = rules.get(ruleIndex);
@@ -42,11 +65,18 @@ public class SelectorResolver {
 
         Map<String, CompiledExecutionControl.ResolvedControl> resolved = new LinkedHashMap<>();
         bySite.forEach((siteId, candidates) -> {
-            Map<Integer, List<FixtureRule>> byPrecedence = new LinkedHashMap<>();
-            candidates.stream().sorted(java.util.Comparator.comparingInt(ScoredRule::score).reversed()
-                            .thenComparingInt(ScoredRule::declarationIndex))
+            Map<PrecedenceGroup, List<FixtureRule>> byPrecedence = new LinkedHashMap<>();
+            java.util.Comparator<ScoredRule> ordering = mirror
+                    ? java.util.Comparator.comparingInt(ScoredRule::sourceRank)
+                    .thenComparing(java.util.Comparator.comparingInt(ScoredRule::score).reversed())
+                    .thenComparingInt(ScoredRule::declarationIndex)
+                    : java.util.Comparator.comparingInt(ScoredRule::score).reversed()
+                    .thenComparingInt(ScoredRule::declarationIndex);
+            candidates.stream().sorted(ordering)
                     .forEach(candidate -> byPrecedence
-                            .computeIfAbsent(candidate.score(), ignored -> new ArrayList<>())
+                            .computeIfAbsent(new PrecedenceGroup(
+                                    mirror ? candidate.sourceRank() : 0, candidate.score()),
+                                    ignored -> new ArrayList<>())
                             .add(candidate.rule()));
             for (List<FixtureRule> peers : byPrecedence.values()) {
                 if (peers.size() > 1 && !pairwiseDisjoint(peers)) {
@@ -57,7 +87,9 @@ public class SelectorResolver {
             }
             InvocationSite site = inventory.byInvocationSiteId().get(siteId).site();
             List<FixtureRule> ordered = byPrecedence.values().stream().flatMap(List::stream).toList();
-            resolved.put(siteId, new CompiledExecutionControl.ResolvedControl(site, ordered, false));
+            resolved.put(siteId, mirror
+                    ? CompiledExecutionControl.ResolvedControl.mirror(site, ordered, false)
+                    : new CompiledExecutionControl.ResolvedControl(site, ordered, false));
         });
         return resolved;
     }
@@ -190,5 +222,15 @@ public class SelectorResolver {
     }
 
     private record ScoredRule(FixtureRule rule, int score, int declarationIndex) {
+        private int sourceRank() {
+            return rule.behavior().kind() == FixtureRule.BehaviorKind.REPLAY
+                    ? com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.MirrorSource
+                    .GOVERNED_REPLAY.ordinal()
+                    : com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.MirrorSource
+                    .OWNER_SPECIFIED.ordinal();
+        }
+    }
+
+    private record PrecedenceGroup(int sourceRank, int selectorScore) {
     }
 }

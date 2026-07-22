@@ -281,7 +281,7 @@ public class ExecutionControlCompiler {
             ExecutionServiceStateSnapshot providerState) {
         return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
                 fixtureBindingTargetFingerprint, replayPayloads, testSecrets, providerState,
-                Set.of(), null);
+                null, null);
     }
 
     private CompiledExecutionControl compileBound(
@@ -320,6 +320,7 @@ public class ExecutionControlCompiler {
 
         InvocationInventory inventory = frozenInventory == null
                 ? inventoryBuilder.build(graph, targetFingerprint) : frozenInventory;
+        boolean mirrorCompilation = mandatoryExternalSiteIds != null;
         Set<String> mandatoryExternalSites = normalizedSites(mandatoryExternalSiteIds);
         List<String> missingMirrorSites = mandatoryExternalSites.stream()
                 .filter(siteId -> !inventory.byInvocationSiteId().containsKey(siteId)).toList();
@@ -331,15 +332,21 @@ public class ExecutionControlCompiler {
         GovernedExecutionServices executionServices = GovernedExecutionServices.prepare(
                 objectMapper, fixtureBundle, inventory, resolvedSecrets);
         Map<String, CompiledExecutionControl.ResolvedControl> controls = new LinkedHashMap<>(
-                selectorResolver.resolve(inventory, fixtureBundle.rules()));
-        rejectMirrorInternalControls(controls, mandatoryExternalSites);
+                mirrorCompilation
+                        ? selectorResolver.resolveMirror(inventory, fixtureBundle.rules())
+                        : selectorResolver.resolve(inventory, fixtureBundle.rules()));
+        rejectMirrorInternalControls(controls, mandatoryExternalSites, mirrorCompilation);
 
         for (InvocationInventory.Entry entry : inventory.entries()) {
             String siteId = entry.site().invocationSiteId();
             if (!controls.containsKey(siteId)
                     && (externalEffect(entry) || mandatoryExternalSites.contains(siteId))) {
-                controls.put(siteId, new CompiledExecutionControl.ResolvedControl(
-                        entry.site(), List.of(implicitDeny(entry)), true));
+                List<FixtureRule> denyRules = List.of(implicitDeny(entry));
+                controls.put(siteId, mirrorCompilation
+                        ? CompiledExecutionControl.ResolvedControl.mirror(
+                        entry.site(), denyRules, true)
+                        : new CompiledExecutionControl.ResolvedControl(
+                        entry.site(), denyRules, true));
             }
         }
         rejectUnsupportedControlledBindings(inventory, controls);
@@ -362,11 +369,14 @@ public class ExecutionControlCompiler {
                         control.rules().stream().map(FixtureRule::ruleId).toList(), fidelity(control)));
             }
         }
-        Map<String, String> defaults = Map.of(
-                "externalEffects", "DENY",
-                "selectorZeroMatch", "FAIL",
-                "selectorAmbiguity", "FAIL",
-                "productionControl", "REJECT");
+        Map<String, String> defaults = new LinkedHashMap<>();
+        defaults.put("externalEffects", "DENY");
+        defaults.put("selectorZeroMatch", "FAIL");
+        defaults.put("selectorAmbiguity", "FAIL");
+        defaults.put("productionControl", "REJECT");
+        if (mirrorCompilation) {
+            defaults.put("mirrorResolverPrecedence", "FIXED_V1");
+        }
         Map<String, Object> fingerprintMaterial = new LinkedHashMap<>();
         fingerprintMaterial.put("purpose", authorizedPurpose);
         fingerprintMaterial.put("target", targetFingerprint);
@@ -378,8 +388,12 @@ public class ExecutionControlCompiler {
         fingerprintMaterial.put("sites", sites);
         fingerprintMaterial.put("replayDependencies", resolvedReplays.planDependencies());
         fingerprintMaterial.put("executionServiceBindings", executionServices.bindings());
-        if (!mandatoryExternalSites.isEmpty()) {
+        if (mirrorCompilation) {
             fingerprintMaterial.put("mandatoryMirrorExternalSites", mandatoryExternalSites);
+            fingerprintMaterial.put("mirrorResolverOrderBySite", controls.entrySet().stream()
+                    .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey,
+                            entry -> entry.getValue().resolverOrder(),
+                            (left, right) -> left, java.util.TreeMap::new)));
         }
         fingerprintMaterial.put("defaults", defaults);
         if (!Objects.equals(targetFingerprint, fixtureBindingTargetFingerprint)) {
@@ -407,7 +421,7 @@ public class ExecutionControlCompiler {
                 sites,
                 resolvedReplays.planDependencies(),
                 executionServices.bindings(),
-                defaults,
+                Map.copyOf(defaults),
                 List.of());
         return new CompiledExecutionControl(effectivePlan, controls, fixtureBundle.rules(), inventory,
                 resolvedReplays, executionServices);
@@ -493,8 +507,9 @@ public class ExecutionControlCompiler {
 
     private static void rejectMirrorInternalControls(
             Map<String, CompiledExecutionControl.ResolvedControl> controls,
-            Set<String> mandatoryExternalSites) {
-        if (mandatoryExternalSites.isEmpty()) {
+            Set<String> mandatoryExternalSites,
+            boolean mirrorCompilation) {
+        if (!mirrorCompilation) {
             return;
         }
         List<String> internalSites = controls.keySet().stream()

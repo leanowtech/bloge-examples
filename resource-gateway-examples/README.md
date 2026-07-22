@@ -136,6 +136,11 @@ evidence, resolved error, rejection and abstention; and fingerprints both visibl
 The model is implemented and schema-tested, but the fixed-priority resolver chain has not yet been wired into the
 run kernel and the protocol is not yet advertised by the capability probe.
 
+Mirror compilation now freezes source-first selection separately from ordinary test selection. Owner rules precede
+governed replay before selector specificity is considered, while ambiguity within one source remains fail-closed.
+The exact strategy and per-site order are fingerprinted, and a mirror with no external edges still rejects fixtures
+that target internal business nodes. Runtime result provenance remains the next gate.
+
 Useful variants:
 
 ```bash

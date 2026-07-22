@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.planning;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.testing.runtime.GovernedExecutionServices;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 
@@ -50,10 +51,68 @@ public record CompiledExecutionControl(
      * @param rules ordered candidate rules
      * @param implicitDeny whether the control was synthesized by side-effect fail-closed policy
      */
-    public record ResolvedControl(InvocationSite site, List<FixtureRule> rules, boolean implicitDeny) {
+    public record ResolvedControl(
+            InvocationSite site,
+            List<FixtureRule> rules,
+            boolean implicitDeny,
+            ResolutionStrategy resolutionStrategy,
+            List<MirrorPlan.MirrorSource> resolverOrder
+    ) {
+        /** Rule-selection strategy frozen into the execution generation. */
+        public enum ResolutionStrategy {
+            SELECTOR_SPECIFICITY,
+            MIRROR_SOURCE_THEN_SELECTOR
+        }
+
         /** Creates an immutable candidate list. */
         public ResolvedControl {
+            site = java.util.Objects.requireNonNull(site, "site");
             rules = rules == null ? List.of() : List.copyOf(rules);
+            resolutionStrategy = resolutionStrategy == null
+                    ? ResolutionStrategy.SELECTOR_SPECIFICITY : resolutionStrategy;
+            resolverOrder = resolverOrder == null ? List.of() : List.copyOf(resolverOrder);
+            if (resolutionStrategy == ResolutionStrategy.SELECTOR_SPECIFICITY
+                    && !resolverOrder.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "ordinary controls must not carry mirror resolver order");
+            }
+            if (resolutionStrategy == ResolutionStrategy.MIRROR_SOURCE_THEN_SELECTOR
+                    && (resolverOrder.isEmpty()
+                    || resolverOrder.getLast() != MirrorPlan.MirrorSource.ABSTAINED)) {
+                throw new IllegalArgumentException(
+                        "mirror controls require resolver order ending in ABSTAINED");
+            }
+        }
+
+        /** Backward-compatible ordinary selector-specificity control. */
+        public ResolvedControl(InvocationSite site, List<FixtureRule> rules, boolean implicitDeny) {
+            this(site, rules, implicitDeny, ResolutionStrategy.SELECTOR_SPECIFICITY, List.of());
+        }
+
+        /**
+         * Creates an external mirror control whose source precedence is fixed before selector
+         * specificity is considered.
+         *
+         * @param site exact invocation site
+         * @param rules candidate owner and governed replay rules
+         * @param implicitDeny whether no source was configured
+         * @return immutable mirror control
+         */
+        public static ResolvedControl mirror(
+                InvocationSite site, List<FixtureRule> rules, boolean implicitDeny) {
+            java.util.LinkedHashSet<MirrorPlan.MirrorSource> sources =
+                    new java.util.LinkedHashSet<>();
+            if (!implicitDeny && rules != null) {
+                rules.forEach(rule -> sources.add(rule.behavior().kind()
+                        == FixtureRule.BehaviorKind.REPLAY
+                        ? MirrorPlan.MirrorSource.GOVERNED_REPLAY
+                        : MirrorPlan.MirrorSource.OWNER_SPECIFIED));
+            }
+            List<MirrorPlan.MirrorSource> order = new java.util.ArrayList<>(sources);
+            order.sort(java.util.Comparator.naturalOrder());
+            order.add(MirrorPlan.MirrorSource.ABSTAINED);
+            return new ResolvedControl(site, rules, implicitDeny,
+                    ResolutionStrategy.MIRROR_SOURCE_THEN_SELECTOR, order);
         }
     }
 }

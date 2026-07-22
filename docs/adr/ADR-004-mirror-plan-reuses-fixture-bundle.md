@@ -32,6 +32,9 @@ replay 治理和证据字段，最终出现“测试通过但镜像失败”或�
    operator runtime inventory、fixture、replay dependency 和 deterministic service binding。
 6. 后续 recorded corpus、session state、schema synthesis 由 `MirrorResolver` SPI 提供，不伪装成 FixtureRule；
    FixtureBundle 仍只表达 owner/test-author 明确给出的控制。
+7. 普通测试按 selector specificity 选择；mirror 固定先按 `MirrorSource` 协议顺序、再在同一 source 内按 selector
+   specificity 选择。`OWNER_SPECIFIED` 和 `GOVERNED_REPLAY` 的重叠是合法 fallback；同一 source、同一 selector
+   precedence 的重叠仍失败关闭。
 
 ## 映射矩阵
 
@@ -63,6 +66,9 @@ replay 治理和证据字段，最终出现“测试通过但镜像失败”或�
   真实执行，不能被 mirror fixture 静默替换。
 - Closure edge 对账与 `CompiledExecutionControl` 必须消费同一个已冻结 `InvocationInventory`；禁止在两者之间
   再查一次 mutable operator registry。
+- mirror resolution strategy、每个 site 的 resolver order 和 mandatory external site 集合必须进入
+  `executionControlFingerprint`；即使 external 集合为空，mirror generation 也不能与普通测试 generation 共用指纹。
+- 即使 closure 没有 external edge，FixtureBundle 也不得控制内部业务节点。
 - 同一组 exact 输入、planId、编译时间和 expiry 必须得到相同 plan fingerprint。
 
 ## 后果
@@ -87,4 +93,5 @@ abstention 和 provenance 属于 mirror serving 协议；owner 明确输入的�
 `ExecutionControlCompilerTest` 验证 read-only mandatory external 也会被拦截、REAL fallback 和未知 site 失败关闭。
 `MirrorPlanCompilerTest` 验证 direct/nested graph 对账、implicit abstention、payload-free plan、target drift、closure
 漏报 external、deterministic services、classification、schema waiver 和未就绪能力拒绝。额外回归证明 registry
-在 inventory freeze 后发生替换不会改变 runtime control，且空 mirror-site adapter 与普通 plan fingerprint 相同。
+在 inventory freeze 后发生替换不会改变 runtime control；新增用例验证 owner source 优先于更具体的 governed
+replay、跨 source fallback 合法、空 external closure 仍拒绝内部 fixture，且 mirror mode 在 fingerprint 中可见。
