@@ -250,7 +250,10 @@
 > 做数据库 I/O；lease loss 和 changed-result conflict 保持分离。新增 23 项测试，supervisor/worker/真实 H2
 > work-journal 组合 33 项、完整物理链聚合 285 项全绿，三个公共 contract strict JavaDoc 零告警。产品 proof
 > resolver、scheduler/Spring、fairness/cohort/history、backfill、retention/health/capability 与生产认证仍未完成，
-> capability 继续关闭；相对完整计划估计仍有约 31% 实质差距，未进入正负 8% 完成区间。验证见
+> capability 继续关闭；相对完整计划估计仍有约 31% 实质差距，未进入正负 8% 完成区间。实现提交
+> `4aaac2cd` 的 immutable snapshot 完整 `clean verify` 执行 4119 tests（0 failures、0 errors、2 skips），
+> 459 份 Surefire XML 独立汇总一致；39,731,723 bytes 可执行 JAR 包含 12 个 worker/supervisor 匹配 class
+> entry，耗时 9:48，构建/测试浏览器残留进程均为零。验证见
 > [physical attempt terminal projection worker verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-worker-verification.md)。
 
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability

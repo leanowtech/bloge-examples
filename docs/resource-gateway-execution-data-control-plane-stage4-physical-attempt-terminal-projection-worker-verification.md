@@ -114,8 +114,20 @@ javadoc --release 25 -Werror -Xdoclint:all
 0 warnings, 0 errors
 ```
 
-完整 `clean verify` 将在实现提交冻结后从 immutable `git archive` snapshot 执行，避免工作区或后续改动
-污染证据。
+实现提交 `4aaac2cd` 已通过 `git archive` 解包到 immutable source snapshot
+`/tmp/bloge-examples-verify-4aaac2cd` 并执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 4119, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 09:48 min
+```
+
+459 份 Surefire XML 使用独立 XML parser 重算为同一 `4119/0/0/2`。重打包 Spring Boot JAR 为
+39,731,723 bytes，包含 12 个 terminal-projection worker/supervisor class entry。门禁退出后，snapshot
+Java/Maven 进程和 ChromeDriver/Chrome for Testing 进程残留均为零。
 
 ## 7. 本轮质量与总体差距
 

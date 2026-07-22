@@ -275,7 +275,9 @@
 > 新增 23 项测试，33 项 supervisor/worker/真实 H2 组合与 285 项 physical/cancellation/queue 聚合全绿，
 > 三个公共 contract strict JavaDoc 零告警。proof 产品 adapter、scheduler/Spring、fairness/cohort/history、
 > backfill、retention/health/capability 和生产认证仍待完成，能力继续关闭；相对完整计划仍估计约 31% 实质
-> 差距，未进入正负 8% 完成区间。验证见
+> 差距，未进入正负 8% 完成区间。实现提交 `4aaac2cd` 的 immutable snapshot 完整 `clean verify` 执行
+> 4119 tests（0 failures、0 errors、2 skips），459 份 Surefire XML 独立汇总一致；39,731,723 bytes
+> 可执行 JAR 含 12 个 worker/supervisor 匹配 class entry，耗时 9:48，构建/测试浏览器残留均为零。验证见
 > [physical attempt terminal projection worker verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-worker-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |
