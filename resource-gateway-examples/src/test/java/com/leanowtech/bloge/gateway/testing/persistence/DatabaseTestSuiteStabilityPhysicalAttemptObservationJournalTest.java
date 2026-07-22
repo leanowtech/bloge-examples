@@ -2,7 +2,11 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationCommand;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationReceipt;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationVerifier;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExecutionStop;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobCancellationCommand;
@@ -26,6 +30,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemp
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartReceipt;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartVerifier;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,6 +82,11 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                     1, 10, 10, 3, 3, Duration.ofSeconds(5), Duration.ofMinutes(5),
                     Duration.ofSeconds(1), Duration.ofMinutes(1), 3, Duration.ofDays(1),
                     Duration.ofDays(7));
+    private static final TestSuiteStabilityQueuePolicy NO_RETRY_POLICY =
+            new TestSuiteStabilityQueuePolicy(
+                    1, 20, 10, 4, 2, Duration.ofSeconds(30), Duration.ofMinutes(5),
+                    Duration.ofSeconds(1), Duration.ofMinutes(1), 0, Duration.ofDays(1),
+                    Duration.ofDays(7));
 
     private ObjectMapper mapper;
     private JdbcTemplate jdbc;
@@ -87,6 +98,8 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     private TestSuiteStabilityPhysicalAttemptObservationAuthority.Descriptor descriptor;
     private DatabaseTestSuiteStabilityPhysicalAttemptStartJournal starts;
     private DatabaseTestSuiteStabilityPhysicalAttemptObservationJournal journal;
+    private DatabaseTestSuiteStabilityAttemptCancellationJournal cancellations;
+    private DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionJournal projections;
     private DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
             reconciliations;
     private AtomicLong startSequence;
@@ -121,6 +134,11 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         journal = new DatabaseTestSuiteStabilityPhysicalAttemptObservationJournal(
                 jdbc, mapper, starts, observationVerifier(), transactions);
         journal.init();
+        cancellations = new DatabaseTestSuiteStabilityAttemptCancellationJournal(
+                jdbc, mapper, cancellationVerifier(), transactions);
+        cancellations.init();
+        projections = new DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionJournal(
+                jobs, attempts, starts, journal, cancellations);
         reconciliations = reconciliationJournal(10);
         startSequence = new AtomicLong(10);
     }
@@ -220,6 +238,232 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         assertThat(replica.claimNext("test", "worker-d", FENCING_POLICY).outcome())
                 .isEqualTo(TestSuiteStabilityJobClaim.Outcome.NO_WORK);
         assertThat(jobs.observe("test").expiredLiveLeases()).isEqualTo(3);
+    }
+
+    @Test
+    void failedTerminalProjectionRequeuesReplaysAndAllowsNextLeaseEpoch() throws Exception {
+        TerminalFixture fixture = terminalFixture(
+                'e', TestSuiteStabilityPhysicalAttemptObservationReceipt
+                        .TerminalDisposition.FAILED, POLICY);
+
+        var projected = projections.project(fixture.command(), POLICY);
+        jdbc.update("""
+                DELETE FROM rg_test_stability_attempt_observation_entries
+                WHERE command_id = ?
+                """, fixture.command().observationCommandId());
+        var replayed = projections.project(fixture.command(), POLICY);
+
+        assertThat(projected.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                        .ProjectionStatus.PROJECTED);
+        assertThat(projected.entry().decision()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                        .QueueDecision.REQUEUED);
+        assertThat(projected.entry().queueResult().retryCount()).isEqualTo(1);
+        assertThat(replayed.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                        .ProjectionStatus.REPLAYED);
+        assertThat(replayed.entry()).isEqualTo(projected.entry());
+        assertThat(projections.find("tenant-a", "test",
+                fixture.command().projectionId())).contains(projected.entry());
+
+        Thread.sleep(1_100);
+        TestSuiteStabilityJobClaim next = jobs.claimNext("test", "worker-next", POLICY);
+        assertThat(next.outcome()).isEqualTo(TestSuiteStabilityJobClaim.Outcome.ACQUIRED);
+        assertThat(next.lease().epoch()).isEqualTo(2L);
+    }
+
+    @Test
+    void retryExhaustionProjectsFailureAndReleasesCapacity() throws Exception {
+        TerminalFixture fixture = terminalFixture(
+                'e', TestSuiteStabilityPhysicalAttemptObservationReceipt
+                        .TerminalDisposition.PROVIDER_ABORTED, NO_RETRY_POLICY);
+        jobs.submit(submission('f'), NO_RETRY_POLICY);
+
+        var projected = projections.project(fixture.command(), NO_RETRY_POLICY);
+
+        assertThat(projected.entry().decision()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                        .QueueDecision.FAILED);
+        assertThat(projected.entry().queueResult().failureCode())
+                .isEqualTo("RG.TEST.STABILITY_ATTEMPT_PROVIDER_ABORTED");
+        assertThat(jobs.claimNext("test", "worker-f", NO_RETRY_POLICY).outcome())
+                .isEqualTo(TestSuiteStabilityJobClaim.Outcome.ACQUIRED);
+    }
+
+    @Test
+    void cancelledProjectionRequiresQueueIntentAndConfirmedProviderReceipt() throws Exception {
+        TerminalFixture fixture = terminalFixture(
+                'e', TestSuiteStabilityPhysicalAttemptObservationReceipt
+                        .TerminalDisposition.CANCELLED, POLICY);
+
+        assertProjectionConflict(() -> projections.project(fixture.command(), POLICY),
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.ConflictReason
+                        .CANCELLATION_PROOF_CONFLICT);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_terminal_projections
+                """, Integer.class)).isZero();
+
+        TestSuiteStabilityJobRecord job = jobs.find(
+                "tenant-a", "test", fixture.context().identity().jobId()).orElseThrow();
+        jobs.cancel(new TestSuiteStabilityJobCancellationCommand(
+                        "tenant-a", "test", job.jobId(), "terminal-project-cancel-e",
+                        fingerprint('a'), job.principal()),
+                POLICY, ignored -> TestRuntimeTransactionMutation.noop());
+        var projected = projections.project(fixture.command(), POLICY);
+
+        assertThat(projected.entry().decision()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                        .QueueDecision.CANCELLED);
+        assertThat(projected.entry().queueResult().status())
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.CANCELLED);
+    }
+
+    @Test
+    void successProjectionRollsBackUntilSignedParentWinnerIsAvailable() throws Exception {
+        TerminalFixture fixture = terminalFixture(
+                'e', TestSuiteStabilityPhysicalAttemptObservationReceipt
+                        .TerminalDisposition.SUCCEEDED, POLICY);
+
+        assertProjectionConflict(() -> projections.project(fixture.command(), POLICY),
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.ConflictReason
+                        .PARENT_CONFLICT);
+        assertThat(jobs.find("tenant-a", "test", fixture.context().identity().jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.RUNNING);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_terminal_projections
+                """, Integer.class)).isZero();
+
+        DatabaseTestSuiteStabilityJobRepository completedJobs =
+                new DatabaseTestSuiteStabilityJobRepository(
+                        jdbc, mapper, new CompletedParentAuthority(
+                                fixture.parentRunId(), fixture.parentEvidenceFingerprint()),
+                        new TestSuiteStabilityJobRequestKeyProtector(
+                                "request-key-a", Map.of("request-key-a", new byte[32])),
+                        "retention-success", Duration.ofSeconds(30), transactions, true);
+        completedJobs.init();
+        var completedProjections =
+                new DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionJournal(
+                        completedJobs, attempts, starts, journal, cancellations);
+
+        var projected = completedProjections.project(fixture.command(), POLICY);
+
+        assertThat(projected.entry().decision()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                        .QueueDecision.SUCCEEDED);
+        assertThat(projected.entry().queueResult().terminalStabilityRunId())
+                .isEqualTo(fixture.parentRunId());
+        assertThat(projected.entry().queueResult().terminalEvidenceFingerprint())
+                .isEqualTo(fixture.parentEvidenceFingerprint());
+    }
+
+    @Test
+    void sourceTamperFailsClosedWithoutQueueOrSlotMutation() throws Exception {
+        TerminalFixture fixture = terminalFixture(
+                'e', TestSuiteStabilityPhysicalAttemptObservationReceipt
+                        .TerminalDisposition.FAILED, POLICY);
+        jdbc.update("""
+                UPDATE rg_test_stability_attempt_observation_entries
+                SET record_fingerprint = ? WHERE command_id = ?
+                """, fingerprint('a'), fixture.command().observationCommandId());
+
+        assertProjectionConflict(() -> projections.project(fixture.command(), POLICY),
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.ConflictReason
+                        .SOURCE_CHANGED);
+        assertThat(jobs.find("tenant-a", "test", fixture.context().identity().jobId()))
+                .get().extracting(TestSuiteStabilityJobRecord::status)
+                .isEqualTo(TestSuiteStabilityJobRecord.Status.RUNNING);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_terminal_projections
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void changedQueueStateCannotConsumeAValidTerminalFact() throws Exception {
+        TerminalFixture fixture = terminalFixture(
+                'e', TestSuiteStabilityPhysicalAttemptObservationReceipt
+                        .TerminalDisposition.FAILED, POLICY);
+        DatabaseTestSuiteStabilityJobRepository legacy =
+                new DatabaseTestSuiteStabilityJobRepository(
+                        jdbc, mapper, new StoppedParentAuthority(),
+                        new TestSuiteStabilityJobRequestKeyProtector(
+                                "request-key-a", Map.of("request-key-a", new byte[32])),
+                        "retention-legacy", Duration.ofSeconds(30), transactions);
+        legacy.retry(fixture.context().claim().lease(),
+                "RG.TEST.LEGACY_RETRY", POLICY);
+
+        assertProjectionConflict(() -> projections.project(fixture.command(), POLICY),
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.ConflictReason
+                        .JOB_FENCE_CHANGED);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_terminal_projections
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void replicasConvergeOnOneTerminalProjectionWinner() throws Exception {
+        TerminalFixture fixture = terminalFixture(
+                'e', TestSuiteStabilityPhysicalAttemptObservationReceipt
+                        .TerminalDisposition.FAILED, POLICY);
+        var replica = new DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionJournal(
+                jobs, attempts, starts, journal, cancellations);
+
+        var results = concurrently(
+                () -> projections.project(fixture.command(), POLICY),
+                () -> replica.project(fixture.command(), POLICY));
+
+        assertThat(results).extracting(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                        .Projection::status)
+                .containsExactlyInAnyOrder(
+                        TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                .ProjectionStatus.PROJECTED,
+                        TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                .ProjectionStatus.REPLAYED);
+        assertThat(results.get(0).entry()).isEqualTo(results.get(1).entry());
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_terminal_projections
+                """, Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void projectionReadDetectsWholeRowDecisionTamper() throws Exception {
+        TerminalFixture fixture = terminalFixture(
+                'e', TestSuiteStabilityPhysicalAttemptObservationReceipt
+                        .TerminalDisposition.FAILED, POLICY);
+        projections.project(fixture.command(), POLICY);
+        jdbc.update("""
+                UPDATE rg_test_stability_attempt_terminal_projections
+                SET queue_decision = 'FAILED' WHERE projection_id = ?
+                """, fixture.command().projectionId());
+
+        assertThatThrownBy(() -> projections.find(
+                "tenant-a", "test", fixture.command().projectionId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("integrity failed");
+    }
+
+    @Test
+    void nonTerminalPositiveStateCannotBeTurnedIntoAProjectionCommand() throws Exception {
+        AttemptContext context = retainedStart('e', true);
+        TestSuiteStabilityPhysicalAttemptObservationCommand command = command(context, 'e');
+        journal.prepare(command, descriptor);
+        journal.accept(command.commandId(), observation(
+                command, 101, 1,
+                TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING));
+
+        assertThatThrownBy(() -> TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand.create(
+                mapper,
+                attempts.find("tenant-a", "test", context.identity().attemptId())
+                        .orElseThrow(),
+                starts.find("tenant-a", "test", context.start().commandId()).orElseThrow(),
+                journal.find("tenant-a", "test", command.commandId()).orElseThrow(),
+                journal.latestPositive("tenant-a", "test", context.identity().attemptId())
+                        .orElseThrow(),
+                Optional.empty(), "", ""))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Terminal");
     }
 
     @Test
@@ -1227,6 +1471,111 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         }
     }
 
+    private TerminalFixture terminalFixture(
+            char id,
+            TestSuiteStabilityPhysicalAttemptObservationReceipt.TerminalDisposition disposition,
+            TestSuiteStabilityQueuePolicy policy) throws Exception {
+        AttemptContext context = retainedStart(id, true, "tenant-a", policy);
+        Optional<TestSuiteStabilityAttemptCancellationJournal.Entry> cancellation =
+                Optional.empty();
+        if (disposition
+                == TestSuiteStabilityPhysicalAttemptObservationReceipt
+                .TerminalDisposition.CANCELLED) {
+            TestSuiteStabilityAttemptCancellationCommand cancellationCommand =
+                    cancellationCommand(context, id);
+            cancellations.prepare(cancellationCommand, cancellationDescriptor());
+            cancellations.accept(cancellationCommand.commandId(),
+                    cancellationAttestation(cancellationCommand, 501));
+            cancellation = cancellations.find(
+                    "tenant-a", "test", cancellationCommand.commandId());
+        }
+        TestSuiteStabilityPhysicalAttemptObservationCommand observationCommand =
+                command(context, id);
+        journal.prepare(observationCommand, descriptor);
+        journal.accept(observationCommand.commandId(), observation(
+                observationCommand, 101, 1,
+                TestSuiteStabilityPhysicalAttemptObservationReceipt.State.TERMINAL,
+                disposition));
+        String parentRunId = disposition
+                == TestSuiteStabilityPhysicalAttemptObservationReceipt
+                .TerminalDisposition.SUCCEEDED
+                ? "stability-run-" + String.valueOf(id).repeat(64) : "";
+        String parentEvidence = disposition
+                == TestSuiteStabilityPhysicalAttemptObservationReceipt
+                .TerminalDisposition.SUCCEEDED ? fingerprint('7') : "";
+        TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand projectionCommand =
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand.create(
+                        mapper,
+                        attempts.find("tenant-a", "test", context.identity().attemptId())
+                                .orElseThrow(),
+                        starts.find("tenant-a", "test", context.start().commandId())
+                                .orElseThrow(),
+                        journal.find("tenant-a", "test", observationCommand.commandId())
+                                .orElseThrow(),
+                        journal.latestPositive(
+                                "tenant-a", "test", context.identity().attemptId())
+                                .orElseThrow(),
+                        cancellation, parentRunId, parentEvidence);
+        return new TerminalFixture(
+                context, projectionCommand, parentRunId, parentEvidence);
+    }
+
+    private TestSuiteStabilityAttemptCancellationCommand cancellationCommand(
+            AttemptContext context, char challenge) {
+        Instant now = databaseTime();
+        TestSuiteStabilityPhysicalAttemptIdentity identity = context.identity();
+        return TestSuiteStabilityAttemptCancellationCommand.create(
+                mapper, identity.tenantId(), identity.environmentId(), identity.jobId(),
+                identity.attemptId(), identity.ownerId(), identity.leaseEpoch(),
+                identity.runtimeBindingFingerprint(),
+                TestSuiteStabilityAttemptCancellationCommand.Reason.CANCELLED,
+                now.minusMillis(10), now.plusSeconds(30), challenge(challenge));
+    }
+
+    private TestSuiteStabilityAttemptCancellationReceipt.Attestation cancellationAttestation(
+            TestSuiteStabilityAttemptCancellationCommand command,
+            long providerSequence) throws Exception {
+        Instant confirmedAt = databaseTime();
+        TestSuiteStabilityAttemptCancellationReceipt receipt =
+                new TestSuiteStabilityAttemptCancellationReceipt(
+                        TestSuiteStabilityAttemptCancellationReceipt.SCHEMA_VERSION,
+                        command.commandId(), command.commandFingerprint(), PROVIDER_ID,
+                        DEPLOYMENT_ID, command.attemptId(), command.leaseEpoch(),
+                        providerSequence,
+                        TestSuiteStabilityAttemptCancellationReceipt.IsolationMode.PROCESS,
+                        TestSuiteStabilityAttemptCancellationReceipt.Outcome.TERMINATED,
+                        TestSuiteStabilityAttemptCancellationReceipt.TerminationMode.PROCESS_KILL,
+                        fingerprint('4'), fingerprint('6'), confirmedAt);
+        Signature signature = Signature.getInstance("Ed25519");
+        signature.initSign(keyPair.getPrivate());
+        signature.update(TestSuiteStabilityAttemptCancellationVerifier.signingBytes(
+                mapper,
+                TestSuiteStabilityAttemptCancellationReceipt.Attestation.SCHEMA_VERSION,
+                receipt, KEY_ID));
+        return new TestSuiteStabilityAttemptCancellationReceipt.Attestation(
+                TestSuiteStabilityAttemptCancellationReceipt.Attestation.SCHEMA_VERSION,
+                receipt, KEY_ID,
+                Base64.getUrlEncoder().withoutPadding().encodeToString(signature.sign()));
+    }
+
+    private TestSuiteStabilityAttemptCancellationAuthority.Descriptor
+            cancellationDescriptor() {
+        return new TestSuiteStabilityAttemptCancellationAuthority.Descriptor(
+                TestSuiteStabilityAttemptCancellationAuthority.Descriptor.SCHEMA_VERSION,
+                PROVIDER_ID, DEPLOYMENT_ID, KEY_ID, true,
+                Set.of(TestSuiteStabilityAttemptCancellationReceipt.IsolationMode.PROCESS),
+                Duration.ofMillis(100));
+    }
+
+    private void assertProjectionConflict(
+            org.assertj.core.api.ThrowableAssert.ThrowingCallable invocation,
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.ConflictReason reason) {
+        assertThatThrownBy(invocation).isInstanceOfSatisfying(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                        .ConflictException.class,
+                failure -> assertThat(failure.reason()).isEqualTo(reason));
+    }
+
     private AttemptContext retainedStart(char id, boolean confirmed) {
         return retainedStart(id, confirmed, "tenant-a");
     }
@@ -1491,6 +1840,16 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                 Duration.ofSeconds(2));
     }
 
+    private TestSuiteStabilityAttemptCancellationVerifier cancellationVerifier() {
+        Instant now = databaseTime();
+        return new TestSuiteStabilityAttemptCancellationVerifier(
+                mapper,
+                Set.of(new TestSuiteStabilityAttemptCancellationVerifier.TrustKey(
+                        PROVIDER_ID, DEPLOYMENT_ID, KEY_ID, keyPair.getPublic(),
+                        now.minus(Duration.ofDays(1)), now.plus(Duration.ofDays(1)))),
+                Duration.ofSeconds(2));
+    }
+
     private TestSuiteStabilityPhysicalAttemptObservationAuthority.Descriptor descriptor(
             Duration latency) {
         return new TestSuiteStabilityPhysicalAttemptObservationAuthority.Descriptor(
@@ -1633,10 +1992,41 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
             boolean confirmed) {
     }
 
+    private record TerminalFixture(
+            AttemptContext context,
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command,
+            String parentRunId,
+            String parentEvidenceFingerprint) {
+    }
+
     private record ConcurrentAcceptance(
             String commandId,
             boolean accepted,
             TestSuiteStabilityPhysicalAttemptObservationJournal.ConflictReason conflict) {
+    }
+
+    private record CompletedParentAuthority(
+            String runId,
+            String evidenceFingerprint) implements TestSuiteStabilityJobParentAuthority {
+
+        @Override
+        public Resolution stop(
+                TestSuiteStabilityJobRecord job,
+                TestSuiteStabilityExecutionStop.Reason reason,
+                String failureCode,
+                Duration retention) {
+            return Resolution.completed(runId, evidenceFingerprint);
+        }
+
+        @Override
+        public Resolution requireCompleted(
+                TestSuiteStabilityJobRecord job,
+                String stabilityRunId,
+                String expectedEvidenceFingerprint) {
+            assertThat(stabilityRunId).isEqualTo(runId);
+            assertThat(expectedEvidenceFingerprint).isEqualTo(evidenceFingerprint);
+            return Resolution.completed(runId, evidenceFingerprint);
+        }
     }
 
     private static final class StoppedParentAuthority

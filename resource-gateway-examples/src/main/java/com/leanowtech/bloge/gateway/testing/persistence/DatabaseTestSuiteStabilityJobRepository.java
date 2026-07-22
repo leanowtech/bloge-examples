@@ -22,6 +22,13 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobSubmission;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueueSnapshot;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityRunConflictException;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationJournal;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationJournal;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationReceipt;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptRegistry;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartJournal;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
@@ -221,6 +228,39 @@ public final class DatabaseTestSuiteStabilityJobRepository
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS idx_rg_test_suite_stability_jobs_retention
                 ON rg_test_suite_stability_jobs (expires_at, job_id)
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS rg_test_stability_attempt_terminal_projections (
+                    projection_id VARCHAR(128) PRIMARY KEY,
+                    command_fingerprint VARCHAR(71) NOT NULL,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(32) NOT NULL,
+                    job_id VARCHAR(96) NOT NULL,
+                    attempt_id VARCHAR(96) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    reservation_record_fingerprint VARCHAR(71) NOT NULL,
+                    start_command_id VARCHAR(128) NOT NULL,
+                    start_entry_fingerprint VARCHAR(71) NOT NULL,
+                    observation_command_id VARCHAR(128) NOT NULL,
+                    observation_entry_fingerprint VARCHAR(71) NOT NULL,
+                    positive_state_fingerprint VARCHAR(71) NOT NULL,
+                    cancellation_command_id VARCHAR(96) NOT NULL,
+                    cancellation_entry_fingerprint VARCHAR(71) NOT NULL,
+                    terminal_disposition VARCHAR(32) NOT NULL,
+                    queue_decision VARCHAR(32) NOT NULL,
+                    command_json CLOB NOT NULL,
+                    queue_result_json CLOB NOT NULL,
+                    projected_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    record_fingerprint VARCHAR(71) NOT NULL,
+                    CONSTRAINT uq_rg_test_stability_attempt_terminal_projection
+                        UNIQUE (tenant_id, environment_id, attempt_id, lease_epoch)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rg_test_stability_attempt_terminal_scope
+                ON rg_test_stability_attempt_terminal_projections (
+                    tenant_id, environment_id, projected_at, projection_id
+                )
                 """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS rg_test_suite_stability_job_tombstones (
@@ -777,6 +817,110 @@ public final class DatabaseTestSuiteStabilityJobRepository
         return required(result, "Suite-stability queue cancellation returned no result");
     }
 
+    TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Projection
+            projectPhysicalAttemptTerminal(
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command,
+                    TestSuiteStabilityPhysicalAttemptRegistry.Entry reservation,
+                    TestSuiteStabilityPhysicalAttemptStartJournal.Entry start,
+                    TestSuiteStabilityPhysicalAttemptObservationJournal.Entry observation,
+                    TestSuiteStabilityPhysicalAttemptObservationJournal.PositiveState state,
+                    Optional<TestSuiteStabilityAttemptCancellationJournal.Entry> cancellation,
+                    TestSuiteStabilityQueuePolicy policy) {
+        TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand requiredCommand =
+                Objects.requireNonNull(command, "command");
+        Objects.requireNonNull(policy, "policy");
+        requireProjectionSources(requiredCommand, reservation, start, observation, state,
+                cancellation);
+        if (!physicalAttemptFencingEnabled) {
+            throw projectionConflict(TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                    .ConflictReason.CAPABILITY_DISABLED);
+        }
+        try {
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Projection result =
+                    mutations.execute(transaction -> {
+                        lockEnvironment(requiredCommand.environmentId());
+                        Instant observedAt = currentTime();
+                        ensurePolicy(requiredCommand.environmentId(), policy, observedAt);
+                        StoredTerminalProjection existing = terminalProjection(
+                                requiredCommand.projectionId());
+                        if (existing != null) {
+                            TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry entry =
+                                    validateTerminalProjection(existing);
+                            if (!entry.command().equals(requiredCommand)) {
+                                throw projectionConflict(
+                                        TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                                .ConflictReason.IDEMPOTENCY_CONFLICT);
+                            }
+                            return new TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                    .Projection(
+                                    TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                            .ProjectionStatus.REPLAYED,
+                                    entry);
+                        }
+                        if (terminalProjectionForAttempt(requiredCommand) != null) {
+                            throw projectionConflict(
+                                    TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                            .ConflictReason.IDEMPOTENCY_CONFLICT);
+                        }
+                        requireRawProjectionSources(requiredCommand);
+                        StoredJob stored = byJobId(requiredCommand.tenantId(),
+                                requiredCommand.environmentId(), requiredCommand.jobId())
+                                .orElseThrow(() -> projectionConflict(
+                                        TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                                .ConflictReason.JOB_NOT_FOUND));
+                        if (stored.record().status().terminal()) {
+                            throw projectionConflict(
+                                    TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                            .ConflictReason.JOB_ALREADY_TERMINAL);
+                        }
+                        if (stored.leaseEpoch() != requiredCommand.leaseEpoch()
+                                || !stored.record().requestFingerprint().equals(
+                                reservation.identity().requestFingerprint())
+                                || !Set.of(TestSuiteStabilityJobRecord.Status.RUNNING,
+                                TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED,
+                                TestSuiteStabilityJobRecord.Status.COMMITTING)
+                                .contains(stored.record().status())) {
+                            throw projectionConflict(
+                                    TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                            .ConflictReason.JOB_FENCE_CHANGED);
+                        }
+                        StoredJob successor = terminalProjectionSuccessor(
+                                stored, requiredCommand, observedAt, policy);
+                        updateExact(stored, successor);
+                        TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry entry =
+                                terminalProjectionEntry(requiredCommand, successor,
+                                        Instant.ofEpochMilli(observedAt.toEpochMilli()));
+                        insertTerminalProjection(entry);
+                        return new TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                .Projection(
+                                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                        .ProjectionStatus.PROJECTED,
+                                entry);
+                    });
+            return required(result, "Physical-attempt terminal projection returned no result");
+        } catch (TestSuiteStabilityJobConflictException parentConflict) {
+            throw projectionConflict(TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                    .ConflictReason.PARENT_CONFLICT);
+        }
+    }
+
+    Optional<TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry>
+            findPhysicalAttemptTerminalProjection(
+                    String tenantId, String environmentId, String projectionId) {
+        String tenant = identifier(tenantId, "tenantId");
+        String environment = environment(environmentId);
+        String exactProjectionId = projectionId(projectionId);
+        StoredTerminalProjection stored = terminalProjection(exactProjectionId);
+        if (stored == null) {
+            return Optional.empty();
+        }
+        TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry entry =
+                validateTerminalProjection(stored);
+        return entry.command().tenantId().equals(tenant)
+                && entry.command().environmentId().equals(environment)
+                ? Optional.of(entry) : Optional.empty();
+    }
+
     @Override
     public Optional<TestSuiteStabilityJobRecord> find(
             String tenantId, String environmentId, String jobId) {
@@ -1251,6 +1395,14 @@ public final class DatabaseTestSuiteStabilityJobRepository
                   AND attempt.environment_id = ?
                   AND attempt.job_id = ?
                   AND attempt.lease_epoch = ?
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM rg_test_stability_attempt_terminal_projections projection
+                      WHERE projection.tenant_id = attempt.tenant_id
+                        AND projection.environment_id = attempt.environment_id
+                        AND projection.attempt_id = attempt.attempt_id
+                        AND projection.lease_epoch = attempt.lease_epoch
+                  )
                 """, Long.class, job.record().tenantId(), job.record().environmentId(),
                 job.record().jobId(), job.leaseEpoch());
         return count != null && count > 0;
@@ -1281,6 +1433,14 @@ public final class DatabaseTestSuiteStabilityJobRepository
                       AND attempt.environment_id = job.environment_id
                       AND attempt.job_id = job.job_id
                       AND attempt.lease_epoch = job.lease_epoch
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM rg_test_stability_attempt_terminal_projections projection
+                          WHERE projection.tenant_id = attempt.tenant_id
+                            AND projection.environment_id = attempt.environment_id
+                            AND projection.attempt_id = attempt.attempt_id
+                            AND projection.lease_epoch = attempt.lease_epoch
+                      )
                 )
                 """;
     }
@@ -1652,6 +1812,431 @@ public final class DatabaseTestSuiteStabilityJobRepository
             return updated == 1;
         });
         return Boolean.TRUE.equals(released);
+    }
+
+    private void requireProjectionSources(
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command,
+            TestSuiteStabilityPhysicalAttemptRegistry.Entry reservation,
+            TestSuiteStabilityPhysicalAttemptStartJournal.Entry start,
+            TestSuiteStabilityPhysicalAttemptObservationJournal.Entry observation,
+            TestSuiteStabilityPhysicalAttemptObservationJournal.PositiveState state,
+            Optional<TestSuiteStabilityAttemptCancellationJournal.Entry> cancellation) {
+        TestSuiteStabilityPhysicalAttemptRegistry.Entry exactReservation =
+                Objects.requireNonNull(reservation, "reservation");
+        TestSuiteStabilityPhysicalAttemptStartJournal.Entry exactStart =
+                Objects.requireNonNull(start, "start");
+        TestSuiteStabilityPhysicalAttemptObservationJournal.Entry exactObservation =
+                Objects.requireNonNull(observation, "observation");
+        TestSuiteStabilityPhysicalAttemptObservationJournal.PositiveState exactState =
+                Objects.requireNonNull(state, "state");
+        Optional<TestSuiteStabilityAttemptCancellationJournal.Entry> exactCancellation =
+                Objects.requireNonNull(cancellation, "cancellation");
+        TestSuiteStabilityPhysicalAttemptObservationReceipt receipt = exactState.receipt();
+        boolean exactCommand = ProtocolFingerprint.of(
+                objectMapper, command.canonicalMaterial()).equals(command.commandFingerprint());
+        if (!exactCommand
+                || !exactReservation.identity().tenantId().equals(command.tenantId())
+                || !exactReservation.identity().environmentId().equals(
+                command.environmentId())
+                || !exactReservation.identity().jobId().equals(command.jobId())
+                || !exactReservation.identity().attemptId().equals(command.attemptId())
+                || exactReservation.identity().leaseEpoch() != command.leaseEpoch()
+                || !exactReservation.recordFingerprint().equals(
+                command.reservationRecordFingerprint())
+                || !exactStart.command().identity().equals(exactReservation.identity())
+                || !exactStart.command().commandId().equals(command.startCommandId())
+                || !exactStart.recordFingerprint().equals(command.startEntryFingerprint())
+                || !exactObservation.command().identity().equals(exactReservation.identity())
+                || !exactObservation.command().startCommand().equals(exactStart.command())
+                || !exactObservation.command().commandId().equals(
+                command.observationCommandId())
+                || !exactObservation.recordFingerprint().equals(
+                command.observationEntryFingerprint())
+                || exactObservation.status()
+                != TestSuiteStabilityPhysicalAttemptObservationJournal.Status.POSITIVE
+                || exactObservation.attestation().isEmpty()
+                || !exactObservation.attestation().orElseThrow().receipt().equals(receipt)
+                || !exactState.recordFingerprint().equals(command.positiveStateFingerprint())
+                || !exactState.observationCommandId().equals(command.observationCommandId())
+                || receipt.state()
+                != TestSuiteStabilityPhysicalAttemptObservationReceipt.State.TERMINAL
+                || receipt.terminalDisposition() != command.terminalDisposition()) {
+            throw projectionConflict(TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                    .ConflictReason.SOURCE_CHANGED);
+        }
+        boolean cancelled = command.terminalDisposition()
+                == TestSuiteStabilityPhysicalAttemptObservationReceipt
+                .TerminalDisposition.CANCELLED;
+        if (cancelled != exactCancellation.isPresent()) {
+            throw projectionConflict(TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                    .ConflictReason.CANCELLATION_PROOF_REQUIRED);
+        }
+        if (exactCancellation.isPresent()) {
+            TestSuiteStabilityAttemptCancellationJournal.Entry entry =
+                    exactCancellation.orElseThrow();
+            if (!entry.command().commandId().equals(command.cancellationCommandId())
+                    || !entry.recordFingerprint().equals(
+                    command.cancellationEntryFingerprint())
+                    || entry.status()
+                    != TestSuiteStabilityAttemptCancellationJournal.Status.CONFIRMED
+                    || entry.attestation().isEmpty()
+                    || !entry.attestation().orElseThrow().receipt().terminationConfirmed()
+                    || !entry.command().attemptId().equals(command.attemptId())
+                    || entry.command().leaseEpoch() != command.leaseEpoch()
+                    || !entry.attestation().orElseThrow().receipt()
+                    .processIdentityFingerprint().equals(
+                            receipt.processIdentityFingerprint())
+                    || !entry.attestation().orElseThrow().receipt()
+                    .terminalStateFingerprint().equals(receipt.runtimeStateFingerprint())
+                    || receipt.stateEffectiveAt().isBefore(
+                            entry.attestation().orElseThrow().receipt().confirmedAt())) {
+                throw projectionConflict(
+                        TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                .ConflictReason.CANCELLATION_PROOF_CONFLICT);
+            }
+        }
+    }
+
+    private void requireRawProjectionSources(
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command) {
+        requireExactProjectionSource("""
+                SELECT COUNT(*) FROM rg_test_stability_physical_attempts
+                WHERE tenant_id = ? AND environment_id = ? AND job_id = ?
+                  AND attempt_id = ? AND lease_epoch = ? AND record_fingerprint = ?
+                """, command.tenantId(), command.environmentId(), command.jobId(),
+                command.attemptId(), command.leaseEpoch(),
+                command.reservationRecordFingerprint());
+        requireExactProjectionSource("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_start_entries
+                WHERE tenant_id = ? AND environment_id = ? AND attempt_id = ?
+                  AND lease_epoch = ? AND command_id = ? AND record_fingerprint = ?
+                """, command.tenantId(), command.environmentId(), command.attemptId(),
+                command.leaseEpoch(), command.startCommandId(),
+                command.startEntryFingerprint());
+        requireExactProjectionSource("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_observation_entries
+                WHERE tenant_id = ? AND environment_id = ? AND attempt_id = ?
+                  AND lease_epoch = ? AND command_id = ? AND status = 'POSITIVE'
+                  AND observed_state = 'TERMINAL' AND record_fingerprint = ?
+                """, command.tenantId(), command.environmentId(), command.attemptId(),
+                command.leaseEpoch(), command.observationCommandId(),
+                command.observationEntryFingerprint());
+        requireExactProjectionSource("""
+                SELECT COUNT(*) FROM rg_test_stability_attempt_observation_state_floors
+                WHERE tenant_id = ? AND environment_id = ? AND attempt_id = ?
+                  AND observation_command_id = ? AND observed_state = 'TERMINAL'
+                  AND record_fingerprint = ?
+                """, command.tenantId(), command.environmentId(), command.attemptId(),
+                command.observationCommandId(), command.positiveStateFingerprint());
+        if (!command.cancellationCommandId().isBlank()) {
+            requireExactProjectionSource("""
+                    SELECT COUNT(*) FROM rg_test_stability_attempt_cancel_entries
+                    WHERE tenant_id = ? AND environment_id = ? AND attempt_id = ?
+                      AND lease_epoch = ? AND command_id = ? AND status = 'CONFIRMED'
+                      AND record_fingerprint = ?
+                    """, command.tenantId(), command.environmentId(), command.attemptId(),
+                    command.leaseEpoch(), command.cancellationCommandId(),
+                    command.cancellationEntryFingerprint());
+        }
+    }
+
+    private void requireExactProjectionSource(String sql, Object... arguments) {
+        Long count = jdbc.queryForObject(sql, Long.class, arguments);
+        if (count == null || count != 1L) {
+            throw projectionConflict(TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                    .ConflictReason.SOURCE_CHANGED);
+        }
+    }
+
+    private StoredJob terminalProjectionSuccessor(
+            StoredJob stored,
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command,
+            Instant observedAt,
+            TestSuiteStabilityQueuePolicy policy) {
+        TestSuiteStabilityPhysicalAttemptObservationReceipt.TerminalDisposition disposition =
+                command.terminalDisposition();
+        if (stored.record().status() == TestSuiteStabilityJobRecord.Status.COMMITTING
+                && disposition
+                != TestSuiteStabilityPhysicalAttemptObservationReceipt
+                .TerminalDisposition.SUCCEEDED) {
+            throw projectionConflict(TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                    .ConflictReason.PARENT_CONFLICT);
+        }
+        if (disposition
+                == TestSuiteStabilityPhysicalAttemptObservationReceipt
+                .TerminalDisposition.CANCELLED
+                && stored.record().status()
+                != TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
+            throw projectionConflict(TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                    .ConflictReason.CANCELLATION_PROOF_CONFLICT);
+        }
+        return switch (disposition) {
+            case SUCCEEDED -> projectedSuccess(stored, command, observedAt, policy);
+            case CANCELLED -> projectedStopped(stored,
+                    TestSuiteStabilityJobRecord.Status.CANCELLED,
+                    TestSuiteStabilityExecutionStop.Reason.CANCELLED,
+                    "RG.TEST.STABILITY_JOB_CANCELLED", observedAt, policy,
+                    stored.record().retryCount());
+            case TIMED_OUT -> projectedStopped(stored,
+                    TestSuiteStabilityJobRecord.Status.EXPIRED,
+                    TestSuiteStabilityExecutionStop.Reason.DEADLINE_EXCEEDED,
+                    "RG.TEST.STABILITY_ATTEMPT_TIMED_OUT", observedAt, policy,
+                    stored.record().retryCount());
+            case FAILED, PROVIDER_ABORTED -> projectedRetryOrFailure(
+                    stored, disposition, observedAt, policy);
+            case NONE -> throw projectionConflict(
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                            .ConflictReason.TERMINAL_NOT_CONFIRMED);
+        };
+    }
+
+    private StoredJob projectedSuccess(
+            StoredJob stored,
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command,
+            Instant observedAt,
+            TestSuiteStabilityQueuePolicy policy) {
+        TestSuiteStabilityJobParentAuthority.Resolution parent = requireCompletedParent(
+                stored.record(), command.parentStabilityRunId(),
+                command.parentEvidenceFingerprint());
+        if (parent.outcome() != TestSuiteStabilityJobParentAuthority.Outcome.COMPLETED
+                || !parent.stabilityRunId().equals(command.parentStabilityRunId())
+                || !parent.evidenceFingerprint().equals(
+                command.parentEvidenceFingerprint())) {
+            throw projectionConflict(TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                    .ConflictReason.PARENT_CONFLICT);
+        }
+        return parentCompleted(stored, parent, observedAt, policy,
+                stored.record().retryCount());
+    }
+
+    private StoredJob projectedRetryOrFailure(
+            StoredJob stored,
+            TestSuiteStabilityPhysicalAttemptObservationReceipt.TerminalDisposition disposition,
+            Instant observedAt,
+            TestSuiteStabilityQueuePolicy policy) {
+        String code = disposition
+                == TestSuiteStabilityPhysicalAttemptObservationReceipt
+                .TerminalDisposition.PROVIDER_ABORTED
+                ? "RG.TEST.STABILITY_ATTEMPT_PROVIDER_ABORTED"
+                : "RG.TEST.STABILITY_ATTEMPT_FAILED";
+        int retryCount = Math.addExact(stored.record().retryCount(), 1);
+        if (!stored.record().deadlineAt().isAfter(observedAt)) {
+            return projectedStopped(stored, TestSuiteStabilityJobRecord.Status.EXPIRED,
+                    TestSuiteStabilityExecutionStop.Reason.DEADLINE_EXCEEDED,
+                    "RG.TEST.STABILITY_JOB_DEADLINE_EXCEEDED", observedAt, policy,
+                    retryCount);
+        }
+        if (stored.record().status()
+                == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
+            return terminal(stored, TestSuiteStabilityJobRecord.Status.FAILED,
+                    observedAt, code, policy, retryCount);
+        }
+        if (retryCount > policy.maximumRetries()) {
+            return projectedStopped(stored, TestSuiteStabilityJobRecord.Status.FAILED,
+                    TestSuiteStabilityExecutionStop.Reason.WORKER_FAILED, code,
+                    observedAt, policy, retryCount);
+        }
+        return transition(stored, TestSuiteStabilityJobRecord.Status.QUEUED,
+                retryCount, observedAt.plus(policy.retryDelay(retryCount)), observedAt,
+                stored.record().expiresAt(), "", stored.leaseEpoch(), null,
+                "", "", code, stored.record().cancellationRequestId(),
+                stored.record().cancellationFingerprint());
+    }
+
+    private StoredJob projectedStopped(
+            StoredJob stored,
+            TestSuiteStabilityJobRecord.Status status,
+            TestSuiteStabilityExecutionStop.Reason reason,
+            String failureCode,
+            Instant observedAt,
+            TestSuiteStabilityQueuePolicy policy,
+            int retryCount) {
+        if (stored.record().status()
+                == TestSuiteStabilityJobRecord.Status.CANCEL_REQUESTED) {
+            return terminal(stored, status, observedAt, failureCode, policy, retryCount);
+        }
+        return parentTerminal(stored, status, reason, observedAt, failureCode,
+                policy, retryCount);
+    }
+
+    private TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry
+            terminalProjectionEntry(
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command,
+                    StoredJob successor,
+                    Instant projectedAt) {
+        TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.QueueDecision decision =
+                switch (successor.record().status()) {
+                    case QUEUED -> TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                            .QueueDecision.REQUEUED;
+                    case SUCCEEDED -> TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                            .QueueDecision.SUCCEEDED;
+                    case FAILED -> TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                            .QueueDecision.FAILED;
+                    case CANCELLED -> TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                            .QueueDecision.CANCELLED;
+                    case EXPIRED -> TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                            .QueueDecision.EXPIRED;
+                    default -> throw new IllegalStateException(
+                            "Terminal projection produced a non-closable queue state");
+                };
+        TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.QueueResult queueResult =
+                new TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.QueueResult(
+                        successor.record().jobId(), successor.record().status(),
+                        successor.record().retryCount(), successor.record().nextEligibleAt(),
+                        successor.leaseEpoch(), successor.record().terminalStabilityRunId(),
+                        successor.record().terminalEvidenceFingerprint(),
+                        successor.record().failureCode(),
+                        successor.record().recordFingerprint());
+        String fingerprint = terminalProjectionFingerprint(
+                command, decision, queueResult, projectedAt);
+        return new TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry.SCHEMA_VERSION,
+                command, decision, queueResult, projectedAt, fingerprint);
+    }
+
+    private void insertTerminalProjection(
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry entry) {
+        TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command = entry.command();
+        try {
+            jdbc.update("""
+                    INSERT INTO rg_test_stability_attempt_terminal_projections (
+                        projection_id, command_fingerprint, tenant_id, environment_id,
+                        job_id, attempt_id, lease_epoch, reservation_record_fingerprint,
+                        start_command_id, start_entry_fingerprint, observation_command_id,
+                        observation_entry_fingerprint, positive_state_fingerprint,
+                        cancellation_command_id, cancellation_entry_fingerprint,
+                        terminal_disposition, queue_decision, command_json,
+                        queue_result_json, projected_at, record_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, command.projectionId(), command.commandFingerprint(),
+                    command.tenantId(), command.environmentId(), command.jobId(),
+                    command.attemptId(), command.leaseEpoch(),
+                    command.reservationRecordFingerprint(), command.startCommandId(),
+                    command.startEntryFingerprint(), command.observationCommandId(),
+                    command.observationEntryFingerprint(), command.positiveStateFingerprint(),
+                    command.cancellationCommandId(), command.cancellationEntryFingerprint(),
+                    command.terminalDisposition().name(), entry.decision().name(), json(command),
+                    json(entry.queueResult()), Timestamp.from(entry.projectedAt()),
+                    entry.recordFingerprint());
+        } catch (DuplicateKeyException collision) {
+            throw projectionConflict(TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                    .ConflictReason.IDEMPOTENCY_CONFLICT);
+        }
+    }
+
+    private StoredTerminalProjection terminalProjection(String projectionId) {
+        List<StoredTerminalProjection> rows = jdbc.query("""
+                SELECT * FROM rg_test_stability_attempt_terminal_projections
+                WHERE projection_id = ?
+                """, this::storedTerminalProjection, projectionId);
+        return one(rows, "Duplicate physical-attempt terminal projections").orElse(null);
+    }
+
+    private StoredTerminalProjection terminalProjectionForAttempt(
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command) {
+        List<StoredTerminalProjection> rows = jdbc.query("""
+                SELECT * FROM rg_test_stability_attempt_terminal_projections
+                WHERE tenant_id = ? AND environment_id = ? AND attempt_id = ?
+                  AND lease_epoch = ?
+                """, this::storedTerminalProjection, command.tenantId(),
+                command.environmentId(), command.attemptId(), command.leaseEpoch());
+        return one(rows, "Duplicate terminal projections for one physical attempt")
+                .orElse(null);
+    }
+
+    private StoredTerminalProjection storedTerminalProjection(
+            ResultSet resultSet, int row) throws SQLException {
+        return new StoredTerminalProjection(
+                resultSet.getString("projection_id"),
+                resultSet.getString("command_fingerprint"),
+                resultSet.getString("tenant_id"),
+                resultSet.getString("environment_id"),
+                resultSet.getString("job_id"),
+                resultSet.getString("attempt_id"),
+                resultSet.getLong("lease_epoch"),
+                resultSet.getString("reservation_record_fingerprint"),
+                resultSet.getString("start_command_id"),
+                resultSet.getString("start_entry_fingerprint"),
+                resultSet.getString("observation_command_id"),
+                resultSet.getString("observation_entry_fingerprint"),
+                resultSet.getString("positive_state_fingerprint"),
+                resultSet.getString("cancellation_command_id"),
+                resultSet.getString("cancellation_entry_fingerprint"),
+                resultSet.getString("terminal_disposition"),
+                resultSet.getString("queue_decision"),
+                resultSet.getString("command_json"),
+                resultSet.getString("queue_result_json"),
+                resultSet.getTimestamp("projected_at").toInstant(),
+                resultSet.getString("record_fingerprint"));
+    }
+
+    private TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry
+            validateTerminalProjection(StoredTerminalProjection stored) {
+        try {
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command =
+                    objectMapper.readValue(stored.commandJson(),
+                            TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand.class);
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.QueueResult queueResult =
+                    objectMapper.readValue(stored.queueResultJson(),
+                            TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                                    .QueueResult.class);
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.QueueDecision decision =
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.QueueDecision
+                            .valueOf(stored.queueDecision());
+            String expected = terminalProjectionFingerprint(
+                    command, decision, queueResult, stored.projectedAt());
+            if (!stored.projectionId().equals(command.projectionId())
+                    || !stored.commandFingerprint().equals(command.commandFingerprint())
+                    || !stored.tenantId().equals(command.tenantId())
+                    || !stored.environmentId().equals(command.environmentId())
+                    || !stored.jobId().equals(command.jobId())
+                    || !stored.attemptId().equals(command.attemptId())
+                    || stored.leaseEpoch() != command.leaseEpoch()
+                    || !stored.reservationRecordFingerprint().equals(
+                    command.reservationRecordFingerprint())
+                    || !stored.startCommandId().equals(command.startCommandId())
+                    || !stored.startEntryFingerprint().equals(
+                    command.startEntryFingerprint())
+                    || !stored.observationCommandId().equals(
+                    command.observationCommandId())
+                    || !stored.observationEntryFingerprint().equals(
+                    command.observationEntryFingerprint())
+                    || !stored.positiveStateFingerprint().equals(
+                    command.positiveStateFingerprint())
+                    || !stored.cancellationCommandId().equals(
+                    command.cancellationCommandId())
+                    || !stored.cancellationEntryFingerprint().equals(
+                    command.cancellationEntryFingerprint())
+                    || !stored.terminalDisposition().equals(
+                    command.terminalDisposition().name())
+                    || !stored.recordFingerprint().equals(expected)) {
+                throw new IllegalStateException(
+                        "Stored physical-attempt terminal projection integrity failed");
+            }
+            return new TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry(
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                            .Entry.SCHEMA_VERSION,
+                    command, decision, queueResult, stored.projectedAt(),
+                    stored.recordFingerprint());
+        } catch (JsonProcessingException | IllegalArgumentException invalid) {
+            throw new IllegalStateException(
+                    "Stored physical-attempt terminal projection is corrupt", invalid);
+        }
+    }
+
+    private String terminalProjectionFingerprint(
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand command,
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.QueueDecision decision,
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.QueueResult queueResult,
+            Instant projectedAt) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion",
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal.Entry.SCHEMA_VERSION);
+        material.put("command", command);
+        material.put("decision", decision);
+        material.put("queueResult", queueResult);
+        material.put("projectedAt", projectedAt);
+        return ProtocolFingerprint.of(objectMapper, material);
     }
 
     private Optional<StoredJob> byJobId(
@@ -2175,6 +2760,14 @@ public final class DatabaseTestSuiteStabilityJobRepository
         return result;
     }
 
+    private static String projectionId(String value) {
+        String result = normalized(value);
+        if (!result.matches("stability-attempt-terminal-project-[a-f0-9]{64}")) {
+            throw new IllegalArgumentException("projectionId is invalid");
+        }
+        return result;
+    }
+
     private static String failureCode(String value) {
         String result = normalized(value).toUpperCase(Locale.ROOT);
         if (!FAILURE_CODE.matcher(result).matches()) {
@@ -2210,6 +2803,14 @@ public final class DatabaseTestSuiteStabilityJobRepository
         return new TestSuiteStabilityJobConflictException(reason, message);
     }
 
+    private static TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+            .ConflictException projectionConflict(
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                            .ConflictReason reason) {
+        return new TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal
+                .ConflictException(reason);
+    }
+
     private record PolicyRow(long generation, String fingerprint) {
     }
 
@@ -2234,6 +2835,30 @@ public final class DatabaseTestSuiteStabilityJobRepository
             Instant tombstonedAt,
             Instant expiresAt,
             int recordVersion,
+            String recordFingerprint) {
+    }
+
+    private record StoredTerminalProjection(
+            String projectionId,
+            String commandFingerprint,
+            String tenantId,
+            String environmentId,
+            String jobId,
+            String attemptId,
+            long leaseEpoch,
+            String reservationRecordFingerprint,
+            String startCommandId,
+            String startEntryFingerprint,
+            String observationCommandId,
+            String observationEntryFingerprint,
+            String positiveStateFingerprint,
+            String cancellationCommandId,
+            String cancellationEntryFingerprint,
+            String terminalDisposition,
+            String queueDecision,
+            String commandJson,
+            String queueResultJson,
+            Instant projectedAt,
             String recordFingerprint) {
     }
 
