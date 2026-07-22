@@ -227,6 +227,15 @@
 > 可执行 JAR 包含 10 个 terminal-projection 匹配 class entry，耗时 9:50，构建/测试浏览器残留进程均为零。验证见
 > [physical attempt terminal projection verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-verification.md)。
 
+> Stage 4 physical attempt 第十一增量新增 proof-aware terminal projection coordinator core。它从 exact
+> scope/attempt 自动装配 reservation/start/terminal observation/positive-state source chain；仅
+> `CANCELLED/SUCCEEDED` 进入 shape-safe proof resolver，其他 terminal disposition 不依赖第二证明。
+> `PROJECTED/REPLAYED/PROOF_PENDING/PERMANENT_CONFLICT/UNAVAILABLE` 与 fixed-cardinality reason
+> 冻结 worker policy 边界，proof 与 journal 的永久冲突不会被误报为 transient outage。18 项聚焦测试、
+> 249 项物理链聚合门禁全绿。该增量仍没有 durable projection work journal、cross-replica claim/takeover、reconciler hook、
+> Spring scheduler/health/capability，因此产品能力继续关闭。验证见
+> [physical attempt terminal projection coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-coordinator-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |

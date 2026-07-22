@@ -202,6 +202,15 @@
 > class entry，耗时 9:50，构建/测试浏览器残留进程均为零。验证见
 > [physical attempt terminal projection verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-verification.md)。
 
+> Stage 4 physical attempt 第十一增量新增 proof-aware terminal projection coordinator core。调用方只给
+> exact scope/attempt 与 queue policy；coordinator 固定读取 reservation、latest terminal positive floor、
+> exact observation 与 original start，再对 `CANCELLED/SUCCEEDED` 解析 shape-safe 第二证明并构造内容寻址
+> projection command。`FAILED/TIMED_OUT/PROVIDER_ABORTED` 完全不依赖 proof resolver；proof 未权威化、
+> proof 永久冲突、source/projection integrity conflict 与 infrastructure unavailable 使用互斥闭集结果，
+> journal conflict reason 不被降级为 transient retry。18 项聚焦测试、249 项物理链聚合门禁全绿。durable projection work journal、
+> cross-replica claim/takeover、reconciler hook、Spring worker/health/capability 仍未接线，产品能力继续关闭。
+> 验证见 [physical attempt terminal projection coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-coordinator-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS
