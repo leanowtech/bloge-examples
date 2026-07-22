@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-testing/physical-attempt-provider-inventory-cohort-binding-v1.schema.json",
+  "title": "Physical Attempt Provider Inventory Cohort Binding v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "scopeId", "cohortId", "expectedReplicaIds",
+    "inventoryAvailable", "sourceSequence", "sourceGenerationFingerprint", "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryCohortBinding.v1"
+    },
+    "scopeId": { "$ref": "#/$defs/identifier" },
+    "cohortId": { "$ref": "#/$defs/identifier" },
+    "expectedReplicaIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "inventoryAvailable": { "type": "boolean" },
+    "sourceSequence": { "type": "integer", "minimum": 1 },
+    "sourceGenerationFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    }
+  }
+}

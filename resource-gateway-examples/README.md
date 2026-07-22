@@ -403,24 +403,60 @@ enable the terminal-projection lane, then set
 `RG_TEST_PHYSICAL_ATTEMPT_OBSERVATION_RECONCILIATION_ENABLED=true`, configure a stable
 `..._WORKER_ID`, and supply exactly one
 `TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority` bean. An arbitrary function or Map
-resolver no longer satisfies startup. The provided static authority verifies a complete, canonical,
-M-of-N Ed25519-signed `TestSuiteStabilityPhysicalAttemptProviderInventory`, binds trust domain,
-scope, deployment cohort, protocol and accepted policy, requires exact runtime-adapter coverage, and
-returns generation-fenced adapters only for retained provider/deployment pairs. Adapter descriptors
-must exactly reproduce signed key, isolation, latency, and retention facts before provider I/O.
-Inventory hard expiry closes both new resolution and previously resolved wrappers without restart.
-Startup also rejects non-database start, observation, or terminal-work journals and unsafe
-deadline/window/lease/capacity combinations. Its database journal discovers retained starts in
-bounded fair-scope pages; a verified terminal completion and projection-work registration commit
-atomically.
+resolver no longer satisfies startup. Static signed inventory remains useful for isolated component
+tests, but Tool Studio intentionally reports it as `DYNAMIC_INVENTORY_REQUIRED` rather than fleet
+readiness.
+
+The product dynamic authority is opt-in with
+`RG_TEST_PHYSICAL_ATTEMPT_PROVIDER_INVENTORY_ENABLED=true` and is physically absent from any profile
+containing `production`. The embedding deployment must register exactly one
+`TestSuiteStabilityPhysicalAttemptRuntimeAdapterCatalog`; this catalog is only the installed adapter
+superset. The signed publication remains the sole admission authority and must name every expected
+Resource Gateway replica. There is deliberately no local expected-replica list that could narrow a
+fleet. Configure the trust domain, scope, cohort, accepted policy fingerprints, independent
+deployment/witness Ed25519 thresholds and public keys, local replica/artifact identities, and the
+HTTPS source using the `RG_TEST_PHYSICAL_ATTEMPT_PROVIDER_INVENTORY_*` variables documented in
+`application-test.yml` and `application-staging.yml`.
+
+The publication endpoint must return
+`application/vnd.bloge.physical-attempt-provider-inventory-publication.v1+json`, the exact
+`X-BLOGE-Physical-Provider-Inventory-Protocol` value
+`bloge.testSuiteStabilityPhysicalAttemptProviderInventoryPublication.v1`, and a strict signed
+`ACTIVE` or `REVOKED` envelope. Bootstrap and each ETag refresh verify the nested inventory,
+deployment quorum, independent witness quorum, predecessor chains, exact signed replica set, hard
+freshness, and the database publication/witness floor before atomically exposing a generation.
+Refresh ambiguity immediately closes resolution; a valid successor restores it without restart.
+Previously resolved wrappers are generation-fenced and also close after successor or revocation.
+
+Each process start publishes a database-clock lease keyed by the signed scope/cohort and local
+replica identity. Cohort readiness requires the exact signed replica set, one publication generation,
+one artifact and protocol, and no missing, unexpected, duplicate, drifted, expired, or corrupt row.
+The heartbeat interval must not exceed half the lease. Startup rejects missing catalogs, unknown
+properties, unsafe timing, unsigned fallback, and non-database floor/cohort composition without
+echoing configured identities.
+
+Adapter descriptors must exactly reproduce signed key, isolation, latency, and retention facts
+before provider I/O. Inventory hard expiry closes both new resolution and previously resolved
+wrappers without restart. The reconciliation runtime also rejects non-database start, observation,
+or terminal-work journals and unsafe deadline/window/lease/capacity combinations. Its database
+journal discovers retained starts in bounded fair-scope pages; a verified terminal completion and
+projection-work registration commit atomically.
 Actuator health reports only aggregate discovery lag, due age, quarantine, scheduler state, and
-provider-call capacity. Micrometer uses only the closed reconciliation stage label. Tool Studio now
-publishes the typed, identity-free `physicalAttemptRuntime` capability and matching boolean features.
-Static signed inventory is deliberately reported as `DYNAMIC_INVENTORY_REQUIRED`; full readiness also
-requires automatic signed refresh/revocation, witnessed ordering, a durable publication floor, exact
-cross-replica cohort convergence, and both local runtimes healthy. Those dynamic authority and cohort
-adapters, plus a certified real process/container provider, remain closed. Both switches are disabled
-by default, and the standalone demo script intentionally enables neither lane.
+provider-call capacity. The provider-inventory health contributor similarly exposes aggregate
+refresh/cohort facts without replica, provider, deployment, key, fingerprint, or URI identities.
+Micrometer uses only closed labels. Tool Studio publishes the typed, identity-free
+`physicalAttemptRuntime` capability and reaches `READY` only while the dynamic authority, exact cohort,
+terminal projection, and observation reconciliation are simultaneously healthy. All switches remain
+disabled by default, and the standalone demo script intentionally enables none of these physical
+lanes. External/non-database rollback anchoring, managed provider-inventory trust-root rotation,
+N/N-1 backfill, bounded evidence retention, a certified process/container adapter, and production
+certification remain open. See the
+[dynamic provider-inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-dynamic-physical-provider-inventory-verification.md)
+and the strict
+[publication](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-publication-v1.schema.json),
+[generation floor](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-publication-generation-v1.schema.json), and
+[cohort binding](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-cohort-binding-v1.schema.json)
+schemas.
 
 Staging also requires managed serving-inventory runtime keys. One canonical publication atomically
 carries the deployment and witness key sets and is independently approved by an M-of-N deployment

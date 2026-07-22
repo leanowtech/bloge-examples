@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-testing/physical-attempt-provider-inventory-publication-generation-v1.schema.json",
+  "title": "Physical Attempt Provider Inventory Publication Generation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "scopeId", "sequence", "publicationMaterialFingerprint",
+    "witnessMaterialFingerprint", "previousPublicationFingerprint",
+    "previousWitnessFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryPublicationGeneration.v1"
+    },
+    "scopeId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$"
+    },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "publicationMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "witnessMaterialFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "previousPublicationFingerprint": { "$ref": "#/$defs/predecessor" },
+    "previousWitnessFingerprint": { "$ref": "#/$defs/predecessor" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "sequence": { "const": 1 } } },
+      "then": {
+        "properties": {
+          "previousPublicationFingerprint": { "const": "" },
+          "previousWitnessFingerprint": { "const": "" }
+        }
+      },
+      "else": {
+        "properties": {
+          "previousPublicationFingerprint": { "$ref": "#/$defs/fingerprint" },
+          "previousWitnessFingerprint": { "$ref": "#/$defs/fingerprint" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "predecessor": {
+      "oneOf": [
+        { "const": "" },
+        { "$ref": "#/$defs/fingerprint" }
+      ]
+    }
+  }
+}

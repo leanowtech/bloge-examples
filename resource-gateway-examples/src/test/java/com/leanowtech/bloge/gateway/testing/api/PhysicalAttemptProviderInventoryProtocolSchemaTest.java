@@ -61,6 +61,52 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
     }
 
     @Test
+    void publicationSchemaMatchesLifecycleWitnessAndSignatureWireFields() throws Exception {
+        JsonNode schema = schema(
+                "physical-attempt-provider-inventory-publication-v1.schema.json");
+        JsonNode publication = objectMapper.valueToTree(publication());
+
+        assertFields(publication, schema.at("/$defs/publication/properties"));
+        assertFields(publication.path("material"), schema.at("/$defs/material/properties"));
+        assertFields(publication.path("witness"), schema.at("/$defs/witness/properties"));
+        assertFields(publication.at("/witness/material"),
+                schema.at("/$defs/witnessMaterial/properties"));
+        assertFields(publication.at("/signatures/0"),
+                schema.at("/$defs/authoritySignature/properties"));
+        assertThat(schema.at("/$defs/publication/additionalProperties").asBoolean()).isFalse();
+        assertThat(schema.at("/$defs/material/properties/schemaVersion/const").asText())
+                .isEqualTo(
+                        TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.Material
+                                .SCHEMA_VERSION);
+    }
+
+    @Test
+    void privateGenerationAndSignedCohortBindingSchemasMatchJavaFields() throws Exception {
+        JsonNode generationSchema = schema(
+                "physical-attempt-provider-inventory-publication-generation-v1.schema.json");
+        JsonNode bindingSchema = schema(
+                "physical-attempt-provider-inventory-cohort-binding-v1.schema.json");
+        var generation = new
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor.Generation(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor.Generation
+                        .SCHEMA_VERSION,
+                "provider-fleet", 1, "sha256:" + "1".repeat(64),
+                "sha256:" + "2".repeat(64), "", "");
+        var binding = new
+                DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.CohortBinding(
+                DynamicTestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.CohortBinding
+                        .SCHEMA_VERSION,
+                "provider-fleet", "cohort-a", List.of("replica-a", "replica-b"), true,
+                1, "sha256:" + "3".repeat(64),
+                Instant.parse("2026-07-23T00:00:00Z"));
+
+        assertFields(objectMapper.valueToTree(generation), generationSchema.path("properties"));
+        assertFields(objectMapper.valueToTree(binding), bindingSchema.path("properties"));
+        assertThat(generationSchema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(bindingSchema.path("additionalProperties").asBoolean()).isFalse();
+    }
+
+    @Test
     void capabilityStatusVocabularyExactlyMatchesJavaProtocol() throws Exception {
         JsonNode schema = schema("physical-attempt-runtime-capability-v1.schema.json");
 
@@ -79,6 +125,9 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
     void schemaFilesAreStrictBoundedAndPackagedByTheTestKitResourceRoot() throws Exception {
         for (String name : List.of(
                 "physical-attempt-provider-inventory-v1.schema.json",
+                "physical-attempt-provider-inventory-publication-v1.schema.json",
+                "physical-attempt-provider-inventory-publication-generation-v1.schema.json",
+                "physical-attempt-provider-inventory-cohort-binding-v1.schema.json",
                 "physical-attempt-provider-inventory-descriptor-v1.schema.json",
                 "physical-attempt-provider-inventory-cohort-observation-v1.schema.json",
                 "physical-attempt-runtime-capability-v1.schema.json")) {
@@ -105,6 +154,48 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
         return new TestSuiteStabilityPhysicalAttemptProviderInventory(
                 TestSuiteStabilityPhysicalAttemptProviderInventory.SCHEMA_VERSION,
                 material, "sha256:" + "1".repeat(64), List.of(signature));
+    }
+
+    private static TestSuiteStabilityPhysicalAttemptProviderInventoryPublication publication() {
+        TestSuiteStabilityPhysicalAttemptProviderInventory inventory = inventory();
+        var material = new
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.Material(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.Material
+                        .SCHEMA_VERSION,
+                "inventory.example", "publication-1", 1, "provider-fleet", "cohort-a",
+                inventory.materialFingerprint(), List.of("replica-a", "replica-b"),
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.State.ACTIVE,
+                "sha256:" + "2".repeat(64), "",
+                Instant.parse("2026-07-22T00:00:00Z"),
+                Instant.parse("2026-07-22T00:00:00Z"),
+                Instant.parse("2026-07-23T00:00:00Z"), "");
+        String materialFingerprint = "sha256:" + "4".repeat(64);
+        var witnessMaterial = new
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.WitnessMaterial(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.WitnessMaterial
+                        .SCHEMA_VERSION,
+                "inventory-witness.example", "checkpoint-1", 1,
+                materialFingerprint, "", Instant.parse("2026-07-22T00:00:00Z"),
+                Instant.parse("2026-07-22T00:00:00Z"),
+                Instant.parse("2026-07-23T00:00:00Z"));
+        var witness = new
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.WitnessCheckpoint(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.WitnessCheckpoint
+                        .SCHEMA_VERSION,
+                witnessMaterial, "sha256:" + "5".repeat(64),
+                List.of(signature("witness-a", "witness-key-a")));
+        return new TestSuiteStabilityPhysicalAttemptProviderInventoryPublication(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryPublication.SCHEMA_VERSION,
+                inventory, material, materialFingerprint,
+                List.of(signature("authority-a", "key-a")), witness);
+    }
+
+    private static TestSuiteStabilityServingInventory.AuthoritySignature signature(
+            String authorityId, String keyId) {
+        return new TestSuiteStabilityServingInventory.AuthoritySignature(
+                authorityId, keyId, "Ed25519",
+                Instant.parse("2026-07-22T00:00:00Z"),
+                java.util.Base64.getEncoder().encodeToString(new byte[64]));
     }
 
     private static TestSuiteStabilityPhysicalAttemptProviderInventory.Binding binding() {
