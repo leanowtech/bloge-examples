@@ -339,7 +339,12 @@
 > `READY`。四份 strict Schema 与 test-kit 资源已同步；29 个新增测试、281 项相邻聚合门禁和五个公共
 > 类型 strict JavaDoc 全绿。动态 HTTPS publication/witness/floor、数据库 cohort、N/N-1 backfill、
 > retention/evidence lifecycle、真实 provider 和生产认证仍待完成；相对完整计划估计仍有约 21% 实质
-> 差距，未进入正负 8% 完成区间。验证见
+> 差距，未进入正负 8% 完成区间。实现提交 `05903ddc` 的 immutable snapshot 完整
+> `resource-gateway-examples clean verify` 一次通过 4218 tests（0 failures、0 errors、2 skips），470 份
+> Surefire XML 独立汇总一致；34 项 Browser DOM 中 32 项真实执行、2 项条件跳过；39,846,655 bytes
+> 可执行 JAR 包含 12 个 provider-inventory 与 2 个 runtime-capability 匹配 class entry。独立 test-kit
+> `clean verify` 通过 231 tests（0 failures、0 errors、0 skips），25 份 XML 汇总一致，普通/CLI JAR 均
+> 包含四份新增 Schema；两次构建总耗时分别为 7:48 和 10.881s，Maven/Java/浏览器残留均为零。验证见
 > [physical attempt provider inventory and capability verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-provider-inventory-capability-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |
