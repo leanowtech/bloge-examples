@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/physical-attempt-provider-inventory-cohort-observation-v1.schema.json",
+  "title": "Resource Gateway Physical Attempt Provider Inventory Cohort Observation v1",
+  "description": "Private exact-generation, identity-free cross-replica convergence observation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "available", "status", "inventorySourceSequence",
+    "inventoryGenerationFingerprint", "expectedReplicas", "readyReplicas",
+    "distinctInventoryGenerations", "observedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryCohortObservation.v1"
+    },
+    "available": { "type": "boolean" },
+    "status": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+    "inventorySourceSequence": { "type": "integer", "minimum": 1 },
+    "inventoryGenerationFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "expectedReplicas": { "type": "integer", "minimum": 1, "maximum": 256 },
+    "readyReplicas": { "type": "integer", "minimum": 0, "maximum": 256 },
+    "distinctInventoryGenerations": { "type": "integer", "minimum": 0, "maximum": 256 },
+    "observedAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "CONVERGED" } }, "required": ["status"] },
+      "then": { "properties": { "distinctInventoryGenerations": { "const": 1 } } }
+    }
+  ]
+}

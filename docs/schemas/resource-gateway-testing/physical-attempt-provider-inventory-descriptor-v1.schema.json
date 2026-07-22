@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/physical-attempt-provider-inventory-descriptor-v1.schema.json",
+  "title": "Resource Gateway Physical Attempt Provider Inventory Descriptor v1",
+  "description": "Identity-free aggregate provider-inventory readiness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "configured", "externallyAttested", "available", "status",
+    "revision", "providerBindingCount", "properties"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryDescriptor.v1"
+    },
+    "configured": { "type": "boolean" },
+    "externallyAttested": { "type": "boolean" },
+    "available": { "type": "boolean" },
+    "status": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "providerBindingCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "properties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceType": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "privateMaterialPresent": { "type": "boolean" },
+        "dynamicInventory": { "type": "boolean" },
+        "automaticRefresh": { "type": "boolean" },
+        "signedRevocation": { "type": "boolean" },
+        "durablePublicationFloor": { "type": "boolean" },
+        "witnessedPublications": { "type": "boolean" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "configured": { "const": false } }, "required": ["configured"] },
+      "then": {
+        "properties": {
+          "externallyAttested": { "const": false },
+          "available": { "const": false },
+          "status": { "const": "DISABLED" },
+          "revision": { "const": 0 },
+          "providerBindingCount": { "const": 0 },
+          "properties": { "maxProperties": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "configured": { "const": true } }, "required": ["configured"] },
+      "then": {
+        "properties": {
+          "externallyAttested": { "const": true },
+          "revision": { "minimum": 1 },
+          "providerBindingCount": { "minimum": 1 }
+        }
+      }
+    }
+  ]
+}

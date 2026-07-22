@@ -17,6 +17,11 @@ import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthorityExternalSequenceAnchor;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityExternalSequenceAnchor;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationReconciliationHealth;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptRuntimeCapability;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -98,6 +103,14 @@ public class ToolStudioIntegrationService {
             recoveryFleetWorkers = List.of();
     private List<ExternalSequenceAnchorBootstrapRootRecoveryFleetScheduler>
             recoveryFleetSchedulers = List.of();
+    private List<TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority>
+            physicalAttemptProviderInventories = List.of();
+    private List<TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate>
+            physicalAttemptInventoryCohorts = List.of();
+    private List<TestSuiteStabilityPhysicalAttemptObservationReconciliationHealth>
+            physicalAttemptReconciliationHealth = List.of();
+    private List<TestSuiteStabilityPhysicalAttemptTerminalProjectionHealth>
+            physicalAttemptTerminalHealth = List.of();
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -192,6 +205,30 @@ public class ToolStudioIntegrationService {
         recoveryFleetAuthorities = authorities.orderedStream().toList();
         recoveryFleetWorkers = workers.orderedStream().toList();
         recoveryFleetSchedulers = schedulers.orderedStream().toList();
+    }
+
+    /**
+     * Freezes physical-attempt aggregate sources so capability reads cannot instantiate a lazy
+     * provider or trigger provider/network I/O.
+     *
+     * @param inventories signed provider-inventory candidates
+     * @param cohorts durable cross-replica convergence candidates
+     * @param reconciliationHealth observation-reconciliation readiness candidates
+     * @param terminalHealth terminal-projection readiness candidates
+     */
+    @Autowired
+    void configurePhysicalAttemptCapabilitySources(
+            ObjectProvider<TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority>
+                    inventories,
+            ObjectProvider<TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate> cohorts,
+            ObjectProvider<TestSuiteStabilityPhysicalAttemptObservationReconciliationHealth>
+                    reconciliationHealth,
+            ObjectProvider<TestSuiteStabilityPhysicalAttemptTerminalProjectionHealth>
+                    terminalHealth) {
+        physicalAttemptProviderInventories = inventories.orderedStream().toList();
+        physicalAttemptInventoryCohorts = cohorts.orderedStream().toList();
+        physicalAttemptReconciliationHealth = reconciliationHealth.orderedStream().toList();
+        physicalAttemptTerminalHealth = terminalHealth.orderedStream().toList();
     }
 
     /** Receives the explicit test/staging reconciliation readiness monitor when assembled. */
@@ -570,6 +607,30 @@ public class ToolStudioIntegrationService {
                 recoveryFleet.trustRootSourceMutualTls());
         features.put("bootstrapRootRecoveryFleetTrustRootSourceCertificateIdentityBound",
                 recoveryFleet.trustRootSourceCertificateIdentityBound());
+        TestSuiteStabilityPhysicalAttemptRuntimeCapability physicalAttempt =
+                currentPhysicalAttemptCapability();
+        features.put("physicalAttemptRuntimeConfigured", physicalAttempt.configured());
+        features.put("physicalAttemptRuntimeReady", physicalAttempt.ready());
+        features.put("physicalAttemptProviderInventoryExternallyAttested",
+                physicalAttempt.providerInventory().externallyAttested());
+        features.put("physicalAttemptProviderInventoryAvailable",
+                physicalAttempt.providerInventory().available());
+        features.put("physicalAttemptProviderInventoryDynamic",
+                physicalAttempt.dynamicInventory());
+        features.put("physicalAttemptProviderInventoryAutomaticRefresh",
+                physicalAttempt.automaticRefresh());
+        features.put("physicalAttemptProviderInventorySignedRevocation",
+                physicalAttempt.signedRevocation());
+        features.put("physicalAttemptProviderInventoryWitnessedPublications",
+                physicalAttempt.witnessedPublications());
+        features.put("physicalAttemptProviderInventoryDurablePublicationFloor",
+                physicalAttempt.durablePublicationFloor());
+        features.put("physicalAttemptProviderInventoryCohortConverged",
+                physicalAttempt.cohortConverged());
+        features.put("physicalAttemptObservationReconciliationReady",
+                physicalAttempt.observationReconciliationReady());
+        features.put("physicalAttemptTerminalProjectionReady",
+                physicalAttempt.terminalProjectionReady());
         ControlPlaneCertificateRotationRuntime.Descriptor rotation =
                 currentControlPlaneCertificateRotation();
         features.put("signedControlPlaneCertificateRotation", rotation.enabled());
@@ -622,7 +683,8 @@ public class ToolStudioIntegrationService {
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),
                 current.supportedObjects(), features, current.identityProvider(),
                 current.evidenceSigner(), current.payloadGovernance(),
-                current.testability().withRecoveryFleet(recoveryFleet),
+                current.testability().withRecoveryFleet(recoveryFleet)
+                        .withPhysicalAttemptRuntime(physicalAttempt),
                 current.endpoints());
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 augmented);
@@ -728,6 +790,32 @@ public class ToolStudioIntegrationService {
                     recoveryFleetSchedulers.getFirst());
         } catch (RuntimeException unavailable) {
             return ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.unavailable();
+        }
+    }
+
+    private TestSuiteStabilityPhysicalAttemptRuntimeCapability
+            currentPhysicalAttemptCapability() {
+        try {
+            int inventories = physicalAttemptProviderInventories.size();
+            int cohorts = physicalAttemptInventoryCohorts.size();
+            int reconciliation = physicalAttemptReconciliationHealth.size();
+            int terminal = physicalAttemptTerminalHealth.size();
+            if (inventories == 0 && cohorts == 0 && reconciliation == 0 && terminal == 0) {
+                return TestSuiteStabilityPhysicalAttemptRuntimeCapability.disabled();
+            }
+            if (inventories > 1 || cohorts > 1 || reconciliation > 1 || terminal > 1) {
+                return TestSuiteStabilityPhysicalAttemptRuntimeCapability.ambiguous();
+            }
+            if (inventories != 1 || cohorts != 1 || reconciliation != 1 || terminal != 1) {
+                return TestSuiteStabilityPhysicalAttemptRuntimeCapability.incomplete();
+            }
+            return TestSuiteStabilityPhysicalAttemptRuntimeCapability.project(
+                    physicalAttemptProviderInventories.getFirst(),
+                    physicalAttemptInventoryCohorts.getFirst(),
+                    physicalAttemptReconciliationHealth.getFirst(),
+                    physicalAttemptTerminalHealth.getFirst());
+        } catch (RuntimeException unavailable) {
+            return TestSuiteStabilityPhysicalAttemptRuntimeCapability.unavailable();
         }
     }
 

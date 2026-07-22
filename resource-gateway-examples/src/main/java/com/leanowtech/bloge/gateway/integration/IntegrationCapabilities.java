@@ -23,6 +23,10 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityRespo
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptRuntimeCapability;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptProviderInventory;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -340,6 +344,16 @@ public record IntegrationCapabilities(
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION_V2,
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION_V3,
                 ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.SCHEMA_VERSION));
+        objects.put("physicalAttemptProviderInventory", List.of(
+                TestSuiteStabilityPhysicalAttemptProviderInventory.SCHEMA_VERSION));
+        objects.put("physicalAttemptProviderInventoryDescriptor", List.of(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.Descriptor
+                        .SCHEMA_VERSION));
+        objects.put("physicalAttemptProviderInventoryCohortObservation", List.of(
+                TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate.Observation
+                        .SCHEMA_VERSION));
+        objects.put("physicalAttemptRuntimeCapability", List.of(
+                TestSuiteStabilityPhysicalAttemptRuntimeCapability.SCHEMA_VERSION));
         if (testExecutionEndpointEnabled) {
             objects.put("testExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest.SCHEMA_VERSION));
@@ -1211,6 +1225,7 @@ public record IntegrationCapabilities(
      * @param suiteStabilityCurrentAuthority key-free current-authority revalidation readiness
      * @param externalArchiveReconciliation identity-free reconciliation operational readiness
      * @param recoveryFleet identity-free bootstrap-root recovery-fleet readiness
+     * @param physicalAttemptRuntime identity-free physical-attempt industrial readiness
      */
     public record Testability(
             String protocolVersion,
@@ -1223,7 +1238,8 @@ public record IntegrationCapabilities(
             TestSuiteStabilityJobAuthorizer.Descriptor suiteStabilityCurrentAuthority,
             TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
                     externalArchiveReconciliation,
-            ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability recoveryFleet
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability recoveryFleet,
+            TestSuiteStabilityPhysicalAttemptRuntimeCapability physicalAttemptRuntime
     ) {
         /** Normalizes capability values. */
         public Testability {
@@ -1247,6 +1263,9 @@ public record IntegrationCapabilities(
             recoveryFleet = recoveryFleet == null
                     ? ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.disabled()
                     : recoveryFleet;
+            physicalAttemptRuntime = physicalAttemptRuntime == null
+                    ? TestSuiteStabilityPhysicalAttemptRuntimeCapability.disabled()
+                    : physicalAttemptRuntime;
             if (suiteStabilityJobSubmissionEnabled
                     && !suiteStabilityCurrentAuthority.available()) {
                 throw new IllegalArgumentException(
@@ -1279,7 +1298,38 @@ public record IntegrationCapabilities(
             this(protocolVersion, enabledEnvironments, schemaContractMode,
                     executionEndpointEnabled, suiteStabilityJobSubmissionEnabled, trust,
                     currentAuthority, archiveReconciliation,
-                    ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.disabled());
+                    ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability.disabled(),
+                    TestSuiteStabilityPhysicalAttemptRuntimeCapability.disabled());
+        }
+
+        /**
+         * Preserves the pre-physical-attempt capability constructor.
+         *
+         * @param protocolVersion testing-control protocol generation
+         * @param enabledEnvironments environments allowed to expose the testing control plane
+         * @param schemaContractMode whether schema-only contracts are available
+         * @param executionEndpointEnabled whether synchronous test execution is available
+         * @param suiteStabilityJobSubmissionEnabled whether asynchronous suite submission is ready
+         * @param trust key-free worker-quarantine authorization trust readiness
+         * @param currentAuthority key-free current-authority revalidation readiness
+         * @param archiveReconciliation external archive reconciliation readiness
+         * @param recoveryFleet bootstrap-root recovery-fleet readiness
+         */
+        public Testability(
+                String protocolVersion,
+                List<String> enabledEnvironments,
+                boolean schemaContractMode,
+                boolean executionEndpointEnabled,
+                boolean suiteStabilityJobSubmissionEnabled,
+                WorkerQuarantineChangeAuthorizationTrustStore.Descriptor trust,
+                TestSuiteStabilityJobAuthorizer.Descriptor currentAuthority,
+                TestSuiteStabilityObservationExternalArchiveReconciliationHealth.Descriptor
+                        archiveReconciliation,
+                ExternalSequenceAnchorBootstrapRootRecoveryFleetCapability recoveryFleet) {
+            this(protocolVersion, enabledEnvironments, schemaContractMode,
+                    executionEndpointEnabled, suiteStabilityJobSubmissionEnabled, trust,
+                    currentAuthority, archiveReconciliation, recoveryFleet,
+                    TestSuiteStabilityPhysicalAttemptRuntimeCapability.disabled());
         }
 
         /** Preserves the v1 constructor while treating asynchronous submission as unavailable. */
@@ -1377,7 +1427,22 @@ public record IntegrationCapabilities(
             return new Testability(protocolVersion, enabledEnvironments, schemaContractMode,
                     executionEndpointEnabled, suiteStabilityJobSubmissionEnabled,
                     workerQuarantineChangeAuthorizationTrust, suiteStabilityCurrentAuthority,
-                    externalArchiveReconciliation,
+                    externalArchiveReconciliation, Objects.requireNonNull(capability, "capability"),
+                    physicalAttemptRuntime);
+        }
+
+        /**
+         * Returns this protocol state with current physical-attempt industrial readiness.
+         *
+         * @param capability identity-free signed-inventory and runtime readiness
+         * @return immutable testability projection
+         */
+        public Testability withPhysicalAttemptRuntime(
+                TestSuiteStabilityPhysicalAttemptRuntimeCapability capability) {
+            return new Testability(protocolVersion, enabledEnvironments, schemaContractMode,
+                    executionEndpointEnabled, suiteStabilityJobSubmissionEnabled,
+                    workerQuarantineChangeAuthorizationTrust, suiteStabilityCurrentAuthority,
+                    externalArchiveReconciliation, recoveryFleet,
                     Objects.requireNonNull(capability, "capability"));
         }
     }

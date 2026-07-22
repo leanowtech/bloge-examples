@@ -25,8 +25,9 @@ import java.util.regex.Pattern;
  *
  * <p>The runtime is physically absent when {@code production} is active and remains inert in
  * {@code test}/{@code staging} until explicitly enabled. Enabling it requires the already enabled
- * database terminal-projection chain plus an exact provider/deployment authority resolver. No
- * local provider, permissive resolver, or trust fallback is created.</p>
+ * database terminal-projection chain plus an externally attested provider-inventory authority.
+ * No local provider, arbitrary map resolver, permissive fallback, or unsigned trust source is
+ * created.</p>
  *
  * <p>The composition owns database discovery/lease/retry state, a zero-queue provider-call
  * supervisor, reconciler, bounded scheduler, fixed-cardinality telemetry, and aggregate health.
@@ -100,7 +101,7 @@ public class TestSuiteStabilityPhysicalAttemptObservationReconciliationRuntimeCo
                 dependencies.observations(), supervisor);
     }
 
-    /** Creates one bounded single-target reconciler using the embedder's exact resolver. */
+    /** Creates one bounded reconciler using only the signed inventory resolver. */
     @Bean
     TestSuiteStabilityPhysicalAttemptObservationReconciler
             testSuiteStabilityPhysicalAttemptObservationReconciler(
@@ -108,7 +109,7 @@ public class TestSuiteStabilityPhysicalAttemptObservationReconciliationRuntimeCo
             DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal work,
             ValidatedDependencies dependencies,
             TestSuiteStabilityPhysicalAttemptObservationCoordinator coordinator,
-            TestSuiteStabilityPhysicalAttemptObservationReconciler.AuthorityResolver authorities,
+            TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority authorities,
             Properties properties) {
         return new TestSuiteStabilityPhysicalAttemptObservationReconciler(
                 objectMapper, work, dependencies.starts(), dependencies.observations(),

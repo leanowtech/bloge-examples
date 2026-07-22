@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/physical-attempt-runtime-capability-v1.schema.json",
+  "title": "Resource Gateway Physical Attempt Runtime Capability v1",
+  "description": "Identity-free signed-inventory, cohort, reconciliation, and terminal-projection readiness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "configured", "ready", "status", "providerInventory",
+    "terminalProjectionReady", "observationReconciliationReady", "dynamicInventory",
+    "automaticRefresh", "signedRevocation", "witnessedPublications",
+    "durablePublicationFloor", "cohortConverged", "expectedReplicaCount",
+    "readyReplicaCount"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.testSuiteStabilityPhysicalAttemptRuntimeCapability.v1"
+    },
+    "configured": { "type": "boolean" },
+    "ready": { "type": "boolean" },
+    "status": {
+      "enum": [
+        "DISABLED", "INCOMPLETE", "AMBIGUOUS", "INVENTORY_UNAVAILABLE",
+        "INVENTORY_INCONSISTENT", "DYNAMIC_INVENTORY_REQUIRED",
+        "AUTOMATIC_REFRESH_REQUIRED", "SIGNED_REVOCATION_REQUIRED", "WITNESS_REQUIRED",
+        "DURABLE_FLOOR_REQUIRED", "COHORT_UNAVAILABLE", "COHORT_NOT_CONVERGED",
+        "RUNTIME_UNAVAILABLE", "READY", "UNAVAILABLE"
+      ]
+    },
+    "providerInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "configured", "externallyAttested", "available", "status",
+        "revision", "providerBindingCount", "properties"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.testSuiteStabilityPhysicalAttemptProviderInventoryDescriptor.v1"
+        },
+        "configured": { "type": "boolean" },
+        "externallyAttested": { "type": "boolean" },
+        "available": { "type": "boolean" },
+        "status": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "providerBindingCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sourceType": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "privateMaterialPresent": { "type": "boolean" },
+            "dynamicInventory": { "type": "boolean" },
+            "automaticRefresh": { "type": "boolean" },
+            "signedRevocation": { "type": "boolean" },
+            "durablePublicationFloor": { "type": "boolean" },
+            "witnessedPublications": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "terminalProjectionReady": { "type": "boolean" },
+    "observationReconciliationReady": { "type": "boolean" },
+    "dynamicInventory": { "type": "boolean" },
+    "automaticRefresh": { "type": "boolean" },
+    "signedRevocation": { "type": "boolean" },
+    "witnessedPublications": { "type": "boolean" },
+    "durablePublicationFloor": { "type": "boolean" },
+    "cohortConverged": { "type": "boolean" },
+    "expectedReplicaCount": { "type": "integer", "minimum": 0, "maximum": 256 },
+    "readyReplicaCount": { "type": "integer", "minimum": 0, "maximum": 256 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "configured": { "const": false } }, "required": ["configured"] },
+      "then": {
+        "properties": {
+          "ready": { "const": false },
+          "status": { "const": "DISABLED" },
+          "terminalProjectionReady": { "const": false },
+          "observationReconciliationReady": { "const": false },
+          "dynamicInventory": { "const": false },
+          "automaticRefresh": { "const": false },
+          "signedRevocation": { "const": false },
+          "witnessedPublications": { "const": false },
+          "durablePublicationFloor": { "const": false },
+          "cohortConverged": { "const": false },
+          "expectedReplicaCount": { "const": 0 },
+          "readyReplicaCount": { "const": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "ready": { "const": true } }, "required": ["ready"] },
+      "then": {
+        "properties": {
+          "configured": { "const": true },
+          "status": { "const": "READY" },
+          "terminalProjectionReady": { "const": true },
+          "observationReconciliationReady": { "const": true },
+          "dynamicInventory": { "const": true },
+          "automaticRefresh": { "const": true },
+          "signedRevocation": { "const": true },
+          "witnessedPublications": { "const": true },
+          "durablePublicationFloor": { "const": true },
+          "cohortConverged": { "const": true },
+          "expectedReplicaCount": { "minimum": 1 },
+          "readyReplicaCount": { "minimum": 1 }
+        }
+      }
+    }
+  ]
+}

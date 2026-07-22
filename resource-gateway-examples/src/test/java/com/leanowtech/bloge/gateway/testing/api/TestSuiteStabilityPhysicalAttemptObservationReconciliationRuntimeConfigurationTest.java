@@ -80,13 +80,30 @@ class TestSuiteStabilityPhysicalAttemptObservationReconciliationRuntimeConfigura
     }
 
     @Test
-    void enabledRuntimeRequiresAnExactProviderDeploymentResolver() {
+    void enabledRuntimeRequiresAnExternallyAttestedProviderInventoryResolver() {
         var context = unrefreshedContext(properties(true, true), false, true, "test");
         try {
             assertThatThrownBy(context::refresh)
                     .hasStackTraceContaining(
-                            TestSuiteStabilityPhysicalAttemptObservationReconciler
-                                    .AuthorityResolver.class.getName());
+                            TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority
+                                    .class.getName());
+        } finally {
+            context.close();
+        }
+    }
+
+    @Test
+    void arbitraryLegacyMapResolverCannotBypassSignedInventoryAdmission() {
+        var context = unrefreshedContext(properties(true, true), false, true, "test");
+        context.registerBean(
+                TestSuiteStabilityPhysicalAttemptObservationReconciler.AuthorityResolver.class,
+                () -> mock(TestSuiteStabilityPhysicalAttemptObservationReconciler
+                        .AuthorityResolver.class));
+        try {
+            assertThatThrownBy(context::refresh)
+                    .hasStackTraceContaining(
+                            TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority
+                                    .class.getName());
         } finally {
             context.close();
         }
@@ -206,9 +223,8 @@ class TestSuiteStabilityPhysicalAttemptObservationReconciliationRuntimeConfigura
                 () -> mock(TestSuiteStabilityAttemptCancellationVerifier.class));
         if (resolver) {
             context.registerBean(
-                    TestSuiteStabilityPhysicalAttemptObservationReconciler.AuthorityResolver.class,
-                    () -> mock(TestSuiteStabilityPhysicalAttemptObservationReconciler
-                            .AuthorityResolver.class));
+                    TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.class,
+                    () -> mock(TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority.class));
         }
         if (terminalRuntime) {
             context.register(

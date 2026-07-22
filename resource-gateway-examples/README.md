@@ -402,16 +402,25 @@ Autonomous retained-start discovery is a second, independently gated test/stagin
 enable the terminal-projection lane, then set
 `RG_TEST_PHYSICAL_ATTEMPT_OBSERVATION_RECONCILIATION_ENABLED=true`, configure a stable
 `..._WORKER_ID`, and supply exactly one
-`TestSuiteStabilityPhysicalAttemptObservationReconciler.AuthorityResolver` bean that resolves the
-retained provider/deployment generation. Startup rejects missing resolvers, non-database start,
-observation, or terminal-work journals, and deadline/window/lease/capacity combinations that cannot
-preserve the command and completion fences. Its database journal discovers retained starts in bounded
-fair-scope pages; a verified terminal completion and projection-work registration commit atomically.
+`TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority` bean. An arbitrary function or Map
+resolver no longer satisfies startup. The provided static authority verifies a complete, canonical,
+M-of-N Ed25519-signed `TestSuiteStabilityPhysicalAttemptProviderInventory`, binds trust domain,
+scope, deployment cohort, protocol and accepted policy, requires exact runtime-adapter coverage, and
+returns generation-fenced adapters only for retained provider/deployment pairs. Adapter descriptors
+must exactly reproduce signed key, isolation, latency, and retention facts before provider I/O.
+Inventory hard expiry closes both new resolution and previously resolved wrappers without restart.
+Startup also rejects non-database start, observation, or terminal-work journals and unsafe
+deadline/window/lease/capacity combinations. Its database journal discovers retained starts in
+bounded fair-scope pages; a verified terminal completion and projection-work registration commit
+atomically.
 Actuator health reports only aggregate discovery lag, due age, quarantine, scheduler state, and
-provider-call capacity. Micrometer uses only the closed reconciliation stage label. Both switches are
-disabled by default. Dynamic signed resolver inventory, capability advertisement, and a certified real
-process/container provider remain closed, so the standalone demo script intentionally enables neither
-lane.
+provider-call capacity. Micrometer uses only the closed reconciliation stage label. Tool Studio now
+publishes the typed, identity-free `physicalAttemptRuntime` capability and matching boolean features.
+Static signed inventory is deliberately reported as `DYNAMIC_INVENTORY_REQUIRED`; full readiness also
+requires automatic signed refresh/revocation, witnessed ordering, a durable publication floor, exact
+cross-replica cohort convergence, and both local runtimes healthy. Those dynamic authority and cohort
+adapters, plus a certified real process/container provider, remain closed. Both switches are disabled
+by default, and the standalone demo script intentionally enables neither lane.
 
 Staging also requires managed serving-inventory runtime keys. One canonical publication atomically
 carries the deployment and witness key sets and is independently approved by an M-of-N deployment
