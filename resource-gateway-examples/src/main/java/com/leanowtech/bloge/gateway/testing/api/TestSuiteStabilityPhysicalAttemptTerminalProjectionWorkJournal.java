@@ -342,6 +342,23 @@ public interface TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal 
         }
 
         /**
+         * Creates a retryable result for a bounded worker-side projection outage.
+         *
+         * <p>This factory is used only when the coordinator call could not produce an
+         * authoritative result, for example after local timeout or saturation. It cannot create
+         * a business conflict or successful projection.</p>
+         *
+         * @param reason exact retryable coordinator failure classification
+         * @return validated payload-free unavailable result
+         */
+        public static Result temporarilyUnavailable(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                        reason) {
+            return new Result(SCHEMA_VERSION, ResultKind.UNAVAILABLE, reason,
+                    Optional.empty(), Optional.empty(), "", "");
+        }
+
+        /**
          * Reconstructs canonical result material for exact response-loss replay.
          *
          * @return immutable ordered result commitment material

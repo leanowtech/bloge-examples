@@ -2,9 +2,12 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionCallSupervisor;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionProofResolver;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionWorker;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,6 +26,10 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournalTest {
 
@@ -285,6 +292,99 @@ class DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournalTest
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void oneShotWorkerDrivesRealRetryClaimAndQuarantineLifecycle() throws Exception {
+        var trigger = register('a');
+        var coordinator = mock(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.class);
+        when(coordinator.project(anyString(), anyString(), anyString(), any()))
+                .thenReturn(proofPendingAttempt())
+                .thenReturn(permanentAttempt());
+
+        try (var supervisor = projectionSupervisor(Duration.ofMillis(300))) {
+            var worker = projectionWorker(coordinator, supervisor);
+
+            var first = worker.processNext();
+            assertThat(first.outcome()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionWorker.Outcome
+                            .RESCHEDULED);
+            assertThat(journal.find("tenant-a", "test", trigger.attemptId()))
+                    .get().satisfies(entry -> {
+                        assertThat(entry.status()).isEqualTo(
+                                TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                                        .Status.READY);
+                        assertThat(entry.executionAttempts()).isEqualTo(1);
+                        assertThat(entry.consecutiveProofPending()).isEqualTo(1);
+                    });
+
+            Thread.sleep(150L);
+            var second = worker.processNext();
+            assertThat(second.outcome()).isEqualTo(
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionWorker.Outcome
+                            .QUARANTINED);
+            assertThat(journal.find("tenant-a", "test", trigger.attemptId()))
+                    .get().satisfies(entry -> {
+                        assertThat(entry.status()).isEqualTo(
+                                TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                                        .Status.QUARANTINED);
+                        assertThat(entry.executionAttempts()).isEqualTo(2);
+                        assertThat(entry.consecutiveProofPending()).isZero();
+                    });
+        }
+    }
+
+    @Test
+    void supervisedTimeoutPersistsUnavailableThroughRealLeaseFence() throws Exception {
+        var trigger = register('a');
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        var coordinator = mock(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.class);
+        when(coordinator.project(anyString(), anyString(), anyString(), any()))
+                .thenAnswer(ignored -> {
+                    entered.countDown();
+                    while (release.getCount() > 0) {
+                        try {
+                            release.await(20, TimeUnit.MILLISECONDS);
+                        } catch (InterruptedException ignoredInterrupt) {
+                            // Simulate a late transaction whose commit status remains unknown.
+                        }
+                    }
+                    return proofPendingAttempt();
+                });
+
+        try (var supervisor = projectionSupervisor(Duration.ofMillis(100))) {
+            var worker = projectionWorker(coordinator, supervisor);
+            try {
+                var execution = worker.processNext();
+
+                assertThat(entered.getCount()).isZero();
+                assertThat(execution.outcome()).isEqualTo(
+                        TestSuiteStabilityPhysicalAttemptTerminalProjectionWorker.Outcome
+                                .RESCHEDULED);
+                assertThat(execution.localDisposition()).isEqualTo(
+                        TestSuiteStabilityPhysicalAttemptTerminalProjectionWorker
+                                .LocalDisposition.TIMED_OUT);
+                assertThat(journal.find("tenant-a", "test", trigger.attemptId()))
+                        .get().satisfies(entry -> {
+                            assertThat(entry.status()).isEqualTo(
+                                    TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                                            .Status.READY);
+                            assertThat(entry.lastResultKind()).isEqualTo(
+                                    TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                                            .ResultKind.UNAVAILABLE);
+                            assertThat(entry.consecutiveUnavailable()).isEqualTo(1);
+                        });
+                assertThat(supervisor.snapshot().lingeringCalls()).isEqualTo(1);
+            } finally {
+                release.countDown();
+                awaitNoActiveProjection(supervisor);
+            }
+        } finally {
+            release.countDown();
+        }
+    }
+
     private TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal.Trigger register(
             char value) {
         var trigger = TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal.Trigger
@@ -302,6 +402,27 @@ class DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournalTest
                         .PROOF_NOT_READY,
                 Optional.of(TestSuiteStabilityPhysicalAttemptTerminalProjectionProofResolver
                         .Reason.CANCELLATION_NOT_CONFIRMED), Optional.empty(), "", "");
+    }
+
+    private TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.Attempt
+            proofPendingAttempt() {
+        return new TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.Attempt(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.Stage
+                        .PROOF_PENDING,
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                        .PROOF_NOT_READY,
+                Optional.of(TestSuiteStabilityPhysicalAttemptTerminalProjectionProofResolver
+                        .Reason.CANCELLATION_NOT_CONFIRMED), Optional.empty(), Optional.empty());
+    }
+
+    private TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.Attempt
+            permanentAttempt() {
+        return new TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.Attempt(
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.Stage
+                        .PERMANENT_CONFLICT,
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator.FailureReason
+                        .SOURCE_CHAIN_CONFLICT,
+                Optional.empty(), Optional.empty(), Optional.empty());
     }
 
     private TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal.Result unavailable() {
@@ -370,6 +491,40 @@ class DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournalTest
                 TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
                         .ConflictException.class,
                 conflict -> assertThat(conflict.reason()).isEqualTo(reason));
+    }
+
+    private TestSuiteStabilityPhysicalAttemptTerminalProjectionWorker projectionWorker(
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCoordinator coordinator,
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCallSupervisor supervisor) {
+        return new TestSuiteStabilityPhysicalAttemptTerminalProjectionWorker(
+                journal, coordinator, supervisor, queuePolicy(),
+                new TestSuiteStabilityPhysicalAttemptTerminalProjectionWorker.Policy(
+                        Duration.ofMillis(200)),
+                "replica-a/terminal-projection-1");
+    }
+
+    private static TestSuiteStabilityPhysicalAttemptTerminalProjectionCallSupervisor
+            projectionSupervisor(Duration timeout) {
+        return new TestSuiteStabilityPhysicalAttemptTerminalProjectionCallSupervisor(
+                new TestSuiteStabilityPhysicalAttemptTerminalProjectionCallSupervisor.Policy(
+                        timeout, 1));
+    }
+
+    private static TestSuiteStabilityQueuePolicy queuePolicy() {
+        return new TestSuiteStabilityQueuePolicy(
+                1, 100, 20, 10, 5, Duration.ofSeconds(30), Duration.ofSeconds(10),
+                Duration.ofSeconds(1), Duration.ofSeconds(30), 2,
+                Duration.ofHours(1), Duration.ofDays(30));
+    }
+
+    private static void awaitNoActiveProjection(
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionCallSupervisor supervisor)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline && supervisor.snapshot().activeCalls() != 0) {
+            Thread.sleep(10L);
+        }
+        assertThat(supervisor.snapshot().activeCalls()).isZero();
     }
 
     private static String attemptId(char value) {
