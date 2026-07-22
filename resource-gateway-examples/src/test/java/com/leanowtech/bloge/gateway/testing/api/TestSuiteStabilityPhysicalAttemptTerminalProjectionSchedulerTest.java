@@ -69,6 +69,7 @@ class TestSuiteStabilityPhysicalAttemptTerminalProjectionSchedulerTest {
         try (TestSuiteStabilityPhysicalAttemptTerminalProjectionScheduler scheduler =
                      scheduler(worker, 1)) {
             assertThat(recovered.await(2, TimeUnit.SECONDS)).isTrue();
+            awaitRecoveredSnapshot(scheduler);
             assertThat(scheduler.snapshot().lastPollFailed()).isFalse();
             assertThat(scheduler.snapshot().unexpectedPollCount()).isEqualTo(1L);
         }
@@ -91,6 +92,7 @@ class TestSuiteStabilityPhysicalAttemptTerminalProjectionSchedulerTest {
         try (TestSuiteStabilityPhysicalAttemptTerminalProjectionScheduler scheduler =
                      scheduler(worker, 1)) {
             assertThat(recovered.await(2, TimeUnit.SECONDS)).isTrue();
+            awaitRecoveredSnapshot(scheduler);
             assertThat(scheduler.snapshot().unexpectedPollCount()).isEqualTo(1L);
         }
     }
@@ -229,5 +231,22 @@ class TestSuiteStabilityPhysicalAttemptTerminalProjectionSchedulerTest {
         }
         assertThat(registry.get(metric("worker.polls"))
                 .tag("outcome", "no_work").counter().count()).isGreaterThanOrEqualTo(minimum);
+    }
+
+    private static void awaitRecoveredSnapshot(
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionScheduler scheduler) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionScheduler.Snapshot snapshot =
+                    scheduler.snapshot();
+            if (snapshot.unexpectedPollCount() == 1L && !snapshot.lastPollFailed()) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        assertThat(scheduler.snapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.unexpectedPollCount()).isEqualTo(1L);
+            assertThat(snapshot.lastPollFailed()).isFalse();
+        });
     }
 }
