@@ -1,12 +1,22 @@
 package com.leanowtech.bloge.gateway;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.engine.GraphEngine;
+import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractCatalog;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestBatchResult;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestService;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestSuiteRepository;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.BuiltInCapabilityClosureService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosureIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityContract;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityProjectionContext;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityProjectionException;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
+import com.leanowtech.bloge.gateway.integration.mirror.EffectContract;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,10 +34,12 @@ import org.springframework.http.MediaType;
 
 import java.lang.reflect.Field;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(
         classes = ResourceGatewayApplication.class,
@@ -56,6 +68,15 @@ class ResourceGatewayApplicationTest {
 
     @Autowired
     private GatewayGraphContractTestSuiteRepository graphContractTestSuites;
+
+    @Autowired
+    private BuiltInCapabilityClosureService builtInCapabilityClosures;
+
+    @Autowired
+    private GatewayGraphContractCatalog graphContracts;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @LocalServerPort
     private int port;
@@ -105,6 +126,71 @@ class ResourceGatewayApplicationTest {
     void contextStarts() {
         assertThat(applicationContext).isNotNull();
         assertThat(applicationContext.containsBeanDefinition("gatewayGraphRuntimeConfiguration")).isFalse();
+    }
+
+    @Test
+    void everyBuiltInGraphProducesAStableCompleteCapabilityClosure() {
+        CapabilityProjectionContext context = capabilityProjectionContext();
+        Map<String, Integer> expectedDependencies = Map.of(
+                "aiEnrichedSearch", 3,
+                "creditScore", 2,
+                "enrichOrderList", 3,
+                "loanDecisionPolicy", 1,
+                "productDetail", 3,
+                "resourceDispatch", 1,
+                "userDashboard", 5);
+
+        Map<String, CapabilityClosure> first = builtInCapabilityClosures.projectAll(context);
+        Map<String, CapabilityClosure> second = builtInCapabilityClosures.projectAll(context);
+
+        assertThat(first.keySet()).containsExactlyInAnyOrderElementsOf(expectedDependencies.keySet());
+        assertThat(first).allSatisfy((graphName, closure) -> {
+            CapabilityClosureIntegrity.verify(objectMapper, closure);
+            CapabilitySnapshot root = closure.snapshots().stream()
+                    .filter(snapshot -> snapshot.capabilityId().equals(closure.rootRef().id()))
+                    .findFirst().orElseThrow();
+            assertThat(root.source().sourceKind()).isEqualTo(CapabilitySnapshot.SourceKind.GRAPH);
+            assertThat(root.contract().inputSchema()).isEqualTo(graphContracts.require(graphName).inputSchema());
+            assertThat(root.contract().outputSchema()).isEqualTo(graphContracts.require(graphName).outputSchema());
+            assertThat(root.dependencies()).hasSize(expectedDependencies.get(graphName));
+            assertThat(closure.snapshots()).hasSize(expectedDependencies.get(graphName) + 1);
+            if (graphName.equals("enrichOrderList")) {
+                assertThat(root.dependencies()).filteredOn(dependency -> !dependency.required())
+                        .extracting(CapabilitySnapshot.Dependency::nodeId)
+                        .containsExactlyInAnyOrder("enrichOrders_fetchInvoice",
+                                "enrichOrders_fetchShippingStatus");
+                assertThat(root.dependencies()).filteredOn(dependency -> !dependency.required())
+                        .allSatisfy(dependency -> assertThat(dependency.conditions())
+                                .containsExactly("foreach:enrichOrders"));
+            }
+            if (graphName.equals("resourceDispatch")) {
+                assertThat(root.contract().effect().mode()).isEqualTo(EffectContract.Mode.UNKNOWN);
+                assertThat(root.runtime().ready()).isFalse();
+                assertThat(root.dependencies().getFirst().capabilityRef().id())
+                        .isEqualTo("operator:httpResource");
+            } else {
+                assertThat(root.contract().effect().mode()).isEqualTo(EffectContract.Mode.READ_ONLY);
+                if (graphName.equals("aiEnrichedSearch")) {
+                    assertThat(root.runtime().ready()).isFalse();
+                    assertThat(root.runtime().limitations()).allMatch(value -> value.contains("RUNTIME_BLOCKED"));
+                } else {
+                    assertThat(root.runtime().ready()).isTrue();
+                }
+            }
+        });
+        assertThat(second).allSatisfy((graphName, closure) ->
+                assertThat(closure.fingerprint()).isEqualTo(first.get(graphName).fingerprint()));
+    }
+
+    @Test
+    void builtInClosureProjectionNormalizesMissingResourceFailure() {
+        registry.deregister("order-service.listOrders");
+
+        assertThatThrownBy(() -> builtInCapabilityClosures.project("enrichOrderList",
+                capabilityProjectionContext()))
+                .isInstanceOfSatisfying(CapabilityProjectionException.Failure.class,
+                        failure -> assertThat(failure.problem().code())
+                                .isEqualTo("RG.MIRROR.RESOURCE_DESCRIPTOR_MISSING"));
     }
 
     @Test
@@ -226,6 +312,15 @@ class ResourceGatewayApplicationTest {
                 .extracting(value -> value.outcome() + ":" + value.reasonCode())
                 .contains("DENIED:RG.INTEGRATION.AUTHENTICATION_REQUIRED",
                         "ALLOWED:", "DENIED:RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH");
+    }
+
+    private static CapabilityProjectionContext capabilityProjectionContext() {
+        return new CapabilityProjectionContext(1, "demo-tenant", "support", "gateway-examples",
+                "test", "sg", "MIRROR_REHEARSAL",
+                new CapabilitySnapshot.Ownership("gateway-owner", "gateway-examples", "pager-gateway"),
+                CapabilitySnapshot.Lifecycle.DRAFT, CapabilityContract.DataClassification.INTERNAL,
+                List.of("sg"), false, "", null, Instant.parse("2026-08-22T00:00:00Z"),
+                Instant.parse("2026-07-22T08:00:00Z"));
     }
 
     private static HttpHeaders integrationHeaders() {

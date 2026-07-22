@@ -141,6 +141,8 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("graphDraftStructuredDependencyRefs", true)
                 .containsEntry("capabilitySnapshotProtocol", true)
                 .containsEntry("capabilityProjection", true)
+                .containsEntry("capabilityClosureProtocol", true)
+                .containsEntry("builtInCapabilityClosureProjection", true)
                 .containsEntry("capabilitySnapshotApi", true)
                 .containsEntry("capabilityLifecycleFencing", true)
                 .containsEntry("mirrorPlanCompilation", false)
@@ -197,7 +199,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", false)
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().supportedObjects())
-                .containsKeys("capabilitySnapshot", "capabilityContract", "effectContract",
+                .containsKeys("capabilitySnapshot", "capabilityClosure", "capabilityContract", "effectContract",
                         "artifactProvenance", "capabilityLifecycleTransition");
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())

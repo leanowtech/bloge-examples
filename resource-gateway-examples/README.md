@@ -28,7 +28,7 @@ integration something the business flow can see, reason about, test, and change.
 | Dynamic workload identity | Atomic JWKS/revocation refresh, zero-restart key rotation, bounded propagation SLO, group/clearance/delegation claims, and explicit 401/503 semantics |
 | Managed evidence signing | Non-exportable KMS/HSM provider protocol, atomic public-key generations, locally verified signatures, rotation/revoke semantics, and machine-readable custody health |
 | Consistent draft export | Frozen operator/library/binding/activation/test-suite refs, deterministic dependency fingerprints, and retryable 409 conflict on assembly-time drift |
-| Governed capability snapshots | Sealed Resource/Operator/Graph projections, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
+| Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
@@ -109,7 +109,8 @@ Use `CAPABILITY_PROJECTION` for exact append, `CAPABILITY_GOVERNANCE` for lifecy
 `MIRROR_REHEARSAL` or `CHANGE_SYNC` for reads. Scope and clearance come from verified identity claims;
 `X-Tenant-Id` and similar headers are only consistency hints. The demo token includes these purposes, while
 enterprise deployments should issue separate author, governor, and rehearsal identities. The capability
-probe reports snapshot protocol/projection/API/lifecycle support as available, but keeps
+probe reports snapshot/closure protocol, projection, seven built-in graph closures, API, and lifecycle support
+as available, but keeps
 `mirrorPlanCompilation`, `mirrorExternalLeafInterception`, and `mirrorServing` false until those paths pass
 their later release gates. The complete protocol and lifecycle rules are in the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md).

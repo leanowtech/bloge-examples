@@ -34,11 +34,6 @@ import java.util.TreeMap;
 @Service
 public class CapabilityProjectionService {
     private static final int MAXIMUM_SOURCE_BYTES = 2 * 1024 * 1024;
-    private static final List<String> GRAPH_SOURCE_KINDS = List.of(
-            "GRAPH", "COMPOSED_GRAPH", "NESTED_GRAPH");
-    private static final List<String> EXTERNAL_SOURCE_KINDS = List.of(
-            "REMOTE_WORKER", "AI_TOOL", "EVENT_SOURCE", "MESSAGE_HANDLER", "WEBHOOK");
-
     private final ObjectMapper mapper;
 
     /**
@@ -113,7 +108,7 @@ public class CapabilityProjectionService {
                                               CapabilityProjectionContext context) {
         Objects.requireNonNull(operator, "operator");
         Objects.requireNonNull(context, "context");
-        if (!capabilityBoundary(operator)) {
+        if (!CapabilityBoundaryResolver.isBoundary(operator)) {
             throw failure("RG.MIRROR.NOT_CAPABILITY_BOUNDARY",
                     "Pure internal operators are covered by their parent graph fingerprint",
                     Map.of("operatorRef", operator.operatorRef()));
@@ -167,7 +162,7 @@ public class CapabilityProjectionService {
                 .sorted(Comparator.comparing(GraphDraft.DraftNode::id)).toList()) {
             OperatorDefinition operator = requiredOperatorSnapshot(draft, node);
             verifyPinnedOperatorFingerprint(draft, node, operator);
-            if (!capabilityBoundary(operator)) {
+            if (!CapabilityBoundaryResolver.isBoundary(operator)) {
                 continue;
             }
             CapabilitySnapshot child = resolveChild(node, operator, children);
@@ -258,8 +253,9 @@ public class CapabilityProjectionService {
     private CapabilitySnapshot resolveChild(GraphDraft.DraftNode node,
                                             OperatorDefinition operator,
                                             List<CapabilitySnapshot> children) {
-        CapabilitySnapshot.SourceKind sourceKind = expectedChildSource(node, operator);
-        String sourceRef = expectedChildSourceRef(node, operator, sourceKind);
+        CapabilityBoundaryResolver.Target target = CapabilityBoundaryResolver.resolve(node, operator);
+        CapabilitySnapshot.SourceKind sourceKind = target.sourceKind();
+        String sourceRef = target.sourceRef();
         List<CapabilitySnapshot> matches = children.stream()
                 .filter(child -> child.source().sourceKind() == sourceKind)
                 .filter(child -> child.source().sourceRef().equals(sourceRef))
@@ -288,52 +284,6 @@ public class CapabilityProjectionService {
                             "actualKind", child.kind().name()));
         }
         return child;
-    }
-
-    private static CapabilitySnapshot.SourceKind expectedChildSource(GraphDraft.DraftNode node,
-                                                                     OperatorDefinition operator) {
-        String sourceKind = normalize(operator.source().kind());
-        if (GRAPH_SOURCE_KINDS.contains(sourceKind)) {
-            return CapabilitySnapshot.SourceKind.GRAPH;
-        }
-        if (!operator.source().resourceId().isBlank() || staticResourceId(node, operator) != null) {
-            return CapabilitySnapshot.SourceKind.RESOURCE;
-        }
-        return CapabilitySnapshot.SourceKind.OPERATOR;
-    }
-
-    private static String expectedChildSourceRef(GraphDraft.DraftNode node,
-                                                 OperatorDefinition operator,
-                                                 CapabilitySnapshot.SourceKind sourceKind) {
-        if (sourceKind == CapabilitySnapshot.SourceKind.OPERATOR) {
-            return operator.operatorRef();
-        }
-        if (!operator.source().resourceId().isBlank()) {
-            return operator.source().resourceId();
-        }
-        String resourceId = staticResourceId(node, operator);
-        return resourceId == null ? operator.operatorRef() : resourceId;
-    }
-
-    private static String staticResourceId(GraphDraft.DraftNode node, OperatorDefinition operator) {
-        if (!"httpResource".equals(operator.operatorRef())) {
-            return null;
-        }
-        GraphDraft.Binding binding = node.inputs().get("resourceId");
-        if (binding == null || !"constant".equals(binding.kind()) || !(binding.value() instanceof String value)) {
-            return null;
-        }
-        String resourceId = value.trim();
-        return resourceId.isEmpty() ? null : resourceId;
-    }
-
-    private static boolean capabilityBoundary(OperatorDefinition operator) {
-        String effect = normalize(operator.capabilities().effect());
-        String sourceKind = normalize(operator.source().kind());
-        return !"PURE".equals(effect)
-                || !operator.source().resourceId().isBlank()
-                || GRAPH_SOURCE_KINDS.contains(sourceKind)
-                || EXTERNAL_SOURCE_KINDS.contains(sourceKind);
     }
 
     private static List<String> conditionsFor(GraphDraft draft, String nodeId) {

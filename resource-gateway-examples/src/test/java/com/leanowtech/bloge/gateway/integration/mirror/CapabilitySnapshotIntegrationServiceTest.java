@@ -119,11 +119,13 @@ class CapabilitySnapshotIntegrationServiceTest {
         IntegrationCapabilities capabilities = IntegrationCapabilities.current();
 
         assertThat(capabilities.supportedObjects()).containsKeys(
-                "capabilitySnapshot", "capabilityContract", "effectContract",
+                "capabilitySnapshot", "capabilityClosure", "capabilityContract", "effectContract",
                 "artifactProvenance", "capabilityLifecycleTransition");
         assertThat(capabilities.features())
                 .containsEntry("capabilitySnapshotProtocol", true)
                 .containsEntry("capabilityProjection", true)
+                .containsEntry("capabilityClosureProtocol", true)
+                .containsEntry("builtInCapabilityClosureProjection", true)
                 .containsEntry("capabilitySnapshotApi", true)
                 .containsEntry("capabilityLifecycleFencing", true)
                 .containsEntry("mirrorPlanCompilation", false)

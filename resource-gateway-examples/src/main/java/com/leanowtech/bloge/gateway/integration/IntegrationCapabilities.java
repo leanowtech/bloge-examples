@@ -279,6 +279,8 @@ public record IntegrationCapabilities(
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
         objects.put("capabilitySnapshot", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.SCHEMA_VERSION));
+        objects.put("capabilityClosure", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure.SCHEMA_VERSION));
         objects.put("capabilityContract", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilityContract.SCHEMA_VERSION));
         objects.put("effectContract", List.of(
@@ -699,6 +701,8 @@ public record IntegrationCapabilities(
         features.put("graphDraftStructuredDependencyRefs", true);
         features.put("capabilitySnapshotProtocol", true);
         features.put("capabilityProjection", true);
+        features.put("capabilityClosureProtocol", true);
+        features.put("builtInCapabilityClosureProjection", true);
         features.put("capabilitySnapshotApi", true);
         features.put("capabilityLifecycleFencing", true);
         features.put("mirrorPlanCompilation", false);

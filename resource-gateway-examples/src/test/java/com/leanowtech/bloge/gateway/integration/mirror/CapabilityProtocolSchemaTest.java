@@ -21,11 +21,16 @@ class CapabilityProtocolSchemaTest {
     @Test
     void strictSchemasMatchEverySerializedProtocolField() throws Exception {
         CapabilitySnapshot snapshot = CapabilitySnapshotIntegrity.seal(mapper, snapshot());
+        CapabilitySnapshot root = CapabilitySnapshotIntegrity.seal(mapper, composedRoot(snapshot));
+        CapabilityClosure closure = CapabilityClosureIntegrity.seal(mapper, new CapabilityClosure("",
+                CapabilityClosureIntegrity.reference(root), List.of(root, snapshot), ""));
         JsonNode snapshotValue = mapper.valueToTree(snapshot);
+        JsonNode closureValue = mapper.valueToTree(closure);
         JsonNode contractValue = mapper.valueToTree(snapshot.contract());
         JsonNode effectValue = mapper.valueToTree(snapshot.contract().effect());
         JsonNode provenanceValue = mapper.valueToTree(snapshot.provenance());
         JsonNode snapshotSchema = schema("capability-snapshot-v1.schema.json");
+        JsonNode closureSchema = schema("capability-closure-v1.schema.json");
         JsonNode contractSchema = schema("capability-contract-v1.schema.json");
         JsonNode effectSchema = schema("effect-contract-v1.schema.json");
         JsonNode provenanceSchema = schema("artifact-provenance-v1.schema.json");
@@ -34,6 +39,7 @@ class CapabilityProtocolSchemaTest {
                 CapabilitySnapshot.Lifecycle.REVIEWED, Instant.parse("2026-08-22T00:00:00Z"), ""));
 
         assertProperties(snapshotValue, snapshotSchema.path("properties"));
+        assertProperties(closureValue, closureSchema.path("properties"));
         assertProperties(contractValue, contractSchema.path("properties"));
         assertProperties(effectValue, effectSchema.path("properties"));
         assertProperties(provenanceValue, provenanceSchema.path("properties"));
@@ -42,11 +48,13 @@ class CapabilityProtocolSchemaTest {
         assertProperties(snapshotValue.path("scope"), snapshotSchema.at("/$defs/scope/properties"));
         assertProperties(snapshotValue.path("runtime"), snapshotSchema.at("/$defs/runtime/properties"));
         assertProperties(snapshotValue.path("ownership"), snapshotSchema.at("/$defs/ownership/properties"));
+        assertProperties(closureValue.path("rootRef"), closureSchema.at("/$defs/capabilityRef/properties"));
         assertProperties(contractValue.path("idempotency"), contractSchema.at("/$defs/idempotency/properties"));
         assertProperties(contractValue.path("compatibility"), contractSchema.at("/$defs/compatibility/properties"));
         assertProperties(contractValue.path("security"), contractSchema.at("/$defs/security/properties"));
         assertProperties(contractValue.path("slo"), contractSchema.at("/$defs/slo/properties"));
         assertThat(snapshotSchema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(closureSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(contractSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(effectSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(provenanceSchema.path("additionalProperties").asBoolean()).isFalse();
@@ -115,5 +123,15 @@ class CapabilityProtocolSchemaTest {
                 new CapabilitySnapshot.Ownership("owner-a", "orders-team", "pager-orders"),
                 CapabilitySnapshot.Lifecycle.ACTIVE, provenance,
                 Instant.parse("2026-07-22T00:00:00Z"));
+    }
+
+    private static CapabilitySnapshot composedRoot(CapabilitySnapshot child) {
+        return new CapabilitySnapshot("", "graph:ordersView", 4, "",
+                CapabilitySnapshot.Kind.COMPOSED, child.scope(),
+                new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.GRAPH,
+                        "ordersView", "sha256:" + "d".repeat(64)), child.contract(), child.runtime(),
+                List.of(new CapabilitySnapshot.Dependency("loadOrders",
+                        CapabilityClosureIntegrity.reference(child), true, List.of())),
+                child.ownership(), child.lifecycle(), child.provenance(), child.createdAt());
     }
 }

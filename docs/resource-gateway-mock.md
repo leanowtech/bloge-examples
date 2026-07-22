@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 通用协议、projection、生命周期仓储、Integration API 与 probe 已完成，内置资产闭包和 test-kit 进行中 |
+| 状态 | Accepted / In implementation；Stage 0 通用协议、projection、生命周期仓储、Integration API、probe 与 7 张内置资源图闭包已完成，3 个画布示例和 test-kit 进行中 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -29,17 +29,26 @@
   冲突 error contract 和不明确 state model 均不会被静默放行。
 - capability snapshot 采用完整 canonical JSON 内容寻址；source、contract、effect、runtime、dependency、
   ownership、lifecycle、provenance 或时间字段被修改都会导致完整性校验失败。
-- 五份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
+- Stage 0 第四增量已完成 `CapabilityClosure`、`CapabilityClosureIntegrity` 和
+  `BuiltInCapabilityClosureService`。闭包必须具有一个 COMPOSED root、同一完整 scope、所有 exact reachable
+  snapshots，且无缺失 child、孤儿、重复引用、同 revision 指纹分叉和递归环；closure 自身也使用 canonical
+  fingerprint 封印。Java 与 JSON Schema 同步限制 root 加依赖最多 10001 个快照，图遍历使用显式栈避免深链耗尽 JVM 栈。
+- 7 张内置资源图现在直接从 classpath DSL、`GatewayGraphContractCatalog`、当前 operator catalog 和 resource
+  registry 生成闭包，不维护第二份手工拓扑。`enrichOrderList` 的 `foreach` 内部资源 invocation 会以稳定结构路径和
+  条件依赖进入闭包；raw DSL digest 进入 graph source fingerprint，避免 importer 尚未平铺的 DSL 变化逃逸。
+- `aiEnrichedSearch` 的三个 streaming Java operator 会进入闭包，但因 visual runtime 尚不支持该执行模式而保持
+  runtime blocked；`resourceDispatch` 的动态资源选择保持 effect unknown/runtime blocked，其余五张静态资源图 ready。
+- 六份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
   矛盾 effect、伪造统计置信度和无 lineage 的 recorded/inferred provenance。
 - Stage 0 第三增量已完成 full-scope H2 append-only repository、lifecycle 状态机和受身份/用途/clearance
   约束的 Integration API。revision gap、内容篡改、非法跃迁、跨 scope 与越级读取均 fail closed；同 fingerprint
   的 exact retry 幂等。
-- capability probe 已如实声明 snapshot protocol/projection/API/lifecycle 为可用，同时将 MirrorPlan、external-leaf
-  interception 和 mirror serving 保持为 `false`。
-- 当前仍未完成内置 7 graph/3 visual examples 的 capability closure、test-kit、MirrorPlan 与 external-leaf runtime，
-  因此 Stage 0 尚未通过退出门禁。聚焦验证为 69 tests、Spring Boot 启动验证 6 tests，均为 0 failures、
-  0 errors、0 skips；Resource Gateway 全量 `clean verify` 为 4336 tests、0 failures、0 errors、2 skips，
-  Spring Boot JAR 打包成功。
+- capability probe 已如实声明 snapshot/closure protocol、projection、7 图 closure projection、API/lifecycle 为可用，
+  同时将 MirrorPlan、external-leaf interception 和 mirror serving 保持为 `false`。
+- 当前仍未完成 3 个 visual examples 的 capability closure、test-kit、MirrorPlan 与 external-leaf runtime，因此
+  Stage 0 尚未通过退出门禁。本增量新增/强化的 closure、projection、schema、nested DSL 与真实 Spring 组合门禁
+  共 25 tests 全绿；相关协议/API/probe 聚合验证 66 tests 全绿。完整 `clean verify` 基线为 4349 tests、
+  0 failures、0 errors、2 skipped，且 Spring Boot 可执行 JAR 已成功重打包。
 
 ---
 
@@ -89,6 +98,7 @@
 | external capability | 以外部系统为事实来源、运行行为不受本平台控制的原子能力 |
 | composed capability | 由 DAG 组合其他能力形成的工具；默认真实执行其编排逻辑 |
 | CapabilitySnapshot | 对 Resource、Operator 或 Graph 的不可变、版本化跨系统投影，不是新的主数据源 |
+| CapabilityClosure | 一个 COMPOSED root 及其所有 exact reachable CapabilitySnapshot 的内容寻址闭包，是 MirrorPlan 的无注册表输入 |
 | Mirror | 在不触达真实副作用的情况下，对能力可观察行为和状态变化的受治理模拟 |
 | Fidelity | 镜像与目标业务行为在明确覆盖范围内的多维相似度和可信度 |
 | Rehearsal | 在一个隔离、确定性的镜像世界中执行场景、故障和 what-if |
@@ -125,7 +135,7 @@ Resource Gateway 已有的工业底座应直接复用：
 
 | 能力域 | 当前成熟度 | 主要缺口 |
 |---|---:|---|
-| Resource/Graph/Schema | 75% | Capability/Effect 协议与基础投影已落地；缺内置资产 closure、生命周期仓储、API 和跨系统 compatibility fixture |
+| Resource/Graph/Schema | 82% | Capability/Effect/Closure、7 张内置图投影、生命周期仓储与 snapshot API 已落地；缺 3 个画布示例、closure API、test-kit compatibility fixture |
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
 | Evidence/Replay | 75% | 缺 mirror provenance、state trace、fidelity observation 和 outcome lineage |
 | 递归 DAG 测试 | 65% | 缺统一镜像编译计划和 contract-mock 展开治理 |
@@ -716,7 +726,7 @@ session 重放造成重复状态、运行时依赖漂移。
 | `PUT /api/integration/capability-snapshots/{capabilityId}/revisions/{revision}` | 导入 exact sealed snapshot | 同 scope/id/revision/fingerprint 幂等 | 已实现 |
 | `GET /api/integration/capability-snapshots/{capabilityId}?revision=0` | 读取 latest 或 exact revision | 只读 | 已实现 |
 | `POST /api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions` | lifecycle-only append | expectedRevision 乐观栅栏 | 已实现 |
-| `POST /api/mirror/capability-snapshots` | 从现有资产生成并持久化不可变投影 | source fingerprint 幂等 | 待内置资产 closure 后实现 |
+| `POST /api/mirror/capability-snapshots` | 从现有资产生成并持久化不可变投影 | source fingerprint 幂等 | 待 projection API 与持久化编排 |
 | `POST /api/mirror/plans` | 编译 exact MirrorPlan | request fingerprint 幂等 | 待实现 |
 | `POST /api/mirror/sessions` | 创建隔离状态世界 | idempotency key | 待实现 |
 | `POST /api/mirror/executions` | 同步运行一个能力或场景 | run request idempotency | 待实现 |
@@ -868,7 +878,7 @@ SDK 默认隐藏 payload，异常消息只能包含稳定错误码、引用和�
 
 **交付物**：
 
-- CapabilitySnapshot、CapabilityContract、EffectContract、ArtifactProvenance JSON Schema；
+- CapabilitySnapshot、CapabilityClosure、CapabilityContract、EffectContract、ArtifactProvenance JSON Schema；
 - lifecycle、compatibility、error code 和 fingerprint 规范；
 - Resource/Operator/Graph 到 CapabilitySnapshot 的无损 projection；
 - 三方责任 RACI、数据驻留和威胁模型；
@@ -1000,8 +1010,8 @@ SRE runbook 和生产认证包。
 真实 mirror serving，避免协议尚未冻结时把临时模型固化进运行时。
 
 当前领取状态：RG-MIR-001/004/005 已完成通用协议、生命周期、仓储、Integration API 与诚实 probe；
-RG-MIR-002/003 已完成通用 projection 与 effect 汇总的第一纵向切片，但必须继续补内置 7 graph/3 visual example
-closure 和递归闭包验证。RG-MIR-006 至 012 仍按上述依赖推进。这里的“完成”只指 ticket 内已列明的增量，
+RG-MIR-002/003 已完成通用 projection、effect 汇总、7 张内置 graph closure 和闭包完整性验证，但仍须补齐
+3 个 visual example closure 与 test-kit compatibility fixture。RG-MIR-006 至 012 仍按上述依赖推进。这里的“完成”只指 ticket 内已列明的增量，
 不代表 Stage 0 已过退出门禁。
 
 ## 20. 测试策略与 Definition of Done
