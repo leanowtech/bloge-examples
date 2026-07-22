@@ -396,10 +396,22 @@ stable replica identity with `RG_TEST_PHYSICAL_ATTEMPT_TERMINAL_PROJECTION_WORKE
 `RG_TEST_PHYSICAL_ATTEMPT_TERMINAL_PROJECTION_*` settings bound pollers, zero-queue call capacity,
 lease/call/completion budgets, retry, and readiness SLOs; invalid combinations fail startup without
 echoing configured identities. Actuator health exposes aggregate work counts and local capacity only,
-and Micrometer labels are closed enums. This lane consumes already registered terminal work. The
-autonomous observation-reconciliation scheduler that discovers orphan starts and atomically registers
-new terminal work, dynamic provider trust inventory, and capability advertisement remain closed, so
-the standalone demo script intentionally does not enable this lane yet.
+and Micrometer labels are closed enums. This lane consumes already registered terminal work.
+
+Autonomous retained-start discovery is a second, independently gated test/staging runtime. First
+enable the terminal-projection lane, then set
+`RG_TEST_PHYSICAL_ATTEMPT_OBSERVATION_RECONCILIATION_ENABLED=true`, configure a stable
+`..._WORKER_ID`, and supply exactly one
+`TestSuiteStabilityPhysicalAttemptObservationReconciler.AuthorityResolver` bean that resolves the
+retained provider/deployment generation. Startup rejects missing resolvers, non-database start,
+observation, or terminal-work journals, and deadline/window/lease/capacity combinations that cannot
+preserve the command and completion fences. Its database journal discovers retained starts in bounded
+fair-scope pages; a verified terminal completion and projection-work registration commit atomically.
+Actuator health reports only aggregate discovery lag, due age, quarantine, scheduler state, and
+provider-call capacity. Micrometer uses only the closed reconciliation stage label. Both switches are
+disabled by default. Dynamic signed resolver inventory, capability advertisement, and a certified real
+process/container provider remain closed, so the standalone demo script intentionally enables neither
+lane.
 
 Staging also requires managed serving-inventory runtime keys. One canonical publication atomically
 carries the deployment and witness key sets and is independently approved by an M-of-N deployment

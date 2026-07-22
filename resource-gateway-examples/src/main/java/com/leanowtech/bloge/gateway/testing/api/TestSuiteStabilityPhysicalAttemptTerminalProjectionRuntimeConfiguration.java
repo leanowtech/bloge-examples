@@ -34,9 +34,9 @@ import java.util.regex.Pattern;
  *
  * <p>This composition owns one work journal, exact-source coordinator, zero-queue call
  * supervisor, bounded polling scheduler, fixed-cardinality telemetry, and aggregate health
- * indicator. It processes already registered terminal work. Autonomous provider observation and
- * atomic registration of new terminal work remain the observation-reconciliation runtime's
- * responsibility.</p>
+ * indicator. It processes already registered terminal work. The separately gated observation-
+ * reconciliation runtime discovers retained starts and atomically registers new terminal work
+ * into this lane.</p>
  */
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
