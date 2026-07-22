@@ -55,6 +55,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `GET http://localhost:8080/api/integration/capability-snapshots/{capabilityId}?revision=0` | Read the latest authorized capability snapshot; use a positive revision for an exact read |
 | `PUT http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/revisions/{revision}` | Append one exact sealed capability snapshot revision |
 | `POST http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions` | Append an optimistically fenced lifecycle-only revision |
+| `POST http://localhost:8080/api/integration/capability-closures/project` | Project a portable visual `GraphDraft` into a sealed, scope-bound root-plus-external-leaf capability closure |
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/boundary-cases` | Generate bounded, validator-proven graph input candidates and explicit coverage gaps (test/staging only) |
@@ -104,13 +105,17 @@ Stop it with:
 ./scripts/stop-visual-canvas-demo.sh
 ```
 
-Capability snapshot endpoints require `Authorization: Bearer ...` and a purpose accepted by the operation.
-Use `CAPABILITY_PROJECTION` for exact append, `CAPABILITY_GOVERNANCE` for lifecycle transitions, and
+Capability snapshot and closure projection endpoints require `Authorization: Bearer ...` and a purpose accepted by
+the operation. Use `CAPABILITY_PROJECTION` for exact append or visual draft projection,
+`CAPABILITY_GOVERNANCE` for lifecycle transitions, and
 `MIRROR_REHEARSAL` or `CHANGE_SYNC` for reads. Scope and clearance come from verified identity claims;
 `X-Tenant-Id` and similar headers are only consistency hints. The demo token includes these purposes, while
 enterprise deployments should issue separate author, governor, and rehearsal identities. The capability
-probe reports snapshot/closure protocol, projection, seven built-in graph closures, API, and lifecycle support
-as available, but keeps
+closure projection request carries only the portable draft, positive target revision, deterministic creation time,
+and a classification no higher than the caller's clearance. Tenant, organization, project, environment, region,
+purpose, ownership, and `DRAFT` lifecycle are server-derived. The capability probe reports snapshot/closure
+protocol, projection, seven built-in graph closures, visual draft closure projection, API, and lifecycle support as
+available, but keeps
 `mirrorPlanCompilation`, `mirrorExternalLeafInterception`, and `mirrorServing` false until those paths pass
 their later release gates. The complete protocol and lifecycle rules are in the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md).

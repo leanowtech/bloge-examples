@@ -24,6 +24,7 @@ export interface CanvasExampleEdge {
 
 export interface CanvasExampleTemplate {
   key: string;
+  graphName: string;
   label: string;
   domain: string;
   description: string;
@@ -85,6 +86,7 @@ const integerSchema = { type: 'integer' };
 export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
   {
     key: 'loan-policy-fallback',
+    graphName: 'loanPolicyFallbackExample',
     label: 'Loan policy fallback',
     domain: 'Risk',
     description: 'Applicant profile, dual credit providers, policy rules, and final response mapping.',
@@ -350,6 +352,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
   },
   {
     key: 'order-fulfillment-lane',
+    graphName: 'orderFulfillmentLaneExample',
     label: 'Order fulfillment lane',
     domain: 'Commerce',
     description: 'Order list, item enrichment, shipping quote, SLA decision, and customer response.',
@@ -614,6 +617,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
   },
   {
     key: 'personalized-dashboard',
+    graphName: 'personalizedDashboardExample',
     label: 'Personalized dashboard',
     domain: 'Experience',
     description: 'Profile fan-out into wallet, recommendations, notifications, and a final dashboard view.',

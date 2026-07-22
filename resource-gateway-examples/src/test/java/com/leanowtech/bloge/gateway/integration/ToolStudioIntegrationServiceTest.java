@@ -143,6 +143,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("capabilityProjection", true)
                 .containsEntry("capabilityClosureProtocol", true)
                 .containsEntry("builtInCapabilityClosureProjection", true)
+                .containsEntry("visualCapabilityClosureProjection", true)
                 .containsEntry("capabilitySnapshotApi", true)
                 .containsEntry("capabilityLifecycleFencing", true)
                 .containsEntry("mirrorPlanCompilation", false)
@@ -200,7 +201,8 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().supportedObjects())
                 .containsKeys("capabilitySnapshot", "capabilityClosure", "capabilityContract", "effectContract",
-                        "artifactProvenance", "capabilityLifecycleTransition");
+                        "artifactProvenance", "capabilityLifecycleTransition",
+                        "capabilityClosureProjectionRequest");
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .containsExactlyInAnyOrder(
@@ -208,6 +210,7 @@ class ToolStudioIntegrationServiceTest {
                 "PUT /api/integration/capability-snapshots/{capabilityId}/revisions/{revision}",
                 "GET /api/integration/capability-snapshots/{capabilityId}",
                 "POST /api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions",
+                "POST /api/integration/capability-closures/project",
                 "GET /api/integration/drafts/{draftId}/export",
                 "GET /api/integration/drafts/{draftId}/correctness-workbook",
                 "GET /api/integration/runs/{runId}/evidence",

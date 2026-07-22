@@ -4885,7 +4885,7 @@ export default function AuthorCanvas() {
     setOperatorTestPublications({});
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
-    setGraphName('visualGraph');
+    setGraphName(template.graphName);
     setGraphDraftId('');
     setGraphDraftRevision(0);
     setGraphInputSchema(template.inputSchema);
@@ -7289,7 +7289,7 @@ export default function AuthorCanvas() {
             className={`toolbar-link ${nodes.length === 0 || hasFixtureErrors ? 'disabled' : ''}`}
             data-testid="author-draft-export"
             href={draftExportUrl}
-            download="visualGraph-draft.json"
+            download={`${graphName}-draft.json`}
             aria-disabled={nodes.length === 0 || hasFixtureErrors}
             onClick={(event) => {
               if (nodes.length === 0 || hasFixtureErrors) {

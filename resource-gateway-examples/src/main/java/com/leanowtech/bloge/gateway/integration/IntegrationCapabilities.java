@@ -281,6 +281,9 @@ public record IntegrationCapabilities(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.SCHEMA_VERSION));
         objects.put("capabilityClosure", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure.SCHEMA_VERSION));
+        objects.put("capabilityClosureProjectionRequest", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityClosureProjectionRequest.SCHEMA_VERSION));
         objects.put("capabilityContract", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilityContract.SCHEMA_VERSION));
         objects.put("effectContract", List.of(
@@ -703,6 +706,7 @@ public record IntegrationCapabilities(
         features.put("capabilityProjection", true);
         features.put("capabilityClosureProtocol", true);
         features.put("builtInCapabilityClosureProjection", true);
+        features.put("visualCapabilityClosureProjection", true);
         features.put("capabilitySnapshotApi", true);
         features.put("capabilityLifecycleFencing", true);
         features.put("mirrorPlanCompilation", false);
@@ -1079,6 +1083,7 @@ public record IntegrationCapabilities(
                 new Endpoint("PUT", "/api/integration/capability-snapshots/{capabilityId}/revisions/{revision}"),
                 new Endpoint("GET", "/api/integration/capability-snapshots/{capabilityId}"),
                 new Endpoint("POST", "/api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions"),
+                new Endpoint("POST", "/api/integration/capability-closures/project"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/export"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/correctness-workbook"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/evidence"),

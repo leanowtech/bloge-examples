@@ -19,6 +19,20 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 server capability test and standalone test-kit both consume this exact file, preventing either side
 from passing against a separately maintained expectation.
 
+## Visual Graph Projection Boundary
+
+`POST /api/integration/capability-closures/project` accepts
+`resourceGateway.capabilityClosureProjectionRequest.v1`: a portable `bloge.visualGraphDraft.v1`, positive
+capability revision, deterministic `createdAt`, and requested data classification. Enterprise scope, purpose,
+ownership, region, and lifecycle are deliberately absent from the request and are derived from the authenticated
+workload identity. A requested classification above that identity's clearance is rejected.
+
+The projection pins omitted operator definitions from one catalog view, preserves exact saved snapshots, resolves
+resource-backed external leaves from the authoritative registry, and seals the root-plus-leaf closure. Missing or
+stale operators, duplicate node identities, missing resources, and nested graph boundaries without an exact child
+closure fail closed with stable `RG.MIRROR.*` codes. Pure implementation operators remain covered by the graph
+source fingerprint without becoming false business capabilities.
+
 ## Invariants
 
 - Every executable reference carries a positive revision and canonical `sha256:<hex>` fingerprint.

@@ -8,7 +8,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 /**
  * Maps integration service failures to the stable problem contract.
  */
-@RestControllerAdvice(assignableTypes = ToolStudioIntegrationController.class)
+@RestControllerAdvice(assignableTypes = {
+        ToolStudioIntegrationController.class,
+        CapabilityClosureIntegrationController.class
+})
 public class IntegrationProblemHandler {
 
     @ExceptionHandler(IntegrationProblemException.class)

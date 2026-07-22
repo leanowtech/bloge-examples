@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
@@ -223,6 +224,55 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n2']")));
         waitForText(wait, By.cssSelector("[data-testid='canvas-node:n2']"), operatorRef);
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace"));
+    }
+
+    @Test
+    void everyBuiltInCanvasExampleProjectsAStableCapabilityClosureInRealBrowser() throws Exception {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/author/");
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".workspace")));
+        Map<String, ExampleClosureExpectation> examples = Map.of(
+                "loan-policy-fallback", new ExampleClosureExpectation("loanPolicyFallbackExample", 4),
+                "order-fulfillment-lane", new ExampleClosureExpectation("orderFulfillmentLaneExample", 3),
+                "personalized-dashboard", new ExampleClosureExpectation("personalizedDashboardExample", 5));
+
+        for (Map.Entry<String, ExampleClosureExpectation> entry : examples.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey()).toList()) {
+            String selector = "[data-testid='canvas-example-load:" + entry.getKey() + "']";
+            wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(selector))).click();
+            ExampleClosureExpectation expected = entry.getValue();
+            WebElement export = wait.until(ignored -> {
+                WebElement candidate = driver.findElement(By.cssSelector("[data-testid='author-draft-export']"));
+                return (expected.graphName() + "-draft.json").equals(candidate.getAttribute("download"))
+                        ? candidate : null;
+            });
+            String draftJson = URLDecoder.decode(
+                    export.getAttribute("href").replace("data:application/json;charset=utf-8,", ""),
+                    StandardCharsets.UTF_8);
+            assertThat(OBJECT_MAPPER.readTree(draftJson).path("graphName").asText())
+                    .isEqualTo(expected.graphName());
+
+            JsonNode first = projectCapabilityClosure(draftJson);
+            JsonNode second = projectCapabilityClosure(draftJson);
+            assertThat(first.path("payloadKind").asText()).isEqualTo("CAPABILITY_CLOSURE");
+            assertThat(first.path("payload").path("rootRef").path("id").asText())
+                    .isEqualTo("graph:" + expected.graphName());
+            assertThat(first.path("payload").path("snapshots").size()).isEqualTo(expected.snapshotCount());
+            assertThat(first.path("payload").path("fingerprint").asText())
+                    .matches("sha256:[a-f0-9]{64}")
+                    .isEqualTo(second.path("payload").path("fingerprint").asText());
+            JsonNode root = java.util.stream.StreamSupport.stream(
+                            first.path("payload").path("snapshots").spliterator(), false)
+                    .filter(snapshot -> ("graph:" + expected.graphName())
+                            .equals(snapshot.path("capabilityId").asText()))
+                    .findFirst().orElseThrow();
+            assertThat(root.path("scope").path("tenantId").asText()).isEqualTo("tenant-a");
+            assertThat(root.path("scope").path("projectId").asText()).isEqualTo("tool-studio");
+            assertThat(root.path("lifecycle").asText()).isEqualTo("DRAFT");
+        }
     }
 
     @Test
@@ -2985,6 +3035,39 @@ class VisualAuthoringBrowserDomTest {
                 port,
                 path
         ));
+    }
+
+    @SuppressWarnings("unchecked")
+    private JsonNode projectCapabilityClosure(String draftJson) throws JsonProcessingException {
+        Map<String, Object> result = (Map<String, Object>) ((JavascriptExecutor) driver).executeAsyncScript("""
+                const draft = JSON.parse(arguments[0]);
+                const done = arguments[arguments.length - 1];
+                fetch('/api/integration/capability-closures/project', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': 'Bearer bloge-aneke-demo-token',
+                    'X-Purpose': 'CAPABILITY_PROJECTION',
+                    'X-Correlation-Id': `canvas-example-${draft.graphName}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    schemaVersion: 'resourceGateway.capabilityClosureProjectionRequest.v1',
+                    draft,
+                    revision: 1,
+                    createdAt: '2026-07-22T08:00:00Z',
+                    classification: 'CONFIDENTIAL'
+                  })
+                })
+                  .then(async (response) => done({ status: response.status, body: await response.text() }))
+                  .catch((error) => done({ status: 0, body: error.message }));
+                """, draftJson);
+        assertThat(((Number) result.get("status")).intValue())
+                .as(String.valueOf(result.get("body")))
+                .isEqualTo(200);
+        return OBJECT_MAPPER.readTree(String.valueOf(result.get("body")));
+    }
+
+    private record ExampleClosureExpectation(String graphName, int snapshotCount) {
     }
 
     private long currentDraftRevisionFromStatus() {

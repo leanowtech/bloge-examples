@@ -850,7 +850,9 @@ describe('AuthorCanvas built-in canvas examples', () => {
 
   it('defines graph-level input and output schemas for every built-in example', () => {
     expect(CANVAS_EXAMPLE_TEMPLATES).toHaveLength(3);
+    expect(new Set(CANVAS_EXAMPLE_TEMPLATES.map((template) => template.graphName)).size).toBe(3);
     for (const template of CANVAS_EXAMPLE_TEMPLATES) {
+      expect(template.graphName).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
       expect(template.inputSchema.schema).toMatchObject({ type: 'object' });
       expect(template.outputSchema.schema).toMatchObject({ type: 'object' });
       expect(Object.keys(template.inputSchema.schema.properties as Record<string, unknown>)).not.toHaveLength(0);
@@ -973,6 +975,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
       .toContain('Decision response');
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
+    expect(exported.graphName).toBe('loanPolicyFallbackExample');
     expect(exported.nodes.map((node: { id: string; operatorRef: string }) => [node.id, node.operatorRef]))
       .toEqual([
         ['n1', 'resource:loan-applicant-service.getProfile'],

@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 通用协议、projection、生命周期仓储、Integration API、probe、7 张内置资源图闭包与独立 test-kit 验证已完成，剩余 3 个画布示例闭包 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过，企业环境责任、数据权利与部署决策仍须在客户准入时关闭；Stage 1 待实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -49,10 +49,21 @@
   `CapabilityMirrorCompatibility` 对 capability probe 做前向兼容的协议/对象/feature 协商，
   `CapabilityMirrorVerifier` 可离线复验 Snapshot/Closure 的 strict Schema、canonical fingerprint、完整 scope、
   exact dependency、环和孤儿，无需依赖服务端 Spring 类。服务端测试直接读取同一 fixture，阻止双边预期漂移。
-- 当前仍未完成 3 个 visual examples 的 capability closure、MirrorPlan 与 external-leaf runtime，因此 Stage 0
-  尚未通过退出门禁。本增量新增 12 个 test-kit compatibility/verifier 测试和 1 个 server-to-fixture 漂移门禁；
-  `resource-gateway-test-kit` 全量 `clean verify` 为 243 项测试全绿，Resource Gateway 全量 `clean verify`
-  为 4350 项测试、0 失败、0 错误、2 跳过，并成功重打可执行 Spring Boot JAR。
+- 通用 `GraphDraftCapabilityClosureService` 已覆盖任意 visual draft：保存态 operator snapshot 原样保留，便携 draft
+  从单次 catalog 视图补齐并固定；resource leaf 从权威 registry 投影；PURE 实现节点只进入 graph fingerprint。
+  缺 operator、旧 fingerprint、重复 node id、缺 resource descriptor 和没有 exact child closure 的 nested graph
+  均以稳定错误码失败关闭。
+- 新增受鉴权的 `POST /api/integration/capability-closures/project`。请求不能声明企业 scope、owner、purpose、region
+  或 lifecycle；服务端从 workload identity 派生这些字段，强制 `DRAFT`，并拒绝 clearance 以上分类和超出时钟偏差
+  的未来时间。probe 已公开请求版本、endpoint 与 `visualCapabilityClosureProjection=true`。
+- 3 个画布复杂示例现在各有稳定 graph identity，导出文件名也随 graphName 变化。真实 Chrome 用例逐个加载示例，
+  读取浏览器实际导出的 GraphDraft，经鉴权调用 projection API 两次，并验证 root identity、snapshot 数量、完整
+  scope 和 fingerprint 确定性。因此 7 个 resource graph 加 3 个 visual examples 的 Stage 0 仓库内工程门禁已闭合。
+- MirrorPlan、external-leaf runtime 和 mirror serving 属于 Stage 1，probe 继续诚实保持 `false`。客户环境的数据
+  使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
+- 本增量验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的新增真实
+  Chrome 示例投影用例 `1/1` 全绿；Resource Gateway `clean verify` 为 4362 项测试、0 失败、0 错误、3 条
+  前端 bundle 条件跳过，并成功重打可执行 Spring Boot JAR。
 
 ---
 
@@ -139,7 +150,7 @@ Resource Gateway 已有的工业底座应直接复用：
 
 | 能力域 | 当前成熟度 | 主要缺口 |
 |---|---:|---|
-| Resource/Graph/Schema | 85% | Capability/Effect/Closure、7 张内置图投影、生命周期仓储、snapshot API、共享 compatibility fixture 与独立离线 verifier 已落地；缺 3 个画布示例和 closure API |
+| Resource/Graph/Schema | 95% | Capability/Effect/Closure、7 张内置图和 3 张画布示例投影、生命周期仓储、scope-bound closure API、共享 compatibility fixture 与独立离线 verifier 已落地；nested graph exact child closure 进入 Stage 1 MirrorPlan |
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
 | Evidence/Replay | 75% | 缺 mirror provenance、state trace、fidelity observation 和 outcome lineage |
 | 递归 DAG 测试 | 65% | 缺统一镜像编译计划和 contract-mock 展开治理 |
@@ -1013,11 +1024,10 @@ SRE runbook 和生产认证包。
 推荐领取顺序：001/004/007/010 可并行；随后 002/003/009/011；最后 005/006/008/012。Stage 0 不实现
 真实 mirror serving，避免协议尚未冻结时把临时模型固化进运行时。
 
-当前领取状态：RG-MIR-001/004/005 已完成通用协议、生命周期、仓储、Integration API 与诚实 probe；
-RG-MIR-002/003 已完成通用 projection、effect 汇总、7 张内置 graph closure 和闭包完整性验证；
-RG-MIR-009 已完成独立 compatibility 协商、Schema/fixture 打包和 Snapshot/Closure 离线复验。
-仍须补齐 3 个 visual example closure；RG-MIR-006/007/008/010/011/012 按上述依赖推进。这里的“完成”
-只指 ticket 内已列明的增量，不代表 Stage 0 已过退出门禁。
+当前领取状态：RG-MIR-001/002/003/004/005/009 已完成通用协议、projection、effect、闭包、生命周期、仓储、
+Integration API、诚实 probe、7 张内置 graph 加 3 张 visual example 确定性投影，以及独立 compatibility/离线复验。
+这已经满足 Stage 0 的仓库内工程退出门禁。RG-MIR-006 归入 Stage 1 主链；007/008/010/011/012 在推进 Stage 1
+前补齐 ADR、生产隔离、退款资产、错误码注册与持续 CI。企业客户准入仍必须关闭第 22.2 节的环境级开放决策。
 
 ## 20. 测试策略与 Definition of Done
 
