@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.TestSuiteStabilityProtocolFixtures;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationCommand;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityAttemptCancellationJournal;
@@ -32,8 +33,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemp
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartVerifier;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionCommand;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionJournal;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityQueuePolicy;
-import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -100,6 +101,8 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     private DatabaseTestSuiteStabilityPhysicalAttemptObservationJournal journal;
     private DatabaseTestSuiteStabilityAttemptCancellationJournal cancellations;
     private DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionJournal projections;
+    private DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+            terminalProjectionWork;
     private DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
             reconciliations;
     private AtomicLong startSequence;
@@ -139,6 +142,10 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         cancellations.init();
         projections = new DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionJournal(
                 jobs, attempts, starts, journal, cancellations);
+        terminalProjectionWork =
+                new DatabaseTestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal(
+                        jdbc, mapper);
+        terminalProjectionWork.init();
         reconciliations = reconciliationJournal(10);
         startSequence = new AtomicLong(10);
     }
@@ -1043,6 +1050,8 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         assertThat(replayed.status()).isEqualTo(
                 TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
                         .CompletionStatus.REPLAYED);
+        assertThat(terminalProjectionWork.find(
+                "tenant-a", "test", context.identity().attemptId())).isEmpty();
         assertReconciliationConflict(() -> reconciliations.complete(
                         claim.lease(),
                         new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
@@ -1148,23 +1157,133 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     }
 
     @Test
-    void positiveTerminalClosesOnlyTheReconciliationTarget() {
+    void positiveTerminalAtomicallyRegistersExactlyOneProjectionWorkItem() {
         AttemptContext context = retainedStart('a', true);
         var claim = reconciliations.claimNext("reconciler-a").orElseThrow();
-
-        var terminal = reconciliations.complete(claim.lease(),
+        String observationCommandId = command(context, 'a').commandId();
+        var result =
                 new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
                         TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
                                 .ResultKind.POSITIVE_TERMINAL,
-                        command(context, 'a').commandId()));
+                        observationCommandId);
+
+        var terminal = reconciliations.complete(claim.lease(), result);
+        var replayed = reconciliations.complete(claim.lease(), result);
 
         assertThat(terminal.status()).isEqualTo(
                 TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
                         .CompletionStatus.TERMINAL);
+        assertThat(replayed.status()).isEqualTo(
+                TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .CompletionStatus.REPLAYED);
         assertThat(reconciliations.claimNext("reconciler-b")).isEmpty();
+        assertThat(terminalProjectionWork.find(
+                "tenant-a", "test", context.identity().attemptId())).get().satisfies(work -> {
+                    assertThat(work.status()).isEqualTo(
+                            TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                                    .Status.READY);
+                    assertThat(work.trigger().observationCommandId())
+                            .isEqualTo(observationCommandId);
+                    assertThat(work.executionAttempts()).isZero();
+                    assertThat(work.nextAttemptAt()).isAfter(Instant.EPOCH);
+                });
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM rg_test_stability_attempt_terminal_projection_work
+                WHERE attempt_id = ?
+                """, Integer.class, context.identity().attemptId())).isEqualTo(1);
         assertThat(jobs.find("tenant-a", "test", context.identity().jobId()))
                 .get().extracting(TestSuiteStabilityJobRecord::status)
                 .isEqualTo(TestSuiteStabilityJobRecord.Status.RUNNING);
+    }
+
+    @Test
+    void projectionWorkRegistrationFailureRollsBackTerminalTargetTransition() {
+        AttemptContext context = retainedStart('a', true);
+        TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal failingWork =
+                new TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal() {
+                    @Override
+                    public TestRuntimeTransactionMutation boundRegister(Trigger trigger) {
+                        return ignored -> {
+                            throw new IllegalStateException("injected registration failure");
+                        };
+                    }
+
+                    @Override
+                    public Optional<Entry> find(
+                            String tenantId, String environmentId, String attemptId) {
+                        return Optional.empty();
+                    }
+                };
+        var failing = reconciliationJournal(10, failingWork);
+        var claim = failing.claimNext("reconciler-a").orElseThrow();
+        var result =
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.POSITIVE_TERMINAL,
+                        command(context, 'a').commandId());
+
+        assertThatThrownBy(() -> failing.complete(claim.lease(), result))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("injected registration failure");
+
+        assertThat(jdbc.queryForObject("""
+                SELECT target_status
+                FROM rg_test_stability_attempt_observation_reconciliation_targets
+                WHERE attempt_id = ?
+                """, String.class, context.identity().attemptId()))
+                .isEqualTo(TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                        .TargetStatus.LEASED.name());
+        assertThat(terminalProjectionWork.find(
+                "tenant-a", "test", context.identity().attemptId())).isEmpty();
+    }
+
+    @Test
+    void projectionWorkRejectsChangedTriggerForTheSameAttempt() {
+        AttemptContext context = retainedStart('a', true);
+        var claim = reconciliations.claimNext("reconciler-a").orElseThrow();
+        reconciliations.complete(claim.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.POSITIVE_TERMINAL,
+                        command(context, 'a').commandId()));
+        var changed = TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal.Trigger
+                .create(mapper, "tenant-a", "test", context.identity().attemptId(),
+                        command(context, 'b').commandId(), fingerprint('9'));
+
+        assertThatThrownBy(() -> terminalProjectionWork.boundRegister(changed).apply(jdbc))
+                .isInstanceOfSatisfying(
+                        TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                                .ConflictException.class,
+                        conflict -> assertThat(conflict.reason()).isEqualTo(
+                                TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                                        .ConflictReason.IDEMPOTENCY_CONFLICT));
+    }
+
+    @Test
+    void projectionWorkReadRejectsTamperedLifecycleState() {
+        AttemptContext context = retainedStart('a', true);
+        var claim = reconciliations.claimNext("reconciler-a").orElseThrow();
+        reconciliations.complete(claim.lease(),
+                new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal.Result(
+                        TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+                                .ResultKind.POSITIVE_TERMINAL,
+                        command(context, 'a').commandId()));
+        jdbc.update("""
+                UPDATE rg_test_stability_attempt_terminal_projection_work
+                SET work_status = ?
+                WHERE attempt_id = ?
+                """, TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                        .Status.COMPLETED.name(), context.identity().attemptId());
+
+        assertThatThrownBy(() -> terminalProjectionWork.find(
+                "tenant-a", "test", context.identity().attemptId()))
+                .isInstanceOfSatisfying(
+                        TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                                .ConflictException.class,
+                        conflict -> assertThat(conflict.reason()).isEqualTo(
+                                TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                                        .ConflictReason.INTEGRITY_FAILURE));
     }
 
     @Test
@@ -1868,6 +1987,13 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
 
     private DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
             reconciliationJournal(int discoveryPageSize) {
+        return reconciliationJournal(discoveryPageSize, terminalProjectionWork);
+    }
+
+    private DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+            reconciliationJournal(
+                    int discoveryPageSize,
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal work) {
         var value =
                 new DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal(
                         jdbc, mapper, starts,
@@ -1876,7 +2002,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                                 Duration.ofSeconds(1), Duration.ofMillis(100),
                                 Duration.ofMillis(100), Duration.ofMillis(400), 2,
                                 Duration.ofMinutes(1), discoveryPageSize),
-                        transactions);
+                        transactions, work);
         value.init();
         return value;
     }

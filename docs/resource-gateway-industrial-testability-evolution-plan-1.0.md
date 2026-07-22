@@ -215,6 +215,17 @@
 > entry，耗时 9:23，构建/测试浏览器残留进程均为零。
 > 验证见 [physical attempt terminal projection coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-coordinator-verification.md)。
 
+> Stage 4 physical attempt 第十二增量先关闭 terminal observation completion 与 projection worker 之间的
+> crash window。新增 payload-free durable work authority，content-addressed Trigger 精确绑定 scope、attempt、
+> terminal observation command 与 reconciliation result fingerprint；完整 Entry 预留 database-clock due、
+> lease fence、执行/连续失败计数、固定结果分类、projection id 与 whole-row fingerprint。reconciliation
+> journal 通过 transaction-bound mutation 在同一 datasource transaction 中同时提交 terminal target 与
+> `READY` work；注册失败两者一起回滚，exact replay 不重复写，非 terminal completion 不注册。53 项真实
+> H2/Ed25519 journal 测试和 252 项物理链聚合门禁全绿，三个相关公共类型严格 JavaDoc 零告警。该增量尚未
+> 实现 claim/retry/takeover worker、N/N-1 orphan terminal backfill、Spring scheduler/health/capability，产品
+> 能力继续关闭。验证见
+> [physical attempt terminal projection work registration verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-work-registration-verification.md)。
+
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
 > advertisement 仍关闭；v1 本地链与 v2 external receipt proof 的严格 Schema、授权 test/staging
 > preview、分页和独立 verifier 已在第二十六子步第五、七阶段落地；第八阶段补齐 strict HTTPS

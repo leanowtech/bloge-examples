@@ -2,9 +2,11 @@ package com.leanowtech.bloge.gateway.testing.persistence;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.TestRuntimeTransactionMutation;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartCommand;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptStartJournal;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
@@ -41,7 +43,9 @@ import java.util.regex.Pattern;
  * <p>Claims and completions are short local transactions. Provider calls never execute while a
  * database transaction is open. Exact completion replay is retained only until a successor lease
  * replaces the fence. Expired leases are eligible for takeover, while a verified observation
- * committed before lease loss remains discoverable through the independent observation journal.</p>
+ * committed before lease loss remains discoverable through the independent observation journal.
+ * When a terminal-projection work journal is configured, terminal target completion and durable
+ * projection-work registration share this same local commit boundary.</p>
  */
 public final class DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
         implements TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal {
@@ -61,6 +65,8 @@ public final class DatabaseTestSuiteStabilityPhysicalAttemptObservationReconcili
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final TestSuiteStabilityPhysicalAttemptStartJournal starts;
+    private final Optional<TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal>
+            terminalProjectionWork;
     private final Policy policy;
     private final TransactionTemplate mutations;
     private final TransactionTemplate reads;
@@ -78,7 +84,8 @@ public final class DatabaseTestSuiteStabilityPhysicalAttemptObservationReconcili
             ObjectMapper objectMapper,
             TestSuiteStabilityPhysicalAttemptStartJournal starts,
             Policy policy) {
-        this(jdbc, objectMapper, starts, policy, localTransactionManager(jdbc));
+        this(jdbc, objectMapper, starts, policy, localTransactionManager(jdbc),
+                Optional.empty());
     }
 
     /**
@@ -96,9 +103,48 @@ public final class DatabaseTestSuiteStabilityPhysicalAttemptObservationReconcili
             TestSuiteStabilityPhysicalAttemptStartJournal starts,
             Policy policy,
             PlatformTransactionManager transactionManager) {
+        this(jdbc, objectMapper, starts, policy, transactionManager, Optional.empty());
+    }
+
+    /**
+     * Creates a reconciliation journal with atomic terminal projection-work registration.
+     *
+     * <p>The work journal must use the same datasource. Its bound registration mutation is
+     * applied through this journal's transaction-enlisted JDBC facade.</p>
+     *
+     * @param jdbc isolated test-runtime JDBC facade
+     * @param objectMapper canonical protocol mapper
+     * @param starts integrity-verifying start journal over the same datasource
+     * @param policy bounded claim, retry, uncertainty, and horizon policy
+     * @param transactionManager manager for the same datasource
+     * @param terminalProjectionWork durable work journal over the same datasource
+     */
+    public DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            TestSuiteStabilityPhysicalAttemptStartJournal starts,
+            Policy policy,
+            PlatformTransactionManager transactionManager,
+            TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal
+                    terminalProjectionWork) {
+        this(jdbc, objectMapper, starts, policy, transactionManager,
+                Optional.of(Objects.requireNonNull(
+                        terminalProjectionWork, "terminalProjectionWork")));
+    }
+
+    private DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            TestSuiteStabilityPhysicalAttemptStartJournal starts,
+            Policy policy,
+            PlatformTransactionManager transactionManager,
+            Optional<TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal>
+                    terminalProjectionWork) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.starts = Objects.requireNonNull(starts, "starts");
+        this.terminalProjectionWork = Objects.requireNonNull(
+                terminalProjectionWork, "terminalProjectionWork");
         this.policy = Objects.requireNonNull(policy, "policy");
         PlatformTransactionManager manager = Objects.requireNonNull(
                 transactionManager, "transactionManager");
@@ -221,6 +267,7 @@ public final class DatabaseTestSuiteStabilityPhysicalAttemptObservationReconcili
             StoredTarget successor = completed(current, requiredResult,
                     resultFingerprint, now);
             updateTarget(current, successor);
+            registerTerminalProjectionWork(successor, requiredResult, resultFingerprint);
             return completion(successor, completionStatus(successor));
         });
         return Objects.requireNonNull(completion, "reconciliation completion");
@@ -474,6 +521,24 @@ public final class DatabaseTestSuiteStabilityPhysicalAttemptObservationReconcili
     private Completion replay(StoredTarget target) {
         completionStatus(target);
         return completion(target, CompletionStatus.REPLAYED);
+    }
+
+    private void registerTerminalProjectionWork(
+            StoredTarget successor,
+            Result result,
+            String resultFingerprint) {
+        if (successor.targetStatus() != TargetStatus.TERMINAL
+                || terminalProjectionWork.isEmpty()) {
+            return;
+        }
+        TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal.Trigger trigger =
+                TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal.Trigger.create(
+                        objectMapper, successor.tenantId(), successor.environmentId(),
+                        successor.attemptId(), result.observationCommandId(), resultFingerprint);
+        TestRuntimeTransactionMutation registration = Objects.requireNonNull(
+                terminalProjectionWork.orElseThrow().boundRegister(trigger),
+                "terminal projection-work registration");
+        registration.apply(jdbc);
     }
 
     private static CompletionStatus completionStatus(StoredTarget target) {

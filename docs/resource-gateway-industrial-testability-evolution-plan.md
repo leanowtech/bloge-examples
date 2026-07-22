@@ -239,6 +239,17 @@
 > 39,655,585 bytes 可执行 JAR 包含 12 个新增匹配 class entry，耗时 9:23，且浏览器残留进程为零。验证见
 > [physical attempt terminal projection coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-coordinator-verification.md)。
 
+> Stage 4 physical attempt 第十二增量建立独立 durable terminal projection work registration authority。
+> content-addressed Trigger 绑定 exact scope/attempt、terminal observation command 与 reconciliation result；
+> payload-free Entry 预留完整 `READY/LEASED/COMPLETED/QUARANTINED` lifecycle、database-clock due、lease
+> fence、执行/连续失败计数、固定结果分类、projection identity 和 whole-row fingerprint。observation
+> reconciliation 仅在 terminal successor 上生成 work，并以 transaction-bound mutation 把 target transition
+> 与 `READY` registration 放入同一 datasource commit；任一失败全部回滚，exact replay 不重复注册，非
+> terminal outcome 不触碰 work table。53 项真实 H2/Ed25519 journal 测试、252 项 physical/cancellation/queue
+> 聚合门禁全绿，三个相关公共类型严格 JavaDoc 零告警。claim/retry/takeover、旧版本 orphan terminal
+> backfill、Spring worker/health/capability 仍未实现，产品能力继续关闭。验证见
+> [physical attempt terminal projection work registration verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-work-registration-verification.md)。
+
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
 | Stage 0 语义冻结 | Done | `SCHEMA_CONTRACT` 诚实命名；五个版本化 testing domain；隔离与 opaque runtime ADR；capability protocol |
