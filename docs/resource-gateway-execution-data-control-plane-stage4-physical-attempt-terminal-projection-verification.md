@@ -88,7 +88,21 @@ javadoc --release 25 -Werror -Xdoclint:all
 0 warnings, 0 errors
 ```
 
-完整 `clean verify` 将在本增量实现 commit 的 immutable snapshot 上执行并回填。
+实现提交 `a87f6780` 已从 `git archive` 解包到 immutable source snapshot
+`/tmp/bloge-examples-verify-a87f6780.KoKMJM` 并执行完整门禁：
+
+```text
+mvn -f /tmp/bloge-examples-verify-a87f6780.KoKMJM/resource-gateway-examples/pom.xml \
+  clean verify
+
+Tests run: 4065, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 09:50 min
+```
+
+455 份 Surefire XML 独立解析汇总为同一 `4065/0/0/2` 结果。重打包后的可执行 JAR 为
+39,632,117 bytes，包含 10 个 `PhysicalAttemptTerminalProjection` 匹配 class entry。门禁退出后，
+snapshot Java/Maven 进程和 ChromeDriver/Chrome for Testing 进程残留均为零。
 
 ## 6. 尚未闭合
 

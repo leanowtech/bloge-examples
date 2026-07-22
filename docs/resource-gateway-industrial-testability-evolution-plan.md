@@ -222,7 +222,9 @@
 > projection 并释放旧 slot；失败继续由 slot fence 保守占槽。source retention 后 exact replay 只依赖完整性
 > projection。真实 H2/Ed25519 组合门禁达到 50 项，physical/cancellation/queue 聚合 231 项全绿，四个公共
 > 类型严格 JavaDoc 零告警。Spring worker/reconciler hook、health/capability、retention/WORM 和真实 provider
-> 尚未完成，产品能力继续关闭。完整 `clean verify` 待实现 commit 的 immutable snapshot 回填。验证见
+> 尚未完成，产品能力继续关闭。实现提交 `a87f6780` 的 immutable snapshot 完整 `clean verify` 执行
+> 4065 tests（0 failures、0 errors、2 skips），455 份 Surefire XML 独立汇总一致；39,632,117 bytes
+> 可执行 JAR 包含 10 个 terminal-projection 匹配 class entry，耗时 9:50，构建/测试浏览器残留进程均为零。验证见
 > [physical attempt terminal projection verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |
