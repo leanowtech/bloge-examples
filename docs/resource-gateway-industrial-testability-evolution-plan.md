@@ -44,8 +44,9 @@
 > [certificate status product verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-product-verification.md)
 > 和 [source-head protocol verification](resource-gateway-execution-data-control-plane-stage4-certificate-status-source-head-protocol-verification.md)。
 > 截至 physical-attempt lifecycle observation proof/durable journal/call supervisor/coordinator/bounded reconciler、
-> start proof/durable start journal、positive queue lease epoch、attempt cancellation coordinator、调用前数据库
-> 时间栅栏与浏览器生命周期修复的最终全量基线为 Resource Gateway 4055 tests（0 failures、
+> start proof/durable start journal、positive queue lease epoch、attempt cancellation coordinator、exact-source
+> terminal projection transaction/proof-aware coordinator、调用前数据库时间栅栏与浏览器生命周期修复的
+> 最终全量基线为 Resource Gateway 4083 tests（0 failures、
 > 0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
@@ -233,7 +234,9 @@
 > `PROJECTED/REPLAYED/PROOF_PENDING/PERMANENT_CONFLICT/UNAVAILABLE` 与 fixed-cardinality reason
 > 冻结 worker policy 边界，proof 与 journal 的永久冲突不会被误报为 transient outage。18 项聚焦测试、
 > 249 项物理链聚合门禁全绿。该增量仍没有 durable projection work journal、cross-replica claim/takeover、reconciler hook、
-> Spring scheduler/health/capability，因此产品能力继续关闭。验证见
+> Spring scheduler/health/capability，因此产品能力继续关闭。实现提交 `c9608454` 的 immutable snapshot
+> 完整 `clean verify` 执行 4083 tests（0 failures、0 errors、2 skips），456 份 Surefire XML 独立汇总一致；
+> 39,655,585 bytes 可执行 JAR 包含 12 个新增匹配 class entry，耗时 9:23，且浏览器残留进程为零。验证见
 > [physical attempt terminal projection coordinator verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-coordinator-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |

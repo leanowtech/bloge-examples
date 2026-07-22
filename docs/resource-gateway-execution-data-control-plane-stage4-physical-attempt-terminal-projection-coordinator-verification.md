@@ -83,8 +83,22 @@ Tests run: 249, Failures: 0, Errors: 0, Skipped: 0
 ```
 
 两个新增公共类型使用 Maven 完整 compile classpath 通过
-`javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。immutable source snapshot 的完整
-`clean verify` 将在实现提交后执行，并通过独立证据提交补记最终数字。
+`javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
+
+实现提交 `c9608454` 已从 `git archive` 解包到 immutable source snapshot
+`/tmp/bloge-examples-verify-c9608454.a5AgTm` 并执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 4083, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 09:23 min
+```
+
+456 份 Surefire XML 独立解析汇总为同一 `4083/0/0/2` 结果。重打包可执行 JAR 为 39,655,585 bytes，
+包含 12 个 coordinator/proof-resolver 匹配 class entry。门禁退出后，snapshot Java/Maven 进程和
+ChromeDriver/Chrome for Testing 进程残留均为零。
 
 ## 6. 尚未闭合
 
