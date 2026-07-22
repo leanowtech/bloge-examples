@@ -97,6 +97,21 @@ Tests run: 262, Failures: 0, Errors: 0, Skipped: 0
 扩展后的 public work contract 与数据库适配器使用 Maven 完整 compile classpath 通过
 `javadoc --release 25 -Werror -Xdoclint:all`，0 warnings、0 errors。
 
+实现提交 `8aedb61e` 已从 `git archive` 解包到 immutable source snapshot
+`/tmp/bloge-examples-verify-8aedb61e` 并执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 4096, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 09:50 min
+```
+
+457 份 Surefire XML 使用独立 XML parser 汇总为同一 `4096/0/0/2` 结果。重打包可执行 JAR 为
+39,703,754 bytes，包含 16 个 terminal-projection-work class entry。门禁退出后，snapshot Java/Maven
+进程和 ChromeDriver/Chrome for Testing 进程残留均为零。
+
 ## 6. 尚未闭合
 
 - 没有把 claim、terminal projection coordinator 和 complete 组合成 bounded one-shot worker；
@@ -107,7 +122,6 @@ Tests run: 262, Failures: 0, Errors: 0, Skipped: 0
 - work row 只保留 fixed failure、projection id 和 exact result fingerprint，尚无 immutable per-attempt result history；
 - N/N-1 旧版本已经 terminal 但没有 work row 的 target 尚无有界 backfill；
 - 没有 scheduler、retention fence、telemetry、health/readiness、capability 或 Spring test/staging composition；
-- 尚未执行本提交 immutable snapshot 的完整 `clean verify`、JAR 内容和残留进程核验；
 - 生产数据库、断电 crash point、真实 process/container provider 与 HA/partition/chaos 认证仍未完成。
 
 下一增量应先建立 bounded one-shot worker，把 claim trigger 的 exact scope/attempt 传给 coordinator，将

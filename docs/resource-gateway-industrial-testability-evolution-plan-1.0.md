@@ -35,7 +35,7 @@
 > 截至 physical-attempt lifecycle observation proof/durable journal/call supervisor/coordinator/bounded reconciler、
 > start proof/durable start journal、positive queue lease epoch、attempt cancellation coordinator、exact-source
 > terminal projection transaction/proof-aware coordinator、调用前数据库时间栅栏与浏览器生命周期修复的
-> 最终全量基线为 Resource Gateway 4086 tests（0 failures、
+> 最终全量基线为 Resource Gateway 4096 tests（0 failures、
 > 0 errors、2 个条件浏览器跳过）和
 > 独立 test-kit 230 tests（0 failures、0 errors、0 skips）；64 份 testing Schema 与 5 份 Tool Studio
 > Schema 已进入发布 JAR，普通/shaded JAR 与 public JavaDoc 门禁通过。
@@ -236,7 +236,9 @@
 > replay 与 changed-result conflict 明确分离。新增 10 项 H2/双副本状态机测试，registration 组合 63 项、完整
 > 物理链聚合 262 项全绿，两个公共类型严格 JavaDoc 零告警。bounded one-shot worker、lease heartbeat/deadline、
 > tenant fairness、policy cohort、immutable attempt history、旧终态 backfill 和 Spring 产品接线尚未完成，能力
-> 继续关闭。验证见
+> 继续关闭。实现提交 `8aedb61e` 的 immutable snapshot 完整 `clean verify` 执行 4096 tests
+> （0 failures、0 errors、2 skips），457 份 Surefire XML 独立汇总一致；39,703,754 bytes 可执行 JAR
+> 包含 16 个匹配 class entry，耗时 9:50，构建/测试浏览器残留进程均为零。验证见
 > [physical attempt terminal projection work lifecycle verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-terminal-projection-work-lifecycle-verification.md)。
 
 > Stage 5 lifecycle 状态校正：下表“公开 floor lifecycle 尚未开放”指 production wiring 与 capability
