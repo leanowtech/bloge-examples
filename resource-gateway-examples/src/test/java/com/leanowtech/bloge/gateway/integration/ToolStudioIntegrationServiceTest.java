@@ -241,10 +241,10 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
-    void capabilitiesAdvertiseProtectedMirrorPlanningOnlyFromItsProfileOwnedMarker() {
+    void capabilitiesAdvertiseOnlyTheProtectedMirrorSurfacesOwnedByItsProfileMarker() {
         ToolStudioIntegrationService disabled = service(null, null, null, null);
         ToolStudioIntegrationService enabled = service(null, null, null, null);
-        enabled.configureMirrorRuntime(new MirrorRuntimeAvailability(true, false));
+        enabled.configureMirrorRuntime(new MirrorRuntimeAvailability(true, true));
 
         IntegrationCapabilities disabledCapabilities = disabled.capabilities().payload();
         IntegrationCapabilities enabledCapabilities = enabled.capabilities().payload();
@@ -258,14 +258,46 @@ class ToolStudioIntegrationServiceTest {
         assertThat(enabledCapabilities.features())
                 .containsEntry("mirrorPlanCompilation", true)
                 .containsEntry("mirrorExternalLeafInterception", true)
-                .containsEntry("mirrorServing", false);
+                .containsEntry("mirrorServing", true);
         assertThat(enabledCapabilities.supportedObjects())
                 .containsEntry("mirrorPlanCreateRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorPlanCreateRequest.SCHEMA_VERSION));
+                                .MirrorPlanCreateRequest.SCHEMA_VERSION))
+                .containsEntry("mirrorExecutionRequest", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorExecutionRequest.SCHEMA_VERSION))
+                .containsEntry("mirrorRunSummary", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorRunSummary.SCHEMA_VERSION))
+                .containsEntry("mirrorEvidenceBundle", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceBundle.SCHEMA_VERSION));
         assertThat(enabledCapabilities.endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
-                .contains("POST /api/mirror/plans", "GET /api/mirror/plans/{planId}");
+                .contains("POST /api/mirror/plans", "GET /api/mirror/plans/{planId}",
+                        "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
+                        "GET /api/mirror/runs/{runId}/evidence");
+    }
+
+    @Test
+    void capabilitiesRecheckDynamicMirrorServingWithoutProducingMixedResponses() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        java.util.concurrent.atomic.AtomicBoolean ready =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        service.configureMirrorRuntime(new MirrorRuntimeAvailability(true, true, ready::get));
+
+        IntegrationCapabilities unavailable = service.capabilities().payload();
+        ready.set(true);
+        IntegrationCapabilities available = service.capabilities().payload();
+
+        assertThat(unavailable.features()).containsEntry("mirrorServing", false);
+        assertThat(unavailable.endpoints())
+                .anyMatch(endpoint -> endpoint.path().equals("/api/mirror/executions"));
+        assertThat(unavailable.supportedObjects()).containsKey("mirrorExecutionRequest");
+        assertThat(available.features()).containsEntry("mirrorServing", true);
+        assertThat(available.endpoints())
+                .anyMatch(endpoint -> endpoint.path().equals("/api/mirror/executions"));
+        assertThat(available.supportedObjects()).containsKey("mirrorExecutionRequest");
     }
 
     @Test

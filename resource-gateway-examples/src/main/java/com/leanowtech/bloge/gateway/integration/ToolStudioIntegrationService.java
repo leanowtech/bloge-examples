@@ -355,6 +355,9 @@ public class ToolStudioIntegrationService {
     }
 
     public IntegrationEnvelope<IntegrationCapabilities> capabilities() {
+        boolean mirrorPlanReady = mirrorRuntimeAvailability.planCompilationApi();
+        boolean mirrorExecutionApi = mirrorRuntimeAvailability.executionApi();
+        boolean mirrorExecutionReady = mirrorRuntimeAvailability.executionReady();
         VisualEvidenceSigner signer = runRepository == null
                 ? VisualEvidenceSigner.unavailable() : runRepository.evidenceSigner();
         VisualRunPayloadRepository payloads = runRepository == null ? null : runRepository.payloadRepository();
@@ -376,10 +379,9 @@ public class ToolStudioIntegrationService {
         TestSecretAuthority.Descriptor testSecretAuthority = currentTestSecretAuthority();
         boolean secretAuthorityReady = testSecretAuthority.available();
         Map<String, Boolean> features = new LinkedHashMap<>(current.features());
-        features.put("mirrorPlanCompilation", mirrorRuntimeAvailability.planCompilationApi());
-        features.put("mirrorExternalLeafInterception",
-                mirrorRuntimeAvailability.planCompilationApi());
-        features.put("mirrorServing", mirrorRuntimeAvailability.executionApi());
+        features.put("mirrorPlanCompilation", mirrorPlanReady);
+        features.put("mirrorExternalLeafInterception", mirrorPlanReady);
+        features.put("mirrorServing", mirrorExecutionReady);
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());
@@ -711,16 +713,33 @@ public class ToolStudioIntegrationService {
         features.put("controlPlaneCertificateRotationProductionReady",
                 rotation.productionReady());
         Map<String, List<String>> supportedObjects = new LinkedHashMap<>(current.supportedObjects());
-        if (mirrorRuntimeAvailability.planCompilationApi()) {
+        if (mirrorPlanReady) {
             supportedObjects.put("mirrorPlanCreateRequest", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorPlanCreateRequest.SCHEMA_VERSION));
         }
+        if (mirrorExecutionApi) {
+            supportedObjects.put("mirrorExecutionRequest", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorExecutionRequest.SCHEMA_VERSION));
+            supportedObjects.put("mirrorRunSummary", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorRunSummary.SCHEMA_VERSION));
+            supportedObjects.put("mirrorEvidenceBundle", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorEvidenceBundle.SCHEMA_VERSION));
+        }
         List<IntegrationCapabilities.Endpoint> endpoints =
                 new java.util.ArrayList<>(current.endpoints());
-        if (mirrorRuntimeAvailability.planCompilationApi()) {
+        if (mirrorPlanReady) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/plans"));
             endpoints.add(new IntegrationCapabilities.Endpoint("GET", "/api/mirror/plans/{planId}"));
+        }
+        if (mirrorExecutionApi) {
+            endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/executions"));
+            endpoints.add(new IntegrationCapabilities.Endpoint("GET", "/api/mirror/runs/{runId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/mirror/runs/{runId}/evidence"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

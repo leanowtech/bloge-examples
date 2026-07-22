@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-run-summary-v1.schema.json",
+  "title": "Resource Gateway Mirror Run Summary v1",
+  "description": "Payload-free terminal projection derived from independently verified mirror evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "requestId",
+    "planId",
+    "planFingerprint",
+    "requestContextFingerprint",
+    "scope",
+    "status",
+    "evidenceClass",
+    "startedAt",
+    "completedAt",
+    "durationMs",
+    "nodeTraceCount",
+    "edgeTraceCount",
+    "resolutionCount",
+    "evidenceBundleFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorRunSummary.v1" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "requestContextFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "status": {
+      "enum": [
+        "PASSED",
+        "ASSERTION_FAILED",
+        "EXECUTION_FAILED",
+        "CONTROL_PLAN_REJECTED",
+        "FIXTURE_UNMATCHED",
+        "FIXTURE_UNUSED",
+        "CONTROL_PLAN_UNAVAILABLE",
+        "EVIDENCE_INCOMPLETE",
+        "CANCELLED",
+        "TIMED_OUT"
+      ]
+    },
+    "evidenceClass": { "enum": ["EXPLORATORY", "CERTIFIABLE"] },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "nodeTraceCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "edgeTraceCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "resolutionCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "evidenceBundleFingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenantId", "organizationId", "projectId", "environmentId", "region"
+      ],
+      "properties": {
+        "tenantId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "environmentId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "region": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    }
+  }
+}

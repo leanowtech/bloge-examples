@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
@@ -20,28 +21,36 @@ import static org.mockito.Mockito.mock;
 class MirrorIntegrationRouteIsolationTest {
 
     @Test
-    void exposesPlanRoutesOnlyWhenTestOrStagingAndTheExplicitSwitchAreBothActive() {
+    void exposesPlanRunAndEvidenceRoutesOnlyInTheExplicitIsolatedComposition() {
         try (var test = context(true, "test");
              var staging = context(true, "staging");
              var disabled = context(false, "test")) {
             assertThat(routes(test)).contains(
                     "POST /api/mirror/plans",
-                    "GET /api/mirror/plans/{planId}");
+                    "GET /api/mirror/plans/{planId}",
+                    "POST /api/mirror/executions",
+                    "GET /api/mirror/runs/{runId}",
+                    "GET /api/mirror/runs/{runId}/evidence");
             assertThat(routes(staging)).contains(
                     "POST /api/mirror/plans",
-                    "GET /api/mirror/plans/{planId}");
+                    "GET /api/mirror/plans/{planId}",
+                    "POST /api/mirror/executions",
+                    "GET /api/mirror/runs/{runId}",
+                    "GET /api/mirror/runs/{runId}/evidence");
             assertThat(routes(disabled)).noneMatch(route -> route.contains("/api/mirror/"));
         }
     }
 
     @Test
-    void productionProfilePhysicallyRemovesPlanRoutesEvenWhenTestIsAlsoActive() {
+    void productionProfilePhysicallyRemovesEveryMirrorRouteEvenWhenTestIsAlsoActive() {
         try (var production = context(true, "production");
              var mixed = context(true, "production", "test")) {
             assertThat(routes(production)).noneMatch(route -> route.contains("/api/mirror/"));
             assertThat(routes(mixed)).noneMatch(route -> route.contains("/api/mirror/"));
             assertThat(production.getBeansOfType(MirrorIntegrationController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(MirrorIntegrationController.class)).isEmpty();
+            assertThat(production.getBeansOfType(MirrorRunIntegrationController.class)).isEmpty();
+            assertThat(mixed.getBeansOfType(MirrorRunIntegrationController.class)).isEmpty();
         }
     }
 
@@ -54,7 +63,8 @@ class MirrorIntegrationRouteIsolationTest {
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
                 "mirror-route-test", Map.of(
                 "gateway.testing.mirror.enabled", Boolean.toString(enabled))));
-        context.register(WebConfiguration.class, MirrorIntegrationController.class);
+        context.register(WebConfiguration.class, MirrorIntegrationController.class,
+                MirrorRunIntegrationController.class);
         context.refresh();
         return context;
     }
@@ -79,6 +89,11 @@ class MirrorIntegrationRouteIsolationTest {
         }
 
         @Bean
+        MirrorRunIntegrationService mirrorRunIntegrationService() {
+            return mock(MirrorRunIntegrationService.class);
+        }
+
+        @Bean
         IntegrationRequestAuthenticator integrationRequestAuthenticator() {
             return mock(IntegrationRequestAuthenticator.class);
         }
@@ -86,6 +101,12 @@ class MirrorIntegrationRouteIsolationTest {
         @Bean
         MirrorPlanRequestDecoder mirrorPlanRequestDecoder() {
             return new MirrorPlanRequestDecoder(
+                    new ObjectMapper().findAndRegisterModules());
+        }
+
+        @Bean
+        MirrorExecutionRequestDecoder mirrorExecutionRequestDecoder() {
+            return new MirrorExecutionRequestDecoder(
                     new ObjectMapper().findAndRegisterModules());
         }
     }

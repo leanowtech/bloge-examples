@@ -194,6 +194,87 @@ public class MirrorPlanIntegrationService {
                         identity.correlationId(), Map.of())));
     }
 
+    /**
+     * Rehydrates one persisted public plan into its exact in-process execution generation.
+     *
+     * <p>The public plan deliberately contains no fixture or replay values. This method resolves
+     * those values through the same full-scope authorization checks used at plan creation,
+     * fingerprints the current authoritative graph, reconstructs and verifies the sealed
+     * capability closure, and recompiles the generation. Execution is allowed only when the
+     * complete recompiled public plan equals the stored plan, not merely when one convenient
+     * fingerprint happens to match.</p>
+     *
+     * @param plan verified persisted public plan
+     * @param identity authenticated enterprise identity and mirror purpose
+     * @return exact self-contained runtime generation
+     */
+    public CompiledMirrorPlan materialize(
+            MirrorPlan plan, IntegrationRequestContext identity) {
+        CapabilitySnapshot.Scope scope = requireMirrorIdentity(identity);
+        if (plan == null || !scope.equals(plan.scope())) {
+            throw new IntegrationProblemException(IntegrationProblem.notFound(
+                    "RG.MIRROR.PLAN_NOT_FOUND",
+                    "Mirror plan was not found in the authorized scope.",
+                    identity.correlationId(), Map.of()));
+        }
+        try {
+            MirrorPlanIntegrity.verify(mapper, plan);
+        } catch (IllegalArgumentException invalid) {
+            throw unavailable(identity, "RG.MIRROR.PLAN_INTEGRITY_INVALID",
+                    "The stored mirror plan failed immutable-content verification.");
+        }
+
+        CapabilityClosure closure;
+        CapabilitySnapshot root;
+        try {
+            closure = new CapabilityClosure("", plan.rootCapability(),
+                    plan.capabilityClosure(), plan.capabilityClosureFingerprint());
+            CapabilityClosureIntegrity.verify(mapper, closure);
+            root = closure.snapshots().stream()
+                    .filter(snapshot -> plan.rootCapability().equals(capabilityRef(snapshot)))
+                    .findFirst().orElseThrow();
+        } catch (RuntimeException invalid) {
+            throw unavailable(identity, "RG.MIRROR.CAPABILITY_CLOSURE_INTEGRITY_INVALID",
+                    "The stored mirror capability closure failed immutable-content verification.");
+        }
+        if (root.source().sourceKind() != CapabilitySnapshot.SourceKind.GRAPH) {
+            throw unavailable(identity, "RG.MIRROR.ROOT_GRAPH_SOURCE_INVALID",
+                    "The mirror root no longer identifies an authoritative graph source.");
+        }
+
+        Graph graph = requireGraph(root.source().sourceRef(), identity);
+        String graphFingerprint = GraphArtifactFingerprint.of(mapper, graph);
+        if (!graphFingerprint.equals(root.source().sourceFingerprint())) {
+            throw conflict(identity, "RG.MIRROR.RUNTIME_GRAPH_DRIFT",
+                    "The authoritative graph differs from the sealed mirror generation.",
+                    Map.of("currentGraphArtifactFingerprint", graphFingerprint));
+        }
+        StoredFixtureBundle storedFixture = requireFixture(plan.fixtureBundleRef(), scope, identity);
+        ResolvedReplayPayloads replays = resolveReplayPayloads(storedFixture.bundle(), identity);
+
+        CompiledMirrorPlan compiled;
+        try {
+            compiled = compiler.compile(new MirrorPlanCompilationRequest(
+                    plan.planId(), graph, graphFingerprint, closure, storedFixture.bundle(),
+                    replays, plan.policy(), plan.scenarioPackRef(), plan.compiledAt(),
+                    plan.expiresAt()));
+        } catch (MirrorPlanRejectedException rejected) {
+            throw conflict(identity, rejected.code(),
+                    "The sealed mirror generation can no longer be materialized exactly.",
+                    rejected.diagnostics().isEmpty()
+                            ? Map.of() : Map.of("diagnostics", rejected.diagnostics()));
+        } catch (IllegalArgumentException invalid) {
+            throw conflict(identity, "RG.MIRROR.RUNTIME_GENERATION_INVALID",
+                    "The sealed mirror generation can no longer be materialized exactly.",
+                    Map.of());
+        }
+        if (!compiled.plan().equals(plan)) {
+            throw conflict(identity, "RG.MIRROR.RUNTIME_GENERATION_DRIFT",
+                    "Recompiled runtime artifacts differ from the sealed mirror plan.", Map.of());
+        }
+        return compiled;
+    }
+
     private Optional<MirrorPlan> findStored(
             CapabilitySnapshot.Scope scope,
             String planId,
@@ -299,7 +380,7 @@ public class MirrorPlanIntegrationService {
                         CapabilitySnapshot.Lifecycle.DEPRECATED));
     }
 
-    private static CapabilitySnapshot.Scope requireMirrorIdentity(IntegrationRequestContext identity) {
+    static CapabilitySnapshot.Scope requireMirrorIdentity(IntegrationRequestContext identity) {
         Objects.requireNonNull(identity, "identity").requireComplete();
         if (!AUTHORIZED_PURPOSE.equals(identity.purpose())) {
             throw new IntegrationProblemException(IntegrationProblem.forbidden(
@@ -424,5 +505,10 @@ public class MirrorPlanIntegrationService {
 
     private static String normalize(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static MirrorArtifactRef capabilityRef(CapabilitySnapshot snapshot) {
+        return new MirrorArtifactRef("CAPABILITY", snapshot.capabilityId(), snapshot.revision(),
+                snapshot.fingerprint());
     }
 }

@@ -27,6 +27,8 @@ final class CapabilityMirrorSchemaValidator {
             "capability-closure-v1.schema.json",
             "capability-lifecycle-transition-v1.schema.json",
             "capability-mirror-compatibility-v1.schema.json",
+            "mirror-execution-request-v1.schema.json",
+            "mirror-run-summary-v1.schema.json",
             "mirror-resolution-v1.schema.json",
             "mirror-run-evidence-v1.schema.json",
             "mirror-evidence-attestation-v1.schema.json",

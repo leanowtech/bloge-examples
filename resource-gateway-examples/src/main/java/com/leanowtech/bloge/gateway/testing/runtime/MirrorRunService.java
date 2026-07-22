@@ -36,10 +36,11 @@ import java.util.Set;
  * independent BLOGE engine. The execution context receives the plan's logical deadline budget;
  * production credentials, interceptors, context carriers, and durable stores are never attached.</p>
  *
- * <p>The class itself is framework-neutral. Resource Gateway can expose it through the isolated
- * test/staging composition root, but no HTTP endpoint is implied by this service. Protected API
- * admission and deployment-level egress attestation remain release gates, so capability probes
- * must continue to report mirror serving as unavailable until those surfaces are complete.</p>
+ * <p>The class itself is framework-neutral. Resource Gateway exposes it only when the isolated
+ * test/staging composition has also assembled protected API admission, durable request fencing,
+ * exact artifact rehydration, and atomic evidence persistence. Deployment-level egress
+ * attestation remains a certification gate and is reported as an evidence limitation; it does
+ * not make the protected exploratory serving surface disappear.</p>
  */
 public class MirrorRunService {
     private static final Duration EVIDENCE_FINALIZATION_RESERVE = Duration.ZERO;

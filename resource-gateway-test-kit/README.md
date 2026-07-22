@@ -15,7 +15,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - runtime validation against the packaged Draft 2020-12 schema plus request/response identity binding;
 - all capability-mirror Draft 2020-12 schemas, a machine-readable Stage 0 compatibility baseline,
   forward-compatible capability-probe negotiation, and registry-free offline verification of sealed
-  `CapabilitySnapshot` and `CapabilityClosure` artifacts;
+  `CapabilitySnapshot` and `CapabilityClosure` artifacts, including protected execution-command and
+  payload-free run-summary schemas;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -75,12 +76,22 @@ String snapshotVersion = compatibility.negotiatedObjectVersions()
         .get("capabilitySnapshot");
 boolean planCompilationAvailable = compatibility.deferredFeatures()
         .get("mirrorPlanCompilation");
+boolean mirrorServingAvailable = compatibility.deferredFeatures()
+        .get("mirrorServing");
 ```
 
 Required protocol/object versions and feature facts fail closed. Deferred Stage 1 features are
 reported but do not make a Stage 0 server incompatible when they are later enabled. Unknown probe
 fields and additional object versions are intentionally tolerated. `reasonCodes()` and
 `requireCompatible()` contain only stable `RG.MIRROR.CLIENT.*` codes, never server payload values.
+
+When `mirrorServingAvailable` is true, submit `resourceGateway.mirrorExecutionRequest.v1` to
+`POST /api/mirror/executions`, then read `resourceGateway.mirrorRunSummary.v1` from the response or
+`GET /api/mirror/runs/{runId}`. The packaged schema resources are exposed as
+`CapabilityMirrorProtocol.MIRROR_EXECUTION_REQUEST_SCHEMA_RESOURCE` and
+`CapabilityMirrorProtocol.MIRROR_RUN_SUMMARY_SCHEMA_RESOURCE`. The command contains only stable request/plan
+identity, the exact reviewed plan fingerprint, and business context; enterprise scope and execution policy are
+server-owned. The summary contains no context, input, output, fixture, or replay payload.
 
 After negotiation, verify every exported artifact before registry ingestion, impact analysis, or
 mirror-plan compilation:

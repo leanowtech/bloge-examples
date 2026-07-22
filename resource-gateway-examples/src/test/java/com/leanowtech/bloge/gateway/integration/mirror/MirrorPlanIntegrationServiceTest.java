@@ -51,6 +51,7 @@ class MirrorPlanIntegrationServiceTest {
     private CapabilityClosure closure;
     private StoredFixtureBundle storedFixture;
     private InMemoryFixtureScopeRepository fixtureScopes;
+    private GatewayGraphService graphService;
     private MirrorPlanIntegrationService service;
 
     @BeforeEach
@@ -68,7 +69,7 @@ class MirrorPlanIntegrationServiceTest {
         fixtureScopes = new InMemoryFixtureScopeRepository();
         fixtureScopes.create(new MirrorFixtureScopeBinding(
                 SCOPE, fixtureRef(storedFixture), NOW, "fixture-owner"));
-        GatewayGraphService graphService = mock(GatewayGraphService.class);
+        graphService = mock(GatewayGraphService.class);
         when(graphService.requireGraph("customerView")).thenReturn(graph);
         service = new MirrorPlanIntegrationService(
                 new MirrorPlanCompiler(operators, mapper), plans,
@@ -101,6 +102,27 @@ class MirrorPlanIntegrationServiceTest {
                     .containsExactly(MirrorPlan.MirrorSource.ABSTAINED);
         });
         assertThat(service.find(first.planId(), identity())).isEqualTo(first);
+    }
+
+    @Test
+    void rehydratesOnlyTheCompleteExactRuntimeGeneration() {
+        MirrorPlan plan = service.create(request("runtime-plan", closure,
+                graphFingerprint, fixtureRef(storedFixture), Duration.ofMinutes(5)), identity());
+
+        var materialized = service.materialize(plan, identity());
+
+        assertThat(materialized.plan()).isEqualTo(plan);
+        assertThat(materialized.graph()).isEqualTo(graph);
+        assertThat(materialized.fixtureBundle()).isEqualTo(storedFixture.bundle());
+
+        Graph changed = graph("customerView", "changedNode", "customer.lookup");
+        when(graphService.requireGraph("customerView")).thenReturn(changed);
+        assertProblem(() -> service.materialize(plan, identity()),
+                409, "RG.MIRROR.RUNTIME_GRAPH_DRIFT");
+        assertProblem(() -> service.materialize(plan, identity(
+                        "org-b", "support", "test", "sg",
+                        "MIRROR_REHEARSAL", "CONFIDENTIAL")),
+                404, "RG.MIRROR.PLAN_NOT_FOUND");
     }
 
     @Test

@@ -91,9 +91,20 @@ final class MirrorPersistenceTestFixtures {
                                          MirrorPlan plan,
                                          String runId,
                                          char semanticMaterial) {
+        return evidence(mapper, signer, plan, runId, semanticMaterial,
+                "request-" + runId, fingerprint('1'));
+    }
+
+    static MirrorEvidenceBundle evidence(ObjectMapper mapper,
+                                         VisualEvidenceSigner signer,
+                                         MirrorPlan plan,
+                                         String runId,
+                                         char semanticMaterial,
+                                         String requestId,
+                                         String contextFingerprint) {
         Instant startedAt = COMPILED_AT.plusSeconds(10);
-        MirrorRunEvidence run = new MirrorRunEvidence("", runId, "request-" + runId,
-                fingerprint('1'), plan.planId(), plan.planFingerprint(),
+        MirrorRunEvidence run = new MirrorRunEvidence("", runId, requestId,
+                contextFingerprint, plan.planId(), plan.planFingerprint(),
                 plan.capabilityClosureFingerprint(), plan.executionControlFingerprint(),
                 plan.rootCapability(), plan.fixtureBundleRef(), List.of(
                 new MirrorRunEvidence.ExternalBinding(plan.rootCapability(), "loadCustomer",

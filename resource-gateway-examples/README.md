@@ -100,6 +100,9 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/visual/operators/tests/suites/run-all` | Run every stored operator schema mock/table suite |
 | `POST http://localhost:8080/api/mirror/plans` | Resolve reviewed graph/closure/fixture/replay artifacts and compile an immutable mirror plan (explicit mirror switch plus test/staging only) |
 | `GET http://localhost:8080/api/mirror/plans/{planId}` | Read a verified payload-free mirror plan in the complete authenticated enterprise scope |
+| `POST http://localhost:8080/api/mirror/executions` | Run one sealed mirror generation under durable request-id fencing and return a payload-free summary |
+| `GET http://localhost:8080/api/mirror/runs/{runId}` | Read a verified payload-free terminal mirror summary in the complete scope |
+| `GET http://localhost:8080/api/mirror/runs/{runId}/evidence` | Export the independently verified signed `HASH_ONLY` evidence bundle |
 
 Stop it with:
 
@@ -120,8 +123,11 @@ protocol, projection, seven built-in graph closures, visual draft closure projec
 sealed `resourceGateway.mirrorPlan.v1` wire model as available. Protocol availability is deliberately separate from
 runtime readiness. With the mirror switch disabled, all three runtime flags remain false and no `/api/mirror/**`
 route exists. With `RG_MIRROR_RUNTIME_ENABLED=true` under `test` or `staging`, the protected plan adapter now reports
-`mirrorPlanCompilation=true` and `mirrorExternalLeafInterception=true`, while `mirrorServing` remains false until
-the run/evidence adapter and deployment egress gate are complete. The complete protocol and lifecycle rules are in the
+`mirrorPlanCompilation=true` and `mirrorExternalLeafInterception=true`; the fully assembled durable run/evidence
+adapter additionally reports `mirrorServing=true` while its signer is usable. Signer readiness is re-evaluated on each
+probe; a signer outage leaves the installed endpoints discoverable but changes serving to false and execution fails
+closed with `503`. Serving means the isolated exploratory API is callable. Evidence
+remains `EXPLORATORY` until an exact deployment egress attestation closes its declared limitation. The complete protocol and lifecycle rules are in the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md).
 
 The Stage 1 compiler and run kernels verify Capability Closure against the recursively
@@ -134,26 +140,73 @@ profile physically excludes the compiler, runtime, integrity service, and reposi
 active. Sealed public plans and independently verified `HASH_ONLY` evidence now persist under a complete
 tenant/organization/project/environment/region compound key; exact retries are idempotent, conflicting identities
 and tampered rows fail closed, and no fixture/replay/context/result payload column exists. This is still not a
-run-serving API. The protected plan endpoint now authenticates `MIRROR_REHEARSAL`, requires complete project and
+production-certified runtime. The protected plan endpoint authenticates `MIRROR_REHEARSAL`, requires complete project and
 region scope, fingerprints the current registered graph, independently verifies the exact stored fixture envelope,
 freezes governed replay dependencies without changing caller purpose, derives all isolation policy on the server,
 and persists only the payload-free plan. Because the legacy testing fixture registry is tenant/environment scoped,
 fixture registration also creates an append-only payload-free organization/project/region authorization binding
 when mirror is assembled; plan compilation requires that exact binding before reading the fixture. Historical
 fixtures must be re-registered idempotently to gain a binding. Plan requests expose no real-call, credential, egress, region, lifecycle,
-or clearance override. The execution/evidence endpoint and deployment egress proof remain open, so
-`mirrorServing` intentionally stays false. The fixture reuse decision is in
+or clearance override. The execution endpoint accepts only requestId, exact plan identity, reviewed plan fingerprint,
+and business context. It server-binds BLOGE tenant/project scope, reconstructs Graph/Fixture/Replay artifacts, and
+requires the complete recompiled plan to equal the stored plan before execution. A payload-free durable request row
+coordinates concurrent retry and restart recovery with lease owner, epoch, and hard-expiry fencing. Claim, expiry,
+takeover, release, commit fencing, and `retryAfterSeconds` all use the coordination database clock, so replica wall-clock
+skew cannot change execution authority. Signed evidence and terminal request state commit atomically. Expired authority
+cannot publish even before takeover, and authority-row locking occurs before time sampling so lock wait cannot bypass
+expiry. H2 time is sampled through an independent short connection after locking because its transaction timestamp is
+frozen; configure the datasource with capacity for the transaction connection plus the clock connection. Deployment
+egress proof remains open, so evidence stays exploratory. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
 The Plan command is recursively strict and its canonical JSON tree is capped at 16 MiB. Because MVC materializes
 JSON before the command decoder runs, deployments must also enforce raw request-body size, connection, and rate
 limits at the ingress boundary; the application decoder alone is not a denial-of-service boundary.
 
+The execution command takes buffered raw bytes so duplicate keys, scalar coercion, non-canonical whitespace, raw size,
+canonical size, depth, and node count are rejected before a typed command is created. Spring still buffers those bytes;
+proxy/container streaming-body, connection, and rate limits remain production gates.
+
+After compiling and reviewing a plan, execute that exact generation with a stable request id. Reusing the same id
+and context returns the stored terminal result; changing plan or context under that id returns
+`RG.MIRROR.RUN_IDEMPOTENCY_CONFLICT`. A concurrent identical call returns retryable
+`RG.MIRROR.RUN_REQUEST_IN_PROGRESS` and `retryAfterSeconds`.
+
+```bash
+PLAN_ID='reviewed-plan-id'
+PLAN_FINGERPRINT='sha256:replace-with-the-fingerprint-returned-by-plan-compilation'
+
+curl -sS http://localhost:8080/api/mirror/executions \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: MIRROR_REHEARSAL' \
+  -H 'Content-Type: application/json' \
+  --data "{
+    \"schemaVersion\": \"resourceGateway.mirrorExecutionRequest.v1\",
+    \"requestId\": \"demo-rehearsal-001\",
+    \"planId\": \"${PLAN_ID}\",
+    \"expectedPlanFingerprint\": \"${PLAN_FINGERPRINT}\",
+    \"context\": {\"customerId\": \"C-1001\"}
+  }"
+
+curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: MIRROR_REHEARSAL'
+
+curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID/evidence \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: MIRROR_REHEARSAL'
+```
+
+Do not place `bloge.tenantId`, `bloge.namespace`, or `__nodeOutput:` keys in `context`; the service derives scope
+from the authenticated identity and rejects internal engine-state injection. Run summaries expose only identities,
+fingerprints, timestamps, status/trust class, and trace counts. Use the evidence endpoint for signed hash-only
+node/edge/resolution facts; neither response returns business payload values.
+
 The strict `resourceGateway.mirrorResolution.v1` protocol is also frozen. It binds every future resolver outcome to
 the exact run, plan, capability and invocation attempt; separates resolved null, visible/redacted output, hash-only
 evidence, resolved error, rejection and abstention; and fingerprints both visible output and the complete artifact.
-The protocol is implemented, schema-tested, and produced by the internal run kernel, but it is not yet advertised
-by the capability probe because no authenticated, durable serving surface exists.
+The protocol is implemented, schema-tested, produced by the run kernel, and exported inside signed evidence through
+the authenticated durable serving surface.
 
 Mirror compilation now freezes source-first selection separately from ordinary test selection. Owner rules precede
 governed replay before selector specificity is considered, while ambiguity within one source remains fail-closed.
@@ -167,8 +220,7 @@ same-source runtime ambiguity. Mirror controls now execute through that chain an
 sealed, coordinate-ordered `MirrorResolution` records. Requests and outputs are represented by bounded canonical
 fingerprints; owner and replay results retain exact artifact provenance; business error, rejection, and abstention
 remain distinct. Ordinary tests keep their previous selection path. The probe advertises interception only when
-the protected plan adapter is assembled; execution serving still waits for authenticated run/evidence APIs and
-deployment egress attestation.
+the protected plan adapter is assembled, and advertises serving only when the complete run/evidence chain is assembled.
 
 The portable evidence protocol is now frozen as `resourceGateway.mirrorRunEvidence.v1`,
 `resourceGateway.mirrorEvidenceAttestation.v1`, and `resourceGateway.mirrorEvidenceBundle.v1`. It signs only a
@@ -179,7 +231,8 @@ projects its real node/attempt/edge values to bounded fingerprints, proves exact
 resolution, and refuses to return a result when no explicit signer exists or immediate signature verification
 fails. A cryptographically signed run is still exploratory unless deployment egress denial is bound to an exact
 isolation attestation and every limitation is closed. Payload-free persistence and protected plan serving are
-complete; run/evidence serving, deployment attestation, and cross-language canonicalization remain release gates.
+complete; run/evidence serving is also complete for isolated test/staging use. Deployment attestation,
+pre-materialization ingress controls, and cross-language canonicalization remain production/certification gates.
 The Spring kernel now has
 profile/property isolation and
 ordinary business run APIs reject nested mirror, replay, replacement, and scenario controls before DTO binding,

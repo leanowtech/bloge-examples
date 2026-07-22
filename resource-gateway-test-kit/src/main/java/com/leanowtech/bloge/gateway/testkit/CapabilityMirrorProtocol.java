@@ -41,6 +41,12 @@ public final class CapabilityMirrorProtocol {
     /** Capability lifecycle transition wire version. */
     public static final String CAPABILITY_LIFECYCLE_TRANSITION_V1 =
             "resourceGateway.capabilityLifecycleTransition.v1";
+    /** Protected mirror execution-command wire version. */
+    public static final String MIRROR_EXECUTION_REQUEST_V1 =
+            "resourceGateway.mirrorExecutionRequest.v1";
+    /** Payload-free terminal mirror run-summary wire version. */
+    public static final String MIRROR_RUN_SUMMARY_V1 =
+            "resourceGateway.mirrorRunSummary.v1";
     /** Per-attempt mirror resolution wire version. */
     public static final String MIRROR_RESOLUTION_V1 = "resourceGateway.mirrorResolution.v1";
     /** Payload-free terminal mirror run evidence wire version. */
@@ -73,6 +79,12 @@ public final class CapabilityMirrorProtocol {
     /** Packaged capability closure schema. */
     public static final String CAPABILITY_CLOSURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-closure-v1.schema.json";
+    /** Packaged protected mirror execution-command schema. */
+    public static final String MIRROR_EXECUTION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-execution-request-v1.schema.json";
+    /** Packaged payload-free terminal run-summary schema. */
+    public static final String MIRROR_RUN_SUMMARY_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-run-summary-v1.schema.json";
     /** Packaged per-attempt mirror resolution schema. */
     public static final String MIRROR_RESOLUTION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-resolution-v1.schema.json";

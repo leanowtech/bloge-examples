@@ -6,11 +6,14 @@ import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
@@ -37,9 +40,8 @@ import java.time.Clock;
  * profile.</p>
  *
  * <p>This configuration assembles the internal Stage 1 kernel and append-only payload-free plan
- * and evidence stores. The profile-gated mirror controller and plan application service add the
- * protected planning adapter; the availability marker is emitted only after that service has been
- * assembled. Execution serving remains closed until its protected adapter is complete.</p>
+ * and evidence stores. The availability marker is emitted only after protected plan, execution,
+ * evidence, durable request-fencing, and atomic commit services have all been assembled.</p>
  */
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
@@ -72,7 +74,7 @@ public class MirrorRuntimeConfiguration {
      * @param objectMapper canonical protocol mapper
      * @param resourceRegistry descriptor inventory used only for fixture protocol reconstruction
      * @param expressionEvaluator descriptor expression evaluator
-     * @param evidenceSigner governed evidence signer; unavailable signers fail execution closed
+     * @param evidenceIntegrity governed signer/verifier boundary; unavailable signers fail closed
      * @return isolated mirror runtime service
      */
     @Bean
@@ -147,16 +149,32 @@ public class MirrorRuntimeConfiguration {
     }
 
     /**
+     * Creates the payload-free durable idempotency and fencing coordinator.
+     *
+     * @param jdbc application JDBC boundary
+     * @return full-scope mirror execution request repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorRunRequestRepository mirrorRunRequestRepository(JdbcTemplate jdbc) {
+        return new DatabaseMirrorRunRequestRepository(jdbc);
+    }
+
+    /**
      * Publishes honest protected-API readiness to the integration capability probe.
      *
      * @param planService fully assembled authoritative plan application boundary
+     * @param runService fully assembled durable execution and evidence application boundary
+     * @param evidenceSigner governed signing authority required for terminal evidence
      * @return profile-owned mirror capability marker
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(MirrorPlanIntegrationService.class)
+    @ConditionalOnBean({MirrorPlanIntegrationService.class, MirrorRunIntegrationService.class})
     public MirrorRuntimeAvailability mirrorRuntimeAvailability(
-            MirrorPlanIntegrationService planService) {
-        return new MirrorRuntimeAvailability(true, false);
+            MirrorPlanIntegrationService planService,
+            MirrorRunIntegrationService runService,
+            VisualEvidenceSigner evidenceSigner) {
+        return new MirrorRuntimeAvailability(true, true, evidenceSigner::available);
     }
 }

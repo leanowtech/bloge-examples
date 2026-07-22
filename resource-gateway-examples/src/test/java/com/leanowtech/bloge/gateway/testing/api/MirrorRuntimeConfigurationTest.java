@@ -9,11 +9,16 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegritySe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
+import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.context.annotation.Bean;
@@ -31,8 +36,11 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class MirrorRuntimeConfigurationTest {
 
@@ -59,6 +67,40 @@ class MirrorRuntimeConfigurationTest {
             assertMirrorKernelAbsent(production);
             assertMirrorKernelAbsent(mixed);
         }
+    }
+
+    @Test
+    void servingAvailabilityRequiresAnActuallyAvailableEvidenceSigner() {
+        MirrorRuntimeConfiguration configuration = new MirrorRuntimeConfiguration();
+        MirrorPlanIntegrationService plans = mock(MirrorPlanIntegrationService.class);
+        MirrorRunIntegrationService runs = mock(MirrorRunIntegrationService.class);
+
+        MirrorRuntimeAvailability unavailable = configuration.mirrorRuntimeAvailability(
+                plans, runs, VisualEvidenceSigner.unavailable());
+        MirrorRuntimeAvailability available = configuration.mirrorRuntimeAvailability(
+                plans, runs, new InMemoryVisualEvidenceSigner());
+
+        assertThat(unavailable.planCompilationApi()).isTrue();
+        assertThat(unavailable.executionApi()).isTrue();
+        assertThat(unavailable.executionReady()).isFalse();
+        assertThat(available.executionReady()).isTrue();
+    }
+
+    @Test
+    void servingAvailabilityTracksSignerChangesAndFailsClosed() {
+        MirrorRuntimeConfiguration configuration = new MirrorRuntimeConfiguration();
+        VisualEvidenceSigner signer = mock(VisualEvidenceSigner.class);
+        AtomicBoolean ready = new AtomicBoolean(false);
+        when(signer.available()).thenAnswer(invocation -> ready.get());
+        MirrorRuntimeAvailability availability = configuration.mirrorRuntimeAvailability(
+                mock(MirrorPlanIntegrationService.class),
+                mock(MirrorRunIntegrationService.class), signer);
+
+        assertThat(availability.executionReady()).isFalse();
+        ready.set(true);
+        assertThat(availability.executionReady()).isTrue();
+        when(signer.available()).thenThrow(new IllegalStateException("provider unavailable"));
+        assertThat(availability.executionReady()).isFalse();
     }
 
     private static AnnotationConfigApplicationContext context(boolean enabled,
@@ -93,9 +135,11 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(MirrorPlanRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorEvidenceRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(MirrorRunRequestRepository.class)).hasSize(1);
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorPlanRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorFixtureScopeRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorEvidenceRepository.class))).isTrue();
+        assertThat(AopUtils.isCglibProxy(context.getBean(MirrorRunRequestRepository.class))).isTrue();
         assertThat(context.getBean(MirrorRunService.class).engineConfiguration())
                 .satisfies(configuration -> {
                     assertThat(configuration.interceptorTypes()).isEmpty();
@@ -115,6 +159,7 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(MirrorPlanRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorEvidenceRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(MirrorRunRequestRepository.class)).isEmpty();
     }
 
     private static final class EmptyResourceRegistry implements ResourceRegistry {

@@ -1,7 +1,8 @@
 # Resource Gateway Mirror Protocol Schemas
 
 This directory is the wire-contract authority for the Resource Gateway capability-mirror protocol.
-Every schema is strict (`additionalProperties: false`) and independently versioned. Server protocol
+Every protocol envelope is strict (`additionalProperties: false`) and independently versioned; only the nested
+business `context` map in an execution command intentionally accepts caller-defined keys. Server protocol
 objects have field-closure tests in `resource-gateway-examples`; cross-system compatibility and
 offline artifact verification live in the independent `resource-gateway-test-kit`.
 
@@ -14,6 +15,8 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-closure-v1.schema.json` | `CapabilityClosure` | Exact root plus every transitively reachable snapshot for registry-free planning |
 | `mirror-plan-v1.schema.json` | `MirrorPlan` | Sealed payload-free execution generation with exact external-edge bindings and isolation policy |
 | `mirror-plan-create-request-v1.schema.json` | `MirrorPlanCreateRequest` | Payload-free protected compile command containing only reviewed artifact identities and bounded requested budgets |
+| `mirror-execution-request-v1.schema.json` | `MirrorExecutionRequest` | Strict execution command containing only request/plan identity, reviewed plan fingerprint, and business context |
+| `mirror-run-summary-v1.schema.json` | `MirrorRunSummary` | Compact payload-free terminal projection derived from verified evidence |
 | `mirror-resolution-v1.schema.json` | `MirrorResolution` | Fingerprinted per-attempt source, confidence, freshness, payload visibility, output/error, and abstention provenance |
 | `mirror-run-evidence-v1.schema.json` | `MirrorRunEvidence` | Payload-free node, edge, resolution, semantic-result, request-context, and isolation facts for one terminal run |
 | `mirror-evidence-attestation-v1.schema.json` | `MirrorEvidenceAttestation` | Domain-separated detached Ed25519 signature over one complete mirror run evidence value |
@@ -72,7 +75,8 @@ conflict. Stage 1 caps timeout at 15 minutes, invocation budget at 100,000, and 
 The application decoder recursively rejects unknown fields and bounds the canonical request tree to 16 MiB.
 Servlet JSON materialization still occurs before that decoder runs, so this is not an ingress denial-of-service
 control. An enterprise deployment must enforce raw-body size, connection, and request-rate limits at the proxy or
-container boundary. A repository-owned pre-materialization limit remains a release gate for execution serving.
+container boundary. A deployment-owned pre-materialization limit remains a production/certification release gate;
+the current protected test/staging serving surface does not claim that MVC parsing is an ingress DoS boundary.
 
 The underlying testing fixture registry predates full organization/project/region coordinates. Mirror does not
 inherit that wider lookup. When the mirror composition is active, fixture registration appends or idempotently
@@ -81,6 +85,78 @@ retryable failure and the exact registration retry completes it. Plan compilatio
 before reading the tenant/environment fixture row. A historical unbound revision is not grandfathered in and must
 be re-registered with identical content under the intended full scope. The companion table contains only scope,
 fixture identity/fingerprint, timestamp, and actor, never fixture or replay values.
+
+## Protected execution and evidence boundary
+
+The same isolated composition exposes these routes only under an explicit mirror switch and a `test` or `staging`
+profile; any active `production` profile physically removes all three mappings:
+
+| Method and path | Response | Semantics |
+|---|---|---|
+| `POST /api/mirror/executions` | `resourceGateway.mirrorRunSummary.v1` | Execute once or return an identical completed request |
+| `GET /api/mirror/runs/{runId}` | `resourceGateway.mirrorRunSummary.v1` | Read a verified payload-free terminal projection |
+| `GET /api/mirror/runs/{runId}/evidence` | `resourceGateway.mirrorEvidenceBundle.v1` | Read independently verified signed `HASH_ONLY` evidence |
+
+`POST /api/mirror/executions` accepts exactly `schemaVersion`, `requestId`, `planId`,
+`expectedPlanFingerprint`, and `context`. It does not accept scope, purpose, fixture/replay references, resolver
+order, credentials, egress, timeout, or policy overrides. The decoder closes top-level fields, requires an object
+context, rejects duplicate keys and scalar coercion before admission, and enforces 16 MiB raw/canonical size, depth 64,
+and 100,000 JSON-node limits. Spring still buffers the body bytes before decoding, so deployment-owned connection,
+streaming body, and rate limits remain required. The application:
+
+1. requires `MIRROR_REHEARSAL`, complete tenant/organization/project/environment/region coordinates, and a
+   `test` or `staging` identity;
+2. loads the plan only inside that exact scope and compares its fingerprint with the caller-reviewed value;
+3. rejects caller-owned `bloge.tenantId`, `bloge.namespace`, and encoded `__nodeOutput:` state, then binds tenant
+   and project namespace from authenticated scope;
+4. fingerprints the effective context under the same 16 MiB limit used by evidence projection;
+5. claims a durable payload-free request lease keyed by full scope and `requestId`;
+6. reconstructs the sealed capability closure, resolves the root's exact graph source, re-verifies the full-scope
+   fixture binding/envelope and governed replay closure, and recompiles the runtime generation;
+7. requires complete equality between the recompiled and stored public plans before scheduling;
+8. executes the independent engine and atomically persists signed evidence plus terminal request state.
+
+`mirror_run_requests` stores only scope, request/context/plan fingerprints, status, opaque lease owner, monotonic
+lease epoch, lease/retention times, stable failure code, and terminal run/evidence fingerprints. It has no request
+JSON, context, fixture, replay, node, edge, input, or output payload column. An identical active retry receives a
+retryable `409 RG.MIRROR.RUN_REQUEST_IN_PROGRESS`; a changed request under the same id receives non-retryable
+`409 RG.MIRROR.RUN_IDEMPOTENCY_CONFLICT`. The coordination database clock is the sole authority for claim time,
+expiry, takeover, release, terminal fencing, and the bounded `retryAfterSeconds`; replicas never supply absolute lease
+timestamps, so wall-clock skew cannot steal authority early or delay recovery. Expiry permits epoch-incrementing
+takeover. Completion compares owner, epoch, the original expiry, and database coordination time; expiry revokes publication
+authority even before another worker takes over. Authority-row locking precedes database-time sampling, so lock wait
+cannot carry a stale time sample across the expiry boundary. H2 clock reads use an independent short connection because
+`CURRENT_TIMESTAMP` is transaction-scoped; the datasource must support at least the outer transaction plus this clock
+connection. Release and takeover also change the fenced row, so an old or
+released worker cannot commit. Evidence insert and terminal request update share one database transaction: stale or
+expired authority rolls back the insert.
+A completed retry loads and cross-checks the stored evidence instead of re-executing. Missing or cross-scope
+plan/run/evidence identities are exposed only as `404`.
+
+The summary contains run/request/plan/context/evidence fingerprints, full scope, terminal status/trust class,
+timestamps, duration, and node/edge/resolution counts. It cannot carry business context, input/output, fixture, or
+replay values. The evidence endpoint remains the authoritative detailed trace. Until a deployment isolation
+attestation is bound, evidence is explicitly `EXPLORATORY` with `DEPLOYMENT_EGRESS_NOT_ATTESTED`; protected serving
+availability is not equivalent to `CERTIFIABLE` evidence.
+
+Stable execution transport failures are grouped by caller action rather than by internal exception type:
+
+| HTTP | Representative code | Retry | Meaning |
+|---:|---|---|---|
+| 400 | `RG.MIRROR.EXECUTION_REQUEST_MALFORMED` | No | Unknown/missing field, wrong version/type, or post-parse size/depth/node limit |
+| 400 | `RG.MIRROR.CONTEXT_RESERVED_KEY` / `RG.MIRROR.CONTEXT_TOO_LARGE` | No | Caller attempted engine-state injection or effective context cannot be fingerprinted safely |
+| 403 | `RG.MIRROR.PURPOSE_REQUIRED` / `RG.MIRROR.ENVIRONMENT_FORBIDDEN` | No | Identity is not authorized for isolated rehearsal |
+| 404 | `RG.MIRROR.PLAN_NOT_FOUND` / `RG.MIRROR.RUN_NOT_FOUND` | No | Absent and cross-scope identities are intentionally indistinguishable |
+| 409 | `RG.MIRROR.PLAN_FINGERPRINT_CONFLICT` | No | Caller did not execute the exact reviewed plan generation |
+| 409 | `RG.MIRROR.RUN_IDEMPOTENCY_CONFLICT` | No | The scoped request id already means different plan/context semantics |
+| 409 | `RG.MIRROR.RUN_REQUEST_IN_PROGRESS` | Yes | Identical request owns an unexpired lease; use bounded `retryAfterSeconds` |
+| 409 | `RG.MIRROR.RUN_LEASE_LOST` | Yes | Execution finished after expiry, release, or epoch takeover and was not allowed to commit |
+| 409 | `RG.MIRROR.RUNTIME_GRAPH_DRIFT` / `RG.MIRROR.RUNTIME_GENERATION_DRIFT` | No | Current authoritative artifacts no longer reproduce the sealed plan |
+| 410 | `RG.MIRROR.RUN_EXPIRED` | No | Plan TTL elapsed before a new execution could start |
+| 503 | `RG.MIRROR.RUN_COORDINATION_UNAVAILABLE` / `RG.MIRROR.RUN_EVIDENCE_UNAVAILABLE` | Yes | Durable coordination or verified evidence storage is unavailable |
+| 503 | `RG.MIRROR.EVIDENCE_SIGNER_UNAVAILABLE` | Yes | No governed signing authority can finalize evidence |
+
+Problem details never contain request context, fixture/replay values, node/edge values, lease owner, or epoch.
 
 ## Invariants
 
@@ -108,6 +184,9 @@ fixture identity/fingerprint, timestamp, and actor, never fixture or replay valu
   `null` is represented by `outputIncluded=true`; `HASH_ONLY` never pretends that payload is present; every
   non-abstained result carries exact artifact provenance. Visible output and the complete artifact have separate
   canonical fingerprints, and generic string rendering omits output and error diagnostics.
+- A durable mirror request is idempotent over full scope, request id, exact plan, effective-context fingerprint,
+  and purpose. Only one unexpired lease epoch may publish terminal evidence, and evidence plus request completion
+  are atomic.
 - A portable mirror evidence bundle never embeds node input, node output, edge value, or resolver output payloads.
   It binds the request-context, plan, capability closure, execution-control generation, fixture revision, semantic
   result, the exact payload-free external binding inventory, ordered node/edge traces, every sealed external
@@ -124,8 +203,8 @@ fixture identity/fingerprint, timestamp, and actor, never fixture or replay valu
 
 ## Independent client admission
 
-The test-kit packages the Stage 0 schemas, the protected plan command, four Stage 1 evidence schemas, and both shared compatibility
-fixtures in its JAR. A Stage 0 consumer first
+The test-kit packages the Stage 0 schemas, protected plan/execution commands, payload-free run summary, four Stage 1
+evidence schemas, and both shared compatibility fixtures in its JAR. A Stage 0 consumer first
 calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
 It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before
 persisting or compiling the artifact. A mirror evidence consumer resolves the attestation key id and calls
@@ -181,6 +260,9 @@ The protected Tool Studio integration surface exposes:
 | `POST /api/integration/capability-snapshots/{id}/lifecycle-transitions` | Append a lifecycle-only revision | `CAPABILITY_GOVERNANCE` |
 | `POST /api/mirror/plans` | Compile exact authoritative artifacts into an append-only payload-free plan | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/plans/{planId}` | Read one verified plan in the full authenticated scope | `MIRROR_REHEARSAL` |
+| `POST /api/mirror/executions` | Execute one exact plan under durable request fencing | `MIRROR_REHEARSAL` |
+| `GET /api/mirror/runs/{runId}` | Read one verified payload-free run summary | `MIRROR_REHEARSAL` |
+| `GET /api/mirror/runs/{runId}/evidence` | Read one verified signed `HASH_ONLY` bundle | `MIRROR_REHEARSAL` |
 
 All endpoints derive scope, actor, and clearance from the verified workload identity. Absent,
 cross-scope, and above-clearance reads deliberately share `404 RG.MIRROR.SNAPSHOT_NOT_FOUND` so the API does
@@ -190,15 +272,20 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4465 tests with no
+passes 4499 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
-the executable Spring Boot JAR.
+the executable Spring Boot JAR. The independent test-kit gate passes 254 tests with no failures, errors, or skips,
+packages all 17 mirror schemas, and rebuilds its ordinary/shaded JAR plus public Javadocs.
 
 The Stage 1 `MirrorPlan` protocol presence alone does not make mirror execution available. Capability discovery
 always reports `mirrorPlanProtocol=true`. It reports `mirrorPlanCompilation` and
-`mirrorExternalLeafInterception` only when the protected test/staging plan adapter is physically assembled; it
-continues to report `mirrorServing=false` until protected execution/evidence routes and deployment egress controls
-pass their own release gates.
+`mirrorExternalLeafInterception` only when the protected test/staging plan adapter is physically assembled, and
+reports `mirrorServing=true` only when run admission, durable request fencing, exact rehydration, independent
+runtime, signed evidence persistence, run/evidence routes, and the signing authority are currently usable. Installed
+run/evidence endpoints and protocol objects remain discoverable while a dynamic signer outage makes
+`mirrorServing=false`; calls then fail closed with the documented `503` instead of pretending the routes do not exist.
+Deployment egress proof controls the evidence certification class, not whether this explicitly isolated exploratory API
+is discoverable.
 
 ## Stage 1 compiler kernel
 
@@ -231,9 +318,9 @@ the public seal, authenticated scope and purpose, TTL, graph/fixture/control gen
 the static invocation floor before executing through the independent test engine. It carries the plan's logical
 timeout into BLOGE `ExecutionBudget`; an unmatched external remains implicit deny and cannot reach the real binding.
 
-The plan compiler now has a protected service endpoint; the execution kernel does not yet. The kernel projects every real node/edge/attempt value to a
-bounded canonical fingerprint, proves exact closure against resolver provenance, requires an explicit signer, and
-returns an immediately verified portable bundle. Durable payload-free plan/evidence storage and independent
-test-kit verification are complete. Protected run admission, request-id coordination, deployment egress proof, and
-the run/evidence HTTP projection remain open. Capability discovery therefore reports protected compilation and
-external interception when assembled, but not execution serving.
+The compiler and execution kernel now have protected service endpoints. The kernel projects every real
+node/edge/attempt value to a bounded canonical fingerprint, proves exact closure against resolver provenance,
+requires an explicit signer, and returns an immediately verified portable bundle. Durable payload-free
+plan/evidence storage, request-id coordination with epoch fencing, atomic terminal commit, and independent test-kit
+verification are complete. Deployment egress proof, pre-MVC ingress controls, dynamic occurrence budgeting, and
+cross-language numeric canonicalization remain open certification/production gates.
