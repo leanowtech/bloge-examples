@@ -160,6 +160,29 @@ frozen; configure the datasource with capacity for the transaction connection pl
 egress proof remains open, so evidence stays exploratory. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
+### Mirror dynamic occurrence budget
+
+`maximumInvocations` is a whole-run operator-occurrence limit, not merely a count of nodes in the
+saved graph. Plan compilation now rejects a limit smaller than the recursively frozen static
+inventory with `RG.MIRROR.INVOCATION_BUDGET_TOO_SMALL`. At runtime, a run-scoped atomic budget is
+checked by BLOGE's inherited `ExecutionOperatorResolver` after exact inventory verification and
+before fixture binding or operator execution. Root nodes, nested graph re-entry, every foreach or
+loop item, streaming nodes, and compensation consume one occurrence. Retries remain ordered
+attempts inside the already admitted occurrence and do not consume another occurrence.
+
+Parallel expansion uses compare-and-set admission, so no race can admit more than the sealed plan
+limit. Once exhausted, later work fails non-retryably with
+`RG.MIRROR.INVOCATION_BUDGET_EXHAUSTED` before the operator can perform a side effect. Already
+admitted work may finish; no new occurrence is admitted. The terminal signed evidence remains
+available with status `EXECUTION_FAILED` and limitation `INVOCATION_BUDGET_EXHAUSTED`. Internal
+test evidence also records only the maximum/admitted/rejected counters under
+`mirrorInvocationBudget`; it stores no site, correlation, input, output, or exception data.
+
+Choose the value from reviewed worst-case expansion, not the static node count alone. For a root
+with one foreach node and an item graph with two nodes, a five-item input can require
+`1 + (5 * 2) = 11` occurrences before compensation. Timeout, ingress limits, tenant concurrency,
+and the occurrence budget protect different resources and must all remain enabled.
+
 ### Mirror operation observability
 
 Every protected Plan, Run, and Evidence operation now reaches exactly one terminal observer before its service

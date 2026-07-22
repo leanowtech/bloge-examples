@@ -22,8 +22,9 @@ import java.util.Set;
  * <p>The projector hashes each node input/output, attempt input/output, edge value, and detached
  * request context independently. It also proves an exact closure between external delegate
  * attempts and sealed {@link MirrorResolution} values before a signing authority may see the
- * result. Internal test metadata, diagnostics, assertions, and business payloads are never copied
- * into the portable protocol.</p>
+ * result. Protected runs also cross-check their payload-free occurrence-budget snapshot and expose
+ * exhaustion as a stable evidence limitation. Internal test metadata, diagnostics, assertions,
+ * and business payloads are never copied into the portable protocol.</p>
  */
 public final class MirrorRunEvidenceProjector {
     /** Maximum canonical business value admitted to one payload fingerprint. */
@@ -45,6 +46,10 @@ public final class MirrorRunEvidenceProjector {
     /**
      * Creates one complete payload-free value from an admitted mirror execution.
      *
+     * <p>This compatibility overload accepts only legacy, non-budgeted evidence. Budgeted evidence
+     * must use the overload that supplies the run-scoped snapshot so callers cannot bypass the
+     * terminal counter cross-check.</p>
+     *
      * @param request exact authenticated mirror request
      * @param execution terminal shared-kernel result
      * @param resolutions sealed resolver provenance completed with the terminal run id
@@ -56,11 +61,49 @@ public final class MirrorRunEvidenceProjector {
             TestExecutionResult execution,
             List<MirrorResolution> resolutions,
             IndependentTestEngineFactory.Configuration engineConfiguration) {
+        if (execution != null && execution.evidence() != null
+                && execution.evidence().metadata()
+                .containsKey(MirrorInvocationBudget.EVIDENCE_METADATA_KEY)) {
+            throw new IllegalArgumentException(
+                    "runtime invocation budget snapshot is required for budgeted mirror evidence");
+        }
+        return projectInternal(request, execution, resolutions, engineConfiguration, null);
+    }
+
+    /**
+     * Creates portable evidence and verifies the protected runtime's occurrence-budget snapshot.
+     *
+     * @param request exact authenticated mirror request
+     * @param execution terminal shared-kernel result
+     * @param resolutions sealed resolver provenance completed with the terminal run id
+     * @param engineConfiguration structural independent-engine facts
+     * @param invocationBudget payload-free runtime occurrence counters
+     * @return unsigned portable evidence ready for the integrity boundary
+     */
+    public MirrorRunEvidence project(
+            MirrorRunRequest request,
+            TestExecutionResult execution,
+            List<MirrorResolution> resolutions,
+            IndependentTestEngineFactory.Configuration engineConfiguration,
+            MirrorInvocationBudget.Snapshot invocationBudget) {
+        return projectInternal(request, execution, resolutions, engineConfiguration,
+                Objects.requireNonNull(invocationBudget, "invocationBudget"));
+    }
+
+    private MirrorRunEvidence projectInternal(
+            MirrorRunRequest request,
+            TestExecutionResult execution,
+            List<MirrorResolution> resolutions,
+            IndependentTestEngineFactory.Configuration engineConfiguration,
+            MirrorInvocationBudget.Snapshot invocationBudget) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(execution, "execution");
         TestRunEvidence source = Objects.requireNonNull(execution.evidence(), "execution.evidence");
         MirrorPlan plan = request.compiledPlan().plan();
         validateSource(plan, execution, source);
+        if (invocationBudget != null) {
+            validateInvocationBudget(plan, source, invocationBudget);
+        }
         List<MirrorResolution> exactResolutions = resolutions == null
                 ? List.of() : List.copyOf(resolutions);
         validateResolutionClosure(plan, source.nodeTrace(), exactResolutions);
@@ -80,6 +123,9 @@ public final class MirrorRunEvidenceProjector {
         if (source.evidenceClass() == TestRunEvidence.EvidenceClass.EXPLORATORY) {
             limitations.add(SHARED_TEST_EVIDENCE_EXPLORATORY);
         }
+        if (invocationBudget != null && invocationBudget.exhausted()) {
+            limitations.add(MirrorInvocationBudget.EXHAUSTED_LIMITATION);
+        }
         return new MirrorRunEvidence("", source.runId(), request.requestId(),
                 fingerprint(request.context().asMap()), plan.planId(), plan.planFingerprint(),
                 plan.capabilityClosureFingerprint(), plan.executionControlFingerprint(),
@@ -89,6 +135,32 @@ public final class MirrorRunEvidenceProjector {
                 source.semanticResultFingerprint(), source.startedAt(), source.completedAt(),
                 projectNodes(source.nodeTrace()), projectEdges(source.edgeTrace()), exactResolutions,
                 isolation, List.copyOf(limitations));
+    }
+
+    private static void validateInvocationBudget(
+            MirrorPlan plan,
+            TestRunEvidence source,
+            MirrorInvocationBudget.Snapshot budget) {
+        if (budget.maximumInvocations() != plan.policy().maximumInvocations()) {
+            throw new IllegalArgumentException(
+                    "runtime invocation budget differs from the sealed mirror plan");
+        }
+        Object metadata = source.metadata().get(MirrorInvocationBudget.EVIDENCE_METADATA_KEY);
+        if (!(metadata instanceof Map<?, ?> values)
+                || integer(values.get("maximumInvocations")) != budget.maximumInvocations()
+                || integer(values.get("admittedInvocations")) != budget.admittedInvocations()
+                || integer(values.get("rejectedInvocations")) != budget.rejectedInvocations()) {
+            throw new IllegalArgumentException(
+                    "shared test evidence differs from the runtime invocation budget");
+        }
+        if (budget.exhausted() && source.status() == TestRunEvidence.Status.PASSED) {
+            throw new IllegalArgumentException(
+                    "an exhausted invocation budget cannot produce passed evidence");
+        }
+    }
+
+    private static int integer(Object value) {
+        return value instanceof Integer integer ? integer : Integer.MIN_VALUE;
     }
 
     private static List<MirrorRunEvidence.ExternalBinding> projectBindings(MirrorPlan plan) {

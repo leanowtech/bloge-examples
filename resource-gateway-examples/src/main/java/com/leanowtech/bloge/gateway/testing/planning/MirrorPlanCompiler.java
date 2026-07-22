@@ -88,6 +88,10 @@ public class MirrorPlanCompiler {
         } catch (ControlPlanRejectedException failure) {
             throw controlFailure(failure);
         }
+        if (inventory.entries().size() > request.policy().maximumInvocations()) {
+            throw reject("RG.MIRROR.INVOCATION_BUDGET_TOO_SMALL",
+                    "Static invocation inventory already exceeds the whole-run occurrence budget.");
+        }
         List<ResolvedExternalEdge> edges = resolveExternalEdges(
                 closure.rootRef(), root, ROOT_PATH, snapshots, inventory);
         Set<String> mandatorySites = edges.stream()

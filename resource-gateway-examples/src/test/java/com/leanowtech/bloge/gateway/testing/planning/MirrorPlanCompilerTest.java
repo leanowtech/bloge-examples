@@ -151,6 +151,20 @@ class MirrorPlanCompilerTest {
     }
 
     @Test
+    void rejectsAPlanWhoseStaticInventoryAlreadyExceedsTheOccurrenceBudget() {
+        registry.register("customer.lookup", new ReadOnlyOperator());
+        registry.register("customer.format", new ReadOnlyOperator());
+        Graph graph = graph("customerView", Map.of(
+                "loadCustomer", "customer.lookup", "formatCustomer", "customer.format"));
+        CapabilityClosure closure = directClosure("customerView", "loadCustomer",
+                "customer.lookup", TARGET, readOnlyEffect(), null);
+
+        assertRejected(() -> compiler.compile(request(
+                        graph, closure, fixture(), policy(1), null, TARGET)),
+                "RG.MIRROR.INVOCATION_BUDGET_TOO_SMALL");
+    }
+
+    @Test
     void requiresDeterministicServicesAndAdmittedFixtureClassification() {
         registry.register("customer.lookup", new ReadOnlyOperator());
         Graph graph = graph("customerView", Map.of("loadCustomer", "customer.lookup"));
@@ -354,8 +368,13 @@ class MirrorPlanCompilerTest {
     }
 
     private static MirrorPlan.ExecutionPolicy policy() {
+        return policy(1000);
+    }
+
+    private static MirrorPlan.ExecutionPolicy policy(int maximumInvocations) {
         return new MirrorPlan.ExecutionPolicy(PURPOSE, false, false, false, false, true,
-                MirrorPlan.UnmatchedResolution.ABSTAINED, 1000, Duration.ofMinutes(5),
+                MirrorPlan.UnmatchedResolution.ABSTAINED, maximumInvocations,
+                Duration.ofMinutes(5),
                 CapabilityContract.DataClassification.CONFIDENTIAL, List.of("sg"),
                 List.of(CapabilitySnapshot.Lifecycle.ACTIVE));
     }

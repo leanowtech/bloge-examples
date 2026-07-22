@@ -235,7 +235,9 @@ public record MirrorPlan(
      * @param schemaSynthesisAllowed whether schema-only synthesized results may be considered
      * @param certificationRequired whether non-certifiable sources fail the run
      * @param unmatchedResolution mandatory fail-closed resolver outcome
-     * @param maximumInvocations positive total invocation budget
+     * @param maximumInvocations positive whole-run operator-occurrence budget; foreach, loop,
+     *                           nested graph, streaming, and compensation re-entry consume it,
+     *                           while retries remain attempts within one occurrence
      * @param timeout positive whole-run logical timeout
      * @param maximumClassification highest classification authorized for this plan
      * @param allowedRegions explicit execution and data-residency allowlist

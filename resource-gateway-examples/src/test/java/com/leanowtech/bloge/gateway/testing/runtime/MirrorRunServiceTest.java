@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.context.GraphContext;
+import com.leanowtech.bloge.core.dsl.GraphBuilder;
+import com.leanowtech.bloge.core.engine.operators.ForEachOperator;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.model.NodeSpec;
 import com.leanowtech.bloge.core.model.ResilienceConfig;
@@ -155,6 +157,97 @@ class MirrorRunServiceTest {
     }
 
     @Test
+    void stopsDynamicForeachExpansionAtTheSealedOccurrenceBudget() {
+        AtomicInteger itemCalls = new AtomicInteger();
+        DefaultOperatorRegistry itemRegistry = new DefaultOperatorRegistry();
+        itemRegistry.register("item.lookup", new ExternalReadOperator(itemCalls));
+        Graph itemGraph = new Graph("itemBody",
+                Map.of("process", node("process", "item.lookup")), List.of(),
+                Set.of("process"), Set.of("process"), SchemaValidationLevel.OFF);
+        Graph foreachGraph = new GraphBuilder("foreachCustomer")
+                .node("expand", new ForEachOperator(itemGraph, itemRegistry, true))
+                .input((results, context) -> context.get("input"))
+                .build();
+        CapabilityClosure foreachClosure = foreachClosure(foreachGraph, itemGraph);
+        FixtureRule nestedRule = new FixtureRule("", "item-response",
+                new FixtureRule.Selector("/root/expand/itemBody", "process", "", "", "",
+                        List.of(), List.of(),
+                        com.leanowtech.bloge.gateway.testing.domain.InvocationSite.InvocationKind.PRIMARY,
+                        List.of(), List.of(), "", FixtureRule.Match.none()),
+                FixtureRule.Behavior.returning(Map.of("accepted", true)),
+                new FixtureRule.Consumption(true, 2, 2,
+                        FixtureRule.ExhaustedAction.FAIL, FixtureRule.UnmatchedAction.FAIL),
+                FixtureRule.SchemaCheck.strict());
+        CompiledMirrorPlan compiled = compiler.compile(new MirrorPlanCompilationRequest(
+                "plan-foreach-customer", foreachGraph, TARGET, foreachClosure,
+                fixture(nestedRule),
+                ResolvedReplayPayloads.empty(), policy(3), null, COMPILED_AT,
+                COMPILED_AT.plus(Duration.ofHours(1))));
+        MirrorRunRequest request = new MirrorRunRequest("request-foreach", compiled,
+                new GraphContext(Map.of("input", List.of("A", "B", "C", "D", "E"))),
+                SCOPE, PURPOSE);
+
+        MirrorRunResult result = runtime.execute(request);
+
+        assertThat(result.passed()).isFalse();
+        assertThat(itemCalls).hasValue(0);
+        assertThat(result.resolutions()).hasSize(2);
+        assertThat(result.execution().evidence().metadata().get("mirrorInvocationBudget"))
+                .isEqualTo(Map.of(
+                        "maximumInvocations", 3,
+                        "admittedInvocations", 3,
+                        "rejectedInvocations", 1));
+        assertThat(result.execution().evidence().nodeTrace()).hasSize(3);
+        assertThat(result.evidenceBundle().evidence().limitations())
+                .contains(MirrorInvocationBudget.EXHAUSTED_LIMITATION);
+        assertThat(result.evidenceBundle().evidence().status())
+                .isEqualTo(com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence.Status
+                        .EXECUTION_FAILED);
+        assertThat(new MirrorEvidenceIntegrityService(mapper, evidenceSigner, Clock.systemUTC())
+                .verify(result.evidenceBundle()))
+                .isEqualTo(MirrorEvidenceIntegrityService.Verification.VERIFIED);
+    }
+
+    @Test
+    void countsRetryAttemptsInsideOneAdmittedOccurrence() {
+        Map<String, NodeSpec> retryNodes = new LinkedHashMap<>();
+        retryNodes.put("loadCustomer", new NodeSpec("loadCustomer", "customer.lookup", null,
+                ResilienceConfig.builder(1).retryBackoff(Duration.ZERO).build(), Map.of(),
+                OpaqueSchema.INSTANCE, OpaqueSchema.INSTANCE));
+        retryNodes.put("formatCustomer", node("formatCustomer", "customer.format"));
+        Graph retryGraph = new Graph("customerView", retryNodes, List.of(),
+                Set.copyOf(retryNodes.keySet()), Set.copyOf(retryNodes.keySet()),
+                SchemaValidationLevel.OFF);
+        FixtureRule firstAttempt = new FixtureRule("", "first-attempt-timeout",
+                attemptSelector("loadCustomer", 1),
+                FixtureRule.Behavior.timeout(Duration.ofSeconds(1),
+                        "FIRST_ATTEMPT_TIMEOUT", "retry this controlled call"),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        FixtureRule secondAttempt = new FixtureRule("", "second-attempt-return",
+                attemptSelector("loadCustomer", 2),
+                FixtureRule.Behavior.returning(Map.of("customerId", "C-1")),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        CompiledMirrorPlan compiled = compiler.compile(new MirrorPlanCompilationRequest(
+                "plan-retry-customer", retryGraph, TARGET, closure,
+                fixture(firstAttempt, secondAttempt), ResolvedReplayPayloads.empty(),
+                policy(2), null, COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(1))));
+
+        MirrorRunResult result = runtime.execute(request(compiled, SCOPE, PURPOSE));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(externalCalls).hasValue(0);
+        assertThat(internalCalls).hasValue(1);
+        assertThat(result.resolutions())
+                .extracting(resolution -> resolution.occurrence() + ":" + resolution.attempt())
+                .containsExactly("1:1", "1:2");
+        assertThat(result.execution().evidence().metadata().get("mirrorInvocationBudget"))
+                .isEqualTo(Map.of(
+                        "maximumInvocations", 2,
+                        "admittedInvocations", 2,
+                        "rejectedInvocations", 0));
+    }
+
+    @Test
     void turnsAnUnmatchedExternalLeafIntoARecordedFailureWithoutRealFallback() {
         CompiledMirrorPlan compiled = compile(fixture());
 
@@ -272,18 +365,31 @@ class MirrorRunServiceTest {
         MirrorRunRequest request = request(compiled, SCOPE, PURPOSE);
         MirrorRunResult result = runtime.execute(request);
         MirrorRunEvidenceProjector projector = new MirrorRunEvidenceProjector(mapper);
+        MirrorInvocationBudget.Snapshot budget =
+                new MirrorInvocationBudget.Snapshot(1000, 2, 0);
 
         assertThatThrownBy(() -> projector.project(request, result.execution(), List.of(),
                 runtime.engineConfiguration()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("budget snapshot is required");
+
+        assertThatThrownBy(() -> projector.project(request, result.execution(), List.of(),
+                runtime.engineConfiguration(), budget))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("exact closure");
 
         MirrorResolution source = result.resolutions().getFirst();
         MirrorResolution mismatched = copyResolutionWithRequest(source, fingerprint('b'));
         assertThatThrownBy(() -> projector.project(request, result.execution(),
-                List.of(mismatched), runtime.engineConfiguration()))
+                List.of(mismatched), runtime.engineConfiguration(), budget))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("differs from its external delegate attempt");
+
+        assertThatThrownBy(() -> projector.project(request, result.execution(),
+                result.resolutions(), runtime.engineConfiguration(),
+                new MirrorInvocationBudget.Snapshot(1000, 1, 0)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("differs from the runtime invocation budget");
     }
 
     @Test
@@ -431,6 +537,40 @@ class MirrorRunServiceTest {
                 CapabilityClosureIntegrity.reference(root), List.of(root, external), ""));
     }
 
+    private CapabilityClosure foreachClosure(Graph rootGraph, Graph itemGraph) {
+        EffectContract effect = EffectContract.readOnly(List.of("item:*"));
+        CapabilitySnapshot external = CapabilitySnapshotIntegrity.seal(mapper,
+                new CapabilitySnapshot("", "operator:item.lookup", 1, "",
+                        CapabilitySnapshot.Kind.EXTERNAL, SCOPE,
+                        new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.OPERATOR,
+                                "item.lookup", fingerprint('4')),
+                        contract(effect), runtime("OPERATOR", "item.lookup", '3'),
+                        List.of(), ownership(), CapabilitySnapshot.Lifecycle.ACTIVE,
+                        provenance(), COMPILED_AT));
+        CapabilitySnapshot child = CapabilitySnapshotIntegrity.seal(mapper,
+                new CapabilitySnapshot("", "graph:" + itemGraph.name(), 1, "",
+                        CapabilitySnapshot.Kind.COMPOSED, SCOPE,
+                        new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.GRAPH,
+                                itemGraph.name(), fingerprint('7')),
+                        contract(effect), runtime("BLOGE_GRAPH", itemGraph.name(), '6'),
+                        List.of(new CapabilitySnapshot.Dependency("process",
+                                CapabilityClosureIntegrity.reference(external), true, List.of())),
+                        ownership(), CapabilitySnapshot.Lifecycle.ACTIVE,
+                        provenance(), COMPILED_AT));
+        CapabilitySnapshot root = CapabilitySnapshotIntegrity.seal(mapper,
+                new CapabilitySnapshot("", "graph:" + rootGraph.name(), 1, "",
+                        CapabilitySnapshot.Kind.COMPOSED, SCOPE,
+                        new CapabilitySnapshot.Source(CapabilitySnapshot.SourceKind.GRAPH,
+                                rootGraph.name(), TARGET),
+                        contract(effect), runtime("BLOGE_GRAPH", rootGraph.name(), '5'),
+                        List.of(new CapabilitySnapshot.Dependency("expand",
+                                CapabilityClosureIntegrity.reference(child), true, List.of())),
+                        ownership(), CapabilitySnapshot.Lifecycle.ACTIVE,
+                        provenance(), COMPILED_AT));
+        return CapabilityClosureIntegrity.seal(mapper, new CapabilityClosure("",
+                CapabilityClosureIntegrity.reference(root), List.of(root, child, external), ""));
+    }
+
     private static CapabilityContract contract(EffectContract effect) {
         return new CapabilityContract("", SchemaEnvelope.opaque(), SchemaEnvelope.opaque(),
                 List.of(), effect, CapabilityContract.Determinism.CONTROLLED_NONDETERMINISTIC,
@@ -461,8 +601,13 @@ class MirrorRunServiceTest {
     }
 
     private static MirrorPlan.ExecutionPolicy policy() {
+        return policy(1000);
+    }
+
+    private static MirrorPlan.ExecutionPolicy policy(int maximumInvocations) {
         return new MirrorPlan.ExecutionPolicy(PURPOSE, false, false, false, false, true,
-                MirrorPlan.UnmatchedResolution.ABSTAINED, 1000, Duration.ofMinutes(5),
+                MirrorPlan.UnmatchedResolution.ABSTAINED, maximumInvocations,
+                Duration.ofMinutes(5),
                 CapabilityContract.DataClassification.CONFIDENTIAL, List.of("sg"),
                 List.of(CapabilitySnapshot.Lifecycle.ACTIVE));
     }
@@ -475,6 +620,12 @@ class MirrorRunServiceTest {
     private static FixtureRule rule(String id, String nodeId, FixtureRule.Behavior behavior) {
         return new FixtureRule("", id, FixtureRule.Selector.node(nodeId), behavior,
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+    }
+
+    private static FixtureRule.Selector attemptSelector(String nodeId, int attempt) {
+        return new FixtureRule.Selector("/root", nodeId, "", "", "", List.of(), List.of(),
+                com.leanowtech.bloge.gateway.testing.domain.InvocationSite.InvocationKind.PRIMARY,
+                List.of(attempt), List.of(), "", FixtureRule.Match.none());
     }
 
     private static Graph graph() {
@@ -552,4 +703,5 @@ class MirrorRunServiceTest {
             return SideEffectType.READ_ONLY;
         }
     }
+
 }

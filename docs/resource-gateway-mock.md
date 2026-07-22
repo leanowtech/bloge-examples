@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、payload-free operation audit 与固定基数指标已完成；部署隔离证明、ingress 预解析防护、跨语言 canonicalization 与 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit 与固定基数指标已完成；部署隔离证明、ingress 预解析防护、跨语言 canonicalization 与 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -75,7 +75,7 @@
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - Stage 0 验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
   Chrome 示例投影用例 `1/1` 全绿。纳入 Stage 1 compiler 与内部 mirror runtime kernel 后，Resource Gateway
-  最新 `clean verify` 为 4514 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
+  最新 `clean verify` 为 4520 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功执行真实浏览器工作流、
   重打可执行 Spring Boot JAR。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -96,7 +96,7 @@
   read-only operator 的真实调用测试计数为 0，内部算子真实执行，并继承 plan logical timeout 对应的
   `ExecutionBudget`。本增量聚焦回归 `75/75`、planning/runtime package 回归 `160/160` 全绿。
 - 第三增量落地时上述 runtime 仍只是内部 kernel；第十四增量已补齐受保护执行/证据 API 和 durable execution
-  request coordination。动态 occurrence budget 与部署 composition/egress 证明仍是更高认证等级门禁，当前
+  request coordination，第十六增量已补齐动态 occurrence budget。部署 composition/egress 证明仍是更高认证等级门禁，当前
   evidence 因 `DEPLOYMENT_EGRESS_NOT_ATTESTED` 明确保持 `EXPLORATORY`。
 - Stage 1 第四增量已冻结 `resourceGateway.mirrorResolution.v1` Java 线模型与 strict JSON Schema。每个结果绑定
   exact run/plan/capability/site/occurrence/attempt/request fingerprint，并区分 `RESOLVED`、`ABSTAINED`、
@@ -223,6 +223,20 @@
   outage 回滚 evidence/request 的专项回归当前 `15/15` 全绿；纳入既有服务/能力探针的本增量精准回归 `62/62`
   全绿，完整 Mirror 聚焦回归 `137/137` 全绿。部署侧 audit 分区/归档/保留期、磁盘容量演练、受限导出、dashboard 和 page route 仍是客户生产准入项，
   feature 为 true 不冒充这些环境控制已完成。
+- Stage 1 第十六增量把 plan 中既有 `maximumInvocations` 从静态提示升级为真实的双层运行安全协议。编译器先对
+  递归冻结的 `InvocationInventory` 执行静态下限证明，预算连结构节点都容纳不下时以
+  `RG.MIRROR.INVOCATION_BUDGET_TOO_SMALL` 拒绝封印。运行时为每个 run 创建独立的
+  `MirrorInvocationBudget`，并在 BLOGE 继承到 root/nested/foreach/loop/streaming/compensation 的
+  `ExecutionOperatorResolver` 中用 CAS 逐次扣减；检查位于 exact inventory 对账之后、fixture binding 和 operator
+  execution 之前，因此并发展开不能超卖，触顶 occurrence 也不能产生外部副作用。retry 保持为已准入 occurrence
+  内的 attempt，不重复占用 occurrence。触顶后已准入工作可收尾，新工作以非重试控制错误
+  `RG.MIRROR.INVOCATION_BUDGET_EXHAUSTED` 终止；签名 evidence 返回 `EXECUTION_FAILED` 并携带稳定
+  `INVOCATION_BUDGET_EXHAUSTED` limitation。shared-kernel metadata 只记录 maximum/admitted/rejected 三个计数，
+  不保留 site、correlation 或业务值；projector 在签名前交叉验证该快照与 sealed plan。旧 projector 入口看到预算
+  metadata 却未收到本次 run 的真实快照时同样失败关闭，不能通过兼容 API 降级绕过对账。静态拒绝、精确边界、64 路
+  并发不超卖、非法快照、真实五项 foreach 在预算 3 下仅准入 root + 两个 child、retry 两次 attempt 只扣一个
+  occurrence、external 调用保持 0、快照篡改失败和 evidence 复验的本增量新增场景 `6/6` 全绿；完整 Mirror
+  聚焦回归 `143/143`、Mirror 加共享 kernel 扩大回归 `181/181` 全绿，并纳入 `4520/4520` 全量门禁。
 
 ---
 
@@ -525,6 +539,12 @@ interface MirrorPlan {
 ```
 
 plan 编译必须是 fail closed 的纯控制面操作。运行时不能临时发现并下载未固定依赖。
+
+`policy.maximumInvocations` 约束实际 operator occurrence，而不是只约束静态 node 数量。编译期必须证明完整递归
+inventory 不超过预算；运行期必须在每次 operator resolution 路径中、返回算子和任何 fixture binding 或 operator execution 前原子
+扣减。root、nested graph、foreach/loop 重入、streaming 和 compensation 都消耗一次；retry 只增加 attempt。并行
+分支只允许至多预算值个 occurrence 穿过门禁。触顶是带签名 evidence 的确定性运行失败，稳定标记为
+`INVOCATION_BUDGET_EXHAUSTED`，不能静默截断为成功，也不能把未准入调用落到真实 operator。
 
 ### 7.2 external leaf 拦截
 
@@ -1232,7 +1252,7 @@ SRE runbook 和生产认证包。
 | RG-MIR-003 | 实现 transitive EffectContract 汇总 | `gateway/integration/mirror` | read/write/mixed/unknown、递归环和声明冲突测试齐全 |
 | RG-MIR-004 | 冻结 provenance 与 lifecycle 状态机 | mirror schema + repository interface | 非法跃迁拒绝；stale/revoke 行为有协议测试 |
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
-| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing 与 fail-closed operation observability；待动态 occurrence budget 和 deployment attestation |
+| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing 与 fail-closed operation observability；待 deployment attestation |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
 | RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝及 Plan/Run/Evidence route 在 production/mixed profile 物理不存在已完成；待部署 egress 证明和 pre-materialization ingress 门禁 |
 | RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure 与 MirrorEvidence 独立复验；共享 signed fixture；不依赖 server/Spring |
@@ -1249,7 +1269,7 @@ Integration API、诚实 probe、7 张内置 graph 加 3 张 visual example 确�
 run kernel；E3 已完成 payload-free evidence/attestation/bundle 协议、真实运行时投影、服务端签名完整性内核、
 external attempt/resolution exact closure、Java test-kit independent verifier、共享 signed fixture 与 full-scope
 append-only plan/evidence 仓储、受保护 Plan/Run/Evidence API、payload-free durable request coordination 与
-fenced atomic commit、同事务成功审计、跨回滚失败审计与固定基数指标；语言中立数字 canonicalization 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
+fenced atomic commit、静态/动态 occurrence budget、同事务成功审计、跨回滚失败审计与固定基数指标；语言中立数字 canonicalization 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
 错误码注册与持续 CI。
 企业客户准入仍必须关闭第 22.2 节的环境级开放决策。
 

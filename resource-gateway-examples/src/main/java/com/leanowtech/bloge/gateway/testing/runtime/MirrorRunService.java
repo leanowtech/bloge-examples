@@ -32,8 +32,10 @@ import java.util.Set;
  * Admits and executes a self-contained stateless mirror generation without recompilation.
  *
  * <p>The service verifies the public seal, authenticated scope and purpose, hard expiry, exact
- * graph/fixture/control identities, and external-only control coverage before creating the
- * independent BLOGE engine. The execution context receives the plan's logical deadline budget;
+ * graph/fixture/control identities, external-only control coverage, and the static invocation
+ * floor before creating the independent BLOGE engine. The execution context receives the plan's
+ * logical deadline budget, while a separate resolver-side occurrence budget fails dynamic
+ * foreach, loop, nested, streaming, or compensation expansion before operator execution;
  * production credentials, interceptors, context carriers, and durable stores are never attached.</p>
  *
  * <p>The class itself is framework-neutral. Resource Gateway exposes it only when the isolated
@@ -182,9 +184,11 @@ public class MirrorRunService {
         TestExecutionResult execution;
         MirrorResolutionJournal resolutionJournal = new MirrorResolutionJournal(
                 mapper, plan, compiled.executionControl().replayPayloads());
+        MirrorInvocationBudget invocationBudget = new MirrorInvocationBudget(
+                plan.policy().maximumInvocations());
         try {
             execution = testRunService.executeCompiled(executionRequest,
-                    compiled.executionControl(), resolutionJournal);
+                    compiled.executionControl(), resolutionJournal, invocationBudget);
         } catch (RuntimeException failure) {
             throw reject("RG.MIRROR.RUNTIME_GENERATION_REJECTED",
                     "Compiled mirror generation failed shared-kernel admission.");
@@ -204,7 +208,7 @@ public class MirrorRunService {
         MirrorRunEvidence evidence;
         try {
             evidence = evidenceProjector.project(request, execution, resolutions,
-                    engineConfiguration());
+                    engineConfiguration(), invocationBudget.snapshot());
         } catch (RuntimeException failure) {
             throw reject("RG.MIRROR.RUN_EVIDENCE_REJECTED",
                     "Mirror run evidence could not prove a complete payload-free execution closure.");

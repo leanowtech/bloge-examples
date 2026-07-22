@@ -54,6 +54,27 @@ public class CompiledTestRuntimeOptions {
             CompiledExecutionControl compiled,
             InvocationRecorder recorder,
             MirrorResolutionObserver mirrorObserver) {
+        return options(compiled, recorder, mirrorObserver, null);
+    }
+
+    /**
+     * Binds one compiled mirror generation to a run-scoped occurrence budget.
+     *
+     * <p>Ordinary test execution passes no budget and retains its existing behavior. A protected
+     * mirror run supplies the exact limit sealed into its plan; admission occurs after frozen-site
+     * verification and before fixture binding or operator execution.</p>
+     *
+     * @param compiled exact compiled execution control
+     * @param recorder run-scoped fixture cursor and trace recorder
+     * @param mirrorObserver run-scoped mirror provenance sink
+     * @param invocationBudget mirror-only whole-run occurrence budget, or {@code null}
+     * @return isolated execution options
+     */
+    public ExecutionOptions options(
+            CompiledExecutionControl compiled,
+            InvocationRecorder recorder,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget) {
         CompiledExecutionControl requiredControl = Objects.requireNonNull(
                 compiled, "compiled");
         InvocationRecorder requiredRecorder = Objects.requireNonNull(recorder, "recorder");
@@ -61,7 +82,8 @@ public class CompiledTestRuntimeOptions {
                 mirrorObserver, "mirrorObserver");
         return ExecutionOptions.builder()
                 .operatorResolver(resolution -> resolveOperator(
-                        resolution, requiredControl, requiredRecorder, requiredObserver))
+                        resolution, requiredControl, requiredRecorder, requiredObserver,
+                        invocationBudget))
                 .executionServices(requiredControl.executionServices().services())
                 .build();
     }
@@ -70,7 +92,8 @@ public class CompiledTestRuntimeOptions {
             OperatorResolutionRequest resolution,
             CompiledExecutionControl compiled,
             InvocationRecorder recorder,
-            MirrorResolutionObserver mirrorObserver) {
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget) {
         InvocationInventory.Entry entry = compiled.inventory().byEngineStructuralId()
                 .get(resolution.site().structuralId());
         if (entry == null || entry.graph() != resolution.graph()) {
@@ -78,6 +101,9 @@ public class CompiledTestRuntimeOptions {
                     "CONTROL_PLAN_RUNTIME_SITE_UNPLANNED", "CONTROL_PLAN",
                     "Runtime invocation was absent from the frozen inventory: "
                             + resolution.site().structuralId());
+        }
+        if (invocationBudget != null) {
+            invocationBudget.admit();
         }
         CompiledExecutionControl.ResolvedControl control = compiled.controls()
                 .get(entry.site().invocationSiteId());

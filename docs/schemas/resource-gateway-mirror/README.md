@@ -72,6 +72,17 @@ An exact retry reuses the original `compiledAt` and returns the existing fingerp
 fixture, timeout, budget, certification flag, expiry, scope, or policy under the same `planId` returns an idempotency
 conflict. Stage 1 caps timeout at 15 minutes, invocation budget at 100,000, and plan lifetime at 24 hours.
 
+`maximumInvocations` is enforced twice. Compilation rejects a value below the complete recursive
+static inventory with `RG.MIRROR.INVOCATION_BUDGET_TOO_SMALL`. Execution then atomically consumes
+one unit before each actual operator occurrence is resolved. The same resolver is inherited by
+root nodes, nested graphs, foreach and loop re-entry, streaming nodes, and compensation. Retry
+attempts remain inside one occurrence and do not consume another unit. Parallel branches cannot
+oversubscribe the limit. Exhaustion stops the next occurrence before fixture binding or operator
+execution, produces terminal `EXECUTION_FAILED` evidence, and adds the stable payload-free
+`INVOCATION_BUDGET_EXHAUSTED` limitation. It is therefore an evidenced business-run failure, not a
+transport-level retry signal. Already admitted concurrent work may complete, but no later
+occurrence is admitted.
+
 The application decoder recursively rejects unknown fields and bounds the canonical request tree to 16 MiB.
 Servlet JSON materialization still occurs before that decoder runs, so this is not an ingress denial-of-service
 control. An enterprise deployment must enforce raw-body size, connection, and request-rate limits at the proxy or
@@ -281,7 +292,7 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4514 tests with no
+passes 4520 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
 the executable Spring Boot JAR. The independent test-kit gate passes 254 tests with no failures, errors, or skips,
 packages all 17 mirror schemas, and rebuilds its ordinary/shaded JAR plus public Javadocs.
@@ -330,6 +341,6 @@ timeout into BLOGE `ExecutionBudget`; an unmatched external remains implicit den
 The compiler and execution kernel now have protected service endpoints. The kernel projects every real
 node/edge/attempt value to a bounded canonical fingerprint, proves exact closure against resolver provenance,
 requires an explicit signer, and returns an immediately verified portable bundle. Durable payload-free
-plan/evidence storage, request-id coordination with epoch fencing, atomic terminal commit, and independent test-kit
-verification are complete. Deployment egress proof, pre-MVC ingress controls, dynamic occurrence budgeting, and
-cross-language numeric canonicalization remain open certification/production gates.
+plan/evidence storage, request-id coordination with epoch fencing, atomic terminal commit, dynamic occurrence
+budgeting, and independent test-kit verification are complete. Deployment egress proof, pre-MVC ingress controls,
+and cross-language numeric canonicalization remain open certification/production gates.

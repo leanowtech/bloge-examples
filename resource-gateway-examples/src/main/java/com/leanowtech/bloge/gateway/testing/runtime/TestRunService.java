@@ -165,6 +165,27 @@ public class TestRunService {
             TestExecutionRequest request,
             CompiledExecutionControl compiled,
             MirrorResolutionObserver mirrorObserver) {
+        return executeCompiled(request, compiled, mirrorObserver, null);
+    }
+
+    /**
+     * Executes one compiled mirror generation under an independent dynamic occurrence budget.
+     *
+     * <p>The budget is optional at the shared kernel boundary so existing operator, graph, and
+     * mutation tests remain source- and behavior-compatible. Protected mirror serving always
+     * supplies it from the sealed plan.</p>
+     *
+     * @param request exact graph, context, fixture, purpose, and evidence provenance
+     * @param compiled exact previously compiled execution control
+     * @param mirrorObserver observer used only by mirror controls
+     * @param invocationBudget mirror-only whole-run occurrence budget, or {@code null}
+     * @return effective plan, graph result, and terminal evidence
+     */
+    public TestExecutionResult executeCompiled(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(compiled, "compiled");
         Objects.requireNonNull(mirrorObserver, "mirrorObserver");
@@ -172,7 +193,8 @@ public class TestRunService {
         String runId = "test-run-" + UUID.randomUUID();
         Instant startedAt = Instant.now();
         try (AdmissionGuard admission = noAdmissionGuard()) {
-            return runCompiled(request, runId, startedAt, compiled, admission, mirrorObserver);
+            return runCompiled(request, runId, startedAt, compiled, admission, mirrorObserver,
+                    invocationBudget);
         }
     }
 
@@ -208,7 +230,7 @@ public class TestRunService {
         try (AdmissionGuard admission = Objects.requireNonNull(
                 admissionFactory.admit(compiled), "admission guard")) {
             return runCompiled(request, runId, startedAt, compiled, admission,
-                    MirrorResolutionObserver.noop());
+                    MirrorResolutionObserver.noop(), null);
         }
     }
 
@@ -218,7 +240,8 @@ public class TestRunService {
             Instant startedAt,
             CompiledExecutionControl compiled,
             AdmissionGuard admission,
-            MirrorResolutionObserver mirrorObserver) {
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget) {
         InvocationRecorder recorder = new InvocationRecorder(objectMapper);
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
@@ -227,7 +250,8 @@ public class TestRunService {
         GraphContext executionContext = new GraphContext(request.context().asMap());
         executionContext.bindExecutionBudget(request.context().executionBudget());
         try {
-            ExecutionOptions options = runtimeOptions.options(compiled, recorder, mirrorObserver);
+            ExecutionOptions options = runtimeOptions.options(
+                    compiled, recorder, mirrorObserver, invocationBudget);
             graphResult = engine.execute(request.graph(), executionContext, options);
         } catch (RuntimeException ex) {
             diagnostics.add(bounded("Test engine failed before producing GraphResult: " + ex.getMessage()));
@@ -266,7 +290,8 @@ public class TestRunService {
                 consumptions,
                 assertions,
                 diagnostics,
-                evidenceMetadata(request, recorder, executionServices, executionContext)));
+                evidenceMetadata(request, recorder, executionServices, executionContext,
+                        invocationBudget)));
         return new TestExecutionResult(compiled.effectivePlan(), graphResult, evidence);
     }
 
@@ -341,7 +366,7 @@ public class TestRunService {
                 TestRunEvidence.EvidenceClass.EXPLORATORY,
                 request.authorizedPurpose(), request.targetFingerprint(), fixtureFingerprint, "",
                 startedAt, Instant.now(), List.of(), List.of(), List.of(), List.of(),
-                ex.diagnostics(), evidenceMetadata(request, null, null, null)));
+                ex.diagnostics(), evidenceMetadata(request, null, null, null, null)));
     }
 
     private static TestRunEvidence.Status terminalStatus(
@@ -399,7 +424,8 @@ public class TestRunService {
     private Map<String, Object> evidenceMetadata(TestExecutionRequest request,
                                                  InvocationRecorder recorder,
                                                  GovernedExecutionServices executionServices,
-                                                 GraphContext executionContext) {
+                                                 GraphContext executionContext,
+                                                 MirrorInvocationBudget invocationBudget) {
         Map<String, Object> metadata = new LinkedHashMap<>(request.metadata());
         metadata.put("fixtureSource", request.fixtureSource().name());
         metadata.put("engineIsolation", engineFactory.configuration());
@@ -416,6 +442,13 @@ public class TestRunService {
             metadata.put("executionServiceUsages", executionServices.usageSnapshot());
             metadata.put("executionServiceStateFingerprint", executionServices.stateFingerprint());
             metadata.put("executionServiceCertificationGaps", executionServices.certificationGaps());
+        }
+        if (invocationBudget != null) {
+            MirrorInvocationBudget.Snapshot budget = invocationBudget.snapshot();
+            metadata.put(MirrorInvocationBudget.EVIDENCE_METADATA_KEY, Map.of(
+                    "maximumInvocations", budget.maximumInvocations(),
+                    "admittedInvocations", budget.admittedInvocations(),
+                    "rejectedInvocations", budget.rejectedInvocations()));
         }
         GovernedExecutionServices.LogicalTimeObservation logicalTime = executionServices == null
                 ? null : executionServices.logicalTimeObservation();
