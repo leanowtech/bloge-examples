@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
  * @param capabilityClosure complete root-plus-dependency snapshot closure
  * @param scope exact enterprise namespace in which every artifact is authorized
  * @param fixtureBundleRef exact existing FixtureBundle revision adapted by the compiler
+ * @param executionControlFingerprint exact EffectiveExecutionPlan generation executed by BLOGE
  * @param externalBindings one binding for every external dependency edge
  * @param scenarioPackRef optional exact scenario pack
  * @param stateModelRefs exact state models required by capability contracts
@@ -46,6 +47,7 @@ public record MirrorPlan(
         List<CapabilitySnapshot> capabilityClosure,
         CapabilitySnapshot.Scope scope,
         MirrorArtifactRef fixtureBundleRef,
+        String executionControlFingerprint,
         List<ExternalBinding> externalBindings,
         MirrorArtifactRef scenarioPackRef,
         List<MirrorArtifactRef> stateModelRefs,
@@ -88,6 +90,8 @@ public record MirrorPlan(
         }
         scope = Objects.requireNonNull(scope, "scope");
         fixtureBundleRef = requireKind(fixtureBundleRef, "FIXTURE_BUNDLE", "fixtureBundleRef");
+        executionControlFingerprint = fingerprint(executionControlFingerprint,
+                "executionControlFingerprint");
         externalBindings = externalBindings == null ? List.of() : externalBindings.stream()
                 .sorted(Comparator.comparing(ExternalBinding::invocationSiteId)
                         .thenComparing(ExternalBinding::dependencyNodeId))
@@ -114,7 +118,8 @@ public record MirrorPlan(
     public MirrorPlan withFingerprint(String value) {
         return new MirrorPlan(schemaVersion, planId, value, rootCapability,
                 capabilityClosureFingerprint, capabilityClosure, scope, fixtureBundleRef,
-                externalBindings, scenarioPackRef, stateModelRefs, executionServices, policy,
+                executionControlFingerprint, externalBindings, scenarioPackRef, stateModelRefs,
+                executionServices, policy,
                 compiledAt, expiresAt);
     }
 

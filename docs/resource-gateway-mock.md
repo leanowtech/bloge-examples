@@ -62,14 +62,27 @@
 - Stage 1 第一增量已冻结 `resourceGateway.mirrorPlan.v1` 与 strict JSON Schema。plan 内嵌 exact capability
   closure，逐条绑定 external dependency edge 到唯一 BLOGE invocation site，并固定 resolver precedence、现有
   FixtureBundle revision、logical clock/random seed、scope、purpose、classification、region、lifecycle、预算和
-  24 小时以内的 expiry。封印前会拒绝缺/重 external binding、调用点复用、state-model closure 缺失、未知 effect、
+  24 小时以内的 expiry；`executionControlFingerprint` 额外固定 BLOGE runtime binding inventory 与实际
+  EffectiveExecutionPlan generation。封印前会拒绝缺/重 external binding、调用点复用、state-model closure 缺失、未知 effect、
   stale/revoked/过期 artifact，以及任何真实 external call、真实凭据或网络出口授权。
 - probe 已声明 `mirrorPlanProtocol=true`；MirrorPlan compiler、external-leaf runtime 和 mirror serving 尚未完成，
   对应三个 feature 继续诚实保持 `false`。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
-- 本增量验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的新增真实
-  Chrome 示例投影用例 `1/1` 全绿；Resource Gateway `clean verify` 为 4362 项测试、0 失败、0 错误、3 条
-  前端 bundle 条件跳过，并成功重打可执行 Spring Boot JAR。
+- Stage 0 验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
+  Chrome 示例投影用例 `1/1` 全绿。纳入 Stage 1 compiler 后，Resource Gateway 最新 `clean verify` 为
+  4384 项测试、0 失败、0 错误、3 条前端 bundle 条件跳过，并成功重打可执行 Spring Boot JAR。
+- Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
+  `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
+  递归冻结的 BLOGE `InvocationInventory`，再复用 FixtureBundle selector、replay、schema check 和 test-double
+  runtime；无 owner rule 会生成 implicit deny/`ABSTAINED`，read-only external 也不能逃逸。Graph/fixture drift、
+  缺失/歧义 site、runtime 多出 external、REAL/SPY/fallback、非确定性 execution services、越级 classification、
+  认证计划 schema waiver 均在调度前以稳定 `RG.MIRROR.*` code 拒绝。compiler kernel 尚未暴露服务 API，
+  所以 `mirrorPlanCompilation` feature 仍保持 false。
+- ADR-004 已冻结 FixtureBundle 复用边界：不建立第二套 MirrorFixture；public MirrorPlan 只保留 exact fixture ref、
+  rule ids、resolver source 和 execution-control fingerprint，业务 fixture/replay payload 只存在于进程内
+  `CompiledMirrorPlan`。Stage 1 compiler 聚焦套件当前 `42/42` 全绿；planning/runtime 扩大回归 `163/163`
+  全绿。Mirror binding 与 execution control 复用同一个已冻结 InvocationInventory，消除了两次 registry lookup
+  之间的并发 binding 漂移窗口；空 mirror-site 集合不改变普通 EffectiveExecutionPlan fingerprint generation。
 
 ---
 
@@ -356,6 +369,7 @@ interface MirrorPlan {
   planFingerprint: string
   rootCapability: RevisionRef
   capabilityClosure: CapabilitySnapshot[]
+  executionControlFingerprint: string
   externalBindings: MirrorBinding[]
   scenarioPackRef?: RevisionRef
   stateModelRefs: RevisionRef[]
@@ -1019,8 +1033,8 @@ SRE runbook 和生产认证包。
 | RG-MIR-003 | 实现 transitive EffectContract 汇总 | `gateway/integration/mirror` | read/write/mixed/unknown、递归环和声明冲突测试齐全 |
 | RG-MIR-004 | 冻结 provenance 与 lifecycle 状态机 | mirror schema + repository interface | 非法跃迁拒绝；stale/revoke 行为有协议测试 |
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
-| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 协议/验封已完成；待接 exact FixtureBundle adapter 与 runtime inventory；漂移、缺失、环和过期全部 fail closed |
-| RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/` + adapter interface | 不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
+| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler kernel、exact closure/runtime inventory 对账、漂移/缺失/歧义/过期 fail closed；待服务 API 与仓储 |
+| RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
 | RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | production profile 无 mirror endpoint/bean；普通请求控制字段被拒绝 |
 | RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 不依赖 server/Spring；schema 与 Java round-trip 一致 |
 | RG-MIR-010 | 建立退款域资产清单 | `docs/examples/resource-gateway-mirror/refund/` | capability closure、entity、baseline read、write effect、outcome owner 完整 |
@@ -1030,7 +1044,7 @@ SRE runbook 和生产认证包。
 推荐领取顺序：001/004/007/010 可并行；随后 002/003/009/011；最后 005/006/008/012。Stage 0 不实现
 真实 mirror serving，避免协议尚未冻结时把临时模型固化进运行时。
 
-当前领取状态：RG-MIR-001/002/003/004/005/009 已完成通用协议、projection、effect、闭包、生命周期、仓储、
+当前领取状态：RG-MIR-001/002/003/004/005/006/007/009 已完成通用协议、projection、effect、闭包、生命周期、仓储、
 Integration API、诚实 probe、7 张内置 graph 加 3 张 visual example 确定性投影，以及独立 compatibility/离线复验。
 这已经满足 Stage 0 的仓库内工程退出门禁。RG-MIR-006 归入 Stage 1 主链；007/008/010/011/012 在推进 Stage 1
 前补齐 ADR、生产隔离、退款资产、错误码注册与持续 CI。企业客户准入仍必须关闭第 22.2 节的环境级开放决策。

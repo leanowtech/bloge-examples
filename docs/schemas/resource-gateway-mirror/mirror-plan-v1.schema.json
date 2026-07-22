@@ -7,6 +7,7 @@
   "required": [
     "schemaVersion", "planId", "planFingerprint", "rootCapability",
     "capabilityClosureFingerprint", "capabilityClosure", "scope", "fixtureBundleRef",
+    "executionControlFingerprint",
     "externalBindings", "scenarioPackRef", "stateModelRefs", "executionServices",
     "policy", "compiledAt", "expiresAt"
   ],
@@ -24,6 +25,7 @@
     },
     "scope": { "$ref": "#/$defs/scope" },
     "fixtureBundleRef": { "$ref": "#/$defs/fixtureBundleRef" },
+    "executionControlFingerprint": { "$ref": "#/$defs/fingerprint" },
     "externalBindings": {
       "type": "array",
       "maxItems": 10000,

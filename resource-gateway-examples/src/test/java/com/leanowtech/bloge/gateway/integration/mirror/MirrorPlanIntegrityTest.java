@@ -168,7 +168,8 @@ class MirrorPlanIntegrityTest {
                 List.of(CapabilitySnapshot.Lifecycle.ACTIVE));
         MirrorPlan changed = new MirrorPlan("", source.planId(), "", source.rootCapability(),
                 source.capabilityClosureFingerprint(), source.capabilityClosure(), source.scope(),
-                source.fixtureBundleRef(), source.externalBindings(), null, source.stateModelRefs(),
+                source.fixtureBundleRef(), source.executionControlFingerprint(),
+                source.externalBindings(), null, source.stateModelRefs(),
                 source.executionServices(), wrongRegion, source.compiledAt(), source.expiresAt());
         assertRejected(changed, "region");
     }
@@ -232,7 +233,8 @@ class MirrorPlanIntegrityTest {
                 ? List.of() : List.of(material.stateModelRef());
         return new MirrorPlan("", "plan-customer-view", "", material.closure().rootRef(),
                 material.closure().fingerprint(), material.closure().snapshots(), SCOPE,
-                ref("FIXTURE_BUNDLE", "customer-fixture", 'e'), List.of(binding), null,
+                ref("FIXTURE_BUNDLE", "customer-fixture", 'e'), fingerprint('9'),
+                List.of(binding), null,
                 stateModels, new MirrorPlan.ExecutionServices(COMPILED_AT, 42L, null, null),
                 policy(false, false, false), COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(1)));
     }
@@ -283,7 +285,8 @@ class MirrorPlanIntegrityTest {
                                    Instant expiresAt) {
         return new MirrorPlan(source.schemaVersion(), source.planId(), "", source.rootCapability(),
                 source.capabilityClosureFingerprint(), closure, source.scope(),
-                source.fixtureBundleRef(), bindings, source.scenarioPackRef(), stateModels,
+                source.fixtureBundleRef(), source.executionControlFingerprint(), bindings,
+                source.scenarioPackRef(), stateModels,
                 source.executionServices(), source.policy(), source.compiledAt(), expiresAt);
     }
 

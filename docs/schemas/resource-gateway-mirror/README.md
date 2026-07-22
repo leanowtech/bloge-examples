@@ -51,7 +51,8 @@ source fingerprint without becoming false business capabilities.
   validation prevents deep dependency chains from consuming the JVM call stack. Its fingerprint covers the
   complete normalized closure.
 - A mirror plan embeds one verified closure and binds every external dependency edge exactly once to a unique
-  BLOGE invocation site. Resolver sources follow the fixed v1 precedence and end in `ABSTAINED`; real external
+  BLOGE invocation site. `executionControlFingerprint` additionally pins the exact frozen BLOGE runtime inventory
+  and EffectiveExecutionPlan generation. Resolver sources follow the fixed v1 precedence and end in `ABSTAINED`; real external
   calls, external credentials, network egress, stale/revoked artifacts, unknown effects, incomplete state-model
   closure, cross-purpose/cross-scope material, and plans longer than 24 hours are rejected before sealing.
 - Revision one must be `DRAFT`; later revisions are contiguous, append-only, and accepted only through the
@@ -114,11 +115,24 @@ not become an asset-existence oracle.
 
 The Stage 0 baseline verifies all seven shipped resource graphs plus all three frontend visual examples. The
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
-focused protocol and probe suite passes 32 tests with no failures, errors, or skips. The latest complete Resource Gateway gate
-before this protocol-only increment passed 4362 tests with no failures or errors and 3 conditional frontend skips;
-the next compiler increment must run the complete gate again before advertising compilation readiness.
+focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
+compiler kernel, the latest complete Resource Gateway gate passes 4384 tests with no failures or errors and 3
+conditional frontend skips, and successfully rebuilds the executable Spring Boot JAR.
 
 The Stage 1 `MirrorPlan` protocol presence does not make mirror execution available. Capability discovery reports
 `mirrorPlanProtocol=true`, while `mirrorPlanCompilation`, `mirrorExternalLeafInterception`, and `mirrorServing`
 remain false until compiler, interception, isolation, independent verification, and evidence paths pass their own
 release gates.
+
+## Stage 1 compiler kernel
+
+`MirrorPlanCompiler` verifies an exact closure, recursively joins direct and nested capability dependency edges to
+the frozen BLOGE `InvocationInventory`, and delegates all owner controls to the existing
+`ExecutionControlCompiler.compileMirror` adapter. The public plan contains no FixtureBundle values or replay payloads;
+its `executionControlFingerprint` binds the exact internal `EffectiveExecutionPlan`. Missing owner rules become
+implicit deny plus `ABSTAINED`, and read-only external operators are still mandatory interception sites.
+
+The accepted reuse decision and behavior-loss matrix are recorded in
+[`ADR-004`](../../adr/ADR-004-mirror-plan-reuses-fixture-bundle.md). The compiler remains a kernel rather than a
+service endpoint, so capability discovery continues to report compilation and serving as unavailable until exact
+artifact resolution, idempotent storage, authenticated API, runtime execution, and evidence integration land.

@@ -23,10 +23,13 @@ import com.leanowtech.bloge.gateway.testing.runtime.GovernedExecutionServices;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedTestSecrets;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -158,6 +161,53 @@ public class ExecutionControlCompiler {
     }
 
     /**
+     * Compiles a mirror execution while forcing every capability-derived external site through the
+     * existing fixture-control runtime.
+     *
+     * <p>Sites without an owner rule receive the same implicit denial used for other external
+     * effects. REAL, SPY, unmatched-real, and exhausted-real policies are rejected even when the
+     * frozen operator reports itself as read-only. This method is the adapter boundary that lets
+     * MirrorPlan reuse FixtureBundle instead of defining a parallel fixture language.</p>
+     *
+     * @param graph exact graph artifact
+     * @param fixtureBundle exact existing fixture bundle
+     * @param authorizedPurpose server-minted mirror purpose
+     * @param targetFingerprint exact graph artifact fingerprint
+     * @param replayPayloads governed replay values frozen before compilation
+     * @param mandatoryExternalSiteIds capability-derived invocation sites that must be intercepted
+     * @return executable frozen control shared by mirror plan and runtime
+     */
+    public CompiledExecutionControl compileMirror(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            Set<String> mandatoryExternalSiteIds) {
+        return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                targetFingerprint, replayPayloads, ResolvedTestSecrets.empty(), null,
+                mandatoryExternalSiteIds);
+    }
+
+    /**
+     * Compiles mirror controls from the exact inventory already used for capability-edge binding.
+     * Package visibility keeps this authority inside the planning boundary and removes a second
+     * mutable registry read between MirrorPlan binding and runtime control compilation.
+     */
+    CompiledExecutionControl compileMirrorFromInventory(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            Set<String> mandatoryExternalSiteIds,
+            InvocationInventory frozenInventory) {
+        return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                targetFingerprint, replayPayloads, ResolvedTestSecrets.empty(), null,
+                mandatoryExternalSiteIds, Objects.requireNonNull(frozenInventory, "frozenInventory"));
+    }
+
+    /**
      * Compiles a mutation child while retaining the fixture's exact baseline target binding.
      *
      * <p>This is an internal test-runtime capability, not a general target-retargeting API. It is
@@ -229,6 +279,37 @@ public class ExecutionControlCompiler {
             ResolvedReplayPayloads replayPayloads,
             ResolvedTestSecrets testSecrets,
             ExecutionServiceStateSnapshot providerState) {
+        return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                fixtureBindingTargetFingerprint, replayPayloads, testSecrets, providerState,
+                Set.of(), null);
+    }
+
+    private CompiledExecutionControl compileBound(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            String fixtureBindingTargetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            ResolvedTestSecrets testSecrets,
+            ExecutionServiceStateSnapshot providerState,
+            Set<String> mandatoryExternalSiteIds) {
+        return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                fixtureBindingTargetFingerprint, replayPayloads, testSecrets, providerState,
+                mandatoryExternalSiteIds, null);
+    }
+
+    private CompiledExecutionControl compileBound(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            String fixtureBindingTargetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            ResolvedTestSecrets testSecrets,
+            ExecutionServiceStateSnapshot providerState,
+            Set<String> mandatoryExternalSiteIds,
+            InvocationInventory frozenInventory) {
         Objects.requireNonNull(graph, "graph");
         ResolvedReplayPayloads resolvedReplays = replayPayloads == null
                 ? ResolvedReplayPayloads.empty() : replayPayloads;
@@ -237,7 +318,16 @@ public class ExecutionControlCompiler {
         safetyPreflight.validate(fixtureBundle, authorizedPurpose,
                 fixtureBindingTargetFingerprint, resolvedReplays);
 
-        InvocationInventory inventory = inventoryBuilder.build(graph, targetFingerprint);
+        InvocationInventory inventory = frozenInventory == null
+                ? inventoryBuilder.build(graph, targetFingerprint) : frozenInventory;
+        Set<String> mandatoryExternalSites = normalizedSites(mandatoryExternalSiteIds);
+        List<String> missingMirrorSites = mandatoryExternalSites.stream()
+                .filter(siteId -> !inventory.byInvocationSiteId().containsKey(siteId)).toList();
+        if (!missingMirrorSites.isEmpty()) {
+            throw new ControlPlanRejectedException("CONTROL_PLAN_MIRROR_SITE_UNRESOLVED", List.of(
+                    "Capability-derived mirror invocation sites are absent from the frozen graph: "
+                            + missingMirrorSites));
+        }
         GovernedExecutionServices executionServices = GovernedExecutionServices.prepare(
                 objectMapper, fixtureBundle, inventory, resolvedSecrets);
         Map<String, CompiledExecutionControl.ResolvedControl> controls = new LinkedHashMap<>(
@@ -245,13 +335,14 @@ public class ExecutionControlCompiler {
 
         for (InvocationInventory.Entry entry : inventory.entries()) {
             String siteId = entry.site().invocationSiteId();
-            if (!controls.containsKey(siteId) && externalEffect(entry)) {
+            if (!controls.containsKey(siteId)
+                    && (externalEffect(entry) || mandatoryExternalSites.contains(siteId))) {
                 controls.put(siteId, new CompiledExecutionControl.ResolvedControl(
                         entry.site(), List.of(implicitDeny(entry)), true));
             }
         }
         rejectUnsupportedControlledBindings(inventory, controls);
-        rejectUnsafeExternalReal(inventory, controls);
+        rejectUnsafeExternalReal(inventory, controls, mandatoryExternalSites);
 
         String fixtureFingerprint = ProtocolFingerprint.of(objectMapper, fixtureBundle);
         List<EffectiveExecutionPlan.ResolvedSite> sites = new ArrayList<>();
@@ -286,6 +377,9 @@ public class ExecutionControlCompiler {
         fingerprintMaterial.put("sites", sites);
         fingerprintMaterial.put("replayDependencies", resolvedReplays.planDependencies());
         fingerprintMaterial.put("executionServiceBindings", executionServices.bindings());
+        if (!mandatoryExternalSites.isEmpty()) {
+            fingerprintMaterial.put("mandatoryMirrorExternalSites", mandatoryExternalSites);
+        }
         fingerprintMaterial.put("defaults", defaults);
         if (!Objects.equals(targetFingerprint, fixtureBindingTargetFingerprint)) {
             fingerprintMaterial.put("fixtureBindingTarget", fixtureBindingTargetFingerprint);
@@ -359,10 +453,12 @@ public class ExecutionControlCompiler {
 
     private void rejectUnsafeExternalReal(
             InvocationInventory inventory,
-            Map<String, CompiledExecutionControl.ResolvedControl> controls) {
+            Map<String, CompiledExecutionControl.ResolvedControl> controls,
+            Set<String> mandatoryExternalSites) {
         controls.forEach((siteId, control) -> {
             InvocationInventory.Entry entry = inventory.byInvocationSiteId().get(siteId);
-            if (entry == null || control.implicitDeny() || !externalEffect(entry)) {
+            if (entry == null || control.implicitDeny()
+                    || (!externalEffect(entry) && !mandatoryExternalSites.contains(siteId))) {
                 return;
             }
             boolean unsafe = control.rules().stream().anyMatch(rule ->
@@ -375,6 +471,23 @@ public class ExecutionControlCompiler {
                                 + "' cannot use REAL/SPY or a fallback-to-real policy in v1."));
             }
         });
+    }
+
+    private static Set<String> normalizedSites(Set<String> siteIds) {
+        if (siteIds == null || siteIds.isEmpty()) {
+            return Set.of();
+        }
+        TreeSet<String> normalized = new TreeSet<>();
+        for (String siteId : siteIds) {
+            String value = siteId == null ? "" : siteId.trim();
+            if (value.isBlank()) {
+                throw new ControlPlanRejectedException(
+                        "CONTROL_PLAN_MIRROR_SITE_INVALID", List.of(
+                        "Capability-derived mirror invocation site id must not be blank."));
+            }
+            normalized.add(value);
+        }
+        return Collections.unmodifiableSet(normalized);
     }
 
     private static FixtureRule implicitDeny(InvocationInventory.Entry entry) {

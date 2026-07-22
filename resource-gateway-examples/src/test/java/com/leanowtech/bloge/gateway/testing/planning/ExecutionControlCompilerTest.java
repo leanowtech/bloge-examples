@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -201,6 +202,71 @@ class ExecutionControlCompilerTest {
                 "OPERATOR_UNIT_TEST", TARGET))
                 .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
                         assertThat(ex.code()).isEqualTo("CONTROL_PLAN_UNSAFE_EXTERNAL_REAL"));
+    }
+
+    @Test
+    void mirrorCompilationInterceptsCapabilityDeclaredReadOnlyExternalSites() {
+        CompiledExecutionControl compiled = compiler.compileMirror(
+                graph(new ReadOnlyOperator()), logicalBundle(), "MIRROR_REHEARSAL", TARGET,
+                ResolvedReplayPayloads.empty(), Set.of("/root/subject#PRIMARY"));
+
+        assertThat(compiled.controls().get("/root/subject#PRIMARY").implicitDeny()).isTrue();
+        assertThat(compiled.effectivePlan().resolvedSites()).singleElement().satisfies(site -> {
+            assertThat(site.resolution()).isEqualTo(EffectiveExecutionPlan.Resolution.DENIED);
+            assertThat(site.ruleRefs()).containsExactly(
+                    "implicit-deny:/root/subject#PRIMARY");
+        });
+    }
+
+    @Test
+    void mirrorCompilationRejectsRealFallbackAndUnknownCapabilitySites() {
+        FixtureRule unsafe = rule("unsafe-real", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.real());
+        assertThatThrownBy(() -> compiler.compileMirror(
+                graph(new ReadOnlyOperator()), logicalBundle(unsafe), "MIRROR_REHEARSAL", TARGET,
+                ResolvedReplayPayloads.empty(), Set.of("/root/subject#PRIMARY")))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("CONTROL_PLAN_UNSAFE_EXTERNAL_REAL"));
+
+        assertThatThrownBy(() -> compiler.compileMirror(
+                graph(new ReadOnlyOperator()), logicalBundle(), "MIRROR_REHEARSAL", TARGET,
+                ResolvedReplayPayloads.empty(), Set.of("/root/missing#PRIMARY")))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("CONTROL_PLAN_MIRROR_SITE_UNRESOLVED"));
+    }
+
+    @Test
+    void mirrorCompilationConsumesTheSameInventoryUsedForCapabilityBinding() {
+        ReadOnlyOperator first = new ReadOnlyOperator();
+        ReadOnlyOperator replacement = new ReadOnlyOperator();
+        registry.register("mirror-binding", first);
+        Graph graph = registryGraph("mirror-binding");
+        InvocationInventory frozen = new InvocationInventoryBuilder(registry).build(graph, TARGET);
+        registry.register("mirror-binding", replacement);
+
+        CompiledExecutionControl compiled = compiler.compileMirrorFromInventory(
+                graph, logicalBundle(), "MIRROR_REHEARSAL", TARGET,
+                ResolvedReplayPayloads.empty(), Set.of("/root/subject#PRIMARY"), frozen);
+
+        assertThat(compiled.inventory().byInvocationSiteId()
+                .get("/root/subject#PRIMARY").frozenOperator()).isSameAs(first);
+        assertThat(compiled.inventory().byInvocationSiteId()
+                .get("/root/subject#PRIMARY").frozenOperator()).isNotSameAs(replacement);
+    }
+
+    @Test
+    void emptyMirrorSiteSetPreservesTheOrdinaryControlPlanGeneration() {
+        Graph graph = graph(new ReadOnlyOperator());
+        FixtureBundle fixture = logicalBundle();
+
+        CompiledExecutionControl ordinary = compiler.compile(
+                graph, fixture, "MIRROR_REHEARSAL", TARGET);
+        CompiledExecutionControl emptyMirror = compiler.compileMirror(
+                graph, fixture, "MIRROR_REHEARSAL", TARGET,
+                ResolvedReplayPayloads.empty(), Set.of());
+
+        assertThat(emptyMirror.effectivePlan().planFingerprint())
+                .isEqualTo(ordinary.effectivePlan().planFingerprint());
     }
 
     @Test

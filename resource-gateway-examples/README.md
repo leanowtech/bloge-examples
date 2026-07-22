@@ -121,6 +121,12 @@ runtime readiness: the probe keeps
 their later release gates. The complete protocol and lifecycle rules are in the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md).
 
+The Stage 1 compiler kernel now exists internally: it verifies Capability Closure against the recursively frozen
+BLOGE invocation inventory and adapts the existing FixtureBundle into mandatory external-site controls. It is not
+yet an API or persisted serving surface, so the runtime feature flags above intentionally remain false. The fixture
+reuse decision and unsupported-behavior matrix are in
+[ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
+
 Useful variants:
 
 ```bash
