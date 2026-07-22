@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRecord;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -83,6 +85,36 @@ class ExecutionControlBoundaryGuardFilterTest {
                         .content("{\"resourceId\":\"customer.get\",\"fixtureBundle\":{}}"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("RG.INTEGRATION.SECURITY_AUDIT_UNAVAILABLE"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "mirrorPlan", "mirrorRequest", "replayPayloads", "replacementRules",
+            "resolverOverrides", "scenarioPackRef"
+    })
+    void productionRunRejectsEveryMirrorControlFamilyBeforeController(String field)
+            throws Exception {
+        RecordingAudit audit = new RecordingAudit();
+        RunEndpoint endpoint = new RunEndpoint();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(endpoint)
+                .addFilters(new ExecutionControlBoundaryGuardFilter(new ObjectMapper(), audit))
+                .build();
+
+        mvc.perform(post("/api/visual/drafts/run")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"context\":{\"nested\":{\"" + field + "\":{}}}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code")
+                        .value("RG.PRODUCTION.CONTROL_FIELD_FORBIDDEN"))
+                .andExpect(jsonPath("$.details.field").value(field));
+
+        assertThat(endpoint.calls).isZero();
+        assertThat(audit.records).singleElement().satisfies(record -> {
+            assertThat(record.operation()).isEqualTo("PRODUCTION_RUN_CONTROL_GUARD");
+            assertThat(record.outcome()).isEqualTo("DENIED");
+            assertThat(record.reasonCode())
+                    .isEqualTo("RG.PRODUCTION.CONTROL_FIELD_FORBIDDEN");
+        });
     }
 
     @Test

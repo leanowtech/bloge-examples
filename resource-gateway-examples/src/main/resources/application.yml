@@ -45,6 +45,10 @@ gateway:
   base-url: http://localhost:${server.port}/demo-upstream
   # Automatically seed or refresh the built-in demo descriptors on startup.
   seed-descriptors: true
+  testing:
+    mirror:
+      # Requires the test or staging profile and is physically excluded whenever production is active.
+      enabled: ${RG_MIRROR_RUNTIME_ENABLED:false}
   integration:
     evidence-signing:
       # Production path: Resource Gateway keeps public verification keys only; the sidecar owns KMS/HSM access.

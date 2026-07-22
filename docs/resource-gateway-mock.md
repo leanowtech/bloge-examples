@@ -66,7 +66,8 @@
   EffectiveExecutionPlan generation。封印前会拒绝缺/重 external binding、调用点复用、state-model closure 缺失、未知 effect、
   stale/revoked/过期 artifact，以及任何真实 external call、真实凭据或网络出口授权。
 - probe 已声明 `mirrorPlanProtocol=true`；MirrorPlan compiler、external-leaf runtime 和 payload-free resolver
-  provenance 已形成未暴露的内部 kernel，生产隔离证明、受保护 API、持久化 evidence 和 mirror serving 尚未完成，
+  provenance 已形成未暴露的内部 kernel，profile/property 双栅栏与普通业务 run 的 mirror 控制字段拒绝已经落地；
+  受保护 API、持久化 evidence、部署级 egress attestation 和 mirror serving 尚未完成，
   对应三个可对外消费的 feature 继续诚实保持
   `false`。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
@@ -149,6 +150,13 @@
   test-kit 聚焦回归 `12/12`、服务端 evidence/runtime 聚焦回归 `28/28` 全绿。当前独立消费者认证范围仅为 Java；
   非 Java 客户端必须先通过固定 fixture，且在 RFC 8785 或等价的语言中立数字 canonicalization profile 冻结前，
   不得宣称跨语言生产兼容。
+- Stage 1 第十一增量建立 `MirrorRuntimeConfiguration` 隔离装配根。只有显式
+  `gateway.testing.mirror.enabled=true` 且 profile 为 `test` 或 `staging` 时才装配 `MirrorPlanCompiler` 与
+  `MirrorRunService`；只要 `production` 出现在 active profiles 中，即使同时激活 `test` 也物理排除全部 mirror
+  bean。装配测试同时证明独立引擎没有生产 interceptor、context carrier、extension listener 和 durable store。
+  普通业务 run 的 DTO 前置 guard 新增 mirror、replay、replacement、resolver override 与 scenario pack 字段族，
+  嵌套注入会在 controller 前拒绝并提交安全审计，审计不可用时继续失败关闭。聚焦回归 `13/13` 全绿。
+  未来受保护 endpoint 必须归属同一隔离装配根，并补应用级 route absence 测试；在此之前三个运行 feature 不变。
 
 ---
 
@@ -1118,7 +1126,7 @@ SRE runbook 和生产认证包。
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
 | RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance 与 generation/TTL/scope 准入；待服务 API、动态预算与仓储 |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
-| RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | production profile 无 mirror endpoint/bean；普通请求控制字段被拒绝 |
+| RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏和普通请求控制字段拒绝已完成；待受保护 API 接入后证明 production route 物理不存在 |
 | RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure 与 MirrorEvidence 独立复验；共享 signed fixture；不依赖 server/Spring |
 | RG-MIR-010 | 建立退款域资产清单 | `docs/examples/resource-gateway-mirror/refund/` | capability closure、entity、baseline read、write effect、outcome owner 完整 |
 | RG-MIR-011 | 增加协议版本与错误码注册表 | mirror protocol docs | 每个拒绝路径有稳定 code、HTTP 语义和重试分类 |
