@@ -90,7 +90,21 @@ javadoc --release 25 -Werror -Xdoclint:all
 0 warnings, 0 errors
 ```
 
-完整 `clean verify` 将在本增量实现 commit 的 immutable snapshot 上执行并回填。
+实现提交 `e70a7c05` 的 immutable snapshot
+`/private/tmp/bloge-examples-verify-e70a7c05.ogLD7Q` 已执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 4056, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 07:57 min
+```
+
+独立读取 455 份 Surefire XML 得到相同的 `4056/0/0/2` 汇总。重打包后的 Spring Boot 可执行 JAR
+为 39,596,599 bytes，并包含 7 个 `DatabaseTestSuiteStabilityJobRepository` 主类/嵌套类 entry。
+Maven 退出后再次检查快照路径关联的 Java/Maven 进程，以及测试启动的 ChromeDriver/Chrome for
+Testing 进程，两类残留数均为 0。
 
 ## 5. 尚未闭合
 

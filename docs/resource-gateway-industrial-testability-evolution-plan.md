@@ -210,8 +210,9 @@
 > Ed25519 组合场景覆盖 PREPARED/CONFIRMED/UNCONFIRMED、COMMITTING、cancellation、容量和双副本无 claim，
 > 并覆盖首次围栏后才到达的 deadline；journal 组合门禁达到 41 项，physical/cancellation/queue 聚合门禁
 > 222 项全绿，公共类型严格 JavaDoc 零告警。terminal projection、可信 slot
-> closure、Spring/health/capability 与真实 provider 尚未完成，产品能力继续关闭。完整 `clean verify` 将在
-> 本增量实现 commit 的 immutable snapshot 上执行并回填。验证见
+> closure、Spring/health/capability 与真实 provider 尚未完成，产品能力继续关闭。实现提交 `e70a7c05`
+> 的 immutable snapshot 完整 `clean verify` 执行 4056 tests，0 failures、0 errors、2 skips；455 份
+> Surefire XML 独立汇总一致，可执行 JAR 为 39,596,599 bytes，构建/浏览器残留进程均为零。验证见
 > [physical attempt slot fence verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-slot-fence-verification.md)。
 
 | 范围 | 状态 | 代码/证据 |
