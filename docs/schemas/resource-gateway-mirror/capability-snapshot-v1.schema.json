@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/capability-snapshot-v1.schema.json",
+  "title": "Resource Gateway Capability Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "capabilityId", "revision", "fingerprint", "kind", "source",
+    "contract", "runtime", "dependencies", "ownership", "lifecycle", "provenance", "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilitySnapshot.v1" },
+    "capabilityId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "kind": { "enum": ["EXTERNAL", "COMPOSED"] },
+    "source": { "$ref": "#/$defs/source" },
+    "contract": { "$ref": "capability-contract-v1.schema.json" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "dependencies": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/dependency" } },
+    "ownership": { "$ref": "#/$defs/ownership" },
+    "lifecycle": { "enum": ["DRAFT", "REVIEWED", "ACTIVE", "DEPRECATED", "STALE", "REVOKED"] },
+    "provenance": { "$ref": "artifact-provenance-v1.schema.json" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceKind", "sourceRef", "sourceFingerprint"],
+      "properties": {
+        "sourceKind": { "enum": ["RESOURCE", "OPERATOR", "GRAPH"] },
+        "sourceRef": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "sourceFingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "bindingRef", "bindingFingerprint", "ready", "limitations"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "bindingRef": { "type": "string", "maxLength": 512 },
+        "bindingFingerprint": { "type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$" },
+        "ready": { "type": "boolean" },
+        "limitations": { "type": "array", "maxItems": 256, "items": { "type": "string", "minLength": 1, "maxLength": 512 } }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "capabilityRef", "required", "conditions"],
+      "properties": {
+        "nodeId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "capabilityRef": { "$ref": "#/$defs/artifactRef" },
+        "required": { "type": "boolean" },
+        "conditions": { "type": "array", "maxItems": 256, "items": { "type": "string", "minLength": 1, "maxLength": 512 } }
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "team", "escalation"],
+      "properties": {
+        "owner": { "type": "string", "maxLength": 255 },
+        "team": { "type": "string", "maxLength": 255 },
+        "escalation": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "const": "CAPABILITY" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    }
+  }
+}

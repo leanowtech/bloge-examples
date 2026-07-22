@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/artifact-provenance-v1.schema.json",
+  "title": "Resource Gateway Artifact Provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "sourceType", "sourceRefs", "tenantId", "purpose", "sampleFrom",
+    "sampleTo", "sampleCount", "confidence", "biasRisks", "approvedBy", "approvedAt",
+    "expiresAt", "revocationRef"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.artifactProvenance.v1" },
+    "sourceType": { "enum": ["OWNER", "RECORDED", "INFERRED", "SYNTHESIZED"] },
+    "sourceRefs": { "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/artifactRef" } },
+    "tenantId": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "purpose": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "sampleFrom": { "type": ["string", "null"], "format": "date-time" },
+    "sampleTo": { "type": ["string", "null"], "format": "date-time" },
+    "sampleCount": { "type": ["integer", "null"], "minimum": 0 },
+    "confidence": { "oneOf": [{ "$ref": "#/$defs/confidence" }, { "type": "null" }] },
+    "biasRisks": { "type": "array", "maxItems": 256, "items": { "type": "string", "minLength": 1, "maxLength": 512 } },
+    "approvedBy": { "type": "string", "maxLength": 255 },
+    "approvedAt": { "type": ["string", "null"], "format": "date-time" },
+    "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+    "revocationRef": { "type": "string", "maxLength": 512 }
+  },
+  "$defs": {
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["point", "lowerBound", "upperBound", "method"],
+      "properties": {
+        "point": { "type": "number", "minimum": 0, "maximum": 1 },
+        "lowerBound": { "type": "number", "minimum": 0, "maximum": 1 },
+        "upperBound": { "type": "number", "minimum": 0, "maximum": 1 },
+        "method": { "type": "string", "minLength": 1, "maxLength": 255 }
+      }
+    }
+  }
+}

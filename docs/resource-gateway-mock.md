@@ -7,11 +7,22 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Proposed，具备工程拆分条件；Stage 0 决策冻结后进入实施 |
+| 状态 | Accepted / In implementation；Stage 0 协议内核已完成，projection 与 probe 接线进行中 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
 | 基准日期 | 2026-07-22 |
+
+### 实施快照（2026-07-22）
+
+- Stage 0 第一增量已完成 `CapabilitySnapshot`、`CapabilityContract`、`EffectContract`、
+  `ArtifactProvenance` 和 exact `MirrorArtifactRef` Java 协议内核。
+- capability snapshot 采用完整 canonical JSON 内容寻址；source、contract、effect、runtime、dependency、
+  ownership、lifecycle、provenance 或时间字段被修改都会导致完整性校验失败。
+- 四份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
+  矛盾 effect、伪造统计置信度和无 lineage 的 recorded/inferred provenance。
+- 当前只完成协议内核，projection、API、MirrorPlan 和 runtime 尚未闭合，因此 capability probe 不得宣称
+  mirror serving 可用。聚焦验证为 7 tests、0 failures、0 errors、0 skips。
 
 ---
 

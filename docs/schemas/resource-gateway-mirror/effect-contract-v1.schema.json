@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/effect-contract-v1.schema.json",
+  "title": "Resource Gateway Effect Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "mode", "readSet", "writeSet", "conditionalEffects",
+    "compensationRef", "requiresApproval", "riskLevel", "derivation", "unresolvedReasons"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.effectContract.v1" },
+    "mode": { "enum": ["READ_ONLY", "VIRTUAL_MUTATION", "EXTERNAL_MUTATION", "MIXED", "UNKNOWN"] },
+    "readSet": { "$ref": "#/$defs/patterns" },
+    "writeSet": { "$ref": "#/$defs/patterns" },
+    "conditionalEffects": { "type": "array", "maxItems": 1024, "items": { "$ref": "#/$defs/conditionalEffect" } },
+    "compensationRef": { "oneOf": [{ "$ref": "#/$defs/artifactRef" }, { "type": "null" }] },
+    "requiresApproval": { "type": "boolean" },
+    "riskLevel": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+    "derivation": { "enum": ["DECLARED", "STATIC_ANALYSIS", "TRANSITIVE_SUMMARY"] },
+    "unresolvedReasons": { "$ref": "#/$defs/patterns" }
+  },
+  "$defs": {
+    "patterns": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+    },
+    "conditionalEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["condition", "mode", "readSet", "writeSet"],
+      "properties": {
+        "condition": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "mode": { "enum": ["READ_ONLY", "VIRTUAL_MUTATION", "EXTERNAL_MUTATION", "MIXED", "UNKNOWN"] },
+        "readSet": { "$ref": "#/$defs/patterns" },
+        "writeSet": { "$ref": "#/$defs/patterns" }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    }
+  }
+}

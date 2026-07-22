@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/capability-contract-v1.schema.json",
+  "title": "Resource Gateway Capability Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "inputSchema", "outputSchema", "errorModel", "effect", "determinism",
+    "idempotency", "stateModelRef", "compatibility", "security", "slo"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityContract.v1" },
+    "inputSchema": { "$ref": "#/$defs/schemaEnvelope" },
+    "outputSchema": { "$ref": "#/$defs/schemaEnvelope" },
+    "errorModel": { "type": "array", "maxItems": 1024, "items": { "$ref": "#/$defs/errorContract" } },
+    "effect": { "$ref": "effect-contract-v1.schema.json" },
+    "determinism": { "enum": ["DETERMINISTIC", "CONTROLLED_NONDETERMINISTIC", "NONDETERMINISTIC"] },
+    "idempotency": { "$ref": "#/$defs/idempotency" },
+    "stateModelRef": { "oneOf": [{ "$ref": "#/$defs/artifactRef" }, { "type": "null" }] },
+    "compatibility": { "$ref": "#/$defs/compatibility" },
+    "security": { "$ref": "#/$defs/security" },
+    "slo": { "$ref": "#/$defs/slo" }
+  },
+  "$defs": {
+    "schemaEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "version", "schema"],
+      "properties": {
+        "format": { "const": "json-schema" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "schema": { "type": "object" }
+      }
+    },
+    "errorContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category", "retryable", "schema"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "category": { "enum": ["VALIDATION", "NOT_FOUND", "CONFLICT", "THROTTLED", "TIMEOUT", "DEPENDENCY", "AUTHORIZATION", "UNKNOWN"] },
+        "retryable": { "type": "boolean" },
+        "schema": { "$ref": "#/$defs/schemaEnvelope" }
+      }
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "keyPath", "replayReturnsOriginal"],
+      "properties": {
+        "mode": { "enum": ["DETERMINISTIC", "KEYED", "NON_IDEMPOTENT", "UNKNOWN"] },
+        "keyPath": { "type": "string", "maxLength": 1024 },
+        "replayReturnsOriginal": { "type": "boolean" }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "output", "errorModel"],
+      "properties": {
+        "input": { "$ref": "#/$defs/compatibilityMode" },
+        "output": { "$ref": "#/$defs/compatibilityMode" },
+        "errorModel": { "$ref": "#/$defs/compatibilityMode" }
+      }
+    },
+    "compatibilityMode": { "enum": ["BACKWARD_COMPATIBLE", "FORWARD_COMPATIBLE", "EXACT", "REVIEW_REQUIRED"] },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "requiresSecrets", "allowedRegions", "payloadRetentionAllowed"],
+      "properties": {
+        "classification": { "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
+        "requiresSecrets": { "type": "boolean" },
+        "allowedRegions": { "type": "array", "maxItems": 256, "items": { "type": "string", "minLength": 1, "maxLength": 255 } },
+        "payloadRetentionAllowed": { "type": "boolean" }
+      }
+    },
+    "slo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeout", "availabilityTarget", "latencyP95Ms", "owner"],
+      "properties": {
+        "timeout": { "type": ["string", "null"], "pattern": "^P" },
+        "availabilityTarget": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "latencyP95Ms": { "type": ["integer", "null"], "minimum": 1 },
+        "owner": { "type": "string", "maxLength": 255 }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    }
+  }
+}
