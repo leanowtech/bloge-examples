@@ -19,7 +19,8 @@ class IntegrationRequestAuthenticatorTest {
         audit = new RecordingIntegrationAccessAuditRepository();
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity("aneke-sync-workload", "tenant-a",
                 "org-a", "project-a", "prod", "ap-southeast-1", "WORKLOAD", "aneke-sync", "",
-                Set.of("CHANGE_SYNC", "PAYLOAD_REPLAY", "GOVERNANCE_EVIDENCE_INGESTION"), Instant.MAX, true,
+                Set.of("CHANGE_SYNC", "PAYLOAD_REPLAY", "GOVERNANCE_EVIDENCE_INGESTION",
+                        "CAPABILITY_PROJECTION", "CAPABILITY_GOVERNANCE", "MIRROR_REHEARSAL"), Instant.MAX, true,
                 Set.of("knowledge-owners", "tool-authors"), "CONFIDENTIAL", "", Instant.MAX);
         authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("test-token", identity, false), audit);
@@ -41,6 +42,17 @@ class IntegrationRequestAuthenticatorTest {
                         IntegrationAccessAuditRecord::identityId, IntegrationAccessAuditRecord::credentialId,
                         IntegrationAccessAuditRecord::operation)
                 .containsExactly("ALLOWED", "aneke-sync-workload", "static-bearer", "CHANGE_SYNC");
+    }
+
+    @Test
+    void authorizesCapabilityOperationsOnlyWithTheirDedicatedPurposes() {
+        assertThat(authenticator.authenticate(authorized("CAPABILITY_PROJECTION"),
+                IntegrationOperation.CAPABILITY_SNAPSHOT_WRITE).purpose()).isEqualTo("CAPABILITY_PROJECTION");
+        assertThat(authenticator.authenticate(authorized("CAPABILITY_GOVERNANCE"),
+                IntegrationOperation.CAPABILITY_LIFECYCLE_TRANSITION).purpose()).isEqualTo("CAPABILITY_GOVERNANCE");
+        assertThat(authenticator.authenticate(authorized("MIRROR_REHEARSAL"),
+                IntegrationOperation.CAPABILITY_SNAPSHOT_READ).purpose()).isEqualTo("MIRROR_REHEARSAL");
+        assertThat(audit.recent(3)).extracting(IntegrationAccessAuditRecord::outcome).containsOnly("ALLOWED");
     }
 
     @Test

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/capability-lifecycle-transition-v1.schema.json",
+  "title": "Resource Gateway Capability Lifecycle Transition v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "expectedRevision", "target", "expiresAt", "revocationRef"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityLifecycleTransition.v1" },
+    "expectedRevision": { "type": "integer", "minimum": 1 },
+    "target": { "enum": ["DRAFT", "REVIEWED", "ACTIVE", "DEPRECATED", "STALE", "REVOKED"] },
+    "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+    "revocationRef": { "type": "string", "maxLength": 512 }
+  }
+}

@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 协议与基础 projection 已完成，内置资产闭包、API 与 probe 接线进行中 |
+| 状态 | Accepted / In implementation；Stage 0 通用协议、projection、生命周期仓储、Integration API 与 probe 已完成，内置资产闭包和 test-kit 进行中 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -27,11 +27,17 @@
   冲突 error contract 和不明确 state model 均不会被静默放行。
 - capability snapshot 采用完整 canonical JSON 内容寻址；source、contract、effect、runtime、dependency、
   ownership、lifecycle、provenance 或时间字段被修改都会导致完整性校验失败。
-- 四份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
+- 五份 strict JSON Schema 已存放在 `docs/schemas/resource-gateway-mirror/`，所有协议对象拒绝不完整引用、
   矛盾 effect、伪造统计置信度和无 lineage 的 recorded/inferred provenance。
-- 当前仍未完成内置 7 graph/3 visual examples 的 capability closure、snapshot API、lifecycle repository、test-kit、
-  MirrorPlan 与 external-leaf runtime，因此 capability probe 不得宣称 mirror serving 可用。聚焦验证为
-  18 tests、0 failures、0 errors、0 skips。
+- Stage 0 第三增量已完成 full-scope H2 append-only repository、lifecycle 状态机和受身份/用途/clearance
+  约束的 Integration API。revision gap、内容篡改、非法跃迁、跨 scope 与越级读取均 fail closed；同 fingerprint
+  的 exact retry 幂等。
+- capability probe 已如实声明 snapshot protocol/projection/API/lifecycle 为可用，同时将 MirrorPlan、external-leaf
+  interception 和 mirror serving 保持为 `false`。
+- 当前仍未完成内置 7 graph/3 visual examples 的 capability closure、test-kit、MirrorPlan 与 external-leaf runtime，
+  因此 Stage 0 尚未通过退出门禁。聚焦验证为 69 tests、Spring Boot 启动验证 6 tests，均为 0 failures、
+  0 errors、0 skips；Resource Gateway 全量 `clean verify` 为 4336 tests、0 failures、0 errors、2 skips，
+  Spring Boot JAR 打包成功。
 
 ---
 
@@ -293,6 +299,16 @@ interface ArtifactProvenance {
 - stale 不自动等于 revoked，但不能生成发布门禁认可的证据。
 - revoke 必须使新执行立即失败关闭；历史证据保持可验证并标记“当时信任状态”。
 - 删除 payload 不删除证据；证据保留 payload fingerprint、删除证明和不可恢复状态。
+
+### 6.4 当前生命周期与仓储实现（已实现）
+
+- revision 1 必须为 `DRAFT`；之后只能以连续 revision append，历史 revision 永不更新。
+- 非 `DRAFT` revision 只能改变 lifecycle/provenance/time，source、contract、runtime、dependency 和 ownership
+  必须保持一致；行为材料变化必须回到新 `DRAFT`。
+- `ACTIVE` 要求 runtime ready 且 effect 已解析；`STALE`/`REVOKED` 强制 runtime unavailable；`REVOKED` 终态。
+- 仓储主键包含 tenant、organization、project、environment、region、capabilityId 和 revision。读写均重新验封，
+  数据库行被篡改时拒绝返回。
+- API 不区分“不存在”“跨 scope”“clearance 不足”，统一返回 `RG.MIRROR.SNAPSHOT_NOT_FOUND`，避免形成存在性侧信道。
 
 ## 7. 镜像运行模型
 
@@ -693,20 +709,23 @@ session 重放造成重复状态、运行时依赖漂移。
 
 所有协议使用独立 schemaVersion、严格 unknown-field policy、bounded collection、canonical fingerprint 和兼容性测试。
 
-| API | 用途 | 幂等语义 |
-|---|---|---|
-| `POST /api/mirror/capability-snapshots` | 从现有资产生成不可变投影 | source fingerprint 幂等 |
-| `POST /api/mirror/plans` | 编译 exact MirrorPlan | request fingerprint 幂等 |
-| `POST /api/mirror/sessions` | 创建隔离状态世界 | idempotency key |
-| `POST /api/mirror/executions` | 同步运行一个能力或场景 | run request idempotency |
-| `POST /api/mirror/rehearsal-jobs` | 提交批量长任务 | job request fingerprint |
-| `GET /api/mirror/runs/{runId}` | 查询运行摘要 | 只读 |
-| `GET /api/mirror/runs/{runId}/evidence` | 导出签名 evidence | 只读、可条件缓存 |
-| `POST /api/mirror/observations` | 接收签名 observation metadata | observationId 幂等 |
-| `POST /api/mirror/corpus-candidates` | 触发受治理归纳 | source snapshot 幂等 |
-| `POST /api/mirror/shadow-jobs` | 提交 shadow comparison | job fingerprint 幂等 |
-| `GET /api/mirror/fidelity/domains/{domainId}` | 查询 fidelity profile | 只读 |
-| `POST /api/mirror/outcomes` | 回填 outcome | outcome identity 幂等 |
+| API | 用途 | 幂等语义 | 当前状态 |
+|---|---|---|---|
+| `PUT /api/integration/capability-snapshots/{capabilityId}/revisions/{revision}` | 导入 exact sealed snapshot | 同 scope/id/revision/fingerprint 幂等 | 已实现 |
+| `GET /api/integration/capability-snapshots/{capabilityId}?revision=0` | 读取 latest 或 exact revision | 只读 | 已实现 |
+| `POST /api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions` | lifecycle-only append | expectedRevision 乐观栅栏 | 已实现 |
+| `POST /api/mirror/capability-snapshots` | 从现有资产生成并持久化不可变投影 | source fingerprint 幂等 | 待内置资产 closure 后实现 |
+| `POST /api/mirror/plans` | 编译 exact MirrorPlan | request fingerprint 幂等 | 待实现 |
+| `POST /api/mirror/sessions` | 创建隔离状态世界 | idempotency key | 待实现 |
+| `POST /api/mirror/executions` | 同步运行一个能力或场景 | run request idempotency | 待实现 |
+| `POST /api/mirror/rehearsal-jobs` | 提交批量长任务 | job request fingerprint | 待实现 |
+| `GET /api/mirror/runs/{runId}` | 查询运行摘要 | 只读 | 待实现 |
+| `GET /api/mirror/runs/{runId}/evidence` | 导出签名 evidence | 只读、可条件缓存 | 待实现 |
+| `POST /api/mirror/observations` | 接收签名 observation metadata | observationId 幂等 | 待实现 |
+| `POST /api/mirror/corpus-candidates` | 触发受治理归纳 | source snapshot 幂等 | 待实现 |
+| `POST /api/mirror/shadow-jobs` | 提交 shadow comparison | job fingerprint 幂等 | 待实现 |
+| `GET /api/mirror/fidelity/domains/{domainId}` | 查询 fidelity profile | 只读 | 待实现 |
+| `POST /api/mirror/outcomes` | 回填 outcome | outcome identity 幂等 | 待实现 |
 
 外部集成协议扩展 `ToolStudioResourceGatewayProtocol`，新增能力快照、镜像证据和保真度 feature flags；
 旧 GraphDraft/RunEvidence 协议保持兼容，不在 v1 中删除。
@@ -978,9 +997,10 @@ SRE runbook 和生产认证包。
 推荐领取顺序：001/004/007/010 可并行；随后 002/003/009/011；最后 005/006/008/012。Stage 0 不实现
 真实 mirror serving，避免协议尚未冻结时把临时模型固化进运行时。
 
-当前领取状态：RG-MIR-001 已完成 Java/schema 协议内核；RG-MIR-002/003 已完成通用 projection 与 effect
-汇总的第一纵向切片，但必须继续补内置 7 graph/3 visual example closure、递归闭包验证和 API 集成验收；其余 ticket
-仍按上述依赖推进。这里的“完成”只指 ticket 内已列明的增量，不代表 Stage 0 已过退出门禁。
+当前领取状态：RG-MIR-001/004/005 已完成通用协议、生命周期、仓储、Integration API 与诚实 probe；
+RG-MIR-002/003 已完成通用 projection 与 effect 汇总的第一纵向切片，但必须继续补内置 7 graph/3 visual example
+closure 和递归闭包验证。RG-MIR-006 至 012 仍按上述依赖推进。这里的“完成”只指 ticket 内已列明的增量，
+不代表 Stage 0 已过退出门禁。
 
 ## 20. 测试策略与 Definition of Done
 

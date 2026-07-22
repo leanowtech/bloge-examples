@@ -139,6 +139,13 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("draftExportDependencyProfile", true)
                 .containsEntry("graphDraftConsistentDependencySnapshot", true)
                 .containsEntry("graphDraftStructuredDependencyRefs", true)
+                .containsEntry("capabilitySnapshotProtocol", true)
+                .containsEntry("capabilityProjection", true)
+                .containsEntry("capabilitySnapshotApi", true)
+                .containsEntry("capabilityLifecycleFencing", true)
+                .containsEntry("mirrorPlanCompilation", false)
+                .containsEntry("mirrorExternalLeafInterception", false)
+                .containsEntry("mirrorServing", false)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("structuredExecutionFacts", true)
                 .containsEntry("graphDeadline", true)
@@ -189,10 +196,16 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("testSecretAuthorityDeploymentSignedInventory", false)
                 .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", false)
                 .containsEntry("webhook", false);
+        assertThat(envelope.payload().supportedObjects())
+                .containsKeys("capabilitySnapshot", "capabilityContract", "effectContract",
+                        "artifactProvenance", "capabilityLifecycleTransition");
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .containsExactlyInAnyOrder(
                 "GET /api/integration/capabilities",
+                "PUT /api/integration/capability-snapshots/{capabilityId}/revisions/{revision}",
+                "GET /api/integration/capability-snapshots/{capabilityId}",
+                "POST /api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions",
                 "GET /api/integration/drafts/{draftId}/export",
                 "GET /api/integration/drafts/{draftId}/correctness-workbook",
                 "GET /api/integration/runs/{runId}/evidence",

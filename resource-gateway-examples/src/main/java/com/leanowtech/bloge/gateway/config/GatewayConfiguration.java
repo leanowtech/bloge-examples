@@ -36,6 +36,8 @@ import com.leanowtech.bloge.gateway.integration.SignedJwtIntegrationIdentityReso
 import com.leanowtech.bloge.gateway.integration.SideEffectReconciler;
 import com.leanowtech.bloge.gateway.integration.SideEffectReconcilerRegistry;
 import com.leanowtech.bloge.gateway.integration.SideEffectReconciliationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilitySnapshotRepository;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
@@ -319,7 +321,7 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
             @Value("${gateway.integration.identity.groups:}") String groups,
             @Value("${gateway.integration.identity.clearance:PUBLIC}") String clearance,
-            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION}") String allowedPurposes) {
+            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL}") String allowedPurposes) {
         if (jwtEnabled) {
             IntegrationJwtTrustStore trustStore = trustStoreProvider.getIfAvailable();
             if (trustStore == null) {
@@ -611,6 +613,14 @@ public class GatewayConfiguration {
                                                                          ObjectMapper objectMapper,
                                                                          IntegrationChangeEventOutbox outbox) {
         return new DatabaseGovernanceGateResultRepository(jdbc, objectMapper, outbox);
+    }
+
+    /** Durable append-only repository for enterprise-scoped capability snapshots. */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilitySnapshotRepository capabilitySnapshotRepository(JdbcTemplate jdbc,
+                                                                     ObjectMapper objectMapper) {
+        return new DatabaseCapabilitySnapshotRepository(jdbc, objectMapper);
     }
 
     /**

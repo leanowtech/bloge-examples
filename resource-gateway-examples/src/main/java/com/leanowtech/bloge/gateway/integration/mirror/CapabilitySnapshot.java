@@ -47,6 +47,7 @@ public record CapabilitySnapshot(
     /** Current capability snapshot version. */
     public static final String SCHEMA_VERSION = "resourceGateway.capabilitySnapshot.v1";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+    private static final Pattern CAPABILITY_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,511}");
 
     /** Capability execution kind. */
     public enum Kind {
@@ -70,6 +71,9 @@ public record CapabilitySnapshot(
     public CapabilitySnapshot {
         schemaVersion = version(schemaVersion);
         capabilityId = required(capabilityId, "capabilityId");
+        if (!CAPABILITY_ID.matcher(capabilityId).matches()) {
+            throw new IllegalArgumentException("capabilityId contains unsupported characters");
+        }
         if (revision < 1) {
             throw new IllegalArgumentException("revision must be positive");
         }

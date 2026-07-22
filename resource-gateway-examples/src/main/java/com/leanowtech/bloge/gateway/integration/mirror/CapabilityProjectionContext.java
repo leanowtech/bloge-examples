@@ -72,6 +72,9 @@ public record CapabilityProjectionContext(
                 || lifecycle == CapabilitySnapshot.Lifecycle.ACTIVE) && approvedBy.isBlank()) {
             throw new IllegalArgumentException("reviewed and active projections require approval coordinates");
         }
+        if (lifecycle == CapabilitySnapshot.Lifecycle.DRAFT && !approvedBy.isBlank()) {
+            throw new IllegalArgumentException("draft projections must not carry approval coordinates");
+        }
         if (expiresAt != null && expiresAt.isBefore(createdAt)) {
             throw new IllegalArgumentException("expiresAt must not precede createdAt");
         }

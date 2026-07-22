@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,6 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityLifecycleTransitionRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotIntegrationService;
 
 /**
  * Stable Resource Gateway integration API consumed by ANEKE Tool Studio.
@@ -26,36 +30,77 @@ public class ToolStudioIntegrationController {
     private final IntegrationChangeFeedService changeFeedService;
     private final IntegrationRequestAuthenticator authenticator;
     private final SideEffectReconciliationService reconciliationService;
+    private final CapabilitySnapshotIntegrationService capabilitySnapshots;
 
     ToolStudioIntegrationController(ToolStudioIntegrationService service) {
-        this(service, null, null, null);
+        this(service, null, null, null, null);
     }
 
     ToolStudioIntegrationController(ToolStudioIntegrationService service,
                                     IntegrationChangeFeedService changeFeedService) {
-        this(service, changeFeedService, null, null);
+        this(service, changeFeedService, null, null, null);
     }
 
     ToolStudioIntegrationController(ToolStudioIntegrationService service,
                                     IntegrationChangeFeedService changeFeedService,
                                     IntegrationRequestAuthenticator authenticator) {
-        this(service, changeFeedService, authenticator, null);
+        this(service, changeFeedService, authenticator, null, null);
+    }
+
+    public ToolStudioIntegrationController(ToolStudioIntegrationService service,
+                                           IntegrationChangeFeedService changeFeedService,
+                                           IntegrationRequestAuthenticator authenticator,
+                                           SideEffectReconciliationService reconciliationService) {
+        this(service, changeFeedService, authenticator, reconciliationService, null);
     }
 
     @Autowired
     public ToolStudioIntegrationController(ToolStudioIntegrationService service,
                                            IntegrationChangeFeedService changeFeedService,
                                            IntegrationRequestAuthenticator authenticator,
-                                           SideEffectReconciliationService reconciliationService) {
+                                           SideEffectReconciliationService reconciliationService,
+                                           CapabilitySnapshotIntegrationService capabilitySnapshots) {
         this.service = service;
         this.changeFeedService = changeFeedService;
         this.authenticator = authenticator;
         this.reconciliationService = reconciliationService;
+        this.capabilitySnapshots = capabilitySnapshots;
     }
 
     @GetMapping("/capabilities")
     public IntegrationEnvelope<IntegrationCapabilities> capabilities() {
         return service.capabilities();
+    }
+
+    /** Appends one exact sealed capability snapshot revision. */
+    @PutMapping("/capability-snapshots/{capabilityId}/revisions/{revision}")
+    public IntegrationEnvelope<CapabilitySnapshot> createCapabilitySnapshot(
+            @PathVariable String capabilityId,
+            @PathVariable long revision,
+            @RequestBody CapabilitySnapshot snapshot,
+            @RequestHeader HttpHeaders headers) {
+        return requireCapabilitySnapshots().create(capabilityId, revision, snapshot,
+                requestContext(headers, IntegrationOperation.CAPABILITY_SNAPSHOT_WRITE));
+    }
+
+    /** Reads an exact capability revision, or the latest revision when revision is omitted. */
+    @GetMapping("/capability-snapshots/{capabilityId}")
+    public IntegrationEnvelope<CapabilitySnapshot> capabilitySnapshot(
+            @PathVariable String capabilityId,
+            @RequestParam(defaultValue = "0") long revision,
+            @RequestHeader HttpHeaders headers) {
+        return requireCapabilitySnapshots().find(capabilityId, revision,
+                requestContext(headers, IntegrationOperation.CAPABILITY_SNAPSHOT_READ));
+    }
+
+    /** Appends a lifecycle-only capability snapshot revision. */
+    @PostMapping("/capability-snapshots/{capabilityId}/lifecycle-transitions")
+    public IntegrationEnvelope<CapabilitySnapshot> transitionCapabilitySnapshot(
+            @PathVariable String capabilityId,
+            @RequestBody CapabilityLifecycleTransitionRequest request,
+            @RequestHeader HttpHeaders headers) {
+        return requireCapabilitySnapshots().transition(capabilityId, request,
+                requestContext(headers, IntegrationOperation.CAPABILITY_LIFECYCLE_TRANSITION));
     }
 
     @GetMapping("/drafts/{draftId}/export")
@@ -254,6 +299,13 @@ public class ToolStudioIntegrationController {
             throw new IllegalStateException("Side-effect reconciliation service is unavailable");
         }
         return reconciliationService;
+    }
+
+    private CapabilitySnapshotIntegrationService requireCapabilitySnapshots() {
+        if (capabilitySnapshots == null) {
+            throw new IllegalStateException("Capability snapshot integration service is unavailable");
+        }
+        return capabilitySnapshots;
     }
 
     private IntegrationRequestContext requestContext(HttpHeaders headers, IntegrationOperation operation) {

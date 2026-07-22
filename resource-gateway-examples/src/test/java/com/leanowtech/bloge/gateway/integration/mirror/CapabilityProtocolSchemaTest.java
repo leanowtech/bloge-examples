@@ -29,11 +29,15 @@ class CapabilityProtocolSchemaTest {
         JsonNode contractSchema = schema("capability-contract-v1.schema.json");
         JsonNode effectSchema = schema("effect-contract-v1.schema.json");
         JsonNode provenanceSchema = schema("artifact-provenance-v1.schema.json");
+        JsonNode transitionSchema = schema("capability-lifecycle-transition-v1.schema.json");
+        JsonNode transitionValue = mapper.valueToTree(new CapabilityLifecycleTransitionRequest("", 4,
+                CapabilitySnapshot.Lifecycle.REVIEWED, Instant.parse("2026-08-22T00:00:00Z"), ""));
 
         assertProperties(snapshotValue, snapshotSchema.path("properties"));
         assertProperties(contractValue, contractSchema.path("properties"));
         assertProperties(effectValue, effectSchema.path("properties"));
         assertProperties(provenanceValue, provenanceSchema.path("properties"));
+        assertProperties(transitionValue, transitionSchema.path("properties"));
         assertProperties(snapshotValue.path("source"), snapshotSchema.at("/$defs/source/properties"));
         assertProperties(snapshotValue.path("scope"), snapshotSchema.at("/$defs/scope/properties"));
         assertProperties(snapshotValue.path("runtime"), snapshotSchema.at("/$defs/runtime/properties"));
@@ -46,6 +50,7 @@ class CapabilityProtocolSchemaTest {
         assertThat(contractSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(effectSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(provenanceSchema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(transitionSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(snapshotValue.at("/contract/slo/timeout").asText()).isEqualTo("PT3S");
     }
 

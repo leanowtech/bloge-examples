@@ -8,11 +8,14 @@ import org.springframework.http.MediaType;
 import java.time.Instant;
 import java.util.Set;
 
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotIntegrationService;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.mock;
 
 class ToolStudioIntegrationControllerTest {
 
@@ -26,7 +29,9 @@ class ToolStudioIntegrationControllerTest {
                 .andExpect(jsonPath("$.protocolVersion").value(ToolStudioResourceGatewayProtocol.VERSION))
                 .andExpect(jsonPath("$.payloadKind").value("CAPABILITIES"))
                 .andExpect(jsonPath("$.payload.features.draftExportDependencyProfile").value(true))
-                .andExpect(jsonPath("$.payload.features.runEvidenceBundle").value(true));
+                .andExpect(jsonPath("$.payload.features.runEvidenceBundle").value(true))
+                .andExpect(jsonPath("$.payload.features.capabilitySnapshotApi").value(true))
+                .andExpect(jsonPath("$.payload.features.mirrorServing").value(false));
     }
 
     @Test
@@ -105,14 +110,38 @@ class ToolStudioIntegrationControllerTest {
                 .andExpect(jsonPath("$.correlationId").value("corr-semantic-workbook"));
     }
 
+    @Test
+    void capabilitySnapshotReadRejectsPurposeOutsideItsOperationPolicy() throws Exception {
+        MockMvc mvc = mvc(new ToolStudioIntegrationService(null, null, null, null),
+                mock(CapabilitySnapshotIntegrationService.class));
+
+        mvc.perform(get("/api/integration/capability-snapshots/resource:orders.get")
+                        .header("X-Tenant-Id", "tenant-a")
+                        .header("X-Organization-Id", "knowledge-governance")
+                        .header("X-Environment-Id", "prod")
+                        .header("X-Actor-Id", "aneke-sync")
+                        .header("X-Purpose", "PAYLOAD_REPLAY")
+                        .header("Authorization", "Bearer test-token")
+                        .header("X-Correlation-Id", "corr-capability-purpose"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.PURPOSE_FORBIDDEN"))
+                .andExpect(jsonPath("$.details.operation").value("CAPABILITY_SNAPSHOT_READ"));
+    }
+
     private static MockMvc mvc(ToolStudioIntegrationService service) {
+        return mvc(service, null);
+    }
+
+    private static MockMvc mvc(ToolStudioIntegrationService service,
+                               CapabilitySnapshotIntegrationService capabilitySnapshots) {
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity("test-aneke", "tenant-a",
                 "knowledge-governance", "tool-studio", "prod", "", "WORKLOAD", "aneke-sync", "",
                 Set.of("GOVERNANCE_EVIDENCE_INGESTION", "PAYLOAD_REPLAY", "CHANGE_SYNC"), Instant.MAX, true);
         IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("test-token", identity, false),
                 new RecordingIntegrationAccessAuditRepository());
-        return MockMvcBuilders.standaloneSetup(new ToolStudioIntegrationController(service, null, authenticator))
+        return MockMvcBuilders.standaloneSetup(new ToolStudioIntegrationController(
+                        service, null, authenticator, null, capabilitySnapshots))
                 .setControllerAdvice(new IntegrationProblemHandler())
                 .build();
     }

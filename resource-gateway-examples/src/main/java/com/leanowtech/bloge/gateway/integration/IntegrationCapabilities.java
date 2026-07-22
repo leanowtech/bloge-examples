@@ -277,6 +277,17 @@ public record IntegrationCapabilities(
                         ? Objects.requireNonNull(requestIndexMode, "requestIndexMode") : null;
         Map<String, List<String>> objects = new LinkedHashMap<>();
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
+        objects.put("capabilitySnapshot", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.SCHEMA_VERSION));
+        objects.put("capabilityContract", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.CapabilityContract.SCHEMA_VERSION));
+        objects.put("effectContract", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.EffectContract.SCHEMA_VERSION));
+        objects.put("artifactProvenance", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance.SCHEMA_VERSION));
+        objects.put("capabilityLifecycleTransition", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityLifecycleTransitionRequest.SCHEMA_VERSION));
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("graphDraftDependencyProfile", List.of(GraphDraftDependencyProfile.SCHEMA_VERSION_V1,
@@ -686,6 +697,13 @@ public record IntegrationCapabilities(
         features.put("draftExportDependencyProfile", true);
         features.put("graphDraftConsistentDependencySnapshot", true);
         features.put("graphDraftStructuredDependencyRefs", true);
+        features.put("capabilitySnapshotProtocol", true);
+        features.put("capabilityProjection", true);
+        features.put("capabilitySnapshotApi", true);
+        features.put("capabilityLifecycleFencing", true);
+        features.put("mirrorPlanCompilation", false);
+        features.put("mirrorExternalLeafInterception", false);
+        features.put("mirrorServing", false);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);
@@ -1054,6 +1072,9 @@ public record IntegrationCapabilities(
 
         List<Endpoint> endpoints = new java.util.ArrayList<>(List.of(
                 new Endpoint("GET", "/api/integration/capabilities"),
+                new Endpoint("PUT", "/api/integration/capability-snapshots/{capabilityId}/revisions/{revision}"),
+                new Endpoint("GET", "/api/integration/capability-snapshots/{capabilityId}"),
+                new Endpoint("POST", "/api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/export"),
                 new Endpoint("GET", "/api/integration/drafts/{draftId}/correctness-workbook"),
                 new Endpoint("GET", "/api/integration/runs/{runId}/evidence"),

@@ -86,6 +86,39 @@ public record ArtifactProvenance(
     }
 
     /**
+     * Returns the same lineage with a fresh owner approval decision.
+     *
+     * @param actor approving owner or delegated reviewer
+     * @param time approval decision time
+     * @param expiry certification expiry, or {@code null} when policy does not impose one
+     * @return copied provenance carrying the approval
+     */
+    public ArtifactProvenance withApproval(String actor, Instant time, Instant expiry) {
+        return new ArtifactProvenance(schemaVersion, sourceType, sourceRefs, tenantId, purpose,
+                sampleFrom, sampleTo, sampleCount, confidence, biasRisks,
+                required(actor, "approvedBy"), java.util.Objects.requireNonNull(time, "approvedAt"),
+                expiry, "");
+    }
+
+    /**
+     * Returns the same lineage with an immutable revocation decision reference.
+     *
+     * @param reference exact external revocation decision reference
+     * @return copied provenance carrying the revocation
+     */
+    public ArtifactProvenance withRevocation(String reference) {
+        return new ArtifactProvenance(schemaVersion, sourceType, sourceRefs, tenantId, purpose,
+                sampleFrom, sampleTo, sampleCount, confidence, biasRisks, approvedBy, approvedAt,
+                expiresAt, required(reference, "revocationRef"));
+    }
+
+    /** @return the same lineage with stale approval and revocation decisions removed */
+    public ArtifactProvenance asDraft() {
+        return new ArtifactProvenance(schemaVersion, sourceType, sourceRefs, tenantId, purpose,
+                sampleFrom, sampleTo, sampleCount, confidence, biasRisks, "", null, null, "");
+    }
+
+    /**
      * Statistical confidence carried without pretending that a point estimate is exact.
      *
      * @param point point estimate in the closed interval [0,1]
