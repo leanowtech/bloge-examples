@@ -66,6 +66,7 @@ class TestSuiteStabilityPhysicalAttemptObservationReconciliationSchedulerTest {
 
         try (var scheduler = scheduler(reconciler, 1)) {
             assertThat(recovered.await(2, TimeUnit.SECONDS)).isTrue();
+            awaitCommittedRecovery(scheduler);
             assertThat(scheduler.snapshot().lastPollFailed()).isFalse();
             assertThat(scheduler.snapshot().unexpectedPollCount()).isEqualTo(1L);
         }
@@ -228,5 +229,22 @@ class TestSuiteStabilityPhysicalAttemptObservationReconciliationSchedulerTest {
         }
         assertThat(registry.get(metric("worker.polls"))
                 .tag("stage", "no_work").counter().count()).isGreaterThanOrEqualTo(minimum);
+    }
+
+    private static void awaitCommittedRecovery(
+            TestSuiteStabilityPhysicalAttemptObservationReconciliationScheduler scheduler)
+            throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            var snapshot = scheduler.snapshot();
+            if (snapshot.unexpectedPollCount() == 1L && !snapshot.lastPollFailed()) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        assertThat(scheduler.snapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.unexpectedPollCount()).isEqualTo(1L);
+            assertThat(snapshot.lastPollFailed()).isFalse();
+        });
     }
 }
