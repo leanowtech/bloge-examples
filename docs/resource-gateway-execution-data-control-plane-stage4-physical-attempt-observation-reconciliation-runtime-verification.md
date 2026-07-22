@@ -134,8 +134,23 @@ javadoc --release 25 -Werror -Xdoclint:all
 ```
 
 `application-test.yml` 与 `application-staging.yml` 均通过 Ruby Psych 完整解析，`git diff --check` 无错误。
-提交冻结后的全量 immutable snapshot 门禁将在下一份 evidence 更新中记录，不能用当前 working tree 的局部
-测试冒充提交级证据。
+
+实现提交 `b116c990` 冻结后，从 `git archive` 创建
+`/tmp/bloge-examples-verify-b116c990` immutable snapshot，并在其中从 clean 状态执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 4189, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+Total time: 07:54 min
+```
+
+34 项 Browser DOM 测试中 32 项真实执行、2 项按环境条件跳过，0 failures、0 errors。独立读取 466 份
+Surefire XML 得到 `tests=4189 failures=0 errors=0 skipped=2`，与 Maven 汇总完全一致。39,807,909 bytes
+Spring Boot 可执行 JAR 包含 telemetry、scheduler、health 和 runtime configuration 的 11 个匹配 class
+entry。构建退出后再次检查 snapshot 路径关联的 Maven/Surefire/Java 进程，以及 Chrome for Testing 和
+ChromeDriver 进程，残留均为零。
 
 ## 7. 质量评估与下一病根
 

@@ -323,6 +323,9 @@
 > retention/evidence lifecycle、真实 provider 和生产认证仍待完成；相对完整计划估计仍有约 23% 实质差距，
 > 未进入正负 8% 完成区间。验证见
 > [physical attempt observation reconciliation runtime verification](resource-gateway-execution-data-control-plane-stage4-physical-attempt-observation-reconciliation-runtime-verification.md)。
+> 实现提交 `b116c990` 的 immutable snapshot 完整 `clean verify` 一次通过 4189 tests（0 failures、0 errors、
+> 2 skips），466 份 Surefire XML 独立汇总一致；39,807,909 bytes 可执行 JAR 包含 11 个新增 runtime 匹配
+> class entry，耗时 7:54，构建/测试浏览器残留均为零。
 
 | 范围 | 状态 | 代码/证据 |
 | --- | --- | --- |
