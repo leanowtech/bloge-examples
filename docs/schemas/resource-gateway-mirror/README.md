@@ -116,8 +116,9 @@ not become an asset-existence oracle.
 The Stage 0 baseline verifies all seven shipped resource graphs plus all three frontend visual examples. The
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
-compiler kernel, the latest complete Resource Gateway gate passes 4384 tests with no failures or errors and 3
-conditional frontend skips, and successfully rebuilds the executable Spring Boot JAR.
+compiler and internal mirror runtime kernels, the latest complete Resource Gateway gate passes 4390 tests with no
+failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
+the executable Spring Boot JAR.
 
 The Stage 1 `MirrorPlan` protocol presence does not make mirror execution available. Capability discovery reports
 `mirrorPlanProtocol=true`, while `mirrorPlanCompilation`, `mirrorExternalLeafInterception`, and `mirrorServing`
@@ -133,6 +134,13 @@ its `executionControlFingerprint` binds the exact internal `EffectiveExecutionPl
 implicit deny plus `ABSTAINED`, and read-only external operators are still mandatory interception sites.
 
 The accepted reuse decision and behavior-loss matrix are recorded in
-[`ADR-004`](../../adr/ADR-004-mirror-plan-reuses-fixture-bundle.md). The compiler remains a kernel rather than a
-service endpoint, so capability discovery continues to report compilation and serving as unavailable until exact
-artifact resolution, idempotent storage, authenticated API, runtime execution, and evidence integration land.
+[`ADR-004`](../../adr/ADR-004-mirror-plan-reuses-fixture-bundle.md). `CompiledMirrorPlan` now retains the exact Graph,
+FixtureBundle, governed replay closure, and execution control in process. The internal `MirrorRunService` re-verifies
+the public seal, authenticated scope and purpose, TTL, graph/fixture/control generation, external-only coverage, and
+the static invocation floor before executing through the independent test engine. It carries the plan's logical
+timeout into BLOGE `ExecutionBudget`; an unmatched external remains implicit deny and cannot reach the real binding.
+
+This is still a kernel rather than a service endpoint. Fixed-priority resolver provenance, dynamic occurrence
+budgeting, mirror evidence vNext, production composition and egress proofs, exact artifact storage, and authenticated
+API admission remain open. Capability discovery therefore continues to report compilation, external interception,
+and serving as unavailable.

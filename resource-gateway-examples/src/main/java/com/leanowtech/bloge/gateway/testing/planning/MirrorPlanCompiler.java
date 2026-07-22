@@ -129,7 +129,8 @@ public class MirrorPlanCompiler {
                 control.effectivePlan().planFingerprint(), bindings, request.scenarioPackRef(),
                 stateModels, services, request.policy(), request.compiledAt(), request.expiresAt());
         try {
-            return new CompiledMirrorPlan(MirrorPlanIntegrity.seal(mapper, plan), control);
+            return new CompiledMirrorPlan(MirrorPlanIntegrity.seal(mapper, plan),
+                    request.graph(), request.fixtureBundle(), control);
         } catch (IllegalArgumentException invalid) {
             throw reject("RG.MIRROR.PLAN_INTEGRITY_REJECTED", invalid.getMessage());
         }

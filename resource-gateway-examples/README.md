@@ -121,10 +121,13 @@ runtime readiness: the probe keeps
 their later release gates. The complete protocol and lifecycle rules are in the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md).
 
-The Stage 1 compiler kernel now exists internally: it verifies Capability Closure against the recursively frozen
-BLOGE invocation inventory and adapts the existing FixtureBundle into mandatory external-site controls. It is not
-yet an API or persisted serving surface, so the runtime feature flags above intentionally remain false. The fixture
-reuse decision and unsupported-behavior matrix are in
+The Stage 1 compiler and run kernels now exist internally: they verify Capability Closure against the recursively
+frozen BLOGE invocation inventory, adapt the existing FixtureBundle into mandatory external-site controls, retain
+the exact Graph/fixture/control generation in process, and execute it through the independent test engine after
+scope, purpose, TTL, fingerprint, coverage, and logical deadline checks. Mirror fixtures cannot replace internal
+business nodes, and unmatched external leaves fail closed. This is not yet an API or persisted serving surface;
+resolver provenance, dynamic invocation budgets, evidence vNext, production egress proof, and authenticated storage
+remain open, so the runtime feature flags above intentionally stay false. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
 Useful variants:

@@ -10,8 +10,9 @@ import java.util.Map;
  * Immutable internal request submitted by graph, operator, suite, and future HTTP adapters.
  *
  * <p>The constructor snapshots business context values. Each execution creates another fresh
- * {@link GraphContext}, so engine-owned services, budgets, node outputs, and side-effect journals
- * cannot leak between repeated or concurrent runs of the same request.</p>
+ * {@link GraphContext}, so engine-owned services, node outputs, and side-effect journals cannot
+ * leak between repeated or concurrent runs of the same request. An explicitly bound immutable
+ * execution deadline is retained across those copies.</p>
  */
 public record TestExecutionRequest(
         Graph graph,
@@ -33,7 +34,11 @@ public record TestExecutionRequest(
 
     /** Normalizes nullable values and freezes caller-owned business context data. */
     public TestExecutionRequest {
-        context = context == null ? new GraphContext() : new GraphContext(context.asMap());
+        GraphContext sourceContext = context;
+        context = sourceContext == null ? new GraphContext() : new GraphContext(sourceContext.asMap());
+        if (sourceContext != null) {
+            context.bindExecutionBudget(sourceContext.executionBudget());
+        }
         authorizedPurpose = authorizedPurpose == null ? "" : authorizedPurpose.trim();
         targetFingerprint = targetFingerprint == null ? "" : targetFingerprint.trim();
         fixtureSource = fixtureSource == null ? FixtureSource.INLINE : fixtureSource;

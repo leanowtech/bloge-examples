@@ -332,6 +332,7 @@ public class ExecutionControlCompiler {
                 objectMapper, fixtureBundle, inventory, resolvedSecrets);
         Map<String, CompiledExecutionControl.ResolvedControl> controls = new LinkedHashMap<>(
                 selectorResolver.resolve(inventory, fixtureBundle.rules()));
+        rejectMirrorInternalControls(controls, mandatoryExternalSites);
 
         for (InvocationInventory.Entry entry : inventory.entries()) {
             String siteId = entry.site().invocationSiteId();
@@ -488,6 +489,21 @@ public class ExecutionControlCompiler {
             normalized.add(value);
         }
         return Collections.unmodifiableSet(normalized);
+    }
+
+    private static void rejectMirrorInternalControls(
+            Map<String, CompiledExecutionControl.ResolvedControl> controls,
+            Set<String> mandatoryExternalSites) {
+        if (mandatoryExternalSites.isEmpty()) {
+            return;
+        }
+        List<String> internalSites = controls.keySet().stream()
+                .filter(siteId -> !mandatoryExternalSites.contains(siteId)).sorted().toList();
+        if (!internalSites.isEmpty()) {
+            throw new ControlPlanRejectedException("CONTROL_PLAN_MIRROR_INTERNAL_CONTROL", List.of(
+                    "Mirror fixtures may control external capability leaves only: "
+                            + internalSites));
+        }
     }
 
     private static FixtureRule implicitDeny(InvocationInventory.Entry entry) {

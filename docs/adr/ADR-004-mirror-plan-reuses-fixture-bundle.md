@@ -57,6 +57,10 @@ replay 治理和证据字段，最终出现“测试通过但镜像失败”或�
 - runtime 中可识别的额外 http/external-effect site 若不在 Closure 中，计划编译失败。
 - public MirrorPlan 不含 fixture value、replay payload、credential 或业务输入输出。
 - runtime 只消费 `CompiledMirrorPlan`，不根据 public plan 重新查找 mutable fixture 或 operator registry。
+- `CompiledMirrorPlan` 必须内含 exact Graph、FixtureBundle、replay closure 和 execution control；运行准入重新计算
+  fixture fingerprint，并重验 graph/control generation 后才能调度。
+- FixtureBundle 只能控制 capability closure 声明的 external leaf；内部 decision、transform 和业务 operator 必须
+  真实执行，不能被 mirror fixture 静默替换。
 - Closure edge 对账与 `CompiledExecutionControl` 必须消费同一个已冻结 `InvocationInventory`；禁止在两者之间
   再查一次 mutable operator registry。
 - 同一组 exact 输入、planId、编译时间和 expiry 必须得到相同 plan fingerprint。

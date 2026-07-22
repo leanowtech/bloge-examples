@@ -135,6 +135,31 @@ public class TestRunService {
         }, true);
     }
 
+    /**
+     * Executes an already compiled immutable control generation without consulting the compiler or
+     * mutable operator registry again.
+     *
+     * <p>This entry is intended for higher-level runtimes such as capability mirror execution. It
+     * verifies target, purpose, fixture, rule, and replay identities before constructing the
+     * isolated engine. Callers must perform their own plan-level authorization and expiry checks.</p>
+     *
+     * @param request exact graph, context, fixture, purpose, and evidence provenance
+     * @param compiled exact previously compiled execution control
+     * @return effective plan, graph result, and terminal evidence
+     */
+    public TestExecutionResult executeCompiled(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled) {
+        Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(compiled, "compiled");
+        validateCompiledBinding(request, compiled);
+        String runId = "test-run-" + UUID.randomUUID();
+        Instant startedAt = Instant.now();
+        try (AdmissionGuard admission = noAdmissionGuard()) {
+            return runCompiled(request, runId, startedAt, compiled, admission);
+        }
+    }
+
     private TestExecutionResult executeBound(
             TestExecutionRequest request,
             String fixtureBindingTargetFingerprint,
@@ -166,11 +191,11 @@ public class TestRunService {
 
         try (AdmissionGuard admission = Objects.requireNonNull(
                 admissionFactory.admit(compiled), "admission guard")) {
-            return executeCompiled(request, runId, startedAt, compiled, admission);
+            return runCompiled(request, runId, startedAt, compiled, admission);
         }
     }
 
-    private TestExecutionResult executeCompiled(
+    private TestExecutionResult runCompiled(
             TestExecutionRequest request,
             String runId,
             Instant startedAt,
@@ -182,6 +207,7 @@ public class TestRunService {
         GovernedExecutionServices executionServices = compiled.executionServices();
         GraphEngine engine = engineFactory.create(recorder, executionServices.services().timeSource());
         GraphContext executionContext = new GraphContext(request.context().asMap());
+        executionContext.bindExecutionBudget(request.context().executionBudget());
         try {
             ExecutionOptions options = runtimeOptions.options(compiled, recorder);
             graphResult = engine.execute(request.graph(), executionContext, options);
@@ -224,6 +250,48 @@ public class TestRunService {
                 diagnostics,
                 evidenceMetadata(request, recorder, executionServices, executionContext)));
         return new TestExecutionResult(compiled.effectivePlan(), graphResult, evidence);
+    }
+
+    private void validateCompiledBinding(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled) {
+        EffectiveExecutionPlan plan = compiled.effectivePlan();
+        List<String> diagnostics = new ArrayList<>();
+        if (!plan.authorizedPurpose().equals(request.authorizedPurpose())) {
+            diagnostics.add("Compiled purpose does not match the execution request.");
+        }
+        if (!plan.targetFingerprint().equals(request.targetFingerprint())) {
+            diagnostics.add("Compiled target does not match the execution request.");
+        }
+        String fixtureFingerprint = ProtocolFingerprint.of(objectMapper, request.fixtureBundle());
+        if (!plan.fixtureBundleFingerprint().equals(fixtureFingerprint)) {
+            diagnostics.add("Compiled fixture does not match the execution request.");
+        }
+        if (!compiled.rules().equals(request.fixtureBundle().rules())) {
+            diagnostics.add("Compiled rules do not match the execution fixture.");
+        }
+        if (!compiled.replayPayloads().planDependencies()
+                .equals(request.replayPayloads().planDependencies())) {
+            diagnostics.add("Compiled replay closure does not match the execution request.");
+        }
+        if (!diagnostics.isEmpty()) {
+            throw new ControlPlanRejectedException(
+                    "CONTROL_PLAN_COMPILED_BINDING_MISMATCH", diagnostics);
+        }
+    }
+
+    private static AdmissionGuard noAdmissionGuard() {
+        return new AdmissionGuard() {
+            @Override
+            public void checkpoint() {
+                // The in-process precompiled caller owns any distributed admission permit.
+            }
+
+            @Override
+            public void close() {
+                // No permit exists for the compatibility path.
+            }
+        };
     }
 
     /** Creates a permit from the already validated, recursively frozen control plan. */
