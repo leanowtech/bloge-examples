@@ -41,7 +41,7 @@
         "events": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 12,
+          "maxItems": 15,
           "items": {
             "$ref": "control-plane-certificate-rotation-event-v1.schema.json#/$defs/event"
           }

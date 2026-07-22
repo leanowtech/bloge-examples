@@ -8,17 +8,23 @@ import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabili
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseTestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor;
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -27,8 +33,10 @@ import java.util.Set;
  * <p>The runtime is physically absent in production and remains absent in test/staging unless
  * explicitly enabled. Enabling requires one installed-adapter catalog, an HTTPS signed ACTIVE
  * publication, independent deployment and witness quorums, a durable database anti-rollback
- * floor, and a database-clock exact replica cohort. No unsigned inventory, empty catalog, static
- * fallback, local expected-replica list, or permissive resolver is created.</p>
+ * floor, and a database-clock exact replica cohort. Staging additionally requires externally
+ * durable challenge-bound Byzantine ordering, managed receipt trust, complete-chain bootstrap
+ * roots, and three independently authenticated control-plane transports. No unsigned inventory,
+ * empty catalog, static fallback, local expected-replica list, or permissive resolver is created.</p>
  */
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
@@ -43,16 +51,124 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
     public TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfiguration() {
     }
 
-    /** Persists publication and independent witness chain heads before local publication. */
+    /** Supplies a stateless environment resolver unless the embedder provides a secret authority. */
+    @Bean
+    @ConditionalOnMissingBean(ControlPlaneHttpTransport.SecretResolver.class)
+    ControlPlaneHttpTransport.SecretResolver
+            physicalProviderInventoryControlPlaneSecretResolver() {
+        return new PinnedMutualTlsRecoveryFleetPublicationTransport.EnvironmentSecretResolver();
+    }
+
+    /** Validates profile-sensitive downgrade fences before physical floor or remote bootstrap. */
+    @Bean
+    ValidatedRuntimeConfiguration physicalProviderInventoryRuntimePreflight(
+            Properties properties,
+            Environment environment) {
+        boolean staging = Objects.requireNonNull(environment, "environment")
+                .acceptsProfiles(Profiles.of("staging"));
+        var anchor = properties.externalAnchor();
+        if (staging && (properties.allowInsecureLoopback()
+                || !anchor.enabled() || !anchor.required()
+                || anchor.maximumFaults() < 1 || anchor.minimumFaults() < 1
+                || anchor.allowInsecureLoopback()
+                || !anchor.transport().enabled() || !anchor.transport().required()
+                || !anchor.transport().certificateIdentityBound()
+                || !anchor.managedTrust().enabled() || !anchor.managedTrust().required()
+                || anchor.managedTrust().allowInsecureLoopback()
+                || !anchor.managedTrust().transport().enabled()
+                || !anchor.managedTrust().transport().required()
+                || !anchor.managedTrust().transport().certificateIdentityBound()
+                || !anchor.managedTrust().bootstrapRoots().enabled()
+                || !anchor.managedTrust().bootstrapRoots().required()
+                || anchor.managedTrust().bootstrapRoots().allowInsecureLoopback()
+                || !anchor.managedTrust().bootstrapRoots().transport().enabled()
+                || !anchor.managedTrust().bootstrapRoots().transport().required()
+                || !anchor.managedTrust().bootstrapRoots().transport()
+                        .certificateIdentityBound())) {
+            throw Properties.invalid();
+        }
+        return new ValidatedRuntimeConfiguration(staging);
+    }
+
+    /**
+     * Creates the strict HTTP/quorum notary unless the embedder supplies one physical-domain bean.
+     */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = Properties.EXTERNAL_ANCHOR_PREFIX,
+            name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(
+            TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor.class)
+    TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor
+            physicalProviderInventoryExternalSequenceAnchor(
+            ObjectMapper objectMapper,
+            Environment environment,
+            TestRuntimeDatabase database,
+            Properties properties,
+            ValidatedRuntimeConfiguration validated,
+            ControlPlaneHttpTransport.SecretResolver secretResolver,
+            ObjectProvider<ControlPlaneCertificateRotationRuntime> rotationRuntimes) {
+        Objects.requireNonNull(validated, "validated");
+        var anchor = properties.externalAnchor();
+        if (anchor.maximumFaults() < Math.max(
+                validated.staging() ? 1 : 0, anchor.minimumFaults())) {
+            throw Properties.invalid();
+        }
+        ControlPlaneCertificateRotationRuntime rotationRuntime =
+                rotationRuntimes.getIfAvailable();
+        if (rotationRuntime == null && Boolean.TRUE.equals(environment.getProperty(
+                ControlPlaneCertificateRotationRuntimeProperties.PREFIX + ".enabled",
+                Boolean.class, false))) {
+            throw Properties.invalid();
+        }
+        TestSuiteStabilityExternalSequenceAnchor shared =
+                TestRuntimeConfiguration.buildExternalSequenceAnchor(
+                        objectMapper, environment, database, Properties.EXTERNAL_ANCHOR_PREFIX,
+                        "physical provider inventory", properties.scopeId(),
+                        anchor.trustDomain(), anchor.anchorSetId(), anchor.signatureThreshold(),
+                        anchor.maximumFaults(), anchor.authorityKeysJson(), anchor.endpointsJson(),
+                        anchor.requestTimeoutMillis(), anchor.clockSkewSeconds(),
+                        anchor.maximumReceiptLifetimeSeconds(), anchor.allowInsecureLoopback(),
+                        secretResolver, rotationRuntime);
+        return TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor.adapt(
+                shared);
+    }
+
+    /** Exposes endpoint-, stream-, fingerprint-, authority-, and key-free notary health. */
+    @Bean
+    @ConditionalOnBean(
+            TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor.class)
+    @ConditionalOnMissingBean(
+            TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchorHealth.class)
+    TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchorHealth
+            physicalProviderInventoryExternalSequenceAnchorHealth(
+            TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor anchor) {
+        return new
+                TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchorHealth(
+                anchor);
+    }
+
+    /** Persists local heads and optionally commits their composite to an external quorum first. */
     @Bean
     TestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor
             testSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor(
             TestRuntimeDatabase database,
             ObjectMapper objectMapper,
-            Properties properties) {
-        return new DatabaseTestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor(
+            Properties properties,
+            Environment environment,
+            ValidatedRuntimeConfiguration validated,
+            ObjectProvider<
+                    TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor>
+                    externalAnchors) {
+        Objects.requireNonNull(validated, "validated");
+        var local = new DatabaseTestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor(
                 database.jdbc(), objectMapper, properties.scopeId(),
                 database.transactionManager());
+        local.init();
+        TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor external =
+                externalAnchor(externalAnchors, properties.externalAnchor(), environment);
+        return external == null ? local : new
+                ExternallyAnchoredTestSuiteStabilityPhysicalAttemptProviderInventoryPublicationFloor(
+                objectMapper, local, external);
     }
 
     /** Bootstraps one dynamic signed publication from exactly one installed adapter catalog. */
@@ -135,6 +251,7 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
      * @param heartbeatIntervalMillis local database lease renewal interval
      * @param leaseDurationMillis database-clock live-member lease
      * @param recordRetentionSeconds expired-row retention before bounded purge
+     * @param externalAnchor optional physical-domain external non-equivocation policy
      */
     @ConfigurationProperties(prefix = Properties.PREFIX, ignoreUnknownFields = false)
     public record Properties(
@@ -158,11 +275,16 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
             String artifactFingerprint,
             Long heartbeatIntervalMillis,
             Long leaseDurationMillis,
-            Long recordRetentionSeconds) {
+            Long recordRetentionSeconds,
+            @NestedConfigurationProperty
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                    externalAnchor) {
 
         /** Prefix shared by Spring configuration, deployment examples, and startup tests. */
         public static final String PREFIX =
                 "gateway.testing.stability-physical-attempt.provider-inventory";
+        /** Nested prefix for physical provider-inventory external non-equivocation. */
+        public static final String EXTERNAL_ANCHOR_PREFIX = PREFIX + ".external-anchor";
 
         /** Applies finite defaults and rejects incomplete or unsafe enabled policy. */
         public Properties {
@@ -188,6 +310,9 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
             heartbeatIntervalMillis = defaulted(heartbeatIntervalMillis, 5_000L);
             leaseDurationMillis = defaulted(leaseDurationMillis, 15_000L);
             recordRetentionSeconds = defaulted(recordRetentionSeconds, 86_400L);
+            externalAnchor = externalAnchor == null
+                    ? ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties
+                    .disabled() : externalAnchor;
             try {
                 ExpectedBinding binding = expectedBinding(trustDomain, scopeId, cohortId,
                         providerProtocolVersion, acceptedPolicyFingerprints);
@@ -327,5 +452,39 @@ public class TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfigurat
         private static long defaulted(Long value, long defaultValue) {
             return value == null ? defaultValue : value;
         }
+    }
+
+    /** Successful stateless profile preflight required by every stateful bean. */
+    record ValidatedRuntimeConfiguration(boolean staging) {
+    }
+
+    private static TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor
+            externalAnchor(
+            ObjectProvider<
+                    TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor>
+                    anchors,
+            ExternalSequenceAnchorBootstrapRootRecoveryFleetExternalAnchorProperties properties,
+            Environment environment) {
+        List<TestSuiteStabilityPhysicalAttemptProviderInventoryExternalSequenceAnchor> configured =
+                anchors.orderedStream().toList();
+        if ((properties.enabled() && configured.size() != 1)
+                || (!properties.enabled() && !configured.isEmpty())) {
+            throw new IllegalStateException(
+                    "Physical provider-inventory non-equivocation requires exactly one anchor");
+        }
+        if (!properties.enabled()) {
+            return null;
+        }
+        var result = configured.getFirst();
+        TestSuiteStabilityExternalSequenceAnchor.Descriptor descriptor = result.descriptor();
+        boolean byzantineRequired = properties.minimumFaults() > 0
+                || environment.acceptsProfiles(Profiles.of("staging"));
+        if (!descriptor.available() || !descriptor.externallyDurable()
+                || !descriptor.challengeBound()
+                || byzantineRequired && !descriptor.byzantineQuorum()) {
+            throw new IllegalStateException(
+                    "Physical provider-inventory external anchor is unavailable or unsafe");
+        }
+        return result;
     }
 }

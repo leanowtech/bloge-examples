@@ -66,7 +66,7 @@ class ControlPlaneCertificateRotationEventPageTest {
         assertThatThrownBy(() -> material(1, HEAD, List.of(), now(), now().plusSeconds(60)))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> material(1, HEAD,
-                java.util.stream.IntStream.range(0, 13)
+                java.util.stream.IntStream.range(0, 16)
                         .mapToObj(index -> event("rotation-" + (index + 100),
                                 "target-" + index)).toList(),
                 now(), now().plusSeconds(60)))

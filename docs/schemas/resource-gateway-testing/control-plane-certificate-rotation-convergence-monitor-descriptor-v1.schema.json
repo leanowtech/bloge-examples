@@ -19,11 +19,11 @@
     "activationModeSupported": { "type": "boolean" },
     "replicaConvergenceProven": { "type": "boolean" },
     "servingReady": { "type": "boolean" },
-    "registeredTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
-    "trackedRotationCount": { "type": "integer", "minimum": 0, "maximum": 12 },
-    "stagedTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
-    "activeTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
-    "blockedTargetCount": { "type": "integer", "minimum": 0, "maximum": 12 },
+    "registeredTargetCount": { "type": "integer", "minimum": 0, "maximum": 15 },
+    "trackedRotationCount": { "type": "integer", "minimum": 0, "maximum": 15 },
+    "stagedTargetCount": { "type": "integer", "minimum": 0, "maximum": 15 },
+    "activeTargetCount": { "type": "integer", "minimum": 0, "maximum": 15 },
+    "blockedTargetCount": { "type": "integer", "minimum": 0, "maximum": 15 },
     "status": {
       "type": "string",
       "pattern": "^[A-Z][A-Z0-9_]{0,63}$"

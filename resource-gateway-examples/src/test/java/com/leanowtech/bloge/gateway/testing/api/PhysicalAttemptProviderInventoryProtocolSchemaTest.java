@@ -122,6 +122,20 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
     }
 
     @Test
+    void physicalInventoryExternalAnchorEntryPointReferencesTheStrictSharedContract()
+            throws Exception {
+        JsonNode schema = schema(
+                "physical-attempt-provider-inventory-external-anchor-configuration-v1.schema.json");
+
+        assertThat(schema.path("$ref").asText()).isEqualTo(
+                "external-sequence-anchor-bootstrap-root-recovery-fleet-external-anchor-configuration-v2.schema.json");
+        assertThat(schema.path("description").asText())
+                .contains("challenge-bound notary quorum")
+                .contains("managed receipt trust")
+                .contains("complete bootstrap-root chain");
+    }
+
+    @Test
     void schemaFilesAreStrictBoundedAndPackagedByTheTestKitResourceRoot() throws Exception {
         for (String name : List.of(
                 "physical-attempt-provider-inventory-v1.schema.json",
@@ -130,6 +144,7 @@ class PhysicalAttemptProviderInventoryProtocolSchemaTest {
                 "physical-attempt-provider-inventory-cohort-binding-v1.schema.json",
                 "physical-attempt-provider-inventory-descriptor-v1.schema.json",
                 "physical-attempt-provider-inventory-cohort-observation-v1.schema.json",
+                "physical-attempt-provider-inventory-external-anchor-configuration-v1.schema.json",
                 "physical-attempt-runtime-capability-v1.schema.json")) {
             JsonNode schema = schema(name);
             assertThat(schema.path("$schema").asText())

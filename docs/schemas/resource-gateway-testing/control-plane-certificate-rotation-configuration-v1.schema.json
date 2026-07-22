@@ -59,7 +59,7 @@
       "type": "string",
       "pattern": "^(|\\s*\\{.*\\}\\s*)$",
       "maxLength": 65536,
-      "description": "Strict map from one of the twelve product transport ids to either a positive baseline generation or an object containing exactly generation and materialId."
+      "description": "Strict map from one of the fifteen product transport ids to either a positive baseline generation or an object containing exactly generation and materialId."
     },
     "material-catalog-json": {
       "type": "string",

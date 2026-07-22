@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-testing/physical-attempt-provider-inventory-external-anchor-configuration-v1.schema.json",
+  "title": "Resource Gateway Physical Attempt Provider Inventory External Anchor Configuration v1",
+  "description": "Physical-provider-inventory product entry point for the strict challenge-bound notary quorum, managed receipt trust, complete bootstrap-root chain, and identity-bound HTTPS transport contract. The referenced shared protocol remains the wire authority; this schema gives operators and integration tooling a stable physical-inventory domain name without duplicating that contract.",
+  "$ref": "external-sequence-anchor-bootstrap-root-recovery-fleet-external-anchor-configuration-v2.schema.json"
+}

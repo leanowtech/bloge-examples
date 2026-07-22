@@ -66,7 +66,7 @@ public record ControlPlaneCertificateRotationEventPage(
      * @param previousPageFingerprint exact fingerprint of the replica's committed cursor head
      * @param issuedAt authenticated source publication time
      * @param expiresAt exclusive page acceptance deadline
-     * @param events one through twelve independently signed events for distinct product targets
+     * @param events one through fifteen independently signed events for distinct product targets
      */
     @JsonIgnoreProperties(ignoreUnknown = false)
     public record Material(
@@ -82,7 +82,7 @@ public record ControlPlaneCertificateRotationEventPage(
         public static final String SCHEMA_VERSION =
                 "bloge.controlPlaneCertificateRotationEventPageMaterial.v1";
         /** Maximum events in one page, equal to the closed product target inventory. */
-        public static final int MAXIMUM_EVENTS = 12;
+        public static final int MAXIMUM_EVENTS = 15;
         private static final Pattern IDENTIFIER =
                 Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}");
 

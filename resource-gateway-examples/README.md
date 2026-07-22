@@ -448,14 +448,36 @@ Micrometer uses only closed labels. Tool Studio publishes the typed, identity-fr
 `physicalAttemptRuntime` capability and reaches `READY` only while the dynamic authority, exact cohort,
 terminal projection, and observation reconciliation are simultaneously healthy. All switches remain
 disabled by default, and the standalone demo script intentionally enables none of these physical
-lanes. The external/non-database rollback protocol core now binds publication and witness into one
+lanes. The physical Spring composition now binds publication and witness into one
 domain-separated, external-first composite head and reports external versus Byzantine quorum truth
-separately. It is not yet installed by the physical Spring composition, so existing deployments
-remain database-floor-only and cannot report `READY`. Managed provider-inventory trust-root rotation,
-N/N-1 backfill, bounded evidence retention, a certified process/container adapter, and production
-certification remain open. See the
-[dynamic provider-inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-dynamic-physical-provider-inventory-verification.md)
+separately through a dedicated domain marker and the shared strict HTTP/quorum adapter. `test` keeps
+this optional for local migration, so disabled deployments remain honestly database-floor-only. An
+enabled anchor must resolve to exactly one available, externally durable and challenge-bound marker
+bean. A configured non-zero fault bound also requires a Byzantine descriptor; hidden, duplicate,
+unsafe, or invalid-quorum anchors fail startup.
+
+Configure this path below
+`RG_TEST_PHYSICAL_ATTEMPT_PROVIDER_INVENTORY_EXTERNAL_ANCHOR_*` in the profile YAML. The groups are:
+the notary set and timing policy, `..._TRANSPORT_*` for the notary HTTPS identity,
+`..._TRUST_*` plus `..._TRUST_TRANSPORT_*` for managed receipt-key publication, and
+`..._BOOTSTRAP_ROOT_*` plus `..._BOOTSTRAP_ROOT_TRANSPORT_*` for its complete-chain root source.
+Staging refuses the physical inventory unless external anchoring is enabled and required with
+`minimum-faults >= 1` and `maximum-faults >= 1`; managed receipt trust, complete-chain bootstrap
+roots, and all three private-PKIX/SPKI/mTLS/workload-identity transports must also be enabled and
+required and carry exact client/server certificate identities, with every insecure-loopback escape
+hatch off. Staging YAML makes each identity requirement follow transport enablement, and Java
+preflight independently rejects any unbound transport so direct property injection cannot downgrade
+the policy. The three transport identities are now
+part of the shared 15-target restart-free certificate-rotation inventory. Aggregate health exposes
+only strength and availability facts. The strict product entry point is the
+[physical external-anchor configuration Schema](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-external-anchor-configuration-v1.schema.json).
+
+Managed deployment/witness signing-root hot rotation, N/N-1 backfill, bounded evidence retention, a
+certified process/container adapter, external notary production certification, and production
+profile wiring remain open. See the
+[dynamic provider-inventory verification](../docs/resource-gateway-execution-data-control-plane-stage4-dynamic-physical-provider-inventory-verification.md),
 [external non-equivocation core verification](../docs/resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-external-non-equivocation-core-verification.md),
+[external non-equivocation runtime verification](../docs/resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-external-non-equivocation-runtime-verification.md),
 and the strict
 [publication](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-publication-v1.schema.json),
 [generation floor](../docs/schemas/resource-gateway-testing/physical-attempt-provider-inventory-publication-generation-v1.schema.json), and
@@ -571,7 +593,7 @@ stages once, failures preserve the old generation, and target drift fails closed
 paths, secret references or resolver errors. A database-clock rotation floor linearizes accepted
 generations across replicas, journals exact event identities, advances due successors atomically,
 rejects restart rollback and same-generation forks, and exposes a strict credential-free snapshot
-v1. The test/staging product runtime now binds this floor-first state machine to all 12 stable
+v1. The test/staging product runtime now binds this floor-first state machine to all 15 stable
 transport ids: it verifies a strict out-of-band baseline, restores an active or pending durable
 successor from the controlled material catalog, and lets exact replay repair a replica whose local
 staging failed after durable acceptance. Set

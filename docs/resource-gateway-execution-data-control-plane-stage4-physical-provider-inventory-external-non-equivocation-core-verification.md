@@ -17,8 +17,10 @@ This increment freezes the domain protocol and fail-closed core needed to close 
 - aggregate-only Actuator health and Tool Studio feature projection;
 - additive v1 descriptor/capability Schema evolution.
 
-It deliberately does **not** yet install the HTTP/quorum adapter in the physical Spring composition.
-No existing deployment becomes externally anchored merely by upgrading to this commit.
+At this increment's boundary it deliberately did **not** install the HTTP/quorum adapter in the
+physical Spring composition. That deployment gap is now superseded by the follow-up
+[runtime wiring verification](resource-gateway-execution-data-control-plane-stage4-physical-provider-inventory-external-non-equivocation-runtime-verification.md); the protocol and failure
+semantics in this document remain authoritative.
 
 ## 2. Canonical Composite Head
 
@@ -105,12 +107,12 @@ does not affect this focused gate.
 
 ## 7. Residual Gap
 
-This core removes the protocol-design uncertainty but not the deployment gap. The next increment
-must wire the strict HTTP/quorum implementation into the physical test/staging composition, require
-managed receipt trust and complete-chain bootstrap roots in staging, publish aggregate health, add
-strict configuration/YAML tests, and prove startup failure for every unsafe downgrade. Managed
-deployment/witness trust-root hot rotation, N/N-1 inventory backfill, retention/evidence lifecycle,
-real process/container providers, and production HA/DR/chaos certification still remain.
+This core removed the protocol-design uncertainty. The follow-up runtime increment has since wired
+the strict HTTP/quorum implementation into the physical test/staging composition, required managed
+receipt trust and complete-chain bootstrap roots in staging, exposed aggregate health, and added
+strict configuration/YAML gates. Managed deployment/witness trust-root hot rotation, N/N-1 inventory
+backfill, retention/evidence lifecycle, real process/container providers, and production
+HA/DR/chaos certification still remain.
 
-Relative to the complete industrial testability plan, the estimated substantive gap is now about
-15%. It remains outside the allowed +/-8% completion band.
+At this historical boundary the estimated substantive gap was about 15%. The follow-up runtime
+increment reassesses the current gap independently.

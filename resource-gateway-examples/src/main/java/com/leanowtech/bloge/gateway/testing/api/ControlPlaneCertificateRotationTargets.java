@@ -3,7 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import java.util.List;
 import java.util.Set;
 
-/** Stable product target identities for the twelve authenticated control-plane transports. */
+/** Stable product target identities for the fifteen authenticated control-plane transports. */
 public final class ControlPlaneCertificateRotationTargets {
 
     /** Bootstrap-root complete-chain publisher. */
@@ -45,6 +45,16 @@ public final class ControlPlaneCertificateRotationTargets {
     public static final String RECOVERY_FLEET_BOOTSTRAP_ROOTS =
             recoveryFleetPrefix() + ".managed-trust.bootstrap-roots.transport";
 
+    /** Physical provider-inventory notary transport. */
+    public static final String PHYSICAL_PROVIDER_INVENTORY_NOTARY =
+            physicalProviderInventoryPrefix() + ".transport";
+    /** Physical provider-inventory managed receipt-key transport. */
+    public static final String PHYSICAL_PROVIDER_INVENTORY_MANAGED_TRUST =
+            physicalProviderInventoryPrefix() + ".managed-trust.transport";
+    /** Physical provider-inventory managed bootstrap-root transport. */
+    public static final String PHYSICAL_PROVIDER_INVENTORY_BOOTSTRAP_ROOTS =
+            physicalProviderInventoryPrefix() + ".managed-trust.bootstrap-roots.transport";
+
     private static final List<String> VALUES = List.of(
             BOOTSTRAP_ROOT_PUBLISHER,
             RECOVERY_FLEET_INVENTORY,
@@ -57,18 +67,21 @@ public final class ControlPlaneCertificateRotationTargets {
             SUITE_STABILITY_BOOTSTRAP_ROOTS,
             RECOVERY_FLEET_NOTARY,
             RECOVERY_FLEET_MANAGED_TRUST,
-            RECOVERY_FLEET_BOOTSTRAP_ROOTS);
+            RECOVERY_FLEET_BOOTSTRAP_ROOTS,
+            PHYSICAL_PROVIDER_INVENTORY_NOTARY,
+            PHYSICAL_PROVIDER_INVENTORY_MANAGED_TRUST,
+            PHYSICAL_PROVIDER_INVENTORY_BOOTSTRAP_ROOTS);
     private static final Set<String> VALUE_SET = Set.copyOf(VALUES);
 
     private ControlPlaneCertificateRotationTargets() {
     }
 
-    /** @return all twelve stable target identities in product order */
+    /** @return all fifteen stable target identities in product order */
     public static List<String> values() {
         return VALUES;
     }
 
-    /** @return whether the supplied identity is one of the twelve product transports */
+    /** @return whether the supplied identity is one of the fifteen product transports */
     public static boolean contains(String targetId) {
         return targetId != null && VALUE_SET.contains(targetId.trim());
     }
@@ -86,5 +99,10 @@ public final class ControlPlaneCertificateRotationTargets {
     private static String recoveryFleetPrefix() {
         return "gateway.testing.external-sequence-anchor."
                 + "bootstrap-root-recovery-fleet-dynamic-inventory.external-anchor";
+    }
+
+    private static String physicalProviderInventoryPrefix() {
+        return TestSuiteStabilityPhysicalAttemptProviderInventoryRuntimeConfiguration.Properties
+                .EXTERNAL_ANCHOR_PREFIX;
     }
 }

@@ -121,14 +121,20 @@ class ControlPlaneCertificateRotationProductConfigurationTest {
     }
 
     @Test
-    void productTargetVocabularyContainsExactlyTwelveUniqueTransportPrefixes() {
+    void productTargetVocabularyContainsExactlyFifteenUniqueTransportPrefixes() {
         assertThat(ControlPlaneCertificateRotationTargets.values())
-                .hasSize(12).doesNotHaveDuplicates()
+                .hasSize(15).doesNotHaveDuplicates()
                 .allMatch(target -> target.endsWith(".transport"));
         assertThat(ControlPlaneCertificateRotationTargets.values())
                 .contains(TARGET,
                         ControlPlaneCertificateRotationTargets.RECOVERY_FLEET_INVENTORY,
-                        ControlPlaneCertificateRotationTargets.RECOVERY_FLEET_BOOTSTRAP_ROOTS);
+                        ControlPlaneCertificateRotationTargets.RECOVERY_FLEET_BOOTSTRAP_ROOTS,
+                        ControlPlaneCertificateRotationTargets
+                                .PHYSICAL_PROVIDER_INVENTORY_NOTARY,
+                        ControlPlaneCertificateRotationTargets
+                                .PHYSICAL_PROVIDER_INVENTORY_MANAGED_TRUST,
+                        ControlPlaneCertificateRotationTargets
+                                .PHYSICAL_PROVIDER_INVENTORY_BOOTSTRAP_ROOTS);
     }
 
     @Test

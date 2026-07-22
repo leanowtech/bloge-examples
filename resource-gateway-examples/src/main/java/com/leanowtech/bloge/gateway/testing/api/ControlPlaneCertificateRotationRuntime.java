@@ -8,7 +8,7 @@ import java.util.Objects;
 /**
  * Product runtime that creates, durably reconstructs, and registers control-plane TLS transports.
  *
- * <p>Every domain asks this runtime to create a transport under one of twelve stable ids. Disabled
+ * <p>Every domain asks this runtime to create a transport under one of fifteen stable ids. Disabled
  * rotation preserves the historical static adapter. Enabled rotation fingerprints its out-of-band
  * baseline, verifies the durable generation floor, restores active and pending material from the
  * deployment catalog when needed, and registers a floor-bound signed controller. Unknown,
