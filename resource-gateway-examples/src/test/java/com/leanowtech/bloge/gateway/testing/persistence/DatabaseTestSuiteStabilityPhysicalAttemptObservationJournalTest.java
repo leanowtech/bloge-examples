@@ -1850,7 +1850,11 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
             TestSuiteStabilityPhysicalAttemptObservationReceipt.State state,
             TestSuiteStabilityPhysicalAttemptObservationReceipt.TerminalDisposition disposition)
             throws Exception {
-        Instant now = databaseTime();
+        // Host scheduling after prepare is not provider latency in this deterministic fixture.
+        Instant now = journal.find(command.identity().tenantId(),
+                        command.identity().environmentId(), command.commandId())
+                .map(TestSuiteStabilityPhysicalAttemptObservationJournal.Entry::preparedAt)
+                .orElseGet(this::databaseTime);
         if (now.isBefore(command.requestedAt())) {
             now = command.requestedAt();
         }

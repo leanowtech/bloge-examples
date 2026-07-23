@@ -32,6 +32,9 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-evidence-attestation-v1.schema.json",
                 "mirror-evidence-bundle-v1.schema.json",
                 "mirror-deployment-isolation-attestation-v1.schema.json",
+                "mirror-deployment-isolation-attestation-status-v1.schema.json",
+                "mirror-deployment-isolation-attestation-revocation-request-v1.schema.json",
+                "mirror-deployment-isolation-attestation-bundle-v1.schema.json",
                 "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
@@ -144,6 +147,80 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_SCHEMA_RESOURCE)
                 .endsWith("authority-key-set-publication-v1.schema.json");
+    }
+
+    @Test
+    void packagedAttestationControlSchemasAcceptAtomicStatusBundleAndRevocation() {
+        JsonNode attestation = CapabilityMirrorProtocol
+                .mirrorDeploymentIsolationCompatibilityFixture().attestation();
+        JsonNode deployment = attestation.at("/material/deployment");
+        var scope = objectMapper.createObjectNode()
+                .put("tenantId", "tenant-a")
+                .put("organizationId", "org-a")
+                .put("projectId", "tool-studio")
+                .put("environmentId", "staging")
+                .put("region", "ap-southeast-1");
+        var authorityRef = objectMapper.createObjectNode()
+                .put("kind", "DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET")
+                .put("id", "mirror-isolation-authorities:staging")
+                .put("revision", 3)
+                .put("fingerprint", fingerprint('a'));
+        var attestationRef = objectMapper.createObjectNode()
+                .put("kind", "DEPLOYMENT_ISOLATION_ATTESTATION")
+                .put("id", attestation.at("/material/attestationId").asText())
+                .put("revision", attestation.at("/material/revision").asLong())
+                .put("fingerprint", attestation.path("attestationFingerprint").asText());
+        var material = objectMapper.createObjectNode()
+                .put("statusRevision", 1)
+                .put("previousStatusFingerprint", "")
+                .put("state", "ACTIVE")
+                .put("reason", "ACCEPTED")
+                .put("effectiveAt", "2026-07-23T00:00:11Z");
+        material.set("scope", scope.deepCopy());
+        material.set("deployment", deployment.deepCopy());
+        material.set("authorityKeySetRef", authorityRef.deepCopy());
+        material.set("attestationRef", attestationRef);
+        var status = objectMapper.createObjectNode()
+                .put("schemaVersion",
+                        CapabilityMirrorProtocol.MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_STATUS_V1)
+                .put("statusFingerprint", fingerprint('b'));
+        status.set("material", material);
+        var bundle = objectMapper.createObjectNode()
+                .put("schemaVersion",
+                        CapabilityMirrorProtocol.MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE_V1)
+                .put("bundleFingerprint", fingerprint('c'));
+        bundle.set("scope", scope);
+        bundle.set("authorityKeySetRef", authorityRef);
+        bundle.set("attestation", attestation);
+        bundle.set("status", status);
+        var revocation = objectMapper.createObjectNode()
+                .put("schemaVersion", CapabilityMirrorProtocol
+                        .MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_V1)
+                .put("attestationRevision", attestation.at("/material/revision").asLong())
+                .put("attestationFingerprint",
+                        attestation.path("attestationFingerprint").asText())
+                .put("expectedStatusRevision", 1)
+                .put("expectedStatusFingerprint", fingerprint('b'))
+                .put("reason", "SECURITY_INCIDENT");
+
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(status,
+                CapabilityMirrorProtocol
+                        .MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_STATUS_SCHEMA_RESOURCE,
+                "invalid-status")).doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(bundle,
+                CapabilityMirrorProtocol
+                        .MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE_SCHEMA_RESOURCE,
+                "invalid-bundle")).doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(revocation,
+                CapabilityMirrorProtocol
+                        .MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_SCHEMA_RESOURCE,
+                "invalid-revocation")).doesNotThrowAnyException();
+
+        revocation.put("reason", "ACCEPTED");
+        assertThatThrownBy(() -> CapabilityMirrorSchemaValidator.require(revocation,
+                CapabilityMirrorProtocol
+                        .MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_SCHEMA_RESOURCE,
+                "invalid-revocation")).isInstanceOf(IllegalArgumentException.class);
     }
 
     private static String fingerprint(char value) {

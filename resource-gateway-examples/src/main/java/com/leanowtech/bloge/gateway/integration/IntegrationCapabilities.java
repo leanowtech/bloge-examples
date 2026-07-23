@@ -286,6 +286,18 @@ public record IntegrationCapabilities(
         objects.put("mirrorDeploymentIsolationAuthorityKeySetPublication", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAuthorityKeySetPublication.SCHEMA_VERSION));
+        objects.put("mirrorDeploymentIsolationAttestation", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorDeploymentIsolationAttestation.SCHEMA_VERSION));
+        objects.put("mirrorDeploymentIsolationAttestationStatus", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorDeploymentIsolationAttestationStatusPublication.SCHEMA_VERSION));
+        objects.put("mirrorDeploymentIsolationAttestationBundle", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorDeploymentIsolationAttestationBundle.SCHEMA_VERSION));
+        objects.put("mirrorDeploymentIsolationAttestationRevocationRequest", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorDeploymentIsolationAttestationRevocationRequest.SCHEMA_VERSION));
         objects.put("capabilityClosureProjectionRequest", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .CapabilityClosureProjectionRequest.SCHEMA_VERSION));
@@ -722,6 +734,9 @@ public record IntegrationCapabilities(
         features.put("mirrorIsolationAuthorityPublicationProtocol", true);
         features.put("mirrorIsolationAuthorityDistributionApi", false);
         features.put("mirrorIsolationAuthorityDistributionReady", false);
+        features.put("mirrorIsolationAttestationTrustProtocol", true);
+        features.put("mirrorIsolationAttestationDistributionApi", false);
+        features.put("mirrorIsolationAttestationDistributionReady", false);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);

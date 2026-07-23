@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-deployment-isolation-attestation-revocation-request-v1.schema.json",
+  "title": "Resource Gateway Mirror Deployment Isolation Attestation Revocation Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "attestationRevision", "attestationFingerprint",
+    "expectedStatusRevision", "expectedStatusFingerprint", "reason"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorDeploymentIsolationAttestationRevocationRequest.v1"
+    },
+    "attestationRevision": { "type": "integer", "minimum": 1 },
+    "attestationFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "expectedStatusRevision": { "type": "integer", "minimum": 1, "maximum": 2 },
+    "expectedStatusFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "reason": {
+      "enum": [
+        "SECURITY_INCIDENT", "POLICY_DRIFT", "DEPLOYMENT_REPLACED",
+        "AUTHORITY_REVOKED", "OPERATOR_REVOKED"
+      ]
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}

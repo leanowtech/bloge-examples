@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-deployment-isolation-attestation-status-v1.schema.json",
+  "title": "Resource Gateway Mirror Deployment Isolation Attestation Status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "statusFingerprint", "material"],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorDeploymentIsolationAttestationStatus.v1"
+    },
+    "statusFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "material": { "$ref": "#/$defs/material" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "canonicalInstant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3}(?:[0-9]{3})?(?:[0-9]{3})?)?Z$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environmentId": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deploymentScopeId", "clusterId", "namespace", "workloadName",
+        "serviceAccount", "imageDigest"
+      ],
+      "properties": {
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "clusterId": { "$ref": "#/$defs/identifier" },
+        "namespace": { "$ref": "#/$defs/identifier" },
+        "workloadName": { "$ref": "#/$defs/identifier" },
+        "serviceAccount": { "$ref": "#/$defs/identifier" },
+        "imageDigest": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "const": "DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "attestationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "const": "DEPLOYMENT_ISOLATION_ATTESTATION" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope", "deployment", "authorityKeySetRef", "attestationRef",
+        "statusRevision", "previousStatusFingerprint", "state", "reason", "effectiveAt"
+      ],
+      "properties": {
+        "scope": { "$ref": "#/$defs/scope" },
+        "deployment": { "$ref": "#/$defs/deployment" },
+        "authorityKeySetRef": { "$ref": "#/$defs/authorityRef" },
+        "attestationRef": { "$ref": "#/$defs/attestationRef" },
+        "statusRevision": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "previousStatusFingerprint": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/fingerprint" }
+          ]
+        },
+        "state": { "enum": ["ACTIVE", "REVOKED"] },
+        "reason": {
+          "enum": [
+            "ACCEPTED", "SECURITY_INCIDENT", "POLICY_DRIFT", "DEPLOYMENT_REPLACED",
+            "AUTHORITY_REVOKED", "OPERATOR_REVOKED"
+          ]
+        },
+        "effectiveAt": { "$ref": "#/$defs/canonicalInstant" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "statusRevision": { "const": 1 },
+            "previousStatusFingerprint": { "const": "" },
+            "state": { "const": "ACTIVE" },
+            "reason": { "const": "ACCEPTED" }
+          }
+        },
+        {
+          "properties": {
+            "statusRevision": { "const": 2 },
+            "previousStatusFingerprint": { "$ref": "#/$defs/fingerprint" },
+            "state": { "const": "REVOKED" },
+            "reason": {
+              "enum": [
+                "SECURITY_INCIDENT", "POLICY_DRIFT", "DEPLOYMENT_REPLACED",
+                "AUTHORITY_REVOKED", "OPERATOR_REVOKED"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorFixtureScop
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorOperationAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAuthorityPublicationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
@@ -22,6 +23,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityTrustPolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationAdmissionPolicyProvider;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationBundleIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
@@ -180,6 +186,71 @@ public class MirrorRuntimeConfiguration {
     }
 
     /**
+     * Creates the external isolation-attestation signature and content-addressing verifier.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @return independent external attestation verifier
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorDeploymentIsolationAttestationIntegrity
+    mirrorDeploymentIsolationAttestationIntegrity(ObjectMapper objectMapper) {
+        return new MirrorDeploymentIsolationAttestationIntegrity(objectMapper);
+    }
+
+    /**
+     * Creates the canonical local status and atomic-bundle integrity boundary.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param attestationIntegrity external attestation content-addressing verifier
+     * @return local status and bundle content-addressing boundary
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorDeploymentIsolationAttestationBundleIntegrity
+    mirrorDeploymentIsolationAttestationBundleIntegrity(
+            ObjectMapper objectMapper,
+            MirrorDeploymentIsolationAttestationIntegrity attestationIntegrity) {
+        return new MirrorDeploymentIsolationAttestationBundleIntegrity(
+                objectMapper, attestationIntegrity);
+    }
+
+    /**
+     * Installs a fail-closed placeholder until exact bootstrap revisions are governed locally.
+     *
+     * @return unavailable provider that cannot accept request-selected bootstrap floors
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorDeploymentIsolationAttestationAdmissionPolicyProvider
+    mirrorDeploymentIsolationAttestationAdmissionPolicyProvider() {
+        return MirrorDeploymentIsolationAttestationAdmissionPolicyProvider.unavailable();
+    }
+
+    /**
+     * Creates the append-only attestation body/status store and durable current floor.
+     *
+     * @param jdbc transaction-aware application JDBC boundary
+     * @param objectMapper canonical protocol mapper
+     * @param attestationIntegrity external attestation content-addressing verifier
+     * @param bundleIntegrity local status and bundle verifier
+     * @param transactionManager transaction manager shared by Mirror persistence
+     * @return full-scope attestation trust-control repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorDeploymentIsolationAttestationRepository
+    mirrorDeploymentIsolationAttestationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            MirrorDeploymentIsolationAttestationIntegrity attestationIntegrity,
+            MirrorDeploymentIsolationAttestationBundleIntegrity bundleIntegrity,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseMirrorDeploymentIsolationAttestationRepository(
+                jdbc, objectMapper, attestationIntegrity, bundleIntegrity, transactionManager);
+    }
+
+    /**
      * Creates the append-only full-enterprise-scope fixture authorization index.
      *
      * @param jdbc application JDBC boundary
@@ -289,15 +360,19 @@ public class MirrorRuntimeConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean({MirrorPlanIntegrationService.class, MirrorRunIntegrationService.class,
-            MirrorDeploymentIsolationAuthorityPublicationService.class})
+            MirrorDeploymentIsolationAuthorityPublicationService.class,
+            MirrorDeploymentIsolationAttestationService.class})
     public MirrorRuntimeAvailability mirrorRuntimeAvailability(
             MirrorPlanIntegrationService planService,
             MirrorRunIntegrationService runService,
             VisualEvidenceSigner evidenceSigner,
             MirrorDeploymentIsolationAuthorityPublicationService authorityService,
-            MirrorDeploymentIsolationAuthorityTrustPolicyProvider trustPolicies) {
+            MirrorDeploymentIsolationAuthorityTrustPolicyProvider trustPolicies,
+            MirrorDeploymentIsolationAttestationService attestationService,
+            MirrorDeploymentIsolationAttestationAdmissionPolicyProvider admissionPolicies) {
         return new MirrorRuntimeAvailability(true, true, evidenceSigner::available,
-                true, trustPolicies::available);
+                true, trustPolicies::available, true,
+                () -> trustPolicies.available() && admissionPolicies.available());
     }
 
     /** Compatibility factory retained for focused readiness tests outside Spring composition. */

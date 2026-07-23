@@ -387,6 +387,10 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.authorityDistributionApi());
         features.put("mirrorIsolationAuthorityDistributionReady",
                 mirrorRuntimeAvailability.authorityDistributionReady());
+        features.put("mirrorIsolationAttestationDistributionApi",
+                mirrorRuntimeAvailability.attestationDistributionApi());
+        features.put("mirrorIsolationAttestationDistributionReady",
+                mirrorRuntimeAvailability.attestationDistributionReady());
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());
@@ -753,6 +757,16 @@ public class ToolStudioIntegrationService {
                     "/api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest"));
             endpoints.add(new IntegrationCapabilities.Endpoint("GET",
                     "/api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}"));
+        }
+        if (mirrorRuntimeAvailability.attestationDistributionApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint("POST",
+                    "/api/mirror/trust/deployment-isolation/attestations"));
+            endpoints.add(new IntegrationCapabilities.Endpoint("GET",
+                    "/api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest"));
+            endpoints.add(new IntegrationCapabilities.Endpoint("GET",
+                    "/api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint("POST",
+                    "/api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

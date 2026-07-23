@@ -61,6 +61,15 @@ public final class CapabilityMirrorProtocol {
     /** Externally signed deployment-isolation attestation wire version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_V1 =
             "resourceGateway.mirrorDeploymentIsolationAttestation.v1";
+    /** Append-only local deployment-isolation attestation status wire version. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_STATUS_V1 =
+            "resourceGateway.mirrorDeploymentIsolationAttestationStatus.v1";
+    /** Atomic deployment-isolation attestation and current-status bundle wire version. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE_V1 =
+            "resourceGateway.mirrorDeploymentIsolationAttestationBundle.v1";
+    /** Optimistically fenced irreversible attestation revocation command wire version. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_V1 =
+            "resourceGateway.mirrorDeploymentIsolationAttestationRevocationRequest.v1";
     /** Signed deployment-isolation compatibility fixture version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_COMPATIBILITY_V1 =
             "resourceGateway.mirrorDeploymentIsolationCompatibility.v1";
@@ -120,6 +129,19 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-deployment-isolation-attestation-v1.schema.json";
+    /** Packaged append-only local attestation status schema. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_STATUS_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-deployment-isolation-attestation-status-v1.schema.json";
+    /** Packaged atomic attestation and current-status bundle schema. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-deployment-isolation-attestation-bundle-v1.schema.json";
+    /** Packaged optimistic irreversible attestation revocation-command schema. */
+    public static final String
+    MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-deployment-isolation-attestation-revocation-request-v1.schema.json";
     /** Packaged threshold-signed deployment-isolation authority key-set schema. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

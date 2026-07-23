@@ -16,10 +16,18 @@ public final class MirrorRuntimeAvailability {
     private final BooleanSupplier executionReadiness;
     private final boolean authorityDistributionApi;
     private final BooleanSupplier authorityDistributionReadiness;
+    private final boolean attestationDistributionApi;
+    private final BooleanSupplier attestationDistributionReadiness;
 
-    /** Creates a marker with static readiness, primarily for disabled composition and tests. */
+    /**
+     * Creates a marker with static readiness, primarily for disabled composition and tests.
+     *
+     * @param planCompilationApi protected plan compile/read routes are assembled
+     * @param executionApi protected run/evidence routes are assembled and statically ready
+     */
     public MirrorRuntimeAvailability(boolean planCompilationApi, boolean executionApi) {
-        this(planCompilationApi, executionApi, () -> executionApi, false, () -> false);
+        this(planCompilationApi, executionApi, () -> executionApi,
+                false, () -> false, false, () -> false);
     }
 
     /**
@@ -33,7 +41,8 @@ public final class MirrorRuntimeAvailability {
             boolean planCompilationApi,
             boolean executionApi,
             BooleanSupplier executionReadiness) {
-        this(planCompilationApi, executionApi, executionReadiness, false, () -> false);
+        this(planCompilationApi, executionApi, executionReadiness,
+                false, () -> false, false, () -> false);
     }
 
     /**
@@ -51,6 +60,30 @@ public final class MirrorRuntimeAvailability {
             BooleanSupplier executionReadiness,
             boolean authorityDistributionApi,
             BooleanSupplier authorityDistributionReadiness) {
+        this(planCompilationApi, executionApi, executionReadiness,
+                authorityDistributionApi, authorityDistributionReadiness,
+                false, () -> false);
+    }
+
+    /**
+     * Creates a marker with independently probed authority and attestation distribution paths.
+     *
+     * @param planCompilationApi protected plan compile/read routes are assembled
+     * @param executionApi protected run/evidence routes are assembled
+     * @param executionReadiness dynamic run/evidence and signing-authority readiness
+     * @param authorityDistributionApi protected authority publication routes are assembled
+     * @param authorityDistributionReadiness dynamic local authority trust readiness
+     * @param attestationDistributionApi protected attestation ingest/read/revoke routes are assembled
+     * @param attestationDistributionReadiness dynamic authority and bootstrap-policy readiness
+     */
+    public MirrorRuntimeAvailability(
+            boolean planCompilationApi,
+            boolean executionApi,
+            BooleanSupplier executionReadiness,
+            boolean authorityDistributionApi,
+            BooleanSupplier authorityDistributionReadiness,
+            boolean attestationDistributionApi,
+            BooleanSupplier attestationDistributionReadiness) {
         this.planCompilationApi = planCompilationApi;
         this.executionApi = executionApi;
         this.executionReadiness = Objects.requireNonNull(
@@ -58,19 +91,34 @@ public final class MirrorRuntimeAvailability {
         this.authorityDistributionApi = authorityDistributionApi;
         this.authorityDistributionReadiness = Objects.requireNonNull(
                 authorityDistributionReadiness, "authorityDistributionReadiness");
+        this.attestationDistributionApi = attestationDistributionApi;
+        this.attestationDistributionReadiness = Objects.requireNonNull(
+                attestationDistributionReadiness, "attestationDistributionReadiness");
     }
 
-    /** @return whether protected plan compile/read routes are physically assembled */
+    /**
+     * Reports protected plan-route assembly.
+     *
+     * @return whether protected plan compile/read routes are physically assembled
+     */
     public boolean planCompilationApi() {
         return planCompilationApi;
     }
 
-    /** @return whether protected run/evidence routes are physically assembled */
+    /**
+     * Reports protected execution-route assembly.
+     *
+     * @return whether protected run/evidence routes are physically assembled
+     */
     public boolean executionApi() {
         return executionApi;
     }
 
-    /** @return whether the assembled execution route and signing chain are currently usable */
+    /**
+     * Probes current execution and signer readiness without propagating provider failure.
+     *
+     * @return whether the assembled execution route and signing chain are currently usable
+     */
     public boolean executionReady() {
         if (!executionApi) {
             return false;
@@ -82,18 +130,51 @@ public final class MirrorRuntimeAvailability {
         }
     }
 
-    /** @return whether protected authority publish/read routes are physically assembled */
+    /**
+     * Reports protected authority-route assembly.
+     *
+     * @return whether protected authority publish/read routes are physically assembled
+     */
     public boolean authorityDistributionApi() {
         return authorityDistributionApi;
     }
 
-    /** @return whether assembled authority routes have a usable local trust-policy source */
+    /**
+     * Probes current authority-distribution readiness without propagating provider failure.
+     *
+     * @return whether assembled authority routes have a usable local trust-policy source
+     */
     public boolean authorityDistributionReady() {
         if (!authorityDistributionApi) {
             return false;
         }
         try {
             return authorityDistributionReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
+     * Reports protected attestation-route assembly.
+     *
+     * @return whether protected attestation ingest/read/revoke routes are physically assembled
+     */
+    public boolean attestationDistributionApi() {
+        return attestationDistributionApi;
+    }
+
+    /**
+     * Probes current attestation-distribution readiness without propagating provider failure.
+     *
+     * @return whether attestation routes have current authority and bootstrap-policy readiness
+     */
+    public boolean attestationDistributionReady() {
+        if (!attestationDistributionApi) {
+            return false;
+        }
+        try {
+            return attestationDistributionReadiness.getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

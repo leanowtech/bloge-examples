@@ -22,6 +22,9 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-evidence-attestation-v1.schema.json` | `MirrorEvidenceAttestation` | Domain-separated detached Ed25519 signature over one complete mirror run evidence value |
 | `mirror-evidence-bundle-v1.schema.json` | `MirrorEvidenceBundle` | Portable `HASH_ONLY` evidence, attestation, and complete bundle fingerprint closure |
 | `mirror-deployment-isolation-attestation-v1.schema.json` | `MirrorDeploymentIsolationAttestation` | Short-lived external proof binding an exact deployment generation to fail-closed egress and credential controls |
+| `mirror-deployment-isolation-attestation-status-v1.schema.json` | `MirrorDeploymentIsolationAttestationStatusPublication` | Locally content-addressed `ACTIVE` or irreversible `REVOKED` status for one exact attestation revision |
+| `mirror-deployment-isolation-attestation-bundle-v1.schema.json` | `MirrorDeploymentIsolationAttestationBundle` | Atomic current-only distribution of authority reference, external attestation body, and local status |
+| `mirror-deployment-isolation-attestation-revocation-request-v1.schema.json` | `MirrorDeploymentIsolationAttestationRevocationRequest` | Exact-current optimistic command for one irreversible status transition |
 | `mirror-deployment-isolation-authority-key-set-publication-v1.schema.json` | `MirrorDeploymentIsolationAuthorityKeySetPublication` | Full-scope, monotonic, M-of-N bootstrap-root-signed publication of isolation-attestation authority keys |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
@@ -90,13 +93,18 @@ successors must advance exactly one generation from the floor and name its finge
 reverification is allowed, while rollback, fork, skipped generation, and predecessor mismatch fail
 closed.
 
-These increments freeze both artifacts, strict Schemas, producer integrity kernels, independent
-test-kit verifiers, and shared signed compatibility fixtures. Authority publications now have a
+These increments freeze both externally signed artifacts, strict Schemas, producer integrity kernels,
+independent test-kit verifiers, and shared signed compatibility fixtures. Authority publications now have a
 full-scope append-only repository, protected publish/latest/current API, operator-owned local trust
 SPI, and atomic durable-floor CAS. Current-only reads re-verify local binding, roots, validity, and
-floor; historical generations are not served as trusted distribution. They do **not** yet provide an
-attestation repository/API, deployment-agent mTLS/HTTPS refresh and atomic cache replacement,
-revocation propagation, or execution-admission/evidence-projector binding. Current
+floor; historical generations are not served as trusted distribution. Attestations now have separate
+append-only body and status logs, a CAS current head, operator-owned bootstrap-revision policy, and
+protected ingest/current/exact-current/revoke APIs. Ingest atomically commits body, initial `ACTIVE`
+status, head, and mandatory audit. An attestation revision can only move once to `REVOKED`; denial
+distribution deliberately bypasses positive authority availability, while every active read re-verifies
+the same current authority generation, key lifecycle, deployment identity, signature, and time window.
+These controls do **not** yet provide deployment-agent mTLS/HTTPS refresh and atomic cache replacement,
+bounded revocation delivery to agents, or execution-admission/evidence-projector binding. Current
 mirror runs therefore remain
 `EXPLORATORY` with `DEPLOYMENT_EGRESS_NOT_ATTESTED`; protocol availability alone must not produce
 `CERTIFIABLE` evidence.
@@ -371,6 +379,10 @@ The protected Tool Studio integration surface exposes:
 | `POST /api/mirror/trust/deployment-isolation/authority-key-sets` | Verify local trust and append one generation plus durable floor | `MIRROR_TRUST_ADMIN` |
 | `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Re-verify and read the current floor | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
 | `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}` | Read an exact address only while it remains current | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
+| `POST /api/mirror/trust/deployment-isolation/attestations` | Verify current authority and atomically append one external proof plus active status | `MIRROR_TRUST_ADMIN` |
+| `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest` | Re-verify and read the atomic current active/revoked bundle | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
+| `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}` | Read exact coordinates only while they remain the current head | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
+| `POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | Apply one exact-current irreversible revocation | `MIRROR_TRUST_ADMIN` |
 
 All endpoints derive scope, actor, and clearance from the verified workload identity. Absent,
 cross-scope, and above-clearance reads deliberately share `404 RG.MIRROR.SNAPSHOT_NOT_FOUND` so the API does
@@ -380,10 +392,10 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4529 tests with no
+passes 4592 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
-the executable Spring Boot JAR. The independent test-kit gate passes 260 tests with no failures, errors, or skips,
-packages all 19 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
+the executable Spring Boot JAR. The independent test-kit gate passes 270 tests with no failures, errors, or skips,
+packages all 24 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
 
 The Stage 1 `MirrorPlan` protocol presence alone does not make mirror execution available. Capability discovery
 always reports `mirrorPlanProtocol=true`. It reports `mirrorPlanCompilation` and

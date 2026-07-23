@@ -154,6 +154,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorIsolationAuthorityPublicationProtocol", true)
                 .containsEntry("mirrorIsolationAuthorityDistributionApi", false)
                 .containsEntry("mirrorIsolationAuthorityDistributionReady", false)
+                .containsEntry("mirrorIsolationAttestationTrustProtocol", true)
+                .containsEntry("mirrorIsolationAttestationDistributionApi", false)
+                .containsEntry("mirrorIsolationAttestationDistributionReady", false)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("structuredExecutionFacts", true)
                 .containsEntry("graphDeadline", true)
@@ -340,6 +343,40 @@ class ToolStudioIntegrationServiceTest {
         assertThat(available.features())
                 .containsEntry("mirrorIsolationAuthorityDistributionApi", true)
                 .containsEntry("mirrorIsolationAuthorityDistributionReady", true);
+    }
+
+    @Test
+    void capabilitiesSeparateAttestationRouteAssemblyFromTrustChainReadiness() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        java.util.concurrent.atomic.AtomicBoolean attestationReady =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        service.configureMirrorRuntime(new MirrorRuntimeAvailability(
+                true, true, () -> true, true, () -> true,
+                true, attestationReady::get));
+
+        IntegrationCapabilities unavailable = service.capabilities().payload();
+        attestationReady.set(true);
+        IntegrationCapabilities available = service.capabilities().payload();
+
+        assertThat(unavailable.features())
+                .containsEntry("mirrorIsolationAttestationTrustProtocol", true)
+                .containsEntry("mirrorIsolationAttestationDistributionApi", true)
+                .containsEntry("mirrorIsolationAttestationDistributionReady", false);
+        assertThat(unavailable.supportedObjects())
+                .containsKeys("mirrorDeploymentIsolationAttestation",
+                        "mirrorDeploymentIsolationAttestationStatus",
+                        "mirrorDeploymentIsolationAttestationBundle",
+                        "mirrorDeploymentIsolationAttestationRevocationRequest");
+        assertThat(unavailable.endpoints())
+                .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
+                .contains(
+                        "POST /api/mirror/trust/deployment-isolation/attestations",
+                        "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
+                        "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
+                        "POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations");
+        assertThat(available.features())
+                .containsEntry("mirrorIsolationAttestationDistributionApi", true)
+                .containsEntry("mirrorIsolationAttestationDistributionReady", true);
     }
 
     @Test

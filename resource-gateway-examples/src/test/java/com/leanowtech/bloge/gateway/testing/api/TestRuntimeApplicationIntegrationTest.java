@@ -162,7 +162,10 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("mirrorServing", true)
                 .containsEntry("mirrorIsolationAuthorityPublicationProtocol", true)
                 .containsEntry("mirrorIsolationAuthorityDistributionApi", true)
-                .containsEntry("mirrorIsolationAuthorityDistributionReady", false);
+                .containsEntry("mirrorIsolationAuthorityDistributionReady", false)
+                .containsEntry("mirrorIsolationAttestationTrustProtocol", true)
+                .containsEntry("mirrorIsolationAttestationDistributionApi", true)
+                .containsEntry("mirrorIsolationAttestationDistributionReady", false);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST")
                         && endpoint.path().equals("/api/mirror/plans"));
@@ -176,6 +179,10 @@ class TestRuntimeApplicationIntegrationTest {
                 endpoint.method().equals("POST")
                         && endpoint.path().equals(
                         "/api/mirror/trust/deployment-isolation/authority-key-sets"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/mirror/trust/deployment-isolation/attestations"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->

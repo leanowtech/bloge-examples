@@ -13,7 +13,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         CapabilityClosureIntegrationController.class,
         MirrorIntegrationController.class,
         MirrorRunIntegrationController.class,
-        MirrorDeploymentIsolationAuthorityPublicationController.class
+        MirrorDeploymentIsolationAuthorityPublicationController.class,
+        MirrorDeploymentIsolationAttestationController.class
 })
 public class IntegrationProblemHandler {
 

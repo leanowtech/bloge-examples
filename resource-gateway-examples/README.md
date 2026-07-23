@@ -103,6 +103,11 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/mirror/executions` | Run one sealed mirror generation under durable request-id fencing and return a payload-free summary |
 | `GET http://localhost:8080/api/mirror/runs/{runId}` | Read a verified payload-free terminal mirror summary in the complete scope |
 | `GET http://localhost:8080/api/mirror/runs/{runId}/evidence` | Export the independently verified signed `HASH_ONLY` evidence bundle |
+| `POST http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets` | Verify and append one current isolation-authority key-set generation |
+| `GET http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Distribute the re-verified current authority floor |
+| `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations` | Verify and append an operator-pinned attestation bootstrap or continuous successor |
+| `GET http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest` | Read one atomic current attestation and local status bundle |
+| `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | Irreversibly revoke one exact current attestation status |
 
 Stop it with:
 
@@ -159,7 +164,7 @@ expiry. H2 time is sampled through an independent short connection after locking
 frozen; configure the datasource with capacity for the transaction connection plus the clock connection. The
 deployment-egress proof and M-of-N authority key-set publication protocols are frozen. Authority publications now
 have full-scope append-only trusted distribution, a durable database CAS floor, strict protected APIs, and read-time
-local re-verification. Deployment-agent refresh, attestation ingest, and runtime binding remain open, so evidence stays
+local re-verification. Deployment-agent refresh and runtime binding remain open, so evidence stays
 exploratory. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
@@ -336,13 +341,21 @@ the default is unavailable and request bodies cannot select trust. Immutable pub
 current publication, and never serve a historical generation as trusted. The capability probe separately reports
 protocol support, route assembly, and trust-provider readiness.
 
-This is still not a deployment-isolation runtime-readiness claim. There is not yet an attestation repository/API,
-deployment-agent mTLS/HTTPS refresh and atomic cache path, revocation propagation, or binding into execution admission
-and `MirrorRunEvidenceProjector`; consequently current runs remain `EXPLORATORY` and the capability probe does not
-advertise deployment isolation as certified. See the
+Attestations now pass through a second full-scope trust-control plane. An operator-owned admission provider pins the
+exact first external revision, eliminating empty-database trust on first use; later revisions must be continuous.
+Immutable proof bodies, append-only `ACTIVE`/`REVOKED` status publications, and one current CAS head commit with the
+mandatory success audit. Reads return one canonical atomic bundle. Active bundles must still bind to the same current
+authority generation and active time window, while revoked bundles remain distributable during authority outage so a
+security denial cannot be blocked. Exact reads never expose historical generations as trusted.
+
+This is still not a deployment-isolation runtime-readiness claim. Deployment-agent mTLS/HTTPS refresh and atomic cache,
+revocation delivery latency, and binding into execution admission and `MirrorRunEvidenceProjector` remain open;
+consequently current runs remain `EXPLORATORY` and the capability probe does not advertise deployment isolation as
+certified. See the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md#deployment-isolation-attestation-boundary).
 Operational wiring, endpoint semantics, stable failures, and rollout checks are in the
-[authority trusted-distribution guide](../docs/resource-gateway-mirror-authority-trusted-distribution.md).
+[authority trusted-distribution guide](../docs/resource-gateway-mirror-authority-trusted-distribution.md) and
+[attestation control-plane guide](../docs/resource-gateway-mirror-attestation-control-plane.md).
 
 Useful variants:
 

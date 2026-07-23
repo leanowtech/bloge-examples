@@ -68,7 +68,13 @@ public record MirrorOperationAuditEvent(
         /** Verify and append one deployment-isolation authority key-set generation. */
         AUTHORITY_KEY_SET_PUBLISH,
         /** Read and re-verify the current deployment-isolation authority key-set floor. */
-        AUTHORITY_KEY_SET_READ
+        AUTHORITY_KEY_SET_READ,
+        /** Verify and append one deployment-isolation attestation revision. */
+        ISOLATION_ATTESTATION_INGEST,
+        /** Read one atomic current deployment-isolation attestation and status bundle. */
+        ISOLATION_ATTESTATION_READ,
+        /** Irreversibly revoke one exact current deployment-isolation attestation. */
+        ISOLATION_ATTESTATION_REVOKE
     }
 
     /** Terminal operation outcomes. */

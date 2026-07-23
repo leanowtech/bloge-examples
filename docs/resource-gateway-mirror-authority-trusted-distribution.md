@@ -23,9 +23,10 @@ The server now provides a full-scope, append-only, content-addressed authority p
 - success and failure paths use the payload-free Mirror operation audit;
 - production and mixed `production,test` profiles contain none of these routes or beans.
 
-This increment does **not** yet provide deployment-agent mTLS/HTTPS refresh, an atomic agent cache,
-attestation ingestion, attestation revocation distribution, or execution-admission/evidence-commit
-binding. Mirror evidence therefore remains `EXPLORATORY` with
+The next increment now provides full-scope attestation ingest and irreversible current-status
+distribution; see [the attestation control-plane guide](resource-gateway-mirror-attestation-control-plane.md).
+This authority increment still does **not** provide deployment-agent mTLS/HTTPS refresh, an atomic
+agent cache, or execution-admission/evidence-commit binding. Mirror evidence therefore remains `EXPLORATORY` with
 `DEPLOYMENT_EGRESS_NOT_ATTESTED`.
 
 ## 2. Trust ownership
@@ -248,11 +249,10 @@ errors, and three conditional skips, including real Chrome regression plus execu
 packaging. The independent test-kit passes 269 tests and packages its library JAR, shaded CLI JAR,
 and schemas.
 
-The next vertical slice is:
+The remaining vertical slices are:
 
 1. authenticated deployment-agent mTLS/HTTPS pull with bounded refresh and atomic read-only cache;
-2. full-scope append-only isolation-attestation ingest and revocation status;
-3. execution admission and evidence commit checks against the same authority-publication and
+2. execution admission and evidence commit checks against the same authority-publication and
    attestation generations;
-4. fail-closed behavior for refresh staleness, expiry crossing, and revocation propagation;
-5. cross-language canonicalization and certification fixtures beyond Java.
+3. fail-closed behavior for refresh staleness, expiry crossing, and revocation propagation;
+4. cross-language canonicalization and certification fixtures beyond Java.

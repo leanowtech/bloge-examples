@@ -67,6 +67,52 @@ public final class MirrorDeploymentIsolationAttestationIntegrity {
     }
 
     /**
+     * Recomputes both canonical fingerprints without consulting caller-selected trust input.
+     *
+     * <p>This proves content addressing only. Authority, identity, time-window, and lifecycle
+     * verification remain mandatory before admission or execution.</p>
+     *
+     * @param attestation untrusted decoded attestation
+     * @return true only when both canonical fingerprints are exact
+     */
+    public boolean canonicalFingerprintVerified(
+            MirrorDeploymentIsolationAttestation attestation) {
+        if (attestation == null) {
+            return false;
+        }
+        try {
+            return attestation.seal().materialFingerprint().equals(
+                    materialFingerprint(attestation.material()))
+                    && attestation.attestationFingerprint().equals(
+                    attestationFingerprint(attestation.material(), attestation.seal()));
+        } catch (RuntimeException invalid) {
+            return false;
+        }
+    }
+
+    /**
+     * Verifies that one attestation is trusted and active at a control-plane admission instant.
+     *
+     * @param attestation signed deployment artifact
+     * @param authorityKey verified current authority key
+     * @param expectedDeployment immutable local runtime identity
+     * @param verificationTime trusted current time
+     * @return bounded payload-free verification result
+     */
+    public VerificationResult verifyAt(
+            MirrorDeploymentIsolationAttestation attestation,
+            AuthorityKey authorityKey,
+            MirrorDeploymentIsolationAttestation.DeploymentIdentity expectedDeployment,
+            Instant verificationTime) {
+        if (verificationTime == null) {
+            return result(Outcome.INVALID, "VERIFICATION_TIME_MISSING",
+                    Coordinates.from(attestation));
+        }
+        return verify(attestation, authorityKey, expectedDeployment,
+                verificationTime, verificationTime);
+    }
+
+    /**
      * Independently verifies content, authority, runtime identity, and the complete run window.
      *
      * @param attestation signed deployment artifact

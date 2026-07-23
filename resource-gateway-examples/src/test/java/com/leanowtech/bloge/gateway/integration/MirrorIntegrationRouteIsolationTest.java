@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
@@ -34,7 +35,11 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/runs/{runId}/evidence",
                     "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
-                    "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}");
+                    "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}",
+                    "POST /api/mirror/trust/deployment-isolation/attestations",
+                    "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
+                    "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
+                    "POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations");
             assertThat(routes(staging)).contains(
                     "POST /api/mirror/plans",
                     "GET /api/mirror/plans/{planId}",
@@ -43,7 +48,11 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/runs/{runId}/evidence",
                     "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
-                    "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}");
+                    "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}",
+                    "POST /api/mirror/trust/deployment-isolation/attestations",
+                    "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
+                    "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
+                    "POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations");
             assertThat(routes(disabled)).noneMatch(route -> route.contains("/api/mirror/"));
         }
     }
@@ -62,6 +71,10 @@ class MirrorIntegrationRouteIsolationTest {
                     MirrorDeploymentIsolationAuthorityPublicationController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(
                     MirrorDeploymentIsolationAuthorityPublicationController.class)).isEmpty();
+            assertThat(production.getBeansOfType(
+                    MirrorDeploymentIsolationAttestationController.class)).isEmpty();
+            assertThat(mixed.getBeansOfType(
+                    MirrorDeploymentIsolationAttestationController.class)).isEmpty();
         }
     }
 
@@ -76,7 +89,8 @@ class MirrorIntegrationRouteIsolationTest {
                 "gateway.testing.mirror.enabled", Boolean.toString(enabled))));
         context.register(WebConfiguration.class, MirrorIntegrationController.class,
                 MirrorRunIntegrationController.class,
-                MirrorDeploymentIsolationAuthorityPublicationController.class);
+                MirrorDeploymentIsolationAuthorityPublicationController.class,
+                MirrorDeploymentIsolationAttestationController.class);
         context.refresh();
         return context;
     }
@@ -112,6 +126,12 @@ class MirrorIntegrationRouteIsolationTest {
         }
 
         @Bean
+        MirrorDeploymentIsolationAttestationService
+        mirrorDeploymentIsolationAttestationService() {
+            return mock(MirrorDeploymentIsolationAttestationService.class);
+        }
+
+        @Bean
         IntegrationRequestAuthenticator integrationRequestAuthenticator() {
             return mock(IntegrationRequestAuthenticator.class);
         }
@@ -132,6 +152,13 @@ class MirrorIntegrationRouteIsolationTest {
         MirrorDeploymentIsolationAuthorityPublicationDecoder
         mirrorDeploymentIsolationAuthorityPublicationDecoder() {
             return new MirrorDeploymentIsolationAuthorityPublicationDecoder(
+                    new ObjectMapper().findAndRegisterModules());
+        }
+
+        @Bean
+        MirrorDeploymentIsolationAttestationDecoder
+        mirrorDeploymentIsolationAttestationDecoder() {
+            return new MirrorDeploymentIsolationAttestationDecoder(
                     new ObjectMapper().findAndRegisterModules());
         }
     }
