@@ -20,7 +20,7 @@ import java.util.List;
  * @param effect conservative transitive effect contract
  * @param determinism runtime determinism class
  * @param idempotency idempotency contract
- * @param stateModelRef exact state model used by virtual mutations, when applicable
+ * @param stateModelRef exact state model used by virtual reads or mutations, when applicable
  * @param compatibility compatibility policy for future revisions
  * @param security data and secret handling contract
  * @param slo service-level and execution-budget contract
@@ -66,9 +66,12 @@ public record CapabilityContract(
         if (effect.mode() == EffectContract.Mode.VIRTUAL_MUTATION && stateModelRef == null) {
             throw new IllegalArgumentException("VIRTUAL_MUTATION requires stateModelRef");
         }
-        if (effect.mode() != EffectContract.Mode.VIRTUAL_MUTATION
-                && effect.mode() != EffectContract.Mode.MIXED && stateModelRef != null) {
-            throw new IllegalArgumentException("stateModelRef is only valid for virtual or mixed mutation");
+        if (effect.mode() != EffectContract.Mode.READ_ONLY
+                && effect.mode() != EffectContract.Mode.VIRTUAL_MUTATION
+                && effect.mode() != EffectContract.Mode.MIXED
+                && stateModelRef != null) {
+            throw new IllegalArgumentException(
+                    "stateModelRef is only valid for virtual reads or mutations");
         }
     }
 

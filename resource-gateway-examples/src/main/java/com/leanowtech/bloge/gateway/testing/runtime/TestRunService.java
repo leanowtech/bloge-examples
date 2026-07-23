@@ -251,7 +251,8 @@ public class TestRunService {
         executionContext.bindExecutionBudget(request.context().executionBudget());
         try {
             ExecutionOptions options = runtimeOptions.options(
-                    compiled, recorder, mirrorObserver, invocationBudget);
+                    compiled, recorder, mirrorObserver, invocationBudget,
+                    request.mirrorSessionContext());
             graphResult = engine.execute(request.graph(), executionContext, options);
         } catch (RuntimeException ex) {
             diagnostics.add(bounded("Test engine failed before producing GraphResult: " + ex.getMessage()));

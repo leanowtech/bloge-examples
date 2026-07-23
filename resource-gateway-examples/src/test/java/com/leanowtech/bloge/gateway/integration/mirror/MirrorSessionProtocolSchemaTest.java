@@ -27,13 +27,15 @@ class MirrorSessionProtocolSchemaTest {
     void strictSchemasCloseEverySerializedSessionProtocolField() throws Exception {
         StateModel model = StateModelIntegrity.seal(
                 mapper, StatefulMirrorProtocolTest.stateModel());
+        StateReadSpec readSpec = StateReadSpecIntegrity.seal(
+                mapper, StatefulMirrorProtocolTest.queryOrderReadSpec(model));
         WriteEffectSpec effect = WriteEffectSpecIntegrity.seal(
                 mapper, StatefulMirrorProtocolTest.refundEffect(model));
         SessionStateSpace initial = StatefulMirrorProtocolTest.initialState(
                 mapper, model, effect);
         MirrorSessionPayload payload = MirrorSessionProtocolIntegrity.sealInitial(
                 mapper, new MirrorSessionPayload(
-                        "", model, List.of(effect), initial, ""), NOW);
+                        "", model, List.of(readSpec), List.of(effect), initial, ""), NOW);
         MirrorSessionCreateRequest create = new MirrorSessionCreateRequest(
                 "", "create-1", payload);
         MirrorSessionCommandRequest command = new MirrorSessionCommandRequest(
@@ -60,6 +62,7 @@ class MirrorSessionProtocolSchemaTest {
         MirrorSessionCommandResult result = new MirrorSessionCommandResult(
                 "", descriptor, receipt, false);
 
+        assertProperties(readSpec, "state-read-spec-v1.schema.json");
         assertProperties(payload, "mirror-session-payload-v1.schema.json");
         assertProperties(create, "mirror-session-create-request-v1.schema.json");
         assertProperties(descriptor, "mirror-session-descriptor-v1.schema.json");

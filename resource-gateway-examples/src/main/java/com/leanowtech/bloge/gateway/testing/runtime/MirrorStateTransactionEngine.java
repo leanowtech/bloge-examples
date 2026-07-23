@@ -318,7 +318,6 @@ public final class MirrorStateTransactionEngine {
         String before = existing == null ? "" : existing.fingerprint();
         if (mutation.operation() == WriteEffectSpec.Operation.DELETE) {
             world.removeEntity(key);
-            world.removeBusinessKeys(key);
             SessionStateSpace.EntityTombstone tombstone =
                     SessionStateSpaceIntegrity.sealTombstone(mapper,
                             new SessionStateSpace.EntityTombstone(

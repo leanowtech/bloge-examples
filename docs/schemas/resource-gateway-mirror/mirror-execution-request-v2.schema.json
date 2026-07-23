@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-execution-request-v2.schema.json",
+  "title": "Resource Gateway Mirror Execution Request v2",
+  "description": "Strict protected command for one sealed mirror plan and one caller-reviewed stateful mirror session head. Enterprise scope and session payload remain server-owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "planId",
+    "expectedPlanFingerprint",
+    "context",
+    "sessionBinding"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorExecutionRequest.v2" },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+    },
+    "planId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+    },
+    "expectedPlanFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "context": {
+      "type": "object",
+      "description": "Caller-owned business inputs. bloge.tenantId, bloge.namespace and encoded node-output keys are rejected and supplied by the server.",
+      "additionalProperties": true
+    },
+    "sessionBinding": { "$ref": "#/$defs/sessionBinding" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "sessionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "expectedStateFingerprint"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}$"
+        },
+        "expectedStateFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

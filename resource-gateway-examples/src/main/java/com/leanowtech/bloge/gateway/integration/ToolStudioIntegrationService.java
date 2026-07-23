@@ -373,6 +373,8 @@ public class ToolStudioIntegrationService {
                 mirrorStatefulRuntimeAvailability.sessionApi();
         boolean mirrorStatefulStoreReady =
                 mirrorStatefulRuntimeAvailability.stateStoreReady();
+        boolean mirrorStatefulResolverReady = mirrorExecutionReady
+                && mirrorStatefulSessionApi && mirrorStatefulStoreReady;
         VisualEvidenceSigner signer = runRepository == null
                 ? VisualEvidenceSigner.unavailable() : runRepository.evidenceSigner();
         VisualRunPayloadRepository payloads = runRepository == null ? null : runRepository.payloadRepository();
@@ -438,7 +440,8 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.corpusClusterResolverReady());
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
-        features.put("mirrorStatefulResolverReady", false);
+        features.put("mirrorStatefulResolverReady", mirrorStatefulResolverReady);
+        // Graph-embedded virtual writes and stateful evidence closure remain later stages.
         features.put("mirrorStatefulRuntimeReady", false);
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
@@ -779,7 +782,9 @@ public class ToolStudioIntegrationService {
         if (mirrorExecutionApi) {
             supportedObjects.put("mirrorExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
-                            .MirrorExecutionRequest.SCHEMA_VERSION));
+                            .MirrorExecutionRequest.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION));
             supportedObjects.put("mirrorRunSummary", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorRunSummary.SCHEMA_VERSION));
@@ -800,6 +805,9 @@ public class ToolStudioIntegrationService {
                             .MirrorEvidenceAttestation.SCHEMA_VERSION));
         }
         if (mirrorStatefulSessionApi) {
+            supportedObjects.put("stateReadSpec", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .StateReadSpec.SCHEMA_VERSION));
             supportedObjects.put("mirrorSessionPayload", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorSessionPayload.SCHEMA_VERSION));

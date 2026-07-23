@@ -199,6 +199,16 @@ public final class MirrorPlanIntegrity {
                 throw new IllegalArgumentException(
                         "external binding source does not match its capability snapshot");
             }
+            boolean statefulRead =
+                    child.contract().stateModelRef() != null
+                            && child.contract().effect().mode()
+                            == EffectContract.Mode.READ_ONLY;
+            if (binding.resolverOrder().contains(
+                    MirrorPlan.MirrorSource.SESSION_STATE)
+                    != statefulRead) {
+                throw new IllegalArgumentException(
+                        "SESSION_STATE must exactly match state-model-backed read capabilities");
+            }
         }
         if (!expected.equals(actual)) {
             throw new IllegalArgumentException(

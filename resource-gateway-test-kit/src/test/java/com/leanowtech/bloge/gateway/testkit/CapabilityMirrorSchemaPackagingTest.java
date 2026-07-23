@@ -26,6 +26,7 @@ class CapabilityMirrorSchemaPackagingTest {
                 "capability-lifecycle-transition-v1.schema.json",
                 "capability-mirror-compatibility-v1.schema.json",
                 "mirror-execution-request-v1.schema.json",
+                "mirror-execution-request-v2.schema.json",
                 "mirror-run-summary-v1.schema.json",
                 "mirror-resolution-v1.schema.json",
                 "mirror-run-evidence-v1.schema.json",
@@ -60,6 +61,7 @@ class CapabilityMirrorSchemaPackagingTest {
                 "fixture-mirror-cluster-bindings-v1.schema.json",
                 "bounded-state-expression-v1.schema.json",
                 "state-model-v1.schema.json",
+                "state-read-spec-v1.schema.json",
                 "write-effect-spec-v1.schema.json",
                 "session-state-space-v1.schema.json",
                 "mirror-session-payload-v1.schema.json",
@@ -80,14 +82,23 @@ class CapabilityMirrorSchemaPackagingTest {
 
         assertThat(CapabilityMirrorProtocol.MIRROR_EXECUTION_REQUEST_V1)
                 .isEqualTo("resourceGateway.mirrorExecutionRequest.v1");
+        assertThat(CapabilityMirrorProtocol.MIRROR_EXECUTION_REQUEST_V2)
+                .isEqualTo("resourceGateway.mirrorExecutionRequest.v2");
         assertThat(CapabilityMirrorProtocol.MIRROR_RUN_SUMMARY_V1)
                 .isEqualTo("resourceGateway.mirrorRunSummary.v1");
         assertThat(CapabilityMirrorProtocol.MIRROR_EXECUTION_REQUEST_SCHEMA_RESOURCE)
                 .endsWith("mirror-execution-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_EXECUTION_REQUEST_V2_SCHEMA_RESOURCE)
+                .endsWith("mirror-execution-request-v2.schema.json");
         assertThat(CapabilityMirrorProtocol.MIRROR_RUN_SUMMARY_SCHEMA_RESOURCE)
                 .endsWith("mirror-run-summary-v1.schema.json");
         assertThat(CapabilityMirrorProtocol.MIRROR_SESSION_PAYLOAD_V1)
                 .isEqualTo("resourceGateway.mirrorSessionPayload.v1");
+        assertThat(CapabilityMirrorProtocol.STATE_READ_SPEC_V1)
+                .isEqualTo("resourceGateway.stateReadSpec.v1");
+        assertThat(CapabilityMirrorProtocol.STATE_READ_SPEC_SCHEMA_RESOURCE)
+                .endsWith("state-read-spec-v1.schema.json");
         assertThat(CapabilityMirrorProtocol.MIRROR_SESSION_CREATE_REQUEST_V1)
                 .isEqualTo("resourceGateway.mirrorSessionCreateRequest.v1");
         assertThat(CapabilityMirrorProtocol.MIRROR_SESSION_DESCRIPTOR_V1)
@@ -224,6 +235,14 @@ class CapabilityMirrorSchemaPackagingTest {
                 .put("planId", "plan-1")
                 .put("expectedPlanFingerprint", fingerprint('1'));
         request.set("context", objectMapper.createObjectNode().put("customerId", "C-1"));
+        com.fasterxml.jackson.databind.node.ObjectNode statefulRequest =
+                request.deepCopy();
+        statefulRequest.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol.MIRROR_EXECUTION_REQUEST_V2);
+        statefulRequest.putObject("sessionBinding")
+                .put("sessionId", "refund-session-1")
+                .put("expectedStateFingerprint", fingerprint('4'));
         com.fasterxml.jackson.databind.node.ObjectNode summary = objectMapper.createObjectNode()
                 .put("schemaVersion", CapabilityMirrorProtocol.MIRROR_RUN_SUMMARY_V1)
                 .put("runId", "run-1")
@@ -250,6 +269,10 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThatCode(() -> CapabilityMirrorSchemaValidator.require(request,
                 CapabilityMirrorProtocol.MIRROR_EXECUTION_REQUEST_SCHEMA_RESOURCE,
                 "invalid-request")).doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(
+                statefulRequest,
+                CapabilityMirrorProtocol.MIRROR_EXECUTION_REQUEST_V2_SCHEMA_RESOURCE,
+                "invalid-stateful-request")).doesNotThrowAnyException();
         assertThatCode(() -> CapabilityMirrorSchemaValidator.require(summary,
                 CapabilityMirrorProtocol.MIRROR_RUN_SUMMARY_SCHEMA_RESOURCE,
                 "invalid-summary")).doesNotThrowAnyException();

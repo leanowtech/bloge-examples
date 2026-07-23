@@ -18,6 +18,13 @@
     "stateModel": {
       "$ref": "state-model-v1.schema.json"
     },
+    "stateReadSpecs": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "state-read-spec-v1.schema.json"
+      }
+    },
     "writeEffects": {
       "type": "array",
       "minItems": 1,

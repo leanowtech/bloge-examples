@@ -85,7 +85,16 @@ class DatabaseMirrorOperationAuditRepositoryTest {
     @Test
     void eventRejectsInconsistentOrUnboundedFailureDimensions() {
         MirrorOperationAuditEvent event = failure(scope("org-a"), "plan-1");
+        MirrorOperationAuditEvent namespaced = new MirrorOperationAuditEvent(
+                0, null, event.tenantId(), event.organizationId(), event.projectId(),
+                event.environmentId(), event.region(), event.correlationId(), event.actorType(),
+                event.actorId(), event.operation(), MirrorOperationAuditEvent.Outcome.REJECTED,
+                MirrorOperationAuditEvent.Reason.INVALID_REQUEST,
+                "RG.MIRROR.SESSION.BINDING_REQUIRED",
+                "", event.planId(), "", 1);
 
+        assertThat(namespaced.reasonCode())
+                .isEqualTo("RG.MIRROR.SESSION.BINDING_REQUIRED");
         assertThatThrownBy(() -> new MirrorOperationAuditEvent(
                 0, null, event.tenantId(), event.organizationId(), event.projectId(),
                 event.environmentId(), event.region(), event.correlationId(), event.actorType(),

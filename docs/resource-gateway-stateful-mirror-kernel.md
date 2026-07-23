@@ -3,8 +3,8 @@
 ## 1. 当前结论
 
 Stateful Mirror 的退款域纵向切片现已贯通“协议 -> 事务内核 -> 加密持久化 -> 受保护 Session API ->
-独立客户端复验”，可以在 `test`/`staging` 环境作为可调用的状态化模拟数据面使用，但还不是
-production-certified runtime。
+固定运行快照 -> DAG 状态读 -> 独立客户端复验”，可以在 `test`/`staging` 环境作为可调用的状态化模拟
+数据面和只读 DAG resolver 使用，但还不是 production-certified runtime。
 
 当前实现已经解决：
 
@@ -13,6 +13,12 @@ production-certified runtime。
 - 同一 idempotency key 的相同命令返回原 receipt，输入漂移则失败关闭。
 - update/delete 的历史实体只允许从 exact recorded sample 或 owner fixture copy-in。
 - 删除形成不可复活的 tombstone。
+- `StateReadSpec` 把一个 exact read capability 显式 lowering 到 entity type、业务键、请求取键表达式和响应投影，
+  runtime 不按算子名字猜字段。
+- 一次 DAG run 只读取一次认证 scope 内的 Session head；plan/state fingerprint 双 fence 后，所有节点共享同一
+  revision，运行中并发 command 不会造成撕裂读。
+- `SESSION_STATE` 位于 resolver precedence 首位。live entity 直接返回，absent 才允许下层来源提供初始观测；
+  tombstone 返回终态业务错误，不能回退 corpus、fixture 或真实资源。
 - 单 session 写事务串行化，时间、sequence 和 ID 由确定性执行服务产生。
 - state revision、transition event 和 transaction receipt 必须形成完整闭包。
 - 独立 test-kit 不依赖 Resource Gateway/Spring，可复验相同 Schema、fingerprint 和闭包。
@@ -31,15 +37,16 @@ production-certified runtime。
 
 - production profile；
 - TEE、HSM/KMS 托管密钥、远程 payload authority 和正式 cryptographic erasure 证明；
-- stateful query resolver；
+- 图内虚拟写及 query/create/query 完整 DAG lowering；
 - 签名 checkpoint、跨区域恢复、灾备演练和逐写点进程 crash certification；
 - state transition evidence 与 ANEKE workbook 导出；
 - 目标共享数据库的方言/锁语义认证、容量基准、stateful Scenario UI 与 fidelity/outcome 校准；
 - 生产级共享数据库、跨区域 owner 接管与 HA/DR SLO 认证。
 
-Capability probe 会分别报告事实：协议、Session API 和数据面 readiness 可以为 `true`；在 resolver/evidence
-尚未闭环前，`mirrorStatefulResolverReady` 与 `mirrorStatefulRuntimeReady` 必须继续为 `false`。不能把
-“Session API 可调用”解释为“完整 Stateful Mirror runtime 已可发布”。
+Capability probe 会分别报告事实：协议、Session API、数据面和只读 resolver readiness 可以为 `true`。
+`mirrorStatefulResolverReady=true` 只在 Mirror execution 可运行、Session API 已装配且 state store 当前健康时
+成立；图内写/evidence 尚未闭环，因此 `mirrorStatefulRuntimeReady` 必须继续为 `false`。不能把“状态读可调用”
+解释为“完整 Stateful Mirror runtime 已可发布”。
 
 ### 1.1 一条命令启动与停止
 
@@ -106,6 +113,7 @@ JsonNode fixture = CapabilityMirrorProtocol.statefulRefundFixture();
 MirrorStateProtocolVerifier verifier = new MirrorStateProtocolVerifier();
 JsonNode payload = verifier.sealSessionPayload(
         fixture.path("stateModel"),
+        List.of(fixture.path("stateReadSpec")),
         List.of(fixture.path("writeEffect")),
         fixture.path("initialState"));
 
@@ -136,6 +144,31 @@ JsonNode replay = client.executeMirrorSessionCommand(
         descriptor.path("sessionId").asText(), command);
 client.destroyMirrorSession(descriptor.path("sessionId").asText());
 ```
+
+要让 `/api/mirror/executions` 使用 Session 状态，编译的 plan 必须把对应 external capability 声明为
+`READ_ONLY + stateModelRef`，Session 的 `planFingerprint` 必须与该 plan 完全相同。调用方先读取 payload-free
+descriptor，再提交 v2 命令：
+
+```json
+{
+  "schemaVersion": "resourceGateway.mirrorExecutionRequest.v2",
+  "requestId": "refund-query-run-1",
+  "planId": "refund-query-plan",
+  "expectedPlanFingerprint": "sha256:<reviewed-plan-fingerprint>",
+  "context": {
+    "orderId": "O-100"
+  },
+  "sessionBinding": {
+    "sessionId": "refund-session-1",
+    "expectedStateFingerprint": "sha256:<descriptor-state-fingerprint>"
+  }
+}
+```
+
+服务端在 durable run 首次 claim 后读取一次 Session snapshot；completed request retry 不再重新读 Session。
+若状态已变化返回 retryable `RG.MIRROR.SESSION.STATE_CONFLICT`，若 plan 不同返回
+`RG.MIRROR.SESSION.PLAN_CONFLICT`。固定退款 fixture 的 `planFingerprint` 是兼容测试坐标，不对应运行中 plan；
+它可直接演示 Session API，但不能绕过 exact-plan fence 冒充可执行 plan。
 
 幂等 key 的位置由 `WriteEffectSpec.idempotency.keyPath` 定义；退款样本使用 `input.requestId`。相同 key 和相同
 输入返回原 receipt，且 exact replay 先于 `expectedStateFingerprint` 判断，从而允许安全重试“已提交但响应
@@ -232,6 +265,7 @@ scope 上限必须小于或等于全局上限。数量上限最大 `1,000,000`�
 |---|---|---|
 | `resourceGateway.boundedStateExpression.v1` | `bounded-state-expression-v1.schema.json` | 无循环、无外部访问的确定性表达式 AST |
 | `resourceGateway.stateModel.v1` | `state-model-v1.schema.json` | 实体 Schema、唯一业务键和业务不变量 |
+| `resourceGateway.stateReadSpec.v1` | `state-read-spec-v1.schema.json` | exact read capability 到 Session 业务键查询与响应投影的 lowering |
 | `resourceGateway.writeEffectSpec.v1` | `write-effect-spec-v1.schema.json` | 一个虚拟写能力的原子 mutation 集合、前置条件、响应投影和幂等契约 |
 | `resourceGateway.sessionStateSpace.v1` | `session-state-space-v1.schema.json` | 一个隔离会话的实体、索引、tombstone、事件和 receipt |
 | `resourceGateway.mirrorSessionPayload.v1` | `mirror-session-payload-v1.schema.json` | 加密数据面的 model/effect/state 聚合及总 fingerprint |
@@ -246,6 +280,7 @@ scope 上限必须小于或等于全局上限。数量上限最大 `1,000,000`�
 包含：
 
 - `order` 与 `refund` 两类实体；
+- `query-order` 到 `order-id` 业务键的状态读规格及初始查询期望；
 - `create-refund` 两实体原子写效果；
 - 初始订单 `O-100`；
 - `requestId=REQ-1`、退款金额 `450` 的命令与预期结果。
@@ -281,7 +316,24 @@ mutation 支持 `CREATE`、`UPDATE`、`DELETE`、`UPSERT`。一个 spec 中的 m
 update/delete 可声明 exact `baselineReadCapabilityRef`。该引用只是允许的读取能力，不代表任意 resolver
 可以提供基线；实际 baseline 仍必须经过受限来源协议。
 
-### 3.3 BoundedStateExpression
+### 3.3 StateReadSpec
+
+一个 `StateReadSpec` 精确绑定：
+
+- 一个 `READ_ONLY` capability revision；
+- 一个 StateModel revision；
+- 一个 entity type 与该实体已声明的业务键；
+- 1..16 个只允许 `INPUT_POINTER`、`LITERAL`、`CONCAT` 的有序取键表达式；
+- 一个只能以 `result` 为实体 alias、不能分配 ID/sequence 的 bounded response projection；
+- owner provenance、lifecycle、createdAt 和 canonical fingerprint。
+
+业务键分量个数必须与 StateModel 完全一致。Session payload 最多携带 256 个 read spec，并要求 target capability
+唯一，避免同一 invocation site 出现歧义。两种“没有命中”必须严格区分：`StateReadSpec` 缺失是控制面闭包不完整，
+运行接入层在 DAG 调度前返回 `RG.MIRROR.SESSION.READ_SPEC_MISSING` 并释放运行租约；read spec 存在但业务键在
+live/tombstone 索引中都不存在，resolver 才 `ABSTAIN`，允许下层受治理来源提供初始观测。业务键指向 tombstone
+时生成 `RG.MIRROR.STATE.ENTITY_TOMBSTONED`，并终止后续 resolver precedence，防止被 recorded sample 意外复活。
+
+### 3.4 BoundedStateExpression
 
 v1 只允许：
 
@@ -302,7 +354,7 @@ v1 只允许：
 单个表达式最大深度 32、最大节点数 1024。它不能循环、递归、赋值、访问网络、读取 secret、调用真实时间或
 动态加载函数。表达式 missing field、类型错误或非法 JSON Pointer 会使整个事务失败。
 
-### 3.4 SessionStateSpace
+### 3.5 SessionStateSpace
 
 一个 session snapshot 同时保存两类完整性：
 
@@ -410,7 +462,9 @@ order O-100
 
 ```java
 StateModel model = StateModelIntegrity.seal(mapper, unsealedModel);
+StateReadSpec readSpec = StateReadSpecIntegrity.seal(mapper, unsealedReadSpec);
 WriteEffectSpec effect = WriteEffectSpecIntegrity.seal(mapper, unsealedEffect);
+StateReadSpecIntegrity.verify(mapper, readSpec, model);
 WriteEffectSpecIntegrity.verify(mapper, effect, model);
 
 SessionStateSpace initial =
@@ -428,6 +482,11 @@ MirrorStateTransactionEngine engine = new MirrorStateTransactionEngine(
 SessionStateSpace.TransactionReceipt receipt =
         engine.execute(effect, commandInput);
 ```
+
+DAG 运行路径不直接持有 store。`MirrorSessionIntegrationService.snapshotForRun` 先按认证 scope 获取一个不可变
+`SessionSnapshot`，验证 expected plan/state fingerprint，再把同一个 `MirrorResolver.SessionContext` 传播到
+所有 controlled operator。`MirrorSessionStateResolver` 只消费该快照和 plan 的 exact
+`invocationSiteId -> capabilityRef` 映射，因此不会在节点间重新读取 head，也没有时序窗口可见半个新 revision。
 
 生产 adapter 的 `compareAndSet` 必须原子完成：
 
@@ -506,6 +565,12 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | `RG.MIRROR.SESSION.STATE_CORRUPT` | 密文、AAD、fingerprint 或闭包不一致，失败关闭并告警 |
 | `RG.MIRROR.SESSION.STORE_UNAVAILABLE` | 数据面不可用，失败关闭，不回退真实资源 |
 | `RG.MIRROR.SESSION.WRITE_EFFECT_NOT_ADMITTED` | command effect 不在 Session 的 exact closure |
+| `RG.MIRROR.SESSION.PLAN_CONFLICT` | Session 与待执行 plan generation 不一致，不得自动迁移 |
+| `RG.MIRROR.SESSION.BINDING_REQUIRED` / `BINDING_NOT_ADMITTED` | stateful plan 必须使用 v2 exact Session binding；stateless plan 禁止携带该 binding |
+| `RG.MIRROR.SESSION.READ_SPEC_MISSING` / `READ_SPEC_NOT_ACTIVE` | Session 无法完整服务 plan 的状态读站点；DAG 调度前失败，不得伪装成业务实体缺失 |
+| `RG.MIRROR.SESSION.READ_SPEC_INCONSISTENT` | 已验证 Session 出现歧义读规范；按数据面完整性故障处理 |
+| `RG.MIRROR.STATE.ENTITY_TOMBSTONED` | exact 业务键已删除；终态命中且禁止下层 resolver 回退 |
+| `MIRROR_SESSION_LOOKUP_INVALID` / `PROJECTION_INVALID` | read spec 无法从请求取键或无法投影；plan/runtime 配置错误 |
 
 ## 10. 直接开工的剩余工作
 
@@ -522,10 +587,10 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 
 | Ticket | 状态 | 工作与验收门禁 |
 |---|---|---|
-| RG-MIR-STATE-006 | 待实现 | 在 resolver precedence 中接入 `SESSION_STATE`；命中不访问 corpus/真实资源，tombstone 不回退 |
+| RG-MIR-STATE-006 | 完成 | `StateReadSpec`、v2 session run binding、单次固定快照、`SESSION_STATE` 首位 resolver、live/absent/tombstone 语义、真实 BLOGE 运行测试均已完成 |
 | RG-MIR-STATE-007 | 部分完成 | create-refund 两实体事务已可经 API 运行；仍需 query-order/create-refund/query-refund 真实 DAG lowering，且外部写调用恒为 0 |
 | RG-MIR-STATE-008 | 内核完成 | exact source/kind/identity/schema/key 校验已完成；仍需接 corpus/owner fixture authority 的在线 scope/grant/retention/content-address 复验 |
-| RG-MIR-STATE-009 | 部分完成 | protocol、API、store、resolver、runtime 五段探针已分离；API/store 按装配与健康动态为 true，resolver/runtime 保持 false |
+| RG-MIR-STATE-009 | 部分完成 | protocol、API、store、resolver、runtime 五段探针已分离；resolver 仅在 execution/API/store 同时 ready 时为 true；完整 runtime 在 evidence 与图内写闭环前保持 false |
 
 ### 10.3 P0：Evidence、checkpoint 与恢复
 
@@ -553,6 +618,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | 事务 | multi-entity rollback、idempotency replay/conflict、business-key conflict、schema invalid |
 | 并发 | 同 session 1000 命令、双 owner、lease 接管、CAS conflict、无 lost update |
 | 时间 | expiry 边界、logical clock、timeout before/after commit、clock skew |
+| 状态读 | live exact hit、absent 后受控回退、tombstone 终止、错误 key arity、projection alias、运行中并发 command、跨 plan/state fence |
 | 基线 | exact hit、absent、authority outage、source mismatch、identity drift、tombstone |
 | 恢复 | 每个持久化写点 crash、checkpoint tamper、dependency drift、重复恢复 |
 | 隔离 | 跨 tenant/org/project/environment/region、production credential、真实写 egress |
@@ -564,7 +630,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=MirrorSessionProtocolTest,MirrorStateTransactionEngineTest,DatabaseMirrorSessionStateStoreTest,MirrorSessionIntegrationServiceTest,MirrorSessionControllerTest,VisualCanvasDemoScriptTest test
+  -Dtest=StateReadSpecIntegrityTest,MirrorSessionStateResolverTest,MirrorRunServiceTest,MirrorSessionProtocolTest,MirrorStateTransactionEngineTest,DatabaseMirrorSessionStateStoreTest,MirrorSessionIntegrationServiceTest,MirrorSessionControllerTest,VisualCanvasDemoScriptTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=MirrorStateProtocolVerifierTest,ResourceGatewayMirrorSessionClientTest,CapabilityMirrorSchemaPackagingTest test
@@ -573,7 +639,8 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-这些命令验证协议、事务、加密数据面、HTTP 生命周期、脚本和独立客户端。它们不会把 resolver/runtime
-readiness 提升为 true。要做真实服务演示，运行
+这些命令验证协议、事务、固定运行快照、状态读 resolver、加密数据面、HTTP 生命周期、脚本和独立客户端。
+它们不会把完整 runtime readiness 提升为 true。要做真实服务演示，运行
 `./scripts/start-visual-canvas-demo.sh --stateful`；仅在 capability probe 同时报告
-`mirrorStatefulSessionApi=true` 与 `mirrorStatefulStateStoreReady=true` 时调用 Session API。
+`mirrorStatefulSessionApi=true` 与 `mirrorStatefulStateStoreReady=true` 时调用 Session API；只有再报告
+`mirrorStatefulResolverReady=true` 时才提交 execution request v2。

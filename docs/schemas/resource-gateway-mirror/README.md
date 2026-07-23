@@ -17,7 +17,8 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-plan-v2.schema.json` | `MirrorPlan` | Current sealed plan; requires a signed serving generation whenever recorded corpus resolvers are present |
 | `mirror-serving-generation-token-v1.schema.json` | `MirrorServingGenerationToken` | Signed scope/purpose/dependency-bound generation, revocation cursor, expiry, and floor-cache staleness authority |
 | `mirror-plan-create-request-v1.schema.json` | `MirrorPlanCreateRequest` | Payload-free protected compile command containing only reviewed artifact identities and bounded requested budgets |
-| `mirror-execution-request-v1.schema.json` | `MirrorExecutionRequest` | Strict execution command containing only request/plan identity, reviewed plan fingerprint, and business context |
+| `mirror-execution-request-v1.schema.json` | `MirrorExecutionRequest` | Strict stateless execution command containing only request/plan identity, reviewed plan fingerprint, and business context |
+| `mirror-execution-request-v2.schema.json` | `MirrorExecutionRequest` | Stateful execution command adding an exact payload-free Session id/state-fingerprint binding |
 | `mirror-run-summary-v1.schema.json` | `MirrorRunSummary` | Compact payload-free terminal projection derived from verified evidence |
 | `mirror-resolution-v1.schema.json` | `MirrorResolution` | Fingerprinted per-attempt source, confidence, freshness, payload visibility, output/error, and abstention provenance |
 | `mirror-run-evidence-v1.schema.json` | `MirrorRunEvidence` | Payload-free node, edge, resolution, semantic-result, request-context, and isolation facts for one terminal run |
@@ -52,6 +53,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `fixture-mirror-cluster-bindings-v1.schema.json` | `FixtureMirrorClusterBindings` | Strict immutable fixture metadata selecting reviewed recorded clusters under an exact selected corpus publication |
 | `bounded-state-expression-v1.schema.json` | `BoundedStateExpression` | Closed deterministic state expression AST with runtime depth/node bounds |
 | `state-model-v1.schema.json` | `StateModel` | Content-addressed entity schemas, unique business keys, invariants, scope, and provenance |
+| `state-read-spec-v1.schema.json` | `StateReadSpec` | Exact read capability to Session business-key lookup and bounded response projection |
 | `write-effect-spec-v1.schema.json` | `WriteEffectSpec` | Owner-governed atomic multi-entity virtual mutation and exact idempotency contract |
 | `session-state-space-v1.schema.json` | `SessionStateSpace` | Payload-bearing isolated world, tombstones, business-key index, transition journal, and receipts |
 | `mirror-session-payload-v1.schema.json` | `MirrorSessionPayload` | Encrypted data-plane aggregate closing one state model, admitted write effects, and current session state |
@@ -160,8 +162,9 @@ cluster/corpus heads, policy, validation, grant, lifecycle, retention, payload, 
 readiness.
 
 `stateful-refund-stage3-v1.fixture.json` is the fixed Stage 3 payload-bearing compatibility
-fixture. It freezes one exact `order`/`refund` state model, one two-entity atomic
-`create-refund` write effect, a sealed initial session, and one command expectation. The fixture is
+fixture. It freezes one exact `order`/`refund` state model, one `query-order` state-read lowering,
+one two-entity atomic `create-refund` write effect, a sealed initial session, and read/write
+expectations. The fixture is
 test data and contains no credential or production customer payload. The server rehydrates the
 typed records and verifies every nested/top-level fingerprint. The independent
 `MirrorStateProtocolVerifier` applies the strict Schemas, exact model/effect/session closure,
@@ -169,9 +172,11 @@ bounded expressions, mutation-alias admission, entity/tombstone/business-key sea
 revision/receipt/event closure, response fingerprints, and the latest resulting-world binding
 without linking server or Spring classes. The test-kit also seals aggregate fingerprints and drives
 the protected create/read/command/destroy API while validating both sides of transport. This proves
-protocol and current test/staging data-plane compatibility; it does not prove stateful resolver,
-checkpoint/recovery, TEE/KMS custody, cross-region HA/DR, evidence, retention certification, or
-production readiness.
+protocol and current test/staging data-plane compatibility. The server now also executes
+state-model-backed `READ_ONLY` external sites through one fixed Session snapshot, and tombstones
+terminate precedence instead of falling through. The fixture does not prove graph-embedded virtual
+writes, checkpoint/recovery, TEE/KMS custody, cross-region HA/DR, state evidence, retention
+certification, or production readiness.
 See the
 [Stateful Mirror kernel guide](../../resource-gateway-stateful-mirror-kernel.md).
 

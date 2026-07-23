@@ -51,7 +51,8 @@ public record MirrorOperationAuditEvent(
         String runId,
         long durationMillis
 ) {
-    private static final Pattern REASON_CODE = Pattern.compile("RG\\.MIRROR\\.[A-Z0-9_]{1,128}");
+    private static final Pattern REASON_CODE = Pattern.compile(
+            "RG\\.MIRROR\\.[A-Z0-9_]+(?:\\.[A-Z0-9_]+)*");
 
     /** Protected service operations with a permanently bounded metric and audit vocabulary. */
     public enum Operation {

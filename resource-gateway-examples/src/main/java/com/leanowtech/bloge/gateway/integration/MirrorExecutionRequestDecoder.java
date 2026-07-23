@@ -36,8 +36,13 @@ public final class MirrorExecutionRequestDecoder {
     public static final int MAXIMUM_DEPTH = 64;
     /** Maximum total object, array, and scalar nodes in one command. */
     public static final int MAXIMUM_NODES = 100_000;
-    private static final Set<String> FIELDS = Set.of(
+    private static final Set<String> V1_FIELDS = Set.of(
             "schemaVersion", "requestId", "planId", "expectedPlanFingerprint", "context");
+    private static final Set<String> V2_FIELDS = Set.of(
+            "schemaVersion", "requestId", "planId",
+            "expectedPlanFingerprint", "context", "sessionBinding");
+    private static final Set<String> SESSION_BINDING_FIELDS = Set.of(
+            "sessionId", "expectedStateFingerprint");
 
     private final ObjectMapper strictMapper;
 
@@ -72,7 +77,7 @@ public final class MirrorExecutionRequestDecoder {
     }
 
     /**
-     * Converts one authenticated JSON tree to the exact v1 execution command.
+     * Converts one authenticated JSON tree to an exact supported execution command.
      *
      * @param value untrusted request tree; transport callers should prefer raw-byte decoding
      * @param identity authenticated identity used only for stable problem correlation
@@ -87,16 +92,25 @@ public final class MirrorExecutionRequestDecoder {
             }
             HashSet<String> actualFields = new HashSet<>();
             value.fieldNames().forEachRemaining(actualFields::add);
-            if (!actualFields.equals(FIELDS)
-                    || FIELDS.stream().anyMatch(field -> value.path(field).isNull())
+            String schemaVersion = value.path("schemaVersion").textValue();
+            Set<String> expectedFields =
+                    MirrorExecutionRequest.SCHEMA_VERSION.equals(schemaVersion)
+                            ? V1_FIELDS
+                            : MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION
+                            .equals(schemaVersion) ? V2_FIELDS : Set.of();
+            if (expectedFields.isEmpty()
+                    || !actualFields.equals(expectedFields)
+                    || expectedFields.stream().anyMatch(
+                    field -> value.path(field).isNull())
                     || !value.path("context").isObject()
-                    || !MirrorExecutionRequest.SCHEMA_VERSION.equals(
-                    value.path("schemaVersion").textValue())
                     || !exactText(value.path("requestId"))
                     || !exactText(value.path("planId"))
-                    || !exactText(value.path("expectedPlanFingerprint"))) {
+                    || !exactText(value.path("expectedPlanFingerprint"))
+                    || (expectedFields == V2_FIELDS
+                    && !validSessionBinding(
+                    value.path("sessionBinding")))) {
                 throw invalid(identity,
-                        "Mirror execution request must contain only the complete v1 field set.");
+                        "Mirror execution request must contain only one complete supported field set.");
             }
             requireStructuralBounds(value, identity);
             if (strictMapper.writeValueAsBytes(value).length > MAXIMUM_REQUEST_BYTES) {
@@ -113,6 +127,19 @@ public final class MirrorExecutionRequestDecoder {
 
     private static boolean exactText(JsonNode value) {
         return value.isTextual() && value.textValue().equals(value.textValue().trim());
+    }
+
+    private static boolean validSessionBinding(JsonNode value) {
+        if (!value.isObject()) {
+            return false;
+        }
+        HashSet<String> fields = new HashSet<>();
+        value.fieldNames().forEachRemaining(fields::add);
+        return fields.equals(SESSION_BINDING_FIELDS)
+                && SESSION_BINDING_FIELDS.stream().noneMatch(
+                field -> value.path(field).isNull())
+                && exactText(value.path("sessionId"))
+                && exactText(value.path("expectedStateFingerprint"));
     }
 
     private static void requireStructuralBounds(
@@ -138,6 +165,8 @@ public final class MirrorExecutionRequestDecoder {
                 "RG.MIRROR.EXECUTION_REQUEST_MALFORMED", title,
                 identity.correlationId(), Map.of(
                         "schemaVersion", MirrorExecutionRequest.SCHEMA_VERSION,
+                        "statefulSchemaVersion",
+                        MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION,
                         "maximumBytes", MAXIMUM_REQUEST_BYTES,
                         "maximumDepth", MAXIMUM_DEPTH,
                         "maximumNodes", MAXIMUM_NODES)));

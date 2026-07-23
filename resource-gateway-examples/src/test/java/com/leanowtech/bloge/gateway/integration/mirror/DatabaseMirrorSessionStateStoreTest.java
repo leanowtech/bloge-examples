@@ -29,6 +29,7 @@ import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionState
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.GONE;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.LEASE_BUSY;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.LEASE_LOST;
+import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.NOT_FOUND;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.SESSION_ID_CONFLICT;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.STATE_CONFLICT;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.UNAVAILABLE;
@@ -86,6 +87,68 @@ class DatabaseMirrorSessionStateStoreTest {
                     "tenant-a", "org-b", "tool-studio", "test", "sg");
             assertThat(harness.store().find(
                     other, fixture.state().sessionId())).isEmpty();
+        }
+    }
+
+    @Test
+    void snapshotsOneExactImmutableAggregateWithoutChangingItsLease() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            MirrorSessionStateStore.CreateResult created = harness.store().create(
+                    create("create-1", fixture.payload()));
+
+            MirrorSessionStateStore.SessionSnapshot snapshot =
+                    harness.store().snapshot(
+                            new MirrorSessionStateStore.SnapshotCommand(
+                                    fixture.state().scope(),
+                                    fixture.state().sessionId()));
+
+            assertThat(snapshot.payload()).isEqualTo(fixture.payload());
+            assertThat(snapshot.descriptor()).isEqualTo(created.descriptor());
+            assertThat(snapshot.payload().state().fingerprint())
+                    .isEqualTo(snapshot.descriptor().stateFingerprint());
+            assertThat(harness.jdbc().queryForObject(
+                    "SELECT lease_fence FROM mirror_session_state",
+                    Long.class)).isZero();
+            assertThat(harness.jdbc().queryForObject(
+                    "SELECT lease_owner FROM mirror_session_state",
+                    String.class)).isNull();
+        }
+    }
+
+    @Test
+    void snapshotFailsClosedForForeignScopeAndTerminalOrExpiredSessions() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            harness.store().create(create("create-1", fixture.payload()));
+            CapabilitySnapshot.Scope foreign = new CapabilitySnapshot.Scope(
+                    "tenant-a", "org-b", "tool-studio", "test", "sg");
+
+            assertStoreFailure(() -> harness.store().snapshot(
+                    new MirrorSessionStateStore.SnapshotCommand(
+                            foreign, fixture.state().sessionId())), NOT_FOUND);
+            harness.store().destroy(
+                    fixture.state().scope(), fixture.state().sessionId());
+            assertStoreFailure(() -> harness.store().snapshot(
+                    new MirrorSessionStateStore.SnapshotCommand(
+                            fixture.state().scope(),
+                            fixture.state().sessionId())), GONE);
+        }
+
+        try (Harness harness = harness()) {
+            Fixture expiring = fixture(
+                    "expiring-session", NOW.plusSeconds(1));
+            harness.store().create(create("create-2", expiring.payload()));
+            harness.clock().set(NOW.plusSeconds(2));
+
+            assertStoreFailure(() -> harness.store().snapshot(
+                    new MirrorSessionStateStore.SnapshotCommand(
+                            expiring.state().scope(),
+                            expiring.state().sessionId())), GONE);
+            assertThat(harness.store().find(
+                    expiring.state().scope(),
+                    expiring.state().sessionId()).orElseThrow().status())
+                    .isEqualTo(MirrorSessionDescriptor.Status.EXPIRED);
         }
     }
 

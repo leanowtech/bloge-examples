@@ -14,6 +14,7 @@ import java.util.Objects;
  *
  * @param schemaVersion encrypted aggregate wire version
  * @param stateModel exact virtual-world model
+ * @param stateReadSpecs exact admitted query-to-state lowering definitions
  * @param writeEffects exact admitted mutation definitions
  * @param state current immutable session state
  * @param fingerprint canonical aggregate fingerprint
@@ -21,6 +22,7 @@ import java.util.Objects;
 public record MirrorSessionPayload(
         String schemaVersion,
         StateModel stateModel,
+        List<StateReadSpec> stateReadSpecs,
         List<WriteEffectSpec> writeEffects,
         SessionStateSpace state,
         String fingerprint
@@ -33,6 +35,20 @@ public record MirrorSessionPayload(
     public MirrorSessionPayload {
         schemaVersion = version(schemaVersion);
         stateModel = Objects.requireNonNull(stateModel, "stateModel");
+        stateReadSpecs = stateReadSpecs == null ? List.of() : stateReadSpecs.stream()
+                .map(spec -> Objects.requireNonNull(spec, "stateReadSpec"))
+                .sorted(Comparator.comparing(StateReadSpec::specId)
+                        .thenComparingLong(StateReadSpec::revision))
+                .toList();
+        if (stateReadSpecs.size() > 256
+                || stateReadSpecs.stream().map(StateReadSpecIntegrity::reference)
+                .distinct().count() != stateReadSpecs.size()
+                || stateReadSpecs.stream().map(StateReadSpec::targetCapabilityRef)
+                .distinct().count() != stateReadSpecs.size()) {
+            throw new IllegalArgumentException(
+                    "session payload accepts at most 256 unique state read specs "
+                            + "with unique target capabilities");
+        }
         writeEffects = writeEffects == null ? List.of() : writeEffects.stream()
                 .map(effect -> Objects.requireNonNull(effect, "writeEffect"))
                 .sorted(Comparator.comparing(WriteEffectSpec::specId)
@@ -57,13 +73,31 @@ public record MirrorSessionPayload(
     /** @return a copy carrying a replacement state and no aggregate fingerprint */
     public MirrorSessionPayload withState(SessionStateSpace value) {
         return new MirrorSessionPayload(
-                schemaVersion, stateModel, writeEffects, value, "");
+                schemaVersion, stateModel, stateReadSpecs, writeEffects, value, "");
     }
 
     /** @return a copy carrying a replacement canonical fingerprint */
     public MirrorSessionPayload withFingerprint(String value) {
         return new MirrorSessionPayload(
-                schemaVersion, stateModel, writeEffects, state, value);
+                schemaVersion, stateModel, stateReadSpecs, writeEffects, state, value);
+    }
+
+    /**
+     * Compatibility constructor for write-only v1 session aggregates.
+     *
+     * @param schemaVersion encrypted aggregate wire version
+     * @param stateModel exact virtual-world model
+     * @param writeEffects exact admitted mutation definitions
+     * @param state current immutable session state
+     * @param fingerprint canonical aggregate fingerprint
+     */
+    public MirrorSessionPayload(
+            String schemaVersion,
+            StateModel stateModel,
+            List<WriteEffectSpec> writeEffects,
+            SessionStateSpace state,
+            String fingerprint) {
+        this(schemaVersion, stateModel, List.of(), writeEffects, state, fingerprint);
     }
 
     private static String version(String value) {

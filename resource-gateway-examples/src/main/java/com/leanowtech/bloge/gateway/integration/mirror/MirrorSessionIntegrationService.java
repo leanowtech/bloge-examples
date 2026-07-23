@@ -162,6 +162,73 @@ public final class MirrorSessionIntegrationService {
     }
 
     /**
+     * Freezes one active session state head for a complete mirror DAG run.
+     *
+     * <p>The method resolves the session only inside the authenticated enterprise scope, then
+     * verifies both the persisted plan generation and the caller-reviewed state head. The returned
+     * aggregate is detached from later commits and should be reused by every node in that run.</p>
+     *
+     * @param binding payload-free session and expected-state coordinates
+     * @param expectedPlanFingerprint exact plan generation being executed
+     * @param identity verified enterprise identity
+     * @return immutable payload and descriptor aligned to one state revision
+     */
+    public MirrorSessionStateStore.SessionSnapshot snapshotForRun(
+            MirrorSessionRunBinding binding,
+            String expectedPlanFingerprint,
+            IntegrationRequestContext identity) {
+        CapabilitySnapshot.Scope scope = requireScope(identity);
+        if (binding == null) {
+            throw badRequest(identity,
+                    "RG.MIRROR.SESSION.RUN_BINDING_INVALID",
+                    "A complete mirror session run binding is required.");
+        }
+        try {
+            String sessionId = normalizeSessionId(
+                    binding.sessionId(), identity);
+            String planFingerprint = canonicalFingerprint(
+                    expectedPlanFingerprint, "expectedPlanFingerprint");
+            MirrorSessionStateStore.SessionSnapshot snapshot =
+                    store.snapshot(new MirrorSessionStateStore.SnapshotCommand(
+                            scope, sessionId));
+            if (!planFingerprint.equals(
+                    snapshot.payload().state().planFingerprint())) {
+                throw new IntegrationProblemException(
+                        IntegrationProblem.conflict(
+                                "RG.MIRROR.SESSION.PLAN_CONFLICT",
+                                "The mirror session belongs to a different plan generation.",
+                                identity.correlationId(),
+                                Map.of("sessionPlanFingerprint",
+                                        snapshot.payload().state()
+                                                .planFingerprint())));
+            }
+            if (!binding.expectedStateFingerprint().equals(
+                    snapshot.descriptor().stateFingerprint())) {
+                throw new IntegrationProblemException(
+                        IntegrationProblem.retryableConflict(
+                                MirrorSessionStateStoreException.Code
+                                        .STATE_CONFLICT.wireCode(),
+                                "The mirror session changed after the caller reviewed it.",
+                                identity.correlationId(),
+                                Map.of(
+                                        "currentStateFingerprint",
+                                        snapshot.descriptor()
+                                                .stateFingerprint(),
+                                        "retryAfterSeconds", 1)));
+            }
+            return snapshot;
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (MirrorSessionStateStoreException failure) {
+            throw storeProblem(identity, failure);
+        } catch (IllegalArgumentException invalid) {
+            throw badRequest(identity,
+                    "RG.MIRROR.SESSION.RUN_BINDING_INVALID",
+                    "The mirror session run binding is invalid.");
+        }
+    }
+
+    /**
      * Executes or exactly replays one admitted virtual write transaction.
      *
      * <p>Exact idempotency-journal replay precedes the optional expected-state fence. This lets a
@@ -356,6 +423,16 @@ public final class MirrorSessionIntegrationService {
         if (!normalized.matches("[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}")) {
             throw badRequest(identity, "RG.MIRROR.SESSION.ID_INVALID",
                     "The mirror session id is invalid.");
+        }
+        return normalized;
+    }
+
+    private static String canonicalFingerprint(
+            String value, String field) {
+        String normalized = value == null ? "" : value.trim();
+        if (!normalized.matches("sha256:[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(
+                    field + " must be a canonical SHA-256 value");
         }
         return normalized;
     }

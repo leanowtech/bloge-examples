@@ -45,6 +45,9 @@ public final class CapabilityMirrorProtocol {
     /** Protected mirror execution-command wire version. */
     public static final String MIRROR_EXECUTION_REQUEST_V1 =
             "resourceGateway.mirrorExecutionRequest.v1";
+    /** Protected stateful mirror execution-command wire version. */
+    public static final String MIRROR_EXECUTION_REQUEST_V2 =
+            "resourceGateway.mirrorExecutionRequest.v2";
     /** Payload-free terminal mirror run-summary wire version. */
     public static final String MIRROR_RUN_SUMMARY_V1 =
             "resourceGateway.mirrorRunSummary.v1";
@@ -164,6 +167,9 @@ public final class CapabilityMirrorProtocol {
     /** Governed state-model wire version. */
     public static final String STATE_MODEL_V1 =
             "resourceGateway.stateModel.v1";
+    /** Governed session-state read-lowering wire version. */
+    public static final String STATE_READ_SPEC_V1 =
+            "resourceGateway.stateReadSpec.v1";
     /** Governed virtual write-effect wire version. */
     public static final String WRITE_EFFECT_SPEC_V1 =
             "resourceGateway.writeEffectSpec.v1";
@@ -243,6 +249,9 @@ public final class CapabilityMirrorProtocol {
     /** Packaged protected mirror execution-command schema. */
     public static final String MIRROR_EXECUTION_REQUEST_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-execution-request-v1.schema.json";
+    /** Packaged protected stateful mirror execution-command schema. */
+    public static final String MIRROR_EXECUTION_REQUEST_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-execution-request-v2.schema.json";
     /** Packaged payload-free terminal run-summary schema. */
     public static final String MIRROR_RUN_SUMMARY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-run-summary-v1.schema.json";
@@ -371,6 +380,9 @@ public final class CapabilityMirrorProtocol {
     /** Packaged governed state-model schema. */
     public static final String STATE_MODEL_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "state-model-v1.schema.json";
+    /** Packaged governed session-state read-lowering schema. */
+    public static final String STATE_READ_SPEC_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "state-read-spec-v1.schema.json";
     /** Packaged governed virtual write-effect schema. */
     public static final String WRITE_EFFECT_SPEC_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "write-effect-spec-v1.schema.json";
@@ -517,9 +529,10 @@ public final class CapabilityMirrorProtocol {
     /**
      * Returns the strict-schema and independently verified Stage 3 refund fixture.
      *
-     * <p>The fixture includes an exact state model, a two-entity atomic write effect, a sealed
-     * initial session, and one executable command expectation. Loading proves the model/effect/
-     * session fingerprint closure without linking Resource Gateway server classes.</p>
+     * <p>The fixture includes an exact state model, one state-backed read, a two-entity atomic
+     * write effect, a sealed initial session, and executable read/write expectations. Loading
+     * proves the model/read/effect/session fingerprint closure without linking Resource Gateway
+     * server classes.</p>
      *
      * @return mutable detached copy of the verified fixture
      * @throws IllegalStateException when the packaged fixture is absent or unverifiable
@@ -544,8 +557,10 @@ public final class CapabilityMirrorProtocol {
                         "RG.MIRROR.CLIENT.STATEFUL_REFUND_FIXTURE_SCHEMA_INVALID");
                 MirrorStateProtocolVerifier verifier = new MirrorStateProtocolVerifier();
                 JsonNode model = fixture.path("stateModel");
+                JsonNode readSpec = fixture.path("stateReadSpec");
                 JsonNode effect = fixture.path("writeEffect");
                 verifier.verifyStateModel(model);
+                verifier.verifyStateReadSpec(readSpec, model);
                 verifier.verifyWriteEffect(effect, model);
                 verifier.verifySession(
                         fixture.path("initialState"), model, List.of(effect));

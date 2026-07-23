@@ -70,8 +70,9 @@ public final class MirrorResolverChain {
      */
     public static MirrorResolverChain standard(ObjectMapper mapper) {
         return new MirrorResolverChain(List.of(
+                new MirrorSessionStateResolver(Objects.requireNonNull(mapper, "mapper")),
                 new ExactRuleResolver(MirrorPlan.MirrorSource.OWNER_SPECIFIED, false),
-                new RecordedExactResolver(Objects.requireNonNull(mapper, "mapper")),
+                new RecordedExactResolver(mapper),
                 new RecordedTrajectoryResolver(mapper),
                 new RecordedClusterResolver(mapper),
                 new ExactRuleResolver(MirrorPlan.MirrorSource.GOVERNED_REPLAY, true)));

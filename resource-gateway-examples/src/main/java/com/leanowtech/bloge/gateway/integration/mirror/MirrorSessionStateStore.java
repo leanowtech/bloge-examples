@@ -34,6 +34,19 @@ public interface MirrorSessionStateStore {
             CapabilitySnapshot.Scope scope, String sessionId);
 
     /**
+     * Decrypts one active aggregate as an immutable run snapshot without acquiring or renewing a
+     * writer lease.
+     *
+     * <p>The implementation must read the payload and descriptor from one database transaction.
+     * A caller can therefore reuse the returned value throughout one DAG run and observe one
+     * state revision even if another run commits later.</p>
+     *
+     * @param command exact enterprise namespace and session identity
+     * @return payload and descriptor aligned to one durable state head
+     */
+    SessionSnapshot snapshot(SnapshotCommand command);
+
+    /**
      * Acquires or renews a database-clock owner lease and decrypts the exact current aggregate.
      *
      * @param command exact scope, session, owner, and bounded lease duration
@@ -141,6 +154,47 @@ public interface MirrorSessionStateStore {
         public CreateResult {
             disposition = Objects.requireNonNull(disposition, "disposition");
             descriptor = Objects.requireNonNull(descriptor, "descriptor");
+        }
+    }
+
+    /** Coordinates one lease-free immutable session read. */
+    record SnapshotCommand(
+            CapabilitySnapshot.Scope scope,
+            String sessionId
+    ) {
+        /** Validates exact enterprise and session coordinates. */
+        public SnapshotCommand {
+            scope = Objects.requireNonNull(scope, "scope");
+            sessionId = required(sessionId, "sessionId");
+        }
+    }
+
+    /**
+     * One immutable state head supplied to a complete DAG run.
+     *
+     * <p>The snapshot intentionally excludes lease metadata and must not be exposed through
+     * payload-free session management responses.</p>
+     */
+    record SessionSnapshot(
+            MirrorSessionPayload payload,
+            MirrorSessionDescriptor descriptor
+    ) {
+        /** Validates payload, scope, identity, state head, and active lifecycle alignment. */
+        public SessionSnapshot {
+            payload = Objects.requireNonNull(payload, "payload");
+            descriptor = Objects.requireNonNull(descriptor, "descriptor");
+            SessionStateSpace state = payload.state();
+            if (descriptor.status() != MirrorSessionDescriptor.Status.ACTIVE
+                    || !state.scope().equals(descriptor.scope())
+                    || !state.sessionId().equals(descriptor.sessionId())
+                    || state.stateRevision() != descriptor.stateRevision()
+                    || !state.worldFingerprint().equals(
+                    descriptor.worldFingerprint())
+                    || !state.fingerprint().equals(
+                    descriptor.stateFingerprint())) {
+                throw new IllegalArgumentException(
+                        "session snapshot payload and descriptor do not align");
+            }
         }
     }
 

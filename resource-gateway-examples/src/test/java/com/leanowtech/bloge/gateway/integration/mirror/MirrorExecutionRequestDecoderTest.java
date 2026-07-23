@@ -37,6 +37,36 @@ class MirrorExecutionRequestDecoderTest {
     }
 
     @Test
+    void decodesStatefulV2OnlyWithOneExactSessionBinding() {
+        ObjectNode value = statefulValid();
+
+        MirrorExecutionRequest decoded = decoder.decode(value, identity());
+
+        assertThat(decoded.schemaVersion())
+                .isEqualTo(MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION);
+        assertThat(decoded.sessionBinding()).isEqualTo(
+                new MirrorSessionRunBinding(
+                        "refund-session-1", fingerprint('b')));
+        assertThat(decoded.toString())
+                .contains("refund-session-1")
+                .doesNotContain("context=");
+
+        assertMalformed(valid().set(
+                "sessionBinding", value.path("sessionBinding")));
+        ObjectNode missingBinding = statefulValid();
+        missingBinding.remove("sessionBinding");
+        assertMalformed(missingBinding);
+        ObjectNode unknownBindingField = statefulValid();
+        ((ObjectNode) unknownBindingField.path("sessionBinding"))
+                .put("payload", "forbidden");
+        assertMalformed(unknownBindingField);
+        ObjectNode missingStateFence = statefulValid();
+        ((ObjectNode) missingStateFence.path("sessionBinding"))
+                .remove("expectedStateFingerprint");
+        assertMalformed(missingStateFence);
+    }
+
+    @Test
     void rejectsUnknownOrMissingTopLevelFieldsAndNonObjectContext() {
         ObjectNode unknown = valid().put("scope", "caller-controlled");
         assertMalformed(unknown);
@@ -101,6 +131,16 @@ class MirrorExecutionRequestDecoderTest {
                 .put("planId", "plan-1")
                 .put("expectedPlanFingerprint", fingerprint('a'))
                 .set("context", mapper.createObjectNode());
+    }
+
+    private ObjectNode statefulValid() {
+        ObjectNode value = valid().put(
+                "schemaVersion",
+                MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION);
+        value.set("sessionBinding", mapper.createObjectNode()
+                .put("sessionId", "refund-session-1")
+                .put("expectedStateFingerprint", fingerprint('b')));
+        return value;
     }
 
     private void assertMalformed(ObjectNode value) {

@@ -13,7 +13,9 @@ import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunResult;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunEvidenceProjector;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunService;
+import com.leanowtech.bloge.gateway.testing.runtime.MirrorResolver;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -56,6 +59,7 @@ public class MirrorRunIntegrationService {
     private final MirrorOperationObservability observations;
     private final Clock clock;
     private final MirrorDeploymentIsolationRunTrustAuthority deploymentTrust;
+    private final MirrorSessionIntegrationService sessions;
 
     /** Creates the protected execution boundary using the server UTC clock. */
     @Autowired
@@ -67,9 +71,26 @@ public class MirrorRunIntegrationService {
             MirrorRunCommitService commits,
             ObjectMapper mapper,
             MirrorOperationObservability observations,
-            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust) {
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust,
+            ObjectProvider<MirrorSessionIntegrationService> sessionProvider) {
         this(plans, runtime, requests, evidence, commits, mapper, observations,
-                Clock.systemUTC(), deploymentTrust);
+                Clock.systemUTC(), deploymentTrust,
+                Objects.requireNonNull(
+                        sessionProvider, "sessionProvider").getIfAvailable());
+    }
+
+    /** Compatibility constructor for compositions without stateful mirror sessions. */
+    public MirrorRunIntegrationService(
+            MirrorPlanIntegrationService plans,
+            MirrorRunService runtime,
+            MirrorRunRequestRepository requests,
+            MirrorEvidenceRepository evidence,
+            MirrorRunCommitService commits,
+            ObjectMapper mapper,
+            MirrorOperationObservability observations,
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust) {
+        this(plans, runtime, requests, evidence, commits, mapper,
+                observations, Clock.systemUTC(), deploymentTrust, null);
     }
 
     /** Full constructor for deterministic admission and lease tests. */
@@ -83,7 +104,7 @@ public class MirrorRunIntegrationService {
             MirrorOperationObservability observations,
             Clock clock) {
         this(plans, runtime, requests, evidence, commits, mapper, observations, clock,
-                MirrorDeploymentIsolationRunTrustAuthority.unavailable());
+                MirrorDeploymentIsolationRunTrustAuthority.unavailable(), null);
     }
 
     /** Full constructor with deterministic time and deployment trust. */
@@ -106,6 +127,34 @@ public class MirrorRunIntegrationService {
         this.observations = Objects.requireNonNull(observations, "observations");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.deploymentTrust = Objects.requireNonNull(deploymentTrust, "deploymentTrust");
+        this.sessions = null;
+    }
+
+    /**
+     * Full constructor with deterministic time, deployment trust, and stateful session boundary.
+     */
+    public MirrorRunIntegrationService(
+            MirrorPlanIntegrationService plans,
+            MirrorRunService runtime,
+            MirrorRunRequestRepository requests,
+            MirrorEvidenceRepository evidence,
+            MirrorRunCommitService commits,
+            ObjectMapper mapper,
+            MirrorOperationObservability observations,
+            Clock clock,
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust,
+            MirrorSessionIntegrationService sessions) {
+        this.plans = Objects.requireNonNull(plans, "plans");
+        this.runtime = Objects.requireNonNull(runtime, "runtime");
+        this.requests = Objects.requireNonNull(requests, "requests");
+        this.evidence = Objects.requireNonNull(evidence, "evidence");
+        this.commits = Objects.requireNonNull(commits, "commits");
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.observations = Objects.requireNonNull(observations, "observations");
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.deploymentTrust = Objects.requireNonNull(
+                deploymentTrust, "deploymentTrust");
+        this.sessions = sessions;
     }
 
     /**
@@ -140,6 +189,7 @@ public class MirrorRunIntegrationService {
                     "The persisted plan differs from the execution generation reviewed by the caller.",
                     Map.of("currentPlanFingerprint", plan.planFingerprint()));
         }
+        validateSessionBinding(request, plan, identity);
 
         GraphContext effectiveContext = effectiveContext(request.context(), scope, identity);
         String contextFingerprint;
@@ -155,7 +205,7 @@ public class MirrorRunIntegrationService {
                 admitDeploymentTrust(plan, scope, identity);
         String trustDecisionFingerprint = trustAdmission == null
                 ? "" : trustAdmission.decisionRef().fingerprint();
-        String requestFingerprint = ProtocolFingerprint.of(mapper, Map.of(
+        LinkedHashMap<String, Object> requestIdentity = new LinkedHashMap<>(Map.of(
                 "schemaVersion", request.schemaVersion(),
                 "requestId", request.requestId(),
                 "planId", plan.planId(),
@@ -164,6 +214,11 @@ public class MirrorRunIntegrationService {
                 "deploymentTrustDecisionFingerprint", trustDecisionFingerprint,
                 "scope", scope,
                 "authorizedPurpose", identity.purpose()));
+        if (request.sessionBinding() != null) {
+            requestIdentity.put("sessionBinding", request.sessionBinding());
+        }
+        String requestFingerprint = ProtocolFingerprint.of(
+                mapper, requestIdentity);
         Instant now = clock.instant();
         Instant retainUntil = later(plan.expiresAt(), now.plus(REQUEST_RETENTION));
         MirrorRunRequestRepository.Registration registration =
@@ -197,9 +252,12 @@ public class MirrorRunIntegrationService {
                         identity.correlationId(), Map.of()));
             }
             try (CompiledMirrorPlan generation = plans.materialize(plan, identity)) {
+                MirrorResolver.SessionContext sessionContext =
+                        sessionContext(request, plan, identity);
                 MirrorRunResult result = runtime.execute(new MirrorRunRequest(request.requestId(),
                         generation, effectiveContext, scope,
-                        MirrorPlanIntegrationService.AUTHORIZED_PURPOSE, trustAdmission));
+                        MirrorPlanIntegrationService.AUTHORIZED_PURPOSE,
+                        trustAdmission, sessionContext));
                 MirrorRunSummary summary = MirrorRunSummary.from(result.evidenceBundle());
                 commits.commit(lease, result.evidenceBundle(), observation);
                 return summary;
@@ -223,6 +281,111 @@ public class MirrorRunIntegrationService {
             release(lease, "RG.MIRROR.RUN_UNAVAILABLE");
             throw serviceUnavailable(identity, "RG.MIRROR.RUN_UNAVAILABLE",
                     "The isolated mirror runtime or evidence store is unavailable.");
+        }
+    }
+
+    private MirrorResolver.SessionContext sessionContext(
+            MirrorExecutionRequest request,
+            MirrorPlan plan,
+            IntegrationRequestContext identity) {
+        if (request.sessionBinding() == null) {
+            return null;
+        }
+        if (sessions == null) {
+            throw serviceUnavailable(
+                    identity, "RG.MIRROR.STATEFUL_RUNTIME_UNAVAILABLE",
+                    "The stateful mirror session runtime is unavailable.");
+        }
+        MirrorSessionStateStore.SessionSnapshot snapshot =
+                sessions.snapshotForRun(
+                        request.sessionBinding(),
+                        plan.planFingerprint(),
+                        identity);
+        if (!plan.stateModelRefs().contains(
+                snapshot.payload().state().stateModelRef())) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.SESSION.STATE_MODEL_NOT_ADMITTED",
+                    "The session state model is not admitted by this plan generation.",
+                    Map.of());
+        }
+        LinkedHashMap<String, MirrorArtifactRef> capabilitiesBySite =
+                new LinkedHashMap<>();
+        for (MirrorPlan.ExternalBinding binding
+                : plan.externalBindings()) {
+            validateStateReadSpec(
+                    binding, snapshot.payload(), identity);
+            if (capabilitiesBySite.put(
+                    binding.invocationSiteId(),
+                    binding.capabilityRef()) != null) {
+                throw serviceUnavailable(
+                        identity,
+                        "RG.MIRROR.PLAN_BINDING_INCONSISTENT",
+                        "The mirror plan contains duplicate invocation-site bindings.");
+            }
+        }
+        return new MirrorResolver.SessionContext(
+                snapshot.payload(),
+                plan.planFingerprint(),
+                capabilitiesBySite);
+    }
+
+    private static void validateStateReadSpec(
+            MirrorPlan.ExternalBinding binding,
+            MirrorSessionPayload payload,
+            IntegrationRequestContext identity) {
+        if (!binding.resolverOrder().contains(
+                MirrorPlan.MirrorSource.SESSION_STATE)) {
+            return;
+        }
+        List<StateReadSpec> matches = payload.stateReadSpecs().stream()
+                .filter(spec -> spec.targetCapabilityRef().equals(
+                        binding.capabilityRef()))
+                .toList();
+        if (matches.isEmpty()) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.SESSION.READ_SPEC_MISSING",
+                    "The session has no state read specification for an admitted plan site.",
+                    Map.of("invocationSiteId",
+                            binding.invocationSiteId()));
+        }
+        if (matches.size() != 1) {
+            throw serviceUnavailable(
+                    identity,
+                    "RG.MIRROR.SESSION.READ_SPEC_INCONSISTENT",
+                    "The session has ambiguous state read specifications.");
+        }
+        if (matches.getFirst().lifecycle()
+                != CapabilitySnapshot.Lifecycle.ACTIVE) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.SESSION.READ_SPEC_NOT_ACTIVE",
+                    "The session state read specification is not active.",
+                    Map.of("invocationSiteId",
+                            binding.invocationSiteId()));
+        }
+    }
+
+    private static void validateSessionBinding(
+            MirrorExecutionRequest request,
+            MirrorPlan plan,
+            IntegrationRequestContext identity) {
+        boolean statefulPlan = !plan.stateModelRefs().isEmpty();
+        if (statefulPlan && request.sessionBinding() == null) {
+            throw badRequest(
+                    identity,
+                    "RG.MIRROR.SESSION.BINDING_REQUIRED",
+                    "A state-model-backed plan requires execution request v2 "
+                            + "and an exact Session state binding.",
+                    Map.of());
+        }
+        if (!statefulPlan && request.sessionBinding() != null) {
+            throw badRequest(
+                    identity,
+                    "RG.MIRROR.SESSION.BINDING_NOT_ADMITTED",
+                    "A stateless plan cannot accept a Session state binding.",
+                    Map.of());
         }
     }
 

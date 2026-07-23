@@ -24,7 +24,8 @@ public record TestExecutionRequest(
         Map<String, Object> metadata,
         boolean certificationEligible,
         ResolvedReplayPayloads replayPayloads,
-        ResolvedTestSecrets testSecrets
+        ResolvedTestSecrets testSecrets,
+        MirrorResolver.SessionContext mirrorSessionContext
 ) {
     /** Provenance used for evidence trust classification. */
     public enum FixtureSource {
@@ -47,13 +48,30 @@ public record TestExecutionRequest(
         testSecrets = testSecrets == null ? ResolvedTestSecrets.empty() : testSecrets;
     }
 
+    /** Compatibility constructor for requests without stateful mirror context. */
+    public TestExecutionRequest(
+            Graph graph,
+            GraphContext context,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            FixtureSource fixtureSource,
+            Map<String, Object> metadata,
+            boolean certificationEligible,
+            ResolvedReplayPayloads replayPayloads,
+            ResolvedTestSecrets testSecrets) {
+        this(graph, context, fixtureBundle, authorizedPurpose,
+                targetFingerprint, fixtureSource, metadata,
+                certificationEligible, replayPayloads, testSecrets, null);
+    }
+
     /** Backward-compatible internal constructor for already-frozen adapters. */
     public TestExecutionRequest(Graph graph, GraphContext context, FixtureBundle fixtureBundle,
                                 String authorizedPurpose, String targetFingerprint,
                                 FixtureSource fixtureSource, Map<String, Object> metadata) {
         this(graph, context, fixtureBundle, authorizedPurpose, targetFingerprint,
                 fixtureSource, metadata, true, ResolvedReplayPayloads.empty(),
-                ResolvedTestSecrets.empty());
+                ResolvedTestSecrets.empty(), null);
     }
 
     /** Backward-compatible internal constructor without governed replay dependencies. */
@@ -63,7 +81,7 @@ public record TestExecutionRequest(
                                 boolean certificationEligible) {
         this(graph, context, fixtureBundle, authorizedPurpose, targetFingerprint,
                 fixtureSource, metadata, certificationEligible, ResolvedReplayPayloads.empty(),
-                ResolvedTestSecrets.empty());
+                ResolvedTestSecrets.empty(), null);
     }
 
     /** Backward-compatible constructor without externally governed test secrets. */
@@ -74,6 +92,6 @@ public record TestExecutionRequest(
                                 ResolvedReplayPayloads replayPayloads) {
         this(graph, context, fixtureBundle, authorizedPurpose, targetFingerprint,
                 fixtureSource, metadata, certificationEligible, replayPayloads,
-                ResolvedTestSecrets.empty());
+                ResolvedTestSecrets.empty(), null);
     }
 }

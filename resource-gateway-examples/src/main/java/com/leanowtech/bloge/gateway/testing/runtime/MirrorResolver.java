@@ -2,10 +2,13 @@ package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -42,6 +45,7 @@ public interface MirrorResolver {
      * @param input ephemeral business input; resolvers must not retain or log it
      * @param matchedRules preflight-ordered rules whose selectors match this invocation
      * @param recordedExactCorpus optional site-bound immutable corpus generation
+     * @param sessionContext optional frozen stateful-run snapshot and site capability bindings
      */
     record Request(
             InvocationSite site,
@@ -50,7 +54,8 @@ public interface MirrorResolver {
             String requestFingerprint,
             Object input,
             List<FixtureRule> matchedRules,
-            ResolvedCorpusPayloads.CapabilityCorpus recordedExactCorpus
+            ResolvedCorpusPayloads.CapabilityCorpus recordedExactCorpus,
+            SessionContext sessionContext
     ) {
         /** Validates exact coordinates and detaches the candidate list. */
         public Request {
@@ -75,7 +80,20 @@ public interface MirrorResolver {
                 Object input,
                 List<FixtureRule> matchedRules) {
             this(site, occurrence, attempt, requestFingerprint,
-                    input, matchedRules, null);
+                    input, matchedRules, null, null);
+        }
+
+        /** Backward-compatible request carrying recorded corpus but no stateful session. */
+        public Request(
+                InvocationSite site,
+                int occurrence,
+                int attempt,
+                String requestFingerprint,
+                Object input,
+                List<FixtureRule> matchedRules,
+                ResolvedCorpusPayloads.CapabilityCorpus recordedExactCorpus) {
+            this(site, occurrence, attempt, requestFingerprint,
+                    input, matchedRules, recordedExactCorpus, null);
         }
 
         /** Prevents ephemeral business input from entering ordinary logs. */
@@ -86,7 +104,54 @@ public interface MirrorResolver {
                     + ", attempt=" + attempt
                     + ", requestFingerprint=" + requestFingerprint
                     + ", matchedRules=" + matchedRules.size()
-                    + ", recordedExactCorpus=" + (recordedExactCorpus != null) + "]";
+                    + ", recordedExactCorpus=" + (recordedExactCorpus != null)
+                    + ", sessionContext=" + (sessionContext != null) + "]";
+        }
+    }
+
+    /**
+     * One run-scoped immutable state snapshot shared by every resolver occurrence.
+     *
+     * <p>The payload is already authenticated and decrypted by the protected Session boundary. It
+     * must never be logged, retained beyond the run, or copied into evidence. The site map binds
+     * structural invocation identities to exact plan capability revisions.</p>
+     *
+     * @param payload exact sealed session aggregate observed before graph execution
+     * @param planFingerprint exact plan generation authorized for the run
+     * @param capabilitiesBySite exact external capability binding by invocation site
+     */
+    record SessionContext(
+            MirrorSessionPayload payload,
+            String planFingerprint,
+            Map<String, MirrorArtifactRef> capabilitiesBySite
+    ) {
+        /** Validates payload-free coordinates and detaches the capability map. */
+        public SessionContext {
+            payload = Objects.requireNonNull(payload, "payload");
+            planFingerprint = required(planFingerprint, "planFingerprint");
+            if (!FINGERPRINT.matcher(planFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "planFingerprint must be a canonical SHA-256 value");
+            }
+            capabilitiesBySite = capabilitiesBySite == null
+                    ? Map.of() : Map.copyOf(capabilitiesBySite);
+            capabilitiesBySite.forEach((site, capability) -> {
+                required(site, "invocationSiteId");
+                if (!"CAPABILITY".equals(
+                        Objects.requireNonNull(capability, "capability").kind())) {
+                    throw new IllegalArgumentException(
+                            "session resolver sites must reference CAPABILITY");
+                }
+            });
+        }
+
+        /** Prevents decrypted session payloads from entering ordinary logs. */
+        @Override
+        public String toString() {
+            return "SessionContext[sessionId=" + payload.state().sessionId()
+                    + ", planFingerprint=" + planFingerprint
+                    + ", stateFingerprint=" + payload.state().fingerprint()
+                    + ", capabilitySites=" + capabilitiesBySite.size() + "]";
         }
     }
 

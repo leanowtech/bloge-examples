@@ -22,6 +22,9 @@ class MirrorStateProtocolVerifierTest {
         JsonNode fixture = CapabilityMirrorProtocol.statefulRefundFixture();
         MirrorStateProtocolVerifier.VerifiedStateModel model =
                 verifier.verifyStateModel(fixture.path("stateModel"));
+        MirrorStateProtocolVerifier.VerifiedStateReadSpec readSpec =
+                verifier.verifyStateReadSpec(
+                        fixture.path("stateReadSpec"), fixture.path("stateModel"));
         MirrorStateProtocolVerifier.VerifiedWriteEffect effect =
                 verifier.verifyWriteEffect(
                         fixture.path("writeEffect"), fixture.path("stateModel"));
@@ -33,10 +36,40 @@ class MirrorStateProtocolVerifierTest {
 
         assertThat(model.stateModelId()).isEqualTo("refund-world");
         assertThat(model.entityTypeCount()).isEqualTo(2);
+        assertThat(readSpec.entityType()).isEqualTo("order");
+        assertThat(readSpec.businessKeyName()).isEqualTo("order-id");
         assertThat(effect.mutationCount()).isEqualTo(2);
         assertThat(session.sessionId()).isEqualTo("refund-session-1");
         assertThat(session.stateRevision()).isZero();
         assertThat(session.entityCount()).isEqualTo(1);
+    }
+
+    @Test
+    void rejectsUnsafeStateReadLookupAndProjectionExpressions() {
+        JsonNode fixture = CapabilityMirrorProtocol.statefulRefundFixture();
+        ObjectNode nondeterministic = fixture.path("stateReadSpec").deepCopy();
+        ObjectNode component =
+                (ObjectNode) nondeterministic.path("keyComponents").get(0);
+        component.put("operator", "LOGICAL_TIME");
+        component.putNull("literal");
+        component.put("path", "");
+        component.put("reference", "");
+        component.putArray("arguments");
+        component.putObject("fields");
+        seal(nondeterministic);
+
+        assertThatThrownBy(() -> verifier.verifyStateReadSpec(
+                nondeterministic, fixture.path("stateModel")))
+                .hasMessage("RG.MIRROR.CLIENT.STATE_READ_SPEC_LOOKUP_INVALID");
+
+        ObjectNode foreignAlias = fixture.path("stateReadSpec").deepCopy();
+        ((ObjectNode) foreignAlias.path("responseProjection"))
+                .put("reference", "another-entity");
+        seal(foreignAlias);
+
+        assertThatThrownBy(() -> verifier.verifyStateReadSpec(
+                foreignAlias, fixture.path("stateModel")))
+                .hasMessage("RG.MIRROR.CLIENT.STATE_READ_SPEC_PROJECTION_INVALID");
     }
 
     @Test
@@ -178,6 +211,7 @@ class MirrorStateProtocolVerifierTest {
         assertThat(verifiedCreate.payload().sessionId())
                 .isEqualTo("refund-session-1");
         assertThat(verifiedCreate.payload().writeEffectCount()).isEqualTo(1);
+        assertThat(verifiedCreate.payload().stateReadSpecCount()).isEqualTo(1);
         assertThat(verifiedDescriptor.status()).isEqualTo("ACTIVE");
         assertThat(verifiedDescriptor.writeEffectCoordinates())
                 .containsExactly(verifiedCommand.writeEffectCoordinate());
@@ -192,6 +226,7 @@ class MirrorStateProtocolVerifierTest {
 
         JsonNode sealed = verifier.sealSessionPayload(
                 fixture.path("stateModel"),
+                List.of(fixture.path("stateReadSpec")),
                 List.of(fixture.path("writeEffect")),
                 fixture.path("initialState"));
 
@@ -253,6 +288,8 @@ class MirrorStateProtocolVerifierTest {
                 .put("schemaVersion",
                         CapabilityMirrorProtocol.MIRROR_SESSION_PAYLOAD_V1);
         value.set("stateModel", fixture.path("stateModel").deepCopy());
+        value.putArray("stateReadSpecs")
+                .add(fixture.path("stateReadSpec").deepCopy());
         value.putArray("writeEffects")
                 .add(fixture.path("writeEffect").deepCopy());
         value.set("state", fixture.path("initialState").deepCopy());

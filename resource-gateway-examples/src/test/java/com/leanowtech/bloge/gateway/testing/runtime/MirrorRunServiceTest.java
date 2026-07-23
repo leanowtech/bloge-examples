@@ -14,6 +14,7 @@ import com.leanowtech.bloge.core.schema.OpaqueSchema;
 import com.leanowtech.bloge.core.schema.SchemaValidationLevel;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance;
+import com.leanowtech.bloge.gateway.integration.mirror.BoundedStateExpression;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosureIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityContract;
@@ -32,10 +33,20 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegritySe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolutionIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationToken;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
+import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
+import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpaceIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.StateModel;
+import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpec;
+import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpecIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpec;
+import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpecIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -167,6 +178,126 @@ class MirrorRunServiceTest {
         assertThat(runtime.engineConfiguration().interceptorTypes()).isEmpty();
         assertThat(runtime.engineConfiguration().durableStores()).isFalse();
         assertThat(runtime.engineConfiguration().productionContextCarriers()).isFalse();
+    }
+
+    @Test
+    void executesStateBackedReadFromOneFrozenSessionRevision() {
+        graph = statefulGraph();
+        StateModel model = customerStateModel();
+        MirrorArtifactRef modelRef =
+                StateModelIntegrity.reference(model);
+        CapabilityClosure statefulClosure =
+                statefulClosure(modelRef);
+        closure = statefulClosure;
+        CompiledMirrorPlan compiled = compile(fixture());
+        MirrorArtifactRef queryCapability =
+                compiled.plan().externalBindings().stream()
+                        .filter(binding -> "loadCustomer".equals(
+                                binding.dependencyNodeId()))
+                        .map(MirrorPlan.ExternalBinding::capabilityRef)
+                        .findFirst().orElseThrow();
+        WriteEffectSpec effect = customerWriteEffect(model);
+        StateReadSpec readSpec = StateReadSpecIntegrity.seal(
+                mapper, new StateReadSpec(
+                        StateReadSpec.SCHEMA_VERSION,
+                        "query-customer", 1, "", SCOPE,
+                        queryCapability, modelRef,
+                        "customer", "customer-id",
+                        List.of(BoundedStateExpression.input(
+                                "/customerId")),
+                        BoundedStateExpression.entity(
+                                StateReadSpec.RESULT_ALIAS, ""),
+                        stateProvenance(),
+                        CapabilitySnapshot.Lifecycle.ACTIVE,
+                        COMPILED_AT));
+        SessionStateSpace.EntitySnapshot customer =
+                SessionStateSpaceIntegrity.sealEntity(
+                        mapper,
+                        new SessionStateSpace.EntitySnapshot(
+                                new SessionStateSpace.EntityKey(
+                                        "customer", "C-1"),
+                                1,
+                                Map.of(
+                                        "customerId", "C-1",
+                                        "name", "Session Alice",
+                                        "segment", "ENTERPRISE"),
+                                ""));
+        SessionStateSpace state =
+                SessionStateSpaceIntegrity.seal(
+                        mapper, new SessionStateSpace(
+                                SessionStateSpace.SCHEMA_VERSION,
+                                "customer-session-1", SCOPE,
+                                compiled.plan().planFingerprint(),
+                                modelRef,
+                                List.of(WriteEffectSpecIntegrity.reference(
+                                        effect)),
+                                0, COMPILED_AT, 42,
+                                List.of(customer), List.of(),
+                                List.of(
+                                        SessionStateSpaceIntegrity
+                                                .businessKey(
+                                                        mapper,
+                                                        "customer-id",
+                                                        List.of("C-1"),
+                                                        customer.key())),
+                                List.of(), List.of(),
+                                COMPILED_AT.plus(
+                                        Duration.ofHours(1)),
+                                "", ""));
+        MirrorSessionPayload payload =
+                MirrorSessionProtocolIntegrity.sealInitial(
+                        mapper,
+                        new MirrorSessionPayload(
+                                MirrorSessionPayload.SCHEMA_VERSION,
+                                model, List.of(readSpec),
+                                List.of(effect), state, ""),
+                        COMPILED_AT.plusSeconds(1));
+        MirrorResolver.SessionContext sessionContext =
+                new MirrorResolver.SessionContext(
+                        payload, compiled.plan().planFingerprint(),
+                        Map.of(
+                                compiled.plan().externalBindings()
+                                        .getFirst()
+                                        .invocationSiteId(),
+                                queryCapability));
+        MirrorRunRequest request = new MirrorRunRequest(
+                "request-state-1", compiled,
+                new GraphContext(
+                        Map.of("customerId", "C-1")),
+                SCOPE, PURPOSE, null, sessionContext);
+
+        MirrorRunResult result = runtime.execute(request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(externalCalls).hasValue(0);
+        assertThat(result.execution().evidence().nodeTrace())
+                .filteredOn(trace -> trace.invocationSiteId()
+                        .equals("/root/loadCustomer#PRIMARY"))
+                .singleElement()
+                .satisfies(trace -> assertThat(trace.output())
+                        .isEqualTo(Map.of(
+                                "customerId", "C-1",
+                                "name", "Session Alice",
+                                "segment", "ENTERPRISE")));
+        assertThat(result.resolutions())
+                .filteredOn(resolution -> resolution.invocationSiteId()
+                        .equals("/root/loadCustomer#PRIMARY"))
+                .singleElement()
+                .satisfies(resolution -> {
+                    assertThat(resolution.source())
+                            .isEqualTo(
+                                    MirrorPlan.MirrorSource
+                                            .SESSION_STATE);
+                    assertThat(resolution.matchedArtifactRefs())
+                            .extracting(MirrorArtifactRef::kind)
+                            .containsExactly(
+                                    "SESSION_STATE",
+                                    "STATE_MODEL",
+                                    "STATE_READ_SPEC");
+                    assertThat(resolution.matchedRuleRefs())
+                            .anyMatch(ref -> ref.startsWith(
+                                    "state-read-spec:query-customer:"));
+                });
     }
 
     @Test
@@ -1057,6 +1188,127 @@ class MirrorRunServiceTest {
                 CapabilityClosureIntegrity.reference(root), List.of(root, external), ""));
     }
 
+    private CapabilityClosure statefulClosure(
+            MirrorArtifactRef stateModelRef) {
+        EffectContract effect =
+                EffectContract.readOnly(List.of("customer:*"));
+        CapabilitySnapshot external =
+                CapabilitySnapshotIntegrity.seal(
+                        mapper,
+                        new CapabilitySnapshot(
+                                "", "operator:customer.lookup", 1,
+                                "", CapabilitySnapshot.Kind.EXTERNAL,
+                                SCOPE,
+                                new CapabilitySnapshot.Source(
+                                        CapabilitySnapshot.SourceKind
+                                                .OPERATOR,
+                                        "customer.lookup",
+                                        fingerprint('e')),
+                                contract(effect, stateModelRef),
+                                runtime(
+                                        "OPERATOR",
+                                        "customer.lookup", 'f'),
+                                List.of(), ownership(),
+                                CapabilitySnapshot.Lifecycle.ACTIVE,
+                                provenance(), COMPILED_AT));
+        CapabilitySnapshot root =
+                CapabilitySnapshotIntegrity.seal(
+                        mapper,
+                        new CapabilitySnapshot(
+                                "", "graph:customerView", 1, "",
+                                CapabilitySnapshot.Kind.COMPOSED,
+                                SCOPE,
+                                new CapabilitySnapshot.Source(
+                                        CapabilitySnapshot.SourceKind.GRAPH,
+                                        "customerView", TARGET),
+                                contract(effect, stateModelRef),
+                                runtime(
+                                        "BLOGE_GRAPH",
+                                        "customerView", '8'),
+                                List.of(
+                                        new CapabilitySnapshot.Dependency(
+                                                "loadCustomer",
+                                                CapabilityClosureIntegrity
+                                                        .reference(
+                                                                external),
+                                                true, List.of())),
+                                ownership(),
+                                CapabilitySnapshot.Lifecycle.ACTIVE,
+                                provenance(), COMPILED_AT));
+        return CapabilityClosureIntegrity.seal(
+                mapper, new CapabilityClosure(
+                        "",
+                        CapabilityClosureIntegrity.reference(root),
+                        List.of(root, external), ""));
+    }
+
+    private StateModel customerStateModel() {
+        return StateModelIntegrity.seal(
+                mapper, new StateModel(
+                        StateModel.SCHEMA_VERSION,
+                        "customer-world", 1, "", SCOPE,
+                        List.of(new StateModel.EntityType(
+                                "customer",
+                                SchemaEnvelope.object(
+                                        Map.of(
+                                                "customerId",
+                                                Map.of("type", "string"),
+                                                "name",
+                                                Map.of("type", "string"),
+                                                "segment",
+                                                Map.of("type", "string")),
+                                        List.of(
+                                                "customerId",
+                                                "name", "segment")),
+                                List.of(
+                                        new StateModel
+                                                .BusinessKeyDefinition(
+                                                "customer-id",
+                                                List.of(
+                                                        "/customerId"))))),
+                        List.of(), stateProvenance(),
+                        CapabilitySnapshot.Lifecycle.ACTIVE,
+                        COMPILED_AT));
+    }
+
+    private WriteEffectSpec customerWriteEffect(
+            StateModel model) {
+        WriteEffectSpec.Mutation mutation =
+                new WriteEffectSpec.Mutation(
+                        "update-customer",
+                        WriteEffectSpec.Operation.UPDATE,
+                        "customer",
+                        BoundedStateExpression.input("/customerId"),
+                        null, List.of(), List.of(
+                        new WriteEffectSpec.FieldEffect(
+                                "/name",
+                                BoundedStateExpression.input("/name"))),
+                        List.of(
+                                new WriteEffectSpec.BusinessKeyRule(
+                                        "customer-id",
+                                        List.of(
+                                                BoundedStateExpression
+                                                        .entity(
+                                                                "update-customer",
+                                                                "/customerId")))));
+        return WriteEffectSpecIntegrity.seal(
+                mapper, new WriteEffectSpec(
+                        WriteEffectSpec.SCHEMA_VERSION,
+                        "update-customer", 1, "", SCOPE,
+                        new MirrorArtifactRef(
+                                "CAPABILITY", "customer.update", 1,
+                                fingerprint('7')),
+                        StateModelIntegrity.reference(model),
+                        List.of(mutation),
+                        BoundedStateExpression.entity(
+                                "update-customer", ""),
+                        new WriteEffectSpec.Idempotency(
+                                "/requestId", true),
+                        stateProvenance(),
+                        CapabilitySnapshot.Lifecycle.ACTIVE,
+                        COMPILED_AT));
+    }
+
     private CapabilityClosure foreachClosure(Graph rootGraph, Graph itemGraph) {
         EffectContract effect = EffectContract.readOnly(List.of("item:*"));
         CapabilitySnapshot external = CapabilitySnapshotIntegrity.seal(mapper,
@@ -1092,11 +1344,18 @@ class MirrorRunServiceTest {
     }
 
     private static CapabilityContract contract(EffectContract effect) {
+        return contract(effect, null);
+    }
+
+    private static CapabilityContract contract(
+            EffectContract effect,
+            MirrorArtifactRef stateModelRef) {
         return new CapabilityContract("", SchemaEnvelope.opaque(), SchemaEnvelope.opaque(),
                 List.of(), effect, CapabilityContract.Determinism.CONTROLLED_NONDETERMINISTIC,
                 new CapabilityContract.IdempotencyContract(
                         CapabilityContract.IdempotencyMode.IDEMPOTENT, "", true),
-                null, CapabilityContract.CompatibilityPolicy.conservative(),
+                stateModelRef,
+                CapabilityContract.CompatibilityPolicy.conservative(),
                 new CapabilityContract.SecurityContract(
                         CapabilityContract.DataClassification.CONFIDENTIAL, false,
                         List.of("sg"), false), CapabilityContract.SloContract.unspecified());
@@ -1117,6 +1376,16 @@ class MirrorRunServiceTest {
         return new ArtifactProvenance("", ArtifactProvenance.SourceType.OWNER, List.of(),
                 SCOPE.tenantId(), PURPOSE, null, null, null, null, List.of(),
                 "owner-a", COMPILED_AT.minus(Duration.ofDays(1)),
+                COMPILED_AT.plus(Duration.ofDays(1)), "");
+    }
+
+    private static ArtifactProvenance stateProvenance() {
+        return new ArtifactProvenance(
+                ArtifactProvenance.SCHEMA_VERSION,
+                ArtifactProvenance.SourceType.OWNER,
+                List.of(), SCOPE.tenantId(), PURPOSE,
+                null, null, null, null, List.of(),
+                "owner-a", COMPILED_AT,
                 COMPILED_AT.plus(Duration.ofDays(1)), "");
     }
 
@@ -1160,6 +1429,26 @@ class MirrorRunServiceTest {
         nodes.put("formatCustomer", node("formatCustomer", "customer.format"));
         return new Graph("customerView", nodes, List.of(), Set.copyOf(nodes.keySet()),
                 Set.copyOf(nodes.keySet()), SchemaValidationLevel.OFF);
+    }
+
+    private static Graph statefulGraph() {
+        Map<String, NodeSpec> nodes = new LinkedHashMap<>();
+        nodes.put("loadCustomer", new NodeSpec(
+                "loadCustomer", "customer.lookup",
+                (results, context) -> Map.of(
+                        "customerId",
+                        context.get("customerId")),
+                ResilienceConfig.DEFAULT, Map.of(),
+                OpaqueSchema.INSTANCE,
+                OpaqueSchema.INSTANCE));
+        nodes.put(
+                "formatCustomer",
+                node("formatCustomer", "customer.format"));
+        return new Graph(
+                "customerView", nodes, List.of(),
+                Set.copyOf(nodes.keySet()),
+                Set.copyOf(nodes.keySet()),
+                SchemaValidationLevel.OFF);
     }
 
     private static NodeSpec node(String id, String operatorRef) {

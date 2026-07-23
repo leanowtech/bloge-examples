@@ -75,6 +75,26 @@ public class CompiledTestRuntimeOptions {
             InvocationRecorder recorder,
             MirrorResolutionObserver mirrorObserver,
             MirrorInvocationBudget invocationBudget) {
+        return options(compiled, recorder, mirrorObserver,
+                invocationBudget, null);
+    }
+
+    /**
+     * Binds one immutable session state head to every mirror resolver occurrence in this run.
+     *
+     * @param compiled exact compiled execution control
+     * @param recorder run-scoped fixture cursor and trace recorder
+     * @param mirrorObserver run-scoped mirror provenance sink
+     * @param invocationBudget mirror-only whole-run occurrence budget, or {@code null}
+     * @param sessionContext immutable session state head, or {@code null} for stateless runs
+     * @return isolated execution options
+     */
+    public ExecutionOptions options(
+            CompiledExecutionControl compiled,
+            InvocationRecorder recorder,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget,
+            MirrorResolver.SessionContext sessionContext) {
         CompiledExecutionControl requiredControl = Objects.requireNonNull(
                 compiled, "compiled");
         InvocationRecorder requiredRecorder = Objects.requireNonNull(recorder, "recorder");
@@ -83,7 +103,7 @@ public class CompiledTestRuntimeOptions {
         return ExecutionOptions.builder()
                 .operatorResolver(resolution -> resolveOperator(
                         resolution, requiredControl, requiredRecorder, requiredObserver,
-                        invocationBudget))
+                        invocationBudget, sessionContext))
                 .executionServices(requiredControl.executionServices().services())
                 .build();
     }
@@ -93,7 +113,8 @@ public class CompiledTestRuntimeOptions {
             CompiledExecutionControl compiled,
             InvocationRecorder recorder,
             MirrorResolutionObserver mirrorObserver,
-            MirrorInvocationBudget invocationBudget) {
+            MirrorInvocationBudget invocationBudget,
+            MirrorResolver.SessionContext sessionContext) {
         InvocationInventory.Entry entry = compiled.inventory().byEngineStructuralId()
                 .get(resolution.site().structuralId());
         if (entry == null || entry.graph() != resolution.graph()) {
@@ -119,6 +140,6 @@ public class CompiledTestRuntimeOptions {
         }
         return doubleFactory.create(entry.node(), binding, control,
                 entry.frozenOperator(), recorder, compiled.replayPayloads(),
-                compiled.corpusPayloads(), mirrorObserver);
+                compiled.corpusPayloads(), mirrorObserver, sessionContext);
     }
 }

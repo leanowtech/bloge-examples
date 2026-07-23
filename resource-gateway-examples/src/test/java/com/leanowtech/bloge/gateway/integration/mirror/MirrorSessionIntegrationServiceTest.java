@@ -160,6 +160,37 @@ class MirrorSessionIntegrationServiceTest {
     }
 
     @Test
+    void bindsOneRunToTheExactAuthenticatedSessionPlanAndStateHead() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            MirrorSessionDescriptor created = harness.service().create(
+                    create(fixture.payload()), identity());
+            MirrorSessionRunBinding binding = new MirrorSessionRunBinding(
+                    created.sessionId(), created.stateFingerprint());
+
+            MirrorSessionStateStore.SessionSnapshot snapshot =
+                    harness.service().snapshotForRun(
+                            binding, created.planFingerprint(), identity());
+
+            assertThat(snapshot.payload()).isEqualTo(fixture.payload());
+            assertThat(snapshot.descriptor()).isEqualTo(created);
+            assertProblem(() -> harness.service().snapshotForRun(
+                            new MirrorSessionRunBinding(
+                                    created.sessionId(),
+                                    "sha256:" + "8".repeat(64)),
+                            created.planFingerprint(), identity()),
+                    409, STATE_CONFLICT.wireCode(), true);
+            assertProblem(() -> harness.service().snapshotForRun(
+                            binding, "sha256:" + "7".repeat(64), identity()),
+                    409, "RG.MIRROR.SESSION.PLAN_CONFLICT", false);
+            assertProblem(() -> harness.service().snapshotForRun(
+                            binding, created.planFingerprint(),
+                            identity("org-b")),
+                    404, "RG.MIRROR.SESSION.NOT_FOUND", false);
+        }
+    }
+
+    @Test
     void preservesDatabaseCasFailureInsteadOfCollapsingItToKernelCommitFailed() {
         try (Harness harness = harness()) {
             Fixture fixture = fixture();
@@ -347,6 +378,11 @@ class MirrorSessionIntegrationServiceTest {
         public java.util.Optional<MirrorSessionDescriptor> find(
                 CapabilitySnapshot.Scope scope, String sessionId) {
             return delegate.find(scope, sessionId);
+        }
+
+        @Override
+        public SessionSnapshot snapshot(SnapshotCommand command) {
+            return delegate.snapshot(command);
         }
 
         @Override

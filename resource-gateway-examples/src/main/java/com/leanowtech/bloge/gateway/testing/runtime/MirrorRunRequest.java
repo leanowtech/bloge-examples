@@ -20,6 +20,7 @@ import java.util.Objects;
  * @param authorizedScope scope derived from authenticated workload identity
  * @param authorizedPurpose purpose minted by the protected endpoint
  * @param deploymentTrust verified pre-execution trust for certification-required plans
+ * @param sessionContext optional immutable state head shared by every node in this run
  */
 public record MirrorRunRequest(
         String requestId,
@@ -27,7 +28,8 @@ public record MirrorRunRequest(
         GraphContext context,
         CapabilitySnapshot.Scope authorizedScope,
         String authorizedPurpose,
-        MirrorDeploymentIsolationRunTrust.Admission deploymentTrust
+        MirrorDeploymentIsolationRunTrust.Admission deploymentTrust,
+        MirrorResolver.SessionContext sessionContext
 ) {
     /** Detaches business context and normalizes authenticated coordinates. */
     public MirrorRunRequest {
@@ -40,6 +42,26 @@ public record MirrorRunRequest(
             throw new IllegalArgumentException(
                     "deployment trust scope must match the authenticated mirror scope");
         }
+        if (sessionContext != null
+                && (!authorizedScope.equals(
+                sessionContext.payload().state().scope())
+                || !compiledPlan.plan().planFingerprint().equals(
+                sessionContext.planFingerprint()))) {
+            throw new IllegalArgumentException(
+                    "session context must match the authenticated scope and compiled plan");
+        }
+    }
+
+    /** Compatibility constructor for runs without a stateful session snapshot. */
+    public MirrorRunRequest(
+            String requestId,
+            CompiledMirrorPlan compiledPlan,
+            GraphContext context,
+            CapabilitySnapshot.Scope authorizedScope,
+            String authorizedPurpose,
+            MirrorDeploymentIsolationRunTrust.Admission deploymentTrust) {
+        this(requestId, compiledPlan, context, authorizedScope,
+                authorizedPurpose, deploymentTrust, null);
     }
 
     /** Compatibility constructor for explicitly exploratory runtime tests. */

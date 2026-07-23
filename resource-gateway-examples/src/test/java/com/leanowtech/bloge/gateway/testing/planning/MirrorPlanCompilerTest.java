@@ -211,6 +211,41 @@ class MirrorPlanCompilerTest {
     }
 
     @Test
+    void compilesReadOnlyStateDependencyAsTheHighestPrecedenceResolver() {
+        registry.register("order.query", new ReadOnlyOperator());
+        Graph graph = graph(
+                "orderView", Map.of("loadOrder", "order.query"));
+        MirrorArtifactRef stateModel =
+                ref("STATE_MODEL", "order-world", 'c');
+        CapabilityClosure closure = directClosure(
+                "orderView", "loadOrder", "order.query",
+                TARGET, EffectContract.readOnly(List.of("order:*")),
+                stateModel);
+        FixtureBundle ownerFallback = fixture(rule(
+                "owner-order", "loadOrder",
+                FixtureRule.Behavior.returning(
+                        Map.of("status", "OWNER_FALLBACK"))));
+
+        CompiledMirrorPlan compiled = compiler.compile(request(
+                graph, closure, ownerFallback, policy(), null, TARGET));
+
+        assertThat(compiled.plan().stateModelRefs())
+                .containsExactly(stateModel);
+        assertThat(compiled.plan().externalBindings())
+                .singleElement()
+                .satisfies(binding -> assertThat(binding.resolverOrder())
+                        .containsExactly(
+                                MirrorPlan.MirrorSource.SESSION_STATE,
+                                MirrorPlan.MirrorSource.OWNER_SPECIFIED,
+                                MirrorPlan.MirrorSource.ABSTAINED));
+        assertThat(compiled.executionControl().effectivePlan().resolvedSites())
+                .singleElement()
+                .satisfies(site -> assertThat(site.fidelity())
+                        .isEqualTo("SESSION_STATE"));
+        MirrorPlanIntegrity.verify(mapper, compiled.plan());
+    }
+
+    @Test
     void rejectsRealFallbackEvenWhenExternalOperatorClaimsReadOnly() {
         registry.register("customer.lookup", new ReadOnlyOperator());
         Graph graph = graph("customerView", Map.of("loadCustomer", "customer.lookup"));
@@ -301,7 +336,7 @@ class MirrorPlanCompilerTest {
                 "refund.update", TARGET, mutation, stateModel);
         assertRejected(() -> compiler.compile(request(
                         graph, closure, fixture(), policy(), null, TARGET)),
-                "RG.MIRROR.STATEFUL_RUNTIME_NOT_AVAILABLE");
+                "RG.MIRROR.STATEFUL_WRITE_RUNTIME_NOT_AVAILABLE");
 
         CapabilityClosure stateless = directClosure("refundFlow", "updateRefund",
                 "refund.update", TARGET, readOnlyEffect(), null);

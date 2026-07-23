@@ -225,10 +225,34 @@ public class ExecutionControlCompiler {
             Set<String> mandatoryExternalSiteIds,
             InvocationInventory frozenInventory,
             ResolvedCorpusPayloads corpusPayloads) {
+        return compileMirrorFromInventory(
+                graph, fixtureBundle, authorizedPurpose,
+                targetFingerprint, replayPayloads,
+                mandatoryExternalSiteIds, Set.of(),
+                frozenInventory, corpusPayloads);
+    }
+
+    /**
+     * Compiles mirror controls with exact state-model-backed read sites.
+     *
+     * <p>The stateful site set is capability-derived rather than caller-selected. Every such site
+     * remains a mandatory intercepted external and receives {@code SESSION_STATE} before owner,
+     * recorded, and replay fallbacks.</p>
+     */
+    CompiledExecutionControl compileMirrorFromInventory(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            Set<String> mandatoryExternalSiteIds,
+            Set<String> statefulReadSiteIds,
+            InvocationInventory frozenInventory,
+            ResolvedCorpusPayloads corpusPayloads) {
         return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
                 targetFingerprint, replayPayloads, ResolvedTestSecrets.empty(), null,
                 mandatoryExternalSiteIds, Objects.requireNonNull(frozenInventory, "frozenInventory"),
-                corpusPayloads);
+                corpusPayloads, statefulReadSiteIds);
     }
 
     /**
@@ -335,6 +359,27 @@ public class ExecutionControlCompiler {
             Set<String> mandatoryExternalSiteIds,
             InvocationInventory frozenInventory,
             ResolvedCorpusPayloads corpusPayloads) {
+        return compileBound(
+                graph, fixtureBundle, authorizedPurpose,
+                targetFingerprint, fixtureBindingTargetFingerprint,
+                replayPayloads, testSecrets, providerState,
+                mandatoryExternalSiteIds, frozenInventory, corpusPayloads,
+                Set.of());
+    }
+
+    private CompiledExecutionControl compileBound(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            String fixtureBindingTargetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            ResolvedTestSecrets testSecrets,
+            ExecutionServiceStateSnapshot providerState,
+            Set<String> mandatoryExternalSiteIds,
+            InvocationInventory frozenInventory,
+            ResolvedCorpusPayloads corpusPayloads,
+            Set<String> statefulReadSiteIds) {
         Objects.requireNonNull(graph, "graph");
         ResolvedReplayPayloads resolvedReplays = replayPayloads == null
                 ? ResolvedReplayPayloads.empty() : replayPayloads;
@@ -349,6 +394,8 @@ public class ExecutionControlCompiler {
                 ? inventoryBuilder.build(graph, targetFingerprint) : frozenInventory;
         boolean mirrorCompilation = mandatoryExternalSiteIds != null;
         Set<String> mandatoryExternalSites = normalizedSites(mandatoryExternalSiteIds);
+        Set<String> statefulReadSites =
+                normalizedSites(statefulReadSiteIds);
         Set<String> recordedCorpusSites =
                 normalizedSites(resolvedCorpus.siteIds());
         Set<String> recordedExactSites =
@@ -361,6 +408,11 @@ public class ExecutionControlCompiler {
             throw new ControlPlanRejectedException(
                     "CONTROL_PLAN_CORPUS_SITE_NOT_EXTERNAL", List.of(
                     "Recorded corpus sites must belong to the external capability closure."));
+        }
+        if (!mandatoryExternalSites.containsAll(statefulReadSites)) {
+            throw new ControlPlanRejectedException(
+                    "CONTROL_PLAN_STATE_SITE_NOT_EXTERNAL", List.of(
+                    "Stateful read sites must belong to the external capability closure."));
         }
         List<String> missingMirrorSites = mandatoryExternalSites.stream()
                 .filter(siteId -> !inventory.byInvocationSiteId().containsKey(siteId)).toList();
@@ -391,6 +443,17 @@ public class ExecutionControlCompiler {
                         entry.site(), denyRules, true));
             }
         }
+        statefulReadSites.forEach(
+                siteId -> controls.compute(siteId, (ignored, control) -> {
+                    if (control == null) {
+                        throw new ControlPlanRejectedException(
+                                "CONTROL_PLAN_STATE_SITE_UNRESOLVED",
+                                List.of(
+                                        "Stateful read site has no mirror control."));
+                    }
+                    return control.withMirrorSource(
+                            MirrorPlan.MirrorSource.SESSION_STATE);
+                }));
         recordedExactSites.forEach(siteId -> controls.compute(siteId, (ignored, control) -> {
             if (control == null) {
                 throw new ControlPlanRejectedException(
@@ -439,24 +502,32 @@ public class ExecutionControlCompiler {
                         MirrorPlan.MirrorSource.RECORDED_TRAJECTORY);
                 boolean recordedCluster = control.resolverOrder().contains(
                         MirrorPlan.MirrorSource.RECORDED_CLUSTER);
-                boolean corpusOnly = control.implicitDeny()
-                        && (recordedExact
+                boolean stateful = control.resolverOrder().contains(
+                        MirrorPlan.MirrorSource.SESSION_STATE);
+                boolean sourceOnly = control.implicitDeny()
+                        && (stateful || recordedExact
                         || recordedTrajectory
                         || recordedCluster);
-                FixtureRule.BehaviorKind kind = corpusOnly
-                        ? FixtureRule.BehaviorKind.REPLAY : first.behavior().kind();
-                sites.add(new EffectiveExecutionPlan.ResolvedSite(control.site().invocationSiteId(),
-                        corpusOnly ? EffectiveExecutionPlan.Resolution.TEST_DOUBLE
-                                : resolution(control),
-                        kind, first.behavior().boundary(),
-                        corpusOnly ? List.of()
-                                : control.rules().stream().map(FixtureRule::ruleId).toList(),
-                        corpusOnly
-                                ? recordedFidelity(
+                FixtureRule.BehaviorKind kind = !sourceOnly
+                        ? first.behavior().kind()
+                        : stateful
+                        ? FixtureRule.BehaviorKind.RETURN
+                        : FixtureRule.BehaviorKind.REPLAY;
+                String effectiveFidelity = stateful
+                        ? "SESSION_STATE"
+                        : sourceOnly
+                        ? recordedFidelity(
                                 recordedExact,
                                 recordedTrajectory,
                                 recordedCluster)
-                                : fidelity(control)));
+                        : fidelity(control);
+                sites.add(new EffectiveExecutionPlan.ResolvedSite(control.site().invocationSiteId(),
+                        sourceOnly ? EffectiveExecutionPlan.Resolution.TEST_DOUBLE
+                                : resolution(control),
+                        kind, first.behavior().boundary(),
+                        sourceOnly ? List.of()
+                                : control.rules().stream().map(FixtureRule::ruleId).toList(),
+                        effectiveFidelity));
             }
         }
         Map<String, String> defaults = new LinkedHashMap<>();
@@ -492,6 +563,8 @@ public class ExecutionControlCompiler {
         fingerprintMaterial.put("executionServiceBindings", executionServices.bindings());
         if (mirrorCompilation) {
             fingerprintMaterial.put("mandatoryMirrorExternalSites", mandatoryExternalSites);
+            fingerprintMaterial.put(
+                    "statefulReadSites", statefulReadSites);
             fingerprintMaterial.put("mirrorResolverOrderBySite", controls.entrySet().stream()
                     .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey,
                             entry -> entry.getValue().resolverOrder(),

@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosureIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityContract;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
+import com.leanowtech.bloge.gateway.integration.mirror.EffectContract;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrity;
@@ -45,9 +46,9 @@ import java.util.Set;
  * the payload-free public plan. Mutable registries are not consulted after constructor entry and no
  * graph node is scheduled during compilation.</p>
  *
- * <p>Stage 1 intentionally rejects scenario packs, state models, and schema synthesis. Those
- * protocol fields are reserved for later runtimes; accepting them before a serving implementation
- * exists would create false capability.</p>
+ * <p>The compiler admits state-model-backed read capabilities through the immutable Session
+ * resolver. Graph-internal virtual writes, scenario packs, and schema synthesis remain rejected
+ * until their own serving paths can produce complete transactional evidence.</p>
  */
 public class MirrorPlanCompiler {
     private static final String ROOT_PATH = "/root";
@@ -98,6 +99,11 @@ public class MirrorPlanCompiler {
         Set<String> mandatorySites = edges.stream()
                 .map(edge -> edge.entry().site().invocationSiteId())
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Set<String> statefulReadSites = edges.stream()
+                .filter(edge -> statefulRead(edge.child()))
+                .map(edge -> edge.entry().site().invocationSiteId())
+                .collect(java.util.stream.Collectors.toCollection(
+                        LinkedHashSet::new));
         rejectUnclosedRuntimeExternals(inventory, mandatorySites);
         ResolvedCorpusPayloads corpusPayloads = bindCorpusPayloads(
                 request.corpusPayloads(), edges);
@@ -107,7 +113,8 @@ public class MirrorPlanCompiler {
             control = executionControlCompiler.compileMirrorFromInventory(
                     request.graph(), request.fixtureBundle(),
                     request.policy().authorizedPurpose(), request.graphArtifactFingerprint(),
-                    request.replayPayloads(), mandatorySites, inventory, corpusPayloads);
+                    request.replayPayloads(), mandatorySites,
+                    statefulReadSites, inventory, corpusPayloads);
         } catch (ControlPlanRejectedException failure) {
             throw controlFailure(failure);
         }
@@ -193,10 +200,22 @@ public class MirrorPlanCompiler {
             throw reject("RG.MIRROR.FIXTURE_CLASSIFICATION_FORBIDDEN",
                     "Fixture classification exceeds mirror-plan clearance.");
         }
-        if (!stateModelRefs(snapshots).isEmpty()) {
-            throw reject("RG.MIRROR.STATEFUL_RUNTIME_NOT_AVAILABLE",
-                    "State-model dependencies require the Stage 3 session runtime.");
+        for (CapabilitySnapshot snapshot : snapshots) {
+            if (snapshot.contract().stateModelRef() != null
+                    && snapshot.contract().effect().mode()
+                    != EffectContract.Mode.READ_ONLY) {
+                throw reject(
+                        "RG.MIRROR.STATEFUL_WRITE_RUNTIME_NOT_AVAILABLE",
+                        "Stateful DAG execution currently admits virtual reads only.");
+            }
         }
+    }
+
+    private static boolean statefulRead(
+            CapabilitySnapshot snapshot) {
+        return snapshot.contract().stateModelRef() != null
+                && snapshot.contract().effect().mode()
+                == EffectContract.Mode.READ_ONLY;
     }
 
     private List<ResolvedExternalEdge> resolveExternalEdges(

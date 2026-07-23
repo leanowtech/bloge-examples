@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -21,24 +23,53 @@ import java.util.regex.Pattern;
  * @param planId previously persisted mirror plan identity
  * @param expectedPlanFingerprint exact plan generation reviewed by the caller
  * @param context business input context; server-owned BLOGE scope keys are added after admission
+ * @param sessionBinding optional v2 binding to one reviewed virtual state head
  */
 public record MirrorExecutionRequest(
         String schemaVersion,
         String requestId,
         String planId,
         String expectedPlanFingerprint,
-        Map<String, Object> context
+        Map<String, Object> context,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        MirrorSessionRunBinding sessionBinding
 ) {
-    /** Current protected execution-command protocol version. */
+    /** Stateless protected execution-command protocol version. */
     public static final String SCHEMA_VERSION = "resourceGateway.mirrorExecutionRequest.v1";
+    /** Stateful protected execution-command protocol version. */
+    public static final String STATEFUL_SCHEMA_VERSION =
+            "resourceGateway.mirrorExecutionRequest.v2";
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,511}");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
-    /** Validates immutable plan coordinates and recursively detaches JSON-compatible context. */
+    /**
+     * Preserves the stateless v1 source contract.
+     *
+     * @param schemaVersion stateless execution-command protocol version
+     * @param requestId stable caller idempotency identity
+     * @param planId sealed plan identity
+     * @param expectedPlanFingerprint exact reviewed plan generation
+     * @param context detached business context
+     */
+    public MirrorExecutionRequest(
+            String schemaVersion,
+            String requestId,
+            String planId,
+            String expectedPlanFingerprint,
+            Map<String, Object> context) {
+        this(schemaVersion, requestId, planId, expectedPlanFingerprint,
+                context, null);
+    }
+
+    /** Validates version-coupled coordinates and recursively detaches JSON-compatible context. */
     public MirrorExecutionRequest {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank()
                 ? SCHEMA_VERSION : schemaVersion.trim();
-        if (!SCHEMA_VERSION.equals(schemaVersion)) {
+        boolean stateless = SCHEMA_VERSION.equals(schemaVersion);
+        boolean stateful = STATEFUL_SCHEMA_VERSION.equals(schemaVersion);
+        if ((!stateless && !stateful)
+                || (stateless && sessionBinding != null)
+                || (stateful && sessionBinding == null)) {
             throw new IllegalArgumentException("unsupported mirror execution request schemaVersion");
         }
         requestId = identifier(requestId, "requestId");
@@ -57,7 +88,8 @@ public record MirrorExecutionRequest(
     public String toString() {
         return "MirrorExecutionRequest[requestId=" + requestId + ", planId=" + planId
                 + ", expectedPlanFingerprint=" + expectedPlanFingerprint
-                + ", contextEntries=" + context.size() + "]";
+                + ", contextEntries=" + context.size()
+                + ", sessionBinding=" + sessionBinding + "]";
     }
 
     private static Map<String, Object> immutableMap(Map<?, ?> values, String path) {

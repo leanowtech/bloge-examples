@@ -279,7 +279,8 @@ public class MirrorRunService {
                 plan.policy().authorizedPurpose(),
                 compiled.executionControl().effectivePlan().targetFingerprint(),
                 TestExecutionRequest.FixtureSource.STORED, metadata,
-                true, compiled.executionControl().replayPayloads(), ResolvedTestSecrets.empty());
+                true, compiled.executionControl().replayPayloads(),
+                ResolvedTestSecrets.empty(), request.sessionContext());
         TestExecutionResult execution;
         MirrorResolutionJournal resolutionJournal = new MirrorResolutionJournal(
                 mapper, plan, compiled.executionControl().replayPayloads());

@@ -373,6 +373,42 @@ public final class DatabaseMirrorSessionStateStore
     }
 
     @Override
+    public SessionSnapshot snapshot(SnapshotCommand command) {
+        Objects.requireNonNull(command, "command");
+        try {
+            SnapshotAttempt attempt = transaction.execute(ignored -> {
+                Row row = rowForUpdate(
+                        command.scope(), command.sessionId())
+                        .orElseThrow(() -> terminal(NOT_FOUND));
+                Instant now = now();
+                if (row.active() && !row.expiresAt().isAfter(now)) {
+                    expire(command.scope(), command.sessionId(), row, now);
+                    return SnapshotAttempt.expiredAttempt();
+                }
+                if (!row.active()) {
+                    throw terminal(GONE);
+                }
+                MirrorSessionPayload payload = decrypt(
+                        command.scope(), command.sessionId(), row);
+                return SnapshotAttempt.available(new SessionSnapshot(
+                        payload, readDescriptor(row)));
+            });
+            if (attempt == null) {
+                throw retryable(
+                        UNAVAILABLE, RETRY_AFTER_UNAVAILABLE_SECONDS);
+            }
+            if (attempt.expired()) {
+                throw terminal(GONE);
+            }
+            return attempt.snapshot();
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DataAccessException failure) {
+            throw retryable(UNAVAILABLE, RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    @Override
     public ClaimedSession claim(ClaimCommand command) {
         Objects.requireNonNull(command, "command");
         try {
@@ -1301,6 +1337,21 @@ public final class DatabaseMirrorSessionStateStore
 
         private static ClaimAttempt expiredAttempt() {
             return new ClaimAttempt(null, true);
+        }
+    }
+
+    private record SnapshotAttempt(
+            SessionSnapshot snapshot,
+            boolean expired
+    ) {
+        private static SnapshotAttempt available(
+                SessionSnapshot snapshot) {
+            return new SnapshotAttempt(
+                    Objects.requireNonNull(snapshot, "snapshot"), false);
+        }
+
+        private static SnapshotAttempt expiredAttempt() {
+            return new SnapshotAttempt(null, true);
         }
     }
 

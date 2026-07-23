@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunResult;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunService;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunEvidenceProjector;
+import com.leanowtech.bloge.gateway.testing.runtime.MirrorResolver;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -124,6 +126,207 @@ class MirrorRunIntegrationServiceTest {
         verify(plans, never()).materialize(any(), any());
         verify(runtime, never()).execute(any());
         verify(commits, never()).commit(any(), any(), any());
+    }
+
+    @Test
+    void freezesOneAuthenticatedSessionSnapshotAndPassesItToTheWholeRun() {
+        MirrorArtifactRef stateModelRef = new MirrorArtifactRef(
+                "STATE_MODEL", "order-world", 1,
+                MirrorPersistenceTestFixtures.fingerprint('9'));
+        MirrorPlan statefulPlan = statefulPlan(stateModelRef);
+        MirrorSessionPayload payload = mock(MirrorSessionPayload.class);
+        SessionStateSpace state = mock(SessionStateSpace.class);
+        when(payload.state()).thenReturn(state);
+        StateReadSpec readSpec = mock(StateReadSpec.class);
+        when(readSpec.targetCapabilityRef()).thenReturn(
+                statefulPlan.externalBindings().getFirst()
+                        .capabilityRef());
+        when(readSpec.lifecycle()).thenReturn(
+                CapabilitySnapshot.Lifecycle.ACTIVE);
+        when(payload.stateReadSpecs()).thenReturn(List.of(readSpec));
+        when(state.scope()).thenReturn(SCOPE);
+        when(state.stateModelRef()).thenReturn(stateModelRef);
+        MirrorSessionStateStore.SessionSnapshot snapshot =
+                mock(MirrorSessionStateStore.SessionSnapshot.class);
+        when(snapshot.payload()).thenReturn(payload);
+        MirrorSessionIntegrationService sessions =
+                mock(MirrorSessionIntegrationService.class);
+        MirrorSessionRunBinding binding = new MirrorSessionRunBinding(
+                "refund-session-1",
+                MirrorPersistenceTestFixtures.fingerprint('8'));
+        when(sessions.snapshotForRun(
+                binding, statefulPlan.planFingerprint(), identity()))
+                .thenReturn(snapshot);
+        service = new MirrorRunIntegrationService(
+                plans, runtime, requests, evidence, commits, mapper,
+                MirrorOperationObservability.noop(),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                MirrorDeploymentIsolationRunTrustAuthority.unavailable(),
+                sessions);
+        when(plans.findForExecution("plan-1", identity()))
+                .thenReturn(statefulPlan);
+        when(plans.materialize(statefulPlan, identity()))
+                .thenReturn(generation);
+        when(generation.plan()).thenReturn(statefulPlan);
+        when(requests.claim(any(), anyString(), any()))
+                .thenAnswer(invocation -> acquired(
+                        invocation.getArgument(0), "owner-a", 1));
+        MirrorRunResult result = mock(MirrorRunResult.class);
+        when(result.evidenceBundle()).thenReturn(bundle);
+        when(runtime.execute(any())).thenReturn(result);
+        when(commits.commit(any(), any(), any())).thenReturn(bundle);
+        MirrorExecutionRequest request = new MirrorExecutionRequest(
+                MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION,
+                "request-1", "plan-1",
+                statefulPlan.planFingerprint(),
+                Map.of("customerId", "C-1"), binding);
+
+        service.execute(request, identity());
+
+        ArgumentCaptor<MirrorRunRequest> runtimeRequest =
+                ArgumentCaptor.forClass(MirrorRunRequest.class);
+        verify(runtime).execute(runtimeRequest.capture());
+        MirrorResolver.SessionContext sessionContext =
+                runtimeRequest.getValue().sessionContext();
+        assertThat(sessionContext.payload()).isSameAs(payload);
+        assertThat(sessionContext.planFingerprint())
+                .isEqualTo(statefulPlan.planFingerprint());
+        assertThat(sessionContext.capabilitiesBySite())
+                .containsEntry(
+                        statefulPlan.externalBindings().getFirst()
+                                .invocationSiteId(),
+                        statefulPlan.externalBindings().getFirst()
+                                .capabilityRef());
+        verify(sessions, times(1)).snapshotForRun(
+                binding, statefulPlan.planFingerprint(), identity());
+    }
+
+    @Test
+    void rejectsSessionMissingAStatefulSiteReadSpecBeforeGraphExecution() {
+        MirrorArtifactRef stateModelRef = new MirrorArtifactRef(
+                "STATE_MODEL", "order-world", 1,
+                MirrorPersistenceTestFixtures.fingerprint('9'));
+        MirrorPlan statefulPlan = statefulPlan(stateModelRef);
+        MirrorSessionPayload payload = mock(MirrorSessionPayload.class);
+        SessionStateSpace state = mock(SessionStateSpace.class);
+        when(payload.state()).thenReturn(state);
+        when(payload.stateReadSpecs()).thenReturn(List.of());
+        when(state.scope()).thenReturn(SCOPE);
+        when(state.stateModelRef()).thenReturn(stateModelRef);
+        MirrorSessionStateStore.SessionSnapshot snapshot =
+                mock(MirrorSessionStateStore.SessionSnapshot.class);
+        when(snapshot.payload()).thenReturn(payload);
+        MirrorSessionIntegrationService sessions =
+                mock(MirrorSessionIntegrationService.class);
+        MirrorSessionRunBinding binding = new MirrorSessionRunBinding(
+                "refund-session-1",
+                MirrorPersistenceTestFixtures.fingerprint('8'));
+        when(sessions.snapshotForRun(
+                binding, statefulPlan.planFingerprint(), identity()))
+                .thenReturn(snapshot);
+        service = new MirrorRunIntegrationService(
+                plans, runtime, requests, evidence, commits, mapper,
+                MirrorOperationObservability.noop(),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                MirrorDeploymentIsolationRunTrustAuthority.unavailable(),
+                sessions);
+        when(plans.findForExecution("plan-1", identity()))
+                .thenReturn(statefulPlan);
+        when(plans.materialize(statefulPlan, identity()))
+                .thenReturn(generation);
+        when(requests.claim(any(), anyString(), any()))
+                .thenAnswer(invocation -> acquired(
+                        invocation.getArgument(0), "owner-a", 1));
+        MirrorExecutionRequest request = new MirrorExecutionRequest(
+                MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION,
+                "request-1", "plan-1",
+                statefulPlan.planFingerprint(),
+                Map.of("customerId", "C-1"), binding);
+
+        assertProblem(
+                () -> service.execute(request, identity()),
+                409, "RG.MIRROR.SESSION.READ_SPEC_MISSING", false);
+
+        verify(runtime, never()).execute(any());
+        verify(requests).release(
+                any(), org.mockito.ArgumentMatchers.eq(
+                        "RG.MIRROR.SESSION.READ_SPEC_MISSING"));
+    }
+
+    @Test
+    void rejectsAStatefulPlanWithoutSessionBindingBeforeDurableClaim() {
+        MirrorArtifactRef stateModelRef = new MirrorArtifactRef(
+                "STATE_MODEL", "order-world", 1,
+                MirrorPersistenceTestFixtures.fingerprint('9'));
+        MirrorPlan statefulPlan = statefulPlan(stateModelRef);
+        when(plans.findForExecution("plan-1", identity()))
+                .thenReturn(statefulPlan);
+        MirrorExecutionRequest statelessRequest = new MirrorExecutionRequest(
+                MirrorExecutionRequest.SCHEMA_VERSION,
+                "request-1", "plan-1",
+                statefulPlan.planFingerprint(),
+                Map.of("customerId", "C-1"));
+
+        assertProblem(
+                () -> service.execute(statelessRequest, identity()),
+                400, "RG.MIRROR.SESSION.BINDING_REQUIRED", false);
+
+        verify(requests, never()).claim(any(), anyString(), any());
+        verify(runtime, never()).execute(any());
+    }
+
+    @Test
+    void rejectsASessionBindingForAStatelessPlanBeforeDurableClaim() {
+        MirrorExecutionRequest statefulRequest = new MirrorExecutionRequest(
+                MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION,
+                "request-1", "plan-1", plan.planFingerprint(),
+                Map.of("customerId", "C-1"),
+                new MirrorSessionRunBinding(
+                        "refund-session-1",
+                        MirrorPersistenceTestFixtures.fingerprint('8')));
+
+        assertProblem(
+                () -> service.execute(statefulRequest, identity()),
+                400, "RG.MIRROR.SESSION.BINDING_NOT_ADMITTED", false);
+
+        verify(requests, never()).claim(any(), anyString(), any());
+        verify(runtime, never()).execute(any());
+    }
+
+    @Test
+    void completedStatefulRetryDoesNotReadAnewerSessionHead() {
+        MirrorArtifactRef stateModelRef = new MirrorArtifactRef(
+                "STATE_MODEL", "order-world", 1,
+                MirrorPersistenceTestFixtures.fingerprint('9'));
+        MirrorPlan statefulPlan = statefulPlan(stateModelRef);
+        MirrorSessionIntegrationService sessions =
+                mock(MirrorSessionIntegrationService.class);
+        service = new MirrorRunIntegrationService(
+                plans, runtime, requests, evidence, commits, mapper,
+                MirrorOperationObservability.noop(),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                MirrorDeploymentIsolationRunTrustAuthority.unavailable(),
+                sessions);
+        when(plans.findForExecution("plan-1", identity()))
+                .thenReturn(statefulPlan);
+        when(requests.claim(any(), anyString(), any()))
+                .thenAnswer(invocation -> completed(
+                        invocation.getArgument(0), bundle));
+        when(evidence.find(SCOPE, "run-1")).thenReturn(Optional.of(bundle));
+        MirrorExecutionRequest statefulRequest = new MirrorExecutionRequest(
+                MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION,
+                "request-1", "plan-1",
+                statefulPlan.planFingerprint(),
+                Map.of("customerId", "C-1"),
+                new MirrorSessionRunBinding(
+                        "refund-session-1",
+                        MirrorPersistenceTestFixtures.fingerprint('8')));
+
+        service.execute(statefulRequest, identity());
+
+        verify(sessions, never()).snapshotForRun(any(), anyString(), any());
+        verify(plans, never()).materialize(any(), any());
+        verify(runtime, never()).execute(any());
     }
 
     @Test
@@ -287,6 +490,44 @@ class MirrorRunIntegrationServiceTest {
     private MirrorExecutionRequest request() {
         return new MirrorExecutionRequest("", "request-1", "plan-1",
                 plan.planFingerprint(), Map.of("customerId", "C-1"));
+    }
+
+    private MirrorPlan statefulPlan(
+            MirrorArtifactRef stateModelRef) {
+        MirrorPlan.ExternalBinding source =
+                plan.externalBindings().getFirst();
+        MirrorPlan.ExternalBinding binding =
+                new MirrorPlan.ExternalBinding(
+                        source.parentCapabilityRef(),
+                        source.dependencyNodeId(),
+                        source.capabilityRef(),
+                        source.invocationSiteId(),
+                        source.graphPath(),
+                        source.sourceKind(),
+                        source.sourceRef(),
+                        List.of(
+                                MirrorPlan.MirrorSource.SESSION_STATE,
+                                MirrorPlan.MirrorSource.OWNER_SPECIFIED,
+                                MirrorPlan.MirrorSource.ABSTAINED),
+                        source.fixtureRuleRefs());
+        return new MirrorPlan(
+                plan.schemaVersion(),
+                plan.planId(),
+                plan.planFingerprint(),
+                plan.rootCapability(),
+                plan.capabilityClosureFingerprint(),
+                plan.capabilityClosure(),
+                plan.scope(),
+                plan.fixtureBundleRef(),
+                plan.executionControlFingerprint(),
+                plan.servingGeneration(),
+                List.of(binding),
+                plan.scenarioPackRef(),
+                List.of(stateModelRef),
+                plan.executionServices(),
+                plan.policy(),
+                plan.compiledAt(),
+                plan.expiresAt());
     }
 
     private static MirrorRunRequestRepository.Claim acquired(

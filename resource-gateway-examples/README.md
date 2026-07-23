@@ -253,9 +253,9 @@ model, fixture bindings, provider contracts, request
 examples, errors, startup commands and remaining production gates are in the
 [capability corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
 
-### Stateful mirror Session data plane
+### Stateful mirror Session data plane and DAG reads
 
-The Stage 3 vertical freezes `StateModel`, `WriteEffectSpec`,
+The Stage 3 vertical freezes `StateModel`, `StateReadSpec`, `WriteEffectSpec`,
 `SessionStateSpace`, five Session API objects, and a closed bounded expression AST. The
 `MirrorStateTransactionEngine` serializes one session's writes, atomically
 applies ordered multi-entity mutations, returns the original receipt for exact
@@ -289,11 +289,25 @@ available while full. A bounded oldest-first worker erases expired ciphertext,
 and aggregate health plus fixed-cardinality metrics never expose customer
 dimensions.
 
-This is not a production-ready stateful resolver: TEE/KMS custody,
-stateful read lowering, state evidence, signed checkpoint/recovery,
+State-model-backed `READ_ONLY` external capabilities can now be compiled with
+`SESSION_STATE` first in resolver precedence. Execution request v2 binds the run
+to one caller-reviewed Session state fingerprint. The server freezes that head
+once per run, propagates the same immutable revision to every controlled
+operator, returns live entities through the declared bounded projection, and
+lets an absent key continue to lower governed sources. A missing read spec is a
+plan/Session closure defect that fails before graph scheduling; it is never
+treated as an absent business entity. An indexed tombstone is terminal and
+cannot fall through to corpus, fixture, or a real resource. The fixed refund
+fixture and standalone test kit include and independently verify the
+`query-order` read lowering.
+
+This is not yet a production-certified stateful runtime: TEE/KMS custody,
+graph-embedded virtual writes, state evidence, signed checkpoint/recovery,
 cryptographic deletion proof, target-database capacity/lock certification and
-HA/DR certification remain. The probe may report Session API/store ready while
-resolver/runtime readiness remains false. Startup, Java usage, capacity
+HA/DR certification remain. The probe reports `mirrorStatefulResolverReady`
+only when mirror execution, the Session API, and the encrypted state store are
+all ready; `mirrorStatefulRuntimeReady` remains false until write/evidence
+closure is complete. Startup, request v2 usage, Java usage, capacity
 configuration, stable errors, and remaining industrial work packages are in the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
 

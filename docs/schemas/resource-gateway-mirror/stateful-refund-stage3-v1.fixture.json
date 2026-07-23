@@ -86,6 +86,69 @@
     "lifecycle": "ACTIVE",
     "createdAt": "2026-07-24T02:00:00Z"
   },
+  "stateReadSpec": {
+    "schemaVersion": "resourceGateway.stateReadSpec.v1",
+    "specId": "query-order",
+    "revision": 1,
+    "fingerprint": "sha256:33960ba87968fc49adf51d225e4fab4b013f7238dcf382103ff8f5fb90628aaa",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-a",
+      "projectId": "tool-studio",
+      "environmentId": "test",
+      "region": "sg"
+    },
+    "targetCapabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "query-order",
+      "revision": 1,
+      "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "stateModelRef": {
+      "kind": "STATE_MODEL",
+      "id": "refund-world",
+      "revision": 1,
+      "fingerprint": "sha256:eccc04864493ef38632cd559059fd93be2ba6d094f86512ffde060d6039bdcfd"
+    },
+    "entityType": "order",
+    "businessKeyName": "order-id",
+    "keyComponents": [
+      {
+        "operator": "INPUT_POINTER",
+        "literal": null,
+        "path": "/orderId",
+        "reference": "",
+        "arguments": [],
+        "fields": {}
+      }
+    ],
+    "responseProjection": {
+      "operator": "ENTITY_POINTER",
+      "literal": null,
+      "path": "",
+      "reference": "result",
+      "arguments": [],
+      "fields": {}
+    },
+    "provenance": {
+      "schemaVersion": "resourceGateway.artifactProvenance.v1",
+      "sourceType": "OWNER",
+      "sourceRefs": [],
+      "tenantId": "tenant-a",
+      "purpose": "customer-support-simulation",
+      "sampleFrom": null,
+      "sampleTo": null,
+      "sampleCount": null,
+      "confidence": null,
+      "biasRisks": [],
+      "approvedBy": "refund-owner",
+      "approvedAt": "2026-07-24T02:00:00Z",
+      "expiresAt": "2026-07-25T02:00:00Z",
+      "revocationRef": ""
+    },
+    "lifecycle": "ACTIVE",
+    "createdAt": "2026-07-24T02:00:00Z"
+  },
   "writeEffect": {
     "schemaVersion": "resourceGateway.writeEffectSpec.v1",
     "specId": "create-refund",
@@ -483,6 +546,18 @@
     "worldFingerprint": "sha256:b9d49000719100ceeb8d083d45937a1b30c0cf6896b6f2ba4506b1b09ce778f4",
     "fingerprint": "sha256:8a8120d701c6e87b9b9a4da9858e407eebdf28d8df9f0978dcf7d6b82b4fad79"
   },
+  "queries": [
+    {
+      "input": {
+        "orderId": "O-100"
+      },
+      "expectedResponse": {
+        "paidAmount": 1000,
+        "orderId": "O-100",
+        "refundedAmount": 0
+      }
+    }
+  ],
   "commands": [
     {
       "input": {

@@ -134,10 +134,24 @@ public final class SessionStateSpaceIntegrity {
             String keyName,
             List<?> components,
             SessionStateSpace.EntityKey entityKey) {
-        String fingerprint = ProtocolFingerprint.ofBounded(
-                mapper, components, 64 * 1024);
+        String fingerprint = businessKeyFingerprint(mapper, components);
         return new SessionStateSpace.BusinessKeyBinding(
                 keyName, new ArrayList<>(components), fingerprint, entityKey);
+    }
+
+    /**
+     * Computes the exact index coordinate for ordered business-key components.
+     *
+     * @param mapper canonical protocol mapper
+     * @param components bounded ordered scalar components
+     * @return canonical component fingerprint used by the session index
+     */
+    public static String businessKeyFingerprint(
+            ObjectMapper mapper, List<?> components) {
+        return ProtocolFingerprint.ofBounded(
+                Objects.requireNonNull(mapper, "mapper"),
+                Objects.requireNonNull(components, "components"),
+                64 * 1024);
     }
 
     /**
@@ -220,9 +234,10 @@ public final class SessionStateSpaceIntegrity {
                 throw new IllegalArgumentException(
                         "business-key component fingerprint mismatch");
             }
-            if (!entities.containsKey(binding.entityKey())) {
+            if (!entities.containsKey(binding.entityKey())
+                    && !tombstones.contains(binding.entityKey())) {
                 throw new IllegalArgumentException(
-                        "business-key binding targets a missing entity");
+                        "business-key binding targets neither a live entity nor a tombstone");
             }
             String coordinate = binding.keyName() + "\0" + binding.valueFingerprint();
             if (!businessCoordinates.add(coordinate)) {

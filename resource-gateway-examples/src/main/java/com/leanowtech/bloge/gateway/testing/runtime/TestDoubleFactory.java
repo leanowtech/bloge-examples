@@ -102,7 +102,8 @@ public class TestDoubleFactory {
         }
         Operator<Object, Object> controlled = new ControlledOperator(node, binding, rules,
                 (Operator<Object, Object>) typed, implicitDeny, recorder, replayPayloads,
-                null, ResolvedCorpusPayloads.empty(), MirrorResolutionObserver.noop());
+                null, ResolvedCorpusPayloads.empty(), MirrorResolutionObserver.noop(),
+                null);
         return observed(node, binding, controlled, recorder);
     }
 
@@ -137,7 +138,7 @@ public class TestDoubleFactory {
                 node, binding, requiredControl.rules(), (Operator<Object, Object>) typed,
                 requiredControl.implicitDeny(), recorder, replayPayloads, requiredControl,
                 ResolvedCorpusPayloads.empty(),
-                Objects.requireNonNull(mirrorObserver, "mirrorObserver"));
+                Objects.requireNonNull(mirrorObserver, "mirrorObserver"), null);
         return observed(node, binding, controlled, recorder);
     }
 
@@ -164,6 +165,35 @@ public class TestDoubleFactory {
             ResolvedReplayPayloads replayPayloads,
             ResolvedCorpusPayloads corpusPayloads,
             MirrorResolutionObserver mirrorObserver) {
+        return create(node, binding, control, realOperator, recorder,
+                replayPayloads, corpusPayloads, mirrorObserver, null);
+    }
+
+    /**
+     * Creates a mirror control that shares one immutable session state head across the run.
+     *
+     * @param node frozen node specification
+     * @param binding occurrence-specific invocation coordinates
+     * @param control exact compiled site control
+     * @param realOperator frozen real binding
+     * @param recorder shared test evidence recorder
+     * @param replayPayloads exact governed replay closure
+     * @param corpusPayloads exact governed recorded corpus closure
+     * @param mirrorObserver mirror provenance sink
+     * @param sessionContext immutable session state head, or {@code null}
+     * @return isolated controlled operator
+     */
+    @SuppressWarnings("unchecked")
+    public Operator<Object, Object> create(
+            NodeSpec node,
+            InvocationRecorder.InvocationBinding binding,
+            CompiledExecutionControl.ResolvedControl control,
+            Object realOperator,
+            InvocationRecorder recorder,
+            ResolvedReplayPayloads replayPayloads,
+            ResolvedCorpusPayloads corpusPayloads,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorResolver.SessionContext sessionContext) {
         if (!(realOperator instanceof Operator<?, ?> typed)) {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
@@ -174,7 +204,8 @@ public class TestDoubleFactory {
                 node, binding, requiredControl.rules(), (Operator<Object, Object>) typed,
                 requiredControl.implicitDeny(), recorder, replayPayloads, requiredControl,
                 corpusPayloads,
-                Objects.requireNonNull(mirrorObserver, "mirrorObserver"));
+                Objects.requireNonNull(mirrorObserver, "mirrorObserver"),
+                sessionContext);
         return observed(node, binding, controlled, recorder);
     }
 
@@ -218,6 +249,7 @@ public class TestDoubleFactory {
         private final CompiledExecutionControl.ResolvedControl compiledControl;
         private final ResolvedCorpusPayloads corpusPayloads;
         private final MirrorResolutionObserver mirrorObserver;
+        private final MirrorResolver.SessionContext sessionContext;
 
         private ControlledOperator(NodeSpec node, InvocationRecorder.InvocationBinding binding,
                                    List<FixtureRule> rules,
@@ -226,7 +258,8 @@ public class TestDoubleFactory {
                                    ResolvedReplayPayloads replayPayloads,
                                    CompiledExecutionControl.ResolvedControl compiledControl,
                                    ResolvedCorpusPayloads corpusPayloads,
-                                   MirrorResolutionObserver mirrorObserver) {
+                                   MirrorResolutionObserver mirrorObserver,
+                                   MirrorResolver.SessionContext sessionContext) {
             this.node = node;
             this.binding = Objects.requireNonNull(binding, "binding");
             this.site = binding.site();
@@ -240,6 +273,7 @@ public class TestDoubleFactory {
             this.corpusPayloads = corpusPayloads == null
                     ? ResolvedCorpusPayloads.empty() : corpusPayloads;
             this.mirrorObserver = Objects.requireNonNull(mirrorObserver, "mirrorObserver");
+            this.sessionContext = sessionContext;
         }
 
         @Override
@@ -300,7 +334,8 @@ public class TestDoubleFactory {
                     objectMapper, input);
             MirrorResolver.Request request = new MirrorResolver.Request(
                     site, binding.occurrence(), attempt, requestFingerprint, input, matched,
-                    corpusPayloads.forSite(site.invocationSiteId()).orElse(null));
+                    corpusPayloads.forSite(site.invocationSiteId()).orElse(null),
+                    sessionContext);
             MirrorResolverChain.Decision decision = mirrorResolverChain.resolve(
                     compiledControl, request);
             if (decision.abstained()) {

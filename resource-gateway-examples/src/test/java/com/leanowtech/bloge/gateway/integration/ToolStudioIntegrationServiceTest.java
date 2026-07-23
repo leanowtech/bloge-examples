@@ -319,7 +319,9 @@ class ToolStudioIntegrationServiceTest {
                                 .MirrorPlanCreateRequest.SCHEMA_VERSION))
                 .containsEntry("mirrorExecutionRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorExecutionRequest.SCHEMA_VERSION))
+                                .MirrorExecutionRequest.SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorExecutionRequest.STATEFUL_SCHEMA_VERSION))
                 .containsEntry("mirrorRunSummary", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorRunSummary.SCHEMA_VERSION))
@@ -371,11 +373,13 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
-    void capabilitiesAdvertiseStatefulSessionApiAndStoreWithoutClaimingRuntimeReadiness() {
+    void capabilitiesAdvertiseStateResolverOnlyWhenExecutionAndStoreAreReady() {
         ToolStudioIntegrationService service =
                 service(null, null, null, null);
         java.util.concurrent.atomic.AtomicBoolean ready =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
+        service.configureMirrorRuntime(
+                new MirrorRuntimeAvailability(true, true, ready::get));
         service.configureMirrorStatefulRuntime(
                 new MirrorStatefulRuntimeAvailability(
                         true, ready::get));
@@ -395,10 +399,11 @@ class ToolStudioIntegrationServiceTest {
         assertThat(available.features())
                 .containsEntry("mirrorStatefulSessionApi", true)
                 .containsEntry("mirrorStatefulStateStoreReady", true)
-                .containsEntry("mirrorStatefulResolverReady", false)
+                .containsEntry("mirrorStatefulResolverReady", true)
                 .containsEntry("mirrorStatefulRuntimeReady", false);
         assertThat(available.supportedObjects())
                 .containsKeys(
+                        "stateReadSpec",
                         "mirrorSessionPayload",
                         "mirrorSessionCreateRequest",
                         "mirrorSessionDescriptor",

@@ -18,9 +18,10 @@ import java.util.Set;
 /**
  * Independent strict-schema and canonical-integrity verifier for stateful mirror artifacts.
  *
- * <p>The verifier links neither Resource Gateway nor Spring. It checks state models, write
- * effects, and payload-bearing session snapshots directly from JSON, making it suitable for TEE
- * ingress, ANEKE workbook import, deployment probes, and non-server compatibility tests.</p>
+ * <p>The verifier links neither Resource Gateway nor Spring. It checks state models, state-read
+ * lowerings, write effects, and payload-bearing session snapshots directly from JSON, making it
+ * suitable for TEE ingress, ANEKE workbook import, deployment probes, and non-server
+ * compatibility tests.</p>
  */
 public final class MirrorStateProtocolVerifier {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -123,6 +124,86 @@ public final class MirrorStateProtocolVerifier {
             }
         }
         return false;
+    }
+
+    /**
+     * Verifies one sealed state-backed read lowering against its exact state model.
+     *
+     * @param value state-read-spec JSON
+     * @param stateModel exact state-model JSON
+     * @return payload-free verified read identity
+     */
+    public VerifiedStateReadSpec verifyStateReadSpec(
+            JsonNode value, JsonNode stateModel) {
+        VerifiedStateModel verifiedModel = verifyStateModel(stateModel);
+        CapabilityMirrorSchemaValidator.require(
+                value,
+                CapabilityMirrorProtocol.STATE_READ_SPEC_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.STATE_READ_SPEC_SCHEMA_INVALID");
+        requireFingerprint(value, "fingerprint",
+                "RG.MIRROR.CLIENT.STATE_READ_SPEC_FINGERPRINT_MISMATCH");
+        if (!value.path("scope").equals(stateModel.path("scope"))
+                || !value.at("/scope/tenantId").asText()
+                .equals(value.at("/provenance/tenantId").asText())) {
+            throw invalid("RG.MIRROR.CLIENT.STATE_READ_SPEC_SCOPE_MISMATCH");
+        }
+        JsonNode modelRef = value.path("stateModelRef");
+        if (!referenceCoordinate(
+                "STATE_MODEL", verifiedModel.stateModelId(), verifiedModel.revision(),
+                verifiedModel.fingerprint()).equals(referenceCoordinate(modelRef))) {
+            throw invalid("RG.MIRROR.CLIENT.STATE_READ_SPEC_MODEL_MISMATCH");
+        }
+        JsonNode entity = null;
+        for (JsonNode candidate : stateModel.path("entityTypes")) {
+            if (candidate.path("entityType").asText()
+                    .equals(value.path("entityType").asText())) {
+                entity = candidate;
+                break;
+            }
+        }
+        if (entity == null) {
+            throw invalid("RG.MIRROR.CLIENT.STATE_READ_SPEC_ENTITY_UNKNOWN");
+        }
+        JsonNode businessKey = null;
+        for (JsonNode candidate : entity.path("businessKeys")) {
+            if (candidate.path("name").asText()
+                    .equals(value.path("businessKeyName").asText())) {
+                businessKey = candidate;
+                break;
+            }
+        }
+        if (businessKey == null
+                || businessKey.path("fieldPaths").size()
+                != value.path("keyComponents").size()) {
+            throw invalid("RG.MIRROR.CLIENT.STATE_READ_SPEC_BUSINESS_KEY_INVALID");
+        }
+        for (JsonNode component : value.path("keyComponents")) {
+            verifyExpression(component);
+            verifyExpressionOperators(
+                    component,
+                    Set.of("LITERAL", "INPUT_POINTER", "CONCAT"),
+                    "RG.MIRROR.CLIENT.STATE_READ_SPEC_LOOKUP_INVALID");
+        }
+        JsonNode projection = value.path("responseProjection");
+        verifyExpression(projection);
+        verifyStateReadProjection(projection);
+        Instant createdAt = instant(
+                value.path("createdAt"),
+                "RG.MIRROR.CLIENT.STATE_READ_SPEC_TIME_INVALID");
+        JsonNode approvedAt = value.at("/provenance/approvedAt");
+        if (!approvedAt.isNull() && createdAt.isAfter(instant(
+                approvedAt, "RG.MIRROR.CLIENT.STATE_READ_SPEC_TIME_INVALID"))) {
+            throw invalid("RG.MIRROR.CLIENT.STATE_READ_SPEC_TIME_INVALID");
+        }
+        return new VerifiedStateReadSpec(
+                value.path("schemaVersion").asText(),
+                value.path("specId").asText(),
+                value.path("revision").asLong(),
+                value.path("fingerprint").asText(),
+                referenceCoordinate(value.path("targetCapabilityRef")),
+                verifiedModel.fingerprint(),
+                value.path("entityType").asText(),
+                value.path("businessKeyName").asText());
     }
 
     /**
@@ -374,6 +455,19 @@ public final class MirrorStateProtocolVerifier {
         List<JsonNode> writeEffects = new ArrayList<>();
         value.path("writeEffects").forEach(writeEffects::add);
         VerifiedStateModel stateModel = verifyStateModel(value.path("stateModel"));
+        Set<String> readCoordinates = new HashSet<>();
+        Set<String> readCapabilities = new HashSet<>();
+        for (JsonNode readSpec : value.path("stateReadSpecs")) {
+            VerifiedStateReadSpec verified =
+                    verifyStateReadSpec(readSpec, value.path("stateModel"));
+            String coordinate = referenceCoordinate(
+                    "STATE_READ_SPEC", verified.specId(), verified.revision(),
+                    verified.fingerprint());
+            if (!readCoordinates.add(coordinate)
+                    || !readCapabilities.add(verified.targetCapabilityCoordinate())) {
+                throw invalid("RG.MIRROR.CLIENT.STATE_READ_SPEC_CLOSURE_INVALID");
+            }
+        }
         VerifiedSession session = verifySession(
                 value.path("state"), value.path("stateModel"), writeEffects);
         requireFingerprint(value, "fingerprint",
@@ -384,6 +478,7 @@ public final class MirrorStateProtocolVerifier {
                 session.stateRevision(),
                 value.path("fingerprint").asText(),
                 stateModel.fingerprint(),
+                readCoordinates.size(),
                 writeEffects.size());
     }
 
@@ -404,14 +499,39 @@ public final class MirrorStateProtocolVerifier {
             JsonNode stateModel,
             List<JsonNode> writeEffects,
             JsonNode state) {
+        return sealSessionPayload(stateModel, List.of(), writeEffects, state);
+    }
+
+    /**
+     * Builds and seals one session aggregate with exact state-read and write closure.
+     *
+     * <p>The returned value contains customer-shaped state and must be kept out of logs, public
+     * evidence, and control-plane persistence.</p>
+     *
+     * @param stateModel exact sealed state model
+     * @param stateReadSpecs exact admitted sealed state-read lowerings
+     * @param writeEffects exact admitted sealed write effects
+     * @param state exact sealed initial or checkpoint session state
+     * @return detached strict-schema and fingerprint-verified session payload
+     */
+    public JsonNode sealSessionPayload(
+            JsonNode stateModel,
+            List<JsonNode> stateReadSpecs,
+            List<JsonNode> writeEffects,
+            JsonNode state) {
+        List<JsonNode> reads = stateReadSpecs == null
+                ? List.of() : List.copyOf(stateReadSpecs);
         List<JsonNode> effects = writeEffects == null
                 ? List.of() : List.copyOf(writeEffects);
+        reads.forEach(readSpec -> verifyStateReadSpec(readSpec, stateModel));
         verifySession(state, stateModel, effects);
         ObjectNode payload = JSON.createObjectNode();
         payload.put(
                 "schemaVersion",
                 CapabilityMirrorProtocol.MIRROR_SESSION_PAYLOAD_V1);
         payload.set("stateModel", stateModel.deepCopy());
+        var encodedReads = payload.putArray("stateReadSpecs");
+        reads.forEach(readSpec -> encodedReads.add(readSpec.deepCopy()));
         var encodedEffects = payload.putArray("writeEffects");
         effects.forEach(effect -> encodedEffects.add(effect.deepCopy()));
         payload.set("state", state.deepCopy());
@@ -625,6 +745,36 @@ public final class MirrorStateProtocolVerifier {
         }
     }
 
+    private void verifyExpressionOperators(
+            JsonNode root, Set<String> allowed, String failureCode) {
+        ArrayDeque<JsonNode> remaining = new ArrayDeque<>();
+        remaining.push(root);
+        while (!remaining.isEmpty()) {
+            JsonNode value = remaining.pop();
+            if (!allowed.contains(value.path("operator").asText())) {
+                throw invalid(failureCode);
+            }
+            value.path("arguments").forEach(remaining::push);
+            value.path("fields").elements().forEachRemaining(remaining::push);
+        }
+    }
+
+    private void verifyStateReadProjection(JsonNode root) {
+        ArrayDeque<JsonNode> remaining = new ArrayDeque<>();
+        remaining.push(root);
+        while (!remaining.isEmpty()) {
+            JsonNode value = remaining.pop();
+            String operator = value.path("operator").asText();
+            if ("DETERMINISTIC_ID".equals(operator) || "SEQUENCE".equals(operator)
+                    || "ENTITY_POINTER".equals(operator)
+                    && !"result".equals(value.path("reference").asText())) {
+                throw invalid("RG.MIRROR.CLIENT.STATE_READ_SPEC_PROJECTION_INVALID");
+            }
+            value.path("arguments").forEach(remaining::push);
+            value.path("fields").elements().forEachRemaining(remaining::push);
+        }
+    }
+
     private static void verifyExpressionShape(JsonNode value) {
         String operator = value.path("operator").asText();
         int arguments = value.path("arguments").size();
@@ -760,6 +910,30 @@ public final class MirrorStateProtocolVerifier {
     }
 
     /**
+     * Payload-free identity of a verified state-backed read lowering.
+     *
+     * @param schemaVersion verified protocol version
+     * @param specId stable read-spec id
+     * @param revision exact revision
+     * @param fingerprint verified content fingerprint
+     * @param targetCapabilityCoordinate exact capability reference coordinate
+     * @param stateModelFingerprint exact model fingerprint
+     * @param entityType selected state entity type
+     * @param businessKeyName selected business-key definition
+     */
+    public record VerifiedStateReadSpec(
+            String schemaVersion,
+            String specId,
+            long revision,
+            String fingerprint,
+            String targetCapabilityCoordinate,
+            String stateModelFingerprint,
+            String entityType,
+            String businessKeyName
+    ) {
+    }
+
+    /**
      * Payload-free identity and cardinality of a verified session snapshot.
      *
      * @param schemaVersion verified protocol version
@@ -789,6 +963,7 @@ public final class MirrorStateProtocolVerifier {
      * @param stateRevision committed state revision
      * @param fingerprint verified aggregate fingerprint
      * @param stateModelFingerprint exact state-model fingerprint
+     * @param stateReadSpecCount admitted state-read-spec count
      * @param writeEffectCount admitted write-effect count
      */
     public record VerifiedSessionPayload(
@@ -797,6 +972,7 @@ public final class MirrorStateProtocolVerifier {
             long stateRevision,
             String fingerprint,
             String stateModelFingerprint,
+            int stateReadSpecCount,
             int writeEffectCount
     ) {
     }

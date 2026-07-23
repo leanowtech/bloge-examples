@@ -25,12 +25,16 @@ public class StatefulMirrorProtocolTest {
     @Test
     void sealsAndVerifiesARefundStateModelAndAtomicWriteEffect() {
         StateModel model = StateModelIntegrity.seal(mapper, stateModel());
+        StateReadSpec readSpec = StateReadSpecIntegrity.seal(
+                mapper, queryOrderReadSpec(model));
         WriteEffectSpec effect = WriteEffectSpecIntegrity.seal(mapper, refundEffect(model));
 
         StateModelIntegrity.verify(mapper, model);
+        StateReadSpecIntegrity.verify(mapper, readSpec, model);
         WriteEffectSpecIntegrity.verify(mapper, effect, model);
 
         assertThat(model.fingerprint()).startsWith("sha256:");
+        assertThat(readSpec.fingerprint()).startsWith("sha256:");
         assertThat(effect.fingerprint()).startsWith("sha256:");
         assertThat(effect.mutations()).extracting(WriteEffectSpec.Mutation::mutationId)
                 .containsExactly("create-refund", "update-order");
@@ -167,13 +171,22 @@ public class StatefulMirrorProtocolTest {
     @Test
     void canonicalRefundCompatibilityFixtureDoesNotDrift() throws Exception {
         StateModel model = StateModelIntegrity.seal(mapper, stateModel());
+        StateReadSpec readSpec = StateReadSpecIntegrity.seal(
+                mapper, queryOrderReadSpec(model));
         WriteEffectSpec effect = WriteEffectSpecIntegrity.seal(mapper, refundEffect(model));
         SessionStateSpace initial = initialState(mapper, model, effect);
         ObjectNode fixture = mapper.createObjectNode();
         fixture.put("schemaVersion", "resourceGateway.statefulRefundFixture.v1");
         fixture.set("stateModel", mapper.valueToTree(model));
+        fixture.set("stateReadSpec", mapper.valueToTree(readSpec));
         fixture.set("writeEffect", mapper.valueToTree(effect));
         fixture.set("initialState", mapper.valueToTree(initial));
+        ObjectNode query = fixture.putArray("queries").addObject();
+        query.set("input", mapper.valueToTree(Map.of("orderId", "O-100")));
+        query.set("expectedResponse", mapper.valueToTree(Map.of(
+                "orderId", "O-100",
+                "paidAmount", 1000,
+                "refundedAmount", 0)));
         ObjectNode command = fixture.putArray("commands").addObject();
         command.set("input", mapper.valueToTree(Map.of(
                 "requestId", "REQ-1",
@@ -304,6 +317,24 @@ public class StatefulMirrorProtocolTest {
                         "status", BoundedStateExpression.entity(
                                 "create-refund", "/status"))),
                 new WriteEffectSpec.Idempotency("/requestId", true),
+                ownerProvenance(),
+                CapabilitySnapshot.Lifecycle.ACTIVE,
+                NOW);
+    }
+
+    public static StateReadSpec queryOrderReadSpec(StateModel model) {
+        return new StateReadSpec(
+                StateReadSpec.SCHEMA_VERSION,
+                "query-order",
+                1,
+                "",
+                scope(),
+                capabilityRef("query-order"),
+                StateModelIntegrity.reference(model),
+                "order",
+                "order-id",
+                List.of(BoundedStateExpression.input("/orderId")),
+                BoundedStateExpression.entity(StateReadSpec.RESULT_ALIAS, ""),
                 ownerProvenance(),
                 CapabilitySnapshot.Lifecycle.ACTIVE,
                 NOW);

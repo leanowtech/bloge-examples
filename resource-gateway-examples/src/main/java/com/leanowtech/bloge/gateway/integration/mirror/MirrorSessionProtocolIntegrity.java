@@ -91,6 +91,9 @@ public final class MirrorSessionProtocolIntegrity {
         Objects.requireNonNull(mapper, "mapper");
         Objects.requireNonNull(payload, "payload");
         StateModelIntegrity.verify(mapper, payload.stateModel());
+        for (StateReadSpec spec : payload.stateReadSpecs()) {
+            StateReadSpecIntegrity.verify(mapper, spec, payload.stateModel());
+        }
         for (WriteEffectSpec effect : payload.writeEffects()) {
             WriteEffectSpecIntegrity.verify(mapper, effect, payload.stateModel());
         }
