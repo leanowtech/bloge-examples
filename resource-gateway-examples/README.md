@@ -696,6 +696,12 @@ wrappers without restart. The reconciliation runtime also rejects non-database s
 or terminal-work journals and unsafe deadline/window/lease/capacity combinations. Its database
 journal discovers retained starts in bounded fair-scope pages; a verified terminal completion and
 projection-work registration commit atomically.
+Observation provider-call capacity is enforced by nonblocking admission permits. Active and
+interrupt-ignoring lingering calls consume permits and reject excess work immediately. A separate
+bounded executor buffer is only a worker-handoff mechanism after a provider has returned; it prevents
+a completed sequential descriptor/observation call from being misclassified as saturation while the
+worker is still in executor bookkeeping. Timeout, interruption, and close remove unstarted handoffs
+and recycle their permits, while a started provider retains its permit until it actually exits.
 Actuator health reports only aggregate discovery lag, due age, quarantine, scheduler state, and
 provider-call capacity. The provider-inventory health contributor similarly exposes aggregate
 refresh/cohort facts without replica, provider, deployment, key, fingerprint, or URI identities.

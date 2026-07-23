@@ -1,15 +1,17 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -18,9 +20,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Fixed-capacity, zero-queue boundary for physical-attempt observation providers.
+ * Fixed-capacity, non-queuing admission boundary for physical-attempt observation providers.
  *
- * <p>Descriptor and observation calls either begin immediately or fail closed. A local timeout
+ * <p>A nonblocking permit admits a call only when provider capacity is free. A bounded executor
+ * handoff buffer bridges the interval after one provider returns but before its worker can accept
+ * the next task; it never admits work behind an active or lingering provider call. A local timeout
  * requests interruption but proves neither that the provider did not observe the attempt nor any
  * particular lifecycle state. An adapter that ignores interruption remains in
  * {@link Snapshot#lingeringCalls()} and occupies its fixed slot until the provider call actually
@@ -33,7 +37,8 @@ public final class TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
 
     private final Policy policy;
     private final ThreadPoolExecutor executor;
-    private final Set<CallState<?>> runningCalls = ConcurrentHashMap.newKeySet();
+    private final Semaphore admissionSlots;
+    private final Set<CallState<?>> admittedCalls = ConcurrentHashMap.newKeySet();
     private final Object outcomeLock = new Object();
     private final Object occupancyLock = new Object();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -58,16 +63,31 @@ public final class TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
      * @param policy descriptor/observation deadlines and fixed process-local capacity
      */
     public TestSuiteStabilityPhysicalAttemptObservationCallSupervisor(Policy policy) {
+        this(policy, () -> {
+        });
+    }
+
+    TestSuiteStabilityPhysicalAttemptObservationCallSupervisor(
+            Policy policy, Runnable workerHandoffHook) {
         this.policy = Objects.requireNonNull(policy, "policy");
+        Runnable handoffHook = Objects.requireNonNull(workerHandoffHook, "workerHandoffHook");
         long poolId = POOL_SEQUENCE.incrementAndGet();
         AtomicLong threadSequence = new AtomicLong();
         ThreadFactory factory = task -> Thread.ofPlatform().daemon(true).name(
                 "resource-gateway-physical-attempt-observation-" + poolId + '-'
                         + threadSequence.incrementAndGet()).unstarted(task);
+        admissionSlots = new Semaphore(policy.maximumConcurrentCalls());
         executor = new ThreadPoolExecutor(
                 policy.maximumConcurrentCalls(), policy.maximumConcurrentCalls(),
-                0L, TimeUnit.MILLISECONDS, new SynchronousQueue<>(), factory,
-                new ThreadPoolExecutor.AbortPolicy());
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(policy.maximumConcurrentCalls()), factory,
+                new ThreadPoolExecutor.AbortPolicy()) {
+            @Override
+            protected void afterExecute(Runnable task, Throwable failure) {
+                super.afterExecute(task, failure);
+                handoffHook.run();
+            }
+        };
     }
 
     /**
@@ -128,7 +148,7 @@ public final class TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
             }
         }
         if (closing) {
-            runningCalls.forEach(CallState::requestCancellation);
+            List.copyOf(admittedCalls).forEach(CallState::requestCancellation);
         }
     }
 
@@ -137,18 +157,30 @@ public final class TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
             closedCalls.incrementAndGet();
             throw failed(callType, Disposition.CLOSED);
         }
+        if (!admissionSlots.tryAcquire()) {
+            if (closed.get()) {
+                closedCalls.incrementAndGet();
+                throw failed(callType, Disposition.CLOSED);
+            }
+            saturatedCalls.incrementAndGet();
+            throw failed(callType, Disposition.SATURATED);
+        }
         CallState<T> call = new CallState<>(operation);
-        Future<T> future;
+        FutureTask<T> future = new FutureTask<>(call);
+        call.attach(future);
         try {
             synchronized (outcomeLock) {
                 if (closed.get()) {
+                    call.rejectBeforeStart();
                     closedCalls.incrementAndGet();
                     throw failed(callType, Disposition.CLOSED);
                 }
-                future = executor.submit(call);
+                admittedCalls.add(call);
+                executor.execute(future);
                 acceptedCalls.incrementAndGet();
             }
         } catch (RejectedExecutionException saturated) {
+            call.rejectBeforeStart();
             if (closed.get()) {
                 closedCalls.incrementAndGet();
                 throw failed(callType, Disposition.CLOSED);
@@ -165,12 +197,10 @@ public final class TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
         } catch (TimeoutException timedOut) {
             increment(timedOutCalls);
             call.requestCancellation();
-            future.cancel(true);
             throw failed(callType, Disposition.TIMED_OUT);
         } catch (InterruptedException callerInterrupted) {
             increment(interruptedCalls);
             call.requestCancellation();
-            future.cancel(true);
             Thread.currentThread().interrupt();
             throw failed(callType, Disposition.CALLER_INTERRUPTED);
         } catch (ExecutionException | CancellationException | NullPointerException unavailable) {
@@ -340,10 +370,12 @@ public final class TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
 
     private final class CallState<T> implements Callable<T> {
         private final Callable<T> operation;
+        private FutureTask<T> future;
         private boolean started;
         private boolean completed;
         private boolean cancellationRequested;
         private boolean lingeringCounted;
+        private boolean admissionReleased;
 
         private CallState(Callable<T> operation) {
             this.operation = Objects.requireNonNull(operation, "operation");
@@ -353,14 +385,14 @@ public final class TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
         public T call() throws Exception {
             synchronized (this) {
                 synchronized (outcomeLock) {
-                    if (closed.get()) {
+                    if (admissionReleased || cancellationRequested || closed.get()) {
+                        releaseAdmission();
                         throw new CancellationException();
                     }
                     started = true;
                     synchronized (occupancyLock) {
                         activeCalls.incrementAndGet();
                     }
-                    runningCalls.add(this);
                 }
                 countLingeringIfRequired();
             }
@@ -369,22 +401,53 @@ public final class TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
             } finally {
                 synchronized (this) {
                     completed = true;
-                    if (lingeringCounted) {
-                        synchronized (occupancyLock) {
+                    synchronized (occupancyLock) {
+                        if (lingeringCounted) {
                             lingeringCalls.decrementAndGet();
                         }
+                        activeCalls.decrementAndGet();
                     }
+                    releaseAdmission();
                 }
-                synchronized (occupancyLock) {
-                    activeCalls.decrementAndGet();
-                }
-                runningCalls.remove(this);
             }
         }
 
-        private synchronized void requestCancellation() {
-            cancellationRequested = true;
-            countLingeringIfRequired();
+        private synchronized void attach(FutureTask<T> value) {
+            if (future != null) {
+                throw new IllegalStateException("provider call future is already attached");
+            }
+            future = Objects.requireNonNull(value, "future");
+        }
+
+        private void requestCancellation() {
+            FutureTask<T> attached;
+            synchronized (this) {
+                cancellationRequested = true;
+                countLingeringIfRequired();
+                attached = future;
+            }
+            if (attached != null) {
+                attached.cancel(true);
+                synchronized (this) {
+                    if (!started) {
+                        executor.remove(attached);
+                        completed = true;
+                        releaseAdmission();
+                    }
+                }
+            }
+        }
+
+        private synchronized void rejectBeforeStart() {
+            if (started) {
+                throw new IllegalStateException("started provider call cannot be rejected");
+            }
+            completed = true;
+            if (future != null) {
+                future.cancel(false);
+                executor.remove(future);
+            }
+            releaseAdmission();
         }
 
         private void countLingeringIfRequired() {
@@ -393,6 +456,14 @@ public final class TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
                 synchronized (occupancyLock) {
                     lingeringCalls.incrementAndGet();
                 }
+            }
+        }
+
+        private void releaseAdmission() {
+            if (!admissionReleased) {
+                admissionReleased = true;
+                admittedCalls.remove(this);
+                admissionSlots.release();
             }
         }
     }

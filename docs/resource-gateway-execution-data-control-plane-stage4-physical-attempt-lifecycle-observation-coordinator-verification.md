@@ -38,19 +38,25 @@ bounded provider.descriptor
 
 ## 3. Observation Call Supervisor
 
-`TestSuiteStabilityPhysicalAttemptObservationCallSupervisor` 使用固定大小 platform daemon worker 和
-`SynchronousQueue`：
+`TestSuiteStabilityPhysicalAttemptObservationCallSupervisor` 使用固定大小 platform daemon worker、
+非阻塞 admission permit 和有界内部 handoff buffer。permit 而不是 executor queue 定义 provider 容量：
 
 | 语义 | 约束 |
 | --- | --- |
 | 容量 | 1..32 fixed workers |
-| 排队 | 0；无空闲 worker 时立即 `SATURATED` |
+| provider 排队 | 0；所有 admission permit 被 active/lingering provider 占用时立即 `SATURATED` |
+| worker handoff | 最多等于 worker 数；仅桥接 provider 已返回、worker 尚在 `afterExecute` 的收尾窗口 |
 | descriptor timeout | 100 ms..30 s，毫秒精确 |
 | observation timeout | 100 ms..5 min，毫秒精确 |
 | adapter diagnostics | 不进入 exception message/cause |
 | caller interrupt | 恢复 interrupt flag，返回 `CALLER_INTERRUPTED` |
 | non-cooperative adapter | 继续占用原 slot，并进入 `lingeringCalls` |
 | close | 拒绝新调用，请求 interrupt，不无界等待 adapter |
+
+provider 返回后先原子清理 active/lingering occupancy，再归还 admission permit；因此调用方已看到前一
+`Future` 完成后，下一次严格串行调用不会因 worker 尚未重新进入取任务状态而被误判为 `SATURATED`。
+handoff 中尚未启动的调用若超时、调用方中断或 supervisor 关闭，会从 executor buffer 移除并幂等归还
+permit。已经进入 provider 的调用不会提前归还 permit；忽略 interrupt 的 adapter 仍持续占槽直至真实返回。
 
 `TIMED_OUT/CALLER_INTERRUPTED/UNAVAILABLE` 只是本地等待结果。它们不证明 provider 未执行，也不证明
 attempt 处于 `START_PENDING/RUNNING/TERMINAL/NOT_OBSERVED/INDETERMINATE` 中的任何状态。
@@ -141,6 +147,21 @@ JAR entry inspection 确认 `TestSuiteStabilityPhysicalAttemptObservationCallSup
 `TestSuiteStabilityPhysicalAttemptObservationCoordinator` 均进入 `BOOT-INF/classes`。因此 Maven 汇总、结构化
 XML、发布制品和进程收敛四个观察面一致；该结论只覆盖此 immutable snapshot，不以共享 worktree 的缓存或
 进程状态替代证据。
+
+### 6.1 Worker handoff 竞态修正
+
+2026-07-23 的全量门禁曾捕获一条真实时序错误：capacity 为 1 时，descriptor `Future` 已完成但 worker 仍在
+`afterExecute`，紧接的 observation 被 `SynchronousQueue` 误判为 `SATURATED`。新增测试通过受控 hook 固定该窗口，
+旧实现确定性红灯；permit admission 与 bounded handoff 实现后，以下场景同时通过：
+
+- 已完成调用后的严格串行 handoff 不计 saturation；
+- active 或 interrupt-ignoring lingering provider 仍立即拒绝新增调用；
+- handoff 中未启动任务超时后从 buffer 删除并回收 permit；
+- close 立即取消未启动 handoff，不等待调用 deadline；
+- caller interrupt、null/failing adapter、snapshot counter 和关闭后拒绝语义保持不变。
+
+关联 supervisor/coordinator/runtime/scheduler/health 回归 `45/45`；Resource Gateway `clean verify`
+为 `4542` tests、0 failures、0 errors、3 条条件跳过，真实 Chrome 与可执行 Spring Boot JAR 同时通过。
 
 ## 7. 尚未闭合
 

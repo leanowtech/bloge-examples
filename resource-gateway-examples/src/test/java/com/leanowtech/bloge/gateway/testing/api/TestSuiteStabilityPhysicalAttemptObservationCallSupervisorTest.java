@@ -58,6 +58,132 @@ class TestSuiteStabilityPhysicalAttemptObservationCallSupervisorTest {
     }
 
     @Test
+    void completedSequentialCallIsNotMisclassifiedDuringWorkerHandoff() throws Exception {
+        CountDownLatch handoffEntered = new CountDownLatch(1);
+        CountDownLatch releaseHandoff = new CountDownLatch(1);
+        AtomicBoolean blockFirstHandoff = new AtomicBoolean(true);
+        TestSuiteStabilityPhysicalAttemptObservationAuthority authority = authority(
+                TestSuiteStabilityPhysicalAttemptObservationCallSupervisorTest::descriptor,
+                ignored -> attestation(command()));
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        var policy = new TestSuiteStabilityPhysicalAttemptObservationCallSupervisor.Policy(
+                Duration.ofSeconds(1), Duration.ofSeconds(1), 1);
+
+        try (var supervisor =
+                     new TestSuiteStabilityPhysicalAttemptObservationCallSupervisor(
+                             policy, () -> {
+                                 if (blockFirstHandoff.compareAndSet(true, false)) {
+                                     handoffEntered.countDown();
+                                     await(releaseHandoff);
+                                 }
+                             })) {
+            assertThat(supervisor.descriptor(authority)).isEqualTo(descriptor());
+            assertThat(handoffEntered.await(2, TimeUnit.SECONDS)).isTrue();
+
+            Future<TestSuiteStabilityPhysicalAttemptObservationAuthority.Descriptor> next =
+                    caller.submit(() -> supervisor.descriptor(authority));
+            assertThat(next.isDone()).isFalse();
+
+            releaseHandoff.countDown();
+            assertThat(next.get(2, TimeUnit.SECONDS)).isEqualTo(descriptor());
+            assertThat(supervisor.snapshot().saturatedCalls()).isZero();
+        } finally {
+            releaseHandoff.countDown();
+            caller.shutdownNow();
+            assertThat(caller.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void timedOutWorkerHandoffIsRemovedAndItsAdmissionPermitIsRecycled() throws Exception {
+        CountDownLatch handoffEntered = new CountDownLatch(1);
+        CountDownLatch releaseHandoff = new CountDownLatch(1);
+        AtomicBoolean blockFirstHandoff = new AtomicBoolean(true);
+        TestSuiteStabilityPhysicalAttemptObservationAuthority authority = authority(
+                TestSuiteStabilityPhysicalAttemptObservationCallSupervisorTest::descriptor,
+                ignored -> attestation(command()));
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        var policy = new TestSuiteStabilityPhysicalAttemptObservationCallSupervisor.Policy(
+                Duration.ofMillis(100), Duration.ofSeconds(1), 1);
+
+        try (var supervisor =
+                     new TestSuiteStabilityPhysicalAttemptObservationCallSupervisor(
+                             policy, () -> {
+                                 if (blockFirstHandoff.compareAndSet(true, false)) {
+                                     handoffEntered.countDown();
+                                     await(releaseHandoff);
+                                 }
+                             })) {
+            assertThat(supervisor.descriptor(authority)).isEqualTo(descriptor());
+            assertThat(handoffEntered.await(2, TimeUnit.SECONDS)).isTrue();
+            assertInvocation(() -> supervisor.descriptor(authority),
+                    TestSuiteStabilityPhysicalAttemptObservationCallSupervisor.CallType
+                            .DESCRIPTOR,
+                    TestSuiteStabilityPhysicalAttemptObservationCallSupervisor.Disposition
+                            .TIMED_OUT);
+
+            Future<TestSuiteStabilityPhysicalAttemptObservationAuthority.Descriptor> next =
+                    caller.submit(() -> supervisor.descriptor(authority));
+            assertThat(next.isDone()).isFalse();
+            releaseHandoff.countDown();
+
+            assertThat(next.get(2, TimeUnit.SECONDS)).isEqualTo(descriptor());
+            assertThat(supervisor.snapshot().timedOutCalls()).isEqualTo(1);
+            assertThat(supervisor.snapshot().saturatedCalls()).isZero();
+        } finally {
+            releaseHandoff.countDown();
+            caller.shutdownNow();
+            assertThat(caller.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void closeCancelsAnUnstartedWorkerHandoffWithoutWaitingForItsDeadline() throws Exception {
+        CountDownLatch handoffEntered = new CountDownLatch(1);
+        CountDownLatch releaseHandoff = new CountDownLatch(1);
+        AtomicBoolean blockFirstHandoff = new AtomicBoolean(true);
+        TestSuiteStabilityPhysicalAttemptObservationAuthority authority = authority(
+                TestSuiteStabilityPhysicalAttemptObservationCallSupervisorTest::descriptor,
+                ignored -> attestation(command()));
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        var supervisor = new TestSuiteStabilityPhysicalAttemptObservationCallSupervisor(
+                new TestSuiteStabilityPhysicalAttemptObservationCallSupervisor.Policy(
+                        Duration.ofSeconds(2), Duration.ofSeconds(2), 1),
+                () -> {
+                    if (blockFirstHandoff.compareAndSet(true, false)) {
+                        handoffEntered.countDown();
+                        awaitOrPreserveInterrupt(releaseHandoff);
+                    }
+                });
+        try {
+            assertThat(supervisor.descriptor(authority)).isEqualTo(descriptor());
+            assertThat(handoffEntered.await(2, TimeUnit.SECONDS)).isTrue();
+            Future<?> next = caller.submit(() -> supervisor.descriptor(authority));
+            awaitAccepted(supervisor, 2);
+
+            supervisor.close();
+
+            assertThatThrownBy(() -> next.get(500, TimeUnit.MILLISECONDS))
+                    .isInstanceOfSatisfying(java.util.concurrent.ExecutionException.class,
+                            failure -> assertThat(failure.getCause())
+                                    .isInstanceOfSatisfying(
+                                            TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
+                                                    .InvocationException.class,
+                                            invocation -> assertThat(invocation.disposition())
+                                                    .isEqualTo(
+                                                            TestSuiteStabilityPhysicalAttemptObservationCallSupervisor
+                                                                    .Disposition.UNAVAILABLE)));
+            assertThat(supervisor.snapshot().closed()).isTrue();
+            assertThat(supervisor.snapshot().activeCalls()).isZero();
+        } finally {
+            releaseHandoff.countDown();
+            supervisor.close();
+            caller.shutdownNow();
+            assertThat(caller.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
     void zeroQueueSaturationRejectsBeforeAnotherProviderCallStarts() throws Exception {
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -380,6 +506,19 @@ class TestSuiteStabilityPhysicalAttemptObservationCallSupervisorTest {
         assertThat(supervisor.snapshot().lingeringCalls()).isEqualTo(lingering);
     }
 
+    private static void awaitAccepted(
+            TestSuiteStabilityPhysicalAttemptObservationCallSupervisor supervisor,
+            long accepted) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            if (supervisor.snapshot().acceptedCalls() == accepted) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        assertThat(supervisor.snapshot().acceptedCalls()).isEqualTo(accepted);
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             if (!latch.await(2, TimeUnit.SECONDS)) {
@@ -388,6 +527,16 @@ class TestSuiteStabilityPhysicalAttemptObservationCallSupervisorTest {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Provider test latch interrupted");
+        }
+    }
+
+    private static void awaitOrPreserveInterrupt(CountDownLatch latch) {
+        try {
+            if (!latch.await(2, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Provider test latch timed out");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
