@@ -22,7 +22,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -117,6 +119,44 @@ class MirrorDeploymentIsolationAuthorityPublicationControllerTest {
                 .accepts("MIRROR_REHEARSAL")).isFalse();
         assertThat(IntegrationOperation.MIRROR_ISOLATION_AUTHORITY_READ
                 .accepts("MIRROR_TRUST_ADMIN")).isFalse();
+    }
+
+    @Test
+    void currentReadsRequireExactAgentProtocolAndReturnVendorJson() throws Exception {
+        var service = mock(MirrorDeploymentIsolationAuthorityPublicationService.class);
+        var authenticator = mock(IntegrationRequestAuthenticator.class);
+        var publication = fixtures.publication(1, "");
+        when(authenticator.authenticate(any(HttpHeaders.class),
+                eq(IntegrationOperation.MIRROR_ISOLATION_AUTHORITY_READ)))
+                .thenReturn(identity("MIRROR_TRUST_DISTRIBUTION"));
+        when(service.latest(eq(MirrorDeploymentIsolationAuthorityPublicationTestFixtures
+                        .DEPLOYMENT_SCOPE_ID),
+                eq(MirrorDeploymentIsolationAuthorityPublicationTestFixtures.KEY_SET_ID),
+                any(IntegrationRequestContext.class))).thenReturn(publication);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(
+                        new MirrorDeploymentIsolationAuthorityPublicationController(
+                                service, authenticator,
+                                new MirrorDeploymentIsolationAuthorityPublicationDecoder(
+                                        fixtures.mapper)))
+                .setControllerAdvice(new IntegrationProblemHandler())
+                .build();
+
+        var request = get(
+                "/api/mirror/trust/deployment-isolation/authority-key-sets/{id}/latest",
+                MirrorDeploymentIsolationAuthorityPublicationTestFixtures.KEY_SET_ID)
+                .queryParam("deploymentScopeId",
+                        MirrorDeploymentIsolationAuthorityPublicationTestFixtures
+                                .DEPLOYMENT_SCOPE_ID)
+                .accept(MirrorDeploymentIsolationTrustDistributionProtocol.MEDIA_TYPE);
+        mvc.perform(request).andExpect(status().isNotFound());
+        mvc.perform(request.header(
+                        MirrorDeploymentIsolationTrustDistributionProtocol.REQUEST_HEADER,
+                        MirrorDeploymentIsolationTrustDistributionProtocol.VERSION))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(
+                        MirrorDeploymentIsolationTrustDistributionProtocol.MEDIA_TYPE))
+                .andExpect(jsonPath("$.payload.publicationFingerprint")
+                        .value(publication.publicationFingerprint()));
     }
 
     private static IntegrationRequestContext identity(String purpose) {

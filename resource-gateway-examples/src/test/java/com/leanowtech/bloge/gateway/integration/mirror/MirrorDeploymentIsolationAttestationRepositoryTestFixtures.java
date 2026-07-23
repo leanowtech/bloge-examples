@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Optional;
 
 /** Deterministic payload-free fixtures for deployment-isolation attestation repository tests. */
-final class MirrorDeploymentIsolationAttestationRepositoryTestFixtures {
+public final class MirrorDeploymentIsolationAttestationRepositoryTestFixtures {
     static final String KEY_SET_ID = "mirror-isolation-authorities:staging";
     static final String ATTESTATION_ID = "mirror-staging-isolation";
     static final long BOOTSTRAP_REVISION = 7;
@@ -37,6 +37,29 @@ final class MirrorDeploymentIsolationAttestationRepositoryTestFixtures {
     private final Instant expiresAt = observedAt.plusSeconds(600);
     final Clock activeClock = Clock.fixed(base.plusSeconds(11), ZoneOffset.UTC);
     final Clock expiredClock = Clock.fixed(expiresAt.plusSeconds(1), ZoneOffset.UTC);
+
+    public MirrorDeploymentIsolationAttestationRepositoryTestFixtures() {
+    }
+
+    public DistributionFixtures distributionFixtures() {
+        var publication = authorityPublication();
+        var signed = attestation(BOOTSTRAP_REVISION, deployment("cluster-a"), fingerprint('2'));
+        var status = bundleIntegrity.activeStatus(scope("org-a"), publication.artifactRef(),
+                signed, activeClock.instant());
+        var bundle = bundleIntegrity.bundle(scope("org-a"), publication.artifactRef(),
+                signed, status);
+        return new DistributionFixtures(mapper, publication, bundle,
+                deployment("cluster-a").deploymentScopeId(), KEY_SET_ID, ATTESTATION_ID);
+    }
+
+    public record DistributionFixtures(
+            ObjectMapper mapper,
+            MirrorDeploymentIsolationAuthorityKeySetPublication authority,
+            MirrorDeploymentIsolationAttestationBundle bundle,
+            String deploymentScopeId,
+            String keySetId,
+            String attestationId) {
+    }
 
     MirrorDeploymentIsolationAttestationBundle bundle(long revision) {
         return bundle(revision, scope("org-a"), deployment("cluster-a"), fingerprint('2'));

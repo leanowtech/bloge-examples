@@ -295,6 +295,9 @@ public record IntegrationCapabilities(
         objects.put("mirrorDeploymentIsolationAttestationBundle", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAttestationBundle.SCHEMA_VERSION));
+        objects.put("mirrorDeploymentIsolationAgentSnapshot", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorDeploymentIsolationAgentSnapshot.SCHEMA_VERSION));
         objects.put("mirrorDeploymentIsolationAttestationRevocationRequest", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAttestationRevocationRequest.SCHEMA_VERSION));
@@ -737,6 +740,7 @@ public record IntegrationCapabilities(
         features.put("mirrorIsolationAttestationTrustProtocol", true);
         features.put("mirrorIsolationAttestationDistributionApi", false);
         features.put("mirrorIsolationAttestationDistributionReady", false);
+        features.put("mirrorIsolationDeploymentAgentProtocol", true);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);

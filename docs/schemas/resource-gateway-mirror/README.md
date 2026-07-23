@@ -24,6 +24,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-deployment-isolation-attestation-v1.schema.json` | `MirrorDeploymentIsolationAttestation` | Short-lived external proof binding an exact deployment generation to fail-closed egress and credential controls |
 | `mirror-deployment-isolation-attestation-status-v1.schema.json` | `MirrorDeploymentIsolationAttestationStatusPublication` | Locally content-addressed `ACTIVE` or irreversible `REVOKED` status for one exact attestation revision |
 | `mirror-deployment-isolation-attestation-bundle-v1.schema.json` | `MirrorDeploymentIsolationAttestationBundle` | Atomic current-only distribution of authority reference, external attestation body, and local status |
+| `mirror-deployment-isolation-agent-snapshot-v1.schema.json` | `MirrorDeploymentIsolationAgentSnapshot` | Crash-safe local cache generation binding refresh deadline, optional denial-only authority body, and atomic attestation bundle |
 | `mirror-deployment-isolation-attestation-revocation-request-v1.schema.json` | `MirrorDeploymentIsolationAttestationRevocationRequest` | Exact-current optimistic command for one irreversible status transition |
 | `mirror-deployment-isolation-authority-key-set-publication-v1.schema.json` | `MirrorDeploymentIsolationAuthorityKeySetPublication` | Full-scope, monotonic, M-of-N bootstrap-root-signed publication of isolation-attestation authority keys |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
@@ -103,11 +104,17 @@ protected ingest/current/exact-current/revoke APIs. Ingest atomically commits bo
 status, head, and mandatory audit. An attestation revision can only move once to `REVOKED`; denial
 distribution deliberately bypasses positive authority availability, while every active read re-verifies
 the same current authority generation, key lifecycle, deployment identity, signature, and time window.
-These controls do **not** yet provide deployment-agent mTLS/HTTPS refresh and atomic cache replacement,
-bounded revocation delivery to agents, or execution-admission/evidence-projector binding. Current
-mirror runs therefore remain
+The deployment agent now pulls these artifacts through private-PKI, SPKI-pinned, identity-bound
+mTLS, enforces a separately provisioned bootstrap floor and contiguous successors, and atomically
+replaces one durable read-only snapshot. Valid revocation does not depend on positive authority
+availability, while an old active snapshot is usable only until its local hard deadline. These
+controls do **not** yet provide execution-admission/evidence-projector binding. Current mirror runs therefore remain
 `EXPLORATORY` with `DEPLOYMENT_EGRESS_NOT_ATTESTED`; protocol availability alone must not produce
 `CERTIFIABLE` evidence.
+
+The cache contract, non-TOFU provisioning, refresh/expiry SLO, filesystem guarantees, health states,
+and recovery procedures are specified in the
+[deployment-agent guide](../../resource-gateway-mirror-deployment-agent.md).
 
 ## Visual Graph Projection Boundary
 
@@ -384,6 +391,11 @@ The protected Tool Studio integration surface exposes:
 | `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}` | Read exact coordinates only while they remain the current head | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
 | `POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | Apply one exact-current irreversible revocation | `MIRROR_TRUST_ADMIN` |
 
+All authority/attestation GET routes additionally require the exact
+`application/vnd.bloge.mirror-deployment-isolation-trust.v1+json` media type and
+`X-BLOGE-Mirror-Trust-Protocol: mirror-deployment-isolation-trust-v1`. This separates deployment
+agent distribution from generic JSON callers before controller authentication and lookup.
+
 All endpoints derive scope, actor, and clearance from the verified workload identity. Absent,
 cross-scope, and above-clearance reads deliberately share `404 RG.MIRROR.SNAPSHOT_NOT_FOUND` so the API does
 not become an asset-existence oracle.
@@ -392,10 +404,10 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4592 tests with no
+passes 4608 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
 the executable Spring Boot JAR. The independent test-kit gate passes 270 tests with no failures, errors, or skips,
-packages all 24 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
+packages all 25 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
 
 The Stage 1 `MirrorPlan` protocol presence alone does not make mirror execution available. Capability discovery
 always reports `mirrorPlanProtocol=true`. It reports `mirrorPlanCompilation` and

@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityKeySetPublication;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationTrustDistributionProtocol;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
@@ -72,7 +73,10 @@ public class MirrorDeploymentIsolationAuthorityPublicationController {
      * @param headers authenticated integration request headers
      * @return versioned envelope containing the current verified publication
      */
-    @GetMapping("/{keySetId}/latest")
+    @GetMapping(value = "/{keySetId}/latest",
+            headers = MirrorDeploymentIsolationTrustDistributionProtocol.REQUEST_HEADER + "="
+                    + MirrorDeploymentIsolationTrustDistributionProtocol.VERSION,
+            produces = MirrorDeploymentIsolationTrustDistributionProtocol.MEDIA_TYPE)
     public IntegrationEnvelope<MirrorDeploymentIsolationAuthorityKeySetPublication> latest(
             @PathVariable String keySetId,
             @RequestParam String deploymentScopeId,
@@ -92,7 +96,10 @@ public class MirrorDeploymentIsolationAuthorityPublicationController {
      * @param headers authenticated integration request headers
      * @return versioned envelope containing the current verified publication
      */
-    @GetMapping("/{keySetId}/generations/{generation}")
+    @GetMapping(value = "/{keySetId}/generations/{generation}",
+            headers = MirrorDeploymentIsolationTrustDistributionProtocol.REQUEST_HEADER + "="
+                    + MirrorDeploymentIsolationTrustDistributionProtocol.VERSION,
+            produces = MirrorDeploymentIsolationTrustDistributionProtocol.MEDIA_TYPE)
     public IntegrationEnvelope<MirrorDeploymentIsolationAuthorityKeySetPublication> current(
             @PathVariable String keySetId,
             @PathVariable long generation,

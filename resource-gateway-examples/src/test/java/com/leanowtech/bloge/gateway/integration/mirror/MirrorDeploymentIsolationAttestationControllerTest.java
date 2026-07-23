@@ -23,7 +23,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -125,6 +127,40 @@ class MirrorDeploymentIsolationAttestationControllerTest {
                 .accepts("MIRROR_REHEARSAL")).isFalse();
         assertThat(IntegrationOperation.MIRROR_ISOLATION_ATTESTATION_READ
                 .accepts("MIRROR_TRUST_ADMIN")).isFalse();
+    }
+
+    @Test
+    void currentReadsRequireExactAgentProtocolAndReturnVendorJson() throws Exception {
+        var service = mock(MirrorDeploymentIsolationAttestationService.class);
+        var authenticator = mock(IntegrationRequestAuthenticator.class);
+        var bundle = fixtures.bundle(7);
+        when(authenticator.authenticate(any(HttpHeaders.class),
+                eq(IntegrationOperation.MIRROR_ISOLATION_ATTESTATION_READ)))
+                .thenReturn(identity("MIRROR_TRUST_DISTRIBUTION"));
+        when(service.current(eq("deployment:staging"), eq(fixtures.KEY_SET_ID),
+                eq(fixtures.ATTESTATION_ID), any(IntegrationRequestContext.class)))
+                .thenReturn(bundle);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(
+                        new MirrorDeploymentIsolationAttestationController(
+                                service, authenticator,
+                                new MirrorDeploymentIsolationAttestationDecoder(fixtures.mapper)))
+                .setControllerAdvice(new IntegrationProblemHandler())
+                .build();
+
+        var request = get("/api/mirror/trust/deployment-isolation/attestations/{id}/latest",
+                fixtures.ATTESTATION_ID)
+                .queryParam("deploymentScopeId", "deployment:staging")
+                .queryParam("keySetId", fixtures.KEY_SET_ID)
+                .accept(MirrorDeploymentIsolationTrustDistributionProtocol.MEDIA_TYPE);
+        mvc.perform(request).andExpect(status().isNotFound());
+        mvc.perform(request.header(
+                        MirrorDeploymentIsolationTrustDistributionProtocol.REQUEST_HEADER,
+                        MirrorDeploymentIsolationTrustDistributionProtocol.VERSION))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(
+                        MirrorDeploymentIsolationTrustDistributionProtocol.MEDIA_TYPE))
+                .andExpect(jsonPath("$.payload.bundleFingerprint")
+                        .value(bundle.bundleFingerprint()));
     }
 
     private MirrorDeploymentIsolationAttestationRevocationRequest revocation(

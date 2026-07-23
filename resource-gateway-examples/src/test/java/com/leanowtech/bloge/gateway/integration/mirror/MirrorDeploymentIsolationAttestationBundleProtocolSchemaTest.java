@@ -46,6 +46,15 @@ class MirrorDeploymentIsolationAttestationBundleProtocolSchemaTest {
                 "mirror-deployment-isolation-attestation-bundle-v1.schema.json");
         JsonNode revocationSchema = schema(
                 "mirror-deployment-isolation-attestation-revocation-request-v1.schema.json");
+        var distributed = fixtures.distributionFixtures();
+        var snapshotIntegrity = new MirrorDeploymentIsolationAgentSnapshotIntegrity(
+                fixtures.mapper, fixtures.authorityIntegrity, fixtures.bundleIntegrity);
+        var snapshot = snapshotIntegrity.snapshot(1, fixtures.activeClock.instant(),
+                fixtures.activeClock.instant().plusSeconds(5), distributed.authority(),
+                distributed.bundle());
+        JsonNode snapshotValue = fixtures.mapper.valueToTree(snapshot);
+        JsonNode snapshotSchema = schema(
+                "mirror-deployment-isolation-agent-snapshot-v1.schema.json");
 
         assertProperties(bundle, bundleSchema.path("properties"));
         assertProperties(status, statusSchema.path("properties"));
@@ -61,10 +70,12 @@ class MirrorDeploymentIsolationAttestationBundleProtocolSchemaTest {
                 statusSchema.at("/$defs/attestationRef/properties"));
         assertProperties(fixtures.mapper.valueToTree(request),
                 revocationSchema.path("properties"));
+        assertProperties(snapshotValue, snapshotSchema.path("properties"));
         for (JsonNode closed : Set.of(bundleSchema, statusSchema,
                 statusSchema.at("/$defs/material"), statusSchema.at("/$defs/scope"),
                 statusSchema.at("/$defs/deployment"), statusSchema.at("/$defs/authorityRef"),
-                statusSchema.at("/$defs/attestationRef"), revocationSchema)) {
+                statusSchema.at("/$defs/attestationRef"), revocationSchema,
+                snapshotSchema)) {
             assertThat(closed.path("additionalProperties").asBoolean(true)).isFalse();
         }
     }
@@ -89,7 +100,9 @@ class MirrorDeploymentIsolationAttestationBundleProtocolSchemaTest {
                 + Files.readString(protocolPath(
                 "mirror-deployment-isolation-attestation-status-v1.schema.json"))
                 + Files.readString(protocolPath(
-                "mirror-deployment-isolation-attestation-revocation-request-v1.schema.json"));
+                "mirror-deployment-isolation-attestation-revocation-request-v1.schema.json"))
+                + Files.readString(protocolPath(
+                "mirror-deployment-isolation-agent-snapshot-v1.schema.json"));
         for (String forbidden : Set.of("requestPayload", "responsePayload", "secret", "token",
                 "password", "stackTrace", "endpointUri", "fixtureValue")) {
             assertThat(source).doesNotContain("\"" + forbidden + "\"");

@@ -193,6 +193,24 @@ class CapabilityMirrorSchemaPackagingTest {
         bundle.set("authorityKeySetRef", authorityRef);
         bundle.set("attestation", attestation);
         bundle.set("status", status);
+        JsonNode authority = CapabilityMirrorProtocol
+                .mirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture().publication();
+        var exactAuthorityRef = objectMapper.createObjectNode()
+                .put("kind", "DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET")
+                .put("id", authority.at("/material/keySetId").asText())
+                .put("revision", authority.at("/material/generation").asLong())
+                .put("fingerprint", authority.path("publicationFingerprint").asText());
+        bundle.set("authorityKeySetRef", exactAuthorityRef.deepCopy());
+        status.withObject("/material").set("authorityKeySetRef", exactAuthorityRef);
+        var snapshot = objectMapper.createObjectNode()
+                .put("schemaVersion", CapabilityMirrorProtocol
+                        .MIRROR_DEPLOYMENT_ISOLATION_AGENT_SNAPSHOT_V1)
+                .put("snapshotFingerprint", fingerprint('d'))
+                .put("cacheGeneration", 1)
+                .put("refreshedAt", "2026-07-23T00:00:11Z")
+                .put("validUntil", "2026-07-23T00:05:11Z");
+        snapshot.set("authorityPublication", authority);
+        snapshot.set("attestationBundle", bundle);
         var revocation = objectMapper.createObjectNode()
                 .put("schemaVersion", CapabilityMirrorProtocol
                         .MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_V1)
@@ -215,12 +233,21 @@ class CapabilityMirrorSchemaPackagingTest {
                 CapabilityMirrorProtocol
                         .MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_SCHEMA_RESOURCE,
                 "invalid-revocation")).doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(snapshot,
+                CapabilityMirrorProtocol
+                        .MIRROR_DEPLOYMENT_ISOLATION_AGENT_SNAPSHOT_SCHEMA_RESOURCE,
+                "invalid-agent-snapshot")).doesNotThrowAnyException();
 
         revocation.put("reason", "ACCEPTED");
         assertThatThrownBy(() -> CapabilityMirrorSchemaValidator.require(revocation,
                 CapabilityMirrorProtocol
                         .MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_SCHEMA_RESOURCE,
                 "invalid-revocation")).isInstanceOf(IllegalArgumentException.class);
+        snapshot.putNull("authorityPublication");
+        assertThatThrownBy(() -> CapabilityMirrorSchemaValidator.require(snapshot,
+                CapabilityMirrorProtocol
+                        .MIRROR_DEPLOYMENT_ISOLATION_AGENT_SNAPSHOT_SCHEMA_RESOURCE,
+                "invalid-agent-snapshot")).isInstanceOf(IllegalArgumentException.class);
     }
 
     private static String fingerprint(char value) {

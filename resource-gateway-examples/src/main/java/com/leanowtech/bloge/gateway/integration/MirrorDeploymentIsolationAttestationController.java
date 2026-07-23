@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationTrustDistributionProtocol;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
@@ -80,7 +81,10 @@ public class MirrorDeploymentIsolationAttestationController {
      * @param headers authenticated integration request headers
      * @return versioned envelope containing the atomic current bundle
      */
-    @GetMapping("/{attestationId}/latest")
+    @GetMapping(value = "/{attestationId}/latest",
+            headers = MirrorDeploymentIsolationTrustDistributionProtocol.REQUEST_HEADER + "="
+                    + MirrorDeploymentIsolationTrustDistributionProtocol.VERSION,
+            produces = MirrorDeploymentIsolationTrustDistributionProtocol.MEDIA_TYPE)
     public IntegrationEnvelope<MirrorDeploymentIsolationAttestationBundle> current(
             @PathVariable String attestationId,
             @RequestParam String deploymentScopeId,
@@ -105,7 +109,10 @@ public class MirrorDeploymentIsolationAttestationController {
      * @param headers authenticated integration request headers
      * @return versioned envelope containing the atomic current bundle
      */
-    @GetMapping("/{attestationId}/revisions/{revision}")
+    @GetMapping(value = "/{attestationId}/revisions/{revision}",
+            headers = MirrorDeploymentIsolationTrustDistributionProtocol.REQUEST_HEADER + "="
+                    + MirrorDeploymentIsolationTrustDistributionProtocol.VERSION,
+            produces = MirrorDeploymentIsolationTrustDistributionProtocol.MEDIA_TYPE)
     public IntegrationEnvelope<MirrorDeploymentIsolationAttestationBundle> currentExact(
             @PathVariable String attestationId,
             @PathVariable long revision,

@@ -4,8 +4,9 @@ This guide describes the Stage 1 trust-control plane for externally signed deplo
 attestations. It covers ingest, durable anti-rollback state, irreversible revocation, current-only
 distribution, operator wiring, failure semantics, and rollout checks.
 
-It does not claim that Mirror execution is certified. Deployment-agent refresh, runtime admission,
-and evidence-commit binding remain separate gates.
+It does not claim that Mirror execution is certified. The deployment-agent refresh boundary is now
+implemented in the [deployment-agent guide](resource-gateway-mirror-deployment-agent.md); runtime
+admission and evidence-commit binding remain separate gates.
 
 ## 1. What this increment closes
 
@@ -246,7 +247,8 @@ default provider keeps readiness false.
 8. Back up all three attestation tables and authority publication/floor tables as one recovery set.
 9. Restrict direct database writes and test full-disk, lock contention, backup restore, and schema
    migration on the production database engine.
-10. Keep execution certification disabled until the deployment agent and runtime dual binding pass.
+10. Deploy the pinned mTLS agent and keep execution certification disabled until runtime dual
+    binding passes.
 
 ## 11. Verified coverage and remaining gates
 
@@ -257,16 +259,16 @@ exact-current reads, irreversible and idempotent revocation, authority generatio
 expiry, denial propagation during authority outage, payload-free audit, and transaction rollback on
 mandatory audit failure.
 
-The remaining path to certified deployment isolation is:
+The deployment-agent increment adds identity-bound pinned mTLS pull, strict vendor/envelope
+negotiation, non-TOFU bootstrap, contiguous transition checks, denial-first revocation, bounded
+stale-positive use, and crash-safe atomic cache replacement. The remaining path to certified
+deployment isolation is:
 
-1. authenticated deployment-agent mTLS/HTTPS pull with bounded refresh, anti-equivocation checks,
-   and atomic read-only cache replacement;
-2. execution admission that pins one exact current authority and active attestation bundle;
-3. evidence commit that rechecks the same generations and full execution-window coverage;
-4. immediate fail-closed response to cache staleness, expiry crossing, authority change, and
-   revocation;
-5. language-neutral canonical status/bundle fixtures and deployment certification gates;
-6. production database HA/DR, custody, capacity, migration, and chaos evidence.
+1. execution admission that pins one exact agent snapshot/cache generation;
+2. evidence commit that rechecks the same generation and full execution-window coverage;
+3. crash recovery and terminal evidence that cannot cross a cache generation;
+4. language-neutral canonical status/bundle/snapshot fixtures and deployment certification gates;
+5. production database HA/DR, custody, capacity, migration, and chaos evidence.
 
 Until those gates close, Mirror runs remain `EXPLORATORY` and retain
 `DEPLOYMENT_EGRESS_NOT_ATTESTED`.

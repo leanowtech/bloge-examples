@@ -88,6 +88,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                     1, 20, 10, 4, 2, Duration.ofSeconds(30), Duration.ofMinutes(5),
                     Duration.ofSeconds(1), Duration.ofMinutes(1), 0, Duration.ofDays(1),
                     Duration.ofDays(7));
+    private static final Duration TEST_START_LATENCY_BUDGET = Duration.ofSeconds(5);
 
     private ObjectMapper mapper;
     private JdbcTemplate jdbc;
@@ -129,7 +130,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                 TestSuiteStabilityPhysicalAttemptStartAuthority.Descriptor.SCHEMA_VERSION,
                 PROVIDER_ID, DEPLOYMENT_ID, KEY_ID, true,
                 Set.of(TestSuiteStabilityAttemptCancellationReceipt.IsolationMode.PROCESS),
-                Duration.ofMillis(100));
+                TEST_START_LATENCY_BUDGET);
         descriptor = descriptor(Duration.ofMillis(100));
         starts = new DatabaseTestSuiteStabilityPhysicalAttemptStartJournal(
                 jdbc, mapper, jobs, startVerifier(), transactions);

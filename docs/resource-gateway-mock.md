@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation 已完成；deployment agent 安全刷新、运行时双重绑定、跨语言 canonicalization 与 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache 已完成；运行时双重绑定、跨语言 canonicalization 与 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -307,6 +307,23 @@
   deployment agent mTLS/HTTPS atomic cache、execution admission 与 evidence commit 同代双重校验、跨语言固定 fixture 和
   环境 certification 尚未闭合。接线、错误语义和演练清单见
   [attestation control-plane guide](resource-gateway-mirror-attestation-control-plane.md)。
+- Stage 1 第二十一增量补上 deployment-side trust distribution。`HttpMirrorDeploymentIsolationTrustSource`
+  只接受 private PKIX trust store、server SPKI pin、mutual TLS 和 client/server exact X.509 workload identity
+  同时成立的 `ControlPlaneHttpTransport`，不允许 system-root-only、未 pin、单向 TLS 或 identity-unbound 降级；GET
+  还要求 exact vendor media、`X-BLOGE-Mirror-Trust-Protocol`、动态逐请求 workload authorization、严格 envelope
+  字段集和 payload fingerprint。`MirrorDeploymentIsolationTrustAgent` 不做 TOFU：空 cache 的 authority generation /
+  fingerprint、attestation revision/fingerprint、status revision/fingerprint 必须全部等于 operator 通过独立安全通道
+  预置的 floor；后续 authority 走 signed predecessor chain，attestation/status 只接受 same-exact 或连续 successor，
+  同 revision 被撤销后永不 re-activate。ACTIVE 刷新同时复验 current authority 与 attestation；REVOKED 则绕过正向
+  authority 可用性先落 denial，避免过期 key/source outage 阻断吊销。`AtomicFileMirrorDeploymentIsolationAgentCache`
+  以 expected fingerprint + 连续 local generation 做单 writer CAS，在同目录写入并 fsync 临时文件、要求 atomic rename、
+  fsync 目录并读回复验；不支持 atomic move、symlink、损坏/截断/unknown/oversize 文件全部 fail closed。旧 ACTIVE 只在
+  `maximumSnapshotAge` 内降级可用，形成 missed-revocation 的硬上界；REVOKED 过期仍是 denial。真实 private-CA/SPKI/
+  mTLS/SPIFFE 双端身份、协议降级、rollback/fork/gap、revocation-with-authority-outage、same-revision reactivation、硬过期、
+  原子 cache/CAS/corruption 与协议 schema 场景聚焦回归 `50/50`，test-kit schema packaging `6/6` 全绿；
+  Resource Gateway 干净全量门禁 `4608/4608`（另有 3 条条件跳过）通过，真实 Chrome 与可执行 Boot JAR 同时验证。
+  运行时 admission/evidence commit 尚未 pin 同一 cache generation，trust class 仍保持 `EXPLORATORY`。接线与 SLO/runbook 见
+  [deployment-agent guide](resource-gateway-mirror-deployment-agent.md)。
 
 ---
 
@@ -985,7 +1002,9 @@ Outcome 分为：
 authority 从 scheduler、network policy、service identity 和 image registry 的权威状态生成证明；Resource
 Gateway 只接受独立信任通道分发的 key set，并用本机不可变坐标匹配。证明过期、吊销、身份漂移、刷新失败或
 运行窗口越界必须在执行前/提交前失败关闭。authority key-set 的服务端可信准入、不可变正文、数据库防回滚
-floor 和 current-only 分发已经实现；deployment agent 刷新原子性、attestation 吊销传播与运行时绑定仍未实现。
+floor 和 current-only 分发已经实现；deployment agent 的 identity-bound pinned mTLS、non-TOFU floor、连续状态机、
+denial-first 吊销与 crash-safe atomic cache 也已实现。执行准入与 evidence commit 对同一 cache generation 的双重
+绑定仍未实现。
 
 ### 12.2 权限
 
@@ -1047,9 +1066,12 @@ repository/API，并在同一数据库事务中原子追加正文、CAS 推进 `
 publicationFingerprint)` durable floor、提交成功 audit；local binding/roots 只来自 operator-owned SPI。服务端只分发
 current floor，过期或本地复验失败会停止服务。attestation 现在也有 operator-pinned bootstrap revision、full-scope
 append-only body/status repository、durable current head、protected ingest/current/revoke API 和同事务成功 audit；ACTIVE
-必须绑定同一 current authority generation，REVOKED 在 authority outage/过期后仍可作为 denial-only 状态分发。下一增量
-应让 deployment agent 经 mTLS/HTTPS 刷新并原子替换只读缓存，再接入 execution admission 和 evidence commit 的同代
-双重校验。在这些边界闭合前，不得仅凭 control-plane 分发成功、调用方上传 attestation 或进程内缓存提升 trust class。
+必须绑定同一 current authority generation，REVOKED 在 authority outage/过期后仍可作为 denial-only 状态分发。
+deployment agent 现在经 private-PKI/SPKI-pinned/identity-bound mTLS 拉取 exact vendor/envelope，按 operator-pinned
+bootstrap floor 与连续 authority/attestation/status 状态机验真，并通过 fsync + atomic rename 替换 durable read-only
+snapshot；旧 ACTIVE 在 hard age 关闭后不可用，REVOKED 不因过期恢复权限。下一增量应让 execution admission 和
+evidence commit pin 并复验同一 `cacheGeneration/snapshotFingerprint`。在运行时双重绑定闭合前，不得仅凭 control-plane
+分发成功、agent cache 存在或调用方上传 attestation 提升 trust class。
 
 外部集成协议扩展 `ToolStudioResourceGatewayProtocol`，新增能力快照、镜像证据和保真度 feature flags；
 旧 GraphDraft/RunEvidence 协议保持兼容，不在 v1 中删除。
@@ -1370,7 +1392,7 @@ SRE runbook 和生产认证包。
 | RG-MIR-003 | 实现 transitive EffectContract 汇总 | `gateway/integration/mirror` | read/write/mixed/unknown、递归环和声明冲突测试齐全 |
 | RG-MIR-004 | 冻结 provenance 与 lifecycle 状态机 | mirror schema + repository interface | 非法跃迁拒绝；stale/revoke 行为有协议测试 |
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
-| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability、deployment-attestation 协议/离线验真、authority key-set trusted distribution/durable floor，以及 attestation ingest/status/revocation/current-only 分发；待 agent refresh、runtime dual binding 和跨语言固定 bundle fixture |
+| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability、deployment-attestation 协议/离线验真、authority key-set trusted distribution/durable floor、attestation ingest/status/revocation/current-only 分发，以及 agent pinned mTLS/non-TOFU/atomic cache；待 runtime dual binding 和跨语言固定 bundle/snapshot fixture |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
 | RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝及 Plan/Run/Evidence route 在 production/mixed profile 物理不存在已完成；deployment-attestation strict protocol/producer/verifier 已完成；待外部签发/分发、运行时 egress 证明绑定和 pre-materialization ingress 门禁 |
 | RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence 与 DeploymentIsolationAttestation 独立复验；三份共享 fixture（含两份 signed fixture）；不依赖 server/Spring |
@@ -1390,8 +1412,10 @@ append-only plan/evidence 仓储、受保护 Plan/Run/Evidence API、payload-fre
 fenced atomic commit、静态/动态 occurrence budget、同事务成功审计、跨回滚失败审计、固定基数指标，以及
 deployment-isolation strict protocol、producer integrity、共享 signed fixture、独立 verifier、authority key-set
 full-scope append-only trusted distribution API 与 durable floor CAS，以及 full-scope attestation body/status/head
-存储、受保护 ingest/current/revoke API、不可逆撤销和当前 authority 读时复验；deployment agent 安全刷新、
-execution admission/evidence projector 双重运行时 binding、跨语言固定 bundle fixture、语言中立数字 canonicalization
+存储、受保护 ingest/current/revoke API、不可逆撤销和当前 authority 读时复验，以及 deployment agent 的 private-PKI/
+SPKI-pinned/identity-bound mTLS、strict vendor/envelope、operator-pinned bootstrap floor、连续状态机、denial-first revocation、
+hard freshness fence 与 crash-safe atomic cache；execution admission/evidence projector 双重运行时 binding、跨语言固定
+bundle/snapshot fixture、语言中立数字 canonicalization
 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
 错误码注册与持续 CI。
 企业客户准入仍必须关闭第 22.2 节的环境级开放决策。

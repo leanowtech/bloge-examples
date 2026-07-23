@@ -89,6 +89,55 @@ final class RecoveryFleetPublicationTlsFixture {
                 "https://localhost:" + server.getAddress().getPort() + path), requests);
     }
 
+    static Server startRoutes(
+            Material material,
+            Map<String, Response> routes,
+            AtomicReference<String> peer) throws Exception {
+        SSLContext context = material.serverContext();
+        HttpsServer server = HttpsServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.setHttpsConfigurator(new HttpsConfigurator(context) {
+            @Override
+            public void configure(com.sun.net.httpserver.HttpsParameters parameters) {
+                var ssl = getSSLContext().getDefaultSSLParameters();
+                ssl.setNeedClientAuth(true);
+                ssl.setProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+                parameters.setSSLParameters(ssl);
+            }
+        });
+        AtomicInteger requests = new AtomicInteger();
+        server.createContext("/", exchange -> {
+            try (exchange) {
+                peer.set(((HttpsExchange) exchange).getSSLSession()
+                        .getPeerPrincipal().getName());
+                requests.incrementAndGet();
+                Response response = routes.get(exchange.getRequestURI().getPath());
+                if (response == null) {
+                    exchange.sendResponseHeaders(404, -1);
+                    return;
+                }
+                response.headers().forEach(
+                        (name, value) -> exchange.getResponseHeaders().set(name, value));
+                exchange.sendResponseHeaders(response.status(), response.body().length);
+                exchange.getResponseBody().write(response.body());
+            }
+        });
+        server.start();
+        return new Server(server, URI.create(
+                "https://localhost:" + server.getAddress().getPort()), requests);
+    }
+
+    record Response(int status, byte[] body, Map<String, String> headers) {
+        Response {
+            body = body == null ? new byte[0] : body.clone();
+            headers = headers == null ? Map.of() : Map.copyOf(headers);
+        }
+
+        @Override
+        public byte[] body() {
+            return body.clone();
+        }
+    }
+
     record Server(HttpsServer server, URI uri, AtomicInteger requestCount)
             implements AutoCloseable {
 

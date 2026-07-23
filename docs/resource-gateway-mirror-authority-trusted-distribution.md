@@ -25,9 +25,10 @@ The server now provides a full-scope, append-only, content-addressed authority p
 
 The next increment now provides full-scope attestation ingest and irreversible current-status
 distribution; see [the attestation control-plane guide](resource-gateway-mirror-attestation-control-plane.md).
-This authority increment still does **not** provide deployment-agent mTLS/HTTPS refresh, an atomic
-agent cache, or execution-admission/evidence-commit binding. Mirror evidence therefore remains `EXPLORATORY` with
-`DEPLOYMENT_EGRESS_NOT_ATTESTED`.
+The following increment now also provides deployment-agent pinned mTLS/HTTPS refresh and an atomic
+read-only cache; see [the deployment-agent guide](resource-gateway-mirror-deployment-agent.md).
+Execution-admission/evidence-commit binding is still open, so Mirror evidence remains `EXPLORATORY`
+with `DEPLOYMENT_EGRESS_NOT_ATTESTED`.
 
 ## 2. Trust ownership
 
@@ -244,15 +245,14 @@ wrong local roots, expiry, sanitized audit, and mandatory-audit rollback.
 
 The increment adds 23 focused scenarios and passes a 66-test authority integration gate. Seven
 authority public types pass `javadoc --release 25 -Werror -Xdoclint:all` with zero warnings. The
-frozen tree also passes Resource Gateway `clean verify` with 4,565 tests, zero failures, zero
+frozen tree also passes Resource Gateway `clean verify` with 4,608 tests, zero failures, zero
 errors, and three conditional skips, including real Chrome regression plus executable Boot JAR
-packaging. The independent test-kit passes 269 tests and packages its library JAR, shaded CLI JAR,
+packaging. The independent test-kit passes 270 tests and packages its library JAR, shaded CLI JAR,
 and schemas.
 
 The remaining vertical slices are:
 
-1. authenticated deployment-agent mTLS/HTTPS pull with bounded refresh and atomic read-only cache;
-2. execution admission and evidence commit checks against the same authority-publication and
+1. execution admission and evidence commit checks against the same agent snapshot, authority-publication and
    attestation generations;
-3. fail-closed behavior for refresh staleness, expiry crossing, and revocation propagation;
-4. cross-language canonicalization and certification fixtures beyond Java.
+2. crash recovery and terminal evidence that cannot cross an admitted cache generation;
+3. cross-language canonicalization and certification fixtures beyond Java.

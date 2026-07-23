@@ -67,6 +67,9 @@ public final class CapabilityMirrorProtocol {
     /** Atomic deployment-isolation attestation and current-status bundle wire version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE_V1 =
             "resourceGateway.mirrorDeploymentIsolationAttestationBundle.v1";
+    /** Atomic deployment-agent read-only cache snapshot wire version. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_AGENT_SNAPSHOT_V1 =
+            "resourceGateway.mirrorDeploymentIsolationAgentSnapshot.v1";
     /** Optimistically fenced irreversible attestation revocation command wire version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_V1 =
             "resourceGateway.mirrorDeploymentIsolationAttestationRevocationRequest.v1";
@@ -137,6 +140,10 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-deployment-isolation-attestation-bundle-v1.schema.json";
+    /** Packaged atomic deployment-agent read-only cache snapshot schema. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_AGENT_SNAPSHOT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-deployment-isolation-agent-snapshot-v1.schema.json";
     /** Packaged optimistic irreversible attestation revocation-command schema. */
     public static final String
     MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_SCHEMA_RESOURCE =

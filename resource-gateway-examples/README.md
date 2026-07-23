@@ -109,6 +109,14 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `GET http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest` | Read one atomic current attestation and local status bundle |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | Irreversibly revoke one exact current attestation status |
 
+Deployment-agent authority/attestation GETs require vendor negotiation in addition to normal
+`MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` authentication:
+
+```http
+Accept: application/vnd.bloge.mirror-deployment-isolation-trust.v1+json
+X-BLOGE-Mirror-Trust-Protocol: mirror-deployment-isolation-trust-v1
+```
+
 Stop it with:
 
 ```bash
@@ -300,8 +308,9 @@ projects its real node/attempt/edge values to bounded fingerprints, proves exact
 resolution, and refuses to return a result when no explicit signer exists or immediate signature verification
 fails. A cryptographically signed run is still exploratory unless deployment egress denial is bound to an exact
 isolation attestation and every limitation is closed. Payload-free persistence and protected plan serving are
-complete; run/evidence serving is also complete for isolated test/staging use. Deployment-attestation runtime wiring,
-pre-materialization ingress controls, and cross-language canonicalization remain production/certification gates.
+complete; run/evidence serving is also complete for isolated test/staging use. Agent-snapshot
+admission/evidence binding, pre-materialization ingress controls, and cross-language canonicalization
+remain production/certification gates.
 The Spring kernel now has
 profile/property isolation and
 ordinary business run APIs reject nested mirror, replay, replacement, and scenario controls before DTO binding,
@@ -348,14 +357,20 @@ mandatory success audit. Reads return one canonical atomic bundle. Active bundle
 authority generation and active time window, while revoked bundles remain distributable during authority outage so a
 security denial cannot be blocked. Exact reads never expose historical generations as trusted.
 
-This is still not a deployment-isolation runtime-readiness claim. Deployment-agent mTLS/HTTPS refresh and atomic cache,
-revocation delivery latency, and binding into execution admission and `MirrorRunEvidenceProjector` remain open;
+The reusable deployment agent now pulls these current artifacts through private-PKI, SPKI-pinned,
+identity-bound mTLS, requires an operator-provisioned non-TOFU bootstrap floor, rejects rollback,
+fork, gaps and same-revision reactivation, and atomically replaces a durable read-only snapshot.
+Revocation can commit without a positive authority read; stale ACTIVE use is bounded by the local
+hard snapshot age. This is still not a deployment-isolation runtime-readiness claim. Binding the exact
+snapshot generation into execution admission and `MirrorRunEvidenceProjector` remains open;
 consequently current runs remain `EXPLORATORY` and the capability probe does not advertise deployment isolation as
 certified. See the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md#deployment-isolation-attestation-boundary).
 Operational wiring, endpoint semantics, stable failures, and rollout checks are in the
 [authority trusted-distribution guide](../docs/resource-gateway-mirror-authority-trusted-distribution.md) and
-[attestation control-plane guide](../docs/resource-gateway-mirror-attestation-control-plane.md).
+[attestation control-plane guide](../docs/resource-gateway-mirror-attestation-control-plane.md). Deployment-side
+assembly, cache ownership, revocation SLOs and recovery are in the
+[deployment-agent guide](../docs/resource-gateway-mirror-deployment-agent.md).
 
 Useful variants:
 
