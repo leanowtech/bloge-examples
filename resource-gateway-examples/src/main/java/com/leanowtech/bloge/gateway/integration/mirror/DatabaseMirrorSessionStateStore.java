@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
+import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.CAPACITY_EXCEEDED;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.CORRUPT;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.CREATE_CONFLICT;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.GONE;
@@ -38,6 +39,9 @@ import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionState
 public final class DatabaseMirrorSessionStateStore
         implements MirrorSessionStateStore {
     private static final long RETRY_AFTER_UNAVAILABLE_SECONDS = 5;
+    private static final long MAXIMUM_CAPACITY_RETRY_SECONDS = 300;
+    private static final int MAXIMUM_EXPIRY_SWEEP_BATCH = 1_000;
+    private static final int GLOBAL_CAPACITY_GUARD = 1;
     private static final String CREATE_STATE_TABLE = """
             CREATE TABLE IF NOT EXISTS mirror_session_state (
                 tenant_id VARCHAR(256) NOT NULL,
@@ -91,6 +95,25 @@ public final class DatabaseMirrorSessionStateStore
                 state_fingerprint VARCHAR(71) NOT NULL
             )
             """;
+    private static final String CREATE_CAPACITY_GUARD_TABLE = """
+            CREATE TABLE IF NOT EXISTS mirror_session_capacity_guard (
+                guard_id INTEGER PRIMARY KEY
+            )
+            """;
+    private static final String CREATE_CAPACITY_INDEX = """
+            CREATE INDEX IF NOT EXISTS mirror_session_capacity_idx
+            ON mirror_session_state (
+                status, expires_at, payload_bytes
+            )
+            """;
+    private static final String CREATE_SCOPE_CAPACITY_INDEX = """
+            CREATE INDEX IF NOT EXISTS mirror_session_scope_capacity_idx
+            ON mirror_session_state (
+                tenant_id, organization_id, project_id,
+                environment_id, region,
+                status, expires_at, payload_bytes
+            )
+            """;
     private static final String SCOPE =
             "tenant_id = ? AND organization_id = ? AND project_id = ? "
                     + "AND environment_id = ? AND region = ?";
@@ -122,6 +145,8 @@ public final class DatabaseMirrorSessionStateStore
     private final MirrorStatePayloadProtector protector;
     private final TransactionTemplate transaction;
     private final Supplier<Instant> coordinationClock;
+    private final MirrorSessionCapacityPolicy capacityPolicy;
+    private final MirrorSessionCapacityTelemetry capacityTelemetry;
 
     /**
      * Creates a durable encrypted store using the database clock.
@@ -141,6 +166,29 @@ public final class DatabaseMirrorSessionStateStore
     }
 
     /**
+     * Creates a durable encrypted store with explicit capacity policy and database coordination
+     * time.
+     *
+     * @param stateJdbc dedicated mirror-state JDBC boundary
+     * @param mapper canonical protocol mapper
+     * @param protector configured AES-256-GCM key ring
+     * @param stateTransactionManager transaction manager for the same data source
+     * @param capacityPolicy hierarchical database-authoritative hard limits
+     * @param capacityTelemetry fixed-cardinality capacity telemetry sink
+     */
+    public DatabaseMirrorSessionStateStore(
+            JdbcTemplate stateJdbc,
+            ObjectMapper mapper,
+            MirrorStatePayloadProtector protector,
+            PlatformTransactionManager stateTransactionManager,
+            MirrorSessionCapacityPolicy capacityPolicy,
+            MirrorSessionCapacityTelemetry capacityTelemetry) {
+        this(stateJdbc, mapper, protector, stateTransactionManager,
+                () -> databaseNow(stateJdbc),
+                capacityPolicy, capacityTelemetry);
+    }
+
+    /**
      * Creates a store with an explicit coordination clock for deterministic tests.
      *
      * @param stateJdbc dedicated mirror-state JDBC boundary
@@ -155,6 +203,30 @@ public final class DatabaseMirrorSessionStateStore
             MirrorStatePayloadProtector protector,
             PlatformTransactionManager stateTransactionManager,
             Supplier<Instant> coordinationClock) {
+        this(stateJdbc, mapper, protector, stateTransactionManager,
+                coordinationClock, MirrorSessionCapacityPolicy.defaults(),
+                MirrorSessionCapacityTelemetry.noop());
+    }
+
+    /**
+     * Creates a store with explicit cross-replica capacity policy and telemetry.
+     *
+     * @param stateJdbc dedicated mirror-state JDBC boundary
+     * @param mapper canonical protocol mapper
+     * @param protector configured AES-256-GCM key ring
+     * @param stateTransactionManager transaction manager for the same data source
+     * @param coordinationClock authoritative coordination time
+     * @param capacityPolicy hierarchical database-authoritative hard limits
+     * @param capacityTelemetry fixed-cardinality capacity telemetry sink
+     */
+    public DatabaseMirrorSessionStateStore(
+            JdbcTemplate stateJdbc,
+            ObjectMapper mapper,
+            MirrorStatePayloadProtector protector,
+            PlatformTransactionManager stateTransactionManager,
+            Supplier<Instant> coordinationClock,
+            MirrorSessionCapacityPolicy capacityPolicy,
+            MirrorSessionCapacityTelemetry capacityTelemetry) {
         this.jdbc = Objects.requireNonNull(stateJdbc, "stateJdbc");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.protector = Objects.requireNonNull(protector, "protector");
@@ -162,8 +234,20 @@ public final class DatabaseMirrorSessionStateStore
                 stateTransactionManager, "stateTransactionManager"));
         this.coordinationClock = Objects.requireNonNull(
                 coordinationClock, "coordinationClock");
+        this.capacityPolicy = Objects.requireNonNull(
+                capacityPolicy, "capacityPolicy");
+        this.capacityTelemetry = Objects.requireNonNull(
+                capacityTelemetry, "capacityTelemetry");
         jdbc.execute(CREATE_STATE_TABLE);
         jdbc.execute(CREATE_AUDIT_TABLE);
+        jdbc.execute(CREATE_CAPACITY_GUARD_TABLE);
+        jdbc.execute(CREATE_CAPACITY_INDEX);
+        jdbc.execute(CREATE_SCOPE_CAPACITY_INDEX);
+        jdbc.update("""
+                MERGE INTO mirror_session_capacity_guard (guard_id)
+                KEY (guard_id) VALUES (?)
+                """, GLOBAL_CAPACITY_GUARD);
+        capacityTelemetry.observe(globalSnapshot(globalCapacity(now())));
     }
 
     @Override
@@ -181,7 +265,27 @@ public final class DatabaseMirrorSessionStateStore
                 command.payload(), MirrorSessionDescriptor.Status.ACTIVE,
                 now, now, null);
         try {
-            transaction.executeWithoutResult(ignored -> {
+            CreateMutation mutation = transaction.execute(ignored -> {
+                lockCapacity();
+                Optional<Row> byRequest = queryOne(
+                        SELECT_BY_REQUEST,
+                        scopeArgs(state.scope(), command.requestId()));
+                if (byRequest.isPresent()) {
+                    Row row = byRequest.orElseThrow();
+                    if (!command.requestFingerprint().equals(
+                            row.createFingerprint())) {
+                        throw terminal(CREATE_CONFLICT);
+                    }
+                    return CreateMutation.replayed(new CreateResult(
+                            CreateDisposition.REPLAYED,
+                            readDescriptor(row)));
+                }
+                if (queryOne(SELECT_BY_SESSION, scopeArgs(
+                        state.scope(), state.sessionId())).isPresent()) {
+                    throw terminal(SESSION_ID_CONFLICT);
+                }
+                CapacityUsage usage = capacityUsage(now, state.scope());
+                requireCreateCapacity(usage, plaintext.length, now);
                 jdbc.update("""
                                 INSERT INTO mirror_session_state (
                                     tenant_id, organization_id, project_id,
@@ -220,8 +324,20 @@ public final class DatabaseMirrorSessionStateStore
                         descriptor.updatedAt().toString());
                 appendAudit(state.scope(), state.sessionId(), now,
                         Operation.CREATE, "", descriptor);
+                return CreateMutation.created(
+                        new CreateResult(
+                                CreateDisposition.CREATED, descriptor),
+                        globalSnapshot(
+                                usage.global().plus(plaintext.length)));
             });
-            return new CreateResult(CreateDisposition.CREATED, descriptor);
+            if (mutation == null) {
+                throw retryable(UNAVAILABLE,
+                        RETRY_AFTER_UNAVAILABLE_SECONDS);
+            }
+            if (mutation.capacity() != null) {
+                capacityTelemetry.observe(mutation.capacity());
+            }
+            return mutation.result();
         } catch (DuplicateKeyException duplicate) {
             return replayCreate(command);
         } catch (MirrorSessionStateStoreException expected) {
@@ -374,6 +490,7 @@ public final class DatabaseMirrorSessionStateStore
             CommitAttempt attempt = transaction.execute(ignored -> {
                 CapabilitySnapshot.Scope scope = command.lease().scope();
                 String sessionId = command.lease().sessionId();
+                lockCapacity();
                 Row row = rowForUpdate(scope, sessionId)
                         .orElseThrow(() -> terminal(NOT_FOUND));
                 Instant now = now();
@@ -384,6 +501,9 @@ public final class DatabaseMirrorSessionStateStore
                 requireCommitFence(command, row, now);
                 MirrorSessionDescriptor previous = readDescriptor(row);
                 requireCandidateClosure(previous, candidateState);
+                CapacityUsage usage = capacityUsage(now, scope);
+                requireCommitCapacity(
+                        usage, row.payloadBytes(), plaintext.length, now);
                 MirrorSessionDescriptor descriptor = descriptor(
                         command.candidate(),
                         MirrorSessionDescriptor.Status.ACTIVE,
@@ -427,11 +547,14 @@ public final class DatabaseMirrorSessionStateStore
                 appendAudit(scope, sessionId, now,
                         Operation.COMMIT, "", descriptor);
                 return CommitAttempt.committed(
-                        new CommitResult(descriptor));
+                        new CommitResult(descriptor),
+                        globalSnapshot(usage.global().replace(
+                                row.payloadBytes(), plaintext.length)));
             });
             if (attempt.expired()) {
                 throw terminal(GONE);
             }
+            capacityTelemetry.observe(attempt.capacity());
             return attempt.result();
         } catch (MirrorSessionStateStoreException expected) {
             throw expected;
@@ -479,6 +602,70 @@ public final class DatabaseMirrorSessionStateStore
     }
 
     @Override
+    public int expireDue(int limit) {
+        if (limit < 1 || limit > MAXIMUM_EXPIRY_SWEEP_BATCH) {
+            throw new IllegalArgumentException(
+                    "mirror expiry sweep limit must be between 1 and "
+                            + MAXIMUM_EXPIRY_SWEEP_BATCH);
+        }
+        try {
+            ExpirySweep sweep = transaction.execute(ignored -> {
+                lockCapacity();
+                Instant now = now();
+                List<SessionCoordinate> due = jdbc.query("""
+                                SELECT tenant_id, organization_id, project_id,
+                                       environment_id, region, session_id
+                                  FROM mirror_session_state
+                                 WHERE status = 'ACTIVE'
+                                   AND expires_at <= ?
+                                 ORDER BY expires_at,
+                                          tenant_id, organization_id,
+                                          project_id, environment_id,
+                                          region, session_id
+                                 LIMIT ?
+                                """,
+                        (rs, rowNum) -> new SessionCoordinate(
+                                new CapabilitySnapshot.Scope(
+                                        rs.getString("tenant_id"),
+                                        rs.getString("organization_id"),
+                                        rs.getString("project_id"),
+                                        rs.getString("environment_id"),
+                                        rs.getString("region")),
+                                rs.getString("session_id")),
+                        now.toString(), limit);
+                int expired = 0;
+                for (SessionCoordinate coordinate : due) {
+                    Optional<Row> found = rowForUpdate(
+                            coordinate.scope(), coordinate.sessionId());
+                    if (found.isEmpty()) {
+                        continue;
+                    }
+                    Row row = found.orElseThrow();
+                    if (row.active()
+                            && !row.expiresAt().isAfter(now)) {
+                        expire(coordinate.scope(),
+                                coordinate.sessionId(), row, now);
+                        expired++;
+                    }
+                }
+                return new ExpirySweep(
+                        expired, globalSnapshot(globalCapacity(now)));
+            });
+            if (sweep == null) {
+                throw retryable(UNAVAILABLE,
+                        RETRY_AFTER_UNAVAILABLE_SECONDS);
+            }
+            capacityTelemetry.observe(sweep.capacity());
+            return sweep.expired();
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DataAccessException failure) {
+            throw retryable(UNAVAILABLE,
+                    RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    @Override
     public List<OperationAudit> recentAudit(
             CapabilitySnapshot.Scope scope,
             String sessionId,
@@ -512,6 +699,22 @@ public final class DatabaseMirrorSessionStateStore
     }
 
     @Override
+    public CapacitySnapshot capacity() {
+        try {
+            Instant observedAt = now();
+            CapacitySnapshot snapshot = globalSnapshot(
+                    globalCapacity(observedAt));
+            capacityTelemetry.observe(snapshot);
+            return snapshot;
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DataAccessException failure) {
+            throw retryable(UNAVAILABLE,
+                    RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    @Override
     public boolean ready() {
         try {
             Integer one = jdbc.queryForObject("SELECT 1", Integer.class);
@@ -520,6 +723,157 @@ public final class DatabaseMirrorSessionStateStore
         } catch (RuntimeException unavailable) {
             return false;
         }
+    }
+
+    private void lockCapacity() {
+        Integer guard = jdbc.queryForObject("""
+                SELECT guard_id
+                  FROM mirror_session_capacity_guard
+                 WHERE guard_id = ?
+                 FOR UPDATE
+                """, Integer.class, GLOBAL_CAPACITY_GUARD);
+        if (guard == null || guard != GLOBAL_CAPACITY_GUARD) {
+            throw terminal(CORRUPT);
+        }
+    }
+
+    private CapacityUsage capacityUsage(
+            Instant now, CapabilitySnapshot.Scope scope) {
+        return new CapacityUsage(
+                globalCapacity(now),
+                scopeCapacity(now, scope));
+    }
+
+    private CapacityNumbers globalCapacity(Instant now) {
+        return queryCapacity("""
+                SELECT COALESCE(SUM(CASE
+                           WHEN status = 'ACTIVE' AND expires_at > ?
+                           THEN 1 ELSE 0 END), 0) AS active_sessions,
+                       COALESCE(SUM(CASE
+                           WHEN payload_bytes > 0
+                           THEN payload_bytes ELSE 0 END), 0)
+                           AS retained_payload_bytes,
+                       COALESCE(SUM(CASE
+                           WHEN status = 'ACTIVE' AND expires_at <= ?
+                                AND payload_bytes > 0
+                           THEN payload_bytes ELSE 0 END), 0)
+                           AS expired_retained_payload_bytes,
+                       MIN(CASE
+                           WHEN status = 'ACTIVE' AND expires_at > ?
+                           THEN expires_at ELSE NULL END) AS earliest_expiry
+                  FROM mirror_session_state
+                """, now.toString(), now.toString(), now.toString());
+    }
+
+    private CapacityNumbers scopeCapacity(
+            Instant now, CapabilitySnapshot.Scope scope) {
+        return queryCapacity("""
+                SELECT COALESCE(SUM(CASE
+                           WHEN status = 'ACTIVE' AND expires_at > ?
+                           THEN 1 ELSE 0 END), 0) AS active_sessions,
+                       COALESCE(SUM(CASE
+                           WHEN payload_bytes > 0
+                           THEN payload_bytes ELSE 0 END), 0)
+                           AS retained_payload_bytes,
+                       COALESCE(SUM(CASE
+                           WHEN status = 'ACTIVE' AND expires_at <= ?
+                                AND payload_bytes > 0
+                           THEN payload_bytes ELSE 0 END), 0)
+                           AS expired_retained_payload_bytes,
+                       MIN(CASE
+                           WHEN status = 'ACTIVE' AND expires_at > ?
+                           THEN expires_at ELSE NULL END) AS earliest_expiry
+                  FROM mirror_session_state
+                 WHERE %s
+                """.formatted(SCOPE),
+                concatArgs(
+                        new Object[]{
+                                now.toString(),
+                                now.toString(),
+                                now.toString()
+                        },
+                        scopeArgs(scope)));
+    }
+
+    private CapacityNumbers queryCapacity(
+            String sql, Object... arguments) {
+        CapacityNumbers result = jdbc.queryForObject(
+                sql,
+                (rs, rowNum) -> new CapacityNumbers(
+                        rs.getLong("active_sessions"),
+                        rs.getLong("retained_payload_bytes"),
+                        rs.getLong("expired_retained_payload_bytes"),
+                        instant(rs.getString("earliest_expiry"))),
+                arguments);
+        return Objects.requireNonNull(
+                result, "capacity query returned no aggregate");
+    }
+
+    private void requireCreateCapacity(
+            CapacityUsage usage, long payloadBytes, Instant now) {
+        CapacityNumbers global = usage.global().plus(payloadBytes);
+        CapacityNumbers scope = usage.scope().plus(payloadBytes);
+        if (global.activeSessions()
+                > capacityPolicy.maximumActiveSessions()
+                || global.retainedPayloadBytes()
+                > capacityPolicy.maximumRetainedPayloadBytes()
+                || scope.activeSessions()
+                > capacityPolicy.maximumScopeActiveSessions()
+                || scope.retainedPayloadBytes()
+                > capacityPolicy.maximumScopeRetainedPayloadBytes()) {
+            throw retryable(CAPACITY_EXCEEDED,
+                    capacityRetryAfter(now, usage));
+        }
+    }
+
+    private void requireCommitCapacity(
+            CapacityUsage usage,
+            long previousPayloadBytes,
+            long candidatePayloadBytes,
+            Instant now) {
+        CapacityNumbers global = usage.global().replace(
+                previousPayloadBytes, candidatePayloadBytes);
+        CapacityNumbers scope = usage.scope().replace(
+                previousPayloadBytes, candidatePayloadBytes);
+        if (global.retainedPayloadBytes()
+                > capacityPolicy.maximumRetainedPayloadBytes()
+                || scope.retainedPayloadBytes()
+                > capacityPolicy.maximumScopeRetainedPayloadBytes()) {
+            throw retryable(CAPACITY_EXCEEDED,
+                    capacityRetryAfter(now, usage));
+        }
+    }
+
+    private long capacityRetryAfter(
+            Instant now, CapacityUsage usage) {
+        Instant earliest = earliest(
+                usage.global().earliestExpiry(),
+                usage.scope().earliestExpiry());
+        if (earliest == null || !earliest.isAfter(now)) {
+            return MAXIMUM_CAPACITY_RETRY_SECONDS;
+        }
+        return Math.min(
+                MAXIMUM_CAPACITY_RETRY_SECONDS,
+                retryAfter(now, earliest));
+    }
+
+    private CapacitySnapshot globalSnapshot(CapacityNumbers usage) {
+        return new CapacitySnapshot(
+                usage.activeSessions(),
+                usage.retainedPayloadBytes(),
+                usage.expiredRetainedPayloadBytes(),
+                capacityPolicy.maximumActiveSessions(),
+                capacityPolicy.maximumRetainedPayloadBytes());
+    }
+
+    private static Instant earliest(Instant first, Instant second) {
+        if (first == null) {
+            return second;
+        }
+        if (second == null) {
+            return first;
+        }
+        return first.isBefore(second) ? first : second;
     }
 
     private CreateResult replayCreate(CreateCommand command) {
@@ -894,6 +1248,48 @@ public final class DatabaseMirrorSessionStateStore
         return new MirrorSessionStateStoreException(code, retryAfterSeconds);
     }
 
+    private record CreateMutation(
+            CreateResult result,
+            CapacitySnapshot capacity
+    ) {
+        private CreateMutation {
+            result = Objects.requireNonNull(result, "result");
+        }
+
+        private static CreateMutation created(
+                CreateResult result, CapacitySnapshot capacity) {
+            return new CreateMutation(
+                    result, Objects.requireNonNull(capacity, "capacity"));
+        }
+
+        private static CreateMutation replayed(CreateResult result) {
+            return new CreateMutation(result, null);
+        }
+    }
+
+    private record ExpirySweep(
+            int expired,
+            CapacitySnapshot capacity
+    ) {
+        private ExpirySweep {
+            if (expired < 0) {
+                throw new IllegalArgumentException(
+                        "expired session count must not be negative");
+            }
+            capacity = Objects.requireNonNull(capacity, "capacity");
+        }
+    }
+
+    private record SessionCoordinate(
+            CapabilitySnapshot.Scope scope,
+            String sessionId
+    ) {
+        private SessionCoordinate {
+            scope = Objects.requireNonNull(scope, "scope");
+            sessionId = required(sessionId, "sessionId");
+        }
+    }
+
     private record ClaimAttempt(
             ClaimedSession session,
             boolean expired
@@ -910,15 +1306,87 @@ public final class DatabaseMirrorSessionStateStore
 
     private record CommitAttempt(
             CommitResult result,
+            CapacitySnapshot capacity,
             boolean expired
     ) {
-        private static CommitAttempt committed(CommitResult result) {
+        private static CommitAttempt committed(
+                CommitResult result, CapacitySnapshot capacity) {
             return new CommitAttempt(
-                    Objects.requireNonNull(result, "result"), false);
+                    Objects.requireNonNull(result, "result"),
+                    Objects.requireNonNull(capacity, "capacity"),
+                    false);
         }
 
         private static CommitAttempt expiredAttempt() {
-            return new CommitAttempt(null, true);
+            return new CommitAttempt(null, null, true);
+        }
+    }
+
+    private record CapacityUsage(
+            CapacityNumbers global,
+            CapacityNumbers scope
+    ) {
+        private CapacityUsage {
+            global = Objects.requireNonNull(global, "global");
+            scope = Objects.requireNonNull(scope, "scope");
+        }
+    }
+
+    private record CapacityNumbers(
+            long activeSessions,
+            long retainedPayloadBytes,
+            long expiredRetainedPayloadBytes,
+            Instant earliestExpiry
+    ) {
+        private CapacityNumbers {
+            if (activeSessions < 0
+                    || retainedPayloadBytes < 0
+                    || expiredRetainedPayloadBytes < 0
+                    || expiredRetainedPayloadBytes > retainedPayloadBytes) {
+                throw terminal(CORRUPT);
+            }
+        }
+
+        private CapacityNumbers plus(long payloadBytes) {
+            if (payloadBytes < 1) {
+                throw terminal(CORRUPT);
+            }
+            try {
+                return new CapacityNumbers(
+                        Math.addExact(activeSessions, 1),
+                        Math.addExact(
+                                retainedPayloadBytes, payloadBytes),
+                        expiredRetainedPayloadBytes,
+                        earliestExpiry);
+            } catch (ArithmeticException overflow) {
+                throw retryable(
+                        CAPACITY_EXCEEDED,
+                        MAXIMUM_CAPACITY_RETRY_SECONDS);
+            }
+        }
+
+        private CapacityNumbers replace(
+                long previousPayloadBytes, long candidatePayloadBytes) {
+            if (previousPayloadBytes < 1
+                    || previousPayloadBytes > retainedPayloadBytes
+                    || candidatePayloadBytes < 1) {
+                throw terminal(CORRUPT);
+            }
+            try {
+                return new CapacityNumbers(
+                        activeSessions,
+                        Math.addExact(
+                                Math.subtractExact(
+                                        retainedPayloadBytes,
+                                        previousPayloadBytes),
+                                candidatePayloadBytes),
+                        expiredRetainedPayloadBytes,
+                        earliestExpiry);
+            } catch (ArithmeticException overflow) {
+                throw retryable(
+                        CAPACITY_EXCEEDED,
+                        MAXIMUM_CAPACITY_RETRY_SECONDS);
+            }
         }
     }
 

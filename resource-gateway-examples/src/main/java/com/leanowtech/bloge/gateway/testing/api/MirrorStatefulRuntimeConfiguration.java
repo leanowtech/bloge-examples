@@ -3,11 +3,17 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.MirrorStatefulRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorSessionStateStore;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCapacityPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCapacityTelemetry;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCommandAdmission;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStore;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStateDataPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStatePayloadProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateBaselineResolver;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -68,16 +74,47 @@ public class MirrorStatefulRuntimeConfiguration {
                 activeKeyId, keyRing);
     }
 
+    /** Creates validated deployment-wide and per-scope state-plane hard limits. */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorSessionCapacityPolicy mirrorSessionCapacityPolicy(
+            @Value("${gateway.testing.mirror.stateful.capacity.maximum-active-sessions:1000}")
+            long maximumActiveSessions,
+            @Value("${gateway.testing.mirror.stateful.capacity.maximum-scope-active-sessions:100}")
+            long maximumScopeActiveSessions,
+            @Value("${gateway.testing.mirror.stateful.capacity.maximum-retained-payload-bytes:4294967296}")
+            long maximumRetainedPayloadBytes,
+            @Value("${gateway.testing.mirror.stateful.capacity.maximum-scope-retained-payload-bytes:536870912}")
+            long maximumScopeRetainedPayloadBytes) {
+        return new MirrorSessionCapacityPolicy(
+                maximumActiveSessions,
+                maximumScopeActiveSessions,
+                maximumRetainedPayloadBytes,
+                maximumScopeRetainedPayloadBytes);
+    }
+
+    /** Registers fixed-cardinality session admission and capacity telemetry. */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorSessionCapacityTelemetry mirrorSessionCapacityTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new MirrorSessionCapacityTelemetry(
+                meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
+    }
+
     /** Creates the durable full-scope lease-fenced encrypted state store. */
     @Bean
     @ConditionalOnMissingBean
     public MirrorSessionStateStore mirrorSessionStateStore(
             MirrorStateDataPlane dataPlane,
             ObjectMapper mapper,
-            MirrorStatePayloadProtector protector) {
+            MirrorStatePayloadProtector protector,
+            MirrorSessionCapacityPolicy capacityPolicy,
+            MirrorSessionCapacityTelemetry capacityTelemetry) {
         return new DatabaseMirrorSessionStateStore(
                 dataPlane.jdbc(), mapper, protector,
-                dataPlane.transactionManager());
+                dataPlane.transactionManager(),
+                capacityPolicy, capacityTelemetry);
     }
 
     /**
@@ -89,6 +126,17 @@ public class MirrorStatefulRuntimeConfiguration {
         return MirrorStateBaselineResolver.none();
     }
 
+    /** Creates the fair fail-fast replica command backpressure boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorSessionCommandAdmission mirrorSessionCommandAdmission(
+            MirrorSessionCapacityTelemetry capacityTelemetry,
+            @Value("${gateway.testing.mirror.stateful.capacity.maximum-concurrent-commands:32}")
+            int maximumConcurrentCommands) {
+        return new MirrorSessionCommandAdmission(
+                maximumConcurrentCommands, capacityTelemetry);
+    }
+
     /** Creates the authenticated session application boundary. */
     @Bean
     @ConditionalOnMissingBean
@@ -96,13 +144,39 @@ public class MirrorStatefulRuntimeConfiguration {
             ObjectMapper mapper,
             MirrorSessionStateStore store,
             MirrorStateBaselineResolver baselineResolver,
+            MirrorSessionCommandAdmission commandAdmission,
+            MirrorSessionCapacityTelemetry capacityTelemetry,
             @Value("${gateway.testing.mirror.stateful.instance-id:}")
             String instanceId,
             @Value("${gateway.testing.mirror.stateful.lease-duration-seconds:30}")
             long leaseDurationSeconds) {
         return new MirrorSessionIntegrationService(
                 mapper, store, baselineResolver, Clock.systemUTC(),
-                instanceId, leaseDurationSeconds);
+                instanceId, leaseDurationSeconds,
+                commandAdmission, capacityTelemetry);
+    }
+
+    /** Publishes aggregate-only state-plane capacity and connectivity health. */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorSessionCapacityHealth mirrorSessionCapacityHealth(
+            MirrorSessionStateStore store) {
+        return new MirrorSessionCapacityHealth(store);
+    }
+
+    /** Creates the bounded cross-replica-safe expiry trigger. */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorSessionExpiryScheduler mirrorSessionExpiryScheduler(
+            MirrorSessionStateStore store,
+            MirrorSessionCapacityTelemetry capacityTelemetry,
+            @Value("${gateway.testing.mirror.stateful.expiry.batch-size:100}")
+            int batchSize,
+            @Value("${gateway.testing.mirror.stateful.expiry.sweep-interval-millis:30000}")
+            long sweepIntervalMillis) {
+        return new MirrorSessionExpiryScheduler(
+                store, capacityTelemetry, batchSize,
+                sweepIntervalMillis);
     }
 
     /** Publishes route assembly and dynamic encrypted-store readiness independently. */

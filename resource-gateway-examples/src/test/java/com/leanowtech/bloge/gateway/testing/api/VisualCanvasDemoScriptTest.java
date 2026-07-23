@@ -45,6 +45,10 @@ class VisualCanvasDemoScriptTest {
                 "--stateful",
                 "BLOGE_VISUAL_CANVAS_STATEFUL",
                 "RG_MIRROR_STATEFUL_KEY_RING",
+                "RG_MIRROR_STATEFUL_MAXIMUM_ACTIVE_SESSIONS",
+                "RG_MIRROR_STATEFUL_MAXIMUM_RETAINED_PAYLOAD_BYTES",
+                "RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS",
+                "RG_MIRROR_STATEFUL_EXPIRY_BATCH_SIZE",
                 "scripts/start-visual-canvas-demo.sh --stateful");
     }
 

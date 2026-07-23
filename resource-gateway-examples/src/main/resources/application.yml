@@ -54,6 +54,17 @@ gateway:
         enabled: ${RG_MIRROR_STATEFUL_ENABLED:false}
         instance-id: ${RG_MIRROR_STATEFUL_INSTANCE_ID:}
         lease-duration-seconds: ${RG_MIRROR_STATEFUL_LEASE_SECONDS:30}
+        capacity:
+          # Database-authoritative global/per-scope limits plus fail-fast replica backpressure.
+          maximum-active-sessions: ${RG_MIRROR_STATEFUL_MAXIMUM_ACTIVE_SESSIONS:1000}
+          maximum-scope-active-sessions: ${RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_ACTIVE_SESSIONS:100}
+          maximum-retained-payload-bytes: ${RG_MIRROR_STATEFUL_MAXIMUM_RETAINED_PAYLOAD_BYTES:4294967296}
+          maximum-scope-retained-payload-bytes: ${RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_RETAINED_PAYLOAD_BYTES:536870912}
+          maximum-concurrent-commands: ${RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS:32}
+        expiry:
+          # Bounded oldest-first ciphertext erasure; the store serializes competing replicas.
+          batch-size: ${RG_MIRROR_STATEFUL_EXPIRY_BATCH_SIZE:100}
+          sweep-interval-millis: ${RG_MIRROR_STATEFUL_EXPIRY_SWEEP_INTERVAL_MILLIS:30000}
         datasource:
           # This must remain a physically distinct database/credential in managed deployments.
           url: ${RG_MIRROR_STATEFUL_JDBC_URL:jdbc:h2:file:./target/bloge-resource-gateway-mirror-state;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false}

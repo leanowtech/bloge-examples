@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStatePayloadProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateBaselineResolver;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -179,6 +180,43 @@ class MirrorSessionIntegrationServiceTest {
         }
     }
 
+    @Test
+    void mapsReplicaCommandBackpressureToStableRetryableCapacityProblem() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            harness.service().create(create(fixture.payload()), identity());
+            MirrorSessionCapacityTelemetry telemetry =
+                    new MirrorSessionCapacityTelemetry(
+                            new SimpleMeterRegistry());
+            MirrorSessionCommandAdmission admission =
+                    new MirrorSessionCommandAdmission(1, telemetry);
+            MirrorSessionIntegrationService bounded =
+                    new MirrorSessionIntegrationService(
+                            mapper, harness.store(),
+                            MirrorStateBaselineResolver.none(),
+                            Clock.fixed(NOW, ZoneOffset.UTC),
+                            "bounded-replica", 30,
+                            admission, telemetry);
+
+            try (MirrorSessionCommandAdmission.Permit ignored =
+                         admission.tryAcquire().orElseThrow()) {
+                assertProblem(() -> bounded.command(
+                        fixture.state().sessionId(),
+                        command(fixture.effect(), "REQ-1", 100),
+                        identity()),
+                        429,
+                        MirrorSessionStateStoreException.Code
+                                .CAPACITY_EXCEEDED.wireCode(),
+                        true);
+            }
+
+            assertThat(bounded.command(
+                    fixture.state().sessionId(),
+                    command(fixture.effect(), "REQ-1", 100),
+                    identity()).descriptor().stateRevision()).isEqualTo(1);
+        }
+    }
+
     private Fixture fixture() {
         StateModel model = StateModelIntegrity.seal(
                 mapper, StatefulMirrorProtocolTest.stateModel());
@@ -334,11 +372,21 @@ class MirrorSessionIntegrationServiceTest {
         }
 
         @Override
+        public int expireDue(int limit) {
+            return delegate.expireDue(limit);
+        }
+
+        @Override
         public List<OperationAudit> recentAudit(
                 CapabilitySnapshot.Scope scope,
                 String sessionId,
                 int limit) {
             return delegate.recentAudit(scope, sessionId, limit);
+        }
+
+        @Override
+        public CapacitySnapshot capacity() {
+            return delegate.capacity();
         }
 
         @Override

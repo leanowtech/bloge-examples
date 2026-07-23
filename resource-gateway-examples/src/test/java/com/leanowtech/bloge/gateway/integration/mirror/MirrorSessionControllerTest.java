@@ -175,6 +175,45 @@ class MirrorSessionControllerTest {
                 .andExpect(jsonPath("$.retryable").value(true));
     }
 
+    @Test
+    void capacityRejectionPublishesStable429Contract()
+            throws Exception {
+        Fixture fixture = fixture();
+        MirrorSessionIntegrationService service =
+                mock(MirrorSessionIntegrationService.class);
+        IntegrationRequestAuthenticator authenticator =
+                mock(IntegrationRequestAuthenticator.class);
+        MirrorSessionRequestDecoder decoder =
+                mock(MirrorSessionRequestDecoder.class);
+        when(authenticator.authenticate(
+                any(HttpHeaders.class),
+                eq(IntegrationOperation.MIRROR_SESSION_CREATE)))
+                .thenReturn(identity());
+        when(decoder.decodeCreate(any(byte[].class), eq(identity())))
+                .thenReturn(fixture.create());
+        when(service.create(fixture.create(), identity()))
+                .thenThrow(new IntegrationProblemException(
+                        IntegrationProblem.tooManyRequests(
+                                "RG.MIRROR.SESSION.CAPACITY_EXCEEDED",
+                                "The mirror state data plane is at its admission limit.",
+                                "corr-1",
+                                Map.of("retryAfterSeconds", 1))));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(
+                        new MirrorSessionController(
+                                service, authenticator, decoder))
+                .setControllerAdvice(new IntegrationProblemHandler())
+                .build();
+
+        mvc.perform(post("/api/mirror/sessions")
+                        .contentType(APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "1"))
+                .andExpect(jsonPath("$.code").value(
+                        "RG.MIRROR.SESSION.CAPACITY_EXCEEDED"))
+                .andExpect(jsonPath("$.retryable").value(true));
+    }
+
     private Fixture fixture() {
         StateModel model = StateModelIntegrity.seal(
                 mapper, StatefulMirrorProtocolTest.stateModel());

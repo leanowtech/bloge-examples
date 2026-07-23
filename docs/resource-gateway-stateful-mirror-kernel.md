@@ -22,6 +22,10 @@ production-certified runtime。
 - 同进程 fair lock、跨 replica 数据库 lease/fence、expected state fingerprint 和存储 CAS 共同防止丢更新；
   命令结束立即精确释放 lease，旧 owner 不能释放新 owner 的 fence。
 - TTL、显式 destroy、终态 descriptor、create replay 和 command replay 已形成稳定语义。
+- 数据库权威的全局/企业 scope 活动 Session 数与保留 canonical payload 字节配额在同一事务栅栏下判定；一个租户不能
+  吞掉整个部署，跨副本也不能同时抢到最后一个名额。
+- 每副本命令执行使用无等待的公平 admission；执行中和等待单 Session 锁的请求总量都受硬上限保护。
+- 过期 worker 按最早到期顺序有界擦除密文，健康检查和指标只暴露固定基数的全局容量事实。
 
 当前实现**仍不代表**以下能力已经可用：
 
@@ -30,7 +34,7 @@ production-certified runtime。
 - stateful query resolver；
 - 签名 checkpoint、跨区域恢复、灾备演练和逐写点进程 crash certification；
 - state transition evidence 与 ANEKE workbook 导出；
-- capacity admission、固定基数 telemetry、stateful Scenario UI 与 fidelity/outcome 校准；
+- 目标共享数据库的方言/锁语义认证、容量基准、stateful Scenario UI 与 fidelity/outcome 校准；
 - 生产级共享数据库、跨区域 owner 接管与 HA/DR SLO 认证。
 
 Capability probe 会分别报告事实：协议、Session API 和数据面 readiness 可以为 `true`；在 resolver/evidence
@@ -59,15 +63,22 @@ export RG_MIRROR_STATEFUL_ENABLED=true
 export RG_MIRROR_STATEFUL_INSTANCE_ID=rg-staging-a
 export RG_MIRROR_STATEFUL_ACTIVE_KEY_ID=kms-generation-7
 export RG_MIRROR_STATEFUL_KEY_RING='kms-generation-7=<base64-aes256>,kms-generation-6=<base64-aes256>'
-export RG_MIRROR_STATEFUL_JDBC_URL='jdbc:postgresql://state-plane.example/mirror'
+export RG_MIRROR_STATEFUL_JDBC_URL='<vendor-certified-state-plane-jdbc-url>'
 export RG_MIRROR_STATEFUL_JDBC_USERNAME='mirror_runtime'
 export RG_MIRROR_STATEFUL_JDBC_PASSWORD='<deployment-secret>'
+export RG_MIRROR_STATEFUL_MAXIMUM_ACTIVE_SESSIONS=10000
+export RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_ACTIVE_SESSIONS=500
+export RG_MIRROR_STATEFUL_MAXIMUM_RETAINED_PAYLOAD_BYTES=42949672960
+export RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_RETAINED_PAYLOAD_BYTES=2147483648
+export RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS=64
 
 ./scripts/start-visual-canvas-demo.sh --profile staging
 ```
 
 state-plane JDBC URL/credential 必须与 control plane 物理隔离；active key 缺失、数据库不可用、复用 control
-DB 或 profile 不允许时启动失败关闭。`production` 即使设置全部开关也不会装配 Controller。
+DB 或 profile 不允许时启动失败关闭。仓库自动化当前只认证 H2；换用 PostgreSQL、MySQL 或企业数据库前必须
+完成本节测试矩阵中的 DDL、行锁、事务隔离和并发认证，不能因为接受任意 JDBC URL 就推断已支持该方言。
+`production` 即使设置全部开关也不会装配 Controller。
 
 启动后以 capability probe 为准：
 
@@ -130,6 +141,74 @@ client.destroyMirrorSession(descriptor.path("sessionId").asText());
 输入返回原 receipt，且 exact replay 先于 `expectedStateFingerprint` 判断，从而允许安全重试“已提交但响应
 丢失”的请求；optimistic fence 只约束真正的新提交。key 相同但命令内容漂移会失败关闭。不要把 Session
 payload、command input 或 receipt response 写进日志和公开 evidence。
+
+### 1.2 容量、背压与过期回收
+
+Stateful Mirror 同时使用两个不同边界，不能只依赖线程池或数据库连接池：
+
+1. **数据面 admission**：创建 Session 和提交更大状态时，在数据库事务内锁定唯一
+   `mirror_session_capacity_guard` 行，再计算全局与完整企业 scope 的活动 Session 数、保留 canonical payload 字节。
+   所有副本竞争同一权威栅栏，因此不会靠进程内近似计数超卖。
+2. **副本 admission**：command 在进入 Session fair lock 之前立即尝试获取本地 permit。没有 permit 就
+   返回 `429`，不在 servlet 线程、Session 锁或 JDBC 连接池前形成无界队列。
+
+“活动数量”和“保留字节”故意采用不同生命周期：
+
+- 已过期 Session 不再占活动数量，但只要密文尚未擦除，就继续占保留字节。
+- destroy、读时发现过期或后台 expiry sweep 完成终态事务后，密文长度归零，才释放字节配额。
+- command 提交按 `新 canonical payload 字节 - 旧 canonical payload 字节` 检查，拒绝发生在
+  descriptor、revision、audit 和密文改变之前。
+- exact create replay 和 exact command replay 在 admission/fingerprint fence 之前识别；系统满载时，已经成功
+  的调用仍能安全拿回原结果，不会被容量状态改写成新失败。
+
+容量拒绝统一返回 HTTP `429`、`RG.MIRROR.SESSION.CAPACITY_EXCEEDED`、
+`retryable=true` 和 `Retry-After`。调用方应按 `Retry-After` 加抖动重试，并保持同一 idempotency key；
+不得改 key 绕过 admission，也不得回退内存、control DB 或真实业务资源。
+
+| 环境变量 | 默认值 | 语义 |
+|---|---:|---|
+| `RG_MIRROR_STATEFUL_MAXIMUM_ACTIVE_SESSIONS` | `1000` | 部署全局未过期活动 Session 数 |
+| `RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_ACTIVE_SESSIONS` | `100` | 一个完整 tenant/org/project/environment/region scope 的活动数 |
+| `RG_MIRROR_STATEFUL_MAXIMUM_RETAINED_PAYLOAD_BYTES` | `4294967296` | 全局尚未擦除的 canonical serialized payload 字节 |
+| `RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_RETAINED_PAYLOAD_BYTES` | `536870912` | 单 scope 尚未擦除的 canonical serialized payload 字节 |
+| `RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS` | `32` | 单副本执行中或等待 Session 锁的 command 总数 |
+| `RG_MIRROR_STATEFUL_EXPIRY_BATCH_SIZE` | `100` | 单次最早到期擦除页，范围 `1..1000` |
+| `RG_MIRROR_STATEFUL_EXPIRY_SWEEP_INTERVAL_MILLIS` | `30000` | 每个副本上一次 sweep 完成到下一次开始的间隔，范围 `1000..3600000` |
+
+scope 上限必须小于或等于全局上限。数量上限最大 `1,000,000`，字节上限最大 `1 TiB`，本地 command
+上限最大 `4096`；非法组合在 Spring 装配时失败，而不是带病启动。默认值只用于本地/test，不是容量建议。
+
+`mirrorSessionCapacity` health component 的语义是：
+
+- 数据库可达且容量可读取：`UP`；即使满载仍为 `UP`，但 `admissionAvailable=false`。
+- 数据库不可达、容量聚合失败或 store 未 ready：`DOWN`，且不回显 SQL、scope、Session、key 或 payload。
+- detail 是否通过 `/actuator/health` 对外可见由部署的 Actuator 授权策略决定，不能把隐藏 detail 当成没有监控。
+
+固定基数 Micrometer 指标如下，tag 只来自封闭枚举：
+
+| 指标 | tag/含义 |
+|---|---|
+| `resource.gateway.mirror.session.admission.decisions` | `boundary=replica|data_plane`、`decision=admitted|rejected` |
+| `resource.gateway.mirror.session.commands.inflight` | 当前副本已获 permit 的 command |
+| `resource.gateway.mirror.session.capacity.active.sessions` | 数据库权威全局活动数 |
+| `resource.gateway.mirror.session.capacity.retained.payload.bytes` | 全局尚未擦除的 canonical payload 字节 |
+| `resource.gateway.mirror.session.capacity.expired.retained.payload.bytes` | 已过期但还未擦除的 canonical payload 字节 |
+| `resource.gateway.mirror.session.capacity.maximum.sessions` | 配置的全局活动数上限 |
+| `resource.gateway.mirror.session.capacity.maximum.retained.payload.bytes` | 配置的全局字节上限 |
+| `resource.gateway.mirror.session.expiry.sweeps` | `outcome=succeeded|failed|skipped` |
+| `resource.gateway.mirror.session.expiry.last.expired.sessions` | 最近一次成功 sweep 擦除数 |
+
+禁止向这些指标追加 tenant、scope、session、request、actor、correlation、异常文本或 payload tag。生产告警至少
+覆盖全局容量利用率、数据面拒绝率、副本拒绝率、过期保留字节持续增长、连续 sweep failure 和 health DOWN。
+
+这里的 payload bytes 是加密前 canonical serialization 的长度，并同时用于解密后的完整性校验；它约束业务
+状态体量，但不等于 CLOB envelope、索引、MVCC/WAL 或备份的物理磁盘占用。数据库磁盘、水位与写放大必须
+由数据库原生指标和独立配额治理。
+
+当前实现以一个数据库 guard 行换取精确跨副本配额，create、状态增长 commit 与 expiry sweep 会在该点串行。
+这是正确性优先的首版，不是无限扩展结构。上线前必须在目标数据库上量出 guard lock p95/p99、事务时间、
+拒绝率、连接池等待和 sweep 对前台延迟的影响；超过目标 SLO 后按稳定 scope hash 分片 guard，并证明全局总量
+不会因分片而失去硬约束。禁止未经基准直接增大连接池掩盖锁竞争。
 
 ## 2. 为什么先做事务内核
 
@@ -437,7 +516,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | RG-MIR-STATE-002 | 完成 | 五个 Session 协议、create/get/command/destroy API、auth-before-decode、身份派生 scope、strict bounded decoder、稳定错误 | 保持兼容性与跨语言 contract suite |
 | RG-MIR-STATE-003 | 核心完成 | 独立 JDBC 数据面、AES-256-GCM key ring、CAS head、DB lease/fence、TTL、destroy、精确 release | TEE/KMS provider、共享托管 DB、HA/DR 与跨区域接管认证 |
 | RG-MIR-STATE-004 | 核心完成 | payload/head/revision/audit 同事务提交，失败回滚；stale owner/CAS/审计失败测试 | 每个持久化写点的真实进程 kill、网络分区和恢复 fault injection |
-| RG-MIR-STATE-005 | 待实现 | 请求/表达式/集合/Schema 已有硬上限，连接池有独立上限 | 全局/租户 admission、backpressure、固定基数 telemetry、容量基准 |
+| RG-MIR-STATE-005 | 核心完成 | 数据库权威全局/scope 数量与保留字节配额、exact replay 优先、副本无等待背压、429/Retry-After、固定基数 telemetry、aggregate health、有界 oldest-first expiry erasure | 目标数据库方言与锁认证、峰值/耐久容量基准、guard 分片阈值、跨副本长期 soak |
 
 ### 10.2 P0：Stateful resolver 与退款读写读
 
@@ -477,7 +556,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | 基线 | exact hit、absent、authority outage、source mismatch、identity drift、tombstone |
 | 恢复 | 每个持久化写点 crash、checkpoint tamper、dependency drift、重复恢复 |
 | 隔离 | 跨 tenant/org/project/environment/region、production credential、真实写 egress |
-| 容量 | entity/event/receipt 上限、16 MiB payload、256 MiB snapshot、backpressure |
+| 容量 | entity/event/receipt 上限、16 MiB payload、256 MiB snapshot、全局/scope 数量与字节、commit 增长、exact replay、429/backpressure、expiry lag、guard lock 压测 |
 | 数据治理 | TTL、destroy、legal hold、deletion proof、日志/metric/exception 泄漏扫描 |
 | 业务 | refund golden/negative/boundary/retry/cancel/over-refund/read-write-read |
 

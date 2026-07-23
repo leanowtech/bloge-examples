@@ -32,6 +32,8 @@ public final class MirrorSessionIntegrationService {
     private final Clock clock;
     private final String ownerId;
     private final long leaseDurationSeconds;
+    private final MirrorSessionCommandAdmission commandAdmission;
+    private final MirrorSessionCapacityTelemetry capacityTelemetry;
     private final ConcurrentHashMap<SessionKey, LockReference> sessionLocks =
             new ConcurrentHashMap<>();
 
@@ -52,6 +54,34 @@ public final class MirrorSessionIntegrationService {
             Clock clock,
             String instanceId,
             long leaseDurationSeconds) {
+        this(mapper, store, baselineResolver, clock, instanceId,
+                leaseDurationSeconds,
+                new MirrorSessionCommandAdmission(
+                        64, MirrorSessionCapacityTelemetry.noop()),
+                MirrorSessionCapacityTelemetry.noop());
+    }
+
+    /**
+     * Creates the protected Session application service with explicit local backpressure.
+     *
+     * @param mapper canonical protocol mapper
+     * @param store dedicated encrypted data-plane store
+     * @param baselineResolver governed copy-on-write baseline authority
+     * @param clock server clock for kernel expiry admission
+     * @param instanceId unique replica identity; blank generates a process identity
+     * @param leaseDurationSeconds bounded database lease duration
+     * @param commandAdmission fair replica-local command admission boundary
+     * @param capacityTelemetry fixed-cardinality capacity telemetry sink
+     */
+    public MirrorSessionIntegrationService(
+            ObjectMapper mapper,
+            MirrorSessionStateStore store,
+            MirrorStateBaselineResolver baselineResolver,
+            Clock clock,
+            String instanceId,
+            long leaseDurationSeconds,
+            MirrorSessionCommandAdmission commandAdmission,
+            MirrorSessionCapacityTelemetry capacityTelemetry) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.store = Objects.requireNonNull(store, "store");
         this.baselineResolver = Objects.requireNonNull(
@@ -67,6 +97,10 @@ public final class MirrorSessionIntegrationService {
                     "mirror session instance or lease configuration is invalid");
         }
         this.leaseDurationSeconds = leaseDurationSeconds;
+        this.commandAdmission = Objects.requireNonNull(
+                commandAdmission, "commandAdmission");
+        this.capacityTelemetry = Objects.requireNonNull(
+                capacityTelemetry, "capacityTelemetry");
     }
 
     /**
@@ -94,6 +128,9 @@ public final class MirrorSessionIntegrationService {
                             MirrorSessionProtocolIntegrity.createFingerprint(
                                     mapper, request),
                             request.payload()));
+            capacityTelemetry.record(
+                    MirrorSessionCapacityTelemetry.Boundary.DATA_PLANE,
+                    MirrorSessionCapacityTelemetry.Decision.ADMITTED);
             return created.descriptor();
         } catch (MirrorSessionStateStoreException failure) {
             throw storeProblem(identity, failure);
@@ -147,13 +184,24 @@ public final class MirrorSessionIntegrationService {
         }
         SessionKey key = new SessionKey(scope, normalizeSessionId(
                 sessionId, identity));
-        LockReference reference = retainLock(key);
-        reference.lock().lock();
+        MirrorSessionCommandAdmission.Permit permit =
+                commandAdmission.tryAcquire()
+                        .orElseThrow(() ->
+                                localCapacityProblem(identity));
         try {
-            return executeCommand(key, request, identity);
+            LockReference reference = retainLock(key);
+            try {
+                reference.lock().lock();
+                try {
+                    return executeCommand(key, request, identity);
+                } finally {
+                    reference.lock().unlock();
+                }
+            } finally {
+                releaseLock(key, reference);
+            }
         } finally {
-            reference.lock().unlock();
-            releaseLock(key, reference);
+            permit.close();
         }
     }
 
@@ -262,6 +310,11 @@ public final class MirrorSessionIntegrationService {
                 ? claimed.descriptor()
                 : Objects.requireNonNull(
                         committed.get(), "new command did not commit").descriptor();
+        if (!replayed) {
+            capacityTelemetry.record(
+                    MirrorSessionCapacityTelemetry.Boundary.DATA_PLANE,
+                    MirrorSessionCapacityTelemetry.Decision.ADMITTED);
+        }
         return new MirrorSessionCommandResult(
                 MirrorSessionCommandResult.SCHEMA_VERSION,
                 descriptor, receipt, replayed);
@@ -307,9 +360,15 @@ public final class MirrorSessionIntegrationService {
         return normalized;
     }
 
-    private static IntegrationProblemException storeProblem(
+    private IntegrationProblemException storeProblem(
             IntegrationRequestContext identity,
             MirrorSessionStateStoreException failure) {
+        if (failure.code()
+                == MirrorSessionStateStoreException.Code.CAPACITY_EXCEEDED) {
+            capacityTelemetry.record(
+                    MirrorSessionCapacityTelemetry.Boundary.DATA_PLANE,
+                    MirrorSessionCapacityTelemetry.Decision.REJECTED);
+        }
         String code = failure.code().wireCode();
         Map<String, Object> retry = failure.code().retryable()
                 ? Map.of("retryAfterSeconds", failure.retryAfterSeconds())
@@ -343,6 +402,18 @@ public final class MirrorSessionIntegrationService {
                                     "The mirror state data plane cannot safely serve this request.",
                                     identity.correlationId(), retry));
         };
+    }
+
+    private static IntegrationProblemException localCapacityProblem(
+            IntegrationRequestContext identity) {
+        MirrorSessionStateStoreException.Code capacity =
+                MirrorSessionStateStoreException.Code.CAPACITY_EXCEEDED;
+        return new IntegrationProblemException(
+                IntegrationProblem.tooManyRequests(
+                        capacity.wireCode(),
+                        "The mirror session command executor is at its admission limit.",
+                        identity.correlationId(),
+                        Map.of("retryAfterSeconds", 1)));
     }
 
     private static IntegrationProblemException stateProblem(

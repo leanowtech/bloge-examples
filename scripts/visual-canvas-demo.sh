@@ -62,6 +62,13 @@ Environment:
   RG_MIRROR_STATEFUL_INSTANCE_ID       optional stable replica id
   RG_MIRROR_STATEFUL_ACTIVE_KEY_ID     optional active AES key id
   RG_MIRROR_STATEFUL_KEY_RING          optional keyId=base64AES256[,oldKeyId=...]
+  RG_MIRROR_STATEFUL_MAXIMUM_ACTIVE_SESSIONS  global active-session limit
+  RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_ACTIVE_SESSIONS  exact-scope active-session limit
+  RG_MIRROR_STATEFUL_MAXIMUM_RETAINED_PAYLOAD_BYTES  global canonical-payload-byte limit
+  RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_RETAINED_PAYLOAD_BYTES  scope canonical-byte limit
+  RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS  replica-local in-flight limit
+  RG_MIRROR_STATEFUL_EXPIRY_BATCH_SIZE  oldest-first erasure page size (1..1000)
+  RG_MIRROR_STATEFUL_EXPIRY_SWEEP_INTERVAL_MILLIS  erasure sweep delay
   RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID  required for staging
   RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING       required for staging; keyId=base64AES256[,..]
   RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID  required for staging

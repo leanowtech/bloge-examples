@@ -70,6 +70,17 @@ public interface MirrorSessionStateStore {
     DestroyResult destroy(CapabilitySnapshot.Scope scope, String sessionId);
 
     /**
+     * Erases one bounded oldest-first page of due active session payloads.
+     *
+     * <p>Implementations must coordinate competing replicas and commit each terminal descriptor,
+     * ciphertext erasure, lease release, and success audit atomically.</p>
+     *
+     * @param limit positive bounded page size
+     * @return number of sessions terminalized by this sweep
+     */
+    int expireDue(int limit);
+
+    /**
      * Reads recent payload-free operation facts for diagnostics and evidence projection.
      *
      * @param scope exact enterprise namespace
@@ -79,6 +90,18 @@ public interface MirrorSessionStateStore {
      */
     List<OperationAudit> recentAudit(
             CapabilitySnapshot.Scope scope, String sessionId, int limit);
+
+    /**
+     * Reads a payload-free database-authoritative global capacity observation.
+     *
+     * <p>The active count excludes expired sessions, while retained bytes continue to include
+     * their payload until terminal erasure is materialized. The snapshot is suitable for health
+     * and low-cardinality telemetry, not as an admission decision; implementations must make
+     * admission atomically with the mutation.</p>
+     *
+     * @return current global usage and configured hard limits
+     */
+    CapacitySnapshot capacity();
 
     /**
      * Probes local data-plane connectivity and encryption-key availability without decrypting a
@@ -271,6 +294,46 @@ public interface MirrorSessionStateStore {
     /** Fixed-cardinality state-store outcome vocabulary. */
     enum Outcome {
         SUCCEEDED
+    }
+
+    /**
+     * Payload-free global capacity observation.
+     *
+     * @param activeSessions active, non-expired sessions
+     * @param retainedPayloadBytes canonical serialized payload bytes not yet erased
+     * @param expiredRetainedPayloadBytes retained bytes belonging to expired sessions
+     * @param maximumActiveSessions configured global active-session limit
+     * @param maximumRetainedPayloadBytes configured global retained-byte limit
+     */
+    record CapacitySnapshot(
+            long activeSessions,
+            long retainedPayloadBytes,
+            long expiredRetainedPayloadBytes,
+            long maximumActiveSessions,
+            long maximumRetainedPayloadBytes
+    ) {
+        /** Validates non-negative usage under positive configured limits. */
+        public CapacitySnapshot {
+            if (activeSessions < 0
+                    || retainedPayloadBytes < 0
+                    || expiredRetainedPayloadBytes < 0
+                    || expiredRetainedPayloadBytes > retainedPayloadBytes
+                    || maximumActiveSessions < 1
+                    || maximumRetainedPayloadBytes < 1) {
+                throw new IllegalArgumentException(
+                        "mirror session capacity snapshot is invalid");
+            }
+        }
+
+        /**
+         * @return whether both global dimensions are below their hard limits; an actual payload
+         * still requires atomic admission against its byte size and scope limits
+         */
+        public boolean admissionAvailable() {
+            return activeSessions < maximumActiveSessions
+                    && retainedPayloadBytes
+                    < maximumRetainedPayloadBytes;
+        }
     }
 
     private static String required(String value, String field) {

@@ -279,12 +279,22 @@ lease/fence, expected-state checks, CAS, exact lease release, TTL and destroy
 define the concurrency and lifecycle boundary. Authentication happens before
 decoding and scope comes only from verified identity.
 
+The database serializes create, payload-growth commit, and expiry capacity
+decisions under one cross-replica guard. Global and exact enterprise-scope
+limits cover both active-session count and all canonical serialized payload
+bytes not yet erased, including expired payload awaiting cleanup. Commands also pass a fair,
+non-blocking replica-local admission gate before waiting on a session lock.
+Saturation is a stable retryable `429`; exact idempotent replay remains
+available while full. A bounded oldest-first worker erases expired ciphertext,
+and aggregate health plus fixed-cardinality metrics never expose customer
+dimensions.
+
 This is not a production-ready stateful resolver: TEE/KMS custody,
-capacity/backpressure, stateful read lowering, state evidence, signed
-checkpoint/recovery, cryptographic deletion proof and HA/DR certification
-remain. The probe may report Session API/store ready while resolver/runtime
-readiness remains false. Startup, Java usage, stable errors, and remaining
-industrial work packages are in the
+stateful read lowering, state evidence, signed checkpoint/recovery,
+cryptographic deletion proof, target-database capacity/lock certification and
+HA/DR certification remain. The probe may report Session API/store ready while
+resolver/runtime readiness remains false. Startup, Java usage, capacity
+configuration, stable errors, and remaining industrial work packages are in the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
 
 The Stage 1 compiler and run kernels verify Capability Closure against the recursively
@@ -599,6 +609,22 @@ Useful variants:
 ./scripts/visual-canvas-demo.sh restart
 ./scripts/stop-visual-canvas-demo.sh
 ```
+
+`--stateful` uses conservative local defaults: 1,000 global and 100 per-scope
+active sessions, 4 GiB global and 512 MiB per-scope retained canonical payload,
+32 concurrent commands per replica, and a 100-session expiry page every 30
+seconds. Override them with
+`RG_MIRROR_STATEFUL_MAXIMUM_ACTIVE_SESSIONS`,
+`RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_ACTIVE_SESSIONS`,
+`RG_MIRROR_STATEFUL_MAXIMUM_RETAINED_PAYLOAD_BYTES`,
+`RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_RETAINED_PAYLOAD_BYTES`,
+`RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS`,
+`RG_MIRROR_STATEFUL_EXPIRY_BATCH_SIZE`, and
+`RG_MIRROR_STATEFUL_EXPIRY_SWEEP_INTERVAL_MILLIS`. These are hard safety
+bounds, not production sizing recommendations. Target database dialect, row-lock
+semantics, guard contention, expiry lag, and peak/soak behavior require
+deployment-specific certification; this payload counter is not a physical
+database disk quota, and the repository test gate currently certifies H2 only.
 
 `staging` requires two independent deployment-secret key rings before `--profile staging`:
 `RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID` plus

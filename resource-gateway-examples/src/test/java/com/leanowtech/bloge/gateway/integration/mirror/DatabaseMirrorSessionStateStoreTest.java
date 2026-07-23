@@ -18,8 +18,12 @@ import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.CAPACITY_EXCEEDED;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.CORRUPT;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.CREATE_CONFLICT;
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.GONE;
@@ -359,6 +363,192 @@ class DatabaseMirrorSessionStateStoreTest {
         }
     }
 
+    @Test
+    void capacityAdmissionPreservesExactReplayAndRecoversAfterDestroy() throws Exception {
+        Fixture firstFixture = fixture("refund-session-capacity-a");
+        int payloadBytes = mapper.writeValueAsBytes(firstFixture.payload()).length;
+        MirrorSessionCapacityPolicy policy = new MirrorSessionCapacityPolicy(
+                1, 1, payloadBytes * 4L, payloadBytes * 4L);
+        try (Harness harness = harness(policy)) {
+            MirrorSessionStateStore.CreateCommand first =
+                    create("create-capacity-a", firstFixture.payload());
+            Fixture secondFixture = fixture("refund-session-capacity-b");
+
+            assertThat(harness.store().create(first).disposition())
+                    .isEqualTo(MirrorSessionStateStore.CreateDisposition.CREATED);
+            assertThat(harness.store().create(first).disposition())
+                    .isEqualTo(MirrorSessionStateStore.CreateDisposition.REPLAYED);
+            assertStoreFailure(() -> harness.store().create(
+                    create("create-capacity-b", secondFixture.payload())),
+                    CAPACITY_EXCEEDED);
+
+            MirrorSessionStateStore.CapacitySnapshot capacity =
+                    harness.store().capacity();
+            assertThat(capacity.activeSessions()).isEqualTo(1);
+            assertThat(capacity.retainedPayloadBytes()).isEqualTo(payloadBytes);
+            assertThat(capacity.expiredRetainedPayloadBytes()).isZero();
+            assertThat(capacity.maximumActiveSessions()).isEqualTo(1);
+            assertThat(capacity.maximumRetainedPayloadBytes())
+                    .isEqualTo(payloadBytes * 4L);
+
+            harness.store().destroy(
+                    firstFixture.state().scope(),
+                    firstFixture.state().sessionId());
+            assertThat(harness.store().create(
+                    create("create-capacity-b", secondFixture.payload()))
+                    .disposition())
+                    .isEqualTo(MirrorSessionStateStore.CreateDisposition.CREATED);
+        }
+    }
+
+    @Test
+    void competingReplicasCannotOverAdmitTheLastGlobalSession() throws Exception {
+        Fixture firstFixture = fixture("refund-session-race-a");
+        Fixture secondFixture = fixture("refund-session-race-b");
+        int payloadBytes = mapper.writeValueAsBytes(firstFixture.payload()).length;
+        MirrorSessionCapacityPolicy policy = new MirrorSessionCapacityPolicy(
+                1, 1, payloadBytes * 4L, payloadBytes * 4L);
+        try (Harness harness = harness(policy);
+             var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            DatabaseMirrorSessionStateStore replica =
+                    store(harness, policy);
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+            Future<Object> first = executor.submit(() -> createAfterBarrier(
+                    harness.store(),
+                    create("create-race-a", firstFixture.payload()),
+                    ready, start));
+            Future<Object> second = executor.submit(() -> createAfterBarrier(
+                    replica,
+                    create("create-race-b", secondFixture.payload()),
+                    ready, start));
+
+            assertThat(ready.await(
+                    5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            assertThat(List.of(first.get(), second.get()))
+                    .containsExactlyInAnyOrder(
+                            MirrorSessionStateStore.CreateDisposition.CREATED,
+                            CAPACITY_EXCEEDED);
+            assertThat(harness.store().capacity().activeSessions())
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
+    void payloadGrowthIsRejectedBeforeChangingStateOrCiphertext() throws Exception {
+        Fixture fixture = fixture();
+        int initialBytes = mapper.writeValueAsBytes(fixture.payload()).length;
+        MirrorSessionCapacityPolicy policy = new MirrorSessionCapacityPolicy(
+                10, 10, initialBytes, initialBytes);
+        try (Harness harness = harness(policy)) {
+            harness.store().create(create("create-1", fixture.payload()));
+            MirrorSessionStateStore.ClaimedSession claimed =
+                    harness.store().claim(claim(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(), "worker-a", 30));
+            MirrorSessionPayload candidate = committedPayload(
+                    claimed.payload(), fixture.effect(), 100);
+
+            assertThat(mapper.writeValueAsBytes(candidate).length)
+                    .isGreaterThan(initialBytes);
+            assertStoreFailure(() -> harness.store().compareAndSet(
+                    new MirrorSessionStateStore.CommitCommand(
+                            claimed.lease(),
+                            claimed.payload().state().fingerprint(),
+                            candidate)), CAPACITY_EXCEEDED);
+
+            MirrorSessionDescriptor current = harness.store().find(
+                    fixture.state().scope(),
+                    fixture.state().sessionId()).orElseThrow();
+            assertThat(current.stateRevision()).isZero();
+            assertThat(harness.jdbc().queryForObject(
+                    "SELECT payload_bytes FROM mirror_session_state",
+                    Long.class)).isEqualTo(initialBytes);
+        }
+    }
+
+    @Test
+    void expiredButUnerasedCiphertextStillConsumesPhysicalByteCapacity()
+            throws Exception {
+        Fixture firstFixture = fixture("refund-session-expired-a");
+        Fixture secondFixture = fixture(
+                "refund-session-expired-b", NOW.plusSeconds(7_200));
+        int payloadBytes = mapper.writeValueAsBytes(firstFixture.payload()).length;
+        MirrorSessionCapacityPolicy policy = new MirrorSessionCapacityPolicy(
+                2, 2, payloadBytes, payloadBytes);
+        try (Harness harness = harness(policy)) {
+            harness.store().create(
+                    create("create-expired-a", firstFixture.payload()));
+            harness.clock().set(firstFixture.state().expiresAt());
+
+            MirrorSessionStateStore.CapacitySnapshot retained =
+                    harness.store().capacity();
+            assertThat(retained.activeSessions()).isZero();
+            assertThat(retained.retainedPayloadBytes()).isEqualTo(payloadBytes);
+            assertThat(retained.expiredRetainedPayloadBytes())
+                    .isEqualTo(payloadBytes);
+            assertStoreFailure(() -> harness.store().create(
+                    create("create-expired-b", secondFixture.payload())),
+                    CAPACITY_EXCEEDED);
+
+            harness.store().find(
+                    firstFixture.state().scope(),
+                    firstFixture.state().sessionId()).orElseThrow();
+            assertThat(harness.store().create(
+                    create("create-expired-b", secondFixture.payload()))
+                    .disposition())
+                    .isEqualTo(MirrorSessionStateStore.CreateDisposition.CREATED);
+        }
+    }
+
+    @Test
+    void boundedExpirySweepErasesDueCiphertextAndReleasesRetainedBytes()
+            throws Exception {
+        Fixture firstFixture = fixture("refund-session-sweep-a");
+        Fixture secondFixture = fixture("refund-session-sweep-b");
+        int payloadBytes = mapper.writeValueAsBytes(firstFixture.payload()).length;
+        MirrorSessionCapacityPolicy policy = new MirrorSessionCapacityPolicy(
+                2, 2, payloadBytes * 2L, payloadBytes * 2L);
+        try (Harness harness = harness(policy)) {
+            harness.store().create(
+                    create("create-sweep-a", firstFixture.payload()));
+            harness.store().create(
+                    create("create-sweep-b", secondFixture.payload()));
+            harness.clock().set(firstFixture.state().expiresAt());
+
+            assertThat(harness.store().expireDue(1)).isEqualTo(1);
+            MirrorSessionStateStore.CapacitySnapshot halfway =
+                    harness.store().capacity();
+            assertThat(halfway.activeSessions()).isZero();
+            assertThat(halfway.retainedPayloadBytes()).isEqualTo(payloadBytes);
+            assertThat(halfway.expiredRetainedPayloadBytes())
+                    .isEqualTo(payloadBytes);
+
+            assertThat(harness.store().expireDue(10)).isEqualTo(1);
+            assertThat(harness.store().expireDue(10)).isZero();
+            MirrorSessionStateStore.CapacitySnapshot complete =
+                    harness.store().capacity();
+            assertThat(complete.retainedPayloadBytes()).isZero();
+            assertThat(complete.expiredRetainedPayloadBytes()).isZero();
+            assertThat(harness.jdbc().queryForObject("""
+                    SELECT COUNT(*)
+                      FROM mirror_session_state
+                     WHERE status = 'EXPIRED'
+                       AND payload_envelope IS NULL
+                       AND payload_bytes = 0
+                    """, Long.class)).isEqualTo(2);
+        }
+
+        try (Harness harness = harness()) {
+            assertThatThrownBy(() -> harness.store().expireDue(0))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> harness.store().expireDue(1_001))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
     private SessionStateSpace.TransactionReceipt executeRefund(
             Harness harness,
             MirrorSessionStateStore.ClaimedSession claimed,
@@ -421,12 +611,30 @@ class DatabaseMirrorSessionStateStoreTest {
     }
 
     private Fixture fixture() {
+        return fixture("refund-session-1");
+    }
+
+    private Fixture fixture(String sessionId) {
+        return fixture(sessionId, NOW.plusSeconds(3_600));
+    }
+
+    private Fixture fixture(String sessionId, Instant expiresAt) {
         StateModel model = StateModelIntegrity.seal(
                 mapper, StatefulMirrorProtocolTest.stateModel());
         WriteEffectSpec effect = WriteEffectSpecIntegrity.seal(
                 mapper, StatefulMirrorProtocolTest.refundEffect(model));
-        SessionStateSpace state = StatefulMirrorProtocolTest.initialState(
+        SessionStateSpace initial = StatefulMirrorProtocolTest.initialState(
                 mapper, model, effect);
+        SessionStateSpace state = SessionStateSpaceIntegrity.seal(
+                mapper, new SessionStateSpace(
+                        initial.schemaVersion(), sessionId, initial.scope(),
+                        initial.planFingerprint(), initial.stateModelRef(),
+                        initial.writeEffectRefs(), initial.stateRevision(),
+                        initial.logicalClock(), initial.randomSeed(),
+                        initial.entities(), initial.tombstones(),
+                        initial.businessKeyIndex(), initial.committedEvents(),
+                        initial.processedCommands(), expiresAt,
+                        "", ""));
         MirrorSessionPayload payload = MirrorSessionProtocolIntegrity.sealInitial(
                 mapper, new MirrorSessionPayload(
                         "", model, List.of(effect), state, ""), NOW);
@@ -434,6 +642,10 @@ class DatabaseMirrorSessionStateStoreTest {
     }
 
     private Harness harness() {
+        return harness(MirrorSessionCapacityPolicy.defaults());
+    }
+
+    private Harness harness(MirrorSessionCapacityPolicy policy) {
         EmbeddedDatabase database = new EmbeddedDatabaseBuilder()
                 .setType(EmbeddedDatabaseType.H2)
                 .generateUniqueName(true)
@@ -450,8 +662,38 @@ class DatabaseMirrorSessionStateStoreTest {
                 new DatabaseMirrorSessionStateStore(
                         jdbc, mapper, protector,
                         new DataSourceTransactionManager(database),
-                        clock::get);
+                        clock::get, policy,
+                        MirrorSessionCapacityTelemetry.noop());
         return new Harness(database, jdbc, clock, store);
+    }
+
+    private DatabaseMirrorSessionStateStore store(
+            Harness harness, MirrorSessionCapacityPolicy policy) {
+        byte[] key = new byte[32];
+        java.util.Arrays.fill(key, (byte) 7);
+        MirrorStatePayloadProtector protector =
+                MirrorStatePayloadProtector.fromConfiguration(
+                        "test", "test=" + Base64.getEncoder()
+                                .encodeToString(key));
+        return new DatabaseMirrorSessionStateStore(
+                harness.jdbc(), mapper, protector,
+                new DataSourceTransactionManager(harness.database()),
+                harness.clock()::get, policy,
+                MirrorSessionCapacityTelemetry.noop());
+    }
+
+    private static Object createAfterBarrier(
+            DatabaseMirrorSessionStateStore store,
+            MirrorSessionStateStore.CreateCommand command,
+            CountDownLatch ready,
+            CountDownLatch start) throws InterruptedException {
+        ready.countDown();
+        start.await();
+        try {
+            return store.create(command).disposition();
+        } catch (MirrorSessionStateStoreException failure) {
+            return failure.code();
+        }
     }
 
     private static void assertStoreFailure(

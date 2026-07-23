@@ -2,6 +2,9 @@ package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.MirrorStatefulRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCapacityPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCapacityTelemetry;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCommandAdmission;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStore;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStateDataPlane;
@@ -80,6 +83,37 @@ class MirrorStatefulRuntimeConfigurationTest {
                 }).stateStoreReady()).isFalse();
     }
 
+    @Test
+    void rejectsInvertedCapacityAtAssemblyTime() {
+        MirrorStatefulRuntimeConfiguration configuration =
+                new MirrorStatefulRuntimeConfiguration();
+
+        assertThatThrownBy(() ->
+                configuration.mirrorSessionCapacityPolicy(
+                        10, 11, 1_000, 100))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() ->
+                configuration.mirrorSessionCommandAdmission(
+                        MirrorSessionCapacityTelemetry.noop(), 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() ->
+                configuration.mirrorSessionExpiryScheduler(
+                        org.mockito.Mockito.mock(
+                                MirrorSessionStateStore.class),
+                        MirrorSessionCapacityTelemetry.noop(),
+                        1_001,
+                        30_000))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() ->
+                configuration.mirrorSessionExpiryScheduler(
+                        org.mockito.Mockito.mock(
+                                MirrorSessionStateStore.class),
+                        MirrorSessionCapacityTelemetry.noop(),
+                        100,
+                        0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static AnnotationConfigApplicationContext context(
             boolean mirrorEnabled,
             boolean statefulEnabled,
@@ -149,6 +183,16 @@ class MirrorStatefulRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 MirrorSessionStateStore.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                MirrorSessionCapacityPolicy.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                MirrorSessionCapacityTelemetry.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                MirrorSessionCommandAdmission.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                MirrorSessionCapacityHealth.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                MirrorSessionExpiryScheduler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
                 MirrorStateBaselineResolver.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 MirrorSessionIntegrationService.class)).hasSize(1);
@@ -170,6 +214,12 @@ class MirrorStatefulRuntimeConfigurationTest {
                 MirrorStateDataPlane.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 MirrorSessionStateStore.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                MirrorSessionCapacityPolicy.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                MirrorSessionCommandAdmission.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                MirrorSessionExpiryScheduler.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 MirrorSessionIntegrationService.class)).isEmpty();
         assertThat(context.getBeansOfType(
