@@ -42,7 +42,7 @@
     },
     "matchedArtifactRefs": {
       "type": "array",
-      "maxItems": 1000,
+      "maxItems": 12000,
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/artifactRef" }
     },

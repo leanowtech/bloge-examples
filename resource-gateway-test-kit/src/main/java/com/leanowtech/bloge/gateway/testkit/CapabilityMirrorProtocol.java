@@ -154,6 +154,9 @@ public final class CapabilityMirrorProtocol {
     /** Fixture metadata contract selecting exact reviewed retry trajectories. */
     public static final String FIXTURE_MIRROR_TRAJECTORY_BINDINGS_V1 =
             "resourceGateway.fixtureMirrorTrajectoryBindings.v1";
+    /** Fixture metadata contract selecting exact reviewed recorded clusters. */
+    public static final String FIXTURE_MIRROR_CLUSTER_BINDINGS_V1 =
+            "resourceGateway.fixtureMirrorClusterBindings.v1";
 
     /** Classpath root containing the authoritative mirror schemas and fixtures. */
     public static final String SCHEMA_RESOURCE_ROOT = "/schemas/resource-gateway-mirror/";
@@ -189,6 +192,11 @@ public final class CapabilityMirrorProtocol {
     FIXTURE_MIRROR_TRAJECTORY_BINDINGS_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "fixture-mirror-trajectory-bindings-v1.fixture.json";
+    /** Packaged fixed fixture-level cluster-binding example. */
+    public static final String
+    FIXTURE_MIRROR_CLUSTER_BINDINGS_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "fixture-mirror-cluster-bindings-v1.fixture.json";
     /** Packaged compatibility fixture schema. */
     public static final String COMPATIBILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-mirror-compatibility-v1.schema.json";
@@ -318,6 +326,11 @@ public final class CapabilityMirrorProtocol {
     FIXTURE_MIRROR_TRAJECTORY_BINDINGS_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "fixture-mirror-trajectory-bindings-v1.schema.json";
+    /** Packaged strict fixture-level cluster-binding schema. */
+    public static final String
+    FIXTURE_MIRROR_CLUSTER_BINDINGS_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "fixture-mirror-cluster-bindings-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -425,6 +438,16 @@ public final class CapabilityMirrorProtocol {
     public static CapabilityCorpusClusterCompatibilityFixture
             capabilityCorpusClusterCompatibilityFixture() {
         return ClusterFixtureHolder.FIXTURE.detachedCopy();
+    }
+
+    /**
+     * Returns a strict-schema-verified copy of the fixed cluster-binding example.
+     *
+     * @return mutable copy of the nested {@code mirrorClusters} object
+     * @throws IllegalStateException when the packaged fixture is absent or malformed
+     */
+    public static JsonNode fixtureMirrorClusterBindingsFixture() {
+        return ClusterBindingFixtureHolder.FIXTURE.deepCopy();
     }
 
     private static final class BaselineHolder {
@@ -750,6 +773,31 @@ public final class CapabilityMirrorProtocol {
             java.util.HashSet<String> names = new java.util.HashSet<>();
             value.fieldNames().forEachRemaining(names::add);
             return Set.copyOf(names);
+        }
+    }
+
+    private static final class ClusterBindingFixtureHolder {
+        private static final JsonNode FIXTURE = load();
+
+        private static JsonNode load() {
+            try (InputStream input =
+                         CapabilityMirrorProtocol.class.getResourceAsStream(
+                                 FIXTURE_MIRROR_CLUSTER_BINDINGS_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException(
+                            "Fixture mirror cluster bindings are absent");
+                }
+                JsonNode value = JSON.readTree(input);
+                CapabilityMirrorSchemaValidator.require(
+                        value,
+                        FIXTURE_MIRROR_CLUSTER_BINDINGS_SCHEMA_RESOURCE,
+                        "RG.MIRROR.CLIENT.CLUSTER_BINDINGS_FIXTURE_INVALID");
+                return value;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.CLUSTER_BINDINGS_FIXTURE_UNAVAILABLE",
+                        failure);
+            }
         }
     }
 }

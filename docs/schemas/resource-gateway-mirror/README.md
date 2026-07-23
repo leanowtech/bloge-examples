@@ -47,6 +47,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-corpus-cluster-publication-v1.schema.json` | `CapabilityCorpusClusterPublication` | Immutable payload-free recorded-cluster publication with exact support, identity safety, confidence, policy, and lineage |
 | `fixture-mirror-corpus-bindings-v1.schema.json` | `FixtureMirrorCorpusBindings` | Strict immutable fixture metadata selecting one exact latest publication per external capability |
 | `fixture-mirror-trajectory-bindings-v1.schema.json` | `FixtureMirrorTrajectoryBindings` | Strict immutable fixture metadata selecting reviewed trajectories under an exact selected corpus publication |
+| `fixture-mirror-cluster-bindings-v1.schema.json` | `FixtureMirrorClusterBindings` | Strict immutable fixture metadata selecting reviewed recorded clusters under an exact selected corpus publication |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -125,7 +126,7 @@ lineage, member and representative membership, common response Schema, JSON Poin
 holdout counts, and the 95% Wilson precision interval. A successful offline result deliberately
 retains limitations for current cluster policy, validation authority, grant/retention, source
 lifecycle, and payload authority. It proves that a publication is structurally safe to consider;
-it does not prove runtime materialization or `RECORDED_CLUSTER` serving is installed.
+it does not prove that current online authorities permit materialization.
 
 `fixture-mirror-trajectory-bindings-v1.fixture.json` is the fixed payload-free trajectory
 selection fixture. The server parser cross-checks every capability and corpus publication against
@@ -138,6 +139,13 @@ materialized trajectory is consumed by the real BLOGE one-based retry loop throu
 `RECORDED_TRAJECTORY`; protocol support alone never implies dynamic readiness. The producer parser
 does not normalize invalid wire values: artifact kind is case-sensitive, identifiers must already
 match the bounded wire pattern, and revisions must be positive integers within signed 64-bit range.
+
+`fixture-mirror-cluster-bindings-v1.fixture.json` is the fixed payload-free cluster selection
+fixture. The server parser cross-checks every capability and corpus publication against the same
+fixture's `mirrorCorpus` selection. The independent `FixtureMirrorClusterBindingsVerifier` can
+perform the same cross-check when given both nested objects, while still refusing to claim current
+cluster/corpus heads, policy, validation, grant, lifecycle, retention, payload, or runtime
+readiness.
 
 ## Deployment isolation attestation boundary
 
@@ -405,7 +413,8 @@ Problem details never contain request context, fixture/replay values, node/edge 
   owner-approved request-to-response JSON Pointer mappings whose response paths are globally
   disjoint and non-overlapping. Holdout precision is recomputed from counts with
   `WILSON_PRECISION_95_V1`; low point estimates, lower bounds, support, identity diversity, or
-  false-positive thresholds cannot be waived by the command. Publication is not runtime serving.
+  false-positive thresholds cannot be waived by the command. Runtime serving additionally requires
+  an exact fixture binding and online revalidation of every mutable authority and content address.
 
 ## Independent client admission
 
@@ -502,10 +511,10 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, MirrorResolution protocol, governed observation admission, and governed
-corpus publication increments, the latest complete Resource Gateway gate passes 4742 tests with no failures or
+corpus publication/runtime increments, the latest complete Resource Gateway gate passes 4752 tests with no failures or
 errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds the
-executable Spring Boot JAR. The independent test-kit gate passes 302 tests with no failures, errors, or skips,
-packages all 50 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
+executable Spring Boot JAR. The independent test-kit gate passes 304 tests with no failures, errors, or skips,
+packages all 52 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
 
 The Stage 1 `MirrorPlan` protocol presence alone does not make mirror execution available. Capability discovery
 always reports `mirrorPlanProtocol=true`. It reports `mirrorPlanCompilation` and

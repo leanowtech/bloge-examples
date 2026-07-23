@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "resourceGateway.fixtureMirrorClusterBindings.v1",
+  "clusters": [
+    {
+      "capabilityRef": {
+        "kind": "CAPABILITY",
+        "id": "operator:customer.lookup",
+        "revision": 3,
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "corpusPublicationRef": {
+        "kind": "CAPABILITY_CORPUS_PUBLICATION",
+        "id": "customer-lookup-corpus",
+        "revision": 7,
+        "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "clusterPublicationRef": {
+        "kind": "CAPABILITY_CORPUS_CLUSTER_PUBLICATION",
+        "id": "customer-lookup-retail-cluster",
+        "revision": 2,
+        "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      }
+    },
+    {
+      "capabilityRef": {
+        "kind": "CAPABILITY",
+        "id": "operator:customer.lookup",
+        "revision": 3,
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "corpusPublicationRef": {
+        "kind": "CAPABILITY_CORPUS_PUBLICATION",
+        "id": "customer-lookup-corpus",
+        "revision": 7,
+        "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "clusterPublicationRef": {
+        "kind": "CAPABILITY_CORPUS_CLUSTER_PUBLICATION",
+        "id": "customer-lookup-smb-cluster",
+        "revision": 10,
+        "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      }
+    }
+  ]
+}

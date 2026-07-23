@@ -55,7 +55,9 @@ class CapabilityMirrorSchemaPackagingTest {
                 "capability-corpus-cluster-validation-v1.schema.json",
                 "capability-corpus-cluster-publish-request-v1.schema.json",
                 "capability-corpus-cluster-publication-v1.schema.json",
-                "fixture-mirror-corpus-bindings-v1.schema.json")) {
+                "fixture-mirror-corpus-bindings-v1.schema.json",
+                "fixture-mirror-trajectory-bindings-v1.schema.json",
+                "fixture-mirror-cluster-bindings-v1.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
                 assertThat(input).as(resource).isNotNull();
@@ -146,6 +148,23 @@ class CapabilityMirrorSchemaPackagingTest {
                 .FIXTURE_MIRROR_TRAJECTORY_BINDINGS_FIXTURE_RESOURCE)
                 .endsWith(
                         "fixture-mirror-trajectory-bindings-v1.fixture.json");
+        assertThat(CapabilityMirrorProtocol
+                .FIXTURE_MIRROR_CLUSTER_BINDINGS_V1)
+                .isEqualTo(
+                        "resourceGateway.fixtureMirrorClusterBindings.v1");
+        assertThat(CapabilityMirrorProtocol
+                .FIXTURE_MIRROR_CLUSTER_BINDINGS_SCHEMA_RESOURCE)
+                .endsWith(
+                        "fixture-mirror-cluster-bindings-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .FIXTURE_MIRROR_CLUSTER_BINDINGS_FIXTURE_RESOURCE)
+                .endsWith(
+                        "fixture-mirror-cluster-bindings-v1.fixture.json");
+        assertThat(CapabilityMirrorProtocol.fixtureMirrorClusterBindingsFixture()
+                .path("schemaVersion").asText())
+                .isEqualTo(
+                        CapabilityMirrorProtocol
+                                .FIXTURE_MIRROR_CLUSTER_BINDINGS_V1);
 
         JsonNode baseline = CapabilityMirrorProtocol.compatibilityBaseline();
         assertThat(baseline.path("schemaVersion").asText())

@@ -141,6 +141,7 @@ class TestRuntimeApplicationIntegrationTest {
             assertThat(availability.corpusGovernanceReady()).isFalse();
             assertThat(availability.corpusClusterApi()).isTrue();
             assertThat(availability.corpusClusterReady()).isFalse();
+            assertThat(availability.corpusClusterResolverReady()).isFalse();
         });
         assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunRepository.class)).hasSize(1);
@@ -205,12 +206,16 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry(
                         "mirrorCorpusClusterPublicationProtocol", true)
                 .containsEntry(
+                        "mirrorCorpusClusterResolverProtocol", true)
+                .containsEntry(
                         "mirrorCorpusClusterPublicationApi", true)
                 .containsEntry(
                         "mirrorCorpusClusterPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false)
                 .containsEntry(
-                        "mirrorCorpusTrajectoryResolverReady", false);
+                        "mirrorCorpusTrajectoryResolverReady", false)
+                .containsEntry(
+                        "mirrorCorpusClusterResolverReady", false);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST")
                         && endpoint.path().equals("/api/mirror/plans"));

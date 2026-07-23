@@ -212,8 +212,9 @@ public class ExecutionControlCompiler {
     /**
      * Compiles mirror controls with an already-authorized, site-bound recorded corpus snapshot.
      *
-     * <p>Standalone exact samples and reviewed retry trajectories remain separate source indexes;
-     * the compiler freezes each available source explicitly into the plan.</p>
+     * <p>Standalone exact samples, reviewed retry trajectories, and validated recorded clusters
+     * remain separate source indexes; the compiler freezes each available source explicitly into
+     * the plan.</p>
      */
     CompiledExecutionControl compileMirrorFromInventory(
             Graph graph,
@@ -354,6 +355,8 @@ public class ExecutionControlCompiler {
                 normalizedSites(resolvedCorpus.exactSiteIds());
         Set<String> recordedTrajectorySites =
                 normalizedSites(resolvedCorpus.trajectorySiteIds());
+        Set<String> recordedClusterSites =
+                normalizedSites(resolvedCorpus.clusterSiteIds());
         if (!mandatoryExternalSites.containsAll(recordedCorpusSites)) {
             throw new ControlPlanRejectedException(
                     "CONTROL_PLAN_CORPUS_SITE_NOT_EXTERNAL", List.of(
@@ -406,6 +409,16 @@ public class ExecutionControlCompiler {
                     return control.withMirrorSource(
                             MirrorPlan.MirrorSource.RECORDED_TRAJECTORY);
                 }));
+        recordedClusterSites.forEach(
+                siteId -> controls.compute(siteId, (ignored, control) -> {
+                    if (control == null) {
+                        throw new ControlPlanRejectedException(
+                                "CONTROL_PLAN_CORPUS_SITE_UNRESOLVED", List.of(
+                                "Recorded cluster corpus site has no mirror control."));
+                    }
+                    return control.withMirrorSource(
+                            MirrorPlan.MirrorSource.RECORDED_CLUSTER);
+                }));
         rejectUnsupportedControlledBindings(inventory, controls);
         rejectUnsafeExternalReal(inventory, controls, mandatoryExternalSites);
 
@@ -424,8 +437,12 @@ public class ExecutionControlCompiler {
                         MirrorPlan.MirrorSource.RECORDED_EXACT);
                 boolean recordedTrajectory = control.resolverOrder().contains(
                         MirrorPlan.MirrorSource.RECORDED_TRAJECTORY);
+                boolean recordedCluster = control.resolverOrder().contains(
+                        MirrorPlan.MirrorSource.RECORDED_CLUSTER);
                 boolean corpusOnly = control.implicitDeny()
-                        && (recordedExact || recordedTrajectory);
+                        && (recordedExact
+                        || recordedTrajectory
+                        || recordedCluster);
                 FixtureRule.BehaviorKind kind = corpusOnly
                         ? FixtureRule.BehaviorKind.REPLAY : first.behavior().kind();
                 sites.add(new EffectiveExecutionPlan.ResolvedSite(control.site().invocationSiteId(),
@@ -436,7 +453,9 @@ public class ExecutionControlCompiler {
                                 : control.rules().stream().map(FixtureRule::ruleId).toList(),
                         corpusOnly
                                 ? recordedFidelity(
-                                recordedExact, recordedTrajectory)
+                                recordedExact,
+                                recordedTrajectory,
+                                recordedCluster)
                                 : fidelity(control)));
             }
         }
@@ -673,11 +692,20 @@ public class ExecutionControlCompiler {
     }
 
     private static String recordedFidelity(
-            boolean exact, boolean trajectory) {
-        if (exact && trajectory) {
-            return "RECORDED_EXACT+TRAJECTORY";
+            boolean exact,
+            boolean trajectory,
+            boolean cluster) {
+        List<String> sources = new ArrayList<>(3);
+        if (exact) {
+            sources.add("EXACT");
         }
-        return exact ? "RECORDED_EXACT" : "RECORDED_TRAJECTORY";
+        if (trajectory) {
+            sources.add("TRAJECTORY");
+        }
+        if (cluster) {
+            sources.add("CLUSTER");
+        }
+        return "RECORDED_" + String.join("+", sources);
     }
 
     private static final class SetLike {

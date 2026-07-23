@@ -1,10 +1,16 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterValidation;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
@@ -31,6 +37,8 @@ import java.util.Set;
 public final class ResolvedCorpusPayloads {
     /** Whole-generation in-memory payload bound. */
     public static final long MAXIMUM_TOTAL_BYTES = 256L * 1024 * 1024;
+    /** Maximum payload-free artifact closure carried by one recorded outcome. */
+    public static final int MAXIMUM_ARTIFACT_REFS = 12_000;
 
     private static final ResolvedCorpusPayloads EMPTY =
             new ResolvedCorpusPayloads(Map.of(), Map.of());
@@ -149,6 +157,14 @@ public final class ResolvedCorpusPayloads {
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
+    /** @return deterministic sites with at least one governed recorded cluster */
+    public Set<String> clusterSiteIds() {
+        return bySite.entrySet().stream()
+                .filter(entry -> !entry.getValue().clusters().isEmpty())
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     /** Prevents response material from entering logs. */
     @Override
     public String toString() {
@@ -158,6 +174,9 @@ public final class ResolvedCorpusPayloads {
                 + ", trajectories="
                 + byCapability.values().stream()
                 .mapToInt(value -> value.trajectories().size()).sum()
+                + ", clusters="
+                + byCapability.values().stream()
+                .mapToInt(value -> value.clusters().size()).sum()
                 + "]";
     }
 
@@ -172,6 +191,7 @@ public final class ResolvedCorpusPayloads {
         private final Instant usableUntil;
         private final Map<String, Sample> byRequestFingerprint;
         private final Map<String, Trajectory> trajectoryByRequestFingerprint;
+        private final List<Cluster> clusters;
 
         /**
          * Creates one conflict-free capability corpus.
@@ -191,7 +211,7 @@ public final class ResolvedCorpusPayloads {
                 Instant usableUntil,
                 List<Sample> samples) {
             this(capabilityRef, publicationRef, corpusRevisionRef,
-                    materializedAt, usableUntil, samples, List.of());
+                    materializedAt, usableUntil, samples, List.of(), List.of());
         }
 
         /**
@@ -213,6 +233,31 @@ public final class ResolvedCorpusPayloads {
                 Instant usableUntil,
                 List<Sample> samples,
                 List<Trajectory> trajectories) {
+            this(capabilityRef, publicationRef, corpusRevisionRef,
+                    materializedAt, usableUntil, samples, trajectories, List.of());
+        }
+
+        /**
+         * Creates one capability corpus with exact, trajectory, and cluster indexes.
+         *
+         * @param capabilityRef exact capability
+         * @param publicationRef exact latest serving publication
+         * @param corpusRevisionRef exact published corpus revision
+         * @param materializedAt frozen serving instant
+         * @param usableUntil exclusive serving horizon
+         * @param samples unique standalone exact request outcomes
+         * @param trajectories unique reviewed retry sequences
+         * @param clusters reviewed safely generalizable recorded clusters
+         */
+        public CapabilityCorpus(
+                MirrorArtifactRef capabilityRef,
+                MirrorArtifactRef publicationRef,
+                MirrorArtifactRef corpusRevisionRef,
+                Instant materializedAt,
+                Instant usableUntil,
+                List<Sample> samples,
+                List<Trajectory> trajectories,
+                List<Cluster> clusters) {
             this.capabilityRef = ref(capabilityRef, "CAPABILITY", "capabilityRef");
             this.publicationRef = ref(publicationRef,
                     "CAPABILITY_CORPUS_PUBLICATION", "publicationRef");
@@ -227,11 +272,16 @@ public final class ResolvedCorpusPayloads {
                     samples == null ? List.of() : List.copyOf(samples);
             List<Trajectory> exactTrajectories =
                     trajectories == null ? List.of() : List.copyOf(trajectories);
-            if (exactSamples.isEmpty() && exactTrajectories.isEmpty()) {
+            List<Cluster> exactClusters =
+                    clusters == null ? List.of() : List.copyOf(clusters);
+            if (exactSamples.isEmpty() && exactTrajectories.isEmpty()
+                    && exactClusters.isEmpty()) {
                 throw new IllegalArgumentException(
-                        "capability corpus requires an exact sample or trajectory");
+                        "capability corpus requires an exact sample, trajectory, or cluster");
             }
-            if (exactSamples.size() > 1_000 || exactTrajectories.size() > 1_000) {
+            if (exactSamples.size() > 1_000
+                    || exactTrajectories.size() > 1_000
+                    || exactClusters.size() > 1_000) {
                 throw new IllegalArgumentException(
                         "capability corpus outcome indexes exceed their item bounds");
             }
@@ -256,6 +306,23 @@ public final class ResolvedCorpusPayloads {
             }
             this.trajectoryByRequestFingerprint =
                     Collections.unmodifiableMap(trajectoryIndex);
+            Set<MirrorArtifactRef> clusterRefs = new LinkedHashSet<>();
+            List<Cluster> orderedClusters = exactClusters.stream()
+                    .map(value -> Objects.requireNonNull(value, "cluster"))
+                    .sorted(Comparator.comparing(
+                            (Cluster value) -> value.publicationRef().id())
+                            .thenComparingLong(
+                                    value -> value.publicationRef().revision())
+                            .thenComparing(
+                                    value -> value.publicationRef().fingerprint()))
+                    .toList();
+            for (Cluster cluster : orderedClusters) {
+                if (!clusterRefs.add(cluster.publicationRef())) {
+                    throw new IllegalArgumentException(
+                            "capability corpus contains a duplicate cluster publication");
+                }
+            }
+            this.clusters = List.copyOf(orderedClusters);
         }
 
         /** @return exact capability */
@@ -304,13 +371,45 @@ public final class ResolvedCorpusPayloads {
                     trajectoryByRequestFingerprint.get(requestFingerprint));
         }
 
+        /** @return payload-safe reviewed cluster descriptors */
+        public List<Cluster> clusters() {
+            return clusters;
+        }
+
+        /**
+         * Resolves at most one cluster against the current ephemeral request.
+         *
+         * @param requestFingerprint canonical current request fingerprint
+         * @param input ephemeral current request value
+         * @param mapper runtime mapper
+         * @return projected recorded-cluster response, or empty
+         */
+        public Optional<ClusterResolution> findCluster(
+                String requestFingerprint,
+                Object input,
+                ObjectMapper mapper) {
+            List<ClusterResolution> matches = clusters.stream()
+                    .map(cluster -> cluster.resolve(
+                            requestFingerprint, input, mapper))
+                    .flatMap(Optional::stream)
+                    .toList();
+            if (matches.size() > 1) {
+                throw new TestControlException(
+                        "MIRROR_CLUSTER_AMBIGUOUS",
+                        "MIRROR_RESOLUTION",
+                        "More than one governed recorded cluster matched the request.");
+            }
+            return matches.stream().findFirst();
+        }
+
         private long payloadBytes() {
             return byRequestFingerprint.values().stream()
                     .mapToLong(Sample::payloadBytes)
                     .sum()
                     + trajectoryByRequestFingerprint.values().stream()
                     .mapToLong(Trajectory::payloadBytes)
-                    .sum();
+                    .sum()
+                    + clusters.stream().mapToLong(Cluster::payloadBytes).sum();
         }
 
         /** Prevents nested payload material from entering logs. */
@@ -323,7 +422,267 @@ public final class ResolvedCorpusPayloads {
                     + ", usableUntil=" + usableUntil
                     + ", samples=" + byRequestFingerprint.size()
                     + ", trajectories="
-                    + trajectoryByRequestFingerprint.size() + "]";
+                    + trajectoryByRequestFingerprint.size()
+                    + ", clusters=" + clusters.size() + "]";
+        }
+    }
+
+    /**
+     * One safely generalizable recorded cluster frozen into a run generation.
+     *
+     * <p>The representative response and match values are private, defensively copied material.
+     * Runtime matching uses exact RFC 6901 coordinates and never retains the current invocation
+     * input. Identity projection first proves that every source and destination exists, then
+     * clears and replaces all declared response identity paths from the current request.</p>
+     */
+    public static final class Cluster {
+        private final MirrorArtifactRef publicationRef;
+        private final List<MatchCriterion> criteria;
+        private final CapabilityCorpusClusterValidation.IdentityMode identityMode;
+        private final List<CapabilityCorpusClusterValidation.IdentityProjection>
+                identityProjections;
+        private final byte[] representativeResponse;
+        private final List<MirrorArtifactRef> artifactRefs;
+        private final List<String> ruleRefs;
+        private final ArtifactProvenance.Confidence confidence;
+        private final double freshness;
+        private final List<String> limitations;
+
+        /**
+         * Creates one already-authorized, generation-local cluster.
+         *
+         * @param publicationRef exact current cluster publication
+         * @param criteria exact request-pointer values shared by supporting members
+         * @param identityMode reviewed response identity strategy
+         * @param identityProjections reviewed request-to-response projections
+         * @param representativeResponse canonical representative response JSON
+         * @param artifactRefs exact governance and source closure
+         * @param ruleRefs payload-free cluster rule identities
+         * @param confidence frozen externally validated confidence interval
+         * @param freshness normalized source freshness
+         * @param limitations explicit fidelity limitations
+         */
+        public Cluster(
+                MirrorArtifactRef publicationRef,
+                List<MatchCriterion> criteria,
+                CapabilityCorpusClusterValidation.IdentityMode identityMode,
+                List<CapabilityCorpusClusterValidation.IdentityProjection>
+                        identityProjections,
+                byte[] representativeResponse,
+                List<MirrorArtifactRef> artifactRefs,
+                List<String> ruleRefs,
+                ArtifactProvenance.Confidence confidence,
+                double freshness,
+                List<String> limitations) {
+            this.publicationRef = ref(
+                    publicationRef,
+                    "CAPABILITY_CORPUS_CLUSTER_PUBLICATION",
+                    "clusterPublicationRef");
+            this.criteria = criteria == null ? List.of() : criteria.stream()
+                    .map(value -> Objects.requireNonNull(value, "criterion"))
+                    .sorted(Comparator.comparing(MatchCriterion::pointer))
+                    .toList();
+            if (this.criteria.isEmpty() || this.criteria.size() > 32
+                    || new LinkedHashSet<>(this.criteria.stream()
+                    .map(MatchCriterion::pointer).toList()).size()
+                    != this.criteria.size()) {
+                throw new IllegalArgumentException(
+                        "cluster criteria must be unique and bounded");
+            }
+            this.identityMode = Objects.requireNonNull(
+                    identityMode, "identityMode");
+            this.identityProjections = identityProjections == null
+                    ? List.of() : List.copyOf(identityProjections);
+            if (identityMode
+                    == CapabilityCorpusClusterValidation.IdentityMode
+                    .IDENTITY_FREE_RESPONSE
+                    && !this.identityProjections.isEmpty()
+                    || identityMode
+                    == CapabilityCorpusClusterValidation.IdentityMode
+                    .REQUEST_PROJECTION
+                    && this.identityProjections.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "cluster identity strategy is inconsistent");
+            }
+            this.representativeResponse = representativeResponse == null
+                    ? new byte[0]
+                    : Arrays.copyOf(
+                            representativeResponse,
+                            representativeResponse.length);
+            if (this.representativeResponse.length == 0) {
+                throw new IllegalArgumentException(
+                        "cluster representative response must not be empty");
+            }
+            this.artifactRefs = ResolvedCorpusPayloads.artifactRefs(artifactRefs);
+            this.ruleRefs = strings(ruleRefs, "ruleRefs", 1_000);
+            this.confidence = Objects.requireNonNull(
+                    confidence, "confidence");
+            if (!Double.isFinite(freshness)
+                    || freshness < 0 || freshness > 1) {
+                throw new IllegalArgumentException(
+                        "freshness must be in the closed interval [0,1]");
+            }
+            this.freshness = freshness;
+            this.limitations = strings(limitations, "limitations", 64);
+        }
+
+        /** @return exact reviewed cluster publication */
+        public MirrorArtifactRef publicationRef() {
+            return publicationRef;
+        }
+
+        /** @return frozen confidence for evidence */
+        public ArtifactProvenance.Confidence confidence() {
+            return confidence;
+        }
+
+        /** @return normalized source freshness */
+        public double freshness() {
+            return freshness;
+        }
+
+        /** @return bounded explicit limitations */
+        public List<String> limitations() {
+            return limitations;
+        }
+
+        /** @return exact payload-free governance and source closure */
+        public List<MirrorArtifactRef> artifactRefs() {
+            return artifactRefs;
+        }
+
+        /** @return exact payload-free cluster rule identities */
+        public List<String> ruleRefs() {
+            return ruleRefs;
+        }
+
+        private Optional<ClusterResolution> resolve(
+                String requestFingerprint,
+                Object input,
+                ObjectMapper mapper) {
+            Objects.requireNonNull(mapper, "mapper");
+            JsonNode request;
+            try {
+                request = mapper.valueToTree(input);
+            } catch (IllegalArgumentException invalid) {
+                return Optional.empty();
+            }
+            for (MatchCriterion criterion : criteria) {
+                JsonNode actual = request.at(criterion.pointer());
+                if (actual.isMissingNode()
+                        || !actual.equals(criterion.expected())) {
+                    return Optional.empty();
+                }
+            }
+            JsonNode response;
+            try {
+                response = mapper.readTree(representativeResponse);
+            } catch (IOException invalid) {
+                throw new TestControlException(
+                        "MIRROR_CLUSTER_GENERATION_INVALID",
+                        "MIRROR_RESOLUTION",
+                        "The frozen recorded-cluster response is invalid.");
+            }
+            if (response == null || response.isMissingNode()) {
+                throw new TestControlException(
+                        "MIRROR_CLUSTER_GENERATION_INVALID",
+                        "MIRROR_RESOLUTION",
+                        "The frozen recorded-cluster response is invalid.");
+            }
+            if (identityMode
+                    == CapabilityCorpusClusterValidation.IdentityMode
+                    .REQUEST_PROJECTION
+                    && !applyIdentityProjections(
+                    request, response, identityProjections)) {
+                return Optional.empty();
+            }
+            try {
+                Sample sample = Sample.response(
+                        requestFingerprint,
+                        mapper.writeValueAsBytes(response),
+                        artifactRefs,
+                        ruleRefs,
+                        freshness,
+                        limitations);
+                return Optional.of(new ClusterResolution(
+                        sample, confidence));
+            } catch (IOException invalid) {
+                throw new TestControlException(
+                        "MIRROR_CLUSTER_GENERATION_INVALID",
+                        "MIRROR_RESOLUTION",
+                        "The projected recorded-cluster response is invalid.");
+            }
+        }
+
+        private long payloadBytes() {
+            return representativeResponse.length
+                    + criteria.stream().mapToLong(
+                    MatchCriterion::payloadBytes).sum();
+        }
+
+        /** Prevents representative material from entering logs. */
+        @Override
+        public String toString() {
+            return "Cluster[publicationRef=" + publicationRef
+                    + ", criteria=" + criteria.size()
+                    + ", identityMode=" + identityMode
+                    + ", responseBytes=" + representativeResponse.length
+                    + ", artifactRefs=" + artifactRefs.size() + "]";
+        }
+    }
+
+    /**
+     * One exact cluster match dimension frozen from supporting request payloads.
+     *
+     * @param pointer safe non-root JSON Pointer
+     * @param expectedValue exact detached JSON value
+     */
+    public record MatchCriterion(
+            String pointer,
+            JsonNode expectedValue
+    ) {
+        /** Detaches the JSON value and validates a safe bounded pointer. */
+        public MatchCriterion {
+            pointer = required(pointer, "pointer");
+            if (pointer.length() > 512
+                    || !pointer.startsWith("/")
+                    || pointer.contains("*")) {
+                throw new IllegalArgumentException(
+                        "criterion pointer is invalid");
+            }
+            expectedValue = Objects.requireNonNull(
+                    expectedValue, "expectedValue").deepCopy();
+            if (expectedValue.isMissingNode()) {
+                throw new IllegalArgumentException(
+                        "criterion value must exist");
+            }
+        }
+
+        private JsonNode expected() {
+            return expectedValue;
+        }
+
+        private long payloadBytes() {
+            return expectedValue.toString().getBytes(
+                    StandardCharsets.UTF_8).length;
+        }
+    }
+
+    /**
+     * One successful recorded-cluster selection before resolver lowering.
+     *
+     * @param sample projected response and complete provenance
+     * @param confidence frozen externally validated confidence
+     */
+    public record ClusterResolution(
+            Sample sample,
+            ArtifactProvenance.Confidence confidence
+    ) {
+        /** Validates complete response and confidence. */
+        public ClusterResolution {
+            sample = Objects.requireNonNull(sample, "sample");
+            confidence = Objects.requireNonNull(
+                    confidence, "confidence");
         }
     }
 
@@ -617,10 +976,81 @@ public final class ResolvedCorpusPayloads {
                         .thenComparingLong(MirrorArtifactRef::revision)
                         .thenComparing(MirrorArtifactRef::fingerprint))
                 .toList();
-        if (sorted.size() > 1_000 || new LinkedHashSet<>(sorted).size() != sorted.size()) {
+        if (sorted.size() > MAXIMUM_ARTIFACT_REFS
+                || new LinkedHashSet<>(sorted).size() != sorted.size()) {
             throw new IllegalArgumentException("artifactRefs must be unique and bounded");
         }
         return List.copyOf(sorted);
+    }
+
+    private static boolean applyIdentityProjections(
+            JsonNode request,
+            JsonNode response,
+            List<CapabilityCorpusClusterValidation.IdentityProjection>
+                    projections) {
+        List<ProjectionValue> values = new java.util.ArrayList<>();
+        for (CapabilityCorpusClusterValidation.IdentityProjection projection
+                : projections) {
+            JsonNode source = request.at(projection.requestPointer());
+            if (source.isMissingNode()) {
+                return false;
+            }
+            for (String responsePointer : projection.responsePointers()) {
+                if (response.at(responsePointer).isMissingNode()) {
+                    return false;
+                }
+                values.add(new ProjectionValue(
+                        responsePointer, source.deepCopy()));
+            }
+        }
+        for (ProjectionValue value : values) {
+            if (!setExisting(response, value.pointer(), null)) {
+                return false;
+            }
+        }
+        for (ProjectionValue value : values) {
+            if (!setExisting(
+                    response, value.pointer(), value.value().deepCopy())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean setExisting(
+            JsonNode root, String pointer, JsonNode value) {
+        int separator = pointer.lastIndexOf('/');
+        String parentPointer = separator == 0
+                ? "" : pointer.substring(0, separator);
+        String token = decodePointerToken(pointer.substring(separator + 1));
+        JsonNode parent = parentPointer.isEmpty()
+                ? root : root.at(parentPointer);
+        JsonNode replacement = value == null
+                ? com.fasterxml.jackson.databind.node.NullNode.instance : value;
+        if (parent instanceof ObjectNode object && object.has(token)) {
+            object.set(token, replacement);
+            return true;
+        }
+        if (parent instanceof ArrayNode array
+                && token.matches("0|[1-9][0-9]*")) {
+            try {
+                int index = Integer.parseInt(token);
+                if (index >= 0 && index < array.size()) {
+                    array.set(index, replacement);
+                    return true;
+                }
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static String decodePointerToken(String token) {
+        return token.replace("~1", "/").replace("~0", "~");
+    }
+
+    private record ProjectionValue(String pointer, JsonNode value) {
     }
 
     private static List<String> strings(

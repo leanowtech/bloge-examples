@@ -476,13 +476,15 @@ class ToolStudioIntegrationServiceTest {
                 new java.util.concurrent.atomic.AtomicBoolean(false);
         java.util.concurrent.atomic.AtomicBoolean clusterReady =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean clusterResolverReady =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
         service.configureMirrorRuntime(new MirrorRuntimeAvailability(
                 true, true, () -> true, true, () -> true,
                 true, () -> true, () -> true,
                 true, () -> true, true, governanceReady::get,
                 true, trajectoryReady::get,
                 resolverReady::get, trajectoryResolverReady::get,
-                true, clusterReady::get));
+                true, clusterReady::get, clusterResolverReady::get));
 
         IntegrationCapabilities unavailable = service.capabilities().payload();
         governanceReady.set(true);
@@ -496,6 +498,7 @@ class ToolStudioIntegrationServiceTest {
         IntegrationCapabilities exactResolverAvailable =
                 service.capabilities().payload();
         trajectoryResolverReady.set(true);
+        clusterResolverReady.set(true);
         IntegrationCapabilities fullyAvailable =
                 service.capabilities().payload();
 
@@ -508,6 +511,8 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorCorpusTrajectoryPublicationProtocol", true)
                 .containsEntry(
                         "mirrorCorpusClusterPublicationProtocol", true)
+                .containsEntry(
+                        "mirrorCorpusClusterResolverProtocol", true)
                 .containsEntry("mirrorCorpusGovernanceApi", true)
                 .containsEntry("mirrorCorpusGovernanceReady", false)
                 .containsEntry(
@@ -520,7 +525,9 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorCorpusClusterPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false)
                 .containsEntry(
-                        "mirrorCorpusTrajectoryResolverReady", false);
+                        "mirrorCorpusTrajectoryResolverReady", false)
+                .containsEntry(
+                        "mirrorCorpusClusterResolverReady", false);
         assertThat(unavailable.supportedObjects())
                 .containsKeys(
                         "capabilityObservationReviewRequest",
@@ -535,7 +542,8 @@ class ToolStudioIntegrationServiceTest {
                         "capabilityCorpusClusterPublishRequest",
                         "capabilityCorpusClusterPublication",
                         "fixtureMirrorCorpusBindings",
-                        "fixtureMirrorTrajectoryBindings");
+                        "fixtureMirrorTrajectoryBindings",
+                        "fixtureMirrorClusterBindings");
         assertThat(unavailable.endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .contains(
@@ -553,23 +561,31 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorCorpusClusterPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false)
                 .containsEntry(
-                        "mirrorCorpusTrajectoryResolverReady", false);
+                        "mirrorCorpusTrajectoryResolverReady", false)
+                .containsEntry(
+                        "mirrorCorpusClusterResolverReady", false);
         assertThat(clusterAvailable.features())
                 .containsEntry(
                         "mirrorCorpusClusterPublicationReady", true)
                 .containsEntry("mirrorCorpusResolverReady", false)
                 .containsEntry(
-                        "mirrorCorpusTrajectoryResolverReady", false);
+                        "mirrorCorpusTrajectoryResolverReady", false)
+                .containsEntry(
+                        "mirrorCorpusClusterResolverReady", false);
         assertThat(exactResolverAvailable.features())
                 .containsEntry("mirrorCorpusGovernanceReady", true)
                 .containsEntry("mirrorCorpusResolverReady", true)
                 .containsEntry(
-                        "mirrorCorpusTrajectoryResolverReady", false);
+                        "mirrorCorpusTrajectoryResolverReady", false)
+                .containsEntry(
+                        "mirrorCorpusClusterResolverReady", false);
         assertThat(fullyAvailable.features())
                 .containsEntry("mirrorCorpusGovernanceReady", true)
                 .containsEntry("mirrorCorpusResolverReady", true)
                 .containsEntry(
-                        "mirrorCorpusTrajectoryResolverReady", true);
+                        "mirrorCorpusTrajectoryResolverReady", true)
+                .containsEntry(
+                        "mirrorCorpusClusterResolverReady", true);
     }
 
     @Test

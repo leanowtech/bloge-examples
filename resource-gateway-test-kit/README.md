@@ -246,7 +246,7 @@ representative membership plus a common response schema, rejects unsafe or overl
 JSON Pointer projections, and recomputes the 95% Wilson precision interval from holdout counts.
 A verified result still lists the online policy, validation-authority, grant/retention,
 source-lifecycle, and payload-authority checks that an offline client cannot prove. It does not
-claim that cluster fixture binding or `RECORDED_CLUSTER` runtime serving exists.
+claim that a selected cluster remains the current online head or can be materialized now.
 
 Validate a fixture's payload-free exact publication selection before registration:
 
@@ -285,6 +285,28 @@ uniqueness. Because it receives only the nested trajectory object, it cannot pro
 the same fixture's `mirrorCorpus` selection. Current trajectory/corpus heads, retry policy,
 source/grant/retention/tombstone authorities, payload materialization, and graph retry capacity are
 online Resource Gateway checks.
+
+Validate the sibling `fixtureBundle.metadata.mirrorClusters` object and cross-check it against the
+same fixture's `mirrorCorpus` selection:
+
+```java
+JsonNode clusterBindings = objectMapper.readTree(clusterBindingsJson);
+JsonNode corpusBindings = objectMapper.readTree(corpusBindingsJson);
+FixtureMirrorClusterBindingsVerifier.VerificationResult verified =
+        new FixtureMirrorClusterBindingsVerifier().verify(
+                clusterBindings, corpusBindings);
+if (!verified.verified()) {
+    throw new IllegalStateException(verified.reasonCode());
+}
+```
+
+The packaged fixed input is
+`CapabilityMirrorProtocol.FIXTURE_MIRROR_CLUSTER_BINDINGS_FIXTURE_RESOURCE`; its strict Schema is
+`FIXTURE_MIRROR_CLUSTER_BINDINGS_SCHEMA_RESOURCE`. The verifier proves closed fields, artifact
+kinds, canonical capability/cluster order, exact cluster-coordinate uniqueness, and equality with
+one exact selected capability/corpus pair. Current heads, policies, validation revocation, grants,
+source lifecycle, retention, payload content addresses, identity values, and graph runtime
+readiness remain online Resource Gateway checks.
 
 Deployment isolation uses separate bootstrap-root, isolation-attestation, and mirror-evidence
 authorities. Never reuse keys between those roles or trust deployment coordinates copied from an

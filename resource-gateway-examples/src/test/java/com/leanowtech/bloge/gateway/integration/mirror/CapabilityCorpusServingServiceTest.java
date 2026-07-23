@@ -41,8 +41,11 @@ class CapabilityCorpusServingServiceTest {
     private DatabaseCapabilityObservationRepository observations;
     private DatabaseCapabilityCorpusRepository corpora;
     private DatabaseCapabilityCorpusTrajectoryRepository trajectories;
+    private DatabaseCapabilityCorpusClusterRepository clusters;
     private MutablePolicyProvider policies;
     private MutableRetryPolicyProvider retryPolicies;
+    private MutableClusterPolicyProvider clusterPolicies;
+    private MutableClusterValidationAuthority clusterValidations;
     private MutableSourceVerifier sourceVerifier;
     private MutablePayloadAuthority payloadAuthority;
     private CapabilityCorpusServingService service;
@@ -68,6 +71,9 @@ class CapabilityCorpusServingServiceTest {
         trajectories = new DatabaseCapabilityCorpusTrajectoryRepository(
                 jdbc, mapper, corpusIntegrity);
         trajectories.init();
+        clusters = new DatabaseCapabilityCorpusClusterRepository(
+                jdbc, mapper, corpusIntegrity);
+        clusters.init();
         scope = CapabilityObservationTestFixtures.scope("org-a");
         source = observation(
                 "observation-exact", Map.of("customerId", "C-1"),
@@ -78,6 +84,9 @@ class CapabilityCorpusServingServiceTest {
                 CapabilityCorpusTestFixtures.policy(source, 1, 10_000, 1));
         retryPolicies = new MutableRetryPolicyProvider(
                 retryPolicy(source.envelope().material().capabilityRef(), 1));
+        clusterPolicies = new MutableClusterPolicyProvider(
+                clusterPolicy(source.envelope().material().capabilityRef()));
+        clusterValidations = new MutableClusterValidationAuthority();
         sourceVerifier = new MutableSourceVerifier(
                 CapabilityCorpusSourceVerifier.VerificationResult.verified());
         payloadAuthority = new MutablePayloadAuthority();
@@ -90,7 +99,8 @@ class CapabilityCorpusServingServiceTest {
         corpora.appendRevision(revision);
         corpora.appendPublication(publication);
         service = new CapabilityCorpusServingService(
-                corpora, observations, trajectories, policies, retryPolicies,
+                corpora, observations, trajectories, clusters,
+                policies, retryPolicies, clusterPolicies, clusterValidations,
                 sourceVerifier, payloadAuthority, corpusIntegrity, mapper,
                 Clock.fixed(now, ZoneOffset.UTC));
     }
@@ -132,19 +142,27 @@ class CapabilityCorpusServingServiceTest {
     }
 
     @Test
-    void exactAndTrajectoryReadinessExposeIndependentAuthorityFailures() {
+    void resolverReadinessExposesIndependentAuthorityFailures() {
         assertThat(service.ready()).isTrue();
         assertThat(service.trajectoryReady()).isTrue();
+        assertThat(service.clusterReady()).isTrue();
 
         retryPolicies.available = false;
 
         assertThat(service.ready()).isTrue();
         assertThat(service.trajectoryReady()).isFalse();
+        assertThat(service.clusterReady()).isTrue();
+
+        clusterValidations.available = false;
+
+        assertThat(service.ready()).isTrue();
+        assertThat(service.clusterReady()).isFalse();
 
         policies.available = false;
 
         assertThat(service.ready()).isFalse();
         assertThat(service.trajectoryReady()).isFalse();
+        assertThat(service.clusterReady()).isFalse();
     }
 
     @Test
@@ -452,6 +470,133 @@ class CapabilityCorpusServingServiceTest {
     }
 
     @Test
+    void resolvesValidatedClusterAndProjectsTheCurrentRequestIdentity()
+            throws Exception {
+        ClusterServingFixture installed = installCluster();
+        payloadAuthority.calls.set(0);
+
+        ResolvedCorpusPayloads.CapabilityCorpus resolved = service.resolve(
+                        fixture(
+                                installed.publication(),
+                                installed.clusterPublication()),
+                        scope,
+                        executionPolicy(),
+                        now.plus(Duration.ofMinutes(30)),
+                        identity())
+                .bindSites(Map.of(
+                        "/root/loadCustomer#PRIMARY",
+                        installed.revision().capabilityRef()))
+                .forSite("/root/loadCustomer#PRIMARY")
+                .orElseThrow();
+        Map<String, Object> currentRequest = Map.of(
+                "channel", "web",
+                "operation", "lookup",
+                "customerId", "C-current");
+        ResolvedCorpusPayloads.ClusterResolution match =
+                resolved.findCluster(
+                                ProtocolFingerprint.of(
+                                        mapper, currentRequest),
+                                currentRequest,
+                                mapper)
+                        .orElseThrow();
+
+        assertThat(match.sample().toRule(mapper).behavior().value())
+                .isEqualTo(Map.of(
+                        "customer", Map.of("id", "C-current"),
+                        "tier", "gold"));
+        assertThat(match.confidence())
+                .isEqualTo(installed.clusterPublication().confidence());
+        assertThat(match.sample().artifactRefs())
+                .contains(
+                        installed.clusterPublication().artifactRef(),
+                        installed.validation().artifactRef(),
+                        installed.clusterPublication().clusterPolicyRef(),
+                        installed.publication().artifactRef(),
+                        installed.revision().artifactRef());
+        assertThat(match.sample().limitations())
+                .contains(
+                        "CLUSTER_GENERALIZATION_REQUIRES_EXACT_MATCH_POINTERS",
+                        "IDENTITY_REQUEST_PROJECTION",
+                        "STATE_DEPENDENCE_NOT_MODELED");
+        assertThat(match.sample().toString())
+                .doesNotContain("C-current")
+                .doesNotContain("C-recorded-a");
+        assertThat(payloadAuthority.calls).hasValue(5);
+    }
+
+    @Test
+    void staleClusterAndValidationOutageFailBeforePayloadMaterialization()
+            throws Exception {
+        ClusterServingFixture installed = installCluster();
+        CapabilityCorpusClusterPublishRequest successorRequest =
+                new CapabilityCorpusClusterPublishRequest(
+                        "",
+                        installed.clusterPublication().clusterId(),
+                        2,
+                        installed.clusterPublication().artifactRef(),
+                        installed.revision().capabilityRef(),
+                        installed.publication().artifactRef(),
+                        installed.clusterPublication().clusterPolicyRef(),
+                        installed.validation().artifactRef(),
+                        installed.clusterPublication().reviewTicketRef(),
+                        installed.clusterPublication().reasonCode());
+        CapabilityCorpusClusterPublication successor =
+                CapabilityCorpusTestFixtures.clusterPublication(
+                        mapper,
+                        installed.publication(),
+                        installed.revision(),
+                        installed.validation(),
+                        successorRequest,
+                        installed.clusterPublication().artifactRef(),
+                        now.minusMillis(100));
+        clusters.append(successor);
+        payloadAuthority.calls.set(0);
+
+        assertProblem(
+                () -> service.resolve(
+                        fixture(
+                                installed.publication(),
+                                installed.clusterPublication()),
+                        scope,
+                        executionPolicy(),
+                        now.plus(Duration.ofMinutes(30)),
+                        identity()),
+                409,
+                "RG.MIRROR.CORPUS_CLUSTER_STALE");
+        assertThat(payloadAuthority.calls).hasValue(0);
+
+        clusterPolicies.policy = clusterPolicy(
+                installed.revision().capabilityRef(),
+                ignored -> {
+                    throw new IllegalStateException("policy outage");
+                });
+        assertProblem(
+                () -> service.resolve(
+                        fixture(installed.publication(), successor),
+                        scope,
+                        executionPolicy(),
+                        now.plus(Duration.ofMinutes(30)),
+                        identity()),
+                503,
+                "RG.MIRROR.CORPUS_CLUSTER_POLICY_UNAVAILABLE");
+        assertThat(payloadAuthority.calls).hasValue(0);
+
+        clusterPolicies.policy = clusterPolicy(
+                installed.revision().capabilityRef());
+        clusterValidations.available = false;
+        assertProblem(
+                () -> service.resolve(
+                        fixture(installed.publication(), successor),
+                        scope,
+                        executionPolicy(),
+                        now.plus(Duration.ofMinutes(30)),
+                        identity()),
+                503,
+                "RG.MIRROR.CORPUS_CLUSTER_AUTHORITY_UNAVAILABLE");
+        assertThat(payloadAuthority.calls).hasValue(0);
+    }
+
+    @Test
     void regionClassificationAndPlanHorizonAreEnforcedBeforeMaterialization() {
         MirrorPlan.ExecutionPolicy wrongRegion = new MirrorPlan.ExecutionPolicy(
                 MirrorPlanIntegrationService.AUTHORIZED_PURPOSE,
@@ -505,12 +650,144 @@ class CapabilityCorpusServingServiceTest {
                 now.plusSeconds(60));
     }
 
+    private ClusterServingFixture installCluster() throws Exception {
+        Map<String, Object> requestA = Map.of(
+                "channel", "web",
+                "operation", "lookup",
+                "customerId", "C-recorded-a");
+        Map<String, Object> requestB = Map.of(
+                "channel", "web",
+                "operation", "lookup",
+                "customerId", "C-recorded-b");
+        Map<String, Object> responseA = Map.of(
+                "customer", Map.of("id", "C-recorded-a"),
+                "tier", "gold");
+        Map<String, Object> responseB = Map.of(
+                "customer", Map.of("id", "C-recorded-b"),
+                "tier", "gold");
+        List<CapabilityObservationEnvelope.AllowedUse> allowedUses =
+                List.of(
+                        CapabilityObservationEnvelope.AllowedUse
+                                .CLUSTER_MODELING,
+                        CapabilityObservationEnvelope.AllowedUse
+                                .CORPUS_CURATION,
+                        CapabilityObservationEnvelope.AllowedUse
+                                .EXACT_REPLAY);
+        CapabilityObservationRepository.StoredObservation first =
+                observation(
+                        "observation-cluster-a",
+                        requestA,
+                        responseA,
+                        null,
+                        allowedUses);
+        CapabilityObservationRepository.StoredObservation second =
+                observation(
+                        "observation-cluster-b",
+                        requestB,
+                        responseB,
+                        null,
+                        allowedUses);
+        List<CapabilityObservationRepository.StoredObservation> sources =
+                List.of(first, second);
+        sources.forEach(observations::append);
+        payloadAuthority.payloads.put(
+                first.envelope().material().request().payloadRef(),
+                mapper.writeValueAsBytes(requestA));
+        payloadAuthority.payloads.put(
+                first.envelope().material().response().payloadRef(),
+                mapper.writeValueAsBytes(responseA));
+        payloadAuthority.payloads.put(
+                second.envelope().material().request().payloadRef(),
+                mapper.writeValueAsBytes(requestB));
+        payloadAuthority.payloads.put(
+                second.envelope().material().response().payloadRef(),
+                mapper.writeValueAsBytes(responseB));
+
+        policies.policy = CapabilityCorpusTestFixtures.policy(
+                first, 1, 10_000, 1);
+        clusterPolicies.policy = clusterPolicy(
+                first.envelope().material().capabilityRef());
+        CapabilityCorpusRevision clusterRevision =
+                revision("cluster-serving-corpus", sources);
+        CapabilityCorpusPublication clusterCorpusPublication =
+                CapabilityCorpusTestFixtures.publication(
+                        mapper,
+                        clusterRevision,
+                        1,
+                        null,
+                        now.minusSeconds(1));
+        corpora.appendRevision(clusterRevision);
+        corpora.appendPublication(clusterCorpusPublication);
+        CapabilityCorpusClusterValidation validation =
+                CapabilityCorpusTestFixtures.clusterValidation(
+                        mapper,
+                        clusterCorpusPublication,
+                        clusterRevision,
+                        sources,
+                        now.minusSeconds(2));
+        clusterValidations.validation = validation;
+        CapabilityCorpusClusterPublishRequest request =
+                CapabilityCorpusTestFixtures.clusterRequest(
+                        clusterCorpusPublication, validation);
+        CapabilityCorpusClusterPublication clusterPublication =
+                CapabilityCorpusTestFixtures.clusterPublication(
+                        mapper,
+                        clusterCorpusPublication,
+                        clusterRevision,
+                        validation,
+                        request,
+                        null,
+                        now.minusMillis(500));
+        clusters.append(clusterPublication);
+        return new ClusterServingFixture(
+                clusterRevision,
+                clusterCorpusPublication,
+                validation,
+                clusterPublication);
+    }
+
+    private CapabilityCorpusClusterPolicyProvider.ClusterPolicy
+            clusterPolicy(MirrorArtifactRef capabilityRef) {
+        return clusterPolicy(capabilityRef, ignored -> true);
+    }
+
+    private CapabilityCorpusClusterPolicyProvider.ClusterPolicy
+            clusterPolicy(
+            MirrorArtifactRef capabilityRef,
+            java.util.function.Predicate<CapabilityCorpusClusterValidation>
+                    validationPolicy) {
+        return new CapabilityCorpusClusterPolicyProvider.ClusterPolicy(
+                scope,
+                capabilityRef,
+                CapabilityObservationTestFixtures.ref(
+                        "CORPUS_CLUSTER_POLICY",
+                        "support-cluster-policy",
+                        3,
+                        'b'),
+                2,
+                2,
+                10,
+                500,
+                0.8,
+                Duration.ofHours(2),
+                ignored -> true,
+                validationPolicy);
+    }
+
     private CapabilityObservationRepository.StoredObservation observation(
             String observationId,
             Object requestValue,
             Object responseValue) throws Exception {
         return observation(
-                observationId, requestValue, responseValue, null);
+                observationId,
+                requestValue,
+                responseValue,
+                null,
+                List.of(
+                        CapabilityObservationEnvelope.AllowedUse
+                                .CORPUS_CURATION,
+                        CapabilityObservationEnvelope.AllowedUse
+                                .EXACT_REPLAY));
     }
 
     private CapabilityObservationRepository.StoredObservation errorObservation(
@@ -524,14 +801,21 @@ class CapabilityCorpusServingServiceTest {
                         "BUSINESS",
                         "CUSTOMER_NOT_FOUND",
                         retryable,
-                        "sha256:" + "e".repeat(64)));
+                        "sha256:" + "e".repeat(64)),
+                List.of(
+                        CapabilityObservationEnvelope.AllowedUse
+                                .CORPUS_CURATION,
+                        CapabilityObservationEnvelope.AllowedUse
+                                .EXACT_REPLAY));
     }
 
     private CapabilityObservationRepository.StoredObservation observation(
             String observationId,
             Object requestValue,
             Object responseValue,
-            CapabilityObservationEnvelope.NormalizedError error) throws Exception {
+            CapabilityObservationEnvelope.NormalizedError error,
+            List<CapabilityObservationEnvelope.AllowedUse> allowedUses)
+            throws Exception {
         CapabilitySnapshot capability =
                 CapabilityObservationTestFixtures.capability(mapper, scope);
         Instant occurredAt = Instant.now().minusSeconds(3);
@@ -549,9 +833,7 @@ class CapabilityCorpusServingServiceTest {
                         CapabilityObservationTestFixtures.ref(
                                 "DATA_USE_GRANT", "grant-" + observationId, 1, '9'),
                         CapabilityObservationAdmissionService.AUTHORIZED_PURPOSE,
-                        List.of(
-                                CapabilityObservationEnvelope.AllowedUse.CORPUS_CURATION,
-                                CapabilityObservationEnvelope.AllowedUse.EXACT_REPLAY),
+                        allowedUses,
                         occurredAt.minus(Duration.ofDays(1)),
                         occurredAt.plus(Duration.ofDays(20)));
         CapabilityObservationEnvelope.Material material =
@@ -819,6 +1101,45 @@ class CapabilityCorpusServingServiceTest {
                 metadata);
     }
 
+    private FixtureBundle fixture(
+            CapabilityCorpusPublication value,
+            CapabilityCorpusClusterPublication cluster) {
+        MirrorArtifactRef capabilityRef = cluster.capabilityRef();
+        Map<String, Object> corpusBinding = Map.of(
+                "capabilityRef", wire(capabilityRef),
+                "publicationRef", wire(value.artifactRef()));
+        Map<String, Object> clusterBinding = Map.of(
+                "capabilityRef", wire(capabilityRef),
+                "corpusPublicationRef", wire(value.artifactRef()),
+                "clusterPublicationRef", wire(cluster.artifactRef()));
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(
+                FixtureMirrorCorpusBindings.METADATA_KEY,
+                Map.of(
+                        "schemaVersion",
+                        FixtureMirrorCorpusBindings.SCHEMA_VERSION,
+                        "publications",
+                        List.of(corpusBinding)));
+        metadata.put(
+                FixtureMirrorClusterBindings.METADATA_KEY,
+                Map.of(
+                        "schemaVersion",
+                        FixtureMirrorClusterBindings.SCHEMA_VERSION,
+                        "clusters",
+                        List.of(clusterBinding)));
+        return new FixtureBundle(
+                "",
+                "fixture-corpus-cluster",
+                1,
+                "sha256:" + "e".repeat(64),
+                "CONFIDENTIAL",
+                now,
+                42L,
+                List.of(),
+                List.of(),
+                metadata);
+    }
+
     private static Map<String, Object> wire(MirrorArtifactRef ref) {
         return Map.of(
                 "kind", ref.kind(),
@@ -856,6 +1177,14 @@ class CapabilityCorpusServingServiceTest {
                     assertThat(failure.problem().code()).isEqualTo(code);
                     assertThat(failure.problem().details()).isEmpty();
                 });
+    }
+
+    private record ClusterServingFixture(
+            CapabilityCorpusRevision revision,
+            CapabilityCorpusPublication publication,
+            CapabilityCorpusClusterValidation validation,
+            CapabilityCorpusClusterPublication clusterPublication
+    ) {
     }
 
     private static final class MutablePolicyProvider
@@ -921,6 +1250,53 @@ class CapabilityCorpusServingServiceTest {
                     && policy.scope().equals(scope)
                     && policy.capabilityRef().equals(capabilityRef)
                     ? Optional.of(policy) : Optional.empty();
+        }
+    }
+
+    private static final class MutableClusterPolicyProvider
+            implements CapabilityCorpusClusterPolicyProvider {
+        private ClusterPolicy policy;
+        private boolean available = true;
+
+        private MutableClusterPolicyProvider(ClusterPolicy policy) {
+            this.policy = policy;
+        }
+
+        @Override
+        public boolean available() {
+            return available;
+        }
+
+        @Override
+        public Optional<ClusterPolicy> resolve(
+                CapabilitySnapshot.Scope scope,
+                MirrorArtifactRef capabilityRef) {
+            return available
+                    && policy.scope().equals(scope)
+                    && policy.capabilityRef().equals(capabilityRef)
+                    ? Optional.of(policy) : Optional.empty();
+        }
+    }
+
+    private static final class MutableClusterValidationAuthority
+            implements CapabilityCorpusClusterValidationAuthority {
+        private CapabilityCorpusClusterValidation validation;
+        private boolean available = true;
+
+        @Override
+        public boolean available() {
+            return available;
+        }
+
+        @Override
+        public Optional<CapabilityCorpusClusterValidation> resolve(
+                CapabilitySnapshot.Scope scope,
+                MirrorArtifactRef validationRef) {
+            return available
+                    && validation != null
+                    && validation.scope().equals(scope)
+                    && validation.artifactRef().equals(validationRef)
+                    ? Optional.of(validation) : Optional.empty();
         }
     }
 

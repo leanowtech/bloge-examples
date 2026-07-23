@@ -690,7 +690,8 @@ public class MirrorRuntimeConfiguration {
                 () -> corpusPolicies.available()
                         && clusterPolicies.available()
                         && clusterValidations.available()
-                        && corpusSources.available());
+                        && corpusSources.available(),
+                corpusServing::clusterReady);
     }
 
     /** Compatibility factory retained for focused readiness tests outside Spring composition. */

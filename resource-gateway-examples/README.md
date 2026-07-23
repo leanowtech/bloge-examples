@@ -173,7 +173,8 @@ the review/candidate/publication wire objects and strict Schemas are supported;
 external source-lifecycle authority to be currently available. The defaults are unavailable.
 `mirrorCorpusExactResolverProtocol=true` means the runtime understands strict
 `fixtureBundle.metadata.mirrorCorpus` bindings and the fixed
-`OWNER_SPECIFIED -> RECORDED_EXACT -> RECORDED_TRAJECTORY -> GOVERNED_REPLAY -> ABSTAINED` chain.
+`OWNER_SPECIFIED -> RECORDED_EXACT -> RECORDED_TRAJECTORY -> RECORDED_CLUSTER ->
+GOVERNED_REPLAY -> ABSTAINED` chain.
 `mirrorCorpusResolverReady=true` is stronger: the policy provider, source-lifecycle authority, and
 regional `CapabilityCorpusPayloadAuthority` must all be currently usable. The default payload
 authority is unavailable, so enabling the mirror profile never invents payload-vault trust.
@@ -217,10 +218,20 @@ Publication rechecks the current corpus and policy, exact source membership, com
 Schema, `EXACT_REPLAY + CLUSTER_MODELING` grants, retention/horizon, holdout counts, false-positive
 rate, and the independently recomputed 95% Wilson precision interval. Identity-free clusters
 cannot declare projections; request-projection clusters must map current request identity into
-globally disjoint response JSON Pointer paths. The publication route never reads payload. There is
-intentionally no cluster-resolver readiness claim yet: fixture binding, generation
-materialization, identity-safe response transformation, and runtime `RECORDED_CLUSTER` resolution
-are the next vertical slice. API presence must not be interpreted as cluster serving.
+globally disjoint response JSON Pointer paths. The publication route never reads payload.
+
+`mirrorCorpusClusterResolverProtocol=true` advertises strict
+`fixtureBundle.metadata.mirrorClusters` binding and runtime `RECORDED_CLUSTER` support. Each binding
+repeats the exact capability and corpus publication selected by `mirrorCorpus`. Before compilation,
+the serving boundary rechecks the current cluster and corpus heads, current corpus/cluster policies,
+current validation proof, every member grant/lifecycle/horizon, exact match values, distinct
+identity support, and all request/representative-response content addresses. Runtime matching uses
+exact JSON Pointer equality only. For request-projection clusters it first verifies every declared
+source and destination, then replaces all identity destinations from the current request; a missing
+path abstains and multiple matching clusters fail closed.
+`mirrorCorpusClusterResolverReady=true` is the independent dynamic serving probe. Publication API
+readiness does not imply resolver readiness, and both default to false until operator-owned policy,
+validation, source-lifecycle, and regional payload authorities are installed.
 
 The binding selects an exact latest publication for one exact external capability revision. Plan
 creation and every runtime materialization recheck the publication head, current policy, source

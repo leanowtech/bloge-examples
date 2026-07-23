@@ -7,6 +7,8 @@ import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterValidation;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
@@ -332,6 +334,85 @@ class ExecutionControlCompilerTest {
         assertThat(compiled.effectivePlan().resolvedSites()).singleElement()
                 .satisfies(site -> assertThat(site.fidelity())
                         .isEqualTo("RECORDED_EXACT+TRAJECTORY"));
+    }
+
+    @Test
+    void mirrorCompilationFreezesClusterAfterExactForTheSameSite()
+            throws Exception {
+        registry.register("mirror-binding", new ReadOnlyOperator());
+        Graph graph = registryGraph("mirror-binding", 1);
+        InvocationInventory frozen =
+                new InvocationInventoryBuilder(registry).build(graph, TARGET);
+        MirrorArtifactRef capability =
+                ref("CAPABILITY", "operator:subject", '1');
+        MirrorArtifactRef publication = ref(
+                "CAPABILITY_CORPUS_PUBLICATION", "subject-corpus", '2');
+        MirrorArtifactRef revision = ref(
+                "CAPABILITY_CORPUS_REVISION", "subject-corpus", '3');
+        MirrorArtifactRef clusterPublication = ref(
+                "CAPABILITY_CORPUS_CLUSTER_PUBLICATION",
+                "subject-cluster", '4');
+        ResolvedCorpusPayloads.Cluster cluster =
+                new ResolvedCorpusPayloads.Cluster(
+                        clusterPublication,
+                        List.of(new ResolvedCorpusPayloads.MatchCriterion(
+                                "/operation",
+                                objectMapper.valueToTree("lookup"))),
+                        CapabilityCorpusClusterValidation.IdentityMode
+                                .IDENTITY_FREE_RESPONSE,
+                        List.of(),
+                        objectMapper.writeValueAsBytes(
+                                Map.of("tier", "gold")),
+                        List.of(clusterPublication),
+                        List.of("subject-cluster@1"),
+                        new ArtifactProvenance.Confidence(
+                                0.98,
+                                0.91,
+                                1,
+                                CapabilityCorpusClusterValidation
+                                        .CONFIDENCE_METHOD),
+                        0.8,
+                        List.of("STATE_DEPENDENCE_NOT_MODELED"));
+        ResolvedCorpusPayloads payloads = ResolvedCorpusPayloads.of(List.of(
+                        new ResolvedCorpusPayloads.CapabilityCorpus(
+                                capability,
+                                publication,
+                                revision,
+                                Instant.parse("2026-07-23T08:00:00Z"),
+                                Instant.parse("2026-07-24T08:00:00Z"),
+                                List.of(
+                                        ResolvedCorpusPayloads.Sample.response(
+                                                fingerprint('5'),
+                                                objectMapper.writeValueAsBytes(
+                                                        "exact"),
+                                                List.of(publication),
+                                                List.of("exact"),
+                                                1,
+                                                List.of())),
+                                List.of(),
+                                List.of(cluster))))
+                .bindSites(Map.of("/root/subject#PRIMARY", capability));
+
+        CompiledExecutionControl compiled =
+                compiler.compileMirrorFromInventory(
+                        graph,
+                        logicalBundle(),
+                        "MIRROR_REHEARSAL",
+                        TARGET,
+                        ResolvedReplayPayloads.empty(),
+                        Set.of("/root/subject#PRIMARY"),
+                        frozen,
+                        payloads);
+
+        assertThat(compiled.controls().get("/root/subject#PRIMARY")
+                .resolverOrder()).containsExactly(
+                MirrorPlan.MirrorSource.RECORDED_EXACT,
+                MirrorPlan.MirrorSource.RECORDED_CLUSTER,
+                MirrorPlan.MirrorSource.ABSTAINED);
+        assertThat(compiled.effectivePlan().resolvedSites())
+                .singleElement()
+                .satisfies(site -> assertThat(site.fidelity())
+                        .isEqualTo("RECORDED_EXACT+CLUSTER"));
     }
 
     @Test

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/fixture-mirror-cluster-bindings-v1.schema.json",
+  "title": "Resource Gateway Fixture Mirror Cluster Bindings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "clusters"],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.fixtureMirrorClusterBindings.v1"
+    },
+    "clusters": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/clusterBinding" }
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "CAPABILITY",
+            "CAPABILITY_CORPUS_PUBLICATION",
+            "CAPABILITY_CORPUS_CLUSTER_PUBLICATION"
+          ]
+        },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "corpusPublicationRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CAPABILITY_CORPUS_PUBLICATION" }
+          }
+        }
+      ]
+    },
+    "clusterPublicationRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": {
+              "const": "CAPABILITY_CORPUS_CLUSTER_PUBLICATION"
+            }
+          }
+        }
+      ]
+    },
+    "clusterBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capabilityRef",
+        "corpusPublicationRef",
+        "clusterPublicationRef"
+      ],
+      "properties": {
+        "capabilityRef": { "$ref": "#/$defs/capabilityRef" },
+        "corpusPublicationRef": {
+          "$ref": "#/$defs/corpusPublicationRef"
+        },
+        "clusterPublicationRef": {
+          "$ref": "#/$defs/clusterPublicationRef"
+        }
+      }
+    }
+  }
+}

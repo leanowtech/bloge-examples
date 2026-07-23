@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterValidation;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
@@ -305,6 +307,155 @@ class MirrorResolverChainTest {
     }
 
     @Test
+    void recordedClusterProjectsOnlyTheCurrentRequestIdentityAndExportsProvenance()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        MirrorArtifactRef clusterPublication = ref(
+                "CAPABILITY_CORPUS_CLUSTER_PUBLICATION",
+                "subject-cluster",
+                '7');
+        MirrorArtifactRef validation = ref(
+                "CAPABILITY_CORPUS_CLUSTER_VALIDATION",
+                "subject-cluster-validation",
+                '8');
+        ResolvedCorpusPayloads.Cluster cluster = cluster(
+                mapper,
+                clusterPublication,
+                validation,
+                Map.of(
+                        "customer", Map.of("id", "recorded-customer"),
+                        "audit", Map.of(
+                                "subjects", List.of("recorded-customer")),
+                        "tier", "gold"));
+        ResolvedCorpusPayloads.CapabilityCorpus corpus =
+                corpus(List.of(cluster));
+        var control = mirrorControl(List.of(), List.of(
+                MirrorPlan.MirrorSource.RECORDED_CLUSTER,
+                MirrorPlan.MirrorSource.ABSTAINED));
+
+        MirrorResolverChain.Decision decision =
+                MirrorResolverChain.standard(mapper).resolve(
+                        control,
+                        new MirrorResolver.Request(
+                                SITE,
+                                1,
+                                1,
+                                "sha256:" + "9".repeat(64),
+                                Map.of(
+                                        "channel", "web",
+                                        "operation", "lookup",
+                                        "customerId", "current-customer"),
+                                List.of(),
+                                corpus));
+
+        assertThat(decision.source())
+                .isEqualTo(MirrorPlan.MirrorSource.RECORDED_CLUSTER);
+        assertThat(decision.match().rule().behavior().value())
+                .isEqualTo(Map.of(
+                        "customer", Map.of("id", "current-customer"),
+                        "audit", Map.of(
+                                "subjects", List.of("current-customer")),
+                        "tier", "gold"));
+        assertThat(decision.match().confidence())
+                .isEqualTo(new ArtifactProvenance.Confidence(
+                        0.98, 0.91, 1,
+                        CapabilityCorpusClusterValidation.CONFIDENCE_METHOD));
+        assertThat(decision.match().artifactRefs())
+                .containsExactlyInAnyOrder(clusterPublication, validation);
+        assertThat(decision.match().ruleRefs())
+                .containsExactly("subject-cluster@1");
+        assertThat(decision.match().limitations())
+                .containsExactly("STATE_DEPENDENCE_NOT_MODELED");
+        assertThat(decision.match().toString())
+                .doesNotContain("current-customer")
+                .doesNotContain("recorded-customer");
+    }
+
+    @Test
+    void recordedClusterAbstainsWhenMatchOrIdentityCoordinatesAreMissing()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ResolvedCorpusPayloads.CapabilityCorpus corpus = corpus(List.of(
+                cluster(
+                        mapper,
+                        ref("CAPABILITY_CORPUS_CLUSTER_PUBLICATION",
+                                "subject-cluster", '7'),
+                        ref("CAPABILITY_CORPUS_CLUSTER_VALIDATION",
+                                "subject-cluster-validation", '8'),
+                        Map.of("customer", Map.of("id", "recorded-customer"),
+                                "audit", Map.of("subjects",
+                                        List.of("recorded-customer"))))));
+        var control = mirrorControl(List.of(), List.of(
+                MirrorPlan.MirrorSource.RECORDED_CLUSTER,
+                MirrorPlan.MirrorSource.ABSTAINED));
+
+        MirrorResolverChain.Decision missingIdentity =
+                MirrorResolverChain.standard(mapper).resolve(
+                        control,
+                        new MirrorResolver.Request(
+                                SITE, 1, 1, REQUEST_FINGERPRINT,
+                                Map.of(
+                                        "channel", "web",
+                                        "operation", "lookup"),
+                                List.of(), corpus));
+        MirrorResolverChain.Decision missingMatch =
+                MirrorResolverChain.standard(mapper).resolve(
+                        control,
+                        new MirrorResolver.Request(
+                                SITE, 1, 1, REQUEST_FINGERPRINT,
+                                Map.of(
+                                        "channel", "mobile",
+                                        "customerId", "current-customer"),
+                                List.of(), corpus));
+
+        assertThat(missingIdentity.abstained()).isTrue();
+        assertThat(missingMatch.abstained()).isTrue();
+    }
+
+    @Test
+    void multipleRecordedClustersForTheSameRequestFailClosed()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ResolvedCorpusPayloads.CapabilityCorpus corpus = corpus(List.of(
+                cluster(
+                        mapper,
+                        ref("CAPABILITY_CORPUS_CLUSTER_PUBLICATION",
+                                "subject-cluster-a", '7'),
+                        ref("CAPABILITY_CORPUS_CLUSTER_VALIDATION",
+                                "subject-validation-a", '8'),
+                        Map.of("customer", Map.of("id", "recorded-a"),
+                                "audit", Map.of("subjects",
+                                        List.of("recorded-a")))),
+                cluster(
+                        mapper,
+                        ref("CAPABILITY_CORPUS_CLUSTER_PUBLICATION",
+                                "subject-cluster-b", '9'),
+                        ref("CAPABILITY_CORPUS_CLUSTER_VALIDATION",
+                                "subject-validation-b", '0'),
+                        Map.of("customer", Map.of("id", "recorded-b"),
+                                "audit", Map.of("subjects",
+                                        List.of("recorded-b"))))));
+        var control = mirrorControl(List.of(), List.of(
+                MirrorPlan.MirrorSource.RECORDED_CLUSTER,
+                MirrorPlan.MirrorSource.ABSTAINED));
+
+        assertThatThrownBy(() -> MirrorResolverChain.standard(mapper)
+                .resolve(
+                        control,
+                        new MirrorResolver.Request(
+                                SITE, 1, 1, REQUEST_FINGERPRINT,
+                                Map.of(
+                                        "channel", "web",
+                                        "operation", "lookup",
+                                        "customerId", "current-customer"),
+                                List.of(), corpus)))
+                .isInstanceOfSatisfying(
+                        TestControlException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("MIRROR_CLUSTER_AMBIGUOUS"));
+    }
+
+    @Test
     void ordinaryControlCannotEnterMirrorResolverChain() {
         var control = new CompiledExecutionControl.ResolvedControl(SITE, List.of(), false);
 
@@ -344,6 +495,52 @@ class MirrorResolverChainTest {
     private static MirrorResolver.Request request(List<FixtureRule> matched) {
         return new MirrorResolver.Request(SITE, 1, 1, REQUEST_FINGERPRINT,
                 Map.of("customerId", "c-1"), matched);
+    }
+
+    private static ResolvedCorpusPayloads.CapabilityCorpus corpus(
+            List<ResolvedCorpusPayloads.Cluster> clusters) {
+        return new ResolvedCorpusPayloads.CapabilityCorpus(
+                ref("CAPABILITY", "operator:subject", '1'),
+                ref("CAPABILITY_CORPUS_PUBLICATION",
+                        "subject-corpus", '2'),
+                ref("CAPABILITY_CORPUS_REVISION",
+                        "subject-corpus", '3'),
+                java.time.Instant.parse("2026-07-23T08:00:00Z"),
+                java.time.Instant.parse("2026-07-24T08:00:00Z"),
+                List.of(),
+                List.of(),
+                clusters);
+    }
+
+    private static ResolvedCorpusPayloads.Cluster cluster(
+            ObjectMapper mapper,
+            MirrorArtifactRef publication,
+            MirrorArtifactRef validation,
+            Object response) throws Exception {
+        return new ResolvedCorpusPayloads.Cluster(
+                publication,
+                List.of(
+                        new ResolvedCorpusPayloads.MatchCriterion(
+                                "/channel", mapper.valueToTree("web")),
+                        new ResolvedCorpusPayloads.MatchCriterion(
+                                "/operation", mapper.valueToTree("lookup"))),
+                CapabilityCorpusClusterValidation.IdentityMode
+                        .REQUEST_PROJECTION,
+                List.of(
+                        new CapabilityCorpusClusterValidation
+                                .IdentityProjection(
+                                "/customerId",
+                                List.of(
+                                        "/audit/subjects/0",
+                                        "/customer/id"))),
+                mapper.writeValueAsBytes(response),
+                List.of(publication, validation),
+                List.of("subject-cluster@1"),
+                new ArtifactProvenance.Confidence(
+                        0.98, 0.91, 1,
+                        CapabilityCorpusClusterValidation.CONFIDENCE_METHOD),
+                0.87,
+                List.of("STATE_DEPENDENCE_NOT_MODELED"));
     }
 
     private static CompiledExecutionControl.ResolvedControl mirrorControl(

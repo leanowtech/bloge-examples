@@ -73,6 +73,7 @@ public final class MirrorResolverChain {
                 new ExactRuleResolver(MirrorPlan.MirrorSource.OWNER_SPECIFIED, false),
                 new RecordedExactResolver(Objects.requireNonNull(mapper, "mapper")),
                 new RecordedTrajectoryResolver(mapper),
+                new RecordedClusterResolver(mapper),
                 new ExactRuleResolver(MirrorPlan.MirrorSource.GOVERNED_REPLAY, true)));
     }
 
@@ -242,6 +243,41 @@ public final class MirrorResolverChain {
                     sample.ruleRefs(),
                     sample.errorDetailsFingerprint(),
                     sample.retryableError()));
+        }
+    }
+
+    private record RecordedClusterResolver(ObjectMapper mapper)
+            implements MirrorResolver {
+        private RecordedClusterResolver {
+            Objects.requireNonNull(mapper, "mapper");
+        }
+
+        @Override
+        public MirrorPlan.MirrorSource source() {
+            return MirrorPlan.MirrorSource.RECORDED_CLUSTER;
+        }
+
+        @Override
+        public Optional<Match> resolve(Request request) {
+            if (request.recordedExactCorpus() == null) {
+                return Optional.empty();
+            }
+            return request.recordedExactCorpus().findCluster(
+                            request.requestFingerprint(),
+                            request.input(),
+                            mapper)
+                    .map(selected -> {
+                        ResolvedCorpusPayloads.Sample sample =
+                                selected.sample();
+                        return new Match(
+                                sample.toRule(mapper),
+                                selected.confidence(),
+                                sample.freshness(),
+                                sample.limitations(),
+                                sample.artifactRefs(),
+                                sample.ruleRefs(),
+                                sample.errorDetailsFingerprint());
+                    });
         }
     }
 }

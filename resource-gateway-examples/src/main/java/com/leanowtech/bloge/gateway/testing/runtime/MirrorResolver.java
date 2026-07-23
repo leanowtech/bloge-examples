@@ -140,7 +140,9 @@ public interface MirrorResolver {
             ruleRefs = ruleRefs == null ? List.of() : ruleRefs.stream()
                     .map(value -> bounded(value, "ruleRef", 512))
                     .distinct().sorted().toList();
-            if (artifactRefs.size() > 1_000 || ruleRefs.size() > 1_000) {
+            if (artifactRefs.size()
+                    > ResolvedCorpusPayloads.MAXIMUM_ARTIFACT_REFS
+                    || ruleRefs.size() > 1_000) {
                 throw new IllegalArgumentException(
                         "mirror match provenance exceeds its item limit");
             }

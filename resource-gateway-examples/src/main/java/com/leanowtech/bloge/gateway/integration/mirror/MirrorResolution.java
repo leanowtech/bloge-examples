@@ -73,7 +73,7 @@ public record MirrorResolution(
     /** Current mirror-resolution protocol version. */
     public static final String SCHEMA_VERSION = "resourceGateway.mirrorResolution.v1";
     /** Maximum number of exact artifacts attached to one resolution. */
-    public static final int MAXIMUM_ARTIFACT_REFS = 1_000;
+    public static final int MAXIMUM_ARTIFACT_REFS = 12_000;
     /** Maximum number of rule identities attached to one resolution. */
     public static final int MAXIMUM_RULE_REFS = 1_000;
     /** Maximum number of explicit limitations attached to one resolution. */

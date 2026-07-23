@@ -92,6 +92,9 @@ class CapabilityProtocolSchemaTest {
         assertThat(planSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(planCreateSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(resolutionSchema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(resolutionSchema.at(
+                "/properties/matchedArtifactRefs/maxItems").asInt())
+                .isEqualTo(MirrorResolution.MAXIMUM_ARTIFACT_REFS);
         assertThat(snapshotValue.at("/contract/slo/timeout").asText()).isEqualTo("PT3S");
     }
 
