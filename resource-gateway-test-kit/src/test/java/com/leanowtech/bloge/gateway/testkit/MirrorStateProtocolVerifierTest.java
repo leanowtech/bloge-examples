@@ -187,6 +187,23 @@ class MirrorStateProtocolVerifierTest {
     }
 
     @Test
+    void sealsDetachedSessionPayloadsWithoutAClientCanonicalizer() {
+        JsonNode fixture = CapabilityMirrorProtocol.statefulRefundFixture();
+
+        JsonNode sealed = verifier.sealSessionPayload(
+                fixture.path("stateModel"),
+                List.of(fixture.path("writeEffect")),
+                fixture.path("initialState"));
+
+        assertThat(sealed).isEqualTo(payload());
+        assertThat(verifier.verifySessionPayload(sealed).sessionId())
+                .isEqualTo("refund-session-1");
+        ((ObjectNode) sealed.path("state")).put("sessionId", "changed");
+        assertThat(fixture.path("initialState").path("sessionId").asText())
+                .isEqualTo("refund-session-1");
+    }
+
+    @Test
     void rejectsUnsafeSessionIdsLifecycleContradictionsAndUnadmittedEffects() {
         ObjectNode unsafePayload = payload();
         ((ObjectNode) unsafePayload.path("state")).put("sessionId", "tenant/a");

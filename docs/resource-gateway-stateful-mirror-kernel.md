@@ -2,10 +2,11 @@
 
 ## 1. 当前结论
 
-Stateful Mirror 的第一条退款域纵向切片已经完成协议和进程内事务内核，但还不是可对外调用的
-Session 服务。
+Stateful Mirror 的退款域纵向切片现已贯通“协议 -> 事务内核 -> 加密持久化 -> 受保护 Session API ->
+独立客户端复验”，可以在 `test`/`staging` 环境作为可调用的状态化模拟数据面使用，但还不是
+production-certified runtime。
 
-当前实现解决的是最危险、也最值得先解决的确定性问题：
+当前实现已经解决：
 
 - 业务世界、写效果和会话状态不再是任意 `Map`，而是版本化、严格封闭、可内容寻址的协议。
 - 一个写能力可以原子修改多个实体；失败、超时适配、取消和提交拒绝不会留下半状态。
@@ -15,19 +16,120 @@ Session 服务。
 - 单 session 写事务串行化，时间、sequence 和 ID 由确定性执行服务产生。
 - state revision、transition event 和 transaction receipt 必须形成完整闭包。
 - 独立 test-kit 不依赖 Resource Gateway/Spring，可复验相同 Schema、fingerprint 和闭包。
+- Session payload 使用 AES-256-GCM 加密后进入独立 JDBC 数据面；control DB、descriptor、日志、metric 和
+  operation audit 不保存业务 payload。
+- create/get/command/destroy 通过受保护 API 暴露，scope 只来自认证身份，不接受 caller 自报 tenant。
+- 同进程 fair lock、跨 replica 数据库 lease/fence、expected state fingerprint 和存储 CAS 共同防止丢更新；
+  命令结束立即精确释放 lease，旧 owner 不能释放新 owner 的 fence。
+- TTL、显式 destroy、终态 descriptor、create replay 和 command replay 已形成稳定语义。
 
-当前实现**不代表**以下能力已经可用：
+当前实现**仍不代表**以下能力已经可用：
 
-- `POST /api/mirror/sessions`；
-- TEE/data-plane 加密 state store；
+- production profile；
+- TEE、HSM/KMS 托管密钥、远程 payload authority 和正式 cryptographic erasure 证明；
 - stateful query resolver；
-- checkpoint/recovery；
+- 签名 checkpoint、跨区域恢复、灾备演练和逐写点进程 crash certification；
 - state transition evidence 与 ANEKE workbook 导出；
-- 多副本 session owner、租约和故障转移；
-- capability probe 中任何为 `true` 的 stateful API/store/resolver/runtime readiness；
-- 生产环境启用。
+- capacity admission、固定基数 telemetry、stateful Scenario UI 与 fidelity/outcome 校准；
+- 生产级共享数据库、跨区域 owner 接管与 HA/DR SLO 认证。
 
-在这些接线完成之前，Resource Gateway 必须继续把 stateful runtime 报告为 unavailable。
+Capability probe 会分别报告事实：协议、Session API 和数据面 readiness 可以为 `true`；在 resolver/evidence
+尚未闭环前，`mirrorStatefulResolverReady` 与 `mirrorStatefulRuntimeReady` 必须继续为 `false`。不能把
+“Session API 可调用”解释为“完整 Stateful Mirror runtime 已可发布”。
+
+### 1.1 一条命令启动与停止
+
+从仓库根目录启动本地状态化演示：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --stateful --open
+./scripts/visual-canvas-demo.sh status
+./scripts/stop-visual-canvas-demo.sh
+```
+
+`--stateful` 会在 `target/example-state/mirror-aes256.key` 创建或复用权限为 `0600` 的本地 AES-256 key，
+同时启用父级 Mirror runtime 和独立 state-plane H2 数据库。密钥不会输出到终端或日志，stop 不删除密钥和
+数据库，因此重新启动仍可解密已有 Session。不要单独删除密钥文件，除非明确要让现有密文不可恢复。
+
+staging 应由部署系统显式注入以下值，不应依赖本地 demo key：
+
+```bash
+export RG_MIRROR_RUNTIME_ENABLED=true
+export RG_MIRROR_STATEFUL_ENABLED=true
+export RG_MIRROR_STATEFUL_INSTANCE_ID=rg-staging-a
+export RG_MIRROR_STATEFUL_ACTIVE_KEY_ID=kms-generation-7
+export RG_MIRROR_STATEFUL_KEY_RING='kms-generation-7=<base64-aes256>,kms-generation-6=<base64-aes256>'
+export RG_MIRROR_STATEFUL_JDBC_URL='jdbc:postgresql://state-plane.example/mirror'
+export RG_MIRROR_STATEFUL_JDBC_USERNAME='mirror_runtime'
+export RG_MIRROR_STATEFUL_JDBC_PASSWORD='<deployment-secret>'
+
+./scripts/start-visual-canvas-demo.sh --profile staging
+```
+
+state-plane JDBC URL/credential 必须与 control plane 物理隔离；active key 缺失、数据库不可用、复用 control
+DB 或 profile 不允许时启动失败关闭。`production` 即使设置全部开关也不会装配 Controller。
+
+启动后以 capability probe 为准：
+
+```bash
+curl -sS http://localhost:8080/api/integration/capabilities |
+  jq '.payload.features
+      | with_entries(select(.key | startswith("mirrorStateful")))'
+```
+
+本地默认 demo 身份使用 bearer token `bloge-aneke-demo-token` 和
+`X-Purpose: MIRROR_REHEARSAL`。推荐使用 test-kit，它会在发送前验证请求，在接收后验证 envelope、Schema、
+fingerprint、revision 和依赖闭包：
+
+固定退款 fixture 的 scope 是 `tenant-a/org-a/tool-studio/test/sg`。直接运行下列样本前，应以同一身份启动；
+scope 不一致故意返回 404，避免把其他租户 Session 的存在性变成信息侧信道：
+
+```bash
+RG_INTEGRATION_ORGANIZATION_ID=org-a \
+RG_INTEGRATION_REGION=sg \
+  ./scripts/start-visual-canvas-demo.sh --stateful
+```
+
+```java
+JsonNode fixture = CapabilityMirrorProtocol.statefulRefundFixture();
+MirrorStateProtocolVerifier verifier = new MirrorStateProtocolVerifier();
+JsonNode payload = verifier.sealSessionPayload(
+        fixture.path("stateModel"),
+        List.of(fixture.path("writeEffect")),
+        fixture.path("initialState"));
+
+ObjectNode create = objectMapper.createObjectNode()
+        .put("schemaVersion",
+                CapabilityMirrorProtocol.MIRROR_SESSION_CREATE_REQUEST_V1)
+        .put("requestId", "refund-demo-create-1");
+create.set("payload", payload);
+
+ResourceGatewayTestClient client = ResourceGatewayTestClient
+        .builder(URI.create("http://localhost:8080"))
+        .bearerToken(() -> "bloge-aneke-demo-token")
+        .build();
+JsonNode descriptor = client.createMirrorSession(create);
+
+ObjectNode command = objectMapper.createObjectNode()
+        .put("schemaVersion",
+                CapabilityMirrorProtocol.MIRROR_SESSION_COMMAND_REQUEST_V1)
+        .put("expectedStateFingerprint",
+                descriptor.path("stateFingerprint").asText());
+command.set("writeEffectRef",
+        fixture.path("initialState").path("writeEffectRefs").get(0));
+command.set("input", fixture.path("commands").get(0).path("input"));
+
+JsonNode result = client.executeMirrorSessionCommand(
+        descriptor.path("sessionId").asText(), command);
+JsonNode replay = client.executeMirrorSessionCommand(
+        descriptor.path("sessionId").asText(), command);
+client.destroyMirrorSession(descriptor.path("sessionId").asText());
+```
+
+幂等 key 的位置由 `WriteEffectSpec.idempotency.keyPath` 定义；退款样本使用 `input.requestId`。相同 key 和相同
+输入返回原 receipt，且 exact replay 先于 `expectedStateFingerprint` 判断，从而允许安全重试“已提交但响应
+丢失”的请求；optimistic fence 只约束真正的新提交。key 相同但命令内容漂移会失败关闭。不要把 Session
+payload、command input 或 receipt response 写进日志和公开 evidence。
 
 ## 2. 为什么先做事务内核
 
@@ -53,6 +155,11 @@ Session 服务。
 | `resourceGateway.stateModel.v1` | `state-model-v1.schema.json` | 实体 Schema、唯一业务键和业务不变量 |
 | `resourceGateway.writeEffectSpec.v1` | `write-effect-spec-v1.schema.json` | 一个虚拟写能力的原子 mutation 集合、前置条件、响应投影和幂等契约 |
 | `resourceGateway.sessionStateSpace.v1` | `session-state-space-v1.schema.json` | 一个隔离会话的实体、索引、tombstone、事件和 receipt |
+| `resourceGateway.mirrorSessionPayload.v1` | `mirror-session-payload-v1.schema.json` | 加密数据面的 model/effect/state 聚合及总 fingerprint |
+| `resourceGateway.mirrorSessionCreateRequest.v1` | `mirror-session-create-request-v1.schema.json` | 带 create idempotency key 的严格创建命令 |
+| `resourceGateway.mirrorSessionDescriptor.v1` | `mirror-session-descriptor-v1.schema.json` | 不含业务 payload 的依赖、revision、生命周期与 fingerprint 投影 |
+| `resourceGateway.mirrorSessionCommandRequest.v1` | `mirror-session-command-request-v1.schema.json` | exact effect、可选 expected-state fence 与业务输入 |
+| `resourceGateway.mirrorSessionCommandResult.v1` | `mirror-session-command-result-v1.schema.json` | 当前 descriptor 与新提交或原始 replay receipt |
 | `resourceGateway.statefulRefundFixture.v1` | `stateful-refund-stage3-v1.fixture.schema.json` | 跨实现固定退款兼容样本 |
 
 固定样本
@@ -307,25 +414,39 @@ normalization 和固定签名向量仍是独立工作项；在完成前，不得
 
 owner 定义的 precondition/invariant error code会原样作为稳定业务失败 code 返回。
 
+Session transport/store 另有一组稳定、payload-safe 的服务错误：
+
+| Code | HTTP/处理语义 |
+|---|---|
+| `RG.MIRROR.SESSION.NOT_FOUND` | scope 内不存在；不泄露其他 scope 是否存在 |
+| `RG.MIRROR.SESSION.CREATE_CONFLICT` / `ID_CONFLICT` | create request 或 session identity 漂移，不得覆盖 |
+| `RG.MIRROR.SESSION.GONE` | 已过期或销毁，终态不可恢复 |
+| `RG.MIRROR.SESSION.LEASE_BUSY` / `LEASE_LOST` | `Retry-After` 有界的可重试 owner 冲突 |
+| `RG.MIRROR.SESSION.STATE_CONFLICT` | expected fingerprint 或 CAS head 已变化，调用方重新读取后决定是否重试 |
+| `RG.MIRROR.SESSION.CAPACITY_EXCEEDED` | 数据面容量拒绝，不得退化为内存或 control DB |
+| `RG.MIRROR.SESSION.STATE_CORRUPT` | 密文、AAD、fingerprint 或闭包不一致，失败关闭并告警 |
+| `RG.MIRROR.SESSION.STORE_UNAVAILABLE` | 数据面不可用，失败关闭，不回退真实资源 |
+| `RG.MIRROR.SESSION.WRITE_EFFECT_NOT_ADMITTED` | command effect 不在 Session 的 exact closure |
+
 ## 10. 直接开工的剩余工作
 
 ### 10.1 P0：Session service 与 data-plane state store
 
-| Ticket | 工作 | 验收门禁 |
-|---|---|---|
-| RG-MIR-STATE-002 | 定义 SessionDescriptor、Create/Get/Destroy/Command API；身份派生 scope，不接受 caller 自报 tenant | 跨 scope 读写为 0；exact create retry 幂等；未知字段拒绝 |
-| RG-MIR-STATE-003 | TEE/data-plane encrypted state store、CAS head、session owner lease、TTL 和显式销毁 | 进程崩溃/双 owner/lease 接管不丢更新；payload 不入 control DB |
-| RG-MIR-STATE-004 | 把 transaction kernel 接到 store；commit、head、receipt、成功审计形成原子边界 | fault injection 覆盖每个写点；无半状态、孤儿 receipt 或孤儿 audit |
-| RG-MIR-STATE-005 | 固定容量预算、admission、backpressure 和 payload-free telemetry | 100k entity/16 MiB payload 边界无 OOM；高水位明确拒绝 |
+| Ticket | 状态 | 已完成 | 下一门禁 |
+|---|---|---|---|
+| RG-MIR-STATE-002 | 完成 | 五个 Session 协议、create/get/command/destroy API、auth-before-decode、身份派生 scope、strict bounded decoder、稳定错误 | 保持兼容性与跨语言 contract suite |
+| RG-MIR-STATE-003 | 核心完成 | 独立 JDBC 数据面、AES-256-GCM key ring、CAS head、DB lease/fence、TTL、destroy、精确 release | TEE/KMS provider、共享托管 DB、HA/DR 与跨区域接管认证 |
+| RG-MIR-STATE-004 | 核心完成 | payload/head/revision/audit 同事务提交，失败回滚；stale owner/CAS/审计失败测试 | 每个持久化写点的真实进程 kill、网络分区和恢复 fault injection |
+| RG-MIR-STATE-005 | 待实现 | 请求/表达式/集合/Schema 已有硬上限，连接池有独立上限 | 全局/租户 admission、backpressure、固定基数 telemetry、容量基准 |
 
 ### 10.2 P0：Stateful resolver 与退款读写读
 
-| Ticket | 工作 | 验收门禁 |
+| Ticket | 状态 | 工作与验收门禁 |
 |---|---|---|
-| RG-MIR-STATE-006 | 在 resolver precedence 中接入 `SESSION_STATE`；先查 tombstone/live entity，再进入 stateless source | session 命中不访问 corpus/真实资源；tombstone 不回退 |
-| RG-MIR-STATE-007 | query-order/create-refund/query-refund 端到端 lowering | 读写读结果一致；真实外部写调用恒为 0 |
-| RG-MIR-STATE-008 | baseline resolver 接 exact corpus/owner fixture authority | source/kind/scope/capability/content address 任一漂移失败关闭 |
-| RG-MIR-STATE-009 | 已分离 protocol、API、store、resolver、runtime 五段探针；接线时逐项推进 | 只有端到端装配、隔离和故障门禁通过后 runtime 才为 true |
+| RG-MIR-STATE-006 | 待实现 | 在 resolver precedence 中接入 `SESSION_STATE`；命中不访问 corpus/真实资源，tombstone 不回退 |
+| RG-MIR-STATE-007 | 部分完成 | create-refund 两实体事务已可经 API 运行；仍需 query-order/create-refund/query-refund 真实 DAG lowering，且外部写调用恒为 0 |
+| RG-MIR-STATE-008 | 内核完成 | exact source/kind/identity/schema/key 校验已完成；仍需接 corpus/owner fixture authority 的在线 scope/grant/retention/content-address 复验 |
+| RG-MIR-STATE-009 | 部分完成 | protocol、API、store、resolver、runtime 五段探针已分离；API/store 按装配与健康动态为 true，resolver/runtime 保持 false |
 
 ### 10.3 P0：Evidence、checkpoint 与恢复
 
@@ -364,16 +485,16 @@ owner 定义的 precondition/invariant error code会原样作为稳定业务失�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=StatefulMirrorProtocolTest,MirrorStateTransactionEngineTest test
+  -Dtest=MirrorSessionProtocolTest,MirrorStateTransactionEngineTest,DatabaseMirrorSessionStateStoreTest,MirrorSessionIntegrationServiceTest,MirrorSessionControllerTest,VisualCanvasDemoScriptTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
-  -Dtest=MirrorStateProtocolVerifierTest test
+  -Dtest=MirrorStateProtocolVerifierTest,ResourceGatewayMirrorSessionClientTest,CapabilityMirrorSchemaPackagingTest test
 
 mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-这些命令验证协议和内核，不会启动 Session API。现有 Resource Gateway 启停脚本只启动当前已装配服务；
-probe 会报告 `mirrorStatefulProtocol=true`，同时把 Session API、state store、resolver 和 runtime readiness 保持
-为 `false`。在 RG-MIR-STATE-002/003/004/006/009 的剩余接线完成前，演示时不能把 stateful transaction kernel
-描述为可调用产品功能。
+这些命令验证协议、事务、加密数据面、HTTP 生命周期、脚本和独立客户端。它们不会把 resolver/runtime
+readiness 提升为 true。要做真实服务演示，运行
+`./scripts/start-visual-canvas-demo.sh --stateful`；仅在 capability probe 同时报告
+`mirrorStatefulSessionApi=true` 与 `mirrorStatefulStateStoreReady=true` 时调用 Session API。

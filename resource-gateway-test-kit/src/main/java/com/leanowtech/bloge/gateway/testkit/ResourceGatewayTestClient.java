@@ -1438,10 +1438,21 @@ public final class ResourceGatewayTestClient {
                 CapabilityMirrorProtocol.MIRROR_SESSION_DESCRIPTOR_V1);
         MirrorStateProtocolVerifier.VerifiedSessionDescriptor verifiedDescriptor =
                 MIRROR_STATE_VERIFIER.verifySessionDescriptor(descriptor);
+        JsonNode initialState = request.path("payload").path("state");
         if (!verifiedRequest.payload().sessionId().equals(
                 verifiedDescriptor.sessionId())
-                || verifiedRequest.payload().stateRevision()
-                != verifiedDescriptor.stateRevision()) {
+                || verifiedDescriptor.stateRevision()
+                < verifiedRequest.payload().stateRevision()
+                || !initialState.path("planFingerprint").equals(
+                descriptor.path("planFingerprint"))
+                || !initialState.path("stateModelRef").equals(
+                descriptor.path("stateModelRef"))
+                || !initialState.path("writeEffectRefs").equals(
+                descriptor.path("writeEffectRefs"))
+                || (verifiedDescriptor.stateRevision()
+                == verifiedRequest.payload().stateRevision()
+                && !initialState.path("fingerprint").equals(
+                descriptor.path("stateFingerprint")))) {
             throw responseContractInvalid(
                     "The server returned a descriptor for a different mirror session.");
         }

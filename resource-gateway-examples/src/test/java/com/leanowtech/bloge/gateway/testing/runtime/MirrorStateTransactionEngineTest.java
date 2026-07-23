@@ -41,15 +41,22 @@ class MirrorStateTransactionEngineTest {
     @Test
     void executesAtomicRefundAndReturnsTheOriginalReceiptForAnExactRetry() {
         MirrorStateTransactionEngine engine = engine(initialState());
+        AtomicInteger newCommandAdmissions = new AtomicInteger();
         Map<String, Object> input = Map.of(
                 "requestId", "REQ-1", "orderId", "O-100",
                 "amount", new BigDecimal("450"));
 
-        SessionStateSpace.TransactionReceipt first = engine.execute(effect, input);
-        SessionStateSpace.TransactionReceipt retry = engine.execute(effect, input);
+        SessionStateSpace.TransactionReceipt first = engine.execute(
+                effect, input, current -> newCommandAdmissions.incrementAndGet());
+        SessionStateSpace.TransactionReceipt retry = engine.execute(
+                effect, input, current -> {
+                    throw new AssertionError(
+                            "exact replay must bypass new-command admission");
+                });
         SessionStateSpace state = engine.snapshot();
 
         assertThat(retry).isEqualTo(first);
+        assertThat(newCommandAdmissions).hasValue(1);
         assertThat(state.stateRevision()).isEqualTo(1);
         assertThat(state.entities()).hasSize(2);
         assertThat(entity(state, "refund", "R-1").value())

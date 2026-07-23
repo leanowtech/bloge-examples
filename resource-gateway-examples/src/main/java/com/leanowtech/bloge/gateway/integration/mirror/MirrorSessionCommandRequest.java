@@ -10,7 +10,8 @@ import java.util.Objects;
  *
  * @param schemaVersion command wire version
  * @param writeEffectRef exact admitted write effect
- * @param expectedStateFingerprint optional optimistic state fence
+ * @param expectedStateFingerprint optional optimistic fence for a new commit; an exact
+ *                                 idempotency-journal replay is returned before this fence
  * @param input detached business command input
  */
 public record MirrorSessionCommandRequest(

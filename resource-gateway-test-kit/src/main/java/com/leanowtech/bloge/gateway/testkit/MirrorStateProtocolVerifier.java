@@ -388,6 +388,40 @@ public final class MirrorStateProtocolVerifier {
     }
 
     /**
+     * Builds and seals one session aggregate from already sealed protocol artifacts.
+     *
+     * <p>The method verifies the exact model/effect/state closure before deriving the canonical
+     * aggregate fingerprint. It exists so clients do not reimplement canonical JSON hashing.
+     * The returned value contains customer-shaped state and must be kept out of logs, public
+     * evidence, and control-plane persistence.</p>
+     *
+     * @param stateModel exact sealed state model
+     * @param writeEffects exact admitted sealed write effects
+     * @param state exact sealed initial or checkpoint session state
+     * @return detached strict-schema and fingerprint-verified session payload
+     */
+    public JsonNode sealSessionPayload(
+            JsonNode stateModel,
+            List<JsonNode> writeEffects,
+            JsonNode state) {
+        List<JsonNode> effects = writeEffects == null
+                ? List.of() : List.copyOf(writeEffects);
+        verifySession(state, stateModel, effects);
+        ObjectNode payload = JSON.createObjectNode();
+        payload.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol.MIRROR_SESSION_PAYLOAD_V1);
+        payload.set("stateModel", stateModel.deepCopy());
+        var encodedEffects = payload.putArray("writeEffects");
+        effects.forEach(effect -> encodedEffects.add(effect.deepCopy()));
+        payload.set("state", state.deepCopy());
+        payload.put("fingerprint", "");
+        payload.put("fingerprint", EvidenceVerificationSupport.sha256(payload));
+        verifySessionPayload(payload);
+        return payload;
+    }
+
+    /**
      * Verifies one create command and its complete sealed aggregate.
      *
      * @param value session-create request JSON

@@ -25,6 +25,7 @@ class ResourceGatewayMirrorSessionClientTest {
 
     private final List<CapturedRequest> requests = new ArrayList<>();
     private HttpServer server;
+    private long createRevision;
 
     @BeforeEach
     void startServer() throws IOException {
@@ -93,6 +94,21 @@ class ResourceGatewayMirrorSessionClientTest {
                 .isEqualTo("RG.TESTKIT.RESPONSE_CONTRACT_INVALID");
     }
 
+    @Test
+    void acceptsAnExactCreateReplayWhoseCurrentDescriptorHasAdvanced() {
+        createRevision = 1;
+        ObjectNode payload = payload();
+        ObjectNode create = JSON.createObjectNode()
+                .put("schemaVersion",
+                        CapabilityMirrorProtocol.MIRROR_SESSION_CREATE_REQUEST_V1)
+                .put("requestId", "create-refund-1");
+        create.set("payload", payload);
+
+        JsonNode descriptor = client().createMirrorSession(create);
+
+        assertThat(descriptor.path("stateRevision").asLong()).isEqualTo(1);
+    }
+
     private ResourceGatewayTestClient client() {
         return ResourceGatewayTestClient.builder(URI.create(
                         "http://127.0.0.1:" + server.getAddress().getPort()))
@@ -124,9 +140,12 @@ class ResourceGatewayMirrorSessionClientTest {
             kind = "MIRROR_SESSION_COMMAND_RESULT";
             version = CapabilityMirrorProtocol.MIRROR_SESSION_COMMAND_RESULT_V1;
         } else {
+            boolean create = "POST".equals(exchange.getRequestMethod())
+                    && "/api/mirror/sessions".equals(
+                    exchange.getRequestURI().getPath());
             responsePayload = descriptor(
                     payload,
-                    destroy ? 1 : 0,
+                    destroy ? 1 : create ? createRevision : 0,
                     destroy ? "DESTROYED" : "ACTIVE",
                     destroy ? "2026-07-24T00:00:02Z" : null);
             kind = "MIRROR_SESSION_DESCRIPTOR";

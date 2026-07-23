@@ -127,6 +127,10 @@ public final class MirrorSessionIntegrationService {
     /**
      * Executes or exactly replays one admitted virtual write transaction.
      *
+     * <p>Exact idempotency-journal replay precedes the optional expected-state fence. This lets a
+     * caller safely repeat an ambiguous request after the first commit advanced the state. The
+     * fence still runs before baseline resolution or mutation for every genuinely new command.</p>
+     *
      * @param sessionId stable session identity
      * @param request strict effect and input command
      * @param identity verified enterprise identity
@@ -197,13 +201,6 @@ public final class MirrorSessionIntegrationService {
             MirrorSessionCommandRequest request,
             IntegrationRequestContext identity) {
         MirrorSessionPayload payload = claimed.payload();
-        if (!request.expectedStateFingerprint().isBlank()
-                && !request.expectedStateFingerprint().equals(
-                payload.state().fingerprint())) {
-            throw retryableConflict(identity,
-                    MirrorSessionStateStoreException.Code.STATE_CONFLICT.wireCode(),
-                    claimed.lease().expiresAt().isAfter(clock.instant()) ? 1 : 0);
-        }
         WriteEffectSpec effect = payload.writeEffects().stream()
                 .filter(candidate -> WriteEffectSpecIntegrity.reference(candidate)
                         .equals(request.writeEffectRef()))
@@ -238,7 +235,21 @@ public final class MirrorSessionIntegrationService {
                 });
         SessionStateSpace.TransactionReceipt receipt;
         try {
-            receipt = engine.execute(effect, request.input());
+            receipt = engine.execute(
+                    effect,
+                    request.input(),
+                    current -> {
+                        if (!request.expectedStateFingerprint().isBlank()
+                                && !request.expectedStateFingerprint().equals(
+                                current.fingerprint())) {
+                            throw new MirrorSessionStateStoreException(
+                                    MirrorSessionStateStoreException.Code
+                                            .STATE_CONFLICT,
+                                    1);
+                        }
+                    });
+        } catch (MirrorSessionStateStoreException failure) {
+            throw storeProblem(identity, failure);
         } catch (MirrorStateException failure) {
             if (storeFailure.get() != null) {
                 throw storeProblem(identity, storeFailure.get());
@@ -354,15 +365,6 @@ public final class MirrorSessionIntegrationService {
                 failure.code(),
                 "The virtual state transition was rejected.",
                 identity.correlationId(), Map.of()));
-    }
-
-    private static IntegrationProblemException retryableConflict(
-            IntegrationRequestContext identity, String code, long retryAfter) {
-        return new IntegrationProblemException(IntegrationProblem.retryableConflict(
-                code,
-                "The mirror session changed concurrently; retry from its current descriptor.",
-                identity.correlationId(),
-                Map.of("retryAfterSeconds", Math.max(1, retryAfter))));
     }
 
     private static IntegrationProblemException notFound(

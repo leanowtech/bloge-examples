@@ -19,6 +19,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   payload-free run-summary schemas, independent deployment-isolation attestation verification, and
   payload-free corpus review/candidate/publication, trajectory, and recorded-cluster lifecycle
   verification;
+- strict stateful-mirror payload/create/descriptor/command Schemas, a canonical payload sealer,
+  payload-free semantic verification, and authenticated create/read/command/destroy client methods;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -130,21 +132,54 @@ var session = verifier.verifySession(
         fixture.path("initialState"),
         fixture.path("stateModel"),
         List.of(fixture.path("writeEffect")));
+
+JsonNode payload = verifier.sealSessionPayload(
+        fixture.path("stateModel"),
+        List.of(fixture.path("writeEffect")),
+        fixture.path("initialState"));
 ```
 
 The JAR packages the bounded-expression, state-model, write-effect,
-session-state, and fixture Schemas. Verification re-derives nested and
+session-state, five Session API object, and fixture Schemas. Verification re-derives nested and
 top-level fingerprints, exact model/effect/session closure, mutation alias
 admission, business-key component fingerprints, contiguous transaction
 revisions, exact receipt/event closure, response fingerprints, and the latest
 resulting-world binding. Success records and stable
 `RG.MIRROR.CLIENT.*` failures are payload-free.
 
-This verifies artifacts; it does not create or run sessions. Resource Gateway
-does not yet expose a Session API or advertise stateful runtime readiness. See
-the
+The payload sealer intentionally returns customer-shaped state so it can be
+submitted; keep that value out of logs, exceptions, public evidence, and
+control-plane persistence. The client validates before and after transport:
+
+```java
+ObjectNode create = objectMapper.createObjectNode()
+        .put("schemaVersion",
+                CapabilityMirrorProtocol.MIRROR_SESSION_CREATE_REQUEST_V1)
+        .put("requestId", "refund-create-1");
+create.set("payload", payload);
+
+ResourceGatewayTestClient client = ResourceGatewayTestClient
+        .builder(URI.create("http://localhost:8080"))
+        .bearerToken(tokenProvider)
+        .build();
+JsonNode descriptor = client.createMirrorSession(create);
+JsonNode current = client.findMirrorSession(
+        descriptor.path("sessionId").asText());
+JsonNode result = client.executeMirrorSessionCommand(
+        descriptor.path("sessionId").asText(), commandRequest);
+JsonNode terminal = client.destroyMirrorSession(
+        descriptor.path("sessionId").asText());
+```
+
+All four calls use `X-Purpose: MIRROR_REHEARSAL`, validate the Tool Studio
+envelope, and bind the response session id to the requested id. Command
+idempotency comes from the path declared by the admitted
+`WriteEffectSpec.idempotency`, not from an ambient client retry key. The API is
+physically absent in production; API/store readiness is distinct from
+resolver/runtime readiness. See the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md)
-for the server-side transaction semantics and remaining production work.
+for startup, transaction semantics, stable errors, and remaining production
+work.
 
 Mirror run evidence has a separate fail-closed verifier. Resolve the public key named by the
 attestation, then verify the decoded bundle before admitting it into a correctness workbook:

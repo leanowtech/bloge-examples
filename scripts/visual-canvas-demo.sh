@@ -18,6 +18,8 @@ RUN_TESTS="${BLOGE_VISUAL_CANVAS_RUN_TESTS:-0}"
 OPEN_BROWSER="${BLOGE_VISUAL_CANVAS_OPEN:-0}"
 JAVA_BIN="${JAVA_BIN:-java}"
 SPRING_PROFILE="${BLOGE_VISUAL_CANVAS_PROFILE:-test}"
+STATEFUL_MIRROR="${BLOGE_VISUAL_CANVAS_STATEFUL:-${RG_MIRROR_STATEFUL_ENABLED:-0}}"
+STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
 
 if [ -z "${MVN:-}" ]; then
     if [ -x "/opt/apache-maven-3.9.16/bin/mvn" ]; then
@@ -42,6 +44,7 @@ Options:
   --no-build        Reuse the existing resource-gateway jar.
   --api-only        Build without the React frontend profile.
   --run-tests       Run Maven tests during the package step.
+  --stateful        Enable the encrypted stateful-mirror Session API for test/staging.
   --open            Open /author/ in the default browser after startup.
   -h, --help        Show this help.
 
@@ -53,6 +56,12 @@ Environment:
   BLOGE_VISUAL_CANVAS_RUN_TESTS        default: 0
   BLOGE_VISUAL_CANVAS_OPEN             default: 0
   BLOGE_VISUAL_CANVAS_PROFILE          default: test
+  BLOGE_VISUAL_CANVAS_STATEFUL         default: 0; same effect as --stateful
+  BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE  local demo AES-256 key file; never printed
+  RG_MIRROR_STATEFUL_JDBC_URL          optional dedicated state-plane JDBC URL
+  RG_MIRROR_STATEFUL_INSTANCE_ID       optional stable replica id
+  RG_MIRROR_STATEFUL_ACTIVE_KEY_ID     optional active AES key id
+  RG_MIRROR_STATEFUL_KEY_RING          optional keyId=base64AES256[,oldKeyId=...]
   RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID  required for staging
   RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING       required for staging; keyId=base64AES256[,..]
   RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID  required for staging
@@ -217,6 +226,7 @@ Environment:
 Examples:
   scripts/start-visual-canvas-demo.sh
   scripts/start-visual-canvas-demo.sh --open
+  scripts/start-visual-canvas-demo.sh --stateful
   scripts/start-visual-canvas-demo.sh --port 18080 -- --gateway.base-url=http://localhost:9091
   scripts/visual-canvas-demo.sh status
 EOF
@@ -227,6 +237,99 @@ truthy() {
         1|true|TRUE|yes|YES|on|ON) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+configure_stateful_mirror() {
+    if ! truthy "${STATEFUL_MIRROR}"; then
+        return 0
+    fi
+    case ",${SPRING_PROFILE}," in
+        *,production,*)
+            echo "Stateful mirror is physically unavailable in the production profile." >&2
+            return 1
+            ;;
+        *,test,*|*,staging,*) ;;
+        *)
+            echo "Stateful mirror requires the test or staging profile." >&2
+            return 1
+            ;;
+    esac
+
+    export RG_MIRROR_RUNTIME_ENABLED=true
+    export RG_MIRROR_STATEFUL_ENABLED=true
+    export RG_MIRROR_STATEFUL_INSTANCE_ID="${RG_MIRROR_STATEFUL_INSTANCE_ID:-visual-canvas-$(configured_port)}"
+    export RG_MIRROR_STATEFUL_ACTIVE_KEY_ID="${RG_MIRROR_STATEFUL_ACTIVE_KEY_ID:-demo-v1}"
+
+    if [ -z "${RG_MIRROR_STATEFUL_KEY_RING:-}" ]; then
+        local key_file="${STATEFUL_KEY_FILE}"
+        local key_material
+        if [ -L "${key_file}" ]; then
+            echo "Refusing to use a symbolic link as the stateful demo key file." >&2
+            return 1
+        fi
+        if [ ! -f "${key_file}" ]; then
+            local key_directory
+            local temporary_key
+            key_directory="$(dirname "${key_file}")"
+            mkdir -p "${key_directory}"
+            temporary_key="$(mktemp "${key_file}.tmp.XXXXXX")"
+            chmod 600 "${temporary_key}"
+            if command -v openssl >/dev/null 2>&1; then
+                openssl rand -base64 32 | tr -d '\r\n' > "${temporary_key}"
+            else
+                dd if=/dev/urandom bs=32 count=1 2>/dev/null |
+                    base64 | tr -d '\r\n' > "${temporary_key}"
+            fi
+            mv "${temporary_key}" "${key_file}"
+            chmod 600 "${key_file}"
+            echo "Created persistent local stateful-mirror demo key: ${key_file}"
+        fi
+        if [ ! -r "${key_file}" ]; then
+            echo "Stateful mirror demo key is not readable: ${key_file}" >&2
+            return 1
+        fi
+        key_material="$(tr -d '\r\n' < "${key_file}")"
+        if [ -z "${key_material}" ]; then
+            echo "Stateful mirror demo key is empty: ${key_file}" >&2
+            return 1
+        fi
+        export RG_MIRROR_STATEFUL_KEY_RING="${RG_MIRROR_STATEFUL_ACTIVE_KEY_ID}=${key_material}"
+    fi
+}
+
+validate_stateful_mirror() {
+    if ! truthy "${RG_MIRROR_STATEFUL_ENABLED:-false}"; then
+        return 0
+    fi
+    if ! truthy "${RG_MIRROR_RUNTIME_ENABLED:-false}"; then
+        echo "Stateful mirror requires RG_MIRROR_RUNTIME_ENABLED=true." >&2
+        return 1
+    fi
+    if [ -z "${RG_MIRROR_STATEFUL_ACTIVE_KEY_ID:-}" ] ||
+        [ -z "${RG_MIRROR_STATEFUL_KEY_RING:-}" ]; then
+        echo "Stateful mirror requires an active AES-256 key id and key ring." >&2
+        return 1
+    fi
+    if ! printf '%s' "${RG_MIRROR_STATEFUL_ACTIVE_KEY_ID}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'; then
+        echo "Stateful mirror active key id is invalid." >&2
+        return 1
+    fi
+    local active_entry_found=0
+    local entry
+    local -a key_entries
+    IFS=',' read -r -a key_entries <<< "${RG_MIRROR_STATEFUL_KEY_RING}"
+    for entry in "${key_entries[@]}"; do
+        if [[ "${entry}" == "${RG_MIRROR_STATEFUL_ACTIVE_KEY_ID}="* ]] &&
+            [ "${#entry}" -gt $((${#RG_MIRROR_STATEFUL_ACTIVE_KEY_ID} + 1)) ]; then
+            active_entry_found=1
+            break
+        fi
+    done
+    if [ "${active_entry_found}" -ne 1 ]; then
+        echo "Stateful mirror key ring does not contain the active key id." >&2
+        return 1
+    fi
 }
 
 validate_managed_external_anchor_trust() {
@@ -1728,6 +1831,8 @@ Integration API templates:
   Gate feedback:     POST /api/integration/gate-results
   Test execution:    POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
   Fixture registry: PUT /api/testing/fixture-bundles/{id} (X-Purpose: TEST_FIXTURE_WRITE)
+  Stateful session: POST /api/mirror/sessions (--stateful; Bearer token + X-Purpose: MIRROR_REHEARSAL)
+  Session command:  POST /api/mirror/sessions/{sessionId}/commands
 EOF
 }
 
@@ -1768,6 +1873,7 @@ wait_for_ready() {
 
     local deadline
     local url
+    local response
     deadline=$((SECONDS + STARTUP_TIMEOUT))
     url="$(capabilities_url)"
     while [ "${SECONDS}" -lt "${deadline}" ]; do
@@ -1775,7 +1881,26 @@ wait_for_ready() {
             echo "Demo service exited before becoming ready. See $(log_file)." >&2
             return 1
         fi
-        if curl -fsS "${url}" >/dev/null 2>&1; then
+        if response="$(curl -fsS "${url}" 2>/dev/null)"; then
+            if truthy "${RG_MIRROR_STATEFUL_ENABLED:-false}"; then
+                if command -v jq >/dev/null 2>&1; then
+                    if ! printf '%s' "${response}" | jq -e '
+                        .payload.features.mirrorStatefulSessionApi == true
+                        and .payload.features.mirrorStatefulStateStoreReady == true
+                    ' >/dev/null 2>&1; then
+                        sleep 2
+                        continue
+                    fi
+                elif ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorStatefulSessionApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorStatefulStateStoreReady"[[:space:]]*:[[:space:]]*true'; then
+                    sleep 2
+                    continue
+                fi
+                echo "Demo service ready; stateful Session API and state store probes passed: ${url}"
+                return 0
+            fi
             echo "Demo service ready; integration capability probe passed: ${url}"
             return 0
         fi
@@ -1800,6 +1925,8 @@ open_author_if_requested() {
 }
 
 start_service() {
+    configure_stateful_mirror
+    validate_stateful_mirror
     validate_profile_secrets
     mkdir -p "${PID_DIR}" "${LOG_DIR}"
 
@@ -1923,6 +2050,10 @@ parse_options() {
                 ;;
             --run-tests)
                 RUN_TESTS=1
+                shift
+                ;;
+            --stateful)
+                STATEFUL_MIRROR=1
                 shift
                 ;;
             --open)

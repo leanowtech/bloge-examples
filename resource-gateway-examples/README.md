@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Stateful mirror kernel | Versioned entity/write/session protocols, atomic multi-entity mutations, exact replay, bounded expressions, copy-on-write, tombstones, deterministic services, and independently verifiable refund fixtures |
+| Stateful mirror sessions | Versioned entity/write/session/API protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, TTL/destroy, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
@@ -48,6 +48,8 @@ This packages the Spring Boot gateway with the React frontend and starts the
 demo on `http://localhost:8080`. The dedicated demo script activates the `test`
 profile by default so `/api/testing/**` is available; use `--profile production`
 to demonstrate that the testing beans and endpoints are structurally absent.
+Add `--stateful` to assemble the encrypted stateful-mirror Session API and its
+dedicated local data plane.
 
 | Open | Best first move |
 | --- | --- |
@@ -55,6 +57,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
+| `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
 | `GET http://localhost:8080/api/integration/capability-snapshots/{capabilityId}?revision=0` | Read the latest authorized capability snapshot; use a positive revision for an exact read |
 | `PUT http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/revisions/{revision}` | Append one exact sealed capability snapshot revision |
 | `POST http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions` | Append an optimistically fenced lifecycle-only revision |
@@ -250,10 +253,10 @@ model, fixture bindings, provider contracts, request
 examples, errors, startup commands and remaining production gates are in the
 [capability corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
 
-### Stateful mirror transaction kernel
+### Stateful mirror Session data plane
 
-The first Stage 3 vertical freezes `StateModel`, `WriteEffectSpec`,
-`SessionStateSpace`, and a closed bounded expression AST. The in-process
+The Stage 3 vertical freezes `StateModel`, `WriteEffectSpec`,
+`SessionStateSpace`, five Session API objects, and a closed bounded expression AST. The
 `MirrorStateTransactionEngine` serializes one session's writes, atomically
 applies ordered multi-entity mutations, returns the original receipt for exact
 idempotent retries, rejects same-key command drift, validates entity schemas and
@@ -265,15 +268,23 @@ cannot be recreated.
 Session integrity requires a contiguous revision/receipt journal and exact
 event closure, while each entity, tombstone, event, receipt, current world, and
 complete session is content-addressed. The test kit packages the same strict
-Schemas and refund fixture and verifies them without linking server classes.
+Schemas and refund fixture, seals canonical payloads, verifies them without
+linking server classes, and exposes bounded create/read/command/destroy client
+methods.
 
-This is a transaction kernel, not an assembled product route. There is no
-`/api/mirror/sessions` endpoint yet, no production state store, no stateful
-query resolver, and no checkpoint/recovery or state evidence projection. The
-probe reports `mirrorStatefulProtocol=true`, while Session API, state store,
-resolver, and runtime readiness remain `false`. Startup scripts therefore do
-not expose this feature. The contract, Java usage, stable errors, remaining
-industrial work packages, and verification commands are in the
+With `test` or `staging` plus `--stateful`, `/api/mirror/sessions` stores the
+complete payload under AES-256-GCM in a dedicated JDBC data plane. The public
+descriptor remains payload-free. Same-process fair locking, cross-replica DB
+lease/fence, expected-state checks, CAS, exact lease release, TTL and destroy
+define the concurrency and lifecycle boundary. Authentication happens before
+decoding and scope comes only from verified identity.
+
+This is not a production-ready stateful resolver: TEE/KMS custody,
+capacity/backpressure, stateful read lowering, state evidence, signed
+checkpoint/recovery, cryptographic deletion proof and HA/DR certification
+remain. The probe may report Session API/store ready while resolver/runtime
+readiness remains false. Startup, Java usage, stable errors, and remaining
+industrial work packages are in the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
 
 The Stage 1 compiler and run kernels verify Capability Closure against the recursively
@@ -582,10 +593,11 @@ Useful variants:
 ./scripts/start-visual-canvas-demo.sh --port 18080
 ./scripts/start-visual-canvas-demo.sh --no-build
 ./scripts/start-visual-canvas-demo.sh --run-tests
-RG_MIRROR_RUNTIME_ENABLED=true ./scripts/start-visual-canvas-demo.sh --profile test
+./scripts/start-visual-canvas-demo.sh --stateful
 ./scripts/start-visual-canvas-demo.sh --profile production
 ./scripts/visual-canvas-demo.sh status
 ./scripts/visual-canvas-demo.sh restart
+./scripts/stop-visual-canvas-demo.sh
 ```
 
 `staging` requires two independent deployment-secret key rings before `--profile staging`:

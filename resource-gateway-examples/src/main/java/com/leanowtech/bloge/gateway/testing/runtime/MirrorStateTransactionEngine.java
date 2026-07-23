@@ -129,7 +129,29 @@ public final class MirrorStateTransactionEngine {
      */
     public SessionStateSpace.TransactionReceipt execute(
             WriteEffectSpec effect, Map<String, ?> input) {
+        return execute(effect, input, NewCommandGuard.noop());
+    }
+
+    /**
+     * Executes or exactly replays one keyed virtual write transaction with a new-command fence.
+     *
+     * <p>The guard runs only after effect/idempotency validation proves that no exact prior receipt
+     * exists, and before interruption checks, baseline resolution, expressions, or mutations. It
+     * is therefore suitable for optimistic state fences without breaking ambiguous-request
+     * replay.</p>
+     *
+     * @param effect exact sealed write effect admitted by the session
+     * @param input detached JSON command input
+     * @param newCommandGuard admission fence invoked only for a genuinely new command
+     * @return original or newly committed receipt
+     * @throws MirrorStateException for stable fail-closed admission or transaction failures
+     */
+    public SessionStateSpace.TransactionReceipt execute(
+            WriteEffectSpec effect,
+            Map<String, ?> input,
+            NewCommandGuard newCommandGuard) {
         Objects.requireNonNull(effect, "effect");
+        Objects.requireNonNull(newCommandGuard, "newCommandGuard");
         Map<String, Object> detachedInput = ProtocolJsonValue.freezeMap(input);
         mutationLock.lock();
         try {
@@ -161,6 +183,7 @@ public final class MirrorStateTransactionEngine {
                 }
                 return previous.orElseThrow();
             }
+            newCommandGuard.beforeExecute(current);
             if (Thread.currentThread().isInterrupted()) {
                 throw reject(CANCELLED);
             }
@@ -696,6 +719,28 @@ public final class MirrorStateTransactionEngine {
 
     private static MirrorStateException reject(String code) {
         return new MirrorStateException(code);
+    }
+
+    /**
+     * Admission fence invoked only when a command is not an exact idempotency replay.
+     *
+     * <p>Implementations must be payload-safe, bounded, and free of external side effects. Throwing
+     * aborts before baseline resolution or candidate mutation.</p>
+     */
+    @FunctionalInterface
+    public interface NewCommandGuard {
+        /**
+         * Admits one new command against the exact current state.
+         *
+         * @param current exact current session head
+         */
+        void beforeExecute(SessionStateSpace current);
+
+        /** @return a no-op guard for callers without an additional admission fence */
+        static NewCommandGuard noop() {
+            return current -> {
+            };
+        }
     }
 
     /**

@@ -42,13 +42,16 @@ class MirrorSessionIntegrationServiceTest {
             Fixture fixture = fixture();
             MirrorSessionDescriptor created = harness.service().create(
                     create(fixture.payload()), identity());
+            MirrorSessionCommandRequest fencedCommand = command(
+                    fixture.effect(), "REQ-1", 450,
+                    created.stateFingerprint());
             MirrorSessionCommandResult committed = harness.service().command(
                     created.sessionId(),
-                    command(fixture.effect(), "REQ-1", 450),
+                    fencedCommand,
                     identity());
             MirrorSessionCommandResult replayed = harness.service().command(
                     created.sessionId(),
-                    command(fixture.effect(), "REQ-1", 450),
+                    fencedCommand,
                     identity());
             MirrorSessionDescriptor found = harness.service().find(
                     created.sessionId(), identity());
@@ -203,10 +206,18 @@ class MirrorSessionIntegrationServiceTest {
             WriteEffectSpec effect,
             String requestId,
             int amount) {
+        return command(effect, requestId, amount, "");
+    }
+
+    private static MirrorSessionCommandRequest command(
+            WriteEffectSpec effect,
+            String requestId,
+            int amount,
+            String expectedStateFingerprint) {
         return new MirrorSessionCommandRequest(
                 MirrorSessionCommandRequest.SCHEMA_VERSION,
                 WriteEffectSpecIntegrity.reference(effect),
-                "",
+                expectedStateFingerprint,
                 Map.of(
                         "requestId", requestId,
                         "orderId", "O-100",

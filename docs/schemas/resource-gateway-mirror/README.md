@@ -167,8 +167,11 @@ typed records and verifies every nested/top-level fingerprint. The independent
 `MirrorStateProtocolVerifier` applies the strict Schemas, exact model/effect/session closure,
 bounded expressions, mutation-alias admission, entity/tombstone/business-key seals, contiguous
 revision/receipt/event closure, response fingerprints, and the latest resulting-world binding
-without linking server or Spring classes. This proves protocol compatibility only; it does not
-prove Session API, state-store, resolver, recovery, isolation, retention, or production readiness.
+without linking server or Spring classes. The test-kit also seals aggregate fingerprints and drives
+the protected create/read/command/destroy API while validating both sides of transport. This proves
+protocol and current test/staging data-plane compatibility; it does not prove stateful resolver,
+checkpoint/recovery, TEE/KMS custody, cross-region HA/DR, evidence, retention certification, or
+production readiness.
 See the
 [Stateful Mirror kernel guide](../../resource-gateway-stateful-mirror-kernel.md).
 
@@ -518,6 +521,10 @@ The protected Tool Studio integration surface exposes:
 | `POST /api/mirror/executions` | Execute one exact plan under durable request fencing | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}` | Read one verified payload-free run summary | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}/evidence` | Read one verified signed `HASH_ONLY` bundle | `MIRROR_REHEARSAL` |
+| `POST /api/mirror/sessions` | Create or exactly replay one sealed encrypted Session | `MIRROR_REHEARSAL` |
+| `GET /api/mirror/sessions/{sessionId}` | Read the current payload-free Session descriptor | `MIRROR_REHEARSAL` |
+| `POST /api/mirror/sessions/{sessionId}/commands` | Execute or exactly replay one admitted virtual write effect | `MIRROR_REHEARSAL` |
+| `DELETE /api/mirror/sessions/{sessionId}` | Irreversibly clear encrypted payload and return the terminal descriptor | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/trust/deployment-isolation/authority-key-sets` | Verify local trust and append one generation plus durable floor | `MIRROR_TRUST_ADMIN` |
 | `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Re-verify and read the current floor | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
 | `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}` | Read an exact address only while it remains current | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
@@ -531,6 +538,14 @@ The protected Tool Studio integration surface exposes:
 | `POST /api/mirror/corpus-publications` | Publish one current eligible candidate after owner and source rechecks | `MIRROR_CORPUS_GOVERNANCE` |
 | `POST /api/mirror/corpus-trajectories` | Publish one explicit owner-reviewed retry trajectory | `MIRROR_CORPUS_GOVERNANCE` |
 | `POST /api/mirror/corpus-clusters` | Publish one externally validated, owner-reviewed recorded cluster | `MIRROR_CORPUS_GOVERNANCE` |
+
+Session routes are physically present only when the active profile is `test` or `staging` and both
+`gateway.testing.mirror.enabled` and `gateway.testing.mirror.stateful.enabled` are true.
+Authentication and purpose authorization happen before raw JSON decoding. Scope is always derived
+from the verified workload identity; no Session command contains a tenant selector. The encrypted
+payload lives in a dedicated JDBC data plane, while descriptors expose only dependency, lifecycle,
+revision, time, and fingerprint facts. A state-plane outage, key failure, corrupt ciphertext,
+lease conflict, or CAS conflict fails closed and never falls through to a real resource.
 
 All authority/attestation GET routes additionally require the exact
 `application/vnd.bloge.mirror-deployment-isolation-trust.v1+json` media type and

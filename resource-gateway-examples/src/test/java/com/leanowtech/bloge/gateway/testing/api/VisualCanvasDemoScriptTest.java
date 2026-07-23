@@ -31,6 +31,77 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void helpDocumentsTheOneFlagStatefulDemoMode() throws Exception {
+        Process process = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "--help")
+                .redirectErrorStream(true)
+                .start();
+
+        assertThat(process.waitFor()).isZero();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+        assertThat(output).contains(
+                "--stateful",
+                "BLOGE_VISUAL_CANVAS_STATEFUL",
+                "RG_MIRROR_STATEFUL_KEY_RING",
+                "scripts/start-visual-canvas-demo.sh --stateful");
+    }
+
+    @Test
+    void statefulDemoIsRejectedForProductionBeforeKeyGenerationOrBuild()
+            throws Exception {
+        Path key = temporaryDirectory.resolve("must-not-exist.key");
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start",
+                "--profile", "production", "--stateful", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().put(
+                "BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE", key.toString());
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Stateful mirror is physically unavailable in the production profile.");
+        assertThat(output).doesNotContain(
+                "Packaging Resource Gateway demo",
+                "Starting Visual Canvas demo");
+        assertThat(key).doesNotExist();
+    }
+
+    @Test
+    void statefulDemoRejectsMissingActiveKeyBeforeBuild() throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().put("RG_MIRROR_RUNTIME_ENABLED", "true");
+        builder.environment().put("RG_MIRROR_STATEFUL_ENABLED", "true");
+        builder.environment().put(
+                "RG_MIRROR_STATEFUL_ACTIVE_KEY_ID", "active-v2");
+        builder.environment().put(
+                "RG_MIRROR_STATEFUL_KEY_RING",
+                "old-v1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Stateful mirror key ring does not contain the active key id.");
+        assertThat(output).doesNotContain(
+                "Packaging Resource Gateway demo",
+                "Starting Visual Canvas demo");
+    }
+
+    @Test
     void stagingRejectsPartialCertificateRotationBeforeBuild() throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
                 "bash", SCRIPT.toString(), "start", "--no-build")
