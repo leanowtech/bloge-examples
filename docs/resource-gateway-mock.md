@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标与部署隔离证明协议/离线验真已完成；隔离证明可信分发和运行时绑定、ingress 预解析防护、跨语言 canonicalization 与 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真与 M-of-N authority key-set 可信发布协议已完成；动态刷新与 durable trust floor、运行时绑定、ingress 预解析防护、跨语言 canonicalization 与 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -251,10 +251,27 @@
   key/issuer/algorithm/lifecycle/signing window、local immutable deployment identity 和 Ed25519 signature；evidence signer
   不能冒充隔离权威。strict Schema、固定签名 fixture 和无 Spring/server 依赖的 test-kit verifier 同步落地，服务端
   producer/schema/compatibility 场景 `9/9`、test-kit identity drift、policy tamper、wrong/revoked key、window、unknown field
-  与 detached-copy 场景 `6/6` 全绿。当前仍没有 attestation repository/API、authority key-set 分发与轮换、部署 agent
-  刷新、原子缓存或 `MirrorRunEvidenceProjector` 绑定，所以这一步证明的是协议可验，不是部署已经隔离；run 仍必须保留
+  与 detached-copy 场景 `6/6` 全绿。该增量完成时仍没有 attestation repository/API、authority key-set 可信发布、部署
+  agent 刷新、原子缓存或 `MirrorRunEvidenceProjector` 绑定，所以这一步证明的是协议可验，不是部署已经隔离；run 仍必须保留
   `DEPLOYMENT_EGRESS_NOT_ATTESTED` 和 `EXPLORATORY`。完整 Mirror 回归 `152/152`，独立 test-kit `clean verify`
   `260/260`，Resource Gateway 全量门禁 `4529/4529`（另有 3 条条件跳过），真实 Chrome 与可执行 JAR 构建均通过。
+- Stage 1 第十八增量补上隔离证明 authority key 不应靠静态 `Map` 或调用方上传来获得信任的根问题，冻结
+  `resourceGateway.mirrorDeploymentIsolationAuthorityKeySetPublication.v1`。每个短时 publication 同时绑定完整
+  tenant/organization/project/environment/region scope、exact deployment generation、attestation issuer、稳定
+  `keySetId`、bootstrap root trust domain、local-required M-of-N threshold、policy fingerprint、最多 24 小时有效窗、
+  单调 generation 与 predecessor fingerprint；authority keys 和 root signatures 都要求 canonical order、唯一坐标和
+  canonical Base64。至少一把 `ACTIVE` attestation key 必须覆盖整个 publication window，根签名必须来自不同
+  authority 和不同密码学根公钥、完整落在 issuance-to-activation window，且所有携带的签名都必须是已 pin、未吊销、
+  签发时有效并通过 Ed25519 验证，不能用“阈值已够”为理由忽略一个未知或坏签名。服务端
+  `MirrorDeploymentIsolationAuthorityKeySetIntegrity` 和无 Spring/server 依赖的 test-kit verifier 都要求 exact local
+  binding 与 trusted floor，拒绝 threshold downgrade、scope/deployment/issuer/trust-domain drift、bootstrap 非第一代、
+  generation rollback/fork/gap、predecessor mismatch 和过期 publication；只有全部通过才暴露可交给既有 attestation
+  verifier 的公钥。strict Schema 与 public-only 双 root 固定 fixture 同步落地，focused producer/schema `10/10`、
+  test-kit verifier/packaging `13/13`、完整 Mirror `162/162`、独立 test-kit `clean verify` `269/269`、Resource Gateway
+  全量 `4539` tests（0 failures、0 errors、3 条条件跳过）全绿，真实 Chrome 与可执行 JAR 同时通过。这个增量建立的是
+  可验证发行格式和纯函数验真内核；HTTPS/mTLS refresh、
+  full-scope append-only repository/API、durable floor CAS、部署 agent 原子缓存、attestation ingest 与 run admission/evidence
+  commit binding 仍未实现，所以 capability 和 trust class 继续失败关闭。
 
 ---
 
@@ -981,9 +998,12 @@ session 重放造成重复状态、运行时依赖漂移。
 | `GET /api/mirror/fidelity/domains/{domainId}` | 查询 fidelity profile | 只读 | 待实现 |
 | `POST /api/mirror/outcomes` | 回填 outcome | outcome identity 幂等 | 待实现 |
 
-部署隔离证明当前只有 strict artifact protocol 与离线 verifier，没有 ingest/read endpoint。下一增量应先定义
-authority key-set 与 attestation 的 full-scope、append-only、content-addressed distribution boundary，再接入
-execution admission 和 evidence commit；在此之前不得仅凭调用方上传的证明提升 trust class。
+部署隔离证明与 authority key-set publication 已有 strict artifact protocol、双层 canonical fingerprint、M-of-N
+bootstrap-root 验签和独立 test-kit verifier，但仍没有 ingest/read endpoint，也没有持久化 anti-rollback floor。
+下一增量应实现 authority key-set 与 attestation 的 full-scope、append-only、content-addressed repository/API，使用
+数据库 CAS 原子推进 `(keySetId, generation, publicationFingerprint)` floor，再让 deployment agent 经 mTLS/HTTPS
+刷新并原子替换只读缓存；随后接入 execution admission 和 evidence commit 的同代双重校验。在这些边界闭合前，
+不得仅凭调用方上传 publication/attestation 或进程内临时 floor 提升 trust class。
 
 外部集成协议扩展 `ToolStudioResourceGatewayProtocol`，新增能力快照、镜像证据和保真度 feature flags；
 旧 GraphDraft/RunEvidence 协议保持兼容，不在 v1 中删除。

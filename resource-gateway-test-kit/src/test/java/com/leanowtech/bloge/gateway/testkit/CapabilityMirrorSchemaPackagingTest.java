@@ -30,7 +30,9 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-resolution-v1.schema.json",
                 "mirror-run-evidence-v1.schema.json",
                 "mirror-evidence-attestation-v1.schema.json",
-                "mirror-evidence-bundle-v1.schema.json")) {
+                "mirror-evidence-bundle-v1.schema.json",
+                "mirror-deployment-isolation-attestation-v1.schema.json",
+                "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
                 assertThat(input).as(resource).isNotNull();
@@ -126,6 +128,22 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(new MirrorEvidenceVerifier().verify(
                 CapabilityMirrorProtocol.mirrorEvidenceCompatibilityFixture().bundle(),
                 fixture.verificationKey()).verified()).isTrue();
+    }
+
+    @Test
+    void packagesOneFixedThresholdSignedIsolationAuthorityFixture() {
+        var fixture = CapabilityMirrorProtocol
+                .mirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture();
+
+        var verified = new MirrorDeploymentIsolationAuthorityKeySetVerifier().verify(
+                fixture.publication(), fixture.expectedBinding(), fixture.bootstrapRoots(),
+                null, fixture.verificationTime());
+
+        assertThat(verified.verified()).isTrue();
+        assertThat(verified.authorityKeys()).hasSize(1);
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_SCHEMA_RESOURCE)
+                .endsWith("authority-key-set-publication-v1.schema.json");
     }
 
     private static String fingerprint(char value) {

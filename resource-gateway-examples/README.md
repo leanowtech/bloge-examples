@@ -157,8 +157,8 @@ skew cannot change execution authority. Signed evidence and terminal request sta
 cannot publish even before takeover, and authority-row locking occurs before time sampling so lock wait cannot bypass
 expiry. H2 time is sampled through an independent short connection after locking because its transaction timestamp is
 frozen; configure the datasource with capacity for the transaction connection plus the clock connection. The
-deployment-egress proof protocol is frozen, but trusted distribution and runtime binding remain open, so evidence
-stays exploratory. The fixture reuse decision is in
+deployment-egress proof and M-of-N authority key-set publication protocols are frozen, but durable trusted
+distribution, refresh, and runtime binding remain open, so evidence stays exploratory. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
 ### Mirror dynamic occurrence budget
@@ -315,9 +315,21 @@ signing window, exact local deployment identity, and execution-window coverage. 
 is separate from the mirror evidence signer. The independent test-kit verifies the same fixed
 signed fixture without server or Spring classes.
 
+Authority keys are now distributable through the separate strict
+`resourceGateway.mirrorDeploymentIsolationAuthorityKeySetPublication.v1` protocol. Each publication binds the
+complete enterprise scope, exact deployment, attestation issuer, stable key-set stream, bootstrap-root trust
+domain, exact local M-of-N threshold, policy fingerprint, short validity window, and a monotonic generation plus
+predecessor fingerprint. All supplied signatures must verify under distinct locally pinned authorities using
+distinct root public-key material; an unknown, revoked, out-of-window, or cryptographically invalid extra signature
+rejects the whole publication even after the threshold is met.
+`MirrorDeploymentIsolationAuthorityKeySetIntegrity` rejects scope/identity drift, threshold
+downgrade, rollback, fork, skipped generation, and predecessor mismatch, then exposes only verified public
+attestation keys. The standalone test-kit implements the same checks and packages a public-only two-root fixture.
+
 This is a protocol and verification increment, not a runtime-readiness claim. There is not yet an
-attestation repository/API, trusted authority key-set distribution, deployment-agent refresh path,
-or binding into `MirrorRunEvidenceProjector`; consequently current runs remain `EXPLORATORY` and
+attestation or authority-publication repository/API, durable trusted-floor CAS, deployment-agent mTLS/HTTPS refresh
+and atomic cache path, or binding into execution admission and `MirrorRunEvidenceProjector`; consequently current
+runs remain `EXPLORATORY` and
 the capability probe does not advertise deployment isolation as ready. See the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md#deployment-isolation-attestation-boundary).
 

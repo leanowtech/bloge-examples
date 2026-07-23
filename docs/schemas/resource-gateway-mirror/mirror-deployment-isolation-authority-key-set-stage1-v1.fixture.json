@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "resourceGateway.mirrorDeploymentIsolationAuthorityKeySetCompatibility.v1",
+  "verificationTime": "2026-07-22T23:33:03.841537Z",
+  "expectedBinding": {
+    "scope": {
+      "tenantId": "tenant-fixture",
+      "organizationId": "knowledge-governance",
+      "projectId": "tool-studio",
+      "environmentId": "staging",
+      "region": "ap-southeast-1"
+    },
+    "deployment": {
+      "deploymentScopeId": "deployment:fixture-staging",
+      "clusterId": "cluster-fixture",
+      "namespace": "resource-gateway-mirror",
+      "workloadName": "resource-gateway",
+      "serviceAccount": "resource-gateway-mirror",
+      "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "attestationIssuer": "sre:mirror-isolation-fixture",
+    "keySetId": "mirror-isolation-authorities:fixture-staging",
+    "rootTrustDomain": "security:mirror-bootstrap-roots-fixture",
+    "rootThreshold": 2,
+    "acceptedPolicyFingerprints": [
+      "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    ]
+  },
+  "bootstrapRoots": [
+    {
+      "schemaVersion": "resourceGateway.mirrorDeploymentIsolationRootVerificationKey.v1",
+      "authorityId": "security-root:fixture-a",
+      "keyId": "memory-ed25519:127a7f6c-606a-424f-be7c-738d14836a89",
+      "algorithm": "Ed25519",
+      "encodedPublicKey": "MCowBQYDK2VwAyEAuj/OO2V8T4B3gIKGPfjVzDhWGlxLnvJAZ6LYGUfXb+g=",
+      "notBefore": "2026-07-22T22:32:30.841532Z",
+      "notAfter": "2026-07-23T01:33:02.841537Z",
+      "state": "ACTIVE"
+    },
+    {
+      "schemaVersion": "resourceGateway.mirrorDeploymentIsolationRootVerificationKey.v1",
+      "authorityId": "security-root:fixture-b",
+      "keyId": "memory-ed25519:7fe2a66e-aae8-460b-82e7-6afef39e752e",
+      "algorithm": "Ed25519",
+      "encodedPublicKey": "MCowBQYDK2VwAyEA1uVmlMRad9YLnQdgrAxL6OcoWsIIuCMCTC0YEzp15NQ=",
+      "notBefore": "2026-07-22T22:32:30.841532Z",
+      "notAfter": "2026-07-23T01:33:02.841537Z",
+      "state": "ACTIVE"
+    }
+  ],
+  "publication": {
+    "schemaVersion": "resourceGateway.mirrorDeploymentIsolationAuthorityKeySetPublication.v1",
+    "publicationFingerprint": "sha256:4b47466ed85d6cbeca85993b03190d548035ef63cb4b4756dab74702f3fc5c9b",
+    "materialFingerprint": "sha256:4a04eb3b6455f6ed6d5065cb4e685e400a2b66ed61aa6eceb410472d01fcd4a8",
+    "material": {
+      "keySetId": "mirror-isolation-authorities:fixture-staging",
+      "generation": 1,
+      "previousPublicationFingerprint": "",
+      "scope": {
+        "tenantId": "tenant-fixture",
+        "organizationId": "knowledge-governance",
+        "projectId": "tool-studio",
+        "environmentId": "staging",
+        "region": "ap-southeast-1"
+      },
+      "deployment": {
+        "deploymentScopeId": "deployment:fixture-staging",
+        "clusterId": "cluster-fixture",
+        "namespace": "resource-gateway-mirror",
+        "workloadName": "resource-gateway",
+        "serviceAccount": "resource-gateway-mirror",
+        "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "attestationIssuer": "sre:mirror-isolation-fixture",
+      "rootTrustDomain": "security:mirror-bootstrap-roots-fixture",
+      "rootThreshold": 2,
+      "policyFingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "issuedAt": "2026-07-22T23:32:30.841532Z",
+      "notBefore": "2026-07-22T23:33:02.841537Z",
+      "expiresAt": "2026-07-23T00:33:02.841537Z",
+      "authorityKeys": [
+        {
+          "keyId": "memory-ed25519:6dd1ffc4-4280-40cb-8ddc-972dcb67f0a8",
+          "algorithm": "Ed25519",
+          "encodedPublicKey": "MCowBQYDK2VwAyEAhMrcT0lrp+KgXtEOZ1Zj09Arr5oTNPuMUwQkUtKCbNU=",
+          "notBefore": "2026-07-22T22:32:30.841532Z",
+          "notAfter": "2026-07-23T01:33:02.841537Z",
+          "state": "ACTIVE"
+        }
+      ]
+    },
+    "signatures": [
+      {
+        "authorityId": "security-root:fixture-a",
+        "keyId": "memory-ed25519:127a7f6c-606a-424f-be7c-738d14836a89",
+        "algorithm": "Ed25519",
+        "signedAt": "2026-07-22T23:32:32.920172Z",
+        "signature": "M9kImI0CW6gZcW6XNKst5tjHZnIfECnPTxK/V8bDNLM+pm46t6xVvj2fNT8feGyXMW3gMoQ2OVqVEnyDLbyNBQ=="
+      },
+      {
+        "authorityId": "security-root:fixture-b",
+        "keyId": "memory-ed25519:7fe2a66e-aae8-460b-82e7-6afef39e752e",
+        "algorithm": "Ed25519",
+        "signedAt": "2026-07-22T23:32:32.922091Z",
+        "signature": "0JJSIJ4uh5HevwXbvZUB77Qu7D66z/mTpvQKXd1XCqlxyUBBMLBdmM1+s7wFDOG+ghRQ9DM6B2+cC7pOsTyXCQ=="
+      }
+    ]
+  }
+}

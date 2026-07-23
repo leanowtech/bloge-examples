@@ -22,6 +22,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-evidence-attestation-v1.schema.json` | `MirrorEvidenceAttestation` | Domain-separated detached Ed25519 signature over one complete mirror run evidence value |
 | `mirror-evidence-bundle-v1.schema.json` | `MirrorEvidenceBundle` | Portable `HASH_ONLY` evidence, attestation, and complete bundle fingerprint closure |
 | `mirror-deployment-isolation-attestation-v1.schema.json` | `MirrorDeploymentIsolationAttestation` | Short-lived external proof binding an exact deployment generation to fail-closed egress and credential controls |
+| `mirror-deployment-isolation-authority-key-set-publication-v1.schema.json` | `MirrorDeploymentIsolationAuthorityKeySetPublication` | Full-scope, monotonic, M-of-N bootstrap-root-signed publication of isolation-attestation authority keys |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -40,6 +41,13 @@ fixture. It contains one short-lived deployment-isolation attestation, the exter
 public key, immutable expected deployment coordinates, and a covered execution window. It contains
 neither a private key nor business payload. Both the producer implementation and the standalone
 test-kit verify this exact file.
+
+`mirror-deployment-isolation-authority-key-set-stage1-v1.fixture.json` is the fixed public-only
+trusted-publication fixture. It contains one generation-one publication, two independent
+bootstrap-root public keys, exact local binding policy, and a deterministic verification time. It
+contains no private key or business payload. Both implementations re-derive the material and
+publication fingerprints, verify both Ed25519 signatures, and expose the advertised attestation
+key only after every local binding and policy check succeeds.
 
 ## Deployment isolation attestation boundary
 
@@ -69,10 +77,24 @@ an independently distributed SRE/security authority key whose key id, issuer, al
 window, and lifecycle state all match. The Resource Gateway evidence-signing key is deliberately
 not an isolation authority.
 
-This increment freezes the artifact, strict Schema, producer integrity kernel, independent test-kit
-verifier, and shared signed compatibility fixture. It does **not** yet provide an attestation
-repository or API, authority key-set distribution/rotation protocol, deployment-agent integration,
-atomic runtime refresh, or evidence-projector binding. Current mirror runs therefore remain
+The companion `resourceGateway.mirrorDeploymentIsolationAuthorityKeySetPublication.v1` protocol
+removes static-map and caller-upload trust from authority-key distribution. One publication binds
+the full enterprise scope, exact deployment, expected attestation issuer, stable key-set stream,
+bootstrap-root trust domain, exact M-of-N threshold, policy generation, at-most-24-hour window, and
+monotonic generation/predecessor chain. Authority keys and root signatures use canonical order and
+unique coordinates. At least one active attestation key covers the publication window. Every
+supplied root signature, not merely a threshold-sized subset, must be locally pinned, lifecycle
+allowed, valid at signing time, and cryptographically correct. Local expected binding and the last
+durably accepted floor are not read from the publication. Bootstrap requires generation one;
+successors must advance exactly one generation from the floor and name its fingerprint. Idempotent
+reverification is allowed, while rollback, fork, skipped generation, and predecessor mismatch fail
+closed.
+
+These increments freeze both artifacts, strict Schemas, producer integrity kernels, independent
+test-kit verifiers, and shared signed compatibility fixtures. They do **not** yet provide an
+attestation/publication repository or API, durable trusted-floor CAS, deployment-agent mTLS/HTTPS
+refresh and atomic cache replacement, or execution-admission/evidence-projector binding. Current
+mirror runs therefore remain
 `EXPLORATORY` with `DEPLOYMENT_EGRESS_NOT_ATTESTED`; protocol availability alone must not produce
 `CERTIFIABLE` evidence.
 
@@ -260,6 +282,12 @@ Problem details never contain request context, fixture/replay values, node/edge 
   emitted only after its domain-separated Ed25519 signature and complete bundle fingerprint verify immediately.
   Cryptographic provenance does not imply production certification: `CERTIFIABLE` additionally requires proven
   deployment egress isolation and zero declared limitations.
+- An isolation-authority key-set publication is accepted only when its strict structure, both
+  canonical fingerprints, exact full-scope/deployment/issuer/key-set/trust-domain/policy binding,
+  local threshold, validity window, monotonic trusted floor, distinct root public-key material,
+  and every independent root signature verify. Unknown or revoked extra signatures are fatal; a publication cannot lower its own
+  threshold or choose its own trust floor. Verified public keys remain scoped to that exact
+  publication generation.
 - A deployment-isolation attestation is accepted only when its strict structure, deterministic
   ordering, domain-separated material fingerprint, complete artifact fingerprint, external
   Ed25519 authority, exact local deployment generation, and complete execution interval all
@@ -272,7 +300,7 @@ Problem details never contain request context, fixture/replay values, node/edge 
 ## Independent client admission
 
 The test-kit packages the Stage 0 schemas, protected plan/execution commands, payload-free run
-summary, Stage 1 evidence and deployment-isolation schemas, and all three shared compatibility
+summary, Stage 1 evidence and deployment-isolation schemas, and all four shared compatibility
 fixtures in its JAR. A Stage 0 consumer first
 calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
 It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before

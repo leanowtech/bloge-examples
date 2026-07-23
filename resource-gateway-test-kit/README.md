@@ -151,14 +151,26 @@ The fixture is produced by the server and independently consumed here. It includ
 or business payload. Non-Java implementations are not certified merely by matching field names;
 they must pass this cryptographic fixture without lossy numeric reserialization.
 
-Deployment isolation uses a separate authority and verifier. Never reuse the mirror evidence key or
-trust deployment coordinates copied from the attestation. Obtain the public key from the
-SRE/security trust channel and build `expectedDeployment` from immutable local scheduler/runtime
-metadata:
+Deployment isolation uses separate bootstrap-root, isolation-attestation, and mirror-evidence
+authorities. Never reuse keys between those roles or trust deployment coordinates copied from an
+untrusted publication. Verify the authority key-set against immutable local binding, locally pinned
+M-of-N roots with distinct public-key material, trusted time, and the last durably accepted floor
+before selecting the attestation key:
 
 ```java
-MirrorDeploymentIsolationVerificationKey authorityKey = isolationTrustStore
-        .findRequired(attestation.path("seal").path("keyId").asText());
+MirrorDeploymentIsolationAuthorityKeySetVerifier.VerificationResult keySet =
+        new MirrorDeploymentIsolationAuthorityKeySetVerifier().verify(
+                authorityPublication,
+                expectedAuthorityBinding,
+                pinnedBootstrapRoots,
+                durableTrustedFloor,
+                trustedClock.instant());
+if (!keySet.verified()) {
+    throw new IllegalStateException(keySet.reasonCode());
+}
+MirrorDeploymentIsolationVerificationKey authorityKey = keySet
+        .authorityKey(attestation.path("seal").path("keyId").asText())
+        .orElseThrow();
 MirrorDeploymentIdentity expectedDeployment = localDeploymentIdentity.current();
 
 MirrorDeploymentIsolationAttestationVerifier.VerificationResult isolation =
@@ -180,6 +192,15 @@ run wholly inside `[max(validFrom, signedAt), expiresAt)`. Attestations last at 
 may be signed at most 5 minutes after observation. Results expose only bounded reason codes and
 artifact coordinates.
 
+The authority-publication verifier additionally requires both canonical publication fingerprints,
+exact full-scope/deployment/issuer/key-set/trust-domain/policy binding, at most 24 hours of validity,
+canonical key/signature ordering, an active attestation key covering the whole publication window,
+every supplied root signature to be pinned and valid, and a monotonic trusted floor. Generation one
+is the only bootstrap; idempotent reread is allowed; rollback, fork, generation gaps, predecessor
+mismatch, threshold downgrade, and unknown or revoked extra roots fail closed. The caller must store
+and advance the trusted floor durably; an in-memory floor is insufficient for production rollback
+protection.
+
 Run the second packaged fixed fixture during dependency upgrades and startup probes:
 
 ```java
@@ -197,8 +218,27 @@ if (!compatibility.verified()) {
 }
 ```
 
-The packaged key is only a fixture trust root. It must never be accepted for a real deployment.
-The protocol/verifier are available now; server-side attestation distribution and per-run evidence
+Run the public-only threshold-publication fixture in the same probe:
+
+```java
+MirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture authorityFixture =
+        CapabilityMirrorProtocol
+                .mirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture();
+MirrorDeploymentIsolationAuthorityKeySetVerifier.VerificationResult authorityCompatibility =
+        new MirrorDeploymentIsolationAuthorityKeySetVerifier().verify(
+                authorityFixture.publication(),
+                authorityFixture.expectedBinding(),
+                authorityFixture.bootstrapRoots(),
+                null,
+                authorityFixture.verificationTime());
+if (!authorityCompatibility.verified()) {
+    throw new IllegalStateException("Isolation authority publication verifier is incompatible");
+}
+```
+
+Packaged roots and keys are fixture-only and must never be accepted for a real deployment. The
+protocols and pure verification kernels are available now; server-side publication/attestation
+repositories, mTLS/HTTPS refresh, durable floor CAS, atomic deployment cache, and per-run evidence
 binding remain intentionally unimplemented, so current mirror evidence is still exploratory.
 
 ## Use

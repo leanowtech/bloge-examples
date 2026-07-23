@@ -64,6 +64,12 @@ public final class CapabilityMirrorProtocol {
     /** Signed deployment-isolation compatibility fixture version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_COMPATIBILITY_V1 =
             "resourceGateway.mirrorDeploymentIsolationCompatibility.v1";
+    /** Threshold-signed deployment-isolation authority key-set publication wire version. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_V1 =
+            "resourceGateway.mirrorDeploymentIsolationAuthorityKeySetPublication.v1";
+    /** Signed deployment-isolation authority key-set compatibility fixture version. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_COMPATIBILITY_V1 =
+            "resourceGateway.mirrorDeploymentIsolationAuthorityKeySetCompatibility.v1";
     /** Signed Stage 1 mirror evidence compatibility fixture version. */
     public static final String MIRROR_EVIDENCE_COMPATIBILITY_V1 =
             "resourceGateway.mirrorEvidenceCompatibility.v1";
@@ -79,6 +85,10 @@ public final class CapabilityMirrorProtocol {
     /** Packaged signed deployment-isolation compatibility fixture. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-deployment-isolation-stage1-v1.fixture.json";
+    /** Packaged threshold-signed deployment-isolation authority key-set fixture. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-deployment-isolation-authority-key-set-stage1-v1.fixture.json";
     /** Packaged compatibility fixture schema. */
     public static final String COMPATIBILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-mirror-compatibility-v1.schema.json";
@@ -110,6 +120,10 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-deployment-isolation-attestation-v1.schema.json";
+    /** Packaged threshold-signed deployment-isolation authority key-set schema. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -156,6 +170,21 @@ public final class CapabilityMirrorProtocol {
     public static MirrorDeploymentIsolationCompatibilityFixture
     mirrorDeploymentIsolationCompatibilityFixture() {
         return IsolationFixtureHolder.FIXTURE.detachedCopy();
+    }
+
+    /**
+     * Returns the fixed public-only isolation-authority key-set compatibility fixture.
+     *
+     * <p>The fixture proves strict-schema loading, nested canonical fingerprints, exact full-scope
+     * binding, M-of-N public-root verification, and bootstrap generation handling without a server
+     * process or any private key.</p>
+     *
+     * @return detached publication, local binding, bootstrap roots, and verification time
+     * @throws IllegalStateException when the packaged fixture is absent, malformed, or unverifiable
+     */
+    public static MirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture
+    mirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture() {
+        return IsolationAuthorityFixtureHolder.FIXTURE.detachedCopy();
     }
 
     private static final class BaselineHolder {
@@ -271,6 +300,58 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.DEPLOYMENT_ISOLATION_FIXTURE_UNAVAILABLE", failure);
+            }
+        }
+
+        private static Set<String> fieldNames(JsonNode value) {
+            java.util.HashSet<String> names = new java.util.HashSet<>();
+            value.fieldNames().forEachRemaining(names::add);
+            return Set.copyOf(names);
+        }
+    }
+
+    private static final class IsolationAuthorityFixtureHolder {
+        private static final MirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture FIXTURE =
+                load();
+
+        private static MirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture load() {
+            try (InputStream input = CapabilityMirrorProtocol.class.getResourceAsStream(
+                    MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException("Deployment isolation authority fixture is absent");
+                }
+                JsonNode value = JSON.readTree(input);
+                if (!value.isObject() || value.size() != 5
+                        || !Set.of("schemaVersion", "verificationTime", "expectedBinding",
+                        "bootstrapRoots", "publication").equals(fieldNames(value))
+                        || !MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_COMPATIBILITY_V1.equals(
+                        value.path("schemaVersion").asText())) {
+                    throw new IOException(
+                            "Deployment isolation authority fixture envelope is invalid");
+                }
+                MirrorDeploymentIsolationAuthorityKeySetBinding binding =
+                        MirrorDeploymentIsolationAuthorityKeySetBinding.from(
+                                value.path("expectedBinding"));
+                java.util.ArrayList<MirrorDeploymentIsolationRootVerificationKey> roots =
+                        new java.util.ArrayList<>();
+                value.path("bootstrapRoots").forEach(root -> roots.add(
+                        MirrorDeploymentIsolationRootVerificationKey.from(root)));
+                Instant verificationTime = Instant.parse(
+                        value.path("verificationTime").asText());
+                JsonNode publication = value.path("publication");
+                var verification = new MirrorDeploymentIsolationAuthorityKeySetVerifier().verify(
+                        publication, binding, roots, null, verificationTime);
+                if (!verification.verified()) {
+                    throw new IOException(
+                            "Deployment isolation authority fixture cannot be verified: "
+                                    + verification.reasonCode());
+                }
+                return new MirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture(
+                        publication, binding, roots, verificationTime);
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.DEPLOYMENT_ISOLATION_AUTHORITY_FIXTURE_UNAVAILABLE",
+                        failure);
             }
         }
 
