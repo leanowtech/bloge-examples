@@ -115,6 +115,37 @@ same-id/revision fingerprint conflict. It uses iterative graph traversal and acc
 snapshots, while canonical snapshot and closure material is bounded to 2 MiB and 16 MiB respectively.
 No mutable server registry or Spring class is consulted.
 
+Stateful mirror artifacts have a separate server-independent verifier and a
+fixed refund compatibility fixture:
+
+```java
+JsonNode fixture = CapabilityMirrorProtocol.statefulRefundFixture();
+MirrorStateProtocolVerifier verifier = new MirrorStateProtocolVerifier();
+
+var model = verifier.verifyStateModel(fixture.path("stateModel"));
+var effect = verifier.verifyWriteEffect(
+        fixture.path("writeEffect"),
+        fixture.path("stateModel"));
+var session = verifier.verifySession(
+        fixture.path("initialState"),
+        fixture.path("stateModel"),
+        List.of(fixture.path("writeEffect")));
+```
+
+The JAR packages the bounded-expression, state-model, write-effect,
+session-state, and fixture Schemas. Verification re-derives nested and
+top-level fingerprints, exact model/effect/session closure, mutation alias
+admission, business-key component fingerprints, contiguous transaction
+revisions, exact receipt/event closure, response fingerprints, and the latest
+resulting-world binding. Success records and stable
+`RG.MIRROR.CLIENT.*` failures are payload-free.
+
+This verifies artifacts; it does not create or run sessions. Resource Gateway
+does not yet expose a Session API or advertise stateful runtime readiness. See
+the
+[stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md)
+for the server-side transaction semantics and remaining production work.
+
 Mirror run evidence has a separate fail-closed verifier. Resolve the public key named by the
 attestation, then verify the decoded bundle before admitting it into a correctness workbook:
 

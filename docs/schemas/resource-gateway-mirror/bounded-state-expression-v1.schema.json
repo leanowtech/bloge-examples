@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/bounded-state-expression-v1.schema.json",
+  "title": "Resource Gateway Bounded State Expression v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operator", "literal", "path", "reference", "arguments", "fields"],
+  "properties": {
+    "operator": {
+      "enum": [
+        "LITERAL",
+        "INPUT_POINTER",
+        "ENTITY_POINTER",
+        "LOGICAL_TIME",
+        "DETERMINISTIC_ID",
+        "SEQUENCE",
+        "ADD",
+        "CONCAT",
+        "EQUALS",
+        "GREATER_THAN_OR_EQUAL",
+        "NOT_NULL",
+        "AND",
+        "OBJECT"
+      ]
+    },
+    "literal": {},
+    "path": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^(|/.*)$"
+    },
+    "reference": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^(|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"
+    },
+    "arguments": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#" }
+    },
+    "fields": {
+      "type": "object",
+      "maxProperties": 128,
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$"
+      },
+      "additionalProperties": { "$ref": "#" }
+    }
+  }
+}

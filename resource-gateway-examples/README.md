@@ -31,6 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
+| Stateful mirror kernel | Versioned entity/write/session protocols, atomic multi-entity mutations, exact replay, bounded expressions, copy-on-write, tombstones, deterministic services, and independently verifiable refund fixtures |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
@@ -248,6 +249,32 @@ fixture-bound full attempt sequence can produce retryable runtime behavior. The 
 model, fixture bindings, provider contracts, request
 examples, errors, startup commands and remaining production gates are in the
 [capability corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
+
+### Stateful mirror transaction kernel
+
+The first Stage 3 vertical freezes `StateModel`, `WriteEffectSpec`,
+`SessionStateSpace`, and a closed bounded expression AST. The in-process
+`MirrorStateTransactionEngine` serializes one session's writes, atomically
+applies ordered multi-entity mutations, returns the original receipt for exact
+idempotent retries, rejects same-key command drift, validates entity schemas and
+complete unique business keys, and derives logical time, IDs, and sequences
+without ambient nondeterminism. Update/delete copy-on-write accepts only an
+exact recorded corpus sample or owner-specified fixture; tombstoned identities
+cannot be recreated.
+
+Session integrity requires a contiguous revision/receipt journal and exact
+event closure, while each entity, tombstone, event, receipt, current world, and
+complete session is content-addressed. The test kit packages the same strict
+Schemas and refund fixture and verifies them without linking server classes.
+
+This is a transaction kernel, not an assembled product route. There is no
+`/api/mirror/sessions` endpoint yet, no production state store, no stateful
+query resolver, and no checkpoint/recovery or state evidence projection. The
+probe reports `mirrorStatefulProtocol=true`, while Session API, state store,
+resolver, and runtime readiness remain `false`. Startup scripts therefore do
+not expose this feature. The contract, Java usage, stable errors, remaining
+industrial work packages, and verification commands are in the
+[stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
 
 The Stage 1 compiler and run kernels verify Capability Closure against the recursively
 frozen BLOGE invocation inventory, adapt the existing FixtureBundle into mandatory external-site controls, retain

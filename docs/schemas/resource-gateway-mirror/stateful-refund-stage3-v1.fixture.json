@@ -1,0 +1,502 @@
+{
+  "schemaVersion": "resourceGateway.statefulRefundFixture.v1",
+  "stateModel": {
+    "schemaVersion": "resourceGateway.stateModel.v1",
+    "stateModelId": "refund-world",
+    "revision": 1,
+    "fingerprint": "sha256:eccc04864493ef38632cd559059fd93be2ba6d094f86512ffde060d6039bdcfd",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-a",
+      "projectId": "tool-studio",
+      "environmentId": "test",
+      "region": "sg"
+    },
+    "entityTypes": [
+      {
+        "entityType": "order",
+        "schema": {
+          "format": "json-schema",
+          "version": "2020-12",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "orderId": { "type": "string" },
+              "paidAmount": { "type": "number" },
+              "refundedAmount": { "type": "number" }
+            },
+            "required": ["orderId", "paidAmount", "refundedAmount"],
+            "additionalProperties": false
+          }
+        },
+        "businessKeys": [
+          {
+            "name": "order-id",
+            "fieldPaths": ["/orderId"]
+          }
+        ]
+      },
+      {
+        "entityType": "refund",
+        "schema": {
+          "format": "json-schema",
+          "version": "2020-12",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "orderId": { "type": "string" },
+              "status": { "type": "string" },
+              "createdAt": { "type": "string" },
+              "amount": { "type": "number" },
+              "refundId": { "type": "string" }
+            },
+            "required": ["refundId", "orderId", "amount", "status", "createdAt"],
+            "additionalProperties": false
+          }
+        },
+        "businessKeys": [
+          {
+            "name": "refund-id",
+            "fieldPaths": ["/refundId"]
+          },
+          {
+            "name": "refund-request",
+            "fieldPaths": ["/orderId", "/refundId"]
+          }
+        ]
+      }
+    ],
+    "invariants": [],
+    "provenance": {
+      "schemaVersion": "resourceGateway.artifactProvenance.v1",
+      "sourceType": "OWNER",
+      "sourceRefs": [],
+      "tenantId": "tenant-a",
+      "purpose": "customer-support-simulation",
+      "sampleFrom": null,
+      "sampleTo": null,
+      "sampleCount": null,
+      "confidence": null,
+      "biasRisks": [],
+      "approvedBy": "refund-owner",
+      "approvedAt": "2026-07-24T02:00:00Z",
+      "expiresAt": "2026-07-25T02:00:00Z",
+      "revocationRef": ""
+    },
+    "lifecycle": "ACTIVE",
+    "createdAt": "2026-07-24T02:00:00Z"
+  },
+  "writeEffect": {
+    "schemaVersion": "resourceGateway.writeEffectSpec.v1",
+    "specId": "create-refund",
+    "revision": 1,
+    "fingerprint": "sha256:2da4c11f1fd79e61185a47f169cda0008d618918f5ec3a14bee3ee9ed2165373",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-a",
+      "projectId": "tool-studio",
+      "environmentId": "test",
+      "region": "sg"
+    },
+    "targetCapabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "create-refund",
+      "revision": 1,
+      "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "stateModelRef": {
+      "kind": "STATE_MODEL",
+      "id": "refund-world",
+      "revision": 1,
+      "fingerprint": "sha256:eccc04864493ef38632cd559059fd93be2ba6d094f86512ffde060d6039bdcfd"
+    },
+    "mutations": [
+      {
+        "mutationId": "create-refund",
+        "operation": "CREATE",
+        "entityType": "refund",
+        "identity": {
+          "operator": "CONCAT",
+          "literal": null,
+          "path": "",
+          "reference": "",
+          "arguments": [
+            {
+              "operator": "LITERAL",
+              "literal": "R-",
+              "path": "",
+              "reference": "",
+              "arguments": [],
+              "fields": {}
+            },
+            {
+              "operator": "SEQUENCE",
+              "literal": null,
+              "path": "",
+              "reference": "refund",
+              "arguments": [],
+              "fields": {}
+            }
+          ],
+          "fields": {}
+        },
+        "baselineReadCapabilityRef": null,
+        "preconditions": [],
+        "fieldEffects": [
+          {
+            "path": "/amount",
+            "value": {
+              "operator": "INPUT_POINTER",
+              "literal": null,
+              "path": "/amount",
+              "reference": "",
+              "arguments": [],
+              "fields": {}
+            }
+          },
+          {
+            "path": "/createdAt",
+            "value": {
+              "operator": "LOGICAL_TIME",
+              "literal": null,
+              "path": "",
+              "reference": "",
+              "arguments": [],
+              "fields": {}
+            }
+          },
+          {
+            "path": "/orderId",
+            "value": {
+              "operator": "INPUT_POINTER",
+              "literal": null,
+              "path": "/orderId",
+              "reference": "",
+              "arguments": [],
+              "fields": {}
+            }
+          },
+          {
+            "path": "/refundId",
+            "value": {
+              "operator": "CONCAT",
+              "literal": null,
+              "path": "",
+              "reference": "",
+              "arguments": [
+                {
+                  "operator": "LITERAL",
+                  "literal": "R-",
+                  "path": "",
+                  "reference": "",
+                  "arguments": [],
+                  "fields": {}
+                },
+                {
+                  "operator": "SEQUENCE",
+                  "literal": null,
+                  "path": "",
+                  "reference": "refund",
+                  "arguments": [],
+                  "fields": {}
+                }
+              ],
+              "fields": {}
+            }
+          },
+          {
+            "path": "/status",
+            "value": {
+              "operator": "LITERAL",
+              "literal": "CREATED",
+              "path": "",
+              "reference": "",
+              "arguments": [],
+              "fields": {}
+            }
+          }
+        ],
+        "businessKeys": [
+          {
+            "name": "refund-id",
+            "components": [
+              {
+                "operator": "ENTITY_POINTER",
+                "literal": null,
+                "path": "/refundId",
+                "reference": "create-refund",
+                "arguments": [],
+                "fields": {}
+              }
+            ]
+          },
+          {
+            "name": "refund-request",
+            "components": [
+              {
+                "operator": "ENTITY_POINTER",
+                "literal": null,
+                "path": "/orderId",
+                "reference": "create-refund",
+                "arguments": [],
+                "fields": {}
+              },
+              {
+                "operator": "ENTITY_POINTER",
+                "literal": null,
+                "path": "/refundId",
+                "reference": "create-refund",
+                "arguments": [],
+                "fields": {}
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "mutationId": "update-order",
+        "operation": "UPDATE",
+        "entityType": "order",
+        "identity": {
+          "operator": "INPUT_POINTER",
+          "literal": null,
+          "path": "/orderId",
+          "reference": "",
+          "arguments": [],
+          "fields": {}
+        },
+        "baselineReadCapabilityRef": {
+          "kind": "CAPABILITY",
+          "id": "query-order",
+          "revision": 1,
+          "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "preconditions": [
+          {
+            "preconditionId": "refund-does-not-exceed-paid",
+            "predicate": {
+              "operator": "GREATER_THAN_OR_EQUAL",
+              "literal": null,
+              "path": "",
+              "reference": "",
+              "arguments": [
+                {
+                  "operator": "ENTITY_POINTER",
+                  "literal": null,
+                  "path": "/paidAmount",
+                  "reference": "update-order",
+                  "arguments": [],
+                  "fields": {}
+                },
+                {
+                  "operator": "ADD",
+                  "literal": null,
+                  "path": "",
+                  "reference": "",
+                  "arguments": [
+                    {
+                      "operator": "ENTITY_POINTER",
+                      "literal": null,
+                      "path": "/refundedAmount",
+                      "reference": "update-order",
+                      "arguments": [],
+                      "fields": {}
+                    },
+                    {
+                      "operator": "INPUT_POINTER",
+                      "literal": null,
+                      "path": "/amount",
+                      "reference": "",
+                      "arguments": [],
+                      "fields": {}
+                    }
+                  ],
+                  "fields": {}
+                }
+              ],
+              "fields": {}
+            },
+            "errorCode": "REFUND_EXCEEDS_PAID_AMOUNT"
+          }
+        ],
+        "fieldEffects": [
+          {
+            "path": "/refundedAmount",
+            "value": {
+              "operator": "ADD",
+              "literal": null,
+              "path": "",
+              "reference": "",
+              "arguments": [
+                {
+                  "operator": "ENTITY_POINTER",
+                  "literal": null,
+                  "path": "/refundedAmount",
+                  "reference": "update-order",
+                  "arguments": [],
+                  "fields": {}
+                },
+                {
+                  "operator": "INPUT_POINTER",
+                  "literal": null,
+                  "path": "/amount",
+                  "reference": "",
+                  "arguments": [],
+                  "fields": {}
+                }
+              ],
+              "fields": {}
+            }
+          }
+        ],
+        "businessKeys": [
+          {
+            "name": "order-id",
+            "components": [
+              {
+                "operator": "ENTITY_POINTER",
+                "literal": null,
+                "path": "/orderId",
+                "reference": "update-order",
+                "arguments": [],
+                "fields": {}
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "responseProjection": {
+      "operator": "OBJECT",
+      "literal": null,
+      "path": "",
+      "reference": "",
+      "arguments": [],
+      "fields": {
+        "orderId": {
+          "operator": "ENTITY_POINTER",
+          "literal": null,
+          "path": "/orderId",
+          "reference": "create-refund",
+          "arguments": [],
+          "fields": {}
+        },
+        "refundId": {
+          "operator": "ENTITY_POINTER",
+          "literal": null,
+          "path": "/refundId",
+          "reference": "create-refund",
+          "arguments": [],
+          "fields": {}
+        },
+        "status": {
+          "operator": "ENTITY_POINTER",
+          "literal": null,
+          "path": "/status",
+          "reference": "create-refund",
+          "arguments": [],
+          "fields": {}
+        }
+      }
+    },
+    "idempotency": {
+      "keyPath": "/requestId",
+      "replayReturnsOriginal": true
+    },
+    "provenance": {
+      "schemaVersion": "resourceGateway.artifactProvenance.v1",
+      "sourceType": "OWNER",
+      "sourceRefs": [],
+      "tenantId": "tenant-a",
+      "purpose": "customer-support-simulation",
+      "sampleFrom": null,
+      "sampleTo": null,
+      "sampleCount": null,
+      "confidence": null,
+      "biasRisks": [],
+      "approvedBy": "refund-owner",
+      "approvedAt": "2026-07-24T02:00:00Z",
+      "expiresAt": "2026-07-25T02:00:00Z",
+      "revocationRef": ""
+    },
+    "lifecycle": "ACTIVE",
+    "createdAt": "2026-07-24T02:00:00Z"
+  },
+  "initialState": {
+    "schemaVersion": "resourceGateway.sessionStateSpace.v1",
+    "sessionId": "refund-session-1",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-a",
+      "projectId": "tool-studio",
+      "environmentId": "test",
+      "region": "sg"
+    },
+    "planFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "stateModelRef": {
+      "kind": "STATE_MODEL",
+      "id": "refund-world",
+      "revision": 1,
+      "fingerprint": "sha256:eccc04864493ef38632cd559059fd93be2ba6d094f86512ffde060d6039bdcfd"
+    },
+    "writeEffectRefs": [
+      {
+        "kind": "WRITE_EFFECT",
+        "id": "create-refund",
+        "revision": 1,
+        "fingerprint": "sha256:2da4c11f1fd79e61185a47f169cda0008d618918f5ec3a14bee3ee9ed2165373"
+      }
+    ],
+    "stateRevision": 0,
+    "logicalClock": "2026-07-24T02:00:00Z",
+    "randomSeed": 7,
+    "entities": [
+      {
+        "key": {
+          "entityType": "order",
+          "entityId": "O-100"
+        },
+        "version": 1,
+        "value": {
+          "orderId": "O-100",
+          "paidAmount": 1000,
+          "refundedAmount": 0
+        },
+        "fingerprint": "sha256:16c0a4a8d4a9934f84478fd08cb10e94011e6a174d37cc09064c2aa0638685d4"
+      }
+    ],
+    "tombstones": [],
+    "businessKeyIndex": [
+      {
+        "keyName": "order-id",
+        "components": ["O-100"],
+        "valueFingerprint": "sha256:cdc7ef796a24588c97c80ec3721e5cc38eb837af9131f44fbd352097a3209c09",
+        "entityKey": {
+          "entityType": "order",
+          "entityId": "O-100"
+        }
+      }
+    ],
+    "committedEvents": [],
+    "processedCommands": [],
+    "expiresAt": "2026-07-24T03:00:00Z",
+    "worldFingerprint": "sha256:b9d49000719100ceeb8d083d45937a1b30c0cf6896b6f2ba4506b1b09ce778f4",
+    "fingerprint": "sha256:8a8120d701c6e87b9b9a4da9858e407eebdf28d8df9f0978dcf7d6b82b4fad79"
+  },
+  "commands": [
+    {
+      "input": {
+        "orderId": "O-100",
+        "requestId": "REQ-1",
+        "amount": 450
+      },
+      "expectedResponse": {
+        "refundId": "R-1",
+        "orderId": "O-100",
+        "status": "CREATED"
+      },
+      "expectedStateRevision": 1,
+      "expectedEntityCount": 2
+    }
+  ]
+}

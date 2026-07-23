@@ -59,7 +59,12 @@ final class CapabilityMirrorSchemaValidator {
             "capability-corpus-cluster-publication-v1.schema.json",
             "fixture-mirror-corpus-bindings-v1.schema.json",
             "fixture-mirror-trajectory-bindings-v1.schema.json",
-            "fixture-mirror-cluster-bindings-v1.schema.json");
+            "fixture-mirror-cluster-bindings-v1.schema.json",
+            "bounded-state-expression-v1.schema.json",
+            "state-model-v1.schema.json",
+            "write-effect-spec-v1.schema.json",
+            "session-state-space-v1.schema.json",
+            "stateful-refund-stage3-v1.fixture.schema.json");
     private static final Map<String, String> RESOURCE_TO_ID = resourceIds();
 
     private CapabilityMirrorSchemaValidator() {

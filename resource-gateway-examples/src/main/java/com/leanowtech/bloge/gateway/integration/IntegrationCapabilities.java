@@ -287,6 +287,15 @@ public record IntegrationCapabilities(
         objects.put("mirrorServingGenerationToken", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorServingGenerationToken.SCHEMA_VERSION));
+        objects.put("boundedStateExpression", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .BoundedStateExpression.SCHEMA_VERSION));
+        objects.put("stateModel", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.StateModel.SCHEMA_VERSION));
+        objects.put("writeEffectSpec", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpec.SCHEMA_VERSION));
+        objects.put("sessionStateSpace", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace.SCHEMA_VERSION));
         objects.put("mirrorDeploymentIsolationAuthorityKeySetPublication", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAuthorityKeySetPublication.SCHEMA_VERSION));
@@ -820,6 +829,11 @@ public record IntegrationCapabilities(
         features.put("mirrorCorpusResolverReady", false);
         features.put("mirrorCorpusTrajectoryResolverReady", false);
         features.put("mirrorCorpusClusterResolverReady", false);
+        features.put("mirrorStatefulProtocol", true);
+        features.put("mirrorStatefulSessionApi", false);
+        features.put("mirrorStatefulStateStoreReady", false);
+        features.put("mirrorStatefulResolverReady", false);
+        features.put("mirrorStatefulRuntimeReady", false);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);

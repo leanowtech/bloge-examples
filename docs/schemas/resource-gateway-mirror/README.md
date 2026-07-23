@@ -50,6 +50,11 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `fixture-mirror-corpus-bindings-v1.schema.json` | `FixtureMirrorCorpusBindings` | Strict immutable fixture metadata selecting one exact latest publication per external capability |
 | `fixture-mirror-trajectory-bindings-v1.schema.json` | `FixtureMirrorTrajectoryBindings` | Strict immutable fixture metadata selecting reviewed trajectories under an exact selected corpus publication |
 | `fixture-mirror-cluster-bindings-v1.schema.json` | `FixtureMirrorClusterBindings` | Strict immutable fixture metadata selecting reviewed recorded clusters under an exact selected corpus publication |
+| `bounded-state-expression-v1.schema.json` | `BoundedStateExpression` | Closed deterministic state expression AST with runtime depth/node bounds |
+| `state-model-v1.schema.json` | `StateModel` | Content-addressed entity schemas, unique business keys, invariants, scope, and provenance |
+| `write-effect-spec-v1.schema.json` | `WriteEffectSpec` | Owner-governed atomic multi-entity virtual mutation and exact idempotency contract |
+| `session-state-space-v1.schema.json` | `SessionStateSpace` | Payload-bearing isolated world, tombstones, business-key index, transition journal, and receipts |
+| `stateful-refund-stage3-v1.fixture.schema.json` | compatibility fixture envelope | Exact state model, write effect, initial session, and executable refund expectation |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -148,6 +153,19 @@ fixture's `mirrorCorpus` selection. The independent `FixtureMirrorClusterBinding
 perform the same cross-check when given both nested objects, while still refusing to claim current
 cluster/corpus heads, policy, validation, grant, lifecycle, retention, payload, or runtime
 readiness.
+
+`stateful-refund-stage3-v1.fixture.json` is the fixed Stage 3 payload-bearing compatibility
+fixture. It freezes one exact `order`/`refund` state model, one two-entity atomic
+`create-refund` write effect, a sealed initial session, and one command expectation. The fixture is
+test data and contains no credential or production customer payload. The server rehydrates the
+typed records and verifies every nested/top-level fingerprint. The independent
+`MirrorStateProtocolVerifier` applies the strict Schemas, exact model/effect/session closure,
+bounded expressions, mutation-alias admission, entity/tombstone/business-key seals, contiguous
+revision/receipt/event closure, response fingerprints, and the latest resulting-world binding
+without linking server or Spring classes. This proves protocol compatibility only; it does not
+prove Session API, state-store, resolver, recovery, isolation, retention, or production readiness.
+See the
+[Stateful Mirror kernel guide](../../resource-gateway-stateful-mirror-kernel.md).
 
 ## Deployment isolation attestation boundary
 

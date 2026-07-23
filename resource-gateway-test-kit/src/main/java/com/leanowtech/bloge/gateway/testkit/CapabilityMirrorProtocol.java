@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -157,6 +158,21 @@ public final class CapabilityMirrorProtocol {
     /** Fixture metadata contract selecting exact reviewed recorded clusters. */
     public static final String FIXTURE_MIRROR_CLUSTER_BINDINGS_V1 =
             "resourceGateway.fixtureMirrorClusterBindings.v1";
+    /** Bounded deterministic state-expression wire version. */
+    public static final String BOUNDED_STATE_EXPRESSION_V1 =
+            "resourceGateway.boundedStateExpression.v1";
+    /** Governed state-model wire version. */
+    public static final String STATE_MODEL_V1 =
+            "resourceGateway.stateModel.v1";
+    /** Governed virtual write-effect wire version. */
+    public static final String WRITE_EFFECT_SPEC_V1 =
+            "resourceGateway.writeEffectSpec.v1";
+    /** Payload-bearing isolated session-state wire version. */
+    public static final String SESSION_STATE_SPACE_V1 =
+            "resourceGateway.sessionStateSpace.v1";
+    /** Fixed Stage 3 refund fixture envelope version. */
+    public static final String STATEFUL_REFUND_FIXTURE_V1 =
+            "resourceGateway.statefulRefundFixture.v1";
 
     /** Classpath root containing the authoritative mirror schemas and fixtures. */
     public static final String SCHEMA_RESOURCE_ROOT = "/schemas/resource-gateway-mirror/";
@@ -197,6 +213,9 @@ public final class CapabilityMirrorProtocol {
     FIXTURE_MIRROR_CLUSTER_BINDINGS_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "fixture-mirror-cluster-bindings-v1.fixture.json";
+    /** Packaged fixed Stage 3 refund-domain fixture. */
+    public static final String STATEFUL_REFUND_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "stateful-refund-stage3-v1.fixture.json";
     /** Packaged compatibility fixture schema. */
     public static final String COMPATIBILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-mirror-compatibility-v1.schema.json";
@@ -331,6 +350,21 @@ public final class CapabilityMirrorProtocol {
     FIXTURE_MIRROR_CLUSTER_BINDINGS_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "fixture-mirror-cluster-bindings-v1.schema.json";
+    /** Packaged bounded state-expression schema. */
+    public static final String BOUNDED_STATE_EXPRESSION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "bounded-state-expression-v1.schema.json";
+    /** Packaged governed state-model schema. */
+    public static final String STATE_MODEL_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "state-model-v1.schema.json";
+    /** Packaged governed virtual write-effect schema. */
+    public static final String WRITE_EFFECT_SPEC_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "write-effect-spec-v1.schema.json";
+    /** Packaged isolated session-state schema. */
+    public static final String SESSION_STATE_SPACE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "session-state-space-v1.schema.json";
+    /** Packaged fixed Stage 3 refund-fixture schema. */
+    public static final String STATEFUL_REFUND_FIXTURE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "stateful-refund-stage3-v1.fixture.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -448,6 +482,49 @@ public final class CapabilityMirrorProtocol {
      */
     public static JsonNode fixtureMirrorClusterBindingsFixture() {
         return ClusterBindingFixtureHolder.FIXTURE.deepCopy();
+    }
+
+    /**
+     * Returns the strict-schema and independently verified Stage 3 refund fixture.
+     *
+     * <p>The fixture includes an exact state model, a two-entity atomic write effect, a sealed
+     * initial session, and one executable command expectation. Loading proves the model/effect/
+     * session fingerprint closure without linking Resource Gateway server classes.</p>
+     *
+     * @return mutable detached copy of the verified fixture
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static JsonNode statefulRefundFixture() {
+        return StatefulRefundFixtureHolder.FIXTURE.deepCopy();
+    }
+
+    private static final class StatefulRefundFixtureHolder {
+        private static final JsonNode FIXTURE = load();
+
+        private static JsonNode load() {
+            try (InputStream input = CapabilityMirrorProtocol.class.getResourceAsStream(
+                    STATEFUL_REFUND_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException("Stateful refund fixture is absent");
+                }
+                JsonNode fixture = JSON.readTree(input);
+                CapabilityMirrorSchemaValidator.require(
+                        fixture,
+                        STATEFUL_REFUND_FIXTURE_SCHEMA_RESOURCE,
+                        "RG.MIRROR.CLIENT.STATEFUL_REFUND_FIXTURE_SCHEMA_INVALID");
+                MirrorStateProtocolVerifier verifier = new MirrorStateProtocolVerifier();
+                JsonNode model = fixture.path("stateModel");
+                JsonNode effect = fixture.path("writeEffect");
+                verifier.verifyStateModel(model);
+                verifier.verifyWriteEffect(effect, model);
+                verifier.verifySession(
+                        fixture.path("initialState"), model, List.of(effect));
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.STATEFUL_REFUND_FIXTURE_UNAVAILABLE");
+            }
+        }
     }
 
     private static final class BaselineHolder {

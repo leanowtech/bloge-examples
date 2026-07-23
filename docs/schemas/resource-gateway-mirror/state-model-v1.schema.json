@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/state-model-v1.schema.json",
+  "title": "Resource Gateway State Model v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "stateModelId",
+    "revision",
+    "fingerprint",
+    "scope",
+    "entityTypes",
+    "invariants",
+    "provenance",
+    "lifecycle",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.stateModel.v1" },
+    "stateModelId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "$ref": "#/$defs/fingerprint" },
+    "scope": {
+      "$ref": "capability-snapshot-v1.schema.json#/$defs/scope"
+    },
+    "entityTypes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/entityType" }
+    },
+    "invariants": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/invariant" }
+    },
+    "provenance": { "$ref": "artifact-provenance-v1.schema.json" },
+    "lifecycle": {
+      "enum": ["DRAFT", "REVIEWED", "ACTIVE", "DEPRECATED", "STALE", "REVOKED"]
+    },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "entityType": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entityType", "schema", "businessKeys"],
+      "properties": {
+        "entityType": { "$ref": "#/$defs/identifier" },
+        "schema": {
+          "$ref": "capability-contract-v1.schema.json#/$defs/schemaEnvelope"
+        },
+        "businessKeys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/businessKey" }
+        }
+      }
+    },
+    "businessKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fieldPaths"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "fieldPaths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 2048,
+            "pattern": "^/.*[^/]$"
+          }
+        }
+      }
+    },
+    "invariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invariantId", "predicate", "errorCode"],
+      "properties": {
+        "invariantId": { "$ref": "#/$defs/identifier" },
+        "predicate": { "$ref": "bounded-state-expression-v1.schema.json" },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Z][A-Z0-9_.-]{0,191}$"
+        }
+      }
+    }
+  }
+}

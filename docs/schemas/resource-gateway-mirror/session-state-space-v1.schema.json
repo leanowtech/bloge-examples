@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/session-state-space-v1.schema.json",
+  "title": "Resource Gateway Session State Space v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sessionId",
+    "scope",
+    "planFingerprint",
+    "stateModelRef",
+    "writeEffectRefs",
+    "stateRevision",
+    "logicalClock",
+    "randomSeed",
+    "entities",
+    "tombstones",
+    "businessKeyIndex",
+    "committedEvents",
+    "processedCommands",
+    "expiresAt",
+    "worldFingerprint",
+    "fingerprint"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.sessionStateSpace.v1" },
+    "sessionId": { "$ref": "#/$defs/identifier" },
+    "scope": {
+      "$ref": "capability-snapshot-v1.schema.json#/$defs/scope"
+    },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "stateModelRef": { "$ref": "#/$defs/stateModelRef" },
+    "writeEffectRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/writeEffectRef" }
+    },
+    "stateRevision": { "type": "integer", "minimum": 0 },
+    "logicalClock": { "type": "string", "format": "date-time" },
+    "randomSeed": { "type": "integer" },
+    "entities": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/entity" }
+    },
+    "tombstones": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/tombstone" }
+    },
+    "businessKeyIndex": {
+      "type": "array",
+      "maxItems": 500000,
+      "items": { "$ref": "#/$defs/businessKeyBinding" }
+    },
+    "committedEvents": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": { "$ref": "#/$defs/event" }
+    },
+    "processedCommands": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": { "$ref": "#/$defs/receipt" }
+    },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "worldFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "fingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "stateModelRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "type": "object",
+          "properties": { "kind": { "const": "STATE_MODEL" } }
+        }
+      ]
+    },
+    "writeEffectRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "type": "object",
+          "properties": { "kind": { "const": "WRITE_EFFECT" } }
+        }
+      ]
+    },
+    "entityKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entityType", "entityId"],
+      "properties": {
+        "entityType": { "$ref": "#/$defs/identifier" },
+        "entityId": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "version", "value", "fingerprint"],
+      "properties": {
+        "key": { "$ref": "#/$defs/entityKey" },
+        "version": { "type": "integer", "minimum": 1 },
+        "value": { "type": "object" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "tombstone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "deletedRevision",
+        "previousFingerprint",
+        "deletedAt",
+        "fingerprint"
+      ],
+      "properties": {
+        "key": { "$ref": "#/$defs/entityKey" },
+        "deletedRevision": { "type": "integer", "minimum": 1 },
+        "previousFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "deletedAt": { "type": "string", "format": "date-time" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "scalar": {
+      "type": ["string", "number", "integer", "boolean"]
+    },
+    "businessKeyBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyName", "components", "valueFingerprint", "entityKey"],
+      "properties": {
+        "keyName": { "$ref": "#/$defs/identifier" },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/scalar" }
+        },
+        "valueFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "entityKey": { "$ref": "#/$defs/entityKey" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "stateRevision",
+        "mutationId",
+        "operation",
+        "entityKey",
+        "beforeFingerprint",
+        "afterFingerprint",
+        "occurredAt",
+        "fingerprint"
+      ],
+      "properties": {
+        "eventId": { "$ref": "#/$defs/identifier" },
+        "stateRevision": { "type": "integer", "minimum": 1 },
+        "mutationId": { "$ref": "#/$defs/identifier" },
+        "operation": { "enum": ["COPY_IN", "CREATE", "UPDATE", "DELETE", "UPSERT"] },
+        "entityKey": { "$ref": "#/$defs/entityKey" },
+        "beforeFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "afterFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "idempotencyKey",
+        "commandFingerprint",
+        "revisionBefore",
+        "revisionAfter",
+        "eventIds",
+        "response",
+        "responseFingerprint",
+        "resultingWorldFingerprint",
+        "committedAt",
+        "fingerprint"
+      ],
+      "properties": {
+        "idempotencyKey": { "$ref": "#/$defs/identifier" },
+        "commandFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "revisionBefore": { "type": "integer", "minimum": 0 },
+        "revisionAfter": { "type": "integer", "minimum": 1 },
+        "eventIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "response": {},
+        "responseFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "resultingWorldFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "committedAt": { "type": "string", "format": "date-time" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

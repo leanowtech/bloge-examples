@@ -222,10 +222,17 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("testSecretAuthorityTrustCohortReady", false)
                 .containsEntry("testSecretAuthorityDeploymentSignedInventory", false)
                 .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", false)
+                .containsEntry("mirrorStatefulProtocol", true)
+                .containsEntry("mirrorStatefulSessionApi", false)
+                .containsEntry("mirrorStatefulStateStoreReady", false)
+                .containsEntry("mirrorStatefulResolverReady", false)
+                .containsEntry("mirrorStatefulRuntimeReady", false)
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().supportedObjects())
                 .containsKeys("capabilitySnapshot", "capabilityClosure", "mirrorPlan",
                         "mirrorServingGenerationToken",
+                        "boundedStateExpression", "stateModel",
+                        "writeEffectSpec", "sessionStateSpace",
                         "capabilityContract", "effectContract",
                         "artifactProvenance", "capabilityLifecycleTransition",
                         "capabilityClosureProjectionRequest");
@@ -237,7 +244,19 @@ class ToolStudioIntegrationServiceTest {
                                 .MirrorPlan.SCHEMA_VERSION))
                 .containsEntry("mirrorServingGenerationToken", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorServingGenerationToken.SCHEMA_VERSION));
+                                .MirrorServingGenerationToken.SCHEMA_VERSION))
+                .containsEntry("boundedStateExpression", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .BoundedStateExpression.SCHEMA_VERSION))
+                .containsEntry("stateModel", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .StateModel.SCHEMA_VERSION))
+                .containsEntry("writeEffectSpec", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .WriteEffectSpec.SCHEMA_VERSION))
+                .containsEntry("sessionStateSpace", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .SessionStateSpace.SCHEMA_VERSION));
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .containsExactlyInAnyOrder(
