@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 签名 observation 协议、准入/隔离纵切、独立复验已完成第一增量；跨语言 canonicalization、corpus/resolver 和环境 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离与 immutable review/candidate/publication 两个纵切；payload authority、resolver、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -339,11 +339,23 @@
   store 或 mandatory audit 不可用则返回 503 且不伪造决定。full-scope append-only store 会在读写时重验 canonical
   JSON 与索引列；成功写入和 audit 位于同一事务。默认 operator-owned policy 与 external payload-reference verifier
   均 unavailable，probe 因而分开报告 protocol、API assembly 和 readiness。strict Schema、public-only fixed signed
-  fixture、server/test-kit 双边独立复验、生产 route 物理缺失和事务回滚均已有专项测试；Resource Gateway 干净全量
-  门禁 `4649` 项测试零失败、零错误（另有 3 项条件跳过），独立 test-kit `277/277` 全绿。该增量只关闭“可信
+  fixture、server/test-kit 双边独立复验、生产 route 物理缺失和事务回滚均已有专项测试；包含第二增量后的
+  Resource Gateway 干净全量门禁 `4681` 项测试零失败、零错误（另有 3 项条件跳过），独立 test-kit
+  `285/285` 全绿。该增量只关闭“可信
   observation 准入”根问题，不宣称 corpus revision、resolver、retention/deletion proof 或 outcome calibration
   已完成。接线与 runbook 见
   [Capability Observation 准入指南](resource-gateway-capability-observation-admission.md)。
+- Stage 2 第二增量已把 `ObservationReview`、`CorpusRevision` 和 `CorpusPublication` 拆成三类独立不可变事实。
+  quarantine review 不改写原 admission，误判也必须新 observation 重录；candidate 冻结 exact admitted sources、
+  governance policy、payload/proof/schema/key/trace/horizon metadata，并计算 sample、duplicate、producer-diversity 和
+  serving-horizon 风险；blocked candidate 保留证据但永不发布。publication 使用独立连续 lineage，只接受当前
+  eligible candidate、当前 policy、授权 publisher 和每个 source 的第二次 external authority 验证。三条受保护
+  API、full-scope append-only H2 store、mandatory audit 同事务回滚、strict Schema、固定 lifecycle fixture 与独立
+  test-kit verifier 已落地。默认 policy/source providers unavailable，probe 分开报告
+  `mirrorCorpusGovernanceProtocol`、`mirrorCorpusGovernanceApi`、`mirrorCorpusGovernanceReady` 和仍为 false 的
+  `mirrorCorpusResolverReady`。因此该增量只关闭“治理事实如何形成并发布”，不宣称运行时已经消费 corpus。接线、
+  错误语义和演练见
+  [Capability Corpus 治理与发布指南](resource-gateway-capability-corpus-governance.md)。
 
 ---
 
@@ -434,7 +446,7 @@ Resource Gateway 已有的工业底座应直接复用：
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
 | Evidence/Replay | 90% | payload-free signed mirror evidence、deployment trust 双重绑定和独立复验已落地；缺业务 state trace、fidelity observation 聚合和 outcome lineage |
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
-| 日志蒸馏与语料 | 25% | payload-free signed observation、准入/隔离、full-scope durable store 和独立 verifier 已落地；缺 corpus revision、review、resolver、漂移、偏差和删除证明 |
+| 日志蒸馏与语料 | 40% | payload-free signed observation、准入/隔离、immutable review、candidate/publication 双 lineage、元数据风险门禁和独立 verifier 已落地；缺生产 payload authority、resolver、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 5% | 执行 checkpoint 不等于业务实体与事务状态模型 |
 | Scenario/Rehearsal | 10% | 缺场景、写效果、处置断言和状态演练协议 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
@@ -789,8 +801,13 @@ provider message 或 stack trace。
  -> external vault/sanitization proof reference verification
  -> 数据权利、驻留地域和保留期
  -> admitted 或 quarantined 终态与 mandatory audit 原子提交
- -> poisoning/异常样本检测（下一增量）
- -> admitted corpus revision
+ -> quarantined: immutable terminal review，不改写 admission
+ -> admitted: exact source authority recheck
+ -> immutable corpus candidate revision + metadata risk
+ -> blocked candidate 保留治理证据，eligible candidate 等待 owner 审批
+ -> current policy + publisher authorization + every-source second recheck
+ -> independent serving publication lineage
+ -> resolver（后续增量，当前未接线）
 ```
 
 确定的 policy、capability、integrity、grant、window 或 payload-reference 拒绝进入隔离队列，不得部分进入 serving
@@ -1091,7 +1108,9 @@ session 重放造成重复状态、运行时依赖漂移。
 | `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}` | exact current attestation + status 地址读取 | 四坐标都仍等于 current head 才返回 | 已实现（test/staging） |
 | `POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | 精确栅栏下不可逆追加 REVOKED 状态 | 同 reason 原 fence/exact fence 幂等；禁止 re-activate | 已实现（test/staging + `MIRROR_TRUST_ADMIN`） |
 | `POST /api/mirror/observations` | 接收签名 payload-free observation metadata，并原子返回 admitted/quarantined receipt | full scope + observationId/fingerprint 幂等 | 已实现（test/staging + 显式开关；默认外部 policy/payload authority 未就绪） |
-| `POST /api/mirror/corpus-candidates` | 触发受治理归纳 | source snapshot 幂等 | 待实现 |
+| `POST /api/mirror/observations/{observationId}/reviews` | 追加一次 terminal quarantine review，不改写 admission | observation + exact command fingerprint 幂等 | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；默认 policy 未就绪） |
+| `POST /api/mirror/corpus-candidates` | 冻结 exact admitted sources 并计算 non-serving metadata risk | full scope + corpusId + revision + command fingerprint；predecessor fence | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；默认 policy/source authority 未就绪） |
+| `POST /api/mirror/corpus-publications` | owner-reviewed 发布当前 eligible candidate | 独立 publication revision + predecessor fence + exact command fingerprint | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；resolver 未接线） |
 | `POST /api/mirror/shadow-jobs` | 提交 shadow comparison | job fingerprint 幂等 | 待实现 |
 | `GET /api/mirror/fidelity/domains/{domainId}` | 查询 fidelity profile | 只读 | 待实现 |
 | `POST /api/mirror/outcomes` | 回填 outcome | outcome identity 幂等 | 待实现 |
@@ -1333,11 +1352,13 @@ effect unknown 和递归环会失败关闭；旧协议无破坏。
 
 ### Stage 2：受治理语料，4 个 sprint，P0/P1
 
-**当前状态**：第一纵切已完成签名 payload-free observation、operator-owned policy、external payload-reference
-verification SPI、admitted/quarantined 终态、full-scope append-only store、受保护 API、honest capability probe、
-mandatory audit 原子性和独立 test-kit verifier。尚未完成 payload vault 实现、quarantine review、corpus revision、
-exact/trajectory/cluster resolver、poisoning/drift、retention/deletion proof 与 outcome calibration，因此 Stage 2
-不能标记完成。
+**当前状态**：前两个纵切已完成。第一纵切冻结签名 payload-free observation、operator-owned admission policy、
+external payload-reference verification SPI、admitted/quarantined 终态、full-scope append-only store、受保护 API、
+honest capability probe、mandatory audit 原子性和独立 test-kit verifier。第二纵切完成 terminal quarantine review、
+non-serving corpus candidate、policy-independent risk statistics、owner-reviewed serving publication、candidate/publication
+双 lineage、每 source 二次 external verification、strict Schema 与固定兼容样本。尚未完成生产 payload vault/authority、
+exact/trajectory/cluster resolver、poisoning/drift/bias、retention/deletion proof、outcome calibration 和运行时 serving
+绑定，因此 Stage 2 仍不能标记完成。
 
 **交付物**：
 

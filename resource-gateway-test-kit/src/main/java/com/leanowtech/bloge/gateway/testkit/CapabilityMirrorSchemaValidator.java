@@ -45,7 +45,13 @@ final class CapabilityMirrorSchemaValidator {
             "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json",
             "capability-observation-v1.schema.json",
             "capability-observation-admission-v1.schema.json",
-            "capability-observation-receipt-v1.schema.json");
+            "capability-observation-receipt-v1.schema.json",
+            "capability-observation-review-request-v1.schema.json",
+            "capability-observation-review-v1.schema.json",
+            "capability-corpus-candidate-request-v1.schema.json",
+            "capability-corpus-revision-v1.schema.json",
+            "capability-corpus-publish-request-v1.schema.json",
+            "capability-corpus-publication-v1.schema.json");
     private static final Map<String, String> RESOURCE_TO_ID = resourceIds();
 
     private CapabilityMirrorSchemaValidator() {

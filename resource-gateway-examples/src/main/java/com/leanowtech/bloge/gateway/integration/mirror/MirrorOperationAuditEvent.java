@@ -76,7 +76,13 @@ public record MirrorOperationAuditEvent(
         /** Irreversibly revoke one exact current deployment-isolation attestation. */
         ISOLATION_ATTESTATION_REVOKE,
         /** Admit or quarantine one signed payload-free capability observation. */
-        OBSERVATION_INGEST
+        OBSERVATION_INGEST,
+        /** Record one terminal owner review of a quarantined observation. */
+        OBSERVATION_REVIEW,
+        /** Freeze admitted observations into an immutable corpus revision candidate. */
+        CORPUS_CANDIDATE_CREATE,
+        /** Publish one exact reviewed corpus revision as the serving head. */
+        CORPUS_PUBLISH
     }
 
     /** Terminal operation outcomes. */

@@ -21,6 +21,8 @@ public final class MirrorRuntimeAvailability {
     private final BooleanSupplier certificationReadiness;
     private final boolean observationAdmissionApi;
     private final BooleanSupplier observationAdmissionReadiness;
+    private final boolean corpusGovernanceApi;
+    private final BooleanSupplier corpusGovernanceReadiness;
 
     /**
      * Creates a marker with static readiness, primarily for disabled composition and tests.
@@ -31,7 +33,7 @@ public final class MirrorRuntimeAvailability {
     public MirrorRuntimeAvailability(boolean planCompilationApi, boolean executionApi) {
         this(planCompilationApi, executionApi, () -> executionApi,
                 false, () -> false, false, () -> false, () -> false,
-                false, () -> false);
+                false, () -> false, false, () -> false);
     }
 
     /**
@@ -47,7 +49,7 @@ public final class MirrorRuntimeAvailability {
             BooleanSupplier executionReadiness) {
         this(planCompilationApi, executionApi, executionReadiness,
                 false, () -> false, false, () -> false, () -> false,
-                false, () -> false);
+                false, () -> false, false, () -> false);
     }
 
     /**
@@ -67,7 +69,8 @@ public final class MirrorRuntimeAvailability {
             BooleanSupplier authorityDistributionReadiness) {
         this(planCompilationApi, executionApi, executionReadiness,
                 authorityDistributionApi, authorityDistributionReadiness,
-                false, () -> false, () -> false, false, () -> false);
+                false, () -> false, () -> false, false, () -> false,
+                false, () -> false);
     }
 
     /**
@@ -92,7 +95,7 @@ public final class MirrorRuntimeAvailability {
         this(planCompilationApi, executionApi, executionReadiness,
                 authorityDistributionApi, authorityDistributionReadiness,
                 attestationDistributionApi, attestationDistributionReadiness,
-                () -> false, false, () -> false);
+                () -> false, false, () -> false, false, () -> false);
     }
 
     /**
@@ -119,7 +122,8 @@ public final class MirrorRuntimeAvailability {
         this(planCompilationApi, executionApi, executionReadiness,
                 authorityDistributionApi, authorityDistributionReadiness,
                 attestationDistributionApi, attestationDistributionReadiness,
-                certificationReadiness, false, () -> false);
+                certificationReadiness, false, () -> false,
+                false, () -> false);
     }
 
     /**
@@ -147,6 +151,42 @@ public final class MirrorRuntimeAvailability {
             BooleanSupplier certificationReadiness,
             boolean observationAdmissionApi,
             BooleanSupplier observationAdmissionReadiness) {
+        this(planCompilationApi, executionApi, executionReadiness,
+                authorityDistributionApi, authorityDistributionReadiness,
+                attestationDistributionApi, attestationDistributionReadiness,
+                certificationReadiness, observationAdmissionApi,
+                observationAdmissionReadiness, false, () -> false);
+    }
+
+    /**
+     * Creates a marker that also probes governed corpus review and publication.
+     *
+     * @param planCompilationApi protected plan compile/read routes are assembled
+     * @param executionApi protected run/evidence routes are assembled
+     * @param executionReadiness dynamic run/evidence and signing-authority readiness
+     * @param authorityDistributionApi protected authority publication routes are assembled
+     * @param authorityDistributionReadiness dynamic local authority trust readiness
+     * @param attestationDistributionApi protected attestation ingest/read/revoke routes are assembled
+     * @param attestationDistributionReadiness dynamic authority and bootstrap-policy readiness
+     * @param certificationReadiness dynamic deployment-agent run-trust readiness
+     * @param observationAdmissionApi protected observation ingest route is assembled
+     * @param observationAdmissionReadiness dynamic observation admission readiness
+     * @param corpusGovernanceApi protected review/candidate/publication routes are assembled
+     * @param corpusGovernanceReadiness dynamic policy and external source-authority readiness
+     */
+    public MirrorRuntimeAvailability(
+            boolean planCompilationApi,
+            boolean executionApi,
+            BooleanSupplier executionReadiness,
+            boolean authorityDistributionApi,
+            BooleanSupplier authorityDistributionReadiness,
+            boolean attestationDistributionApi,
+            BooleanSupplier attestationDistributionReadiness,
+            BooleanSupplier certificationReadiness,
+            boolean observationAdmissionApi,
+            BooleanSupplier observationAdmissionReadiness,
+            boolean corpusGovernanceApi,
+            BooleanSupplier corpusGovernanceReadiness) {
         this.planCompilationApi = planCompilationApi;
         this.executionApi = executionApi;
         this.executionReadiness = Objects.requireNonNull(
@@ -162,6 +202,9 @@ public final class MirrorRuntimeAvailability {
         this.observationAdmissionApi = observationAdmissionApi;
         this.observationAdmissionReadiness = Objects.requireNonNull(
                 observationAdmissionReadiness, "observationAdmissionReadiness");
+        this.corpusGovernanceApi = corpusGovernanceApi;
+        this.corpusGovernanceReadiness = Objects.requireNonNull(
+                corpusGovernanceReadiness, "corpusGovernanceReadiness");
     }
 
     /**
@@ -284,6 +327,31 @@ public final class MirrorRuntimeAvailability {
         }
         try {
             return observationAdmissionReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
+     * Reports protected corpus-governance route assembly.
+     *
+     * @return whether review, candidate, and publication routes are physically assembled
+     */
+    public boolean corpusGovernanceApi() {
+        return corpusGovernanceApi;
+    }
+
+    /**
+     * Probes current corpus policy and external source-authority readiness.
+     *
+     * @return whether assembled corpus routes can currently make governance decisions
+     */
+    public boolean corpusGovernanceReady() {
+        if (!corpusGovernanceApi) {
+            return false;
+        }
+        try {
+            return corpusGovernanceReadiness.getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

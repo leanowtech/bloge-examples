@@ -313,6 +313,24 @@ public record IntegrationCapabilities(
         objects.put("capabilityObservationReceipt", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .CapabilityObservationReceipt.SCHEMA_VERSION));
+        objects.put("capabilityObservationReviewRequest", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityObservationReviewRequest.SCHEMA_VERSION));
+        objects.put("capabilityObservationReview", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityObservationReview.SCHEMA_VERSION));
+        objects.put("capabilityCorpusCandidateRequest", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityCorpusCandidateRequest.SCHEMA_VERSION));
+        objects.put("capabilityCorpusRevision", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityCorpusRevision.SCHEMA_VERSION));
+        objects.put("capabilityCorpusPublishRequest", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityCorpusPublishRequest.SCHEMA_VERSION));
+        objects.put("capabilityCorpusPublication", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityCorpusPublication.SCHEMA_VERSION));
         objects.put("capabilityClosureProjectionRequest", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .CapabilityClosureProjectionRequest.SCHEMA_VERSION));
@@ -759,6 +777,10 @@ public record IntegrationCapabilities(
         features.put("mirrorObservationProtocol", true);
         features.put("mirrorObservationAdmissionApi", false);
         features.put("mirrorObservationAdmissionReady", false);
+        features.put("mirrorCorpusGovernanceProtocol", true);
+        features.put("mirrorCorpusGovernanceApi", false);
+        features.put("mirrorCorpusGovernanceReady", false);
+        features.put("mirrorCorpusResolverReady", false);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);

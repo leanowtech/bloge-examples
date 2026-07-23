@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationServi
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
@@ -41,7 +42,10 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
                     "POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations",
-                    "POST /api/mirror/observations");
+                    "POST /api/mirror/observations",
+                    "POST /api/mirror/observations/{observationId}/reviews",
+                    "POST /api/mirror/corpus-candidates",
+                    "POST /api/mirror/corpus-publications");
             assertThat(routes(staging)).contains(
                     "POST /api/mirror/plans",
                     "GET /api/mirror/plans/{planId}",
@@ -55,7 +59,10 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
                     "POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations",
-                    "POST /api/mirror/observations");
+                    "POST /api/mirror/observations",
+                    "POST /api/mirror/observations/{observationId}/reviews",
+                    "POST /api/mirror/corpus-candidates",
+                    "POST /api/mirror/corpus-publications");
             assertThat(routes(disabled)).noneMatch(route -> route.contains("/api/mirror/"));
         }
     }
@@ -82,6 +89,10 @@ class MirrorIntegrationRouteIsolationTest {
                     CapabilityObservationController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(
                     CapabilityObservationController.class)).isEmpty();
+            assertThat(production.getBeansOfType(
+                    CapabilityCorpusGovernanceController.class)).isEmpty();
+            assertThat(mixed.getBeansOfType(
+                    CapabilityCorpusGovernanceController.class)).isEmpty();
         }
     }
 
@@ -98,7 +109,8 @@ class MirrorIntegrationRouteIsolationTest {
                 MirrorRunIntegrationController.class,
                 MirrorDeploymentIsolationAuthorityPublicationController.class,
                 MirrorDeploymentIsolationAttestationController.class,
-                CapabilityObservationController.class);
+                CapabilityObservationController.class,
+                CapabilityCorpusGovernanceController.class);
         context.refresh();
         return context;
     }
@@ -146,6 +158,11 @@ class MirrorIntegrationRouteIsolationTest {
         }
 
         @Bean
+        CapabilityCorpusGovernanceService capabilityCorpusGovernanceService() {
+            return mock(CapabilityCorpusGovernanceService.class);
+        }
+
+        @Bean
         IntegrationRequestAuthenticator integrationRequestAuthenticator() {
             return mock(IntegrationRequestAuthenticator.class);
         }
@@ -179,6 +196,12 @@ class MirrorIntegrationRouteIsolationTest {
         @Bean
         CapabilityObservationDecoder capabilityObservationDecoder() {
             return new CapabilityObservationDecoder(
+                    new ObjectMapper().findAndRegisterModules());
+        }
+
+        @Bean
+        CapabilityCorpusGovernanceDecoder capabilityCorpusGovernanceDecoder() {
+            return new CapabilityCorpusGovernanceDecoder(
                     new ObjectMapper().findAndRegisterModules());
         }
     }

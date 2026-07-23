@@ -16,7 +16,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - all capability-mirror Draft 2020-12 schemas, a machine-readable Stage 0 compatibility baseline,
   forward-compatible capability-probe negotiation, and registry-free offline verification of sealed
   `CapabilitySnapshot` and `CapabilityClosure` artifacts, including protected execution-command and
-  payload-free run-summary schemas, plus independent deployment-isolation attestation verification;
+  payload-free run-summary schemas, independent deployment-isolation attestation verification, and
+  payload-free corpus review/candidate/publication lifecycle verification;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -186,6 +187,27 @@ sanitized before persistence. Corpus admission still requires an independent ten
 payload-vault authority. Treating a valid producer signature as proof of payload governance would
 collapse two separate trust domains. The packaged observation, admission, and receipt Schemas are
 available through `CapabilityMirrorProtocol`; the fixture includes no private key or payload.
+
+Corpus review, candidate and publication facts have a second fixed payload-free fixture:
+
+```java
+CapabilityCorpusCompatibilityFixture corpus =
+        CapabilityMirrorProtocol.capabilityCorpusCompatibilityFixture();
+CapabilityCorpusVerifier.VerificationResult governance =
+        new CapabilityCorpusVerifier().verify(corpus);
+if (!governance.verified()) {
+    throw new IllegalStateException(governance.reasonCode());
+}
+```
+
+The independent verifier closes all six strict Schemas, re-derives review/candidate/publish command
+fingerprints and immutable artifact fingerprints, checks complete scope, exact command-to-fact
+binding, ordered source coordinates, candidate/publication lineage, policy-independent risk
+statistics and serving horizons. It deliberately cannot prove that the external source authority
+still accepts payload/proof/grant/retention references, that an operator-owned policy is current,
+that the actor remains authorized, that the publication is the current server head, or that a
+resolver consumes it. Those remain online governance checks. See the
+[Capability Corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
 
 Deployment isolation uses separate bootstrap-root, isolation-attestation, and mirror-evidence
 authorities. Never reuse keys between those roles or trust deployment coordinates copied from an

@@ -30,6 +30,7 @@ integration something the business flow can see, reason about, test, and change.
 | Consistent draft export | Frozen operator/library/binding/activation/test-suite refs, deterministic dependency fingerprints, and retryable 409 conflict on assembly-time drift |
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
+| Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
@@ -110,6 +111,9 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `GET http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest` | Read one atomic current attestation and local status bundle |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | Irreversibly revoke one exact current attestation status |
 | `POST http://localhost:8080/api/mirror/observations` | Admit or quarantine one signed payload-free capability observation under operator-owned policy and external payload-proof verification |
+| `POST http://localhost:8080/api/mirror/observations/{observationId}/reviews` | Append one terminal quarantine review without changing the original admission |
+| `POST http://localhost:8080/api/mirror/corpus-candidates` | Freeze ordered admitted observations into a non-serving corpus candidate and compute metadata risk |
+| `POST http://localhost:8080/api/mirror/corpus-publications` | Publish one current eligible candidate after owner authorization and a second source-authority check |
 
 Deployment-agent authority/attestation GETs require vendor negotiation in addition to normal
 `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` authentication:
@@ -159,6 +163,17 @@ need the dedicated `MIRROR_CORPUS_INGESTION` purpose and exact
 tenant/organization/project/environment/region scope. Integration, receipt semantics, stable
 errors, and outage drills are documented in the
 [capability observation admission guide](../docs/resource-gateway-capability-observation-admission.md).
+
+Corpus governance has a separate readiness boundary. `mirrorCorpusGovernanceProtocol=true` means
+the six review/candidate/publication wire objects and strict Schemas are supported;
+`mirrorCorpusGovernanceApi=true` means the three non-production routes are assembled; and
+`mirrorCorpusGovernanceReady=true` requires both the operator-owned governance policy provider and
+external source-lifecycle authority to be currently available. The defaults are unavailable.
+`mirrorCorpusResolverReady` remains false: a candidate is never a serving fact, and the current
+runtime does not yet consume even a valid publication. Governance workloads require
+`MIRROR_CORPUS_GOVERNANCE`. The immutable fact model, provider contracts, request examples, errors,
+startup commands and remaining production gates are in the
+[capability corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
 
 The Stage 1 compiler and run kernels verify Capability Closure against the recursively
 frozen BLOGE invocation inventory, adapt the existing FixtureBundle into mandatory external-site controls, retain

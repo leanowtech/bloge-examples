@@ -399,6 +399,10 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.observationAdmissionApi());
         features.put("mirrorObservationAdmissionReady",
                 mirrorRuntimeAvailability.observationAdmissionReady());
+        features.put("mirrorCorpusGovernanceApi",
+                mirrorRuntimeAvailability.corpusGovernanceApi());
+        features.put("mirrorCorpusGovernanceReady",
+                mirrorRuntimeAvailability.corpusGovernanceReady());
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());
@@ -791,6 +795,14 @@ public class ToolStudioIntegrationService {
         if (mirrorRuntimeAvailability.observationAdmissionApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/mirror/observations"));
+        }
+        if (mirrorRuntimeAvailability.corpusGovernanceApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/observations/{observationId}/reviews"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/corpus-candidates"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/corpus-publications"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

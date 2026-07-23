@@ -34,6 +34,12 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-observation-v1.schema.json` | `CapabilityObservationEnvelope` | Signed payload-free capability invocation with exact sanitized-payload, proof, schema, purpose, trace, and state references |
 | `capability-observation-admission-v1.schema.json` | `CapabilityObservationAdmission` | Content-addressed local `ADMITTED` or terminal `QUARANTINED` decision |
 | `capability-observation-receipt-v1.schema.json` | `CapabilityObservationReceipt` | Atomic ingest result linking the exact producer envelope to its immutable local decision |
+| `capability-observation-review-request-v1.schema.json` | `CapabilityObservationReviewRequest` | Closed payload-free terminal review command for one exact quarantine |
+| `capability-observation-review-v1.schema.json` | `CapabilityObservationReview` | Immutable review fact that never rewrites the original admission |
+| `capability-corpus-candidate-request-v1.schema.json` | `CapabilityCorpusCandidateRequest` | Ordered exact source selection with optimistic candidate-lineage fencing |
+| `capability-corpus-revision-v1.schema.json` | `CapabilityCorpusRevision` | Non-serving payload-free source snapshot with deterministic metadata risk |
+| `capability-corpus-publish-request-v1.schema.json` | `CapabilityCorpusPublishRequest` | Owner-reviewed publication command with independent lineage fencing |
+| `capability-corpus-publication-v1.schema.json` | `CapabilityCorpusPublication` | Immutable serving-publication fact for one exact eligible candidate |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -79,6 +85,15 @@ authorities and are not implied by this fixture.
 The admission order, operator-owned SPI contract, quarantine/unavailable split, stable errors and
 runbook are documented in
 [Capability Observation admission](../../resource-gateway-capability-observation-admission.md).
+
+`capability-corpus-stage2-v1.fixture.json` is the fixed payload-free Stage 2 governance fixture. It
+contains one quarantine review command/fact, one admitted-source candidate command/revision, one
+owner-reviewed publication command/fact, local expected full scope, and a deterministic verification
+instant. Both producer and standalone test-kit re-derive all six canonical fingerprints, exact
+command-to-fact bindings, source ordering, lineage, policy-independent risk statistics and time
+horizons. The fixture does not prove live payload/proof existence, current policy, actor
+authorization, current serving-head status or resolver readiness. See
+[Capability Corpus governance](../../resource-gateway-capability-corpus-governance.md).
 
 ## Deployment isolation attestation boundary
 
@@ -418,6 +433,9 @@ The protected Tool Studio integration surface exposes:
 | `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}` | Read exact coordinates only while they remain the current head | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
 | `POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | Apply one exact-current irreversible revocation | `MIRROR_TRUST_ADMIN` |
 | `POST /api/mirror/observations` | Admit or quarantine one signed payload-free observation and return an atomic receipt | `MIRROR_CORPUS_INGESTION` |
+| `POST /api/mirror/observations/{observationId}/reviews` | Append one terminal review without changing the quarantine admission | `MIRROR_CORPUS_GOVERNANCE` |
+| `POST /api/mirror/corpus-candidates` | Freeze ordered admitted sources into a non-serving candidate revision | `MIRROR_CORPUS_GOVERNANCE` |
+| `POST /api/mirror/corpus-publications` | Publish one current eligible candidate after owner and source rechecks | `MIRROR_CORPUS_GOVERNANCE` |
 
 All authority/attestation GET routes additionally require the exact
 `application/vnd.bloge.mirror-deployment-isolation-trust.v1+json` media type and
@@ -431,11 +449,11 @@ not become an asset-existence oracle.
 The Stage 0 baseline verifies all seven shipped resource graphs plus all three frontend visual examples. The
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
-compiler, internal mirror runtime kernel, MirrorResolution protocol, and the first Stage 2 governed observation
-admission increment, the latest complete Resource Gateway gate passes 4649 tests with no
-failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
-the executable Spring Boot JAR. The independent test-kit gate passes 277 tests with no failures, errors, or skips,
-packages all 33 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
+compiler, internal mirror runtime kernel, MirrorResolution protocol, governed observation admission, and governed
+corpus publication increments, the latest complete Resource Gateway gate passes 4681 tests with no failures or
+errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds the
+executable Spring Boot JAR. The independent test-kit gate passes 285 tests with no failures, errors, or skips,
+packages all 40 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
 
 The Stage 1 `MirrorPlan` protocol presence alone does not make mirror execution available. Capability discovery
 always reports `mirrorPlanProtocol=true`. It reports `mirrorPlanCompilation` and

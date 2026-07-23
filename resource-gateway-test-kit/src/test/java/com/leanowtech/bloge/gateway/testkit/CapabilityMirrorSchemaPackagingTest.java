@@ -43,7 +43,13 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json",
                 "capability-observation-v1.schema.json",
                 "capability-observation-admission-v1.schema.json",
-                "capability-observation-receipt-v1.schema.json")) {
+                "capability-observation-receipt-v1.schema.json",
+                "capability-observation-review-request-v1.schema.json",
+                "capability-observation-review-v1.schema.json",
+                "capability-corpus-candidate-request-v1.schema.json",
+                "capability-corpus-revision-v1.schema.json",
+                "capability-corpus-publish-request-v1.schema.json",
+                "capability-corpus-publication-v1.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
                 assertThat(input).as(resource).isNotNull();
@@ -75,6 +81,27 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .CAPABILITY_OBSERVATION_RECEIPT_SCHEMA_RESOURCE)
                 .endsWith("capability-observation-receipt-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_OBSERVATION_REVIEW_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "capability-observation-review-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_OBSERVATION_REVIEW_SCHEMA_RESOURCE)
+                .endsWith("capability-observation-review-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_CANDIDATE_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "capability-corpus-candidate-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_REVISION_SCHEMA_RESOURCE)
+                .endsWith("capability-corpus-revision-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_PUBLISH_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "capability-corpus-publish-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_PUBLICATION_SCHEMA_RESOURCE)
+                .endsWith("capability-corpus-publication-v1.schema.json");
 
         JsonNode baseline = CapabilityMirrorProtocol.compatibilityBaseline();
         assertThat(baseline.path("schemaVersion").asText())
@@ -189,6 +216,25 @@ class CapabilityMirrorSchemaPackagingTest {
                 .doesNotContain("customer-123")
                 .doesNotContain("requestBody")
                 .doesNotContain("responseBody");
+    }
+
+    @Test
+    void packagesOneFixedPayloadFreeCorpusGovernanceFixture() {
+        CapabilityCorpusCompatibilityFixture fixture =
+                CapabilityMirrorProtocol.capabilityCorpusCompatibilityFixture();
+
+        CapabilityCorpusVerifier.VerificationResult verified =
+                new CapabilityCorpusVerifier().verify(fixture);
+
+        assertThat(verified.verified()).isTrue();
+        assertThat(verified.corpusId()).isEqualTo("support-refund-corpus");
+        assertThat(fixture.revision().toString())
+                .doesNotContain("customer-123")
+                .doesNotContain("requestBody")
+                .doesNotContain("responseBody");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_FIXTURE_RESOURCE)
+                .endsWith("capability-corpus-stage2-v1.fixture.json");
     }
 
     @Test

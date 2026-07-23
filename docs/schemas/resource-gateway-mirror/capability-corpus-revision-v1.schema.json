@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/capability-corpus-revision-v1.schema.json",
+  "title": "Resource Gateway Capability Corpus Revision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "revisionFingerprint", "sourceCommandFingerprint", "scope",
+    "corpusId", "revision", "predecessorRef", "capabilityRef",
+    "governancePolicyRef", "sources", "riskSummary", "createdBy", "createdAt",
+    "usableUntil"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.capabilityCorpusRevision.v1"
+    },
+    "revisionFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "sourceCommandFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "corpusId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "predecessorRef": {
+      "oneOf": [
+        { "$ref": "#/$defs/corpusRevisionRef" },
+        { "type": "null" }
+      ]
+    },
+    "capabilityRef": { "$ref": "#/$defs/capabilityRef" },
+    "governancePolicyRef": { "$ref": "#/$defs/governancePolicyRef" },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/sourceObservation" }
+    },
+    "riskSummary": { "$ref": "#/$defs/riskSummary" },
+    "createdBy": { "$ref": "#/$defs/actorId" },
+    "createdAt": { "$ref": "#/$defs/canonicalInstant" },
+    "usableUntil": { "$ref": "#/$defs/canonicalInstant" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "revision": { "const": 1 } },
+        "required": ["revision"]
+      },
+      "then": {
+        "properties": { "predecessorRef": { "type": "null" } }
+      },
+      "else": {
+        "properties": {
+          "predecessorRef": { "$ref": "#/$defs/corpusRevisionRef" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "actorId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    },
+    "reasonCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+    },
+    "canonicalInstant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3}(?:[0-9]{3})?(?:[0-9]{3})?)?Z$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenantId", "organizationId", "projectId", "environmentId", "region"
+      ],
+      "properties": {
+        "tenantId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "projectId": { "type": "string", "maxLength": 255 },
+        "environmentId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "region": { "type": "string", "maxLength": 96 }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "CAPABILITY", "CAPABILITY_CORPUS_REVISION",
+            "CAPABILITY_OBSERVATION", "CAPABILITY_OBSERVATION_ADMISSION",
+            "SANITIZED_PAYLOAD", "PAYLOAD_SANITIZATION_PROOF", "JSON_SCHEMA",
+            "OBSERVATION_AUTHORITY_KEY", "CORPUS_GOVERNANCE_POLICY"
+          ]
+        },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "corpusRevisionRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY_CORPUS_REVISION" } } }
+      ]
+    },
+    "governancePolicyRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CORPUS_GOVERNANCE_POLICY" } } }
+      ]
+    },
+    "observationRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY_OBSERVATION" } } }
+      ]
+    },
+    "admissionRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CAPABILITY_OBSERVATION_ADMISSION" }
+          }
+        }
+      ]
+    },
+    "payloadRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "SANITIZED_PAYLOAD" } } }
+      ]
+    },
+    "proofRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "PAYLOAD_SANITIZATION_PROOF" }
+          }
+        }
+      ]
+    },
+    "schemaRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "JSON_SCHEMA" } } }
+      ]
+    },
+    "authorityKeyRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "OBSERVATION_AUTHORITY_KEY" } } }
+      ]
+    },
+    "sourceObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observationRef", "admissionRef", "requestPayloadRef", "requestProofRef",
+        "requestSchemaRef", "responsePayloadRef", "responseProofRef",
+        "responseSchemaRef", "normalizedErrorCode", "traceFingerprint",
+        "authorityKeyRef", "occurredAt", "usableUntil"
+      ],
+      "properties": {
+        "observationRef": { "$ref": "#/$defs/observationRef" },
+        "admissionRef": { "$ref": "#/$defs/admissionRef" },
+        "requestPayloadRef": { "$ref": "#/$defs/payloadRef" },
+        "requestProofRef": { "$ref": "#/$defs/proofRef" },
+        "requestSchemaRef": { "$ref": "#/$defs/schemaRef" },
+        "responsePayloadRef": {
+          "oneOf": [{ "$ref": "#/$defs/payloadRef" }, { "type": "null" }]
+        },
+        "responseProofRef": {
+          "oneOf": [{ "$ref": "#/$defs/proofRef" }, { "type": "null" }]
+        },
+        "responseSchemaRef": {
+          "oneOf": [{ "$ref": "#/$defs/schemaRef" }, { "type": "null" }]
+        },
+        "normalizedErrorCode": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^(?:|[A-Z][A-Z0-9_.-]{0,127})$"
+        },
+        "traceFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "authorityKeyRef": { "$ref": "#/$defs/authorityKeyRef" },
+        "occurredAt": { "$ref": "#/$defs/canonicalInstant" },
+        "usableUntil": { "$ref": "#/$defs/canonicalInstant" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "responsePayloadRef": { "$ref": "#/$defs/payloadRef" },
+            "responseProofRef": { "$ref": "#/$defs/proofRef" },
+            "responseSchemaRef": { "$ref": "#/$defs/schemaRef" },
+            "normalizedErrorCode": { "const": "" }
+          }
+        },
+        {
+          "properties": {
+            "responsePayloadRef": { "type": "null" },
+            "responseProofRef": { "type": "null" },
+            "responseSchemaRef": { "type": "null" },
+            "normalizedErrorCode": { "$ref": "#/$defs/reasonCode" }
+          }
+        }
+      ]
+    },
+    "riskSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sampleCount", "uniqueRequestCount", "duplicateRequestCount",
+        "maximumRequestMultiplicity", "producerKeyCount", "duplicateBasisPoints",
+        "eligibility", "reasons"
+      ],
+      "properties": {
+        "sampleCount": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "uniqueRequestCount": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "duplicateRequestCount": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "maximumRequestMultiplicity": {
+          "type": "integer", "minimum": 1, "maximum": 1000
+        },
+        "producerKeyCount": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "duplicateBasisPoints": {
+          "type": "integer", "minimum": 0, "maximum": 10000
+        },
+        "eligibility": { "enum": ["ELIGIBLE", "BLOCKED"] },
+        "reasons": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "INSUFFICIENT_SAMPLE_COUNT",
+              "EXCESSIVE_SAMPLE_COUNT",
+              "DUPLICATE_REQUEST_RATIO_EXCEEDED",
+              "PRODUCER_DIVERSITY_INSUFFICIENT",
+              "SERVING_HORIZON_INSUFFICIENT"
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "eligibility": { "const": "ELIGIBLE" } },
+            "required": ["eligibility"]
+          },
+          "then": { "properties": { "reasons": { "maxItems": 0 } } },
+          "else": { "properties": { "reasons": { "minItems": 1 } } }
+        }
+      ]
+    }
+  }
+}

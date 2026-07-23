@@ -1,0 +1,254 @@
+{
+  "schemaVersion": "resourceGateway.capabilityCorpusCompatibility.v1",
+  "verificationTime": "2030-01-03T00:02:00Z",
+  "expectedScope": {
+    "tenantId": "tenant-a",
+    "organizationId": "org-support",
+    "projectId": "support-platform",
+    "environmentId": "staging",
+    "region": "sg"
+  },
+  "reviewRequest": {
+    "schemaVersion": "resourceGateway.capabilityObservationReviewRequest.v1",
+    "observationRef": {
+      "kind": "CAPABILITY_OBSERVATION",
+      "id": "support-refund-quarantine-0001",
+      "revision": 1,
+      "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "admissionRef": {
+      "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+      "id": "support-refund-quarantine-0001:admission",
+      "revision": 1,
+      "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "disposition": "PRODUCER_REMEDIATION_REQUIRED",
+    "reviewTicketRef": {
+      "kind": "GOVERNANCE_REVIEW_TICKET",
+      "id": "SEC-2030-0007",
+      "revision": 1,
+      "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "reasonCode": "PRODUCER_SIGNATURE_REMEDIATION"
+  },
+  "review": {
+    "schemaVersion": "resourceGateway.capabilityObservationReview.v1",
+    "reviewFingerprint": "sha256:a806ba586e383f67f4be3163f512ed6c1c3cfdef30569f89f656d8c4ef7e6de6",
+    "sourceCommandFingerprint": "sha256:ed6f7e033376b28545802b119a98a658d709c2c0665599d669c06e7e98b53d11",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-support",
+      "projectId": "support-platform",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "observationRef": {
+      "kind": "CAPABILITY_OBSERVATION",
+      "id": "support-refund-quarantine-0001",
+      "revision": 1,
+      "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "admissionRef": {
+      "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+      "id": "support-refund-quarantine-0001:admission",
+      "revision": 1,
+      "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "disposition": "PRODUCER_REMEDIATION_REQUIRED",
+    "reviewTicketRef": {
+      "kind": "GOVERNANCE_REVIEW_TICKET",
+      "id": "SEC-2030-0007",
+      "revision": 1,
+      "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "reasonCode": "PRODUCER_SIGNATURE_REMEDIATION",
+    "reviewedBy": "support-governance-reviewer",
+    "reviewedAt": "2030-01-03T00:00:00Z"
+  },
+  "candidateRequest": {
+    "schemaVersion": "resourceGateway.capabilityCorpusCandidateRequest.v1",
+    "corpusId": "support-refund-corpus",
+    "revision": 1,
+    "expectedPredecessorRef": null,
+    "capabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "graph:support-refund",
+      "revision": 7,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "sources": [
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-refund-observation-0001",
+          "revision": 1,
+          "fingerprint": "sha256:1f3b78c8cc7112b6cf4f218b2709339c643b9cac4381ff1e3c4115c2083709b0"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-refund-observation-0001:admission",
+          "revision": 1,
+          "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      }
+    ]
+  },
+  "revision": {
+    "schemaVersion": "resourceGateway.capabilityCorpusRevision.v1",
+    "revisionFingerprint": "sha256:5823cbe123386aa74fec0946c31a99aac51860b08275891b5ec2a2c8c96703de",
+    "sourceCommandFingerprint": "sha256:28479fd1243b0f844f360870f6d5a2b2fc615c02200695de72c03aa4a5e720b4",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-support",
+      "projectId": "support-platform",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "corpusId": "support-refund-corpus",
+    "revision": 1,
+    "predecessorRef": null,
+    "capabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "graph:support-refund",
+      "revision": 7,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "governancePolicyRef": {
+      "kind": "CORPUS_GOVERNANCE_POLICY",
+      "id": "support-corpus-policy",
+      "revision": 2,
+      "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    },
+    "sources": [
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-refund-observation-0001",
+          "revision": 1,
+          "fingerprint": "sha256:1f3b78c8cc7112b6cf4f218b2709339c643b9cac4381ff1e3c4115c2083709b0"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-refund-observation-0001:admission",
+          "revision": 1,
+          "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        },
+        "requestPayloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "refund-request-0001",
+          "revision": 1,
+          "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "requestProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "refund-request-0001-proof",
+          "revision": 3,
+          "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "requestSchemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "refund-request-0001-schema",
+          "revision": 5,
+          "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "responsePayloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "refund-response-0001",
+          "revision": 1,
+          "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "responseProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "refund-response-0001-proof",
+          "revision": 3,
+          "fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "responseSchemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "refund-response-0001-schema",
+          "revision": 5,
+          "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "normalizedErrorCode": "",
+        "traceFingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "authorityKeyRef": {
+          "kind": "OBSERVATION_AUTHORITY_KEY",
+          "id": "support-observation-key-2030",
+          "revision": 1,
+          "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "occurredAt": "2030-01-02T03:04:05Z",
+        "usableUntil": "2030-02-01T00:00:00Z"
+      }
+    ],
+    "riskSummary": {
+      "sampleCount": 1,
+      "uniqueRequestCount": 1,
+      "duplicateRequestCount": 0,
+      "maximumRequestMultiplicity": 1,
+      "producerKeyCount": 1,
+      "duplicateBasisPoints": 0,
+      "eligibility": "ELIGIBLE",
+      "reasons": []
+    },
+    "createdBy": "support-corpus-curator",
+    "createdAt": "2030-01-03T00:00:30Z",
+    "usableUntil": "2030-02-01T00:00:00Z"
+  },
+  "publishRequest": {
+    "schemaVersion": "resourceGateway.capabilityCorpusPublishRequest.v1",
+    "corpusId": "support-refund-corpus",
+    "publicationRevision": 1,
+    "expectedPublicationRef": null,
+    "corpusRevisionRef": {
+      "kind": "CAPABILITY_CORPUS_REVISION",
+      "id": "support-refund-corpus",
+      "revision": 1,
+      "fingerprint": "sha256:5823cbe123386aa74fec0946c31a99aac51860b08275891b5ec2a2c8c96703de"
+    },
+    "reviewTicketRef": {
+      "kind": "GOVERNANCE_REVIEW_TICKET",
+      "id": "GOV-2030-0101",
+      "revision": 4,
+      "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    },
+    "reasonCode": "OWNER_APPROVED"
+  },
+  "publication": {
+    "schemaVersion": "resourceGateway.capabilityCorpusPublication.v1",
+    "publicationFingerprint": "sha256:bf53f609cdd9379ee9539c971eecd80126bcc68654a074f266f3fbe1a167b2e3",
+    "sourceCommandFingerprint": "sha256:5f7d3a18df81f3043623035a0dd370cce1141ede05f3737b0409adb2b499c3af",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-support",
+      "projectId": "support-platform",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "corpusId": "support-refund-corpus",
+    "revision": 1,
+    "predecessorRef": null,
+    "corpusRevisionRef": {
+      "kind": "CAPABILITY_CORPUS_REVISION",
+      "id": "support-refund-corpus",
+      "revision": 1,
+      "fingerprint": "sha256:5823cbe123386aa74fec0946c31a99aac51860b08275891b5ec2a2c8c96703de"
+    },
+    "publicationPolicyRef": {
+      "kind": "CORPUS_PUBLICATION_POLICY",
+      "id": "support-publication-policy",
+      "revision": 4,
+      "fingerprint": "sha256:abababababababababababababababababababababababababababababababab"
+    },
+    "reviewTicketRef": {
+      "kind": "GOVERNANCE_REVIEW_TICKET",
+      "id": "GOV-2030-0101",
+      "revision": 4,
+      "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    },
+    "reasonCode": "OWNER_APPROVED",
+    "reviewedBy": "support-corpus-owner",
+    "publishedAt": "2030-01-03T00:01:00Z",
+    "usableUntil": "2030-02-01T00:00:00Z"
+  }
+}

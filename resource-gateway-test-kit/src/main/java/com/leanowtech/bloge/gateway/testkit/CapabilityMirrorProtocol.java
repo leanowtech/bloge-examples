@@ -109,6 +109,27 @@ public final class CapabilityMirrorProtocol {
     /** Fixed observation compatibility-fixture wire version. */
     public static final String CAPABILITY_OBSERVATION_COMPATIBILITY_V1 =
             "resourceGateway.capabilityObservationCompatibility.v1";
+    /** Terminal quarantine-review command wire version. */
+    public static final String CAPABILITY_OBSERVATION_REVIEW_REQUEST_V1 =
+            "resourceGateway.capabilityObservationReviewRequest.v1";
+    /** Immutable terminal quarantine-review wire version. */
+    public static final String CAPABILITY_OBSERVATION_REVIEW_V1 =
+            "resourceGateway.capabilityObservationReview.v1";
+    /** Immutable corpus-candidate command wire version. */
+    public static final String CAPABILITY_CORPUS_CANDIDATE_REQUEST_V1 =
+            "resourceGateway.capabilityCorpusCandidateRequest.v1";
+    /** Immutable payload-free corpus revision wire version. */
+    public static final String CAPABILITY_CORPUS_REVISION_V1 =
+            "resourceGateway.capabilityCorpusRevision.v1";
+    /** Owner-reviewed corpus-publication command wire version. */
+    public static final String CAPABILITY_CORPUS_PUBLISH_REQUEST_V1 =
+            "resourceGateway.capabilityCorpusPublishRequest.v1";
+    /** Immutable serving-publication fact wire version. */
+    public static final String CAPABILITY_CORPUS_PUBLICATION_V1 =
+            "resourceGateway.capabilityCorpusPublication.v1";
+    /** Fixed corpus-governance compatibility-fixture wire version. */
+    public static final String CAPABILITY_CORPUS_COMPATIBILITY_V1 =
+            "resourceGateway.capabilityCorpusCompatibility.v1";
 
     /** Classpath root containing the authoritative mirror schemas and fixtures. */
     public static final String SCHEMA_RESOURCE_ROOT = "/schemas/resource-gateway-mirror/";
@@ -128,6 +149,9 @@ public final class CapabilityMirrorProtocol {
     /** Packaged signed capability-observation compatibility fixture. */
     public static final String CAPABILITY_OBSERVATION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-observation-stage2-v1.fixture.json";
+    /** Packaged payload-free corpus-governance compatibility fixture. */
+    public static final String CAPABILITY_CORPUS_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-corpus-stage2-v1.fixture.json";
     /** Packaged compatibility fixture schema. */
     public static final String COMPATIBILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-mirror-compatibility-v1.schema.json";
@@ -202,6 +226,27 @@ public final class CapabilityMirrorProtocol {
     /** Packaged atomic capability-observation receipt schema. */
     public static final String CAPABILITY_OBSERVATION_RECEIPT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-observation-receipt-v1.schema.json";
+    /** Packaged terminal quarantine-review command schema. */
+    public static final String CAPABILITY_OBSERVATION_REVIEW_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "capability-observation-review-request-v1.schema.json";
+    /** Packaged immutable terminal quarantine-review schema. */
+    public static final String CAPABILITY_OBSERVATION_REVIEW_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-observation-review-v1.schema.json";
+    /** Packaged immutable corpus-candidate command schema. */
+    public static final String CAPABILITY_CORPUS_CANDIDATE_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "capability-corpus-candidate-request-v1.schema.json";
+    /** Packaged immutable payload-free corpus revision schema. */
+    public static final String CAPABILITY_CORPUS_REVISION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-corpus-revision-v1.schema.json";
+    /** Packaged owner-reviewed corpus-publication command schema. */
+    public static final String CAPABILITY_CORPUS_PUBLISH_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "capability-corpus-publish-request-v1.schema.json";
+    /** Packaged immutable serving-publication fact schema. */
+    public static final String CAPABILITY_CORPUS_PUBLICATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-corpus-publication-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -278,6 +323,22 @@ public final class CapabilityMirrorProtocol {
     public static CapabilityObservationCompatibilityFixture
             capabilityObservationCompatibilityFixture() {
         return ObservationFixtureHolder.FIXTURE.detachedCopy();
+    }
+
+    /**
+     * Returns the fixed independently verified corpus-governance fixture.
+     *
+     * <p>The fixture proves strict-schema loading, canonical command and artifact fingerprints,
+     * complete-scope closure, command-to-fact binding, policy-independent risk statistics,
+     * lineage, and use horizons without linking Resource Gateway or contacting payload and policy
+     * authorities.</p>
+     *
+     * @return detached payload-free review, candidate, and publication lifecycle
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static CapabilityCorpusCompatibilityFixture
+            capabilityCorpusCompatibilityFixture() {
+        return CorpusFixtureHolder.FIXTURE.detachedCopy();
     }
 
     private static final class BaselineHolder {
@@ -387,6 +448,57 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.OBSERVATION_FIXTURE_UNAVAILABLE");
+            }
+        }
+
+        private static Set<String> fieldNames(JsonNode value) {
+            java.util.HashSet<String> names = new java.util.HashSet<>();
+            value.fieldNames().forEachRemaining(names::add);
+            return Set.copyOf(names);
+        }
+    }
+
+    private static final class CorpusFixtureHolder {
+        private static final CapabilityCorpusCompatibilityFixture FIXTURE = load();
+
+        private static CapabilityCorpusCompatibilityFixture load() {
+            try (InputStream input = CapabilityMirrorProtocol.class.getResourceAsStream(
+                    CAPABILITY_CORPUS_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException(
+                            "Capability corpus fixture is absent");
+                }
+                JsonNode value = JSON.readTree(input);
+                if (!value.isObject() || value.size() != 9
+                        || !Set.of(
+                        "schemaVersion",
+                        "verificationTime",
+                        "expectedScope",
+                        "reviewRequest",
+                        "review",
+                        "candidateRequest",
+                        "revision",
+                        "publishRequest",
+                        "publication").equals(fieldNames(value))
+                        || !CAPABILITY_CORPUS_COMPATIBILITY_V1.equals(
+                        value.path("schemaVersion").asText())) {
+                    throw new IOException(
+                            "Capability corpus fixture envelope is invalid");
+                }
+                CapabilityCorpusCompatibilityFixture fixture =
+                        CapabilityCorpusCompatibilityFixture.from(value);
+                CapabilityCorpusVerifier.VerificationResult result =
+                        new CapabilityCorpusVerifier().verify(fixture);
+                if (!result.verified()) {
+                    throw new IOException(
+                            "Capability corpus fixture verification failed: "
+                                    + result.reasonCode());
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.CORPUS_FIXTURE_UNAVAILABLE",
+                        failure);
             }
         }
 
