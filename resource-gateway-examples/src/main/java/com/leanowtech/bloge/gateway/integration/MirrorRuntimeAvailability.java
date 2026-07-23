@@ -23,6 +23,8 @@ public final class MirrorRuntimeAvailability {
     private final BooleanSupplier observationAdmissionReadiness;
     private final boolean corpusGovernanceApi;
     private final BooleanSupplier corpusGovernanceReadiness;
+    private final boolean corpusTrajectoryApi;
+    private final BooleanSupplier corpusTrajectoryReadiness;
     private final BooleanSupplier corpusResolverReadiness;
 
     /**
@@ -227,6 +229,50 @@ public final class MirrorRuntimeAvailability {
             boolean corpusGovernanceApi,
             BooleanSupplier corpusGovernanceReadiness,
             BooleanSupplier corpusResolverReadiness) {
+        this(planCompilationApi, executionApi, executionReadiness,
+                authorityDistributionApi, authorityDistributionReadiness,
+                attestationDistributionApi, attestationDistributionReadiness,
+                certificationReadiness, observationAdmissionApi,
+                observationAdmissionReadiness, corpusGovernanceApi,
+                corpusGovernanceReadiness, false, () -> false,
+                corpusResolverReadiness);
+    }
+
+    /**
+     * Creates a marker with independent trajectory-publication API and authority readiness.
+     *
+     * @param planCompilationApi plan routes are assembled
+     * @param executionApi execution routes are assembled
+     * @param executionReadiness dynamic execution readiness
+     * @param authorityDistributionApi authority routes are assembled
+     * @param authorityDistributionReadiness dynamic authority readiness
+     * @param attestationDistributionApi attestation routes are assembled
+     * @param attestationDistributionReadiness dynamic attestation readiness
+     * @param certificationReadiness dynamic certification readiness
+     * @param observationAdmissionApi observation route is assembled
+     * @param observationAdmissionReadiness dynamic observation readiness
+     * @param corpusGovernanceApi corpus review/candidate/publication routes are assembled
+     * @param corpusGovernanceReadiness dynamic corpus governance readiness
+     * @param corpusTrajectoryApi recorded-trajectory publication route is assembled
+     * @param corpusTrajectoryReadiness dynamic corpus/retry/source authority readiness
+     * @param corpusResolverReadiness dynamic exact corpus resolver readiness
+     */
+    public MirrorRuntimeAvailability(
+            boolean planCompilationApi,
+            boolean executionApi,
+            BooleanSupplier executionReadiness,
+            boolean authorityDistributionApi,
+            BooleanSupplier authorityDistributionReadiness,
+            boolean attestationDistributionApi,
+            BooleanSupplier attestationDistributionReadiness,
+            BooleanSupplier certificationReadiness,
+            boolean observationAdmissionApi,
+            BooleanSupplier observationAdmissionReadiness,
+            boolean corpusGovernanceApi,
+            BooleanSupplier corpusGovernanceReadiness,
+            boolean corpusTrajectoryApi,
+            BooleanSupplier corpusTrajectoryReadiness,
+            BooleanSupplier corpusResolverReadiness) {
         this.planCompilationApi = planCompilationApi;
         this.executionApi = executionApi;
         this.executionReadiness = Objects.requireNonNull(
@@ -245,6 +291,9 @@ public final class MirrorRuntimeAvailability {
         this.corpusGovernanceApi = corpusGovernanceApi;
         this.corpusGovernanceReadiness = Objects.requireNonNull(
                 corpusGovernanceReadiness, "corpusGovernanceReadiness");
+        this.corpusTrajectoryApi = corpusTrajectoryApi;
+        this.corpusTrajectoryReadiness = Objects.requireNonNull(
+                corpusTrajectoryReadiness, "corpusTrajectoryReadiness");
         this.corpusResolverReadiness = Objects.requireNonNull(
                 corpusResolverReadiness, "corpusResolverReadiness");
     }
@@ -394,6 +443,31 @@ public final class MirrorRuntimeAvailability {
         }
         try {
             return corpusGovernanceReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
+     * Reports protected recorded-trajectory publication route assembly.
+     *
+     * @return whether trajectory governance is physically assembled
+     */
+    public boolean corpusTrajectoryApi() {
+        return corpusTrajectoryApi;
+    }
+
+    /**
+     * Probes current corpus, retry, and source authorities for trajectory publication.
+     *
+     * @return whether the assembled route can publish a governed trajectory now
+     */
+    public boolean corpusTrajectoryReady() {
+        if (!corpusTrajectoryApi) {
+            return false;
+        }
+        try {
+            return corpusTrajectoryReadiness.getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

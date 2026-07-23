@@ -331,6 +331,12 @@ public record IntegrationCapabilities(
         objects.put("capabilityCorpusPublication", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .CapabilityCorpusPublication.SCHEMA_VERSION));
+        objects.put("capabilityCorpusTrajectoryPublishRequest", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityCorpusTrajectoryPublishRequest.SCHEMA_VERSION));
+        objects.put("capabilityCorpusTrajectoryPublication", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityCorpusTrajectoryPublication.SCHEMA_VERSION));
         objects.put("fixtureMirrorCorpusBindings", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .FixtureMirrorCorpusBindings.SCHEMA_VERSION));
@@ -782,8 +788,11 @@ public record IntegrationCapabilities(
         features.put("mirrorObservationAdmissionReady", false);
         features.put("mirrorCorpusGovernanceProtocol", true);
         features.put("mirrorCorpusExactResolverProtocol", true);
+        features.put("mirrorCorpusTrajectoryPublicationProtocol", true);
         features.put("mirrorCorpusGovernanceApi", false);
         features.put("mirrorCorpusGovernanceReady", false);
+        features.put("mirrorCorpusTrajectoryPublicationApi", false);
+        features.put("mirrorCorpusTrajectoryPublicationReady", false);
         features.put("mirrorCorpusResolverReady", false);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);

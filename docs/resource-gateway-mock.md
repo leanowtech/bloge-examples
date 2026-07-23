@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication 和 test/staging `RECORDED_EXACT` serving kernel 三个纵切；生产 payload authority、trajectory/stateful/cluster resolver、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication、test/staging `RECORDED_EXACT` serving kernel 和 explicit owner-reviewed retry trajectory publication 四个纵切；生产 payload authority、trajectory runtime serving、stateful/cluster resolver、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -373,6 +373,18 @@
   `4698` 项测试零失败、零错误（另有 3 项条件跳过），独立 test-kit `289/289` 全绿；真实 Chrome、前端脚本、
   可执行 Boot JAR、Schema packaging、shaded CLI 与公共 JavaDoc 同时验证。该 kernel 仍不等于生产 vault、
   删除证明、trajectory/stateful/cluster 拟合或认证级客户环境。
+- Stage 2 第四增量已根治“根据时间邻近猜测 retry grouping”的不可靠做法。owner 必须通过
+  `POST /api/mirror/corpus-trajectories` 显式提交 2..32 个 consecutive observation/admission source，并绑定 exact
+  current corpus publication 与 current operator-owned retry policy。服务端重新证明 corpus membership、共同 request
+  fingerprint、同 trace/唯一 span/递增 sequence 与时间、`EXACT_REPLAY + TRAJECTORY_MODELING` grant、source lifecycle、
+  policy-permitted retryable intermediate errors 和 terminal final attempt，再将 payload-free trajectory 追加到独立
+  full-scope lineage；exact retry 在 mutable authority 查询前恢复。默认 retry policy provider unavailable。
+  capability probe 独立公开 trajectory protocol/API/readiness；strict command/fact Schema 与独立 test-kit verifier
+  会重算四个 content address 和 corpus membership，并明确保留在线策略、outcome、trace、grant、retention、
+  tombstone、payload authority 限制。该增量完成的是 governance publication，不代表 fixture binding、generation
+  materialization 或 `RECORDED_TRAJECTORY` runtime resolver 已接线。Resource Gateway 干净全量门禁
+  `4712` 项测试零失败、零错误（另有 3 项条件跳过），独立 test-kit `292/292` 全绿；真实浏览器、
+  可执行 Boot JAR、strict Schema packaging、shaded CLI 和公共 JavaDoc 同时验证。
 
 ---
 
@@ -463,7 +475,7 @@ Resource Gateway 已有的工业底座应直接复用：
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
 | Evidence/Replay | 90% | payload-free signed mirror evidence、deployment trust 双重绑定和独立复验已落地；缺业务 state trace、fidelity observation 聚合和 outcome lineage |
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
-| 日志蒸馏与语料 | 55% | payload-free signed observation、准入/隔离、immutable review、candidate/publication 双 lineage、元数据风险门禁、fixture exact binding、在线 revalidation、test/staging `RECORDED_EXACT` 与独立 verifier 已落地；缺生产 payload authority、trajectory/stateful/cluster resolver、漂移、偏差、outcome 校准和删除证明 |
+| 日志蒸馏与语料 | 60% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory 独立 lineage、元数据风险门禁、fixture exact binding、在线 revalidation、test/staging `RECORDED_EXACT`、显式 retry trajectory publication 与独立 verifier 已落地；缺生产 payload authority、trajectory runtime serving、stateful/cluster resolver、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 5% | 执行 checkpoint 不等于业务实体与事务状态模型 |
 | Scenario/Rehearsal | 10% | 缺场景、写效果、处置断言和状态演练协议 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
@@ -1132,6 +1144,7 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/observations/{observationId}/reviews` | 追加一次 terminal quarantine review，不改写 admission | observation + exact command fingerprint 幂等 | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；默认 policy 未就绪） |
 | `POST /api/mirror/corpus-candidates` | 冻结 exact admitted sources 并计算 non-serving metadata risk | full scope + corpusId + revision + command fingerprint；predecessor fence | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；默认 policy/source authority 未就绪） |
 | `POST /api/mirror/corpus-publications` | owner-reviewed 发布当前 eligible candidate | 独立 publication revision + predecessor fence + exact command fingerprint | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；resolver 未接线） |
+| `POST /api/mirror/corpus-trajectories` | 显式发布 current corpus 中 owner-reviewed retry attempt sequence | full scope + trajectory revision/predecessor + command fingerprint；exact retry 先恢复 | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；runtime resolver 未接线） |
 | `POST /api/mirror/shadow-jobs` | 提交 shadow comparison | job fingerprint 幂等 | 待实现 |
 | `GET /api/mirror/fidelity/domains/{domainId}` | 查询 fidelity profile | 只读 | 待实现 |
 | `POST /api/mirror/outcomes` | 回填 outcome | outcome identity 幂等 | 待实现 |
@@ -1373,14 +1386,17 @@ effect unknown 和递归环会失败关闭；旧协议无破坏。
 
 ### Stage 2：受治理语料，4 个 sprint，P0/P1
 
-**当前状态**：前三个纵切已完成。第一纵切冻结签名 payload-free observation、operator-owned admission policy、
+**当前状态**：前四个纵切已完成。第一纵切冻结签名 payload-free observation、operator-owned admission policy、
 external payload-reference verification SPI、admitted/quarantined 终态、full-scope append-only store、受保护 API、
 honest capability probe、mandatory audit 原子性和独立 test-kit verifier。第二纵切完成 terminal quarantine review、
 non-serving corpus candidate、policy-independent risk statistics、owner-reviewed serving publication、candidate/publication
 双 lineage、每 source 二次 external verification、strict Schema 与固定兼容样本。第三纵切完成 immutable fixture
 publication binding、latest-head/current-policy/source/grant/retention/tombstone 在线复验、外部 payload authority SPI、
 content-addressed in-memory generation、`RECORDED_EXACT` resolver、固定 precedence、payload-free provenance/evidence、
-honest readiness 和独立 binding verifier。尚未完成生产 payload vault/authority、trajectory/stateful/cluster resolver、
+honest readiness 和独立 binding verifier。第四纵切完成 explicit owner-reviewed retry attempt selection、current
+retry-policy authority、independent trajectory publication lineage、strict Schema、API/readiness 与 offline verifier，
+但尚未接入 fixture/generation/runtime。尚未完成生产 payload vault/authority、trajectory runtime serving、
+stateful/cluster resolver、
 poisoning/drift/bias、retention/deletion proof、outcome calibration 和多副本 serving generation 运维，因此 Stage 2
 仍不能标记完成。
 

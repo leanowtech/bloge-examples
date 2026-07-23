@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -123,11 +124,95 @@ class CapabilityCorpusGovernanceTransactionTest {
         }
     }
 
+    @Test
+    void mandatoryAuditFailureRollsBackTrajectoryPublication() {
+        try (var context = context()) {
+            ObjectMapper mapper = context.getBean(ObjectMapper.class);
+            CapabilityObservationRepository observations =
+                    context.getBean(CapabilityObservationRepository.class);
+            CapabilitySnapshot.Scope scope =
+                    CapabilityObservationTestFixtures.scope("org-a");
+            CapabilitySnapshot capability =
+                    CapabilityObservationTestFixtures.capability(mapper, scope);
+            InMemoryVisualEvidenceSigner signer =
+                    new InMemoryVisualEvidenceSigner();
+            java.time.Instant occurredAt =
+                    java.time.Instant.now().minusSeconds(5);
+            CapabilityObservationRepository.StoredObservation first =
+                    CapabilityCorpusTestFixtures.trajectoryObservation(
+                            mapper,
+                            signer,
+                            capability,
+                            "transaction-attempt-1",
+                            occurredAt,
+                            1,
+                            true,
+                            true);
+            CapabilityObservationRepository.StoredObservation second =
+                    CapabilityCorpusTestFixtures.trajectoryObservation(
+                            mapper,
+                            signer,
+                            capability,
+                            "transaction-attempt-2",
+                            occurredAt.plusMillis(100),
+                            2,
+                            false,
+                            true);
+            observations.append(first);
+            observations.append(second);
+            CapabilityCorpusRevision revision =
+                    CapabilityCorpusTestFixtures.revision(
+                            mapper,
+                            List.of(first, second),
+                            "transaction-trajectory-corpus",
+                            java.time.Instant.now().minusSeconds(2));
+            CapabilityCorpusPublication publication =
+                    CapabilityCorpusTestFixtures.publication(
+                            mapper,
+                            revision,
+                            1,
+                            null,
+                            java.time.Instant.now().minusSeconds(1));
+            CapabilityCorpusRepository corpora =
+                    context.getBean(CapabilityCorpusRepository.class);
+            corpora.appendRevision(revision);
+            corpora.appendPublication(publication);
+            MirrorArtifactRef retryPolicyRef =
+                    CapabilityObservationTestFixtures.ref(
+                            "RETRY_POLICY",
+                            "transaction-retry-policy",
+                            1,
+                            '7');
+            CapabilityCorpusTrajectoryPublishRequest request =
+                    CapabilityCorpusTestFixtures.trajectoryRequest(
+                            publication,
+                            List.of(first, second),
+                            retryPolicyRef);
+
+            assertAuditFailure(() -> context.getBean(
+                    CapabilityCorpusTrajectoryGovernanceService.class).publish(
+                    request, identity(Set.of("corpus-publishers"))));
+
+            JdbcTemplate jdbc = context.getBean(JdbcTemplate.class);
+            assertThat(count(
+                    jdbc,
+                    "mirror_capability_corpus_trajectories")).isZero();
+            assertThat(count(
+                    jdbc,
+                    "mirror_capability_corpus_publications")).isOne();
+            assertThat(count(
+                    jdbc,
+                    "mirror_capability_corpus_revisions")).isOne();
+        }
+    }
+
     private static AnnotationConfigApplicationContext context() {
         var context = new AnnotationConfigApplicationContext(
                 ConfigurationUnderTest.class);
         assertThat(AopUtils.isAopProxy(context.getBean(
                 CapabilityCorpusGovernanceService.class))).isTrue();
+        assertThat(AopUtils.isAopProxy(context.getBean(
+                CapabilityCorpusTrajectoryGovernanceService.class))).isTrue();
         return context;
     }
 
@@ -226,6 +311,15 @@ class CapabilityCorpusGovernanceTransactionTest {
         }
 
         @Bean
+        CapabilityCorpusTrajectoryRepository trajectories(
+                JdbcTemplate jdbc,
+                ObjectMapper mapper,
+                CapabilityCorpusIntegrity integrity) {
+            return new DatabaseCapabilityCorpusTrajectoryRepository(
+                    jdbc, mapper, integrity);
+        }
+
+        @Bean
         CapabilityCorpusGovernancePolicyProvider policies() {
             return new CapabilityCorpusGovernancePolicyProvider() {
                 @Override
@@ -281,6 +375,33 @@ class CapabilityCorpusGovernanceTransactionTest {
         }
 
         @Bean
+        CapabilityRetryPolicyProvider retryPolicies() {
+            return new CapabilityRetryPolicyProvider() {
+                @Override
+                public boolean available() {
+                    return true;
+                }
+
+                @Override
+                public Optional<RetryPolicy> resolve(
+                        CapabilitySnapshot.Scope scope,
+                        MirrorArtifactRef capabilityRef) {
+                    return Optional.of(new RetryPolicy(
+                            scope,
+                            capabilityRef,
+                            CapabilityObservationTestFixtures.ref(
+                                    "RETRY_POLICY",
+                                    "transaction-retry-policy",
+                                    1,
+                                    '7'),
+                            3,
+                            Set.of("TRANSIENT_UPSTREAM"),
+                            Set.of("UPSTREAM_TIMEOUT")));
+                }
+            };
+        }
+
+        @Bean
         MirrorOperationAuditRepository failingAudit() {
             return new MirrorOperationAuditRepository() {
                 @Override
@@ -319,6 +440,28 @@ class CapabilityCorpusGovernanceTransactionTest {
                     reviews,
                     corpora,
                     policies,
+                    sourceVerifier,
+                    integrity,
+                    observability,
+                    Clock.systemUTC());
+        }
+
+        @Bean
+        CapabilityCorpusTrajectoryGovernanceService trajectoryService(
+                CapabilityObservationRepository observations,
+                CapabilityCorpusRepository corpora,
+                CapabilityCorpusTrajectoryRepository trajectories,
+                CapabilityCorpusGovernancePolicyProvider policies,
+                CapabilityRetryPolicyProvider retryPolicies,
+                CapabilityCorpusSourceVerifier sourceVerifier,
+                CapabilityCorpusIntegrity integrity,
+                MirrorOperationObservability observability) {
+            return new CapabilityCorpusTrajectoryGovernanceService(
+                    observations,
+                    corpora,
+                    trajectories,
+                    policies,
+                    retryPolicies,
                     sourceVerifier,
                     integrity,
                     observability,

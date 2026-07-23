@@ -209,6 +209,24 @@ that the actor remains authorized, that the publication is the current server he
 resolver consumes it. Those remain online governance checks. See the
 [Capability Corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
 
+Owner-reviewed retry trajectories have a separate offline verifier:
+
+```java
+CapabilityCorpusTrajectoryVerifier.VerificationResult trajectory =
+        new CapabilityCorpusTrajectoryVerifier().verify(
+                trajectoryCommand,
+                trajectoryPublication,
+                corpusPublication,
+                corpusRevision,
+                verificationTime);
+```
+
+It closes the four strict command/publication/corpus schemas, re-derives every content address,
+binds the exact corpus publication and revision, and proves consecutive attempt membership plus a
+common request fingerprint. A verified result deliberately retains online limitations for current
+retry policy, normalized outcomes, trace ordering, grants, retention, tombstones, and payload
+authority; offline structure is not runtime readiness.
+
 Validate a fixture's payload-free exact publication selection before registration:
 
 ```java

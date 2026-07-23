@@ -127,6 +127,12 @@ public final class CapabilityMirrorProtocol {
     /** Immutable serving-publication fact wire version. */
     public static final String CAPABILITY_CORPUS_PUBLICATION_V1 =
             "resourceGateway.capabilityCorpusPublication.v1";
+    /** Owner-reviewed recorded-trajectory command wire version. */
+    public static final String CAPABILITY_CORPUS_TRAJECTORY_PUBLISH_REQUEST_V1 =
+            "resourceGateway.capabilityCorpusTrajectoryPublishRequest.v1";
+    /** Immutable recorded-trajectory publication wire version. */
+    public static final String CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION_V1 =
+            "resourceGateway.capabilityCorpusTrajectoryPublication.v1";
     /** Fixed corpus-governance compatibility-fixture wire version. */
     public static final String CAPABILITY_CORPUS_COMPATIBILITY_V1 =
             "resourceGateway.capabilityCorpusCompatibility.v1";
@@ -254,6 +260,16 @@ public final class CapabilityMirrorProtocol {
     /** Packaged immutable serving-publication fact schema. */
     public static final String CAPABILITY_CORPUS_PUBLICATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-corpus-publication-v1.schema.json";
+    /** Packaged owner-reviewed recorded-trajectory command schema. */
+    public static final String
+    CAPABILITY_CORPUS_TRAJECTORY_PUBLISH_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "capability-corpus-trajectory-publish-request-v1.schema.json";
+    /** Packaged immutable recorded-trajectory publication schema. */
+    public static final String
+    CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "capability-corpus-trajectory-publication-v1.schema.json";
     /** Packaged strict fixture-level corpus-binding schema. */
     public static final String FIXTURE_MIRROR_CORPUS_BINDINGS_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

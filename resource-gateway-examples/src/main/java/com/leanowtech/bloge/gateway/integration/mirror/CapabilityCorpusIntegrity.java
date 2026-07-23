@@ -242,6 +242,87 @@ public final class CapabilityCorpusIntegrity {
         }
     }
 
+    /**
+     * Computes the canonical trajectory-publication command identity.
+     *
+     * @param request exact owner-reviewed trajectory command
+     * @return canonical SHA-256 fingerprint
+     */
+    public String trajectoryCommandFingerprint(
+            CapabilityCorpusTrajectoryPublishRequest request) {
+        return fingerprint(Objects.requireNonNull(request, "request"));
+    }
+
+    /**
+     * Seals one immutable trajectory publication.
+     *
+     * @param candidate publication carrying a placeholder fingerprint
+     * @return content-addressed trajectory publication
+     */
+    public CapabilityCorpusTrajectoryPublication sealTrajectory(
+            CapabilityCorpusTrajectoryPublication candidate) {
+        CapabilityCorpusTrajectoryPublication exact =
+                Objects.requireNonNull(candidate, "candidate");
+        CapabilityCorpusTrajectoryPublication blank =
+                new CapabilityCorpusTrajectoryPublication(
+                        exact.schemaVersion(),
+                        ZERO_FINGERPRINT,
+                        exact.sourceCommandFingerprint(),
+                        exact.scope(),
+                        exact.trajectoryId(),
+                        exact.revision(),
+                        exact.predecessorRef(),
+                        exact.capabilityRef(),
+                        exact.corpusPublicationRef(),
+                        exact.corpusRevisionRef(),
+                        exact.publicationPolicyRef(),
+                        exact.retryPolicyRef(),
+                        exact.requestFingerprint(),
+                        exact.attempts(),
+                        exact.reviewTicketRef(),
+                        exact.reasonCode(),
+                        exact.reviewedBy(),
+                        exact.publishedAt(),
+                        exact.usableUntil());
+        return new CapabilityCorpusTrajectoryPublication(
+                blank.schemaVersion(),
+                fingerprint(blank),
+                blank.sourceCommandFingerprint(),
+                blank.scope(),
+                blank.trajectoryId(),
+                blank.revision(),
+                blank.predecessorRef(),
+                blank.capabilityRef(),
+                blank.corpusPublicationRef(),
+                blank.corpusRevisionRef(),
+                blank.publicationPolicyRef(),
+                blank.retryPolicyRef(),
+                blank.requestFingerprint(),
+                blank.attempts(),
+                blank.reviewTicketRef(),
+                blank.reasonCode(),
+                blank.reviewedBy(),
+                blank.publishedAt(),
+                blank.usableUntil());
+    }
+
+    /**
+     * Verifies a persisted trajectory publication fingerprint.
+     *
+     * @param publication untrusted trajectory publication
+     * @return true only for exact canonical content
+     */
+    public boolean trajectoryVerified(
+            CapabilityCorpusTrajectoryPublication publication) {
+        try {
+            return publication != null
+                    && publication.trajectoryFingerprint().equals(
+                    sealTrajectory(publication).trajectoryFingerprint());
+        } catch (RuntimeException invalid) {
+            return false;
+        }
+    }
+
     private String fingerprint(Object value) {
         return VisualBundleFingerprint.fromCanonicalValue(
                 mapper, value, MAXIMUM_CANONICAL_BYTES);

@@ -403,6 +403,10 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.corpusGovernanceApi());
         features.put("mirrorCorpusGovernanceReady",
                 mirrorRuntimeAvailability.corpusGovernanceReady());
+        features.put("mirrorCorpusTrajectoryPublicationApi",
+                mirrorRuntimeAvailability.corpusTrajectoryApi());
+        features.put("mirrorCorpusTrajectoryPublicationReady",
+                mirrorRuntimeAvailability.corpusTrajectoryReady());
         features.put("mirrorCorpusResolverReady",
                 mirrorRuntimeAvailability.corpusResolverReady());
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
@@ -805,6 +809,10 @@ public class ToolStudioIntegrationService {
                     "POST", "/api/mirror/corpus-candidates"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/mirror/corpus-publications"));
+        }
+        if (mirrorRuntimeAvailability.corpusTrajectoryApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/corpus-trajectories"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

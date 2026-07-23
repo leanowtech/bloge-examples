@@ -50,6 +50,8 @@ class CapabilityMirrorSchemaPackagingTest {
                 "capability-corpus-revision-v1.schema.json",
                 "capability-corpus-publish-request-v1.schema.json",
                 "capability-corpus-publication-v1.schema.json",
+                "capability-corpus-trajectory-publish-request-v1.schema.json",
+                "capability-corpus-trajectory-publication-v1.schema.json",
                 "fixture-mirror-corpus-bindings-v1.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
@@ -103,6 +105,14 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .CAPABILITY_CORPUS_PUBLICATION_SCHEMA_RESOURCE)
                 .endsWith("capability-corpus-publication-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_TRAJECTORY_PUBLISH_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "capability-corpus-trajectory-publish-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION_SCHEMA_RESOURCE)
+                .endsWith(
+                        "capability-corpus-trajectory-publication-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .FIXTURE_MIRROR_CORPUS_BINDINGS_SCHEMA_RESOURCE)
                 .endsWith("fixture-mirror-corpus-bindings-v1.schema.json");

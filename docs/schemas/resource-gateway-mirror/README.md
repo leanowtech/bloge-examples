@@ -40,6 +40,8 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-corpus-revision-v1.schema.json` | `CapabilityCorpusRevision` | Non-serving payload-free source snapshot with deterministic metadata risk |
 | `capability-corpus-publish-request-v1.schema.json` | `CapabilityCorpusPublishRequest` | Owner-reviewed publication command with independent lineage fencing |
 | `capability-corpus-publication-v1.schema.json` | `CapabilityCorpusPublication` | Immutable serving-publication fact for one exact eligible candidate |
+| `capability-corpus-trajectory-publish-request-v1.schema.json` | `CapabilityCorpusTrajectoryPublishRequest` | Explicit owner-reviewed retry sequence bound to exact published sources and current retry policy |
+| `capability-corpus-trajectory-publication-v1.schema.json` | `CapabilityCorpusTrajectoryPublication` | Immutable payload-free serving artifact for one governed recorded retry trajectory |
 | `fixture-mirror-corpus-bindings-v1.schema.json` | `FixtureMirrorCorpusBindings` | Strict immutable fixture metadata selecting one exact latest publication per external capability |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
@@ -103,6 +105,14 @@ unknown fields, wrong artifact kinds, duplicate capability/publication coordinat
 non-canonical capability order. A successful offline result proves only structural compatibility;
 latest-head status, current policy, grant, retention, tombstone, payload bytes, and runtime
 readiness are online authority decisions.
+
+The trajectory command and publication schemas freeze an explicit owner-reviewed sequence rather
+than allowing consumers to infer retries from observation proximity. The independent
+`CapabilityCorpusTrajectoryVerifier` recomputes command/publication and referenced corpus
+content addresses, exact source membership, consecutive numbering, common request fingerprint,
+lineage, and horizons. Current retry policy, retryable outcomes, trace ordering, grants,
+retention, tombstones, and payload bytes remain online authority decisions. Runtime
+`RECORDED_TRAJECTORY` serving is not implied by publication protocol support.
 
 ## Deployment isolation attestation boundary
 

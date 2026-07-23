@@ -31,7 +31,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepo
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernancePolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusTrajectoryRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusSourceVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityRetryPolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationReviewRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
@@ -200,7 +202,13 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 CapabilityCorpusRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                CapabilityCorpusTrajectoryRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
                 CapabilityCorpusGovernancePolicyProvider.class).values())
+                .singleElement()
+                .satisfies(provider -> assertThat(provider.available()).isFalse());
+        assertThat(context.getBeansOfType(
+                CapabilityRetryPolicyProvider.class).values())
                 .singleElement()
                 .satisfies(provider -> assertThat(provider.available()).isFalse());
         assertThat(context.getBeansOfType(
@@ -218,6 +226,8 @@ class MirrorRuntimeConfigurationTest {
                 .isTrue();
         assertThat(AopUtils.isCglibProxy(
                 context.getBean(CapabilityCorpusRepository.class))).isTrue();
+        assertThat(AopUtils.isCglibProxy(context.getBean(
+                CapabilityCorpusTrajectoryRepository.class))).isTrue();
         assertThat(context.getBean(MirrorRunService.class).engineConfiguration())
                 .satisfies(configuration -> {
                     assertThat(configuration.interceptorTypes()).isEmpty();
@@ -273,7 +283,11 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 CapabilityCorpusRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(
+                CapabilityCorpusTrajectoryRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
                 CapabilityCorpusGovernancePolicyProvider.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                CapabilityRetryPolicyProvider.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 CapabilityCorpusSourceVerifier.class)).isEmpty();
     }

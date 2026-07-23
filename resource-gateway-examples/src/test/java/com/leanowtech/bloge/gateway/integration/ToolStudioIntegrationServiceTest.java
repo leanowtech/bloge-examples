@@ -161,8 +161,14 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorObservationAdmissionApi", false)
                 .containsEntry("mirrorObservationAdmissionReady", false)
                 .containsEntry("mirrorCorpusGovernanceProtocol", true)
+                .containsEntry(
+                        "mirrorCorpusTrajectoryPublicationProtocol", true)
                 .containsEntry("mirrorCorpusGovernanceApi", false)
                 .containsEntry("mirrorCorpusGovernanceReady", false)
+                .containsEntry(
+                        "mirrorCorpusTrajectoryPublicationApi", false)
+                .containsEntry(
+                        "mirrorCorpusTrajectoryPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("structuredExecutionFacts", true)
@@ -464,14 +470,18 @@ class ToolStudioIntegrationServiceTest {
                 new java.util.concurrent.atomic.AtomicBoolean(false);
         java.util.concurrent.atomic.AtomicBoolean resolverReady =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean trajectoryReady =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
         service.configureMirrorRuntime(new MirrorRuntimeAvailability(
                 true, true, () -> true, true, () -> true,
                 true, () -> true, () -> true,
                 true, () -> true, true, governanceReady::get,
+                true, trajectoryReady::get,
                 resolverReady::get));
 
         IntegrationCapabilities unavailable = service.capabilities().payload();
         governanceReady.set(true);
+        trajectoryReady.set(true);
         IntegrationCapabilities governanceAvailable =
                 service.capabilities().payload();
         resolverReady.set(true);
@@ -480,8 +490,14 @@ class ToolStudioIntegrationServiceTest {
         assertThat(unavailable.features())
                 .containsEntry("mirrorCorpusGovernanceProtocol", true)
                 .containsEntry("mirrorCorpusExactResolverProtocol", true)
+                .containsEntry(
+                        "mirrorCorpusTrajectoryPublicationProtocol", true)
                 .containsEntry("mirrorCorpusGovernanceApi", true)
                 .containsEntry("mirrorCorpusGovernanceReady", false)
+                .containsEntry(
+                        "mirrorCorpusTrajectoryPublicationApi", true)
+                .containsEntry(
+                        "mirrorCorpusTrajectoryPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false);
         assertThat(unavailable.supportedObjects())
                 .containsKeys(
@@ -491,16 +507,21 @@ class ToolStudioIntegrationServiceTest {
                         "capabilityCorpusRevision",
                         "capabilityCorpusPublishRequest",
                         "capabilityCorpusPublication",
+                        "capabilityCorpusTrajectoryPublishRequest",
+                        "capabilityCorpusTrajectoryPublication",
                         "fixtureMirrorCorpusBindings");
         assertThat(unavailable.endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .contains(
                         "POST /api/mirror/observations/{observationId}/reviews",
                         "POST /api/mirror/corpus-candidates",
-                        "POST /api/mirror/corpus-publications");
+                        "POST /api/mirror/corpus-publications",
+                        "POST /api/mirror/corpus-trajectories");
         assertThat(governanceAvailable.features())
                 .containsEntry("mirrorCorpusGovernanceApi", true)
                 .containsEntry("mirrorCorpusGovernanceReady", true)
+                .containsEntry(
+                        "mirrorCorpusTrajectoryPublicationReady", true)
                 .containsEntry("mirrorCorpusResolverReady", false);
         assertThat(fullyAvailable.features())
                 .containsEntry("mirrorCorpusGovernanceReady", true)

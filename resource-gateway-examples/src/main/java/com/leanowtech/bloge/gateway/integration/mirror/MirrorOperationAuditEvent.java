@@ -82,7 +82,9 @@ public record MirrorOperationAuditEvent(
         /** Freeze admitted observations into an immutable corpus revision candidate. */
         CORPUS_CANDIDATE_CREATE,
         /** Publish one exact reviewed corpus revision as the serving head. */
-        CORPUS_PUBLISH
+        CORPUS_PUBLISH,
+        /** Publish one exact owner-reviewed recorded retry trajectory. */
+        CORPUS_TRAJECTORY_PUBLISH
     }
 
     /** Terminal operation outcomes. */

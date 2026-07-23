@@ -94,6 +94,100 @@ final class CapabilityCorpusTestFixtures {
                 envelope, admission);
     }
 
+    static CapabilityObservationRepository.StoredObservation trajectoryObservation(
+            ObjectMapper mapper,
+            InMemoryVisualEvidenceSigner signer,
+            CapabilitySnapshot capability,
+            String observationId,
+            Instant occurredAt,
+            long sequence,
+            boolean retryableError,
+            boolean trajectoryUse) {
+        CapabilityObservationEnvelope.DataUseGrant grant =
+                new CapabilityObservationEnvelope.DataUseGrant(
+                        CapabilityObservationTestFixtures.ref(
+                                "DATA_USE_GRANT", "grant-trajectory", 1, '9'),
+                        CapabilityObservationAdmissionService.AUTHORIZED_PURPOSE,
+                        trajectoryUse
+                                ? List.of(
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .CORPUS_CURATION,
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .EXACT_REPLAY,
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .TRAJECTORY_MODELING)
+                                : List.of(
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .CORPUS_CURATION,
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .EXACT_REPLAY),
+                        occurredAt.minus(Duration.ofDays(1)),
+                        occurredAt.plus(Duration.ofDays(20)));
+        CapabilityObservationEnvelope.PayloadReference request =
+                CapabilityObservationTestFixtures.payload(
+                        "trajectory-request",
+                        '1',
+                        occurredAt.plus(Duration.ofDays(30)));
+        CapabilityObservationEnvelope.PayloadReference response =
+                retryableError ? null
+                        : CapabilityObservationTestFixtures.payload(
+                        "trajectory-response",
+                        '5',
+                        occurredAt.plus(Duration.ofDays(30)));
+        CapabilityObservationEnvelope.NormalizedError error =
+                retryableError
+                        ? new CapabilityObservationEnvelope.NormalizedError(
+                        "TRANSIENT_UPSTREAM",
+                        "UPSTREAM_TIMEOUT",
+                        true,
+                        CapabilityObservationTestFixtures.fingerprint('8'))
+                        : null;
+        CapabilityObservationEnvelope.Material material =
+                new CapabilityObservationEnvelope.Material(
+                        observationId,
+                        capability.scope(),
+                        new MirrorArtifactRef(
+                                "CAPABILITY",
+                                capability.capabilityId(),
+                                capability.revision(),
+                                capability.fingerprint()),
+                        occurredAt,
+                        new CapabilityObservationEnvelope.TraceCoordinates(
+                                "trace-trajectory",
+                                "span-" + observationId,
+                                sequence),
+                        request,
+                        response,
+                        error,
+                        42,
+                        null,
+                        null,
+                        grant);
+        CapabilityObservationEnvelope envelope =
+                new CapabilityObservationIntegrity(mapper).seal(
+                        material,
+                        signer,
+                        CapabilityObservationTestFixtures.ISSUER);
+        CapabilityObservationAdmissionIntegrity admissions =
+                new CapabilityObservationAdmissionIntegrity(mapper);
+        Instant decidedAt = envelope.seal().signedAt().plusSeconds(1);
+        CapabilityObservationAdmission admission = admissions.admitted(
+                envelope,
+                CapabilityObservationTestFixtures.ref(
+                        "OBSERVATION_ADMISSION_POLICY",
+                        "support-admission-policy",
+                        3,
+                        'f'),
+                CapabilityObservationTestFixtures.authorityKey(
+                        envelope,
+                        signer,
+                        CapabilityObservationIntegrity.KeyState.ACTIVE).keyRef(),
+                decidedAt,
+                decidedAt.plus(Duration.ofDays(10)));
+        return new CapabilityObservationRepository.StoredObservation(
+                envelope, admission);
+    }
+
     static CapabilityCorpusGovernancePolicyProvider.GovernancePolicy policy(
             CapabilityObservationRepository.StoredObservation source,
             int minimumSamples,
@@ -215,6 +309,131 @@ final class CapabilityCorpusTestFixtures {
                 "corpus-curator",
                 createdAt,
                 source.admission().usableUntil()));
+    }
+
+    static CapabilityCorpusRevision revision(
+            ObjectMapper mapper,
+            List<CapabilityObservationRepository.StoredObservation> sources,
+            String corpusId,
+            Instant createdAt) {
+        CapabilityCorpusIntegrity integrity =
+                new CapabilityCorpusIntegrity(mapper);
+        CapabilityCorpusCandidateRequest request = candidateRequest(
+                corpusId, 1, null, sources);
+        List<CapabilityCorpusRevision.SourceObservation> projections =
+                sources.stream().map(source -> {
+                    CapabilityObservationEnvelope.Material material =
+                            source.envelope().material();
+                    CapabilityObservationEnvelope.PayloadReference response =
+                            material.response();
+                    return new CapabilityCorpusRevision.SourceObservation(
+                            source.envelope().artifactRef(),
+                            source.admission().artifactRef(),
+                            material.request().payloadRef(),
+                            material.request().sanitizationProofRef(),
+                            material.request().schemaRef(),
+                            response == null ? null : response.payloadRef(),
+                            response == null
+                                    ? null : response.sanitizationProofRef(),
+                            response == null ? null : response.schemaRef(),
+                            material.error() == null
+                                    ? "" : material.error().errorCode(),
+                            integrity.traceFingerprint(material.trace()),
+                            source.admission().authorityKeyRef(),
+                            material.occurredAt(),
+                            source.admission().usableUntil());
+                }).toList();
+        Instant usableUntil = sources.stream()
+                .map(source -> source.admission().usableUntil())
+                .min(Instant::compareTo)
+                .orElseThrow();
+        return integrity.sealRevision(new CapabilityCorpusRevision(
+                "",
+                ZERO_FINGERPRINT,
+                integrity.candidateCommandFingerprint(request),
+                sources.getFirst().envelope().material().scope(),
+                corpusId,
+                1,
+                null,
+                sources.getFirst().envelope().material().capabilityRef(),
+                policy(sources.getFirst(), 1, 10_000, 1)
+                        .governancePolicyRef(),
+                projections,
+                new CapabilityCorpusRevision.RiskSummary(
+                        sources.size(),
+                        1,
+                        sources.size() - 1,
+                        sources.size(),
+                        1,
+                        (sources.size() - 1) * 10_000 / sources.size(),
+                        CapabilityCorpusRevision.Eligibility.ELIGIBLE,
+                        Set.of()),
+                "corpus-curator",
+                createdAt,
+                usableUntil));
+    }
+
+    static CapabilityCorpusTrajectoryPublishRequest trajectoryRequest(
+            CapabilityCorpusPublication publication,
+            List<CapabilityObservationRepository.StoredObservation> sources,
+            MirrorArtifactRef retryPolicyRef) {
+        List<CapabilityCorpusTrajectoryPublishRequest.AttemptSource> attempts =
+                java.util.stream.IntStream.range(0, sources.size())
+                        .mapToObj(index ->
+                                new CapabilityCorpusTrajectoryPublishRequest
+                                        .AttemptSource(
+                                        index + 1,
+                                        sources.get(index).envelope().artifactRef(),
+                                        sources.get(index).admission().artifactRef()))
+                        .toList();
+        return new CapabilityCorpusTrajectoryPublishRequest(
+                "",
+                "support-timeout-trajectory",
+                1,
+                null,
+                sources.getFirst().envelope().material().capabilityRef(),
+                publication.artifactRef(),
+                retryPolicyRef,
+                attempts,
+                CapabilityObservationTestFixtures.ref(
+                        "GOVERNANCE_REVIEW_TICKET",
+                        "ticket-trajectory",
+                        1,
+                        '6'),
+                "OWNER_APPROVED_RETRY_TRAJECTORY");
+    }
+
+    static CapabilityCorpusTrajectoryPublication trajectoryPublication(
+            ObjectMapper mapper,
+            CapabilityCorpusPublication corpusPublication,
+            CapabilityCorpusRevision corpusRevision,
+            CapabilityCorpusTrajectoryPublishRequest request,
+            MirrorArtifactRef predecessor,
+            Instant publishedAt) {
+        CapabilityCorpusIntegrity integrity =
+                new CapabilityCorpusIntegrity(mapper);
+        return integrity.sealTrajectory(
+                new CapabilityCorpusTrajectoryPublication(
+                        "",
+                        ZERO_FINGERPRINT,
+                        integrity.trajectoryCommandFingerprint(request),
+                        corpusPublication.scope(),
+                        request.trajectoryId(),
+                        request.revision(),
+                        predecessor,
+                        request.capabilityRef(),
+                        corpusPublication.artifactRef(),
+                        corpusRevision.artifactRef(),
+                        corpusPublication.publicationPolicyRef(),
+                        request.retryPolicyRef(),
+                        corpusRevision.sources().getFirst()
+                                .requestPayloadRef().fingerprint(),
+                        request.attempts(),
+                        request.reviewTicketRef(),
+                        request.reasonCode(),
+                        "corpus-curator",
+                        publishedAt,
+                        corpusPublication.usableUntil()));
     }
 
     static CapabilityCorpusPublication publication(
